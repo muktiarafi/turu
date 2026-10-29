@@ -1,7 +1,8 @@
 //! Runs one script in QuickJS on the script thread.
 //!
 //! Natives given to JS (wrapped with types by bot/js/turu.ts):
-//! * `__turu(method, argsJson) -> resultJson`: `{"ok": value}` or `{"error": msg, "stopped": bool}`.
+//! * `__turu(method, argsJson) -> resultJson`: `{"ok": value, "due": [handler names]}` or
+//!   `{"error": msg, "stopped": bool}`. The due handlers are the `bot.handlers` that must run now.
 //! * `__turuEvents() -> eventsJson`: events since the last poll, `[{"name", "data"}]`.
 
 use super::loader::{ScriptLoader, ScriptResolver, normalize};
@@ -14,6 +15,7 @@ use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub enum RunError {
     Stopped,
@@ -143,7 +145,9 @@ fn call(bot: &Arc<Bot>, method: &str, args: &str) -> String {
         }
     };
     match crate::api::dispatch(bot, method, &args) {
-        Ok(value) => json!({ "ok": value }).to_string(),
+        Ok(value) => {
+            json!({ "ok": value, "due": bot.handlers.take_due(Instant::now()) }).to_string()
+        }
         Err(BotError::Stopped) => json!({ "error": "ScriptStopped", "stopped": true }).to_string(),
         Err(e) => json!({ "error": e.to_string() }).to_string(),
     }

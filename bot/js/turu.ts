@@ -35,10 +35,11 @@ export class BotError extends Error {
 
 function call<T>(method: string, ...args: unknown[]): T {
     const raw = __turu(method, JSON.stringify(args));
-    const result = JSON.parse(raw) as { ok?: T; error?: string; stopped?: boolean };
+    const result = JSON.parse(raw) as { ok?: T; error?: string; stopped?: boolean; due?: string[] };
     if (result.stopped) throw new ScriptStopped();
     if (result.error !== undefined) throw new BotError(`${method}: ${result.error}`);
     dispatchEvents();
+    if (result.due && result.due.length > 0) runDueHandlers(result.due);
     return result.ok as T;
 }
 
@@ -694,6 +695,82 @@ export class Flash {
 }
 
 // ---------------------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------------------
+
+/** Longest slice of a `bot.sleep` before the handlers get a turn. */
+const SLEEP_SLICE_MS = 100;
+
+/** The functions of `bot.handlers`. The engine keeps their timing (bot/src/api/handlers.rs). */
+const handlerRuns = new Map<string, () => unknown>();
+/** Handlers the engine named as due and that haven't run yet. */
+const dueHandlers: string[] = [];
+let runningHandlers = false;
+
+/** Runs the handlers the engine named as due. Bot calls made by a handler queue the rest. */
+function runDueHandlers(names: string[]): void {
+    dueHandlers.push(...names);
+    if (runningHandlers) return;
+    runningHandlers = true;
+    try {
+        for (let name = dueHandlers.shift(); name !== undefined; name = dueHandlers.shift()) {
+            runHandler(name);
+        }
+    } finally {
+        runningHandlers = false;
+        dueHandlers.length = 0;
+    }
+}
+
+function runHandler(name: string): void {
+    const run = handlerRuns.get(name);
+    if (run) {
+        try {
+            if (run() === false) bot.handlers.remove(name);
+        } catch (error) {
+            if (error instanceof ScriptStopped) throw error;
+            bot.log(`Handler "${name}" failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+    if (!call<boolean>("handlers.finish", name)) handlerRuns.delete(name);
+}
+
+/**
+ * `bot.handlers`: functions that run while your script makes bot calls, like VibeSkua's
+ * `Bot.Handlers`. They run between your bot calls and during `bot.sleep`, never inside another
+ * handler. They don't run while the engine is inside one long wait (such as
+ * `bot.wait.forMapLoad`); they run at the next call after it.
+ */
+export class Handlers {
+    /**
+     * Runs `run` every `intervalMs`. Registering a `name` that's already in use replaces that
+     * handler. Returning `false` from `run` removes it. Intervals under 20 ms run at 20 ms.
+     */
+    register(name: string, intervalMs: number, run: () => unknown): void {
+        handlerRuns.set(name, run);
+        call("handlers.add", name, intervalMs, false);
+    }
+
+    /** Runs `run` once, `delayMs` from now. */
+    once(name: string, delayMs: number, run: () => unknown): void {
+        handlerRuns.set(name, run);
+        call("handlers.add", name, delayMs, true);
+    }
+
+    /** Removes the handler; false when there was none. */
+    remove(name: string): boolean {
+        handlerRuns.delete(name);
+        return call("handlers.remove", name);
+    }
+
+    /** Removes every handler. */
+    clear(): void {
+        handlerRuns.clear();
+        call("handlers.clear");
+    }
+}
+
+// ---------------------------------------------------------------------------------------
 // The bot
 // ---------------------------------------------------------------------------------------
 
@@ -718,12 +795,23 @@ export class Bot {
     readonly lite = new Lite();
     readonly options: Options = makeOptions();
     readonly events = new Events();
+    readonly handlers = new Handlers();
     readonly flash = new Flash();
 
     /** Writes a line to the script log. */
     log(message: unknown): void { call("log", typeof message === "string" ? message : JSON.stringify(message)); }
-    /** Sleeps; throws `ScriptStopped` early if the script is stopped. */
-    sleep(ms: number): void { call("sleep", ms); }
+    /**
+     * Sleeps; throws `ScriptStopped` early if the script is stopped. The sleep is cut into
+     * slices so that `bot.handlers` run during it.
+     */
+    sleep(ms: number): void {
+        let left = ms;
+        do {
+            const slice = Math.min(Math.max(left, 0), SLEEP_SLICE_MS);
+            call("sleep", slice);
+            left -= slice;
+        } while (left > 0);
+    }
     /** True once Stop was pressed. */
     get shouldExit(): boolean { return call("shouldExit"); }
     /**

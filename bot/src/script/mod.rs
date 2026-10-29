@@ -137,6 +137,8 @@ pub fn start(bot: &Arc<Bot>) -> Result<(), String> {
         return Err("A script is already running".into());
     }
     bot.control.reset();
+    // VibeSkua's `Handlers.Clear()` before the script thread starts.
+    bot.handlers.clear();
     bot.scripts.set_status(ScriptStatus::Compiling);
     let thread_bot = bot.clone();
     std::thread::Builder::new()
@@ -194,6 +196,7 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.drops.stop();
     bot.boosts.reset();
     bot.quests.unregister_all();
+    bot.handlers.clear();
     bot.options.write().reset_after_script();
     let status = match result {
         Ok(()) => {

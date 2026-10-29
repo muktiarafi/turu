@@ -8,6 +8,7 @@
 pub mod boosts;
 pub mod combat;
 pub mod drops;
+pub mod handlers;
 pub mod hunt;
 pub mod inventory;
 pub mod kill;
@@ -43,6 +44,7 @@ pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value
         "monsters" => monsters::dispatch(bot, name, args),
         "quests" => quests::dispatch(bot, name, args),
         "drops" => drops::dispatch(bot, name, args),
+        "handlers" => handlers::dispatch(bot, name, args),
         "boosts" => boosts::dispatch(bot, name, args),
         "inventory" | "bank" | "tempInv" | "house" | "invHelper" => {
             inventory::dispatch(bot, module, name, args)
