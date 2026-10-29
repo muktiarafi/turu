@@ -82,7 +82,8 @@ script runs, and Start Script is disabled while Auto Attack runs.
   "Not logged in"), Load / Load character / Save, tabs Loadout / Options / Other. Loadout: Solo,
   Farm, Dodge and Boss cards (class from the enhanced classes you own plus `[Current]`, skill set
   mode, "Use Dedicated Equipment Loadout") and a collapsible "Detailed Equipment Slots" with six
-  gear drop-downs per role; Options: the 17 CoreBots settings in two columns (switches, numbers,
+  gear drop-downs per role (with a "(none)" entry to clear a slot, which VibeSkua lacks); the
+  cards split the window width in two, so long names are cut off rather than widening it; Options: the 17 CoreBots settings in two columns (switches, numbers,
   text), searchable; Other: Boosters, Nation Farms, PvP, Bot Creators switches. Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
   before saving public rooms (a save without the answer keeps private rooms). Game reads
