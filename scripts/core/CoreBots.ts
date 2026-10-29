@@ -3561,8 +3561,11 @@ export class CoreBots {
         const exemptIds = [18927, 38575]; // Treasure Potion, Dark Potion
         const allowedCategories = ["note", "item", "resource", "questitem"];
 
-        // Include ServerUse if boosts are not active (Turu has no boost runner; CBO file absent).
-        if (!["doGoldBoost", "doClassBoost", "doRepBoost", "doExpBoost"].some((key) => this.cboBool(key) === true))
+        // Include ServerUse if boosts are not active
+        if (
+            !bot.boosts.enabled &&
+            (this.cboActive() || !["doGoldBoost", "doClassBoost", "doRepBoost", "doExpBoost"].some((key) => this.cboBool(key) === true))
+        )
             allowedCategories.push("serveruse");
 
         const extras = this.inventoryWearAndPattern();
@@ -4296,6 +4299,11 @@ export class CoreBots {
         if (dodgeGear.length > 0) this.dodgeGear = dodgeGear;
         const bossGear = gear(this.bossGearOn, 4);
         if (bossGear.length > 0) this.bossGear = bossGear;
+    }
+
+    /** C# `CBO_Active`: your CoreBots Options file was read. */
+    cboActive(): boolean {
+        return this.cboLines.length > 0;
     }
 
     /** C# `CBOString`: the value of a CoreBots Options key, or null when not set. */

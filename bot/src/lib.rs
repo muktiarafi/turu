@@ -50,6 +50,7 @@ pub struct Bot {
     pub scripts: script::ScriptManager,
     pub skills: skills::SkillRunner,
     pub drops: api::drops::DropRunner,
+    pub boosts: api::boosts::BoostRunner,
     pub quests: api::quests::QuestRunner,
     pub paths: paths::Paths,
 }
@@ -69,6 +70,7 @@ impl Bot {
             scripts: script::ScriptManager::default(),
             skills: skills::SkillRunner::default(),
             drops: api::drops::DropRunner::default(),
+            boosts: api::boosts::BoostRunner::default(),
             quests: api::quests::QuestRunner::default(),
             paths,
         });

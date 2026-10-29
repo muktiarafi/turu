@@ -11,16 +11,11 @@ tags: core
  * GoodREP, VampireREP and their helpers); port more from the C# file as scripts need them.
  */
 
-import { bot } from "turu";
+import { bot, BoostType } from "turu";
 import { Alignment, ClassType, Core } from "./CoreBots";
 
-/** C# `Skua.Core.Models.BoostType`. */
-export enum BoostType {
-    Gold = "Gold",
-    Class = "Class",
-    Reputation = "Reputation",
-    Experience = "Experience",
-}
+/** C# `Skua.Core.Models.BoostType` (the engine's, re-exported for scripts that import it here). */
+export { BoostType };
 
 /** "1,500,000" (C# `{n:N0}`). */
 function formatN0(value: number): string {
@@ -29,69 +24,73 @@ function formatN0(value: number): string {
 
 export class CoreFarms {
     /**
-     * Which boosts are on. API gap: turu has no `bot.boosts` (C# `Bot.Boosts` finds the boost item
-     * and uses it on a timer), so boosts are only tracked here and never actually used.
-     */
-    private readonly boosts: Record<BoostType, boolean> = {
-        [BoostType.Gold]: false,
-        [BoostType.Class]: false,
-        [BoostType.Reputation]: false,
-        [BoostType.Experience]: false,
-    };
-
-    /**
-     * Enables or disables a boost. Enabling needs the matching CoreBots Options key
-     * (`doGoldBoost`, `doClassBoost`, `doRepBoost`, `doExpBoost` in `Core.cboValues`); gold is
-     * skipped at max gold, experience at level 100, class at rank 10.
+     * Enables or disables a boost. Enabling needs the matching CoreBots Options switch (Other >
+     * Boosters: `doGoldBoost`, `doClassBoost`, `doRepBoost`, `doExpBoost`); it finds the boost item
+     * (inventory, then bank) and starts the boost timer. Gold is skipped at max gold, experience at
+     * level 100, class at rank 10. Disabling the last one stops the timer.
      */
     toggleBoost(type: BoostType, enabled = true): void {
+        // Only allow enabling if the corresponding CBO is true
         if (enabled) {
             switch (type) {
                 case BoostType.Gold:
-                    if (Core.cboBool("doGoldBoost") !== true || this.boosts.Gold || bot.player.gold >= 100_000_000) return;
-                    this.boosts.Gold = true;
+                    if (Core.cboBool("doGoldBoost") !== true || bot.boosts.uses(BoostType.Gold) || bot.player.gold >= 100_000_000) return;
+                    bot.boosts.setBoostIdFromInventory(BoostType.Gold);
+                    bot.boosts.setUses(BoostType.Gold, true);
                     Core.logger("💰 Gold boost activated!");
                     break;
                 case BoostType.Class:
-                    if (Core.cboBool("doClassBoost") !== true || this.boosts.Class || Core.checkClassRank(true) === 10) return;
-                    this.boosts.Class = true;
+                    if (Core.cboBool("doClassBoost") !== true || bot.boosts.uses(BoostType.Class) || Core.checkClassRank(true) === 10) return;
+                    bot.boosts.setBoostIdFromInventory(BoostType.Class);
+                    bot.boosts.setUses(BoostType.Class, true);
                     Core.logger("🛡️ Class boost activated!");
                     break;
                 case BoostType.Reputation:
-                    if (Core.cboBool("doRepBoost") !== true || this.boosts.Reputation) return;
-                    this.boosts.Reputation = true;
+                    if (Core.cboBool("doRepBoost") !== true || bot.boosts.uses(BoostType.Reputation)) return;
+                    bot.boosts.setBoostIdFromInventory(BoostType.Reputation);
+                    bot.boosts.setUses(BoostType.Reputation, true);
                     Core.logger("🏰 Reputation boost activated!");
                     break;
                 case BoostType.Experience:
-                    if (Core.cboBool("doExpBoost") !== true || this.boosts.Experience || bot.player.level >= 100) return;
-                    this.boosts.Experience = true;
+                    if (Core.cboBool("doExpBoost") !== true || bot.boosts.uses(BoostType.Experience) || bot.player.level >= 100) return;
+                    bot.boosts.setBoostIdFromInventory(BoostType.Experience);
+                    bot.boosts.setUses(BoostType.Experience, true);
                     Core.logger("📚 Experience boost activated!");
                     break;
             }
-            // C# Bot.Boosts.Start(): API gap.
-            Core.logger("Boosts aren't supported by Turu yet; the boost item won't be used.", "ToggleBoost");
+
+            bot.boosts.start();
         } else {
+            // Disable the boost
             switch (type) {
                 case BoostType.Gold:
-                    this.boosts.Gold = false;
+                    bot.boosts.setUses(BoostType.Gold, false);
                     Core.logger("💰 Gold boost deactivated.");
                     break;
                 case BoostType.Class:
-                    this.boosts.Class = false;
+                    bot.boosts.setUses(BoostType.Class, false);
                     Core.logger("🛡️ Class boost deactivated.");
                     break;
                 case BoostType.Reputation:
-                    this.boosts.Reputation = false;
+                    bot.boosts.setUses(BoostType.Reputation, false);
                     Core.logger("🏰 Reputation boost deactivated.");
                     break;
                 case BoostType.Experience:
-                    this.boosts.Experience = false;
+                    bot.boosts.setUses(BoostType.Experience, false);
                     Core.logger("📚 Experience boost deactivated.");
                     break;
             }
 
-            // Stop all boosts if none are active (C# Bot.Boosts.Stop())
-            if (!this.boosts.Gold && !this.boosts.Class && !this.boosts.Reputation && !this.boosts.Experience) Core.logger("🛑 All boosts stopped.");
+            // Stop all boosts if none are active
+            if (
+                !bot.boosts.uses(BoostType.Gold) &&
+                !bot.boosts.uses(BoostType.Class) &&
+                !bot.boosts.uses(BoostType.Reputation) &&
+                !bot.boosts.uses(BoostType.Experience)
+            ) {
+                bot.boosts.stop();
+                Core.logger("🛑 All boosts stopped.");
+            }
         }
     }
 
