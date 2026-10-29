@@ -527,8 +527,8 @@ export class CoreBots {
      * start-up banking, skills for the current class and the run-time log on `setOptions(false)`.
      * Dropped: version check, Bot.Config, telemetry (CollectData), account tags, one-time messages
      * (Discord/Christmas/April Fools/user-specific), Butler logs, the quest-limit handler (needs an
-     * object `setGameObject`), anti-counter-attack (`Bot.UltraBossHelper`) and the stop handler
-     * (`StopBot`: game calls are not possible once the script is stopping).
+     * object `setGameObject`) and anti-counter-attack (`Bot.UltraBossHelper`). Starting also
+     * registers {@link stopBotEvent}, which goes to the stop location when the script is stopped.
      * @param changeTo Value the options will be changed to.
      */
     setOptions(changeTo = true, _disableClassSwap = false): void {
@@ -662,13 +662,7 @@ export class CoreBots {
 
         if (changeTo) {
             // Start scripts safely in the house (or whitemap if the house doesn't exist) if the start map is battleon
-            if (["battleon", "oaklore", "bludrutbrawl"].some((m) => equalsIgnoreCase(bot.map.name, m))) {
-                if (bot.house.items.some((h) => h.equipped)) {
-                    // C# also rewrites the house's moveToArea packet to hide the username; dropped.
-                    bot.send.packet(`%xt%zm%house%1%${this.username()}%`);
-                    bot.wait.forMapLoad("house");
-                } else bot.send.packet(`%xt%zm%cmd%1%tfer%${this.username()}%whitemap-${this.privateRoomNumber}%`);
-            }
+            if (["battleon", "oaklore", "bludrutbrawl"].some((m) => equalsIgnoreCase(bot.map.name, m))) this.goHome();
             // Open Bank on startup ensuring current window is `Bank`, then load the bank information.
             if (bot.flash.get<string>("ui.mcPopup.currentLabel") !== "Bank") bot.bank.open();
             bot.bank.load();
@@ -683,6 +677,8 @@ export class CoreBots {
             bot.options.huntDelay = this.huntDelay;
             if (this.bankMiscAC) this.bankACMisc();
             if (this.bankUnenhancedACGear) this.bankACUnenhancedGear();
+
+            this.equipmentBeforeBot.push(...bot.inventory.items.filter((i) => i.equipped).map((x) => x.name));
 
             const currentClassName = bot.player.currentClass ?? "generic";
 
@@ -704,7 +700,10 @@ export class CoreBots {
                           ? this.dodgeUseMode
                           : ClassUseMode.Base,
             );
-            // C# StopBotEvent / killed-monster listeners: dropped (see the doc comment).
+            // C# Bot.Events.ScriptStopping += StopBotEvent (kept to one subscription here).
+            this.removeStopBotEvent?.();
+            this.removeStopBotEvent = bot.events.on("scriptStopping", (e) => this.stopBotEvent(e));
+            // C# killed-monster listeners (CleanKilledMonstersList, ...): dropped.
 
             this.logger("Bot Configured", "SetOptions");
         }
@@ -794,7 +793,95 @@ export class CoreBots {
     /** Item names {@link toBank} and the AC-banking helpers must never bank. */
     bankingBlackList: string[] = [];
 
-    // C# EquipmentBeforeBot / StopBot / StopBotEvent / CrashDetector: dropped (stop handling).
+    private readonly equipmentBeforeBot: string[] = [];
+    private removeStopBotEvent: (() => void) | null = null;
+
+    /**
+     * Goes to your house, or to /whitemap when you have no house equipped (where scripts start
+     * when you are in battleon, and the "home"/"house" stop location). C# also rewrites the
+     * house's moveToArea packet to hide the username; dropped.
+     */
+    private goHome(): void {
+        if (bot.house.items.some((h) => h.equipped)) {
+            bot.send.packet(`%xt%zm%house%1%${this.username()}%`);
+            bot.wait.forMapLoad("house");
+        } else bot.send.packet(`%xt%zm%cmd%1%tfer%${this.username()}%whitemap-${this.privateRoomNumber}%`);
+    }
+
+    /**
+     * Stops the bot and moves you to the stop location ("Map after stopping the Bot" in
+     * Options > CoreBots, {@link customStopLocation}): your house for "home"/"house", nowhere for
+     * "off"/"none"/..., else that map. Then puts back the gear you wore when the script started.
+     * Runs when the script is stopped or fails, not when it finishes (C# `StopBot`).
+     */
+    private stopBot(crashed: boolean): boolean {
+        this.stopBotBackground();
+        this.clearHandlers();
+
+        if (bot.player.loggedIn) {
+            this.jumpWait();
+            this.sleep();
+
+            if (this.customStopLocation.trim().length > 0) {
+                const stopLoc = this.customStopLocation.trim().toLowerCase();
+                if (["home", "house"].includes(stopLoc)) this.goHome();
+                else if (["off", "disabled", "disable", "stop", "same", "currentmap", "bot.map.currentmap", "none", ""].includes(stopLoc)) {
+                    // Nothing happens
+                } else bot.send.packet(`%xt%zm%cmd%1%tfer%${this.username()}%${stopLoc}-${this.privateRoomNumber}%`);
+
+                if (this.equipmentBeforeBot.length > 0) {
+                    const pvpMaps = [
+                        "bludrutbrawl",
+                        "darkoviapvp",
+                        "dagepvp",
+                        "deathpitbrawl",
+                        "frostbrawl",
+                        "chaosbrawl",
+                        "doomarenaa",
+                        "doomarenab",
+                        "doomarenac",
+                        "doomarenad",
+                    ];
+
+                    if (pvpMaps.includes(bot.map.name)) this.join("whitemap");
+                    else this.jumpWait();
+
+                    this.equip(...this.equipmentBeforeBot);
+                }
+            }
+        }
+
+        if (crashed) this.logger("Bot stopped due to a crash.");
+        // C# restarts the script with auto-relogin on (Bot.Manager.RestartScriptAsync): API gap.
+        else if (!bot.player.loggedIn) this.logger("Bot stopped due to player logout.");
+        else this.logger("Bot stopped successfully.");
+
+        return this.scriptFinished;
+    }
+
+    /** The part of StopBot C# runs in a background task (`StopBotAsync`); Butler log: dropped. */
+    private stopBotBackground(): void {
+        this.savedState(false);
+
+        if (this.antiLag) {
+            bot.options.setFps = 30; // tato keep this fps 30 ples
+            if (bot.flash.get<boolean>("ui.monsterIcon.redX.visible") === true) bot.flash.callGameFunction("world.toggleMonsters");
+        }
+
+        bot.options.customName = bot.player.username || this.username();
+        const guild = bot.flash.get<string | null>("world.myAvatar.objData.guild.Name");
+        bot.options.customGuild = guild ? `< ${guild} >` : "";
+    }
+
+    /** C# `StopBotEvent`: the `scriptStopping` handler (`error` is set when the script failed). */
+    stopBotEvent(error: string | null): boolean {
+        this.removeStopBotEvent?.();
+        this.removeStopBotEvent = null;
+        this.setOptions(false);
+        return this.stopBot(error !== null);
+    }
+
+    // C# CrashDetector: crash reports, dropped.
     private joinedPrison = false;
     private prisonListenerActive = false;
 

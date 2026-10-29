@@ -183,6 +183,11 @@ pub(crate) fn set_running(bot: &Bot) {
     bot.scripts.set_status(ScriptStatus::Running);
 }
 
+/// The script's stopping handlers run ("Stopping...").
+pub(crate) fn set_stopping(bot: &Bot) {
+    bot.scripts.set_status(ScriptStatus::Stopping);
+}
+
 /// Cleanup after `main` returns, throws or is stopped (VibeSkua: ScriptStopping/Stopped).
 fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.skills.stop();

@@ -85,7 +85,7 @@ fn run_inner(
             Ok(())
         })()
         .catch(&ctx);
-        match outcome {
+        let result = match outcome {
             Ok(()) => Ok(()),
             Err(_) if bot.should_exit() => Err(RunError::Stopped),
             Err(CaughtError::Exception(e)) if e.message().as_deref() == Some("ScriptStopped") => {
@@ -100,8 +100,37 @@ fn run_inner(
                 Err(RunError::Failed(text))
             }
             Err(other) => Err(RunError::Failed(other.to_string())),
+        };
+        if let Err(e) = &result {
+            script_stopping(bot, &ctx, e);
         }
+        result
     })
+}
+
+/// VibeSkua's `ScriptStopping` event, sent when the script was stopped or failed (not when
+/// `main` returned): runs the script's `scriptStopping` handlers (CoreBots' `StopBot` goes to
+/// the stop location there). Stop is reset first so they can use the bot, like VibeSkua's
+/// handlers, which run off the script thread; pressing Stop again interrupts them.
+fn script_stopping(bot: &Arc<Bot>, ctx: &rquickjs::Ctx<'_>, error: &RunError) {
+    let Ok(Some(hook)) = ctx
+        .globals()
+        .get::<_, Option<Function>>("__turuScriptStopping")
+    else {
+        return;
+    };
+    let error = match error {
+        RunError::Stopped => None,
+        RunError::Failed(message) => Some(message.clone()),
+    };
+    bot.control.reset();
+    super::set_stopping(bot);
+    match hook.call::<_, ()>((error,)).catch(ctx) {
+        Ok(()) => {}
+        Err(_) if bot.should_exit() => {}
+        Err(CaughtError::Exception(e)) if e.message().as_deref() == Some("ScriptStopped") => {}
+        Err(e) => bot.log(format!("Error while the script was stopping: {e}")),
+    }
 }
 
 /// One `__turu` call: dispatches to the Rust API and wraps the result for JS.
