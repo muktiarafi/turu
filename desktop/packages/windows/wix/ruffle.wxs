@@ -74,7 +74,7 @@ http://wixtoolset.org/schemas/v4/wxs/util https://raw.githubusercontent.com/wixt
                                 Id='DesktopEXE'
                                 Name='ruffle.exe'
                                 DiskId='1'
-                                Source='$(CargoBuildDir)/ruffle_desktop.exe'
+                                Source='$(CargoBuildDir)/turu.exe'
                                 KeyPath='yes'>
                             <Shortcut Name="Ruffle" Directory="ProgramMenuFolder" Advertise="yes"
                                       WorkingDirectory="INSTALLFOLDER" Icon="Icon.ico"/>

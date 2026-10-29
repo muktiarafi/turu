@@ -1069,6 +1069,24 @@ impl MainWindow {
     }
 }
 
+/// Turu: shows Turu's icon in the Dock. A bundled `.app` gets it from its `Info.plist`, but a
+/// bare binary (`cargo run`) would show the generic executable icon.
+#[cfg(target_os = "macos")]
+fn set_dock_icon() {
+    use objc2::{AllocAnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let png = include_bytes!("../assets/Assets.xcassets/RuffleMacIcon.iconset/icon_512x512@2x.png");
+    if let Some(image) = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(png)) {
+        // SAFETY: on the main thread, with a valid image.
+        unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image)) };
+    }
+}
+
 pub struct App {
     main_window: Option<MainWindow>,
     runtime: Option<tokio::runtime::Runtime>,
@@ -1128,6 +1146,9 @@ impl ApplicationHandler<RuffleEvent> for App {
             let icon_bytes = include_bytes!("../assets/turu-icon-64.rgba");
             let icon =
                 Icon::from_rgba(icon_bytes.to_vec(), 64, 64).expect("App icon should be correct");
+            // Turu: macOS ignores the window icon; the Dock takes the app's.
+            #[cfg(target_os = "macos")]
+            set_dock_icon();
 
             let no_gui = self.preferences.cli.no_gui;
             let min_window_size = if no_gui {

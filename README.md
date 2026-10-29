@@ -76,8 +76,8 @@ cargo build -p ruffle_desktop --no-default-features --features software_video,ex
 cargo build -p ruffle_desktop --profile dist --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ```
 
-Binaries land in `target/debug/ruffle_desktop` and `target/dist/ruffle_desktop`
-(`.exe` on Windows).
+The package is `ruffle_desktop`; the program it builds is `turu`. Binaries land in
+`target/debug/turu` and `target/dist/turu` (`.exe` on Windows).
 
 Packaging, including the macOS `.app`, the speed profile (PGO) and the Windows resources,
 follows Mugetsu's scripts in `../mugetsu/source/build-*.sh` / `build-windows.ps1`. A Turu

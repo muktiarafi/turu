@@ -352,7 +352,8 @@ fn main() -> Result<(), Error> {
     let default_filter = if verbose_log {
         "warn,ruffle=info,avm_trace=info"
     } else {
-        "warn,ruffle_desktop=info,ruffle_aqw_perf=info,ruffle_core=warn,ruffle_core::avm2=off,ruffle_core::stub=off,avm_trace=off"
+        // Turu: the desktop crate is `turu` (the binary's name); that also shows the bot's log.
+        "warn,turu=info,ruffle_aqw_perf=info,ruffle_core=warn,ruffle_core::avm2=off,ruffle_core::stub=off,avm_trace=off"
     };
     let env_filter = tracing_subscriber::EnvFilter::builder()
         .parse_lossy(env::var("RUST_LOG").as_deref().unwrap_or(default_filter));

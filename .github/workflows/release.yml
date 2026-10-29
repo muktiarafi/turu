@@ -227,13 +227,13 @@ jobs:
       - name: Package Windows
         if: runner.os == 'Windows'
         run: |
-          cp ${{ env.CARGO_BUILD_DIR }}/ruffle_desktop.exe package/ruffle.exe
+          cp ${{ env.CARGO_BUILD_DIR }}/turu.exe package/ruffle.exe
           7z a ${{ env.PACKAGE_FILE }} ./package/*
 
       - name: Package Linux
         if: runner.os == 'Linux'
         run: |
-          cp ${{ env.CARGO_BUILD_DIR }}/ruffle_desktop package/ruffle
+          cp ${{ env.CARGO_BUILD_DIR }}/turu package/ruffle
 
           # Package extras
           mkdir -p package/extras
@@ -265,7 +265,7 @@ jobs:
         with:
           name: ${{ matrix.build_name }}
           path: |
-            ${{ env.CARGO_BUILD_DIR }}/ruffle_desktop
+            ${{ env.CARGO_BUILD_DIR }}/turu
             ${{ env.CARGO_BUILD_DIR }}/ruffle_web_safari
             package
 
@@ -298,7 +298,7 @@ jobs:
 
       - name: Make universal desktop binary
         run: |
-          lipo -create -output package/ruffle target/x86_64-apple-darwin/dist/ruffle_desktop target/aarch64-apple-darwin/dist/ruffle_desktop
+          lipo -create -output package/ruffle target/x86_64-apple-darwin/dist/turu target/aarch64-apple-darwin/dist/turu
           chmod +x package/ruffle
 
       - name: Make universal Safari stub binary
