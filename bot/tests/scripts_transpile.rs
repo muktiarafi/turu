@@ -23,7 +23,6 @@ fn repo_scripts_transpile() {
     assert!(!files.is_empty());
     for file in files {
         let source = std::fs::read_to_string(&file).unwrap();
-        turu_bot::script::transpile::transpile(&source, &file)
-            .unwrap_or_else(|e| panic!("{e}"));
+        turu_bot::script::transpile::transpile(&source, &file).unwrap_or_else(|e| panic!("{e}"));
     }
 }

@@ -70,7 +70,9 @@ impl Flash {
     /// Like [`Flash::get`], but `None` when the value is missing or doesn't fit `T`.
     pub fn get_opt<T: DeserializeOwned>(&self, path: &str) -> BotResult<Option<T>> {
         let raw = self.call("getGameObject", vec![path.into()])?;
-        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw)).ok().flatten())
+        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw))
+            .ok()
+            .flatten())
     }
 
     /// Like [`Flash::get`], but `default` when the value is missing or doesn't fit `T`.
@@ -81,13 +83,17 @@ impl Flash {
     /// `getGameObjectS(path)`: a static value of the game's class, e.g. `serverIP`.
     pub fn get_static<T: DeserializeOwned>(&self, path: &str) -> BotResult<Option<T>> {
         let raw = self.call("getGameObjectS", vec![path.into()])?;
-        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw)).ok().flatten())
+        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw))
+            .ok()
+            .flatten())
     }
 
     /// `getGameObjectKey(path, key)`: `obj[key]`, for keys that aren't identifiers.
     pub fn get_key<T: DeserializeOwned>(&self, path: &str, key: &str) -> BotResult<Option<T>> {
         let raw = self.call("getGameObjectKey", vec![path.into(), key.into()])?;
-        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw)).ok().flatten())
+        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw))
+            .ok()
+            .flatten())
     }
 
     /// `setGameObject(path, value)`.
@@ -98,7 +104,10 @@ impl Flash {
 
     /// `setGameObjectKey(path, key, value)`.
     pub fn set_key(&self, path: &str, key: &str, value: impl Into<FlashArg>) -> BotResult<()> {
-        self.call("setGameObjectKey", vec![path.into(), key.into(), value.into()])?;
+        self.call(
+            "setGameObjectKey",
+            vec![path.into(), key.into(), value.into()],
+        )?;
         Ok(())
     }
 
@@ -131,7 +140,9 @@ impl Flash {
         args: Vec<FlashArg>,
     ) -> BotResult<Option<T>> {
         let raw = self.call_game_function_raw(path, args)?;
-        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw)).ok().flatten())
+        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw))
+            .ok()
+            .flatten())
     }
 
     /// `selectArrayObjects(path, selector)`: `arr.map(x => x[selector])`.
@@ -144,9 +155,15 @@ impl Flash {
     }
 
     /// `getArrayObject(path, index)`.
-    pub fn get_array_item<T: DeserializeOwned>(&self, path: &str, index: usize) -> BotResult<Option<T>> {
+    pub fn get_array_item<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        index: usize,
+    ) -> BotResult<Option<T>> {
         let raw = self.call("getArrayObject", vec![path.into(), index.into()])?;
-        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw)).ok().flatten())
+        Ok(serde_json::from_str::<Option<T>>(unquote_empty(&raw))
+            .ok()
+            .flatten())
     }
 
     /// Sends a raw packet to the server: `sfc.sendString("%xt%zm%...%")`.

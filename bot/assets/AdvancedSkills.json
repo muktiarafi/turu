@@ -35,7 +35,7 @@
               "type": "Aura",
               "value": 0,
               "comparison": "less",
-              "auraName": "Corporeal Ascenion",
+              "auraName": "Corporeal Ascension",
               "auraTarget": "self"
             }
           ]
@@ -67,7 +67,7 @@
               "type": "Aura",
               "value": 0,
               "comparison": "less",
-              "auraName": "Corporeal Ascenion",
+              "auraName": "Corporeal Ascension",
               "auraTarget": "self"
             }
           ]
@@ -77,6 +77,198 @@
         },
         {
           "skillId": 2
+        }
+      ]
+    }
+  },
+  "Archivist of Time": {
+    "Solo": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 0,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 1,
+              "comparison": "less",
+              "auraName": "Lore Inscribed",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "The Second Index",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Superpower",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 0,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 1,
+              "comparison": "less",
+              "auraName": "Lore Inscribed",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "The First Index",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Splotched",
+              "auraTarget": "target"
+            }
+          ]
+        },
+        {
+          "skillId": 0,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 1,
+              "comparison": "less",
+              "auraName": "Lore Inscribed",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "The Third Index",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Rewind",
+              "auraTarget": "self"
+            }
+          ]
+        }
+      ]
+    },
+    "Atk": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "The Third Index",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Rewind",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
         }
       ]
     }
@@ -109,7 +301,7 @@
       ]
     }
   },
-  "Abyssal Angel's Shadow": {
+  "Abyssal Angel\u0027s Shadow": {
     "Base": {
       "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
@@ -162,25 +354,33 @@
   },
   "Alpha DOOMmega": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 70,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
         },
         {
           "skillId": 1
         },
         {
+          "skillId": 4
+        },
+        {
           "skillId": 2,
           "rules": [
             {
-              "type": "Health",
+              "type": "Mana",
               "value": 50,
-              "comparison": "less",
+              "comparison": "greater",
               "isPercentage": true
             }
           ]
@@ -190,25 +390,33 @@
   },
   "Alpha Omega": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 70,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
         },
         {
           "skillId": 1
         },
         {
+          "skillId": 4
+        },
+        {
           "skillId": 2,
           "rules": [
             {
-              "type": "Health",
+              "type": "Mana",
               "value": 50,
-              "comparison": "less",
+              "comparison": "greater",
               "isPercentage": true
             }
           ]
@@ -531,6 +739,33 @@
           "skillId": 1
         }
       ]
+    },
+    "Def": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Righteous Seal",
+              "auraTarget": "target"
+            }
+          ]
+        }
+      ]
     }
   },
   "Artifact Hunter": {
@@ -602,6 +837,21 @@
           "skillId": 1
         },
         {
+          "skillId": 4
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
           "skillId": 3
         },
         {
@@ -609,6 +859,15 @@
         },
         {
           "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 2
         }
       ]
     }
@@ -976,13 +1235,19 @@
           "skillId": 4
         },
         {
-          "skillId": 3
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+	{
+          "skillId": 4
         },
         {
           "skillId": 1
         },
         {
-          "skillId": 2
+          "skillId": 3
         }
       ]
     }
@@ -1196,25 +1461,34 @@
   },
   "Chaos Slayer Berserker": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
           "skillId": 3
         },
         {
-          "skillId": 1
-        },
-        {
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 1
         }
       ]
     },
     "Farm": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
@@ -1224,32 +1498,50 @@
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
         }
       ]
     }
   },
   "Chaos Slayer Cleric": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
           "skillId": 3
         },
         {
-          "skillId": 1
-        },
-        {
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 1
         }
       ]
     },
     "Farm": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
@@ -1259,32 +1551,50 @@
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
         }
       ]
     }
   },
   "Chaos Slayer Mystic": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
           "skillId": 3
         },
         {
-          "skillId": 1
-        },
-        {
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 1
         }
       ]
     },
     "Farm": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
@@ -1294,32 +1604,50 @@
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
         }
       ]
     }
   },
   "Chaos Slayer Thief": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
           "skillId": 3
         },
         {
-          "skillId": 1
-        },
-        {
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 1
         }
       ]
     },
     "Farm": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
@@ -1329,7 +1657,16 @@
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0.5,
+              "comparison": "less",
+              "auraName": "Courageous",
+              "auraTarget": "self"
+            }
+          ]
         }
       ]
     }
@@ -1635,36 +1972,12 @@
     }
   },
   "Chrono ShadowSlayer": {
-    "Solo": {
+    "Dodge": {
       "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
+      "skillTimeout": 200,
       "skills": [
         {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Aura",
-              "value": 1,
-              "comparison": "less",
-              "auraName": "Rounds Empty!",
-              "auraTarget": "self"
-            }
-          ]
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
+          "skillId": 2
         },
         {
           "skillId": 3
@@ -1673,91 +1986,29 @@
           "skillId": 2
         },
         {
-          "skillId": 4
+          "skillId": 3
         },
         {
-          "skillId": 0,
+          "skillId": 2,
           "rules": [
             {
               "type": "Mana",
-              "value": 15,
+              "value": 5,
               "comparison": "greater",
-              "isPercentage": true
-            },
-            {
-              "type": "Aura",
-              "value": 1,
-              "comparison": "greater",
-              "auraName": "Gunslinger Stance!",
-              "auraTarget": "self"
+              "isPercentage": false
             }
           ]
-        }
-      ]
-    },
-    "Atk": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 1
         },
         {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
-        }
-      ]
-    },
-    "Def": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
+            }
+          ]
         },
         {
           "skillId": 4
@@ -1769,7 +2020,7 @@
     },
     "Farm": {
       "skillUseMode": "UseIfAvailable",
-      "skillTimeout": 100,
+      "skillTimeout": 200,
       "skills": [
         {
           "skillId": 1,
@@ -1782,273 +2033,184 @@
               "auraTarget": "self"
             }
           ]
-        },
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "None"
-            }
-          ],
-          "skipOnMatch": true
-        }
-      ]
-    }
-  },
-  "Chrono ShadowHunter": {
-    "Solo": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Aura",
-              "value": 1,
-              "comparison": "less",
-              "auraName": "Rounds Empty!",
-              "auraTarget": "self"
-            }
-          ]
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 0,
-          "rules": [
-            {
-              "type": "Mana",
-              "value": 15,
-              "comparison": "greater",
-              "isPercentage": true
-            },
-            {
-              "type": "Aura",
-              "value": 1,
-              "comparison": "greater",
-              "auraName": "Gunslinger Stance!",
-              "auraTarget": "self"
-            }
-          ]
-        }
-      ]
-    },
-    "Atk": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
-        }
-      ]
-    },
-    "Def": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        }
-      ]
-    },
-    "Farm": {
-      "skillUseMode": "UseIfAvailable",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Aura",
-              "value": 1,
-              "comparison": "greater",
-              "auraName": "Rounds Empty",
-              "auraTarget": "self"
-            }
-          ]
-        },
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "None"
-            }
-          ],
-          "skipOnMatch": true
-        }
-      ]
-    }
-  },
-  "Chronomancer": {
-    "Base": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 3
-        }
-      ]
-    },
-    "Solo": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 120,
-      "skills": [
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 1
         },
         {
           "skillId": 2,
           "rules": [
             {
               "type": "Health",
-              "value": 60,
+              "value": 75,
               "comparison": "less",
               "isPercentage": true
+            },
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
             }
           ]
         },
         {
-          "skillId": 1
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
+            }
+          ]
         },
         {
-          "skillId": 1
-        },
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 4,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Rounds Empty",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 4,
+              "comparison": "greater",
+              "auraName": "Temporal Rift",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true,
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
+        }
+      ]
+    }
+  },
+  "Chrono ShadowHunter": {
+    "Dodge": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 200,
+      "skills": [
         {
-          "skillId": 1
+          "skillId": 2
         },
         {
           "skillId": 3
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
+            }
+          ]
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        }
+      ]
+    },
+    "Farm": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 200,
+      "skills": [
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 1,
+              "comparison": "greater",
+              "auraName": "Rounds Empty",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            },
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 5,
+              "comparison": "greater",
+              "isPercentage": false
+            }
+          ]
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 4,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Rounds Empty",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 4,
+              "comparison": "greater",
+              "auraName": "Temporal Rift",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true,
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
         }
       ]
     }
@@ -2774,7 +2936,17 @@
       "skillTimeout": 100,
       "skills": [
         {
-          "skillId": 1
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Blood Boil",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
         },
         {
           "skillId": 2
@@ -2788,6 +2960,17 @@
             {
               "type": "Health",
               "value": 40,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 10,
               "comparison": "less",
               "isPercentage": true
             }
@@ -2896,7 +3079,17 @@
       "skillTimeout": 100,
       "skills": [
         {
-          "skillId": 1
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Blood Boil",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
         },
         {
           "skillId": 2
@@ -2905,7 +3098,26 @@
           "skillId": 3
         },
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 40,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 10,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
         }
       ]
     }
@@ -3031,28 +3243,7 @@
     }
   },
   "Dragon of Time": {
-    "Farm": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 2
-        }
-      ]
-    },
-    "Solo": {
+    "Base": {
       "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
@@ -3070,6 +3261,9 @@
         },
         {
           "skillId": 4
+        },
+        {
+          "skillId": 2
         }
       ]
     }
@@ -3358,52 +3552,37 @@
           "skillId": 4
         },
         {
-          "skillId": 1
+          "skillId": 2
         },
         {
           "skillId": 4
         },
         {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
+          "skillId": 2
         },
         {
           "skillId": 1
         },
         {
           "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
         },
         {
           "skillId": 3
@@ -3487,52 +3666,37 @@
           "skillId": 4
         },
         {
-          "skillId": 1
+          "skillId": 2
         },
         {
           "skillId": 4
         },
         {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
+          "skillId": 2
         },
         {
           "skillId": 1
         },
         {
           "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
         },
         {
           "skillId": 3
@@ -4413,9 +4577,30 @@
   },
   "Hollowborn Vindicator Member Preview": {
     "Base": {
-      "skillUseMode": "UseIfAvailable",
+      "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
         {
           "skillId": 1
         },
@@ -4423,19 +4608,40 @@
           "skillId": 2
         },
         {
-          "skillId": 3
+          "skillId": 4
         },
         {
-          "skillId": 4
+          "skillId": 1
         }
       ]
     }
   },
   "Hollowborn Vindicator": {
     "Base": {
-      "skillUseMode": "UseIfAvailable",
+      "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
         {
           "skillId": 1
         },
@@ -4443,10 +4649,10 @@
           "skillId": 2
         },
         {
-          "skillId": 3
+          "skillId": 4
         },
         {
-          "skillId": 4
+          "skillId": 1
         }
       ]
     }
@@ -4495,52 +4701,37 @@
           "skillId": 4
         },
         {
-          "skillId": 1
+          "skillId": 2
         },
         {
           "skillId": 4
         },
         {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 4
+          "skillId": 2
         },
         {
           "skillId": 1
         },
         {
           "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
         },
         {
           "skillId": 3
@@ -4785,7 +4976,7 @@
       ]
     }
   },
-  "King's Echo": {
+  "Kathool Adept": {
     "Base": {
       "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
@@ -4797,7 +4988,19 @@
               "type": "Aura",
               "value": 0,
               "comparison": "less",
-              "auraName": "Royal Resolve",
+              "auraName": "Feeding",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 10,
+              "comparison": "greater",
+              "auraName": "Feeding",
               "auraTarget": "self"
             }
           ]
@@ -4809,15 +5012,165 @@
           "skillId": 2
         },
         {
+          "skillId": 4
+        }
+      ]
+    },
+    "Farm": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Feeding",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 10,
+              "comparison": "greater",
+              "auraName": "Feeding",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 1
+        }
+      ]
+    }
+  },
+  "King's Echo": {
+    "Base": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 23,
+              "comparison": "less",
+              "auraName": "Residual Energy",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 25,
+              "comparison": "greater",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 23,
+              "comparison": "less",
+              "auraName": "Residual Energy",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 24,
+              "comparison": "greater",
+              "auraName": "Residual Energy",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
           "skillId": 4,
           "rules": [
             {
               "type": "Mana",
-              "value": 10,
+              "value": 24,
               "comparison": "less",
-              "isPercentage": true
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Elysium",
+              "auraTarget": "self"
             }
           ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 75,
+              "comparison": "less",
+              "isPercentage": true
+            },
+            {
+              "type": "Mana",
+              "value": 50,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        }
+      ]
+    },
+    "Def": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 500,
+      "skills": [
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4
         }
       ]
     }
@@ -5140,7 +5493,7 @@
   },
   "Legion SwordMaster Assassin": {
     "Base": {
-      "skillUseMode": "UseIfAvailable",
+      "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
         {
@@ -5154,6 +5507,21 @@
         },
         {
           "skillId": 4
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 2
         }
       ]
     }
@@ -5180,47 +5548,115 @@
   },
   "Lich": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 50,
       "skills": [
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 2,
+              "comparison": "less",
+              "auraName": "Ex Mortis",
+              "auraTarget": "self"
+            }
+          ]
         },
         {
-          "skillId": 3
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "MultiAura",
+              "value": 2,
+              "comparison": "greater",
+              "auraName": "Ex Mortis",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Necrotic Edge",
+              "auraTarget": "self"
+            }
+          ],
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
         },
         {
-          "skillId": 4
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "MultiAura",
+              "value": 2,
+              "comparison": "greater",
+              "auraName": "Ex Mortis",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "greater",
+              "auraName": "Necrotic Edge",
+              "auraTarget": "self"
+            }
+          ],
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
         },
         {
-          "skillId": 2
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "MultiAura",
+              "value": 2,
+              "comparison": "greater",
+              "auraName": "Ex Mortis",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "greater",
+              "auraName": "Necrotic Edge",
+              "auraTarget": "self"
+            }
+          ],
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
         },
         {
-          "skillId": 4
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 60,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ]
         },
         {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "MultiAura",
+              "value": 2,
+              "comparison": "greater",
+              "auraName": "Ex Mortis",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "greater",
+              "auraName": "Necrotic Edge",
+              "auraTarget": "self"
+            }
+          ],
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
         }
       ]
     }
@@ -5297,25 +5733,22 @@
       ]
     }
   },
-  "Lord Of Order": {
+  "Lord of Order": {
     "Base": {
       "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
-          "skillId": 0
-        },
-        {
-          "skillId": 2
-        },
-        {
           "skillId": 4
+        },
+        {
+          "skillId": 3
         },
         {
           "skillId": 1
         },
         {
-          "skillId": 3
+          "skillId": 2
         }
       ]
     }
@@ -5368,7 +5801,7 @@
   },
   "Mage": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
@@ -5388,7 +5821,7 @@
   },
   "Mage (Rare)": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
@@ -5540,41 +5973,431 @@
     }
   },
   "Master Martial Artist": {
-    "Base": {
+    "Atk": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Fully Focused",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Wait",
+              "timeout": 1500
+            },
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Fully Focused",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Wait",
+              "timeout": 1500
+            },
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Fully Focused",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Wait",
+              "timeout": 1500
+            },
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        }
+      ]
+    },
+    "Def": {
       "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
         {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
           "skillId": 1
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
         },
         {
           "skillId": 2
         },
         {
-          "skillId": 2
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
         },
         {
           "skillId": 1
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 2
         }
       ]
     }
   },
   "Martial Artist": {
-    "Base": {
+    "Atk": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Fully Focused",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Wait",
+              "timeout": 1500
+            },
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Fully Focused",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Wait",
+              "timeout": 1500
+            },
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": false
+            },
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Fully Focused",
+              "auraTarget": "self"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Wait",
+              "timeout": 1500
+            },
+            {
+              "type": "Mana",
+              "value": 100,
+              "comparison": "less",
+              "isPercentage": true
+            }
+          ],
+          "skipOnMatch": true
+        }
+      ]
+    },
+    "Def": {
       "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
         {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
           "skillId": 1
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
         },
         {
           "skillId": 2
         },
         {
-          "skillId": 2
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
         },
         {
           "skillId": 1
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "None"
+            }
+          ],
+          "skipOnMatch": true
+        },
+        {
+          "skillId": 2
         }
       ]
     }
@@ -5805,11 +6628,58 @@
   },
   "Ninja": {
     "Base": {
-      "skillUseMode": "WaitForCooldown",
+      "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
         {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 0,
+              "comparison": "less",
+              "auraName": "Vanish",
+              "auraTarget": "self"
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "MultiAura",
+              "value": 1,
+              "comparison": "greater",
+              "auraName": "Vanish",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 0,
+              "comparison": "greater",
+              "auraName": "Reappear",
+              "auraTarget": "self"
+            }
+          ],
+          "isMultiAura": true,
+          "multiAuraOperator": "AND"
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        }
+      ]
+    }
+  },
+  "Classic Ninja": {
+    "Base": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1
         },
         {
           "skillId": 2
@@ -5818,13 +6688,27 @@
           "skillId": 3
         },
         {
+          "skillId": 4
+        }
+      ]
+    }
+  },
+  "Ninja (rare)": {
+    "Base": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
           "skillId": 1
+        },
+        {
+          "skillId": 2
         },
         {
           "skillId": 3
         },
         {
-          "skillId": 1
+          "skillId": 4
         }
       ]
     }
@@ -5871,20 +6755,44 @@
   },
   "NOT A MOD": {
     "Base": {
-      "skillUseMode": "UseIfAvailable",
+      "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
         {
           "skillId": 1
         },
         {
-          "skillId": 2
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 4
         },
         {
           "skillId": 3
         },
         {
-          "skillId": 4
+          "skillId": 2
         }
       ]
     }
@@ -6135,9 +7043,6 @@
           "skillId": 3
         },
         {
-          "skillId": 2
-        },
-        {
           "skillId": 1
         },
         {
@@ -6157,6 +7062,9 @@
         },
         {
           "skillId": 1
+        },
+        {
+          "skillId": 2
         },
         {
           "skillId": 3
@@ -6781,6 +7689,119 @@
               "isPercentage": true
             }
           ]
+        }
+      ]
+    }
+  },
+  "Scion of Flames": {
+    "Farm": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        }
+      ]
+    },
+    "Solo": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
         }
       ]
     }
@@ -8369,48 +9390,69 @@
   },
   "Verus DoomKnight": {
     "Def": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 50,
       "skills": [
         {
-          "skillId": 1
+          "skillId": 2,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 9,
+              "comparison": "less",
+              "auraName": "Doom",
+              "auraTarget": "self"
+            }
+          ]
         },
         {
-          "skillId": 3
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 9,
+              "comparison": "less",
+              "auraName": "Doom",
+              "auraTarget": "self"
+            }
+          ]
         },
         {
-          "skillId": 2
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Aura",
+              "value": 9,
+              "comparison": "less",
+              "auraName": "Doom",
+              "auraTarget": "self"
+            }
+          ]
         },
         {
-          "skillId": 1
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 4
+          "skillId": 4,
+          "rules": [
+            {
+              "type": "MultiAura",
+              "value": 9,
+              "comparison": "greater",
+              "auraName": "Doom",
+              "auraTarget": "self"
+            },
+            {
+              "type": "MultiAura",
+              "value": 1,
+              "comparison": "greater",
+              "auraName": "Unleashed Doom",
+              "auraTarget": "self"
+            }
+          ],
+          "isMultiAura": true,
+          "multiAuraOperator": "OR"
         }
       ]
     },
-    "Atk": {
+    "Base": {
       "skillUseMode": "WaitForCooldown",
       "skillTimeout": 100,
       "skills": [
@@ -8424,31 +9466,16 @@
           "skillId": 3
         },
         {
+          "skillId": 4
+        },
+        {
           "skillId": 1
         },
         {
           "skillId": 2
         },
         {
-          "skillId": 4
-        },
-        {
           "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1
-        },
-        {
-          "skillId": 3
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 4
         }
       ]
     }
@@ -8475,6 +9502,152 @@
         },
         {
           "skillId": 1
+        }
+      ]
+    }
+  },
+  "Debris Highlord": {
+    "Atk": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 50,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 30,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 90,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 30,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 50,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 30,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        }
+      ]
+    },
+    "Def": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 90,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        }
+      ]
+    },
+    "Farm": {
+      "skillUseMode": "UseIfAvailable",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 3,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 50,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 1,
+          "rules": [
+            {
+              "type": "Health",
+              "value": 30,
+              "comparison": "greater",
+              "isPercentage": true
+            }
+          ]
         }
       ]
     }
@@ -8942,9 +10115,9 @@
           "rules": [
             {
               "type": "Mana",
-              "value": 60,
+              "value": 20,
               "comparison": "greater",
-              "isPercentage": true
+              "isPercentage": false
             }
           ]
         },

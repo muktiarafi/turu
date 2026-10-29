@@ -123,7 +123,7 @@ Calls are synchronous, so there's no `await`. The API with its docs is in
 
 ## Data folder
 
-Settings, the options file, script options, `AdvancedSkills.json` and the `skua.swf` copy live in:
+Settings, the options file, script options, the skill sets (`UserAdvancedSkills.json` is yours, `AdvancedSkills.json` the shipped ones) and the `skua.swf` copy live in:
 
 | OS | Folder |
 |---|---|

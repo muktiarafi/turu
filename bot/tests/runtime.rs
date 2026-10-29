@@ -33,7 +33,10 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
 fn wait_until_done(bot: &Bot) {
     let start = Instant::now();
     while bot.scripts.is_running() {
-        assert!(start.elapsed() < Duration::from_secs(10), "script didn't finish");
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "script didn't finish"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
 }
