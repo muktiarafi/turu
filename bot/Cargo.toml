@@ -1,0 +1,23 @@
+[package]
+name = "turu_bot"
+description = "Turu: AQW bot engine (VibeSkua-compatible API, TypeScript scripts)"
+authors.workspace = true
+edition.workspace = true
+license = "GPL-3.0-or-later"
+version.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+dirs = "6.0"
+chrono = { workspace = true, features = ["clock"] }
+regex = "1"
+rquickjs = { version = "0.14", features = ["loader", "macro"] }
+oxc = { version = "0.156", features = ["transformer", "codegen", "semantic"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noImplicitOverride": true,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "types": [],
+    "paths": {
+      "turu": ["../bot/js/turu.ts"]
+    }
+  },
+  "include": ["**/*.ts"]
+}
