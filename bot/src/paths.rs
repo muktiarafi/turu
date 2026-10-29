@@ -56,6 +56,12 @@ impl Paths {
         self.root.join("options")
     }
 
+    /// The CoreBots Options file of `username` (VibeSkua `CBO_Storage(<user>).txt`).
+    pub fn cbo_file(&self, username: &str) -> PathBuf {
+        self.script_options_dir()
+            .join(format!("CBO_Storage({username}).txt"))
+    }
+
     pub fn options_file(&self) -> PathBuf {
         self.root.join("options.json")
     }

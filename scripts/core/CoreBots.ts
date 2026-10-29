@@ -10,19 +10,12 @@ tags: core
  * Use the singleton: `import { Core } from "../core/CoreBots";` (C#: `CoreBots.Instance`).
  *
  * ## Configuration
- * VibeSkua overrides the `[Can Change]` fields below from the "CoreBots Options" file
- * (`CBO_Storage(<user>).txt`, written by Skua's options window). That file does not exist in
- * Turu: the fields keep the C# defaults, and you change them here or from your script before
- * `Core.setOptions()`, e.g.
- *
- * ```ts
- * Core.soloClass = "Void Highlord";
- * Core.farmClass = "Archmage";
- * ```
- *
- * The keys some helpers read straight from that file while they run (`Nation_SellMemVoucher`,
- * `Nation_ReturnPolicyDuringSupplies`, `UltraAlteonForSupplies`, `doGoldBoost`, ...) are looked
- * up in {@link CoreBots.cboValues} instead (empty = "not set", like a missing file):
+ * Like in VibeSkua, `Core.setOptions()` overrides the `[Can Change]` fields below from your
+ * CoreBots Options file (Options > CoreBots, saved per character as
+ * `options/CBO_Storage(<user>).txt`; see {@link CoreBots.readCbo}). Without that file the
+ * fields keep the C# defaults. The keys some helpers read from the file while they run
+ * (`Nation_SellMemVoucher`, `Nation_ReturnPolicyDuringSupplies`, `UltraAlteonForSupplies`,
+ * `doGoldBoost`, ...) can be overridden from a script in {@link CoreBots.cboValues}:
  *
  * ```ts
  * Core.cboValues["Nation_SellMemVoucher"] = "True";
@@ -33,7 +26,7 @@ tags: core
  *   "handlers" that Core polls from its own waits ({@link CoreBots.sleep}, {@link CoreBots.pause},
  *   {@link CoreBots.waitForTrue}); see {@link CoreBots.registerHandler}.
  * - Members only reachable from `SetOptions`' infrastructure (version checker, telemetry, April
- *   Fools, crash reports, account tags, Butler logs, the CBO file reader, Windows-only bits) are
+ *   Fools, crash reports, account tags, Butler logs, Windows-only bits) are
  *   dropped or stubbed; each spot says so in a one-line comment.
  * - `ScriptStopped` is never swallowed: every `catch` rethrows it.
  */
@@ -430,7 +423,7 @@ class GameInventoryCategories {
 // ---------------------------------------------------------------------------------------
 
 export class CoreBots {
-    // ---- [Can Change] configuration (C# defaults; the CBO file doesn't exist in Turu) ----
+    // ---- [Can Change] configuration (C# defaults; setOptions() reads the CBO file over them) ----
 
     /** [Can Change] Delay between common actions, 700 is the safe number. */
     actionDelay = 700;
@@ -500,10 +493,13 @@ export class CoreBots {
     bestGear = false;
 
     /**
-     * Values of the CoreBots Options file keys read at use time (C# `CBOBool`/`CBOString`), e.g.
-     * `{ Nation_SellMemVoucher: "True" }`. Empty means "not set", like a missing CBO file.
+     * CoreBots Options values set from a script, e.g. `{ Nation_SellMemVoucher: "True" }`. They
+     * win over the CBO file's (C# `CBOBool`/`CBOString` read only the file).
      */
     cboValues: Record<string, string> = {};
+
+    /** The CBO file's lines, read by {@link readCbo} (C# `CBOList`). */
+    private cboLines: string[] = [];
 
     private static _instance: CoreBots | null = null;
 
@@ -592,7 +588,7 @@ export class CoreBots {
                 );
         }
 
-        // C# ReadCBO(): the CBO file doesn't exist in Turu (see the header comment).
+        this.readCbo();
 
         // Social Privacy Options
         const isStarting = changeTo;
@@ -4126,18 +4122,110 @@ export class CoreBots {
         this.equipClass(ClassType.Solo);
     }
 
-    // C# AutoReport / LockedQuestData, Butler log helpers, WriteFile, CollectData, ReadCBO,
-    // MigrateCBOKeys: crash reports, Butler, telemetry and the CBO file, dropped.
+    // C# AutoReport / LockedQuestData, Butler log helpers, WriteFile, CollectData: crash
+    // reports, Butler and telemetry, dropped.
 
     // ---------------------------------------------------------------------------------------
     // CoreBots Options values (C# CBO*) and one-time messages
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * C# `ReadCBO`: reads your CoreBots Options file (Options > CoreBots) and applies it to the
+     * `[Can Change]` fields. Does nothing when there is no file. The old dodge/boss gear keys are
+     * renamed in the file first (C# `MigrateCBOKeys`, done by the engine).
+     */
+    readCbo(): void {
+        const lines = bot.coreBotsOptions();
+        if (lines === null) return;
+        this.cboLines = lines;
+
+        const bool = (name: string, set: (value: boolean) => void) => {
+            const value = this.cboBool(name);
+            if (value !== null) set(value);
+        };
+        const int = (name: string, set: (value: number) => void) => {
+            const value = this.cboInt(name);
+            if (value !== null) set(value);
+        };
+        const str = (name: string, set: (value: string) => void) => {
+            const value = this.cboString(name);
+            if (value !== null) set(value);
+        };
+        // C# Enum.Parse(typeof(ClassUseMode), ...); an unknown mode is Base here instead of a crash.
+        const mode = (value: string): ClassUseMode =>
+            (Object.values(ClassUseMode) as string[]).includes(value) ? (value as ClassUseMode) : ClassUseMode.Base;
+
+        //Generic
+        bool("PrivateRooms", (v) => (this.privateRooms = v));
+        int("PrivateRoomNr", (v) => (this.privateRoomNumber = v));
+        bool("PublicDifficult", (v) => (this.publicDifficult = v));
+        bool("BankMiscAC", (v) => (this.bankMiscAC = v));
+        bool("BankUnenhancedACGear", (v) => (this.bankUnenhancedACGear = v));
+        bool("LoggerInChat", (v) => (this.loggerInChat = v));
+
+        str("StopLocationSelect", (v) => (this.customStopLocation = v));
+
+        str("SoloClassSelect", (v) => (this.soloClass = v));
+        bool("SoloEquipCheck", (v) => (this.soloGearOn = v));
+        str("SoloModeSelect", (v) => (this.soloUseMode = mode(v)));
+
+        str("FarmClassSelect", (v) => (this.farmClass = v));
+        bool("FarmEquipCheck", (v) => (this.farmGearOn = v));
+        str("FarmModeSelect", (v) => (this.farmUseMode = mode(v)));
+
+        str("DodgeClassSelect", (v) => (this.dodgeClass = v));
+        bool("DodgeEquipCheck", (v) => (this.dodgeGearOn = v));
+        str("DodgeModeSelect", (v) => (this.dodgeUseMode = mode(v)));
+
+        str("BossClassSelect", (v) => (this.bossClass = v));
+        bool("BossEquipCheck", (v) => (this.bossGearOn = v));
+        str("BossModeSelect", (v) => (this.bossUseMode = mode(v)));
+
+        //Advanced (C# assigns the "Disable..." values as they are)
+        bool("DisableBestGear", (v) => (this.bestGear = v));
+        bool("DisableAutoEnhance", (v) => (this.autoEnhance = v));
+        bool("MessageBoxCheck", (v) => (this.forceOffMessageboxes = v));
+        bool("RestCheck", (v) => (this.shouldRest = v));
+        bool("AntiLag", (v) => (this.antiLag = v));
+
+        int("ActionDelay", (v) => (this.actionDelay = v));
+        int("ExitCombatNr", (v) => (this.exitCombatDelay = v));
+        int("HuntDelayNr", (v) => (this.huntDelay = v));
+        int("QuestTriesNr", (v) => (this.acceptandCompleteTries = v));
+        int("QuestMaxNr", (v) => (this.loadedQuestLimit = v));
+
+        //Class Equipment
+        const gear = (on: boolean, n: number): string[] =>
+            on
+                ? ["Helm", "Armor", "Cape", "Weapon", "Pet", "GroundItem"]
+                      .map((slot) => this.cboString(`${slot}${n}Select`))
+                      .filter((name): name is string => name !== null)
+                : [];
+        const soloGear = gear(this.soloGearOn, 1);
+        if (soloGear.length > 0) this.soloGear = soloGear;
+        const farmGear = gear(this.farmGearOn, 2);
+        if (farmGear.length > 0) this.farmGear = farmGear;
+        const dodgeGear = gear(this.dodgeGearOn, 3);
+        if (dodgeGear.length > 0) this.dodgeGear = dodgeGear;
+        const bossGear = gear(this.bossGearOn, 4);
+        if (bossGear.length > 0) this.bossGear = bossGear;
+    }
+
     /** C# `CBOString`: the value of a CoreBots Options key, or null when not set. */
     cboString(name: string): string | null {
         const key = Object.keys(this.cboValues).find((k) => k.startsWith(name));
-        const value = key === undefined ? undefined : this.cboValues[key];
+        let value = key === undefined ? undefined : this.cboValues[key];
+        if (value === undefined) {
+            const line = this.cboLines.find((l) => l.startsWith(name));
+            value = line === undefined ? undefined : line.split(": ")[1];
+        }
         return value === undefined || value === "fail" || value.trim().length === 0 ? null : value;
+    }
+
+    /** C# `CBOInt`: the number of a CoreBots Options key, or null when not set or not a number. */
+    cboInt(name: string): number | null {
+        const value = this.cboString(name);
+        return value !== null && /^\s*[+-]?\d+\s*$/.test(value) ? parseInt(value, 10) : null;
     }
 
     /** C# `CBOBool`: true/false when set ("True" is true), null when not set. */

@@ -67,6 +67,18 @@ fn root(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(())
         }
         "shouldExit" => ok(bot.should_exit()),
+        "coreBotsOptions" => {
+            let username = player::username(bot)?;
+            if username.is_empty() {
+                return ok(Value::Null);
+            }
+            let path = bot.paths.cbo_file(&username);
+            let lines = crate::cbo::read_lines(&path, |old, new| {
+                bot.log(format!("[CBO Migration] Renamed \"{old}\" → \"{new}\""));
+            })
+            .map_err(|e| BotError::Other(format!("couldn't read {}: {e}", path.display())))?;
+            ok(lines)
+        }
         "stop" => {
             bot.control.request_stop();
             Err(BotError::Stopped)

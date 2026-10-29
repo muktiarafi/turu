@@ -4,6 +4,7 @@
 
 pub mod api;
 mod background;
+pub mod cbo;
 pub mod control;
 pub mod error;
 pub mod events;
