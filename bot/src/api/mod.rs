@@ -5,6 +5,7 @@
 //! functions the rest of the engine calls. Method names are camelCase, exactly as in
 //! `bot/js/turu.ts`; keep the two in sync.
 
+pub mod boosts;
 pub mod combat;
 pub mod drops;
 pub mod hunt;
@@ -42,6 +43,7 @@ pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value
         "monsters" => monsters::dispatch(bot, name, args),
         "quests" => quests::dispatch(bot, name, args),
         "drops" => drops::dispatch(bot, name, args),
+        "boosts" => boosts::dispatch(bot, name, args),
         "inventory" | "bank" | "tempInv" | "house" | "invHelper" => {
             inventory::dispatch(bot, module, name, args)
         }

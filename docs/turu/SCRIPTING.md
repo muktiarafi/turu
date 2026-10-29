@@ -61,7 +61,9 @@ Keys read while a script runs (`Nation_SellMemVoucher`, ...) can be overridden f
 `Core.cboValues`. Like VibeSkua, `Core.setOptions()` moves you to your house (or /whitemap) when
 the script starts in battleon, oaklore or bludrutbrawl, and when the script is stopped it goes to
 "Map after stopping the Bot" (`home`/`house`, `none`/`off`, or a map name) and puts your
-starting gear back on. `scripts/README.md` covers the porting conventions (C# named flags become
+starting gear back on. Farms such as `Farm.gold()` use boosts when the CBO's Other > Boosters
+switch is on (`bot.boosts`: the boost item is found in the inventory or bank and used every 30 s
+while it isn't active; the timer stops when the script ends). `scripts/README.md` covers the porting conventions (C# named flags become
 option objects, wait inside `Core.sleep`).
 
 ## Porting a C# script

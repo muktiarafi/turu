@@ -58,7 +58,8 @@ All four agents finished. On disk, not committed:
      consumables in game.
    - No `Handlers` in the engine; Core polls its handlers inside `Core.sleep`/`waitForTrue`.
    - No counter-attack pause (`StopAttacking`).
-   - No boosts or reputation APIs (Core reads `world.myAvatar.factions`).
+   - No reputation API (Core reads `world.myAvatar.factions`). Boosts: `bot.boosts` (engine
+     `api/boosts.rs`), used by CoreFarms.toggleBoost with the CBO Boosters switches.
    - Quest rewards and shop items lack some fields; Core reads them from raw game objects.
    - `turu.ts` could expose `invHelper`, `registerQuests` with reward IDs, and a pads list.
 3. Later: Script Repo browser, Skills editor, Scheduler, HotKeys, Application options, and

@@ -309,6 +309,44 @@ export class Quests {
     unregisterAll(): void { call("quests.unregisterAll"); }
 }
 
+/** VibeSkua `BoostType`. */
+export enum BoostType {
+    Gold = "Gold",
+    Class = "Class",
+    Reputation = "Reputation",
+    Experience = "Experience",
+}
+
+/**
+ * `bot.boosts`: uses boost items on a 30 s timer while their boost isn't active (VibeSkua
+ * `Bot.Boosts`). Pick a boost with `setUses`, give it an item ID (`setBoostId`), then `start()`.
+ * Ending the script stops the timer and turns every boost off.
+ */
+export class Boosts {
+    /** The timer runs. */
+    get enabled(): boolean { return call("boosts.enabled"); }
+    /** Whether the timer uses `type` (VibeSkua `UseGoldBoost`, `UseClassBoost`, ...). */
+    uses(type: BoostType): boolean { return call("boosts.uses", type); }
+    setUses(type: BoostType, value: boolean): void { call("boosts.setUses", type, value); }
+    /** The item ID the timer uses for `type` (VibeSkua `GoldBoostID`, ...); 0 for none. */
+    boostId(type: BoostType): number { return call("boosts.id", type); }
+    setBoostId(type: BoostType, id: number): void { call("boosts.setId", type, id); }
+    /**
+     * The ID of the first boost item of `type` in the inventory, else (with `searchBank`) in the
+     * bank, moving it to the inventory; 0 when you have none.
+     */
+    getBoostId(type: BoostType, searchBank = true): number { return call("boosts.getBoostId", type, searchBank); }
+    /** Finds the boost item of `type` (see {@link getBoostId}) and sets it as its ID. */
+    setBoostIdFromInventory(type: BoostType, searchBank = true): void { this.setBoostId(type, this.getBoostId(type, searchBank)); }
+    /** True while a boost of `type` is active on your character. */
+    isActive(type: BoostType): boolean { return call("boosts.isActive", type); }
+    /** Uses the boost item `id` now. */
+    useBoost(id: number): void { call("boosts.useBoost", id); }
+    /** Starts the timer: uses the chosen boosts at once, then every 30 s. */
+    start(): void { call("boosts.start"); }
+    stop(): void { call("boosts.stop"); }
+}
+
 /** `bot.drops`: the drop stack. */
 export class Drops {
     /** Drops waiting in the drop stack. */
@@ -668,6 +706,7 @@ export class Bot {
     readonly monsters = new Monsters();
     readonly quests = new Quests();
     readonly drops = new Drops();
+    readonly boosts = new Boosts();
     readonly inventory = new Inventory();
     readonly bank = new Bank();
     readonly tempInv = new ItemContainer("tempInv");

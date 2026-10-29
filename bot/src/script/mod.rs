@@ -192,6 +192,7 @@ pub(crate) fn set_stopping(bot: &Bot) {
 fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.skills.stop();
     bot.drops.stop();
+    bot.boosts.reset();
     bot.quests.unregister_all();
     bot.options.write().reset_after_script();
     let status = match result {
