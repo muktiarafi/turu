@@ -31,7 +31,7 @@ port), `../mugetsu` (patch source).
 
 ```bash
 cargo build -p ruffle_desktop --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
-./target/debug/ruffle_desktop            # starts skua.swf -> AQW; log in with the game's own screen
+./target/debug/turu                      # starts skua.swf -> AQW; log in with the game's own screen
 cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
 cargo clippy -p turu_bot -p ruffle_desktop --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
