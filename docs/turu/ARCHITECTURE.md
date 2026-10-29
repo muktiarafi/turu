@@ -111,6 +111,9 @@ Startup sequence (same as VibeSkua):
   `bot/js/turu.ts` wraps it in typed classes (`bot.player.join(...)`); Rust routes
   `method` (`"player.join"`) to `api::<module>::dispatch`. Errors come back as
   `{"error": "...", "stopped": bool}` and are rethrown as JS `Error` / `ScriptStopped`.
+  A successful reply also lists `"due"`, the names of the `bot.handlers` that are due
+  (`bot/src/api/handlers.rs` keeps their timers, the closures stay in JS); `turu.ts` runs them
+  before it returns the value.
 * When `main` throws because it was stopped or failed (not when it returns), the runtime resets
   Stop and calls `__turuScriptStopping(error)` in the same JS context, which runs the
   `scriptStopping` handlers (VibeSkua `ScriptStopping`); a second Stop interrupts them.

@@ -23,8 +23,7 @@ tags: core
  *
  * ## Porting notes
  * - Everything is synchronous. C# background tasks (registered quests, the AFK handler) run as
- *   "handlers" that Core polls from its own waits ({@link CoreBots.sleep}, {@link CoreBots.pause},
- *   {@link CoreBots.waitForTrue}); see {@link CoreBots.registerHandler}.
+ *   `bot.handlers`, which the engine runs between bot calls and during sleeps (C# `Bot.Handlers`).
  * - Members only reachable from `SetOptions`' infrastructure (version checker, telemetry, April
  *   Fools, crash reports, account tags, Butler logs, Windows-only bits) are
  *   dropped or stubbed; each spot says so in a one-line comment.
@@ -127,14 +126,6 @@ export interface LoggerOptions {
     messageBox?: boolean;
     /** Stop the script after logging. */
     stopBot?: boolean;
-}
-
-/** A background check Core runs from its waits (C# `Bot.Handlers.RegisterHandler`). */
-interface Handler {
-    name: string;
-    interval: number;
-    next: number;
-    run: () => void;
 }
 
 /** State of the registered-quest loops started by {@link CoreBots.registerQuests}. */
@@ -720,11 +711,12 @@ export class CoreBots {
         // C# Discord one-time prompt and Butler log cleanup: dropped.
 
         // AFK Handler: logs out after 5 minutes AFK (C# sleeps 300 s on a handler thread; here the
-        // handler remembers when AFK started instead of blocking the script).
+        // handler remembers when AFK started instead of blocking the script). C# registers it every
+        // 5000 ticks of 20 ms, so every 100 s.
         bot.send.packet("%xt%zm%afk%1%false%");
         this.sleep();
         let afkSince: number | null = null;
-        this.registerHandler("AFK Handler", 5000, () => {
+        bot.handlers.register("AFK Handler", 100000, () => {
             if (!bot.player.afk) {
                 if (afkSince !== null) this.logger("afk cleared", "AFK Handler");
                 afkSince = null;
@@ -1984,7 +1976,7 @@ export class CoreBots {
 
     /**
      * Registers quests to be accepted and turned in automatically while the bot does something
-     * else (C# runs three background tasks; here they're Core handlers polled from Core's waits):
+     * else (C# runs three background tasks; here they're `bot.handlers`):
      * - a watcher that turns quests in as soon as they're completable,
      * - a manager that accepts quests that aren't in progress,
      * - a watchdog that nudges the quest log when a completable quest hasn't turned in for ~60 s.
@@ -2054,11 +2046,11 @@ export class CoreBots {
         };
         this.questLoop = loop;
 
-        this.registerHandler(QUEST_WATCHER, Math.min(this.actionDelay, 500), () => this.questWatcher(loop));
-        this.registerHandler(QUEST_MANAGER, Math.max(this.actionDelay, 100) + allQuests.length * this.actionDelay * 2, () =>
+        bot.handlers.register(QUEST_WATCHER, Math.min(this.actionDelay, 500), () => this.questWatcher(loop));
+        bot.handlers.register(QUEST_MANAGER, Math.max(this.actionDelay, 100) + allQuests.length * this.actionDelay * 2, () =>
             this.questManager(loop),
         );
-        this.registerHandler(QUEST_WATCHDOG, 2000, () => this.questWatchdog(loop));
+        bot.handlers.register(QUEST_WATCHDOG, 2000, () => this.questWatchdog(loop));
     }
 
     /** Fast watcher: turns quests in as soon as they become completable. */
@@ -2160,9 +2152,9 @@ export class CoreBots {
         bot.lite.reacceptQuest = false;
 
         if (this.questLoop) {
-            this.removeHandler(QUEST_WATCHER);
-            this.removeHandler(QUEST_MANAGER);
-            this.removeHandler(QUEST_WATCHDOG);
+            bot.handlers.remove(QUEST_WATCHER);
+            bot.handlers.remove(QUEST_MANAGER);
+            bot.handlers.remove(QUEST_WATCHDOG);
             this.questLoop = null;
         }
 
@@ -3049,7 +3041,7 @@ export class CoreBots {
 
     /**
      * Pauses for `ms` milliseconds (ActionDelay when -1, 0 or negative). Stops the script if Stop
-     * was pressed. Keeps Core's handlers (registered quests, AFK, ...) running.
+     * was pressed. Core's handlers (registered quests, AFK, ...) keep running during it.
      */
     sleep(ms = -1): void {
         if (bot.shouldExit) bot.stop();
@@ -3057,15 +3049,9 @@ export class CoreBots {
         this.pause(ms <= 0 ? this.actionDelay : ms);
     }
 
-    /** `bot.sleep(ms)` that keeps Core's handlers running (they're checked every 250 ms). */
+    /** `bot.sleep(ms)`: Core's handlers run during it (`bot.handlers`). */
     pause(ms: number): void {
-        let left = ms;
-        do {
-            this.tick();
-            const step = Math.min(Math.max(left, 0), 250);
-            bot.sleep(step);
-            left -= step;
-        } while (left > 0);
+        bot.sleep(ms);
     }
 
     /**
@@ -3081,48 +3067,12 @@ export class CoreBots {
     }
 
     // ---- Handlers (C# Bot.Handlers) ----
+    // Core's handlers are `bot.handlers`: the engine runs them between bot calls and during sleeps.
 
-    private handlers: Handler[] = [];
-    private ticking = false;
-
-    /**
-     * Runs `run` every `intervalMs` while the script waits in Core ({@link sleep}, {@link pause},
-     * {@link waitForTrue}, and so every Core kill/hunt loop). Replaces an existing handler with
-     * the same name. (C# `Bot.Handlers.RegisterHandler`, which runs on its own thread.)
-     */
-    registerHandler(name: string, intervalMs: number, run: () => void): void {
-        this.removeHandler(name);
-        this.handlers.push({ name, interval: intervalMs, next: Date.now() + intervalMs, run });
-    }
-
-    removeHandler(name: string): void {
-        this.handlers = this.handlers.filter((h) => h.name !== name);
-    }
-
+    /** Removes every handler and Core's quest loop (the script is starting or stopping). */
     clearHandlers(): void {
-        this.handlers = [];
+        bot.handlers.clear();
         this.questLoop = null;
-    }
-
-    /** Runs the handlers that are due. Called from Core's waits; safe to call anywhere. */
-    tick(): void {
-        if (this.ticking || this.handlers.length === 0) return;
-        this.ticking = true;
-        try {
-            const now = Date.now();
-            for (const handler of [...this.handlers]) {
-                if (now < handler.next) continue;
-                handler.next = now + handler.interval;
-                try {
-                    handler.run();
-                } catch (error) {
-                    rethrowIfStopped(error);
-                    this.logger(`Handler "${handler.name}" failed: ${errorMessage(error)}`, "Handlers");
-                }
-            }
-        } finally {
-            this.ticking = false;
-        }
     }
 
     /**

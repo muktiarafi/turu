@@ -9,6 +9,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   VibeSkua's `skua.swf`, which loads AQW. You log in with the game's own screen.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
   background loops for drops, registered quests, skills and boosts; Stop and Pause.
+- **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
+  (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
+  `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
 - **Scripts:** TypeScript, run in QuickJS after oxc strips the types. Ported: the parts of
   CoreBots, CoreFarms and CoreNation that the ported scripts reach,
   `nation/materials/0MaxBags.ts` and `farm/GoldFarm.ts`.
@@ -26,8 +29,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **No servers API:** no auto-relogin or watchdog (`background.rs` has the TODO). `Core.relogin`
   logs out and waits for a relogin that never comes; VibeSkua's restart of a script after a
   logout is missing too.
-- **No script handlers in the engine** (VibeSkua `Bot.Handlers`): CoreBots runs its handlers
-  inside `Core.sleep` / `Core.waitForTrue`.
+- **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
+  is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
+  ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
+  Closing it needs the script's JS context inside those waits; the handler table is ready for it.
 - **`FlashArg` has no object variant:** equipping goes through the `equipItem` packet; check
   consumables in game. The quest-limit handler (an object `setGameObject`) is dropped.
 - **No counter-attack pause** (`Bot.UltraBossHelper`).
