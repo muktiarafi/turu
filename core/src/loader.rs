@@ -1700,6 +1700,16 @@ impl<'gc> MovieLoader<'gc> {
 
         let movie = match sniffed_type {
             ContentType::Swf => {
+                // AQW build: every SWF loaded, once per URL, for the offline load benchmark's
+                // file list (see `aqw_bench`): the game's files are logged by name otherwise
+                // only now and then.
+                thread_local! {
+                    static LOGGED: std::cell::RefCell<fnv::FnvHashSet<String>> =
+                        std::cell::RefCell::new(Default::default());
+                }
+                if LOGGED.with_borrow_mut(|logged| logged.insert(url.clone())) {
+                    tracing::info!(target: "ruffle_aqw_perf", "loaded SWF: {url}");
+                }
                 let mut movie =
                     SwfMovie::from_data(data, url.clone(), loader_url.clone(), load_bytes_info)?;
 

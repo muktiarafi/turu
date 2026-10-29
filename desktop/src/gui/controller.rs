@@ -47,6 +47,9 @@ pub struct GuiController {
     size: PhysicalSize<u32>,
     /// If this is set, we should not render the main menu.
     no_gui: bool,
+    /// AQW build: whether egui drew anything (menu bar, dialog, context menu, debug UI) in the
+    /// last frame. Without any of it, a GUI-only repaint would present the same picture again.
+    ui_visible: bool,
     theme_controller: ThemeController,
     #[cfg(feature = "tracy_images")]
     tracy_frame_captures: crate::tracy::FrameCapturesHolder,
@@ -61,8 +64,13 @@ impl GuiController {
         initial_movie_url: Option<Url>,
         no_gui: bool,
     ) -> anyhow::Result<Self> {
-        let (instance, backend) =
-            select_wgpu_backend(preferences.graphics_backends().into(), &window)?;
+        let wanted: wgpu::Backends = preferences.graphics_backends().into();
+        // AQW build: a driver crash from here until shortly after the first frame counts as
+        // the Vulkan driver crashing at startup (see `mugetsu`).
+        crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
+        let (instance, backend) = select_wgpu_backend(wanted, &window)?;
+        #[cfg(windows)]
+        crate::windows::test_native_crash();
         let surface = instance.create_surface(window.clone())?;
         let (adapter, device, queue) = futures::executor::block_on(request_adapter_and_device(
             backend,
@@ -72,12 +80,37 @@ impl GuiController {
         ))
         .map_err(|e| anyhow!(e.to_string()))?;
         let adapter_info = adapter.get_info();
+        crate::mugetsu::set_adapter_ids(adapter_info.vendor, adapter_info.device);
+        #[cfg(not(windows))]
+        crate::mugetsu::set_video_memory_adapter(adapter.clone());
+        // Which drawing speed-ups are switched off (for test logs).
+        let off = crate::mugetsu::drawing_switches_off();
+        if !off.is_empty() {
+            tracing::info!("Drawing speed-ups switched off: {off:?}");
+        }
+        ruffle_render_wgpu::set_transient_textures_enabled(
+            !crate::mugetsu::exe_flag("no-transient-memory"),
+        );
         tracing::info!(
             "Using graphics API {} on {} (type: {:?})",
             adapter_info.backend.to_str(),
             adapter_info.name,
             adapter_info.device_type
         );
+        if wanted.contains(wgpu::Backends::VULKAN) && adapter_info.backend != wgpu::Backend::Vulkan
+        {
+            aqw_warn_vulkan_fallback(&preferences, adapter_info.backend, &window);
+        }
+        crate::mugetsu::check_gpu_choice(
+            window.clone(),
+            &adapter_info,
+            preferences.graphics_power_preference().into(),
+        );
+        crate::mugetsu::spawn_update_check(window.clone());
+        #[cfg(windows)]
+        if crate::mugetsu::plays_aqw() {
+            crate::windows::add_graphics_menu(&window);
+        }
         let preferred_formats = [
             // by egui
             wgpu::TextureFormat::Rgba8Unorm,
@@ -177,6 +210,7 @@ impl GuiController {
             movie_view_renderer,
             size,
             no_gui,
+            ui_visible: true,
             theme_controller,
             #[cfg(feature = "tracy_images")]
             tracy_frame_captures,
@@ -254,7 +288,11 @@ impl GuiController {
         }
 
         let response = self.egui_winit.on_window_event(&self.window, event);
-        if response.repaint {
+        // AQW build: egui asks for a repaint on every mouse move. When it shows nothing, the
+        // repaint would only present the movie's last frame again (extra presents that frame
+        // counters and frame generation tools such as Lossless Scaling count as frames); the
+        // input still reaches egui with the next movie frame.
+        if response.repaint && self.wants_redraws() {
             self.window.request_redraw();
         }
         response.consumed
@@ -366,6 +404,8 @@ impl GuiController {
 
         let raw_input = self.egui_winit.take_egui_input(&self.window);
         let show_menu = self.window.fullscreen().is_none() && !self.no_gui;
+        let mut counter_shapes = 0;
+        let counter_top = self.height_offset();
         let mut full_output = self.egui_winit.egui_ctx().run_ui(raw_input, |ui| {
             self.gui.update(
                 self.egui_winit.egui_ctx(),
@@ -378,7 +418,13 @@ impl GuiController {
                     0.0
                 },
             );
+            if crate::mugetsu::show_fps() {
+                counter_shapes = fps_counter(ui.ctx(), counter_top);
+            }
         });
+        // AQW build: the FPS counter (Mugetsu's settings) is redrawn with the movie's frames
+        // only, so on its own it isn't UI that wants repaints (see `wants_redraws`).
+        self.ui_visible = full_output.shapes.len() > counter_shapes;
         self.repaint_after = full_output
             .viewport_output
             .get(&ViewportId::ROOT)
@@ -489,6 +535,7 @@ impl GuiController {
 
         self.window.pre_present_notify();
         self.descriptors.queue.present(surface_texture);
+        crate::mugetsu::frame_presented();
         #[cfg(feature = "tracy")]
         tracing_tracy::client::frame_mark();
         #[cfg(feature = "tracy_images")]
@@ -498,13 +545,20 @@ impl GuiController {
     pub fn show_context_menu(
         &mut self,
         menu: Vec<ruffle_core::ContextMenuItem>,
+        settings: Option<crate::mugetsu::MenuSettings>,
         close_event: PlayerEvent,
     ) {
-        self.gui.show_context_menu(menu, close_event);
+        self.gui.show_context_menu(menu, settings, close_event);
+        self.window.request_redraw();
     }
 
     pub fn is_context_menu_visible(&self) -> bool {
         self.gui.is_context_menu_visible()
+    }
+
+    /// AQW build: whether GUI-only repaints are useful: egui shows something, or is about to.
+    pub fn wants_redraws(&self) -> bool {
+        self.ui_visible || self.gui.is_context_menu_visible()
     }
 
     pub fn needs_render(&self) -> bool {
@@ -517,6 +571,7 @@ impl GuiController {
 
     pub fn open_dialog(&mut self, dialog_event: DialogDescriptor) {
         self.gui.dialogs.open_dialog(dialog_event);
+        self.window.request_redraw();
     }
 
     pub fn set_ime_allowed(&self, allowed: bool) {
@@ -572,7 +627,14 @@ fn select_wgpu_backend(
         format_list(&get_backend_names(preferred_backends), "or")
     );
 
-    for backend in wgpu::Backends::all() - preferred_backends {
+    // AQW build: try the native APIs before OpenGL (plain bit order tried GL before DX12,
+    // and wgpu's GL backend is much slower on Windows).
+    let remaining = wgpu::Backends::all() - preferred_backends;
+    let ordered = [wgpu::Backends::DX12, wgpu::Backends::METAL, wgpu::Backends::GL]
+        .into_iter()
+        .filter(|b| remaining.contains(*b))
+        .chain((remaining - wgpu::Backends::DX12 - wgpu::Backends::METAL - wgpu::Backends::GL).iter());
+    for backend in ordered {
         if let Some(instance) = try_wgpu_backend(backend, window.clone()) {
             tracing::info!(
                 "Using fallback backend {}",
@@ -784,4 +846,78 @@ fn mmap_system_font(path: &Path) -> anyhow::Result<memmap2::Mmap> {
 
     let mmap = mmap.map_err(|e| anyhow!("Failed to mmap font file at {path:?}: {e}"))?;
     Ok(mmap)
+}
+
+/// AQW build: Vulkan was asked for (Mugetsu always does) but this PC doesn't have it, so Ruffle
+/// fell back to another API. Says so in the window title, and once in a message box (a marker
+/// file in the config directory remembers it was shown). DirectX 12 runs about as well as
+/// Vulkan since Mugetsu 1.1; OpenGL is much slower.
+fn aqw_warn_vulkan_fallback(
+    preferences: &GlobalPreferences,
+    backend: wgpu::Backend,
+    window: &Window,
+) {
+    let (name, slower) = match backend {
+        wgpu::Backend::Dx12 => ("DirectX 12", false),
+        wgpu::Backend::Gl => ("OpenGL", true),
+        other => (other.to_str(), true),
+    };
+    tracing::warn!("Vulkan is not available; using {name}");
+    crate::mugetsu::add_title_note(if slower {
+        format!("{name}, slower: Vulkan not available")
+    } else {
+        format!("{name}: Vulkan not available")
+    });
+    window.set_title(&crate::window_title());
+
+    let marker = preferences.cli.config.join("mugetsu-vulkan-warning-shown");
+    if marker.exists() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(&preferences.cli.config);
+    let _ = std::fs::write(&marker, name);
+    let how_well = if slower {
+        "It works, but it's much slower than Vulkan: lower FPS in crowded rooms."
+    } else {
+        "It runs about as well as Vulkan."
+    };
+    let description = format!(
+        "Vulkan isn't available on this PC, so Mugetsu is using {name} instead.\n\n\
+        {how_well}\n\n\
+        Updating your graphics driver usually makes Vulkan available (NVIDIA GTX 600, \
+        AMD Radeon HD 7000, Intel 6th-gen Core or newer).\n\n\
+        This message is only shown once."
+    );
+    // On its own thread so the game keeps loading behind it.
+    std::thread::spawn(move || {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Warning)
+            .set_title("Mugetsu")
+            .set_description(description)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    });
+}
+
+/// AQW build: draws the FPS counter (a small badge in the top-left corner of the game); returns
+/// how many shapes it added.
+fn fps_counter(ctx: &egui::Context, top: f64) -> usize {
+    use egui::{Color32, CornerRadius, FontId, Id, LayerId, Order, Rect, pos2, vec2};
+    let fps = f32::from_bits(crate::mugetsu::SHOWN_FPS.load(std::sync::atomic::Ordering::Relaxed));
+    let text = format!("{fps:.0} FPS");
+    let origin = pos2(8.0, top as f32 / ctx.pixels_per_point() + 8.0);
+    let painter = ctx.layer_painter(LayerId::new(Order::Background, Id::new("mugetsu_fps")));
+    let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), Color32::from_rgb(232, 234, 242));
+    let badge = Rect::from_min_size(origin, galley.size() + vec2(22.0, 8.0));
+    let dot = if fps >= 50.0 {
+        Color32::from_rgb(124, 220, 140)
+    } else if fps >= 24.0 {
+        Color32::from_rgb(232, 210, 120)
+    } else {
+        Color32::from_rgb(240, 120, 110)
+    };
+    painter.rect_filled(badge, CornerRadius::same(7), Color32::from_rgba_premultiplied(14, 16, 22, 200));
+    painter.circle_filled(pos2(badge.left() + 9.0, badge.center().y), 3.0, dot);
+    painter.galley(badge.left_top() + vec2(16.0, 4.0), galley, Color32::from_rgb(232, 234, 242));
+    3
 }

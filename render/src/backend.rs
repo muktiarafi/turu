@@ -25,6 +25,16 @@ pub struct BitmapCacheEntry {
     pub filters: Vec<Filter>,
 }
 
+/// AQW build: how a shape is squashed on screen beyond its scale: the symmetric matrix
+/// MᵀM / |det M| (xx, xy, yy) of its transform's linear part M (`[1, 0, 1]` when it's only
+/// scaled and rotated), and how much more detail it needs than its scale says (Ruffle's
+/// scale over it). With Flash-style edges (see the tessellator's `edge_aa`) the soft edges
+/// are made half a pixel wide on screen in every direction from it, and curves are flattened
+/// as finely as Ruffle does.
+pub type Stretch = [f32; 4];
+
+pub const NO_STRETCH: Stretch = [1.0, 0.0, 1.0, 1.0];
+
 pub trait RenderBackend: Any {
     fn viewport_dimensions(&self) -> ViewportDimensions;
     // Do not call this method directly - use `player.set_viewport_dimensions`,
@@ -44,6 +54,82 @@ pub trait RenderBackend: Any {
     ) -> ShapeHandle {
         // Default implementation ignores scale
         self.register_shape(shape, bitmap_source)
+    }
+
+    /// AQW build: `register_shape_with_scale` for a shape drawn squashed (see `Stretch`).
+    fn register_shape_stretched(
+        &mut self,
+        shape: DistilledShape,
+        bitmap_source: &dyn BitmapSource,
+        scale: f32,
+        _stretch: Stretch,
+    ) -> ShapeHandle {
+        self.register_shape_with_scale(shape, bitmap_source, scale)
+    }
+
+    /// AQW build: registers several shapes at once, in order (backends may tessellate them in
+    /// parallel). Same results as calling `register_shape` for each.
+    fn register_shapes(
+        &mut self,
+        shapes: &[&swf::Shape],
+        bitmap_source: &dyn BitmapSource,
+    ) -> Vec<ShapeHandle> {
+        shapes
+            .iter()
+            .map(|shape| self.register_shape((*shape).into(), bitmap_source))
+            .collect()
+    }
+
+    /// AQW build: registers several shapes, each at its own scale and stretch and with its
+    /// own bitmap source, in order (backends may tessellate them in parallel). Same results as
+    /// calling `register_shape_stretched` for each.
+    fn register_shapes_with_scales(
+        &mut self,
+        jobs: &[(&swf::Shape, f32, Stretch, &dyn BitmapSource)],
+    ) -> Vec<ShapeHandle> {
+        jobs.iter()
+            .map(|(shape, scale, stretch, source)| {
+                self.register_shape_stretched((*shape).into(), *source, *scale, *stretch)
+            })
+            .collect()
+    }
+
+    /// AQW build: starts tessellating shapes (each `(ticket, shape, scale, stretch, bitmap
+    /// source)`) in the background; their results come back from `collect_shapes` by ticket,
+    /// to be uploaded with `upload_tessellated`. A backend without background tessellation
+    /// does them now and returns them here.
+    fn start_shapes(
+        &mut self,
+        jobs: Vec<(u64, Arc<swf::Shape>, f32, Stretch, &dyn BitmapSource)>,
+    ) -> Vec<(u64, TessellatedShape)> {
+        jobs.into_iter()
+            .map(|(ticket, shape, scale, stretch, source)| {
+                let handle = self.register_shape_stretched((&*shape).into(), source, scale, stretch);
+                let data = Box::new(handle);
+                (ticket, TessellatedShape { data, micros: 0, vertices: 0, indices: 0 })
+            })
+            .collect()
+    }
+
+    /// AQW build: the background tessellations finished so far (see `start_shapes`), waiting
+    /// for those in `wait_for` until `deadline` (`None`: until they're done), and in any case
+    /// until every ticket in `needed` is done. Others still running aren't waited for.
+    fn collect_shapes(
+        &mut self,
+        _deadline: Option<std::time::Instant>,
+        _wait_for: &[u64],
+        _needed: &[u64],
+    ) -> Vec<(u64, TessellatedShape)> {
+        Vec::new()
+    }
+
+    /// AQW build: uploads a tessellation from `start_shapes`/`collect_shapes`.
+    fn upload_tessellated(
+        &mut self,
+        shape: TessellatedShape,
+        _bitmap_source: &dyn BitmapSource,
+    ) -> Option<ShapeHandle> {
+        shape.data.downcast::<ShapeHandle>().ok().map(|handle| *handle)
     }
 
     fn render_offscreen(
@@ -631,6 +717,16 @@ pub enum Context3DCommand<'a> {
 
 #[derive(Clone, Debug)]
 pub struct ShapeHandle(pub Arc<dyn ShapeHandleImpl>);
+
+/// AQW build: a shape tessellated in the background, not uploaded yet (see
+/// `RenderBackend::start_shapes`); what's inside is up to the backend. With how long it took
+/// and its vertex and index counts, for the log.
+pub struct TessellatedShape {
+    pub data: Box<dyn Any>,
+    pub micros: u64,
+    pub vertices: usize,
+    pub indices: usize,
+}
 
 pub trait ShapeHandleImpl: Any + Debug {}
 

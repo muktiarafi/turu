@@ -144,6 +144,7 @@ impl<'gc> LoaderInfoObject<'gc> {
                 errored: Cell::new(false),
             },
         ));
+        activation.context.avm2.register_loader_info(object);
 
         Ok(object)
     }

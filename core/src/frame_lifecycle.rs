@@ -72,6 +72,8 @@ pub enum FramePhase {
 #[instrument(level = "debug", skip_all)]
 pub fn run_all_phases_avm2(context: &mut UpdateContext<'_>) {
     let stage = context.stage;
+    // AQW build: settled marks only last for one frame (see `display_object::settle`).
+    crate::display_object::settle::new_frame();
 
     if !stage.movie().is_action_script_3() {
         return;

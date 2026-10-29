@@ -339,7 +339,7 @@ impl ActivePlayer {
             .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled);
         let player = builder.build();
 
-        window.set_title(&format!("Ruffle - {readable_name}"));
+        window.set_title(&crate::window_title()); // AQW build: name the window after the launcher, not the SWF.
 
         SWF_INFO.with(|i| *i.borrow_mut() = Some(readable_name));
 

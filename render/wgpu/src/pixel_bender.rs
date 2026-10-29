@@ -482,6 +482,7 @@ pub(super) fn run_pixelbender_shader_impl(
                         );
 
                         BitmapHandle(Arc::new(Texture {
+                            live: None,
                             texture: fresh_texture,
                             repeating_linear: Default::default(),
                             repeating_nearest: Default::default(),
@@ -645,6 +646,7 @@ pub(super) fn run_pixelbender_shader_impl(
 
     let pipeline = compiled_shader.get_pipeline(descriptors, sample_count, target.format());
 
+    crate::perf_counters::inc(crate::perf_counters::RENDER_PASS);
     let mut render_pass = render_command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("PixelBender render pass"),
         color_attachments: &[color_attachment],

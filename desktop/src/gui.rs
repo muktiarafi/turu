@@ -1,8 +1,9 @@
-mod context_menu;
+pub(crate) mod context_menu;
 mod controller;
 pub mod dialogs;
 mod locale;
 mod menu_bar;
+mod mugetsu_menu;
 mod movie;
 mod picker;
 mod theme;
@@ -142,10 +143,11 @@ impl RuffleGui {
     pub fn show_context_menu(
         &mut self,
         menu: Vec<ruffle_core::ContextMenuItem>,
+        settings: Option<crate::mugetsu::MenuSettings>,
         close_event: PlayerEvent,
     ) {
-        if !menu.is_empty() {
-            self.context_menu = Some(ContextMenu::new(menu, close_event));
+        if !menu.is_empty() || settings.is_some() {
+            self.context_menu = Some(ContextMenu::new(menu, settings, close_event));
         }
     }
 

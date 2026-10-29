@@ -63,6 +63,12 @@ struct Avm1ButtonDataMut<'gc> {
 }
 
 impl<'gc> Avm1Button<'gc> {
+    /// AQW build: the shared data that every instance of this library symbol points to, used
+    /// to tell whether the symbol (and so its movie's library) is still in use.
+    pub fn aqw_shared(self) -> Gc<'gc, ()> {
+        Gc::erase(self.0.shared)
+    }
+
     pub fn from_swf_tag(
         button: &swf::Button,
         movie: Arc<SwfMovie>,

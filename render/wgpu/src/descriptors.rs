@@ -7,7 +7,8 @@ use crate::{
 };
 use fnv::FnvHashMap;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use wgpu::Backend;
 
 pub struct Descriptors {
@@ -22,8 +23,11 @@ pub struct Descriptors {
     pub quad: Quad,
     copy_pipeline: Mutex<FnvHashMap<(u32, wgpu::TextureFormat), wgpu::RenderPipeline>>,
     pub shaders: Shaders,
-    pipelines: Mutex<FnvHashMap<(u32, wgpu::TextureFormat), Arc<Pipelines>>>,
+    /// AQW build: one cell per combination, built outside the map lock, so a combination
+    /// being built (e.g. by `warm_up`) doesn't block the others.
+    pipelines: Mutex<FnvHashMap<(u32, wgpu::TextureFormat), Arc<OnceLock<Arc<Pipelines>>>>>,
     pub filters: Filters,
+    warm_up_started: AtomicBool,
 }
 
 impl Debug for Descriptors {
@@ -61,6 +65,59 @@ impl Descriptors {
             shaders,
             pipelines: Default::default(),
             filters,
+            warm_up_started: AtomicBool::new(false),
+        }
+    }
+
+    /// AQW build: on DirectX 12, creating a render pipeline compiles its shaders (with the
+    /// slow FXC compiler), and Ruffle creates ~90 of them the first time it draws with a new
+    /// MSAA sample count, plus filter pipelines on first use: multi-second freezes when
+    /// entering a room or seeing an effect for the first time (2.8 s entering Yulgar on a
+    /// Ryzen 9). Builds them all on background threads at startup, while AQW is loading.
+    /// Vulkan doesn't need this (no freezes there), so it does nothing on other backends.
+    pub fn warm_up(self: &Arc<Self>, target_format: wgpu::TextureFormat) {
+        if self.backend != Backend::Dx12 || self.warm_up_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let mut formats = vec![target_format];
+        if !formats.contains(&wgpu::TextureFormat::Rgba8Unorm) {
+            formats.push(wgpu::TextureFormat::Rgba8Unorm);
+        }
+        // AQW's quality: High = 4x, Medium = 2x, Low = 1x (offscreen layers too).
+        let mut sample_counts: Vec<u32> = [4, 2, 1]
+            .into_iter()
+            .map(|count| crate::utils::supported_sample_count(&self.adapter, count, target_format))
+            .collect();
+        sample_counts.dedup();
+        let started = std::time::Instant::now();
+        let mut jobs: Vec<Box<dyn FnOnce(&Descriptors) + Send>> = Vec::new();
+        for &format in &formats {
+            for &count in &sample_counts {
+                jobs.push(Box::new(move |d: &Descriptors| {
+                    d.pipelines(count, format);
+                }));
+            }
+            jobs.push(Box::new(move |d: &Descriptors| {
+                d.copy_pipeline(format, 1);
+            }));
+        }
+        jobs.push(Box::new(|d: &Descriptors| d.filters.warm_up(d, 1)));
+        let remaining = Arc::new(std::sync::atomic::AtomicUsize::new(jobs.len()));
+        for (index, job) in jobs.into_iter().enumerate() {
+            let descriptors = self.clone();
+            let remaining = remaining.clone();
+            let _ = std::thread::Builder::new()
+                .name(format!("dx12 warm-up {index}"))
+                .spawn(move || {
+                    job(&descriptors);
+                    if remaining.fetch_sub(1, Ordering::SeqCst) == 1 {
+                        tracing::info!(
+                            target: "ruffle_aqw_perf",
+                            "DirectX 12 pipelines ready after {:.1} s",
+                            started.elapsed().as_secs_f64()
+                        );
+                    }
+                });
         }
     }
 
@@ -76,6 +133,7 @@ impl Descriptors {
         pipelines
             .entry((msaa_sample_count, format))
             .or_insert_with(|| {
+                let _timer = crate::perf_counters::timers::Scoped::new(crate::perf_counters::timers::PIPELINE);
                 let copy_texture_pipeline_layout =
                     &self
                         .device
@@ -133,22 +191,24 @@ impl Descriptors {
     }
 
     pub fn pipelines(&self, msaa_sample_count: u32, format: wgpu::TextureFormat) -> Arc<Pipelines> {
-        let mut pipelines = self
+        let cell = self
             .pipelines
             .lock()
-            .expect("Pipelines should not be already locked");
-        pipelines
+            .expect("Pipelines should not be already locked")
             .entry((msaa_sample_count, format))
-            .or_insert_with(|| {
-                Arc::new(Pipelines::new(
-                    &self.device,
-                    &self.shaders,
-                    format,
-                    msaa_sample_count,
-                    &self.bind_layouts,
-                ))
-            })
-            .clone()
+            .or_default()
+            .clone();
+        cell.get_or_init(|| {
+            let _timer = crate::perf_counters::timers::Scoped::new(crate::perf_counters::timers::PIPELINE);
+            Arc::new(Pipelines::new(
+                &self.device,
+                &self.shaders,
+                format,
+                msaa_sample_count,
+                &self.bind_layouts,
+            ))
+        })
+        .clone()
     }
 }
 
@@ -199,19 +259,19 @@ impl Quad {
         let vertices_pos_color = [
             PosColorVertex {
                 position: [0.0, 0.0],
-                color: [1.0, 1.0, 1.0, 1.0],
+                color: [255, 255, 255, 255],
             },
             PosColorVertex {
                 position: [1.0, 0.0],
-                color: [1.0, 1.0, 1.0, 1.0],
+                color: [255, 255, 255, 255],
             },
             PosColorVertex {
                 position: [1.0, 1.0],
-                color: [1.0, 1.0, 1.0, 1.0],
+                color: [255, 255, 255, 255],
             },
             PosColorVertex {
                 position: [0.0, 1.0],
-                color: [1.0, 1.0, 1.0, 1.0],
+                color: [255, 255, 255, 255],
             },
         ];
         let filter_vertices = [

@@ -1,3 +1,4 @@
+use crate::tessellation_cache::{MadeFor, Measure};
 use crate::avm1::Object as Avm1Object;
 use crate::avm2::StageObject as Avm2StageObject;
 use crate::context::{RenderContext, UpdateContext};
@@ -40,6 +41,12 @@ pub struct MorphShapeData<'gc> {
 }
 
 impl<'gc> MorphShape<'gc> {
+    /// AQW build: the shared data that every instance of this library symbol points to, used
+    /// to tell whether the symbol (and so its movie's library) is still in use.
+    pub fn aqw_shared(self) -> Gc<'gc, ()> {
+        Gc::erase(self.0.shared.get())
+    }
+
     pub fn from_swf_tag(
         gc_context: &Mutation<'gc>,
         tag: swf::DefineMorphShape,
@@ -114,7 +121,28 @@ impl<'gc> TDisplayObject<'gc> for MorphShape<'gc> {
     fn render_self(self, context: &mut RenderContext) {
         let ratio = self.ratio();
         let shared = self.0.shared.get();
-        let shape_handle = shared.get_shape(context, ratio);
+        // AQW build: with frame interpolation, drawn between the previous and current ratio.
+        let blended = self.base().interp.ratio(ratio);
+        // AQW build: with Flash-style edges, tessellated at the size it's drawn (see
+        // `Graphic`), so its soft edges are half a pixel wide on screen.
+        let scale = if ruffle_render::tessellator::edge_aa() {
+            // Without a stretch: morphs animate (see `TessellationCache::find_near_and_touch`).
+            let measure = Measure::of(&context.transform_stack.transform().matrix);
+            Measure {
+                stretch: [1.0, 0.0, 1.0, measure.stretch[3]],
+                ..measure
+            }
+        } else {
+            Measure {
+                scale: 1.0,
+                stretch: ruffle_render::backend::NO_STRETCH,
+            }
+        };
+        let shape_handle = if blended == ratio {
+            shared.get_shape(context, ratio, scale)
+        } else {
+            shared.get_blended_shape(context, blended, scale)
+        };
         context
             .commands
             .render_shape(shape_handle, context.transform_stack.transform());
@@ -185,8 +213,14 @@ impl<'gc> TDisplayObject<'gc> for MorphShape<'gc> {
 }
 
 /// A precalculated intermediate frame for a morph shape.
+/// AQW build: how many sizes a shape tween's frame keeps tessellations for (see `Frame`).
+const SIZES_KEPT: usize = 4;
+
 struct Frame {
-    shape_handle: Option<ShapeHandle>,
+    /// (AQW build: with what it was tessellated for; the last used last. Up to
+    /// `SIZES_KEPT`: copies of a tween drawn at different sizes, e.g. an effect spawning many,
+    /// tessellated it again for each draw when only one was kept.)
+    shape_handles: Vec<(MadeFor, ShapeHandle)>,
     shape: swf::Shape,
     bounds: Rectangle<Twips>,
 }
@@ -199,6 +233,9 @@ pub struct MorphShapeShared {
     start: swf::MorphShape,
     end: swf::MorphShape,
     frames: RefCell<fnv::FnvHashMap<u16, Frame>>,
+    /// AQW build: the last few in-between ratios drawn with frame interpolation, most recent
+    /// last. Kept apart from `frames`, which keeps every ratio forever.
+    blended: RefCell<Vec<(u16, MadeFor, ShapeHandle)>>,
     movie: Arc<SwfMovie>,
 }
 
@@ -209,6 +246,7 @@ impl MorphShapeShared {
             start: swf_tag.start.clone(),
             end: swf_tag.end.clone(),
             frames: RefCell::new(fnv::FnvHashMap::default()),
+            blended: RefCell::new(Vec::new()),
             movie,
         }
     }
@@ -226,21 +264,93 @@ impl MorphShapeShared {
 
     /// Retrieves the `ShapeHandle` for the given ratio.
     /// Lazily initializes and tessellates the shape if it does not yet exist.
-    fn get_shape<'gc>(&self, context: &mut RenderContext<'_, 'gc>, ratio: u16) -> ShapeHandle {
+    /// (AQW build: tessellated again when drawn at a scale too far from its tessellation's.)
+    fn get_shape<'gc>(
+        &self,
+        context: &mut RenderContext<'_, 'gc>,
+        ratio: u16,
+        scale: Measure,
+    ) -> ShapeHandle {
         let mut frame = self.get_frame(ratio);
-        if let Some(handle) = frame.shape_handle.clone() {
-            handle
-        } else {
-            let library = context
-                .library
-                .library_for_movie(self.movie.clone())
-                .unwrap();
-            let handle = context
-                .renderer
-                .register_shape((&frame.shape).into(), &MovieLibrarySource { library });
-            frame.shape_handle = Some(handle.clone());
-            handle
+        // The one made for the closest size, of those that fit.
+        if let Some(index) = frame
+            .shape_handles
+            .iter()
+            .enumerate()
+            .filter(|(_, (made_for, _))| made_for.fits(scale))
+            .min_by(|(_, (a, _)), (_, (b, _))| {
+                a.deviation(scale).total_cmp(&b.deviation(scale))
+            })
+            .map(|(index, _)| index)
+        {
+            let entry = frame.shape_handles.remove(index);
+            let handle = entry.1.clone();
+            frame.shape_handles.push(entry);
+            return handle;
         }
+        let library = context
+            .library
+            .library_for_movie(self.movie.clone())
+            .unwrap();
+        let handle = context.renderer.register_shape_stretched(
+            (&frame.shape).into(),
+            &MovieLibrarySource { library },
+            scale.scale,
+            scale.stretch,
+        );
+        if frame.shape_handles.len() >= SIZES_KEPT {
+            frame.shape_handles.remove(0);
+        }
+        frame
+            .shape_handles
+            .push((MadeFor::now(scale), handle.clone()));
+        handle
+    }
+
+    /// AQW build: the `ShapeHandle` for an in-between ratio of frame interpolation.
+    fn get_blended_shape<'gc>(
+        &self,
+        context: &mut RenderContext<'_, 'gc>,
+        ratio: u16,
+        scale: Measure,
+    ) -> ShapeHandle {
+        // Several instances (e.g. the wipes of all skills cooling down) can share a tween.
+        const KEEP: usize = 16;
+        if let Some(frame) = self.frames.borrow().get(&ratio)
+            && let Some((_, handle)) = frame
+                .shape_handles
+                .iter()
+                .rev()
+                .find(|(made_for, _)| made_for.fits(scale))
+        {
+            return handle.clone();
+        }
+        let mut blended = self.blended.borrow_mut();
+        if let Some(index) = blended
+            .iter()
+            .position(|(r, made_for, _)| *r == ratio && made_for.fits(scale))
+        {
+            let entry = blended.remove(index);
+            let handle = entry.2.clone();
+            blended.push(entry);
+            return handle;
+        }
+        let frame = self.build_morph_frame(ratio);
+        let library = context
+            .library
+            .library_for_movie(self.movie.clone())
+            .unwrap();
+        let handle = context.renderer.register_shape_stretched(
+            (&frame.shape).into(),
+            &MovieLibrarySource { library },
+            scale.scale,
+            scale.stretch,
+        );
+        if blended.len() >= KEEP {
+            blended.remove(0);
+        }
+        blended.push((ratio, MadeFor::now(scale), handle.clone()));
+        handle
     }
 
     fn build_morph_frame(&self, ratio: u16) -> Frame {
@@ -369,7 +479,7 @@ impl MorphShapeShared {
         };
 
         Frame {
-            shape_handle: None,
+            shape_handles: Vec::new(),
             shape,
             bounds,
         }

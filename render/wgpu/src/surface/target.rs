@@ -200,6 +200,10 @@ pub struct CommandTarget {
     sample_count: u32,
     color_needs_clear: OnceCell<bool>,
     render_target_mode: RenderTargetMode,
+    /// AQW build: resolve the multisampled frame buffer only when its result is read
+    /// (see `set_lazy_resolve`).
+    lazy_resolve: std::cell::Cell<bool>,
+    resolve_pending: std::cell::Cell<bool>,
 }
 
 impl CommandTarget {
@@ -306,7 +310,45 @@ impl CommandTarget {
             sample_count,
             color_needs_clear: OnceCell::new(),
             render_target_mode,
+            lazy_resolve: std::cell::Cell::new(false),
+            resolve_pending: std::cell::Cell::new(false),
         }
+    }
+
+    /// AQW build: with MSAA (High quality), every render pass on this target used to resolve
+    /// the whole multisampled frame buffer into the resolve buffer when it ended. Crowded AQW
+    /// frames have 2000+ passes on full-screen layers, so the GPU spent most of its time
+    /// resolving (~18 fps, GPU-bound). Now passes only render; `resolve` runs once before the
+    /// result is read (blend buffer copies, and when the target is finished). The resolved
+    /// image is the same: a resolve of the final samples equals the last of the per-pass ones.
+    ///
+    /// Only for targets whose readers call `resolve` first (`Surface::draw_commands`).
+    pub fn set_lazy_resolve(&self) {
+        self.lazy_resolve.set(true);
+    }
+
+    /// AQW build: brings the resolve buffer up to date, if passes drew since the last resolve.
+    pub fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(resolve_buffer) = &self.resolve_buffer else {
+            return;
+        };
+        if !self.resolve_pending.replace(false) {
+            return;
+        }
+        crate::perf_counters::inc(crate::perf_counters::RESOLVES);
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: create_debug_label!("Resolve command target").as_deref(),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: self.frame_buffer.view(),
+                resolve_target: Some(resolve_buffer.view()),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            ..Default::default()
+        });
     }
 
     pub fn width(&self) -> u32 {
@@ -324,6 +366,7 @@ impl CommandTarget {
         // If we aren't clearing with a color (eg a texture instead)
         // the there's no point in creating a new render pass that does nothing.
         if self.render_target_mode.color().is_some() {
+            crate::perf_counters::inc(crate::perf_counters::RENDER_PASS);
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: create_debug_label!("Clearing command target").as_deref(),
                 color_attachments: &[self.color_attachments()],
@@ -349,9 +392,17 @@ impl CommandTarget {
         {
             load = wgpu::LoadOp::Clear(clear_color);
         }
+        let resolve_target = if self.lazy_resolve.get() {
+            if self.resolve_buffer.is_some() {
+                self.resolve_pending.set(true);
+            }
+            None
+        } else {
+            self.resolve_buffer.as_ref().map(|b| b.view())
+        };
         Some(wgpu::RenderPassColorAttachment {
             view: self.frame_buffer.view(),
-            resolve_target: self.resolve_buffer.as_ref().map(|b| b.view()),
+            resolve_target,
             ops: wgpu::Operations {
                 load,
                 store: wgpu::StoreOp::Store,
@@ -405,6 +456,7 @@ impl CommandTarget {
             )
         });
         self.ensure_cleared(encoder);
+        self.resolve(encoder);
         encoder.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: self
@@ -425,6 +477,57 @@ impl CommandTarget {
             self.frame_buffer.size(),
         );
         blend_buffer
+    }
+
+    /// AQW build: copies the (resolved) contents of `rect` into a texture of that size, as the
+    /// backdrop for a complex blend drawn only in `rect` (see `layer_rect_and_exact_size`).
+    pub fn blend_region(
+        &self,
+        descriptors: &Descriptors,
+        pool: &mut TexturePool,
+        encoder: &mut wgpu::CommandEncoder,
+        rect: crate::surface::commands::LayerRect,
+    ) -> PoolEntry<(wgpu::Texture, wgpu::TextureView), AlwaysCompatible> {
+        self.ensure_cleared(encoder);
+        self.resolve(encoder);
+        let size = wgpu::Extent3d {
+            width: rect.width,
+            height: rect.height,
+            depth_or_array_layers: 1,
+        };
+        let region = pool.get_texture(
+            descriptors,
+            size,
+            wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC,
+            self.format,
+            1,
+        );
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: self
+                    .resolve_buffer
+                    .as_ref()
+                    .map(|b| b.texture())
+                    .unwrap_or_else(|| self.frame_buffer.texture()),
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: rect.x,
+                    y: rect.y,
+                    z: 0,
+                },
+                aspect: Default::default(),
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &region.0,
+                mip_level: 0,
+                origin: Default::default(),
+                aspect: Default::default(),
+            },
+            size,
+        );
+        region
     }
 
     pub fn color_view(&self) -> &wgpu::TextureView {

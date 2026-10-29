@@ -22,6 +22,9 @@ pub struct Shaders {
     pub glow_filter: wgpu::ShaderModule,
     pub bevel_filter: wgpu::ShaderModule,
     pub displacement_map_filter: wgpu::ShaderModule,
+    /// AQW build: see `filters::batch`.
+    pub batch_blur_filter: wgpu::ShaderModule,
+    pub batch_glow_filter: wgpu::ShaderModule,
 }
 
 impl Shaders {
@@ -70,6 +73,18 @@ impl Shaders {
             "filter/displacement_map.wgsl",
             include_str!("../shaders/filter/displacement_map.wgsl"),
         );
+        let batch_blur_filter = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: create_debug_label!("Shader filter/batch_blur.wgsl").as_deref(),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../shaders/filter/batch_blur.wgsl").into(),
+            ),
+        });
+        let batch_glow_filter = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: create_debug_label!("Shader filter/batch_glow.wgsl").as_deref(),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../shaders/filter/batch_glow.wgsl").into(),
+            ),
+        });
         let gradient_shader = make_shader(
             device,
             "gradient.wgsl",
@@ -107,6 +122,8 @@ impl Shaders {
             glow_filter,
             bevel_filter,
             displacement_map_filter,
+            batch_blur_filter,
+            batch_glow_filter,
         }
     }
 }
@@ -130,4 +147,30 @@ fn make_filter_shader(device: &wgpu::Device, name: &str, source: &str) -> wgpu::
         label: create_debug_label!("Shader {name}").as_deref(),
         source: wgpu::ShaderSource::Wgsl(format!("{SHADER_FILTER_COMMON}\n{source}").into()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    /// AQW build: the fill shaders compile and validate (they're only compiled at startup).
+    #[test]
+    fn fill_shaders_validate() {
+        let common = include_str!("../shaders/common.wgsl");
+        for (name, source) in [
+            ("color", include_str!("../shaders/color.wgsl")),
+            ("gradient", include_str!("../shaders/gradient.wgsl")),
+            ("bitmap", include_str!("../shaders/bitmap.wgsl")),
+        ] {
+            let full = format!("{common}
+const max_transforms = 64;
+{source}");
+            let module = naga::front::wgsl::parse_str(&full)
+                .unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(&full)));
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        }
+    }
 }

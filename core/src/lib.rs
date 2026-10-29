@@ -8,11 +8,20 @@
 #[macro_use]
 mod display_object;
 pub use display_object::{StageAlign, StageDisplayState, StageScaleMode};
+/// AQW build: frees GPU geometry of shapes not drawn for a while (when GPU memory is low).
+pub use tessellation_cache::evict_unused as evict_unused_shapes;
+/// AQW build: how long a frame waits for its new shapes (see `deferred_shapes`).
+pub use display_object::graphic::deferred_shapes::set_wait as set_shape_wait;
+/// AQW build: frame interpolation (an option, off by default).
+pub use display_object::interp as frame_interpolation;
 
 #[macro_use]
 extern crate num_derive;
 
 #[macro_use]
+mod aqw_retention;
+#[cfg(test)]
+mod aqw_bench;
 mod avm1;
 mod avm2;
 mod avm_rng;
@@ -77,3 +86,47 @@ pub const DEFAULT_PLAYER_VERSION: u8 = 32;
 
 /// Path to the raw playerglobal ABC, for use as an `asc.jar` import library.
 pub const PLAYERGLOBAL_ABC_PATH: &str = env!("RUFFLE_PLAYERGLOBAL_ABC_PATH");
+
+/// AQW build: whether every movie sees the Flash APIs of newer SWF versions than its own (see
+/// `UpdateContext::set_root_movie`). The Mugetsu app turns this on at startup.
+static SHOW_ALL_APIS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_show_all_apis(enabled: bool) {
+    SHOW_ALL_APIS.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn show_all_apis() -> bool {
+    SHOW_ALL_APIS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// AQW build: total time spent building render commands (walking the display list in
+/// `Player::render`, incl. deferred shape tessellation), in microseconds, for the perf log.
+static RENDER_WALK_MICROS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn add_render_walk_micros(micros: u64) {
+    RENDER_WALK_MICROS.fetch_add(micros, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// AQW build: frame interpolation's replays (see `display_object::replay`).
+pub mod interpolation_replay {
+    pub use crate::display_object::replay::{STAT_NAMES, set_enabled, stats, take_reason};
+}
+
+pub fn render_walk_micros() -> u64 {
+    RENDER_WALK_MICROS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// AQW build: whether cacheAsBitmap textures are sized in steps (see
+/// `display_object::cache_texture_size`). A runtime switch for A/B comparisons.
+static CACHE_SIZE_STEPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_cache_size_steps(enabled: bool) {
+    CACHE_SIZE_STEPS.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// `RUFFLE_NO_CACHE_STEPS` turns the steps off for good (A/B comparisons in tests).
+pub fn cache_size_steps() -> bool {
+    static ENV_OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    CACHE_SIZE_STEPS.load(std::sync::atomic::Ordering::Relaxed)
+        && !*ENV_OFF.get_or_init(|| std::env::var_os("RUFFLE_NO_CACHE_STEPS").is_some())
+}

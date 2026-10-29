@@ -147,10 +147,11 @@ mod renderer {
     */
 
     fn create_wgpu_device() -> Option<(wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
-        let instance =
-            create_wgpu_instance(wgpu::Backends::all(), wgpu::BackendOptions::default(), None);
+        // AQW build: `WGPU_BACKEND=vulkan|dx12` picks the graphics API for the image tests.
+        let backends = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::all());
+        let instance = create_wgpu_instance(backends, wgpu::BackendOptions::default(), None);
         futures::executor::block_on(request_adapter_and_device(
-            wgpu::Backends::all(),
+            backends,
             &instance,
             None,
             Default::default(),

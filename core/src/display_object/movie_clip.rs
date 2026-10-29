@@ -273,7 +273,61 @@ impl<'gc> MovieClipData<'gc> {
     }
 }
 
+/// AQW build: while a `SimpleButton` with a movie clip state is constructed, Ruffle runs the
+/// whole stage's frame scripts (`Avm2Button::construct_frame`). The clips around that button
+/// can still be inside their constructors, so their parents' instance variables don't point at
+/// them yet. A frame script of such a parent that fails there gets one more run in the regular
+/// order: AQW's cutscenes set up their Next button in the frame script (`__setProp___id0_…`),
+/// which threw on the still-null button, so the `stop()` after it never ran and the cutscene
+/// played on past every Next button. Scripts that don't fail behave exactly as before.
+pub mod frame_script_retry {
+    use crate::display_object::{DisplayObject, DisplayObjectPtr, TDisplayObject};
+    use std::cell::RefCell;
+
+    thread_local! {
+        static PARENTS: RefCell<Vec<*const DisplayObjectPtr>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Ends the retry window when dropped.
+    pub struct Scope(usize);
+
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            PARENTS.with(|p| p.borrow_mut().truncate(self.0));
+        }
+    }
+
+    /// Opens the window for the parents of `button`'s ancestors that are still constructing.
+    pub fn open(button: DisplayObject<'_>) -> Scope {
+        PARENTS.with(|p| {
+            let mut p = p.borrow_mut();
+            let len = p.len();
+            let mut child = button;
+            while let Some(parent) = child.parent() {
+                if child.as_movie_clip().is_some_and(|clip| !clip.initialized()) {
+                    p.push(parent.as_ptr());
+                }
+                child = parent;
+            }
+            Scope(len)
+        })
+    }
+
+    pub fn applies_to(clip: DisplayObject<'_>) -> bool {
+        PARENTS.with(|p| {
+            let p = p.borrow();
+            !p.is_empty() && p.contains(&clip.as_ptr())
+        })
+    }
+}
+
 impl<'gc> MovieClip<'gc> {
+    /// AQW build: the shared data that every instance of this library symbol points to, used
+    /// to tell whether the symbol (and so its movie's library) is still in use.
+    pub fn aqw_shared(self) -> Gc<'gc, ()> {
+        Gc::erase(self.0.shared.get())
+    }
+
     pub fn downgrade(self) -> MovieClipWeak<'gc> {
         MovieClipWeak(Gc::downgrade(self.0))
     }
@@ -374,6 +428,7 @@ impl<'gc> MovieClip<'gc> {
         is_root: bool,
         loader_info: Option<LoaderInfoObject<'gc>>,
     ) {
+        self.unsettle();
         let write = Gc::write(context.gc(), self.0);
         let movie =
             movie.unwrap_or_else(|| Arc::new(SwfMovie::empty(write.movie().version(), None)));
@@ -817,6 +872,7 @@ impl<'gc> MovieClip<'gc> {
     }
 
     pub fn set_has_pending_script(self, value: bool) {
+        self.unsettle();
         self.0.has_pending_script.set(value);
     }
 
@@ -825,6 +881,7 @@ impl<'gc> MovieClip<'gc> {
     }
 
     pub fn set_last_queued_script_frame(self, frame: Option<FrameNumber>) {
+        self.unsettle();
         self.0.last_queued_script_frame.set(frame);
     }
 
@@ -894,6 +951,7 @@ impl<'gc> MovieClip<'gc> {
     /// This is treated as an 'explicit' goto: frame scripts and other frame
     /// lifecycle events will be retriggered.
     pub fn goto_frame(self, context: &mut UpdateContext<'gc>, goto_info: GotoInfo) {
+        self.unsettle();
         // Clamp frame number in bounds.
         let goto_info = GotoInfo {
             frame: goto_info.frame.max(1),
@@ -912,6 +970,7 @@ impl<'gc> MovieClip<'gc> {
                 // On all other versions, as well as in SWFv9 for gotos not to
                 // the current frame, the goto is properly queued.
 
+                self.unsettle();
                 self.0.queued_goto.set(Some(goto_info));
 
                 // If we have a frame script on that frame, add ourselves to the
@@ -929,6 +988,7 @@ impl<'gc> MovieClip<'gc> {
     }
 
     fn goto_frame_now(self, context: &mut UpdateContext<'gc>, goto_info: GotoInfo) {
+        self.unsettle();
         match goto_info.stop_or_play {
             StopOrPlay::Stop => self.stop(context),
             StopOrPlay::Play => self.play(),
@@ -1147,6 +1207,7 @@ impl<'gc> MovieClip<'gc> {
 
     /// This sets the current frame of this MovieClip to a given number.
     pub fn set_current_frame(self, current_frame: FrameNumber) {
+        self.unsettle();
         self.0.current_frame.set(current_frame);
     }
 
@@ -1487,6 +1548,7 @@ impl<'gc> MovieClip<'gc> {
             self.0.increment_current_frame();
         }
 
+        self.unsettle();
         self.0.queued_script_frame.set(self.0.current_frame.get());
         if self.last_queued_script_frame() != Some(self.0.current_frame.get()) {
             // We explicitly clear this variable since AS3 may later GOTO back
@@ -1642,6 +1704,7 @@ impl<'gc> MovieClip<'gc> {
     }
 
     fn run_goto(mut self, context: &mut UpdateContext<'gc>, frame: FrameNumber, is_implicit: bool) {
+        self.unsettle();
         if cfg!(feature = "timeline_debug") {
             tracing::debug!(
                 "[{}]: {} from frame {} to frame {}",
@@ -1697,6 +1760,7 @@ impl<'gc> MovieClip<'gc> {
         }
 
         if is_implicit {
+            self.unsettle();
             self.0.set_loop_queued();
         }
 
@@ -2139,12 +2203,63 @@ impl<'gc> MovieClip<'gc> {
         self.set_object2(context, object);
     }
 
+    /// AQW build: whether frame construction and frame scripts are no-ops for this clip and
+    /// all its children until something changes (see `display_object::settle`). Evaluated at
+    /// the end of `run_frame_scripts`; every condition `construct_frame` and
+    /// `run_local_frame_scripts` act on must be false here.
+    fn can_settle(self) -> bool {
+        let data = &self.0;
+        if data.object2.get().is_none()
+            || !data.initialized()
+            || data.contains_flag(MovieClipFlags::LOOP_QUEUED)
+            || data.contains_flag(MovieClipFlags::EXECUTING_AVM2_FRAME_SCRIPT)
+            || data.contains_flag(MovieClipFlags::RUNNING_CONSTRUCT_FRAME)
+            || self.is_executing_avm2_frame_script()
+            || data.queued_goto.get().is_some()
+            || self.frames_loaded() < self.header_frames() as i32
+            || !self.movie().is_action_script_3()
+        {
+            return false;
+        }
+        // `check_has_pending_script` must leave the flag as it is...
+        let current = data.current_frame.get();
+        if self.has_pending_script() != self.has_frame_script(current) {
+            return false;
+        }
+        // ...and a pending script must not be due to run.
+        if self.has_pending_script() {
+            let frame_id = data.queued_script_frame.get();
+            if self.last_queued_script_frame() != Some(frame_id)
+                && self.frame_script(frame_id).is_some()
+            {
+                return false;
+            }
+        }
+        self.iter_render_list().all(|child| {
+            if let Some(clip) = child.as_movie_clip() {
+                clip.is_settled()
+            } else {
+                // Leaves whose `construct_frame` only constructs their AS3 object.
+                matches!(
+                    child,
+                    DisplayObject::Graphic(_)
+                        | DisplayObject::MorphShape(_)
+                        | DisplayObject::Text(_)
+                        | DisplayObject::EditText(_)
+                        | DisplayObject::Video(_)
+                        | DisplayObject::Bitmap(_)
+                ) && child.object2().is_some()
+            }
+        })
+    }
+
     pub fn register_frame_script(
         self,
         frame_id: FrameNumber,
         callable: Option<Avm2Object<'gc>>,
         context: &mut UpdateContext<'gc>,
     ) {
+        self.unsettle();
         let current_frame = self.current_frame();
 
         let write = unlock!(Gc::write(context.gc(), self.0), MovieClipData, cell);
@@ -2461,6 +2576,7 @@ impl<'gc> MovieClip<'gc> {
 
                 if is_fresh_frame && let Some(callable) = self.frame_script(frame_id) {
                     let callable = Avm2Value::from(callable);
+                    let previous_script_frame = self.last_queued_script_frame();
 
                     self.set_last_queued_script_frame(Some(frame_id));
                     self.set_has_pending_script(false);
@@ -2487,6 +2603,11 @@ impl<'gc> MovieClip<'gc> {
                             e,
                             "Error running AVM2 frame script",
                         );
+                        // AQW build: see `frame_script_retry`.
+                        if frame_script_retry::applies_to(self.into()) {
+                            self.set_last_queued_script_frame(previous_script_frame);
+                            self.set_has_pending_script(true);
+                        }
                     }
 
                     self.0
@@ -2584,6 +2705,10 @@ impl<'gc> TDisplayObject<'gc> for MovieClip<'gc> {
 
     /// Construct objects placed on this frame.
     fn construct_frame(self, context: &mut UpdateContext<'gc>) {
+        // AQW build: nothing to construct here or below (see `display_object::settle`).
+        if self.is_settled() {
+            return;
+        }
         // AVM1 code expects to execute in line with timeline instructions, so
         // it's exempted from frame construction.
         if self.movie().is_action_script_3()
@@ -2648,16 +2773,28 @@ impl<'gc> TDisplayObject<'gc> for MovieClip<'gc> {
     }
 
     fn run_frame_scripts(self, context: &mut UpdateContext<'gc>) {
+        // AQW build: no frame script to run here or below (see `display_object::settle`).
+        if self.is_settled() {
+            return;
+        }
         self.run_local_frame_scripts(context);
 
         for child in self.iter_render_list() {
             child.run_frame_scripts(context);
+        }
+
+        if self.can_settle() {
+            self.set_settled();
         }
     }
 
     fn render_self(self, context: &mut RenderContext<'_, 'gc>) {
         if let Some(drawing) = self.drawing() {
             drawing.render(context);
+            // AQW build: recorded for frame interpolation's next pictures (see `replay`).
+            if let Some(recorder) = context.recorder.as_deref_mut() {
+                recorder.drawing(&context.commands, self.into());
+            }
         }
         self.render_children(context);
     }
@@ -2867,6 +3004,8 @@ impl<'gc> TDisplayObjectContainer<'gc> for MovieClip<'gc> {
     }
 
     fn raw_container_mut(&self, mc: &Mutation<'gc>) -> RefMut<'_, ChildContainer<'gc>> {
+        // AQW build: its children change (see `display_object::settle`).
+        self.unsettle();
         let write = unlock!(Gc::write(mc, self.0), MovieClipData, cell);
         RefMut::map(write.borrow_mut(), |r| &mut r.container)
     }
@@ -3249,8 +3388,10 @@ impl<'gc> TInteractiveObject<'gc> for MovieClip<'gc> {
             }
 
             // Check drawing, because this selects the current clip, it must have mouse enabled
-            if self.world_bounds(BoundsMode::Engine).contains(point)
-                && let Some(drawing) = self.drawing()
+            // AQW build: look for a drawing before computing the world bounds (of the whole
+            // subtree, for every clip the pick visits); most clips have no drawing.
+            if let Some(drawing) = self.drawing()
+                && self.world_bounds(BoundsMode::Engine).contains(point)
                 && drawing.hit_test(local_matrix * point, &local_matrix)
             {
                 return if self.mouse_enabled() {
@@ -3543,7 +3684,11 @@ impl<'gc, 'a> MovieClipShared<'gc> {
         reader: &mut SwfStream<'a>,
         version: u8,
     ) -> Result<(), Error> {
-        let swf_shape = reader.read_define_shape(version)?;
+        // AQW build: an identical shape tag parsed before is shared (see `shared_shapes`).
+        let bytes = reader.get_ref();
+        let swf_shape = crate::display_object::graphic::shared_shapes::parsed(bytes, version, || {
+            reader.read_define_shape(version)
+        })?;
         let id = swf_shape.id;
         let graphic = Graphic::from_swf_tag(context, swf_shape, self.movie());
         self.library_mut(context)

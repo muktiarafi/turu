@@ -1471,6 +1471,7 @@ pub fn draw<'gc>(
     let mut cache_draws = vec![];
     let mut render_context = RenderContext {
         renderer: context.renderer,
+        recorder: None,
         commands: CommandList::new(),
         cache_draws: &mut cache_draws,
         gc_context: context.gc_context,

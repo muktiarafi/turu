@@ -275,6 +275,10 @@ impl<'gc> Stage<'gc> {
     /// This setting is currently ignored in Ruffle.
     /// Used by AVM1 `stage.quality` and AVM2 `Stage.quality` properties.
     pub fn set_quality(self, context: &mut UpdateContext<'gc>, quality: StageQuality) {
+        // AQW build: log quality changes (AQW's own options can set it).
+        if self.0.quality.get() != quality {
+            tracing::info!(target: "ruffle_aqw_perf", "stage quality: {:?} -> {quality:?}", self.0.quality.get());
+        }
         self.0.quality.set(quality);
         self.0.use_bitmap_downsampling.set(matches!(
             quality,
