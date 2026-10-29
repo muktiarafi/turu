@@ -129,6 +129,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `settings.json` | app settings, bot options (`options`) |
 | `scripts/` | default scripts folder (the repo's `scripts/` can be used directly) |
 | `options/<storage>.json` | per-script option values |
+| `options/CBO_Storage(<username>).txt` | CoreBots Options (`Key: Value` lines), written by Options > CoreBots and read by CoreBots' `setOptions()` through `bot.coreBotsOptions()` (`bot/src/cbo.rs`) |
 | `AdvancedSkills.json` | the shipped skill sets (from `auqw/Scripts` `Skills/AdvancedSkills.json`, rewritten from the app's copy) |
 | `UserAdvancedSkills.json` | your skill sets, used by the bot: seeded from the shipped ones, then only gaining the shipped classes and modes it lacks (VibeSkua's merge) |
 | `logs/` | script logs |

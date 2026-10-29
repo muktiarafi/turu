@@ -5,6 +5,7 @@
 //! briefly). Anything that touches the game goes through `crate::turu::spawn_action`.
 
 mod auto;
+mod core_bots;
 mod current_drops;
 mod files;
 mod game_options;
@@ -25,6 +26,7 @@ use egui::{Context, Window, pos2, vec2};
 pub struct Windows {
     pub script_loader: bool,
     pub game_options: bool,
+    pub core_bots: bool,
     pub skills: bool,
     pub stats: bool,
     pub logs: bool,
@@ -56,6 +58,7 @@ pub struct TuruUi {
     nav: nav_bar::NavBar,
     script_loader: script_loader::ScriptLoader,
     game_options: game_options::GameOptionsWindow,
+    core_bots: core_bots::CoreBotsWindow,
     skills: skills::SkillsWindow,
     stats: stats::StatsWindow,
     logs: logs::LogsWindow,
@@ -72,6 +75,7 @@ impl TuruUi {
             nav: Default::default(),
             script_loader: Default::default(),
             game_options: Default::default(),
+            core_bots: Default::default(),
             skills: Default::default(),
             stats: Default::default(),
             logs: Default::default(),
@@ -99,6 +103,7 @@ impl TuruUi {
         let w = &mut self.windows;
         self.script_loader.show(ctx, &self.picker, &mut w.script_loader);
         self.game_options.show(ctx, &mut w.game_options);
+        self.core_bots.show(ctx, &mut w.core_bots);
         self.current_drops.show(ctx, &mut w.current_drops);
         self.stats.show(ctx, &mut w.stats);
         self.skills.show(ctx, &mut w.skills);

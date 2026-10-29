@@ -40,7 +40,7 @@ Interceptor), **Plugins** (View Plugins). Right side: **Auto**, **Jump**, a divi
 
 | Item | State |
 |---|---|
-| Script Loader, Game, Current Drops, Skills, Stats, Logs, Logger | implemented |
+| Script Loader, Game, CoreBots, Current Drops, Skills, Stats, Logs, Logger | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -78,10 +78,22 @@ script runs, and Start Script is disabled while Auto Attack runs.
   `bot.paths.load_advanced_skills()`, the skill entries with their rules as text, Refresh.
   "Create / Edit Skill" is a "Coming soon" placeholder; Open, Edit Selected, Remove Selected and
   Reset Sets are disabled.
+* **CoreBots Options** (`core_bots.rs`, 800x608, VibeSkua `CoreBotsView`): profile (username or
+  "Not logged in"), Load / Load character / Save, tabs Loadout / Options / Other. Loadout: Solo,
+  Farm, Dodge and Boss cards (class from the enhanced classes you own plus `[Current]`, skill set
+  mode, "Use Dedicated Equipment Loadout") and a collapsible "Detailed Equipment Slots" with six
+  gear drop-downs per role; Options: the 17 CoreBots settings in two columns (switches, numbers,
+  text), searchable; Other: Boosters, Nation Farms, PvP, Bot Creators switches. Opening the window
+  loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
+  before saving public rooms (a save without the answer keeps private rooms). Game reads
+  (username, equipped class, inventory) run through `spawn_action`; VibeSkua's message boxes are
+  egui modals. Not ported: adding a `[Current]` class with no skill set to the skill file
+  (`EnsureSkillEntryExists`). Unlike VibeSkua, the drop-downs list your classes and gear as soon
+  as the window knows who you are, even without a saved file.
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
-Not built at all (greyed in the menus): Scheduler, Application, CoreBots, Application Themes,
+Not built at all (greyed in the menus): Scheduler, Application, Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Runtime, Console, Spammer,
 Interceptor, Plugins, Script Repo (Search Scripts), Auto Hunt.
 

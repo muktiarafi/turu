@@ -677,6 +677,12 @@ export class Bot {
     sleep(ms: number): void { call("sleep", ms); }
     /** True once Stop was pressed. */
     get shouldExit(): boolean { return call("shouldExit"); }
+    /**
+     * The lines of your CoreBots Options file (Options > CoreBots, saved per character as
+     * `options/CBO_Storage(<username>).txt`), e.g. `["PrivateRooms: True", ...]`; null when
+     * you aren't logged in or haven't saved one. CoreBots reads it in `setOptions()`.
+     */
+    coreBotsOptions(): string[] | null { return call("coreBotsOptions"); }
     /** Stops the script (throws `ScriptStopped`). */
     stop(): never {
         call("stop");

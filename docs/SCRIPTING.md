@@ -49,9 +49,12 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
 ## CoreBots
 
 `scripts/core/CoreBots.ts` is the port of the C# `CoreBots` (`Core.join`, `Core.killMonster`,
-`Core.huntMonster`, `Core.ensureAccept`, `Core.checkInventory`, `Core.addDrop`, ...). Script
-settings that C# read from the CoreBots options file are fields on `Core`; set them before
-`Core.setOptions()`. `scripts/README.md` covers the porting conventions (C# named flags become
+`Core.huntMonster`, `Core.ensureAccept`, `Core.checkInventory`, `Core.addDrop`, ...). Its
+settings (classes, gear, private rooms, delays, ...) are fields on `Core`. `Core.setOptions()`
+fills them from your CoreBots Options file (Options > CoreBots, read with
+`bot.coreBotsOptions()`), like VibeSkua's `ReadCBO`; without a file they keep the C# defaults.
+Keys read while a script runs (`Nation_SellMemVoucher`, ...) can be overridden from the script in
+`Core.cboValues`. `scripts/README.md` covers the porting conventions (C# named flags become
 option objects, wait inside `Core.sleep`).
 
 ## Porting a C# script

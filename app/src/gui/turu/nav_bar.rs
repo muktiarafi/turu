@@ -146,7 +146,11 @@ impl NavBar {
             if item(ui, "Game", true) {
                 windows.game_options = true;
             }
-            for name in ["Application", "CoreBots", "Application Themes", "HotKeys"] {
+            item(ui, "Application", false);
+            if item(ui, "CoreBots", true) {
+                windows.core_bots = true;
+            }
+            for name in ["Application Themes", "HotKeys"] {
                 item(ui, name, false);
             }
         });
