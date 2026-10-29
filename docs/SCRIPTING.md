@@ -39,7 +39,8 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
 - **Timeouts count tries** of about 100 ms, as in VibeSkua: `bot.wait.forTrue(() => cond, 20)`
   waits about 2 s.
 - **Options** apply at once: `bot.options.lagKiller = true`. The engine turns
-  `lagKiller`, `aggroMonsters`, `skipCutscenes` and `autoRelogin` off again when the script ends.
+  `lagKiller`, `aggroMonsters`, `aggroAllMonsters`, `skipCutscenes` and `autoRelogin` off again
+  when the script ends.
 - **Events**: `const off = bot.events.on("monsterKilled", (e) => bot.log(e.mapId));`, then
   `off()` to remove it. Handlers run between your bot calls.
 - **Stopping**: `bot.events.on("scriptStopping", (error) => ...)` runs once the script was
@@ -63,8 +64,8 @@ the script starts in battleon, oaklore or bludrutbrawl, and when the script is s
 "Map after stopping the Bot" (`home`/`house`, `none`/`off`, or a map name) and puts your
 starting gear back on. Farms such as `Farm.gold()` use boosts when the CBO's Other > Boosters
 switch is on (`bot.boosts`: the boost item is found in the inventory or bank and used every 30 s
-while it isn't active; the timer stops when the script ends). `scripts/README.md` covers the porting conventions (C# named flags become
-option objects, wait inside `Core.sleep`).
+while it isn't active; the timer stops when the script ends). `scripts/README.md` covers the
+porting conventions (C# named flags become option objects, wait inside `Core.sleep`).
 
 ## Porting a C# script
 
