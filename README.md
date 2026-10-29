@@ -127,11 +127,13 @@ Calls are synchronous, so there's no `await`. The API with its docs is in
 | `desktop/src/gui/turu/` | The UI (top bar, Script Loader, options, logs, ...) |
 | `scripts/` | TypeScript scripts (`core/`, `nation/`, ...) |
 | `patches/` | Mugetsu's patched crates |
-| `docs/turu/` | [Architecture](docs/turu/ARCHITECTURE.md), [UI](docs/turu/UI.md), [scripting](docs/turu/SCRIPTING.md), [VibeSkua reference](docs/turu/VIBESKUA_SPEC.md), [status](docs/turu/HANDOFF.md) |
+| `docs/turu/` | [Architecture](docs/turu/ARCHITECTURE.md), [UI](docs/turu/UI.md), [scripting](docs/turu/SCRIPTING.md), [VibeSkua reference](docs/turu/VIBESKUA_SPEC.md), [status](docs/turu/STATUS.md) |
 
 ## Data folder
 
-Settings, the options file, script options, the CoreBots Options (`options/CBO_Storage(<username>).txt`), the skill sets (`UserAdvancedSkills.json` is yours, `AdvancedSkills.json` the shipped ones) and the `skua.swf` copy live in:
+The bot options (`options.json`), the CoreBots Options (`options/CBO_Storage(<username>).txt`),
+the skill sets (`UserAdvancedSkills.json` is yours, `AdvancedSkills.json` the shipped ones) and
+the `skua.swf` copy live in:
 
 | OS | Folder |
 |---|---|
@@ -144,9 +146,9 @@ Ruffle's own log is in its cache folder (`~/Library/Caches/ruffle/log` on macOS,
 
 ## Status
 
-The engine, the UI and the 0MaxBags port are complete but not yet tested in a live game.
-Auto-relogin, the script browser and the skills editor aren't built yet.
-[docs/turu/HANDOFF.md](docs/turu/HANDOFF.md) has the details.
+The engine, the main windows, CoreBots Options and the 0MaxBags and GoldFarm ports work, and
+are being tested in game. Auto-relogin, the script browser and the skills editor aren't built
+yet. [docs/turu/STATUS.md](docs/turu/STATUS.md) lists what works and what's missing.
 
 ## License
 

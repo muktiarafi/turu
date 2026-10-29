@@ -25,16 +25,21 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
     lib.rs               `Bot` (Arc handle shared by script thread, UI and background threads)
     flash.rs             `Flash`: typed calls into skua.swf's ExternalInterface callbacks
     host.rs              `FlashHost` trait (implemented by desktop) + `FlashArg`
+    control.rs           Stop and Pause (`ScriptControl`), script-thread marking
     events.rs            inbound Flash calls (`pext`, `packet`, `loaded`, ...) -> state + event bus
     state.rs             game state derived from packets (drops, map, counters, ...)
     options.rs           bot options (VibeSkua `IScriptOption`) + persistence
     models.rs            game JSON models (InventoryItem, Monster, Quest, ShopItem, ...)
-    api/                 one module per VibeSkua sub-interface (player, map, combat, kill, hunt,
-                         quests, drops, inventory, bank, temp_inv, house, shops, skills, wait,
-                         send, lite, monsters, servers)
-    background.rs        20 ms "ScriptInterface" timer: option enforcement, watchdog, handlers
+    skills.rs            skill rotations (advanced skill sets) + the background `Worker` loops
+    cbo.rs               the CoreBots Options file (`CBO_Storage(<user>).txt`)
+    paths.rs, log.rs     data directory, skill set files; log buffers
+    api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
+                         monsters, quests, drops, boosts, inventory (also bank, tempInv, house,
+                         invHelper), shops, skills, wait, send, lite, options, packets
+    background.rs        startup calls (`loadClient`, ...) and the 20 ms "ScriptInterface" timer:
+                         login tracking, rest packets, option enforcement (no watchdog yet)
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings
-desktop/src/turu/        desktop integration: FlashHost impl, ExternalInterface provider, launch
+desktop/src/turu.rs      desktop integration: FlashHost impl, ExternalInterface provider, spawn_action
 desktop/src/gui/turu/    egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 scripts/                 TypeScript scripts (types, Core libraries, ported farms)
 docs/turu/               these docs
@@ -47,7 +52,7 @@ winit event loop thread (main)          script thread ("Script Thread")      bac
 ───────────────────────────────         ───────────────────────────────      ────────────────────
 Ruffle Player (Arc<Mutex<Player>>)       QuickJS runtime                       ScriptInterface timer (20 ms)
 egui UI (reads Bot state)                user script + Core libraries          drops loop, quest loop,
-TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐                   skills timer
+TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐                   skills timer, boost timer
                                   │                         │
                                   ▼                         ▼
                            Bot::on_flash_call       Flash::call(name, args)
@@ -89,7 +94,8 @@ Startup sequence (same as VibeSkua):
 1. Desktop starts Ruffle with `skua.swf` (written from the embedded bytes to the data dir).
 2. AS3 `Externalizer.init` registers callbacks and calls `requestLoadGame` → bot calls `loadClient`.
 3. AS3 fetches `https://game.aq.com/game/api/data/gameversion`, loads the game SWF and calls
-   `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (bot starts the 20 ms timer).
+   `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (the bot marks the game
+   loaded and sends `GameLoaded`; its 20 ms timer runs from startup).
 4. The user logs in with the game's own login screen (auto-login via CLI flags comes later).
 
 ## Scripts
@@ -129,10 +135,11 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | Path | Contents |
 |---|---|
 | `skua.swf` | written from the embedded copy at start |
-| `settings.json` | app settings, bot options (`options`) |
+| `options.json` | bot options (Options > Game, Save) |
 | `scripts/` | default scripts folder (the repo's `scripts/` can be used directly) |
-| `options/<storage>.json` | per-script option values |
 | `options/CBO_Storage(<username>).txt` | CoreBots Options (`Key: Value` lines), written by Options > CoreBots and read by CoreBots' `setOptions()` through `bot.coreBotsOptions()` (`bot/src/cbo.rs`) |
 | `AdvancedSkills.json` | the shipped skill sets (from `auqw/Scripts` `Skills/AdvancedSkills.json`, rewritten from the app's copy) |
 | `UserAdvancedSkills.json` | your skill sets, used by the bot: seeded from the shipped ones, then only gaining the shipped classes and modes it lacks (VibeSkua's merge) |
-| `logs/` | script logs |
+
+Per-script options (VibeSkua's script config, "Edit Script Options") aren't built yet. Logs are
+kept in memory; the Logs and Script Loader windows can save them.

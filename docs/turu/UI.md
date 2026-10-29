@@ -48,9 +48,8 @@ Interceptor), **Plugins** (View Plugins). Right side: **Auto**, **Jump**, a divi
 | everything else | greyed, tooltip "Coming soon" |
 
 **Auto Attack** (`auto.rs`): a bot thread marked as a script thread, so `bot.control.request_stop()`
-(Stop Automation) makes the next call fail. It calls `skills.startAdvanced(class|null, true, mode)`
-(mode defaults to Base), then loops `kill.monster("*")` while in game. It is disabled while a
-script runs, and Start Script is disabled while Auto Attack runs.
+(Stop Automation) makes the next call fail. It runs the steps in the Auto popup row above. It is
+disabled while a script runs, and Start Script is disabled while Auto Attack runs.
 
 ## Windows
 
@@ -59,9 +58,8 @@ script runs, and Start Script is disabled while Auto Attack runs.
   Load Script (rfd dialog filtered to .ts/.js, starting in the repo's `scripts/` found next to the
   working directory or above the executable, else the bot's scripts folder); Open VSCode (enabled
   when `code` is on PATH, or the macOS app bundle is found); Edit Script (OS default app);
-  Search Scripts and Edit Script Options (disabled); Start/Stop Script (primary/danger; "Force Stop" while stopping
-  handlers run);
-  Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
+  Search Scripts and Edit Script Options (disabled); Start/Stop Script (primary/danger; "Force
+  Stop" while stopping handlers run); Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
   The "Report Issues" footer is omitted.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
@@ -71,8 +69,8 @@ script runs, and Start Script is disabled while Auto Attack runs.
   Delay sits in the Relogin section because the Application window is not built; the server combo
   uses VibeSkua's fallback list (plus the current value).
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
-  Start/Stop Logging subscribes to the bot's `PacketSent` events and fills `bot.logs.packets`
-  (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
+  Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
+  the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
 * **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,
   DEATHS, PICKUPS, ACCEPTED, COMPLETED, RE-LOGINS, Reset. The STORAGE section is not built.
 * **Skills** (`skills.rs`): "Saved Skills" tab: Load Classes, class and mode combos from
@@ -84,9 +82,10 @@ script runs, and Start Script is disabled while Auto Attack runs.
   Farm, Dodge and Boss cards (class from the enhanced classes you own plus `[Current]`, skill set
   mode, "Use Dedicated Equipment Loadout") and a collapsible "Detailed Equipment Slots" with six
   gear drop-downs per role (with a "(none)" entry to clear a slot, which VibeSkua lacks); the
-  cards split the window width in two, so long names are cut off rather than widening it; Options: the 17 CoreBots settings in two columns (switches, numbers,
-  text), searchable; Other: Boosters (read by CoreFarms.toggleBoost, which runs `bot.boosts`),
-  Nation Farms, PvP, Bot Creators switches. Opening the window
+  cards split the window width in two, so long names are cut off rather than widening it.
+  Options: the 17 CoreBots settings in two columns (switches, numbers, text), searchable. Other:
+  Boosters (read by CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot
+  Creators switches. Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
   before saving public rooms (a save without the answer keeps private rooms). Game reads
   (username, equipped class, inventory) run through `spawn_action`; VibeSkua's message boxes are

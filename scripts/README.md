@@ -57,8 +57,9 @@ export default function main(): void {
   -> `Core.killMonster(..., null, 1, { isTemp: false, log: false })`.
 - Wait with `Core.sleep()` / `Core.waitForTrue()` rather than `bot.sleep()` in long loops: Core's
   background handlers (registered quests, the AFK check) only run while the script waits in Core.
-- Configuration (`soloClass`, `farmClass`, `privateRooms`, ...) are fields on `Core`; the C#
-  CoreBots Options file doesn't exist in Turu. Set them before `Core.setOptions()`. Keys C# reads
-  from that file at run time go in `Core.cboValues` (e.g. `Core.cboValues["Nation_SellMemVoucher"] = "True"`).
+- Configuration (`soloClass`, `farmClass`, `privateRooms`, ...) are fields on `Core`.
+  `Core.setOptions()` fills them from Options > CoreBots (the CBO file), as in VibeSkua. Keys
+  read from that file while a script runs can be overridden in `Core.cboValues`
+  (e.g. `Core.cboValues["Nation_SellMemVoucher"] = "True"`).
 
 A fuller guide is in `docs/turu/SCRIPTING.md`.
