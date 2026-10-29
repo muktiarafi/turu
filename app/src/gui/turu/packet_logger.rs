@@ -22,7 +22,7 @@ impl PacketLogger {
         crate::turu::bot().logs.packet_logging.load(Ordering::Relaxed)
     }
 
-    fn set_logging(&mut self, on: bool) {
+    fn set_logging(&self, on: bool) {
         crate::turu::bot().logs.packet_logging.store(on, Ordering::Relaxed);
     }
 

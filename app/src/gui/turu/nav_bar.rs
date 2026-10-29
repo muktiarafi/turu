@@ -38,9 +38,11 @@ pub struct NavBar {
     auto_class: Option<String>,
     auto_mode: Option<String>,
     map_ids: String,
-    auto_was_open: bool,
+    /// The Auto and Jump popups' open state. Kept here, not in egui's memory: egui keeps one
+    /// open popup per window, so opening a drop-down inside them would close them.
+    auto_open: bool,
     jump: Arc<Mutex<JumpState>>,
-    jump_was_open: bool,
+    jump_open: bool,
     cells_dropdown_was_open: bool,
 }
 
@@ -51,14 +53,14 @@ impl Default for NavBar {
             auto_class: None,
             auto_mode: None,
             map_ids: String::new(),
-            auto_was_open: false,
+            auto_open: false,
             jump: Arc::new(Mutex::new(JumpState {
                 cells: Vec::new(),
                 cell: None,
                 pad: String::new(),
                 status: None,
             })),
-            jump_was_open: false,
+            jump_open: false,
             cells_dropdown_was_open: false,
         }
     }
@@ -209,16 +211,17 @@ impl NavBar {
 
     fn auto_toggle(&mut self, ui: &mut Ui) {
         let running = auto::running();
-        let (response, open) = toggle_button(ui, "Auto", running.then_some(SUCCESS));
-        if open && !self.auto_was_open {
-            self.sets = SkillSets::load();
+        let response = toggle_button(ui, "Auto", running.then_some(SUCCESS), self.auto_open);
+        if response.clicked() {
+            self.auto_open = !self.auto_open;
+            if self.auto_open {
+                self.sets = SkillSets::load();
+            }
         }
-        self.auto_was_open = open;
-        Popup::from_toggle_button_response(&response)
-            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-            .align(RectAlign::BOTTOM_END)
-            .width(280.0)
-            .show(|ui| self.auto_panel(ui));
+        let mut open = self.auto_open;
+        let shown = nav_popup(&response, &mut open, 280.0).show(|ui| self.auto_panel(ui));
+        close_on_click_outside(ui.ctx(), &mut open, shown.map(|s| s.response.rect), response.rect);
+        self.auto_open = open;
     }
 
     fn auto_panel(&mut self, ui: &mut Ui) {
@@ -324,25 +327,17 @@ impl NavBar {
     }
 
     fn jump_toggle(&mut self, ui: &mut Ui) {
-        let (response, open) = toggle_button(ui, "Jump", None);
-        if open && !self.jump_was_open {
-            self.refresh_cells();
+        let response = toggle_button(ui, "Jump", None, self.jump_open);
+        if response.clicked() {
+            self.jump_open = !self.jump_open;
+            if self.jump_open {
+                self.refresh_cells();
+            }
         }
-        self.jump_was_open = open;
-        // `CloseOnClickOutside` would also close it when an item of the cell or pad drop-down
-        // is picked (those are separate layers), so outside clicks are handled below.
-        let shown = Popup::from_toggle_button_response(&response)
-            .close_behavior(PopupCloseBehavior::IgnoreClicks)
-            .align(RectAlign::BOTTOM_END)
-            .width(260.0)
-            .show(|ui| self.jump_panel(ui));
-        if let Some(shown) = shown {
-            close_on_click_outside(
-                ui.ctx(),
-                Popup::default_response_id(&response),
-                &[shown.response.rect, response.rect],
-            );
-        }
+        let mut open = self.jump_open;
+        let shown = nav_popup(&response, &mut open, 260.0).show(|ui| self.jump_panel(ui));
+        close_on_click_outside(ui.ctx(), &mut open, shown.map(|s| s.response.rect), response.rect);
+        self.jump_open = open;
     }
 
     /// VibeSkua `JumpViewModel`: picking a cell jumps there at once ("Enter" with pad
@@ -479,31 +474,42 @@ impl NavBar {
     }
 }
 
-/// Closes popup `id` when a click lands outside `keep` (the popup and its toggle button),
-/// unless it lands on another pop-up layer, such as one of its own drop-downs.
-fn close_on_click_outside(ctx: &egui::Context, id: egui::Id, keep: &[egui::Rect]) {
+/// A nav-bar popup under `button`, open while `open` is true. Clicks are handled by
+/// [`close_on_click_outside`]: egui's own "close on click outside" also fires when an item of
+/// one of its drop-downs is picked (those are separate layers).
+fn nav_popup<'a>(button: &Response, open: &'a mut bool, width: f32) -> Popup<'a> {
+    Popup::from_response(button)
+        .open_bool(open)
+        .close_behavior(PopupCloseBehavior::IgnoreClicks)
+        .align(RectAlign::BOTTOM_END)
+        .width(width)
+}
+
+/// Closes a nav-bar popup when a click lands outside it and its toggle button, unless it lands
+/// on another pop-up layer, such as one of its own drop-downs.
+fn close_on_click_outside(ctx: &egui::Context, open: &mut bool, popup: Option<egui::Rect>, button: egui::Rect) {
+    let Some(popup) = popup else { return };
     let Some(pos) = ctx.input(|i| i.pointer.any_click().then(|| i.pointer.interact_pos()).flatten()) else {
         return;
     };
-    if keep.iter().any(|rect| rect.contains(pos)) {
+    if popup.contains(pos) || button.contains(pos) {
         return;
     }
     let on_popup = ctx
         .layer_id_at(pos)
         .is_some_and(|layer| matches!(layer.order, egui::Order::Foreground | egui::Order::Tooltip));
     if !on_popup {
-        Popup::close_id(ctx, id);
+        *open = false;
     }
 }
 
-/// A flat toggle button for a popup ("Auto", "Jump") with an optional status dot. Returns the
-/// response and whether its popup is open.
-fn toggle_button(ui: &mut Ui, label: &str, dot: Option<Color32>) -> (Response, bool) {
+/// A flat toggle button for a popup ("Auto", "Jump") with an optional status dot, highlighted
+/// while its popup is `open`.
+fn toggle_button(ui: &mut Ui, label: &str, dot: Option<Color32>, open: bool) -> Response {
     let font = FontId::proportional(13.0);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, TEXT);
     let width = galley.size().x + 22.0 + if dot.is_some() { 12.0 } else { 0.0 };
     let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
-    let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&response));
     if open {
         ui.painter()
             .rect_filled(rect, CornerRadius::same(8), ACCENT.gamma_multiply(0.35));
@@ -526,5 +532,5 @@ fn toggle_button(ui: &mut Ui, label: &str, dot: Option<Color32>) -> (Response, b
     };
     ui.painter()
         .galley(egui::pos2(x, rect.center().y - galley.size().y / 2.0), galley, color);
-    (response, open)
+    response
 }
