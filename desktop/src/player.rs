@@ -276,7 +276,10 @@ impl ActivePlayer {
             .expect("Couldn't create wgpu rendering backend");
         RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
 
-        if opt.player.dummy_external_interface.unwrap_or_default() {
+        if crate::mugetsu::plays_aqw() {
+            // Turu: skua.swf talks to the bot through ExternalInterface.
+            builder = builder.with_external_interface(Box::new(crate::turu::TuruExternalInterface));
+        } else if opt.player.dummy_external_interface.unwrap_or_default() {
             builder = builder.with_external_interface(Box::new(DesktopExternalInterfaceProvider {
                 spoof_url: opt.player.spoof_url.clone(),
             }));
@@ -338,6 +341,11 @@ impl ActivePlayer {
             .with_frame_rate(opt.player.frame_rate)
             .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled);
         let player = builder.build();
+        if crate::mugetsu::plays_aqw() {
+            crate::turu::bot().set_host(Some(Arc::new(crate::turu::DesktopFlashHost::new(
+                event_loop.clone(),
+            ))));
+        }
 
         window.set_title(&crate::window_title()); // AQW build: name the window after the launcher, not the SWF.
 
@@ -475,6 +483,9 @@ impl PlayerController {
     }
 
     pub fn destroy(&mut self) {
+        if self.player.is_some() && crate::mugetsu::plays_aqw() {
+            crate::turu::bot().set_host(None);
+        }
         self.player = None;
     }
 

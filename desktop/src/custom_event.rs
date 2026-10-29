@@ -51,4 +51,7 @@ pub enum RuffleEvent {
 
     /// Export Ruffle Bundle from currently playing content and open save dialog.
     ExportBundle,
+
+    /// Turu: a bot thread calls one of skua.swf's ExternalInterface callbacks.
+    TuruFlashCall(crate::turu::TuruFlashCall),
 }

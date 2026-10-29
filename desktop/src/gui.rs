@@ -7,6 +7,7 @@ mod mugetsu_menu;
 mod movie;
 mod picker;
 mod theme;
+mod turu; // Turu: VibeSkua-style nav bar and bot windows.
 mod widgets;
 
 pub use controller::GuiController;
@@ -38,7 +39,7 @@ use winit::event_loop::EventLoopProxy;
 /// Size of the top menu bar in pixels.
 /// This is the offset at which the movie will be shown,
 /// and added to the window size if trying to match a movie.
-pub const MENU_HEIGHT: u32 = 24;
+pub const MENU_HEIGHT: u32 = 34; // Turu: VibeSkua's 34 px top nav bar.
 
 /// The main controller for the Ruffle GUI.
 pub struct RuffleGui {
@@ -46,6 +47,8 @@ pub struct RuffleGui {
     context_menu: Option<ContextMenu>,
     dialogs: Dialogs,
     menu_bar: MenuBar,
+    /// Turu: the bot's nav bar and windows (replace the menu bar when playing AQW).
+    turu: turu::TuruUi,
 
     was_suspended_before_debug: bool,
     preferences: GlobalPreferences,
@@ -59,17 +62,19 @@ impl RuffleGui {
         default_launch_options: LaunchOptions,
         preferences: GlobalPreferences,
     ) -> Self {
+        let dialogs = Dialogs::new(
+            preferences.clone(),
+            default_launch_options.clone(),
+            default_content,
+            window,
+            event_loop.clone(),
+        );
         Self {
             was_suspended_before_debug: false,
 
             context_menu: None,
-            dialogs: Dialogs::new(
-                preferences.clone(),
-                default_launch_options.clone(),
-                default_content,
-                window,
-                event_loop.clone(),
-            ),
+            turu: turu::TuruUi::new(dialogs.file_picker()),
+            dialogs,
             menu_bar: MenuBar::new(
                 event_loop.clone(),
                 default_launch_options,
@@ -95,8 +100,20 @@ impl RuffleGui {
         self.menu_bar
             .consume_shortcuts(egui_ctx, &mut self.dialogs, player.as_deref_mut());
         if show_menu {
-            self.menu_bar
-                .show(&locale, egui_ui, &mut self.dialogs, player.as_deref_mut());
+            if crate::mugetsu::plays_aqw() {
+                // Turu: VibeSkua's nav bar instead of Ruffle's menu bar.
+                self.turu.show_bar(egui_ui);
+            } else {
+                self.menu_bar
+                    .show(&locale, egui_ui, &mut self.dialogs, player.as_deref_mut());
+            }
+        }
+        if crate::mugetsu::plays_aqw() {
+            self.turu.show_windows(egui_ctx);
+            if self.turu.is_busy() {
+                // Logs and counters change on bot threads.
+                egui_ctx.request_repaint_after(std::time::Duration::from_millis(250));
+            }
         }
 
         self.dialogs.show(&locale, egui_ctx, player.as_deref_mut());

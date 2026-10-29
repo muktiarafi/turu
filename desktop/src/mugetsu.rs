@@ -19,13 +19,15 @@ const RELEASES_PAGE: &str = "https://github.com/mugetsu-aqw/mugetsu/releases/lat
 
 static TITLE_NOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// "Mugetsu", plus notes such as "DirectX 12" or "update 1.0.2 available".
+/// "Turu {version}" (Turu: was "Mugetsu"), plus notes such as "DirectX 12" or
+/// "update 1.0.2 available".
 pub fn window_title() -> String {
     let notes = TITLE_NOTES.lock().unwrap_or_else(|e| e.into_inner());
+    let name = format!("{} {}", crate::turu::APP_NAME, crate::turu::VERSION);
     if notes.is_empty() {
-        "Mugetsu".to_string()
+        name
     } else {
-        format!("Mugetsu – {}", notes.join(" · "))
+        format!("{name} – {}", notes.join(" · "))
     }
 }
 

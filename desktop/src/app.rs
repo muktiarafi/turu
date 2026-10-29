@@ -1255,6 +1255,11 @@ impl ApplicationHandler<RuffleEvent> for App {
 
         match (&mut self.main_window, event) {
             (Some(main_window), RuffleEvent::TaskPoll(task)) => main_window.player.poll(task),
+            (Some(main_window), RuffleEvent::TuruFlashCall(call)) => {
+                let mut player = main_window.player.get();
+                crate::turu::answer_flash_call(call, player.as_deref_mut());
+            }
+            (None, RuffleEvent::TuruFlashCall(call)) => crate::turu::answer_flash_call(call, None),
 
             (Some(main_window), RuffleEvent::OnMetadata(swf_header)) => {
                 main_window.on_metadata(swf_header)

@@ -19,6 +19,7 @@ mod player;
 mod preferences;
 #[cfg(feature = "tracy")]
 mod tracy;
+mod turu;
 mod util;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -201,7 +202,6 @@ fn panic_hook(info: &PanicHookInfo) {
 /// ones Artix's own launcher uses for its Ruffle mode); options given on the command line win over
 /// those defaults. `--no-obs` turns off OBS's Game Capture hook (its Vulkan layer) for the game.
 fn mugetsu_args() -> Vec<std::ffi::OsString> {
-    const AQW_LOADER_URL: &str = "https://game.aq.com/game/gamefiles/Loader3.swf?ver=a";
 
     let mut args: Vec<std::ffi::OsString> = env::args_os().collect();
     let is = |arg: &std::ffi::OsString, flag: &str| arg.to_str().is_some_and(|a| a.eq_ignore_ascii_case(flag));
@@ -210,7 +210,6 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
         // SAFETY: this runs first thing in `main`, before any other thread exists.
         unsafe { env::set_var("DISABLE_VULKAN_OBS_CAPTURE", "1") };
     }
-    let gui = args.iter().any(|a| is(a, "--gui"));
     args.retain(|a| !is(a, "--gui"));
     let has_movie = Opt::try_parse_from(&args).map_or(true, |opt| opt.movie_url.is_some());
     if has_movie {
@@ -263,26 +262,31 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
     // (option, short form, value)
     let mut defaults: Vec<(&str, Option<&str>, Option<&str>)> = vec![
         ("--tcp-connections", None, Some("allow")),
-        ("--player-version", None, Some("9")),
     ];
     // `--width`/`--height` are physical pixels. On a Retina display 960x580 would make the
     // window half the apparent size of the 960x550 game, so let the loader SWF's stage size
     // decide there instead.
     #[cfg(not(target_os = "macos"))]
     defaults.extend([
-        ("--width", None, Some("960")),
-        ("--height", None, Some("580")),
+        ("--width", None, Some("958")),
+        ("--height", None, Some("584")),
     ]);
     defaults.extend([
         // Draw on the dedicated GPU when there is one.
         ("--power", Some("-p"), Some("high")),
-        // No menu bar: the window is just the game.
-        ("--no-gui", None, None),
         ("--graphics", Some("-g"), Some(graphics)),
     ]);
-    let mut full = vec![args[0].clone(), AQW_LOADER_URL.into()];
+    // Turu: VibeSkua's skua.swf, which loads AQW and exposes it to the bot.
+    let skua_url = match turu::skua_swf_url() {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("Couldn't write skua.swf: {e}");
+            std::process::exit(1);
+        }
+    };
+    let mut full = vec![args[0].clone(), skua_url.into()];
     for (flag, short, value) in defaults {
-        if (flag == "--no-gui" && gui) || given(flag) || short.is_some_and(given) {
+        if given(flag) || short.is_some_and(given) {
             continue;
         }
         full.push(flag.into());
@@ -312,6 +316,7 @@ fn main() -> Result<(), Error> {
     #[cfg(windows)]
     windows::aqw_tune_process();
 
+    turu::init_main_thread();
     let opt = Opt::parse_from(mugetsu_args());
 
     #[cfg(feature = "shell-completions")]
