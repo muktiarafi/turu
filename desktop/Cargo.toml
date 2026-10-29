@@ -1,16 +1,13 @@
 [package]
-name = "ruffle_desktop"
+# Turu: Ruffle's `ruffle_desktop`, renamed so `cargo run -p turu` works and the executable is
+# `turu` (macOS shows an unbundled binary's file name in the Dock and menu bar).
+name = "turu"
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
-
-# Turu: the executable is `turu` (macOS shows an unbundled binary's file name in the Dock and menu bar).
-[[bin]]
-name = "turu"
-path = "src/main.rs"
 
 [lints]
 workspace = true
@@ -97,17 +94,17 @@ winresource = "0.1"
 # https://learn.microsoft.com/en-us/windows/win32/menurc/stringfileinfo-block
 # AQW build: Mugetsu is a modified build; its file details must not claim to be Ruffle LLC's
 # official program (that also looks like impersonation to antivirus heuristics).
-ProductName = "Mugetsu"
-FileDescription = "Mugetsu player for AdventureQuest Worlds (modified Ruffle)"
-CompanyName = "Mugetsu"
-LegalCopyright = "Mugetsu; based on Ruffle, Copyright © 2018 Ruffle LLC and Ruffle contributors"
+# Turu: Turu's names in the Windows file details.
+ProductName = "Turu"
+FileDescription = "Turu bot client for AdventureQuest Worlds (Ruffle with Mugetsu's patches)"
+CompanyName = "Turu"
+LegalCopyright = "Turu; based on Mugetsu and Ruffle, Copyright © 2018 Ruffle LLC and Ruffle contributors"
 # Keep equal to `mugetsu::VERSION` (desktop/src/mugetsu.rs).
 ProductVersion = "1.6.0"
 FileVersion = "1.6.0 (Ruffle 0.7.0-nightly.2026.10.2)"
 # InternalName should be the same as the module name
-InternalName = "ruffle_desktop"
-# The release ships this player as Mugetsu.exe.
-OriginalFilename = "Mugetsu.exe"
+InternalName = "turu"
+OriginalFilename = "turu.exe"
 
 [features]
 default = ["software_video", "external_video", "lzma", "fontconfig", "freetype"]

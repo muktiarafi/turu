@@ -203,7 +203,7 @@ jobs:
           wix extension add -g WixToolset.Util.wixext/5.0.2
 
       - name: Cargo build
-        run: cargo build --locked --package ruffle_desktop --profile dist ${{matrix.DESKTOP_FEATURES && '--features' }} ${{matrix.DESKTOP_FEATURES}} ${{ matrix.target && '--target' }} ${{ matrix.target }}
+        run: cargo build --locked --package turu --profile dist ${{matrix.DESKTOP_FEATURES && '--features' }} ${{matrix.DESKTOP_FEATURES}} ${{ matrix.target && '--target' }} ${{ matrix.target }}
         env:
           CFG_RELEASE_CHANNEL: ${{ needs.create-release.outputs.release_channel }}
           RUSTFLAGS: ${{ matrix.RUSTFLAGS }}
