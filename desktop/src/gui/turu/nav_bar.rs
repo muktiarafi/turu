@@ -3,7 +3,7 @@
 //! layout matches VibeSkua.
 
 use super::skills::SkillSets;
-use super::theme::{ACCENT, EDGE, HOVER, PANEL, SUCCESS, TEXT};
+use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
 use super::{Windows, auto};
 use egui::containers::menu::{MenuBar, MenuConfig};
@@ -17,7 +17,8 @@ use turu_bot::api::dispatch;
 
 /// Height of the bar; the same as `gui::MENU_HEIGHT`.
 const HEIGHT: f32 = 34.0;
-const PADS: [&str; 7] = ["Spawn", "Left", "Right", "Top", "Bottom", "Up", "Down"];
+/// VibeSkua `MapService.Pads`, in its order.
+const PADS: [&str; 8] = ["Spawn", "Center", "Left", "Right", "Up", "Down", "Top", "Bottom"];
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
@@ -28,6 +29,8 @@ struct JumpState {
     cells: Vec<String>,
     cell: Option<String>,
     pad: String,
+    /// The last jump's outcome, shown under the buttons.
+    status: Option<String>,
 }
 
 pub struct NavBar {
@@ -38,6 +41,7 @@ pub struct NavBar {
     auto_was_open: bool,
     jump: Arc<Mutex<JumpState>>,
     jump_was_open: bool,
+    cells_dropdown_was_open: bool,
 }
 
 impl Default for NavBar {
@@ -51,9 +55,11 @@ impl Default for NavBar {
             jump: Arc::new(Mutex::new(JumpState {
                 cells: Vec::new(),
                 cell: None,
-                pad: "Left".into(),
+                pad: String::new(),
+                status: None,
             })),
             jump_was_open: false,
+            cells_dropdown_was_open: false,
         }
     }
 }
@@ -320,39 +326,54 @@ impl NavBar {
     fn jump_toggle(&mut self, ui: &mut Ui) {
         let (response, open) = toggle_button(ui, "Jump", None);
         if open && !self.jump_was_open {
-            let state = self.jump.clone();
-            crate::turu::spawn_action("Fast Map Jump cells", move |bot| {
-                let cells: Vec<String> = serde_json::from_value(dispatch(bot, "map.cells", &[])?).unwrap_or_default();
-                lock(&state).cells = cells;
-                Ok(())
-            });
+            self.refresh_cells();
         }
         self.jump_was_open = open;
-        Popup::from_toggle_button_response(&response)
-            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+        // `CloseOnClickOutside` would also close it when an item of the cell or pad drop-down
+        // is picked (those are separate layers), so outside clicks are handled below.
+        let shown = Popup::from_toggle_button_response(&response)
+            .close_behavior(PopupCloseBehavior::IgnoreClicks)
             .align(RectAlign::BOTTOM_END)
             .width(260.0)
             .show(|ui| self.jump_panel(ui));
+        if let Some(shown) = shown {
+            close_on_click_outside(
+                ui.ctx(),
+                Popup::default_response_id(&response),
+                &[shown.response.rect, response.rect],
+            );
+        }
     }
 
-    fn jump_panel(&self, ui: &mut Ui) {
+    /// VibeSkua `JumpViewModel`: picking a cell jumps there at once ("Enter" with pad
+    /// "Spawn", else the chosen pad or "Left"); Current selects where you are without
+    /// jumping; the cell list is refreshed whenever its drop-down opens.
+    fn jump_panel(&mut self, ui: &mut Ui) {
         ui.set_width(236.0);
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         ui.label(RichText::new("Fast Map Jump").strong());
+        ui.separator();
         let half = (ui.available_width() - 6.0) / 2.0;
         let mut state = lock(&self.jump);
+        let mut picked = None;
+        let mut cells_open = false;
         ui.horizontal(|ui| {
             let cells = state.cells.clone();
-            ComboBox::from_id_salt("jump_cell")
+            let combo = ComboBox::from_id_salt("jump_cell")
                 .selected_text(state.cell.as_deref().unwrap_or("Select Cell..."))
                 .width(half - 18.0)
+                .height(320.0)
                 .show_ui(ui, |ui| {
+                    if cells.is_empty() {
+                        ui.label(RichText::new("No cells (not in a map?)").small().color(MUTED));
+                    }
                     for cell in &cells {
                         if ui.selectable_label(state.cell.as_deref() == Some(cell), cell).clicked() {
-                            state.cell = Some(cell.clone());
+                            picked = Some(cell.clone());
                         }
                     }
                 });
+            cells_open = combo.inner.is_some();
             let current = state.pad.clone();
             ComboBox::from_id_salt("jump_pad")
                 .selected_text(if current.is_empty() { "Select Pad..." } else { &current })
@@ -365,19 +386,44 @@ impl NavBar {
                     }
                 });
         });
-        let target = state.cell.clone().map(|cell| (cell, state.pad.clone()));
+        if let Some(cell) = picked {
+            if cell == "Enter" {
+                state.pad = "Spawn".into();
+            } else if state.pad.is_empty() {
+                state.pad = "Left".into();
+            }
+            state.cell = Some(cell.clone());
+            let pad = state.pad.clone();
+            drop(state);
+            self.jump_to(cell, pad);
+            state = lock(&self.jump);
+        }
+        let target = state
+            .cell
+            .clone()
+            .filter(|_| !state.pad.is_empty())
+            .map(|cell| (cell, state.pad.clone()));
+        let status = state.status.clone();
         drop(state);
+        if cells_open && !self.cells_dropdown_was_open {
+            self.refresh_cells();
+        }
+        self.cells_dropdown_was_open = cells_open;
+
         ui.horizontal(|ui| {
             if widgets::button(ui, "Current", Kind::Normal, true, vec2(half, 28.0), "").clicked() {
+                self.refresh_cells();
                 let state = self.jump.clone();
                 crate::turu::spawn_action("Fast Map Jump current", move |bot| {
-                    let cell = dispatch(bot, "player.cell", &[])?;
-                    let pad = dispatch(bot, "player.pad", &[])?;
+                    let playing = dispatch(bot, "player.playing", &[])?.as_bool() == Some(true);
+                    let (cell, pad) = if playing {
+                        (dispatch(bot, "player.cell", &[])?, dispatch(bot, "player.pad", &[])?)
+                    } else {
+                        (json!("Enter"), json!("Spawn"))
+                    };
                     let mut state = lock(&state);
-                    state.cell = cell.as_str().map(str::to_owned);
-                    if let Some(pad) = pad.as_str() {
-                        state.pad = pad.to_owned();
-                    }
+                    state.cell = cell.as_str().filter(|c| !c.is_empty()).map(str::to_owned);
+                    state.pad = pad.as_str().unwrap_or_default().to_owned();
                     Ok(())
                 });
             }
@@ -387,16 +433,66 @@ impl NavBar {
                 Kind::Primary,
                 target.is_some(),
                 vec2(half, 28.0),
-                "Select a cell first",
+                "Select a cell and a pad first",
             );
             if jump.clicked()
                 && let Some((cell, pad)) = target
             {
-                crate::turu::spawn_action("Fast Map Jump", move |bot| {
-                    dispatch(bot, "map.jump", &[json!(cell), json!(pad)]).map(|_| ())
-                });
+                self.jump_to(cell, pad);
             }
         });
+        if let Some(status) = status {
+            ui.label(RichText::new(status).small().color(MUTED));
+        }
+    }
+
+    /// Reads the current map's cells (`map.cells`) into the drop-down.
+    fn refresh_cells(&self) {
+        let state = self.jump.clone();
+        crate::turu::spawn_action("Fast Map Jump cells", move |bot| {
+            let cells: Vec<String> =
+                serde_json::from_value(dispatch(bot, "map.cells", &[])?).unwrap_or_default();
+            let mut state = lock(&state);
+            if state.cells != cells {
+                state.cells = cells;
+            }
+            Ok(())
+        });
+    }
+
+    /// VibeSkua `MapService.Jump`: only when logged in, without auto-correcting the pad.
+    fn jump_to(&self, cell: String, pad: String) {
+        let state = self.jump.clone();
+        lock(&state).status = Some(format!("Jumping to {cell} ({pad})..."));
+        crate::turu::spawn_action("Fast Map Jump", move |bot| {
+            let status = if dispatch(bot, "player.loggedIn", &[])?.as_bool() != Some(true) {
+                "Not logged in".to_owned()
+            } else {
+                match dispatch(bot, "map.jump", &[json!(cell), json!(pad), json!(false)]) {
+                    Ok(_) => format!("Jumped to {cell} ({pad})"),
+                    Err(e) => format!("Jump failed: {e}"),
+                }
+            };
+            lock(&state).status = Some(status);
+            Ok(())
+        });
+    }
+}
+
+/// Closes popup `id` when a click lands outside `keep` (the popup and its toggle button),
+/// unless it lands on another pop-up layer, such as one of its own drop-downs.
+fn close_on_click_outside(ctx: &egui::Context, id: egui::Id, keep: &[egui::Rect]) {
+    let Some(pos) = ctx.input(|i| i.pointer.any_click().then(|| i.pointer.interact_pos()).flatten()) else {
+        return;
+    };
+    if keep.iter().any(|rect| rect.contains(pos)) {
+        return;
+    }
+    let on_popup = ctx
+        .layer_id_at(pos)
+        .is_some_and(|layer| matches!(layer.order, egui::Order::Foreground | egui::Order::Tooltip));
+    if !on_popup {
+        Popup::close_id(ctx, id);
     }
 }
 

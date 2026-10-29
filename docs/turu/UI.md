@@ -43,7 +43,7 @@ Interceptor), **Plugins** (View Plugins). Right side: **Auto**, **Jump**, a divi
 | Script Loader, Game, Current Drops, Skills, Stats, Logs, Logger | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented (class/mode combos from `AdvancedSkills.json`); Auto Hunt and the MapIDs box are disabled |
-| Jump popup | implemented: cells from `map.cells` (loaded when the popup opens), pad list, Current (`player.cell`/`player.pad`), Jump (`map.jump`) |
+| Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | + | opens the Script Loader (VibeSkua opens the tabbed tool host) |
 | everything else | greyed, tooltip "Coming soon" |
 
