@@ -1124,8 +1124,8 @@ impl ApplicationHandler<RuffleEvent> for App {
 
         if cause == StartCause::Init {
             let movie_url = self.preferences.cli.movie_url.clone();
-            // AQW build: Mugetsu's icon (64 px so the taskbar copy stays sharp).
-            let icon_bytes = include_bytes!("../assets/mugetsu-icon-64.rgba");
+            // Turu: Turu's icon (64 px so the taskbar copy stays sharp; source in docs/turu/logo).
+            let icon_bytes = include_bytes!("../assets/turu-icon-64.rgba");
             let icon =
                 Icon::from_rgba(icon_bytes.to_vec(), 64, 64).expect("App icon should be correct");
 
