@@ -42,6 +42,10 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   `lagKiller`, `aggroMonsters`, `skipCutscenes` and `autoRelogin` off again when the script ends.
 - **Events**: `const off = bot.events.on("monsterKilled", (e) => bot.log(e.mapId));`, then
   `off()` to remove it. Handlers run between your bot calls.
+- **Stopping**: `bot.events.on("scriptStopping", (error) => ...)` runs once the script was
+  stopped (Stop, `bot.stop()`) or failed (`error` is the message), but not when `main` returns,
+  like VibeSkua's `ScriptStopping`. The handler can still use the bot; the Script Loader shows
+  "Stopping..." and its Force Stop button interrupts it.
 - **Imports** are relative, without extension: `import { Core } from "../core/CoreBots";`.
 - **Missing API**: `bot.flash.get("world.strMapName")`, `bot.flash.callGameFunction(...)` and
   `bot.send.packet("%xt%zm%...%")` reach the game directly, using the same paths VibeSkua uses.
@@ -54,7 +58,10 @@ settings (classes, gear, private rooms, delays, ...) are fields on `Core`. `Core
 fills them from your CoreBots Options file (Options > CoreBots, read with
 `bot.coreBotsOptions()`), like VibeSkua's `ReadCBO`; without a file they keep the C# defaults.
 Keys read while a script runs (`Nation_SellMemVoucher`, ...) can be overridden from the script in
-`Core.cboValues`. `scripts/README.md` covers the porting conventions (C# named flags become
+`Core.cboValues`. Like VibeSkua, `Core.setOptions()` moves you to your house (or /whitemap) when
+the script starts in battleon, oaklore or bludrutbrawl, and when the script is stopped it goes to
+"Map after stopping the Bot" (`home`/`house`, `none`/`off`, or a map name) and puts your
+starting gear back on. `scripts/README.md` covers the porting conventions (C# named flags become
 option objects, wait inside `Core.sleep`).
 
 ## Porting a C# script

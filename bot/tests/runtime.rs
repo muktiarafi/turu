@@ -153,3 +153,55 @@ fn gold_farm_loads_and_stops() {
     assert!(!log.contains("failed"), "{log}");
     assert!(log.contains("stopped") || log.contains("finished"), "{log}");
 }
+
+/// Runs `body` as `main` with a `scriptStopping` handler that uses the bot; `stop` presses Stop.
+fn run_with_stopping_handler(name: &str, body: &str, stop: bool) -> String {
+    let dir = temp_dir(name);
+    std::fs::write(
+        dir.join("main.ts"),
+        format!(
+            r#"import {{ bot }} from "turu";
+export default function main(): void {{
+    bot.events.on("scriptStopping", (error) => {{
+        bot.sleep(10);
+        bot.log(`stopping handler: ${{error}}; gold ${{bot.player.gold}}`);
+    }});
+    {body}
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&dir.join("main.ts"));
+    script::start(&bot).unwrap();
+    if stop {
+        std::thread::sleep(Duration::from_millis(300));
+        script::stop(&bot);
+    }
+    wait_until_done(&bot);
+    bot.logs.script.text()
+}
+
+#[test]
+fn stopping_handlers_run_on_stop_and_can_use_the_bot() {
+    let log = run_with_stopping_handler("stopping-stop", "while (true) bot.sleep(50);", true);
+    assert!(log.contains("stopping handler: null; gold 1234"), "{log}");
+    assert!(log.contains("stopped"), "{log}");
+}
+
+#[test]
+fn stopping_handlers_get_the_error_of_a_failed_script() {
+    let log = run_with_stopping_handler("stopping-fail", r#"throw new Error("boom");"#, false);
+    assert!(log.contains("stopping handler: boom"), "{log}");
+}
+
+#[test]
+fn stopping_handlers_dont_run_when_main_returns() {
+    let log = run_with_stopping_handler("stopping-done", r#"bot.log("done");"#, false);
+    assert!(
+        log.contains("done") && !log.contains("stopping handler"),
+        "{log}"
+    );
+}

@@ -105,6 +105,9 @@ Startup sequence (same as VibeSkua):
   `bot/js/turu.ts` wraps it in typed classes (`bot.player.join(...)`); Rust routes
   `method` (`"player.join"`) to `api::<module>::dispatch`. Errors come back as
   `{"error": "...", "stopped": bool}` and are rethrown as JS `Error` / `ScriptStopped`.
+* When `main` throws because it was stopped or failed (not when it returns), the runtime resets
+  Stop and calls `__turuScriptStopping(error)` in the same JS context, which runs the
+  `scriptStopping` handlers (VibeSkua `ScriptStopping`); a second Stop interrupts them.
 * Script header block comment (`/* name: ... description: ... tags: ... */`) is kept from
   the C# scripts for the repo browser.
 

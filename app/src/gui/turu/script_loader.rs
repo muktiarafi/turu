@@ -157,15 +157,20 @@ impl ScriptLoader {
         ui.horizontal(|ui| {
             let auto = super::auto::running();
             if active {
-                if widgets::button(
-                    ui,
-                    "Stop Script",
-                    Kind::Danger,
-                    status != ScriptStatus::Stopping,
-                    vec2(half, 30.0),
-                    "",
-                )
-                .clicked()
+                // While stopping, CoreBots may still be going to the stop location; a second
+                // press interrupts that.
+                let label = if status == ScriptStatus::Stopping {
+                    "Force Stop"
+                } else {
+                    "Stop Script"
+                };
+                if widgets::button(ui, label, Kind::Danger, true, vec2(half, 30.0), "")
+                    .on_hover_text(if status == ScriptStatus::Stopping {
+                        "Interrupts the script's stopping steps (such as going to the stop location)"
+                    } else {
+                        ""
+                    })
+                    .clicked()
                 {
                     script::stop(bot);
                 }

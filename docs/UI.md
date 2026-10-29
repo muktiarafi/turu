@@ -59,7 +59,8 @@ script runs, and Start Script is disabled while Auto Attack runs.
   Load Script (rfd dialog filtered to .ts/.js, starting in the repo's `scripts/` found next to the
   working directory or above the executable, else the bot's scripts folder); Open VSCode (enabled
   when `code` is on PATH, or the macOS app bundle is found); Edit Script (OS default app);
-  Search Scripts and Edit Script Options (disabled); Start/Stop Script (primary/danger);
+  Search Scripts and Edit Script Options (disabled); Start/Stop Script (primary/danger; "Force Stop" while stopping
+  handlers run);
   Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
   The "Report Issues" footer is omitted.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/

@@ -595,8 +595,13 @@ export interface EventMap {
     extensionPacket: any;
     /** A client packet, "%xt%zm%...%". */
     packetSent: string;
-    /** The script is stopping (Stop pressed, finished or failed). */
-    scriptStopping: null;
+    /**
+     * The script is stopping: Stop was pressed, the script stopped itself (`bot.stop()`) or it
+     * failed (the data is then the error message; otherwise null). Not sent when `main` simply
+     * returns, like VibeSkua's `ScriptStopping`. Handlers may use the bot (Stop is reset while
+     * they run); pressing Stop again interrupts them.
+     */
+    scriptStopping: string | null;
 }
 
 type Listener<K extends keyof EventMap> = (data: EventMap[K]) => void;
@@ -615,6 +620,11 @@ function dispatchEvents(): void {
         dispatching = false;
     }
 }
+
+// Called by the engine once the script has stopped or failed (see `EventMap.scriptStopping`).
+(globalThis as any).__turuScriptStopping = (error?: string | null): void => {
+    for (const listener of [...(listeners.get("scriptStopping") ?? [])]) listener(error ?? null);
+};
 
 /**
  * `bot.events`: game events. Handlers run on the script's thread, between bot calls (so a
