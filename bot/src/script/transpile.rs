@@ -19,7 +19,11 @@ pub fn transpile(source: &str, path: &Path) -> Result<String, String> {
         return Err(describe(source, path, error));
     }
     let mut program = parsed.program;
-    let scoping = SemanticBuilder::new().with_enum_eval(true).build(&program).semantic.into_scoping();
+    let scoping = SemanticBuilder::new()
+        .with_enum_eval(true)
+        .build(&program)
+        .semantic
+        .into_scoping();
     let options = TransformOptions::default();
     let transformed =
         Transformer::new(&allocator, path, &options).build_with_scoping(scoping, &mut program);
@@ -31,10 +35,7 @@ pub fn transpile(source: &str, path: &Path) -> Result<String, String> {
 
 /// "file.ts:12:5: message".
 fn describe(source: &str, path: &Path, error: &oxc::diagnostics::OxcDiagnostic) -> String {
-    let offset = error
-        .labels
-        .first()
-        .map(|label| label.offset() as usize);
+    let offset = error.labels.first().map(|label| label.offset() as usize);
     match offset {
         Some(offset) => {
             let before = &source[..offset.min(source.len())];

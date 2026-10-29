@@ -109,7 +109,9 @@ fn call(bot: &Arc<Bot>, method: &str, args: &str) -> String {
     let args: Vec<Value> = match serde_json::from_str(args) {
         Ok(Value::Array(a)) => a,
         Ok(other) => vec![other],
-        Err(e) => return json!({ "error": format!("bad arguments for {method}: {e}") }).to_string(),
+        Err(e) => {
+            return json!({ "error": format!("bad arguments for {method}: {e}") }).to_string();
+        }
     };
     match crate::api::dispatch(bot, method, &args) {
         Ok(value) => json!({ "ok": value }).to_string(),

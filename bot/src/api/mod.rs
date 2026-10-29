@@ -22,8 +22,8 @@ pub mod shops;
 pub mod skills;
 pub mod wait;
 
-use crate::error::{BotError, BotResult};
 use crate::Bot;
+use crate::error::{BotError, BotResult};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -118,9 +118,9 @@ impl<'a> Args<'a> {
     }
 
     pub fn str(&self, i: usize) -> BotResult<&'a str> {
-        self.value(i)
-            .as_str()
-            .ok_or_else(|| BotError::InvalidArgument(format!("argument {} must be a string", i + 1)))
+        self.value(i).as_str().ok_or_else(|| {
+            BotError::InvalidArgument(format!("argument {} must be a string", i + 1))
+        })
     }
 
     pub fn opt_str(&self, i: usize) -> Option<&'a str> {
@@ -132,8 +132,9 @@ impl<'a> Args<'a> {
     }
 
     pub fn i64(&self, i: usize) -> BotResult<i64> {
-        self.opt_i64(i)
-            .ok_or_else(|| BotError::InvalidArgument(format!("argument {} must be a number", i + 1)))
+        self.opt_i64(i).ok_or_else(|| {
+            BotError::InvalidArgument(format!("argument {} must be a number", i + 1))
+        })
     }
 
     pub fn opt_i64(&self, i: usize) -> Option<i64> {

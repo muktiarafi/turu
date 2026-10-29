@@ -42,7 +42,10 @@ impl ScriptStatus {
     }
 
     pub fn is_active(self) -> bool {
-        matches!(self, Self::Compiling | Self::Running | Self::Paused | Self::Stopping)
+        matches!(
+            self,
+            Self::Compiling | Self::Running | Self::Paused | Self::Stopping
+        )
     }
 }
 
@@ -62,7 +65,9 @@ impl ScriptInfo {
         };
         let header = start.split("*/").next().unwrap_or_default();
         for line in header.lines() {
-            let Some((key, value)) = line.split_once(':') else { continue };
+            let Some((key, value)) = line.split_once(':') else {
+                continue;
+            };
             let value = value.trim().to_owned();
             match key.trim().to_ascii_lowercase().as_str() {
                 "name" => info.name = Some(value),
@@ -139,7 +144,9 @@ pub fn start(bot: &Arc<Bot>) -> Result<(), String> {
         .spawn(move || {
             let bot = thread_bot;
             mark_script_thread(true);
-            let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             bot.log(format!("Started script {name}"));
             bot.state.lock().stats.started = Some(std::time::Instant::now());
             let result = runtime::run(&bot, &path);
@@ -207,7 +214,9 @@ mod tests {
 
     #[test]
     fn parses_header() {
-        let info = ScriptInfo::parse("/*\nname: 0MaxBags\ndescription: Farms bags.\ntags: nation, bags\n*/\nimport x");
+        let info = ScriptInfo::parse(
+            "/*\nname: 0MaxBags\ndescription: Farms bags.\ntags: nation, bags\n*/\nimport x",
+        );
         assert_eq!(info.name.as_deref(), Some("0MaxBags"));
         assert_eq!(info.tags, ["nation", "bags"]);
     }

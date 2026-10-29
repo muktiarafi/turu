@@ -35,6 +35,9 @@ struct JumpState {
 
 pub struct NavBar {
     sets: SkillSets,
+    /// The Class items in the inventory, for Auto's class drop-down (VibeSkua `PlayerClasses`).
+    owned_classes: Arc<Mutex<Vec<String>>>,
+    class_dropdown_was_open: bool,
     auto_class: Option<String>,
     auto_mode: Option<String>,
     map_ids: String,
@@ -50,6 +53,8 @@ impl Default for NavBar {
     fn default() -> Self {
         Self {
             sets: SkillSets::default(),
+            owned_classes: Arc::default(),
+            class_dropdown_was_open: false,
             auto_class: None,
             auto_mode: None,
             map_ids: String::new(),
@@ -256,8 +261,13 @@ impl NavBar {
                 tip,
             );
             if attack.clicked() {
-                let mode = self.auto_mode.clone().unwrap_or_else(|| "Base".into());
-                auto::start(self.auto_class.clone(), mode);
+                // VibeSkua: the picked class and mode only when both are set, else the
+                // equipped class in Base.
+                let map_ids = auto::parse_map_ids(&self.map_ids);
+                match (self.auto_class.clone(), self.auto_mode.clone()) {
+                    (Some(class), Some(mode)) => auto::start(Some(class), mode, map_ids),
+                    _ => auto::start(None, "Base".into(), map_ids),
+                }
             }
             widgets::button(ui, "Auto Hunt", Kind::Normal, false, vec2(half, 30.0), "Coming soon");
         });
@@ -273,37 +283,40 @@ impl NavBar {
         {
             auto::stop();
         }
+        let mut picked_class = None;
+        let mut class_open = false;
         ui.horizontal(|ui| {
-            ComboBox::from_id_salt("auto_class")
+            let owned = lock(&self.owned_classes).clone();
+            let combo = ComboBox::from_id_salt("auto_class")
                 .selected_text(self.auto_class.as_deref().unwrap_or("Select Class..."))
                 .width(half - 18.0)
+                .height(320.0)
                 .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(self.auto_class.is_none(), "Equipped class")
-                        .clicked()
-                    {
-                        self.auto_class = None;
-                        self.auto_mode = None;
+                    if owned.is_empty() {
+                        ui.label(RichText::new("No classes (not logged in?)").small().color(MUTED));
                     }
-                    for class in self.sets.classes() {
+                    for class in &owned {
                         if ui
                             .selectable_label(self.auto_class.as_deref() == Some(class), class)
                             .clicked()
                         {
-                            self.auto_class = Some(class.clone());
-                            self.auto_mode = None;
+                            picked_class = Some(class.clone());
                         }
                     }
                 });
+            class_open = combo.inner.is_some();
             let modes = self
                 .auto_class
                 .as_deref()
-                .map(|c| self.sets.modes(c))
+                .map(|c| self.sets.modes_for(c))
                 .unwrap_or_default();
             ComboBox::from_id_salt("auto_mode")
                 .selected_text(self.auto_mode.as_deref().unwrap_or("Select Mode..."))
                 .width(half - 18.0)
                 .show_ui(ui, |ui| {
+                    if self.auto_class.is_some() && modes.is_empty() {
+                        ui.label(RichText::new("No saved skills for this class").small().color(MUTED));
+                    }
                     for mode in modes {
                         if ui
                             .selectable_label(self.auto_mode.as_deref() == Some(&mode), &mode)
@@ -314,16 +327,51 @@ impl NavBar {
                     }
                 });
         });
-        ui.add_enabled_ui(false, |ui| {
-            widgets::text_box(
-                ui,
-                &mut self.map_ids,
-                "Manual MapIDs (optional, e.g. 1, 2)",
-                ui.available_width(),
-            );
-        })
-        .response
-        .on_disabled_hover_text("Coming soon (Auto Hunt)");
+        // VibeSkua `ReloadClasses` (on opening the class drop-down): re-read the owned classes
+        // and the skill sets, and clear the selection.
+        if class_open && !self.class_dropdown_was_open {
+            self.reload_classes();
+        }
+        self.class_dropdown_was_open = class_open;
+        // VibeSkua `SelectedClass`: list its modes, pick the first, and equip the class.
+        if let Some(class) = picked_class {
+            self.auto_mode = self.sets.modes_for(&class).into_iter().next();
+            self.auto_class = Some(class.clone());
+            crate::turu::spawn_action("Equip class", move |bot| {
+                dispatch(bot, "inventory.equipItem", &[json!(class)]).map(|_| ())
+            });
+        }
+        widgets::text_box(
+            ui,
+            &mut self.map_ids,
+            "Manual MapIDs (optional, e.g. 1, 2)",
+            ui.available_width(),
+        );
+    }
+
+    /// Reads the inventory's Class items (sorted, ignoring case) and the skill sets again.
+    fn reload_classes(&mut self) {
+        self.sets = SkillSets::load();
+        self.auto_class = None;
+        self.auto_mode = None;
+        let owned = self.owned_classes.clone();
+        crate::turu::spawn_action("Auto classes", move |bot| {
+            let items: Vec<serde_json::Value> =
+                serde_json::from_value(dispatch(bot, "inventory.items", &[])?).unwrap_or_default();
+            let mut classes: Vec<String> = items
+                .iter()
+                .filter(|item| {
+                    item.get("category")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|c| c.eq_ignore_ascii_case("Class"))
+                })
+                .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
+                .map(str::to_owned)
+                .collect();
+            classes.sort_by_key(|name| name.to_lowercase());
+            *lock(&owned) = classes;
+            Ok(())
+        });
     }
 
     fn jump_toggle(&mut self, ui: &mut Ui) {

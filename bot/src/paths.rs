@@ -1,9 +1,11 @@
 //! Where Turu keeps its files (see docs/turu/ARCHITECTURE.md, "Data directory").
 
 use crate::options::BotOptions;
+use serde_json::Value;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Once;
 
 #[derive(Debug, Clone)]
 pub struct Paths {
@@ -58,13 +60,78 @@ impl Paths {
         self.root.join("options.json")
     }
 
-    pub fn advanced_skills_file(&self) -> PathBuf {
+    /// The shipped skill sets (VibeSkua `AdvancedSkills.json`), rewritten from the copy built
+    /// into the app whenever it differs.
+    pub fn default_advanced_skills_file(&self) -> PathBuf {
         self.root.join("AdvancedSkills.json")
     }
 
-    /// The user's skill sets, seeded from VibeSkua's shipped file on first use.
+    /// The user's skill sets (VibeSkua `UserAdvancedSkills.json`): what the bot and the
+    /// Skills window use.
+    pub fn user_advanced_skills_file(&self) -> PathBuf {
+        self.root.join("UserAdvancedSkills.json")
+    }
+
+    /// VibeSkua `AdvancedSkillContainer`: seeds the user's sets from the shipped ones, and
+    /// adds the shipped classes and modes the user's file lacks without changing the ones it
+    /// has. An unreadable user file is left alone.
+    pub fn sync_advanced_skills(&self) -> io::Result<()> {
+        self.ensure()?;
+        let shipped = crate::DEFAULT_ADVANCED_SKILLS;
+        let default_file = self.default_advanced_skills_file();
+        if fs::read_to_string(&default_file).ok().as_deref() != Some(shipped) {
+            fs::write(&default_file, shipped)?;
+        }
+        let user_file = self.user_advanced_skills_file();
+        let Ok(user_text) = fs::read_to_string(&user_file) else {
+            return fs::write(&user_file, shipped);
+        };
+        let (Ok(Value::Object(defaults)), Ok(Value::Object(mut user))) = (
+            serde_json::from_str::<Value>(shipped),
+            serde_json::from_str::<Value>(&user_text),
+        ) else {
+            return Ok(());
+        };
+        let mut changed = false;
+        for (class, modes) in defaults {
+            let Value::Object(modes) = modes else {
+                continue;
+            };
+            match user.get_mut(&class) {
+                Some(Value::Object(user_modes)) => {
+                    for (mode, set) in modes {
+                        if !user_modes.contains_key(&mode) {
+                            user_modes.insert(mode, set);
+                            changed = true;
+                        }
+                    }
+                }
+                _ => {
+                    user.insert(class, Value::Object(modes));
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            let text =
+                serde_json::to_string_pretty(&Value::Object(user)).map_err(io::Error::other)?;
+            fs::write(&user_file, text)?;
+        }
+        Ok(())
+    }
+
+    /// The user's skill sets as JSON (synced with the shipped ones once per run).
     pub fn load_advanced_skills(&self) -> String {
-        fs::read_to_string(self.advanced_skills_file())
+        static SYNCED: Once = Once::new();
+        SYNCED.call_once(|| {
+            if let Err(e) = self.sync_advanced_skills() {
+                tracing::warn!(
+                    "Couldn't set up the skill sets in {}: {e}",
+                    self.root.display()
+                );
+            }
+        });
+        fs::read_to_string(self.user_advanced_skills_file())
             .unwrap_or_else(|_| crate::DEFAULT_ADVANCED_SKILLS.to_owned())
     }
 

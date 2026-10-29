@@ -32,6 +32,16 @@ impl SkillSets {
             .unwrap_or_default()
     }
 
+    /// The saved modes of `class`, sorted; the class name is matched ignoring case, since
+    /// the inventory and the skill file may spell it differently.
+    pub fn modes_for(&self, class: &str) -> Vec<String> {
+        self.classes
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(class))
+            .map(|(_, modes)| modes.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     fn set(&self, class: &str, mode: &str) -> Option<&Value> {
         self.classes.get(class)?.get(mode)
     }

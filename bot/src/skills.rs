@@ -721,7 +721,7 @@ pub fn parse_advanced_skills(json: &str) -> Vec<AdvancedSkill> {
         .collect()
 }
 
-/// The user's skill sets (`AdvancedSkills.json` in the data directory, else the shipped one).
+/// The user's skill sets (`UserAdvancedSkills.json`, seeded from the shipped ones).
 pub fn load_advanced_skills(paths: &crate::paths::Paths) -> Vec<AdvancedSkill> {
     parse_advanced_skills(&paths.load_advanced_skills())
 }
