@@ -1,4 +1,13 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/turu/logo/turu-logo-dark.svg">
+    <img src="docs/turu/logo/turu-logo-light.svg" alt="Turu" width="320">
+  </picture>
+</p>
+
 # Turu
+
+*Turu* is Javanese for "sleep": let the bot play while you do.
 
 A cross-platform (macOS, Windows, Linux) bot client for AdventureQuest Worlds.
 
