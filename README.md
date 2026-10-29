@@ -38,13 +38,13 @@ This repository is a Ruffle fork (branch `turu`). Ruffle's own readme is
 macOS:
 
 ```bash
-cargo run -p ruffle_desktop --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
+cargo run -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ```
 
 Windows and Linux:
 
 ```bash
-cargo run -p ruffle_desktop
+cargo run -p turu
 ```
 
 The window opens with VibeSkua's top bar and loads AQW. Then:
@@ -70,14 +70,13 @@ The commands below are for macOS. On Windows and Linux, drop
 
 ```bash
 # Debug build: fast to compile, slower to run
-cargo build -p ruffle_desktop --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
+cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 
 # Release build, as Mugetsu ships it (LTO, much faster in game; takes a while)
-cargo build -p ruffle_desktop --profile dist --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
+cargo build -p turu --profile dist --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ```
 
-The package is `ruffle_desktop`; the program it builds is `turu`. Binaries land in
-`target/debug/turu` and `target/dist/turu` (`.exe` on Windows).
+Binaries land in `target/debug/turu` and `target/dist/turu` (`.exe` on Windows).
 
 Packaging, including the macOS `.app`, the speed profile (PGO) and the Windows resources,
 follows Mugetsu's scripts in `../mugetsu/source/build-*.sh` / `build-windows.ps1`. A Turu
