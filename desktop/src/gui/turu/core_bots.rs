@@ -11,7 +11,8 @@ use egui::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
-use turu_bot::api::{dispatch, inventory, player};
+use turu_bot::api::inventory::{self, Container};
+use turu_bot::api::player;
 use turu_bot::models::ItemBase;
 
 /// VibeSkua's `[Current]` class entry: the class equipped when the bot runs.
@@ -351,11 +352,10 @@ impl CoreBotsWindow {
             let (current_class, items) = if username.is_empty() {
                 (None, Vec::new())
             } else {
-                // Always answer, or the window would stay busy.
-                let items: Vec<ItemBase> = dispatch(bot, "inventory.items", &[])
-                    .ok()
-                    .and_then(|items| serde_json::from_value(items).ok())
-                    .unwrap_or_default();
+                // Read straight from the engine: `inventory.items` serializes for scripts, with
+                // other field names than `ItemBase` reads. A failure still answers, or the
+                // window would stay busy.
+                let items = inventory::items(bot, Container::Inventory).unwrap_or_default();
                 (inventory::current_class(bot).ok().flatten(), items)
             };
             *lock(&slot) = Some(Fetched {
@@ -720,20 +720,20 @@ impl CoreBotsWindow {
                 ) {
                     self.fetch(Purpose::ReloadClasses);
                 }
-                let width = ((ui.available_width() - 10.0) / 2.0).max(200.0);
+                // 2x2 cards; `columns` splits the width, so the window never grows to fit them.
                 for pair in [0, 2] {
-                    ui.horizontal_top(|ui| {
-                        for i in pair..pair + 2 {
-                            self.class_card(ui, i, width);
+                    ui.columns(2, |columns| {
+                        for (column, i) in columns.iter_mut().zip(pair..) {
+                            self.class_card(column, i);
                         }
                     });
                 }
 
                 let header =
-                    egui::CollapsingHeader::new(RichText::new("Detailed Equipment Slots  ").strong().color(TEXT))
+                    egui::CollapsingHeader::new(RichText::new("Detailed Equipment Slots").strong().color(TEXT))
                         .id_salt("cbo_equipment")
                         .open(Some(self.equipment_open))
-                        .show(ui, |ui| {
+                        .show_unindented(ui, |ui| {
                             let refresh = "Refresh items from player inventory";
                             if action_bar(
                                 ui,
@@ -745,9 +745,9 @@ impl CoreBotsWindow {
                                 self.fetch(Purpose::RefreshInventory);
                             }
                             for pair in [0, 2] {
-                                ui.horizontal_top(|ui| {
-                                    for i in pair..pair + 2 {
-                                        self.gear_card(ui, i, width);
+                                ui.columns(2, |columns| {
+                                    for (column, i) in columns.iter_mut().zip(pair..) {
+                                        self.gear_card(column, i);
                                     }
                                 });
                             }
@@ -755,21 +755,20 @@ impl CoreBotsWindow {
                 if header.header_response.clicked() {
                     self.equipment_open = !self.equipment_open;
                 }
-                header
-                    .header_response
-                    .on_hover_text("(Optional per-mode gear overrides)");
+                header.header_response.on_hover_text("Optional per-mode gear overrides");
             });
     }
 
-    fn class_card(&mut self, ui: &mut Ui, i: usize, width: f32) {
+    fn class_card(&mut self, ui: &mut Ui, i: usize) {
         let (sets, current_class, classes) = (&self.sets, self.current_class.as_deref(), &self.owned.classes);
         let role = &mut self.roles[i];
-        role_card(ui, role, width, "Class", |ui, role| {
+        role_card(ui, role, "Class", |ui, role| {
             caption(ui, "Selected Class");
             let mut picked = None;
             ComboBox::from_id_salt(("cbo_class", i))
                 .selected_text(role.class.as_deref().unwrap_or_default())
                 .width(ui.available_width())
+                .truncate()
                 .show_ui(ui, |ui| {
                     for class in classes {
                         if ui.selectable_label(role.class.as_ref() == Some(class), class).clicked() {
@@ -784,6 +783,7 @@ impl CoreBotsWindow {
             ComboBox::from_id_salt(("cbo_mode", i))
                 .selected_text(role.mode.as_deref().unwrap_or_default())
                 .width(ui.available_width())
+                .truncate()
                 .show_ui(ui, |ui| {
                     for mode in &role.modes {
                         if ui.selectable_label(role.mode.as_ref() == Some(mode), mode).clicked() {
@@ -798,30 +798,38 @@ impl CoreBotsWindow {
         });
     }
 
-    fn gear_card(&mut self, ui: &mut Ui, i: usize, width: f32) {
+    fn gear_card(&mut self, ui: &mut Ui, i: usize) {
         let lists = &self.owned.gear;
         let role = &mut self.roles[i];
-        role_card(ui, role, width, "Equipment", |ui, role| {
-            egui::Grid::new(("cbo_gear", i))
-                .num_columns(2)
-                .spacing(vec2(8.0, 6.0))
-                .show(ui, |ui| {
-                    for (slot, (label, _)) in SLOTS.iter().enumerate() {
-                        ui.label(RichText::new(*label).size(10.0).color(MUTED));
-                        let current = &mut role.gear[slot];
-                        ComboBox::from_id_salt(("cbo_gear", i, slot))
-                            .selected_text(current.as_str())
-                            .width((width - 90.0).max(120.0))
-                            .show_ui(ui, |ui| {
-                                for name in &lists[slot] {
-                                    if ui.selectable_label(current == name, name).clicked() {
-                                        *current = name.clone();
-                                    }
+        role_card(ui, role, "Equipment", |ui, role| {
+            for (slot, (label, _)) in SLOTS.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    let (rect, _) = ui.allocate_exact_size(vec2(48.0, 20.0), egui::Sense::hover());
+                    ui.painter().text(
+                        rect.left_center(),
+                        egui::Align2::LEFT_CENTER,
+                        *label,
+                        egui::FontId::proportional(10.0),
+                        MUTED,
+                    );
+                    let current = &mut role.gear[slot];
+                    ComboBox::from_id_salt(("cbo_gear", i, slot))
+                        .selected_text(current.as_str())
+                        .width(ui.available_width())
+                        .truncate()
+                        .show_ui(ui, |ui| {
+                            // An empty entry clears the slot (VibeSkua leaves it blank).
+                            if ui.selectable_label(current.is_empty(), "(none)").clicked() {
+                                current.clear();
+                            }
+                            for name in &lists[slot] {
+                                if ui.selectable_label(current == name, name).clicked() {
+                                    *current = name.clone();
                                 }
-                            });
-                        ui.end_row();
-                    }
+                            }
+                        });
                 });
+            }
         });
     }
 
@@ -961,9 +969,9 @@ fn action_bar(ui: &mut Ui, title: &str, button: &str, tooltip: &str, busy: bool)
 }
 
 /// A role's card: its name and badge, then `add_contents`.
-fn role_card(ui: &mut Ui, role: &mut Role, width: f32, kind: &str, add_contents: impl FnOnce(&mut Ui, &mut Role)) {
+fn role_card(ui: &mut Ui, role: &mut Role, kind: &str, add_contents: impl FnOnce(&mut Ui, &mut Role)) {
     widgets::card(ui, |ui| {
-        ui.set_width(width - 22.0);
+        ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 6.0;
         ui.horizontal(|ui| {
             widgets::dot(ui, role.colors[2], 4.0);
@@ -1021,4 +1029,50 @@ fn option_row(ui: &mut Ui, opt: &mut Opt) {
             );
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The window keeps its width with long class and item names (egui windows grow to fit
+    /// content that asks for more than it was given).
+    #[test]
+    fn loadout_fits_the_window() {
+        let ctx = egui::Context::default();
+        let mut window = CoreBotsWindow::default();
+        let long = "Legendary Elemental Warrior of the Very Long Item Name Showcase".to_owned();
+        window.owned.classes.push(long.clone());
+        for list in &mut window.owned.gear {
+            list.push(long.clone());
+        }
+        for role in &mut window.roles {
+            role.class = Some(long.clone());
+            role.mode = Some("Base".into());
+            role.gear = std::array::from_fn(|_| long.clone());
+        }
+        window.equipment_open = true;
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 1000.0))),
+            ..Default::default()
+        };
+        let mut widths = Vec::new();
+        for tab in [Tab::Loadout, Tab::Options, Tab::Other] {
+            window.tab = tab;
+            for _ in 0..8 {
+                let mut output = ctx.run_ui(input(), |ui| {
+                    let ctx = ui.ctx().clone();
+                    let shown = egui::Window::new("CoreBots Options")
+                        .default_size(vec2(800.0, 608.0))
+                        .resizable(true)
+                        .show(&ctx, |ui| window.ui(ui));
+                    widths.push(shown.unwrap().response.rect.width());
+                });
+                output.textures_delta.clear();
+            }
+        }
+        let first = widths[0];
+        assert!(widths.iter().all(|w| *w <= first + 1.0), "the window grew: {widths:?}");
+        assert!(first < 840.0, "the window is wider than its default: {first}");
+    }
 }
