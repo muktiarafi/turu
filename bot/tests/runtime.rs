@@ -135,3 +135,21 @@ fn max_bags_loads_and_stops() {
     assert!(!log.contains("failed"), "{log}");
     assert!(log.contains("stopped") || log.contains("finished"), "{log}");
 }
+
+#[test]
+fn gold_farm_loads_and_stops() {
+    temp_dir("goldfarm");
+    let script =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/farm/GoldFarm.ts");
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&script);
+    script::start(&bot).unwrap();
+    std::thread::sleep(Duration::from_secs(2));
+    script::stop(&bot);
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    // Like 0MaxBags: the fake game never logs in, so the script waits until it is stopped.
+    assert!(!log.contains("failed"), "{log}");
+    assert!(log.contains("stopped") || log.contains("finished"), "{log}");
+}
