@@ -40,12 +40,20 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
   `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in
   `bot/src/api/reputation.rs` and `auras.rs`. Skill rules read aura stacks through the same code.
+- **Counter-attack pause:** `bot.ultraBossHelper` (VibeSkua `Bot.UltraBossHelper`) and
+  `bot.combat.stopAttacking` / `enableCounterHandler` (`bot/src/api/combat.rs`). With it on
+  (CoreBots' `setOptions()` turns it on, as in VibeSkua), a `ct` packet's "prepares a counter
+  attack!" stops attacks and drops the target, and the "Counter Attack" aura attacks that target
+  again; meanwhile `combat.attack` refuses and the skill timer waits up to 10 s. The packet
+  handler only sets flags; the target calls go through the bot's work thread.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
 - **Scripts:** TypeScript, run in QuickJS after oxc strips the types. Ported: the parts of
   CoreBots, CoreFarms, CoreAdvanced (shop buying and the merge-shop template) and CoreNation that
-  the ported scripts reach, all of CoreStory (for the story scripts) and CoreDailies,
+  the ported scripts and the FarmerJoe include tree reach (the Core boss kills, PvP moves, the
+  brawls, fishing, boosts and 17 more reputations, The Assistant, the Shadow Blast medals), all
+  of CoreStory (for the story scripts) and CoreDailies,
   `nation/materials/0MaxBags.ts`,
   `farm/GoldFarm.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
@@ -82,7 +90,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   {})`, used by CoreStory's `preLoad`), but nothing has sent one in game yet. Equipping still goes
   through the `equipItem` packet (check consumables in game), and CoreBots' quest-limit handler
   isn't restored.
-- **No counter-attack pause** (`Bot.UltraBossHelper`).
+- **The counter-attack pause is unverified in game:** its tests run the `ct` packets against a
+  fake game. Check the skill timer's 10 s wait and the re-attack on a real counter-attack boss.
+- **The FarmerJoe Core members are unverified in game:** the new CoreBots (`killKitsune`,
+  `killDoomKitten`, `huntMonsterMapID`, `pvpMove`, `usePotion`, ...), CoreFarms (the Bludrut and
+  Death Pit brawls, `fishingREP`, `getBoost`, the new REPs) and CoreNation (`theAssistant`,
+  `swindleReturn`, `emblemofNulgath`) members only type-check. `usePotion` sends the action
+  object to `world.testAction` (an object for Flash, see below). CoreAdvanced's `runRep` stops
+  the script for Blacksmithing and Fishing, as VibeSkua's reflection call does.
 - **Auras are unverified in game:** `bot.self` and `bot.target` call skua.swf's `Auras.as`
   callbacks as VibeSkua does, but only a fake game has answered them. Unlike VibeSkua,
   `snapshots` (and so `getAuraStacks` and skill aura rules) drops a timed, non-persistent aura

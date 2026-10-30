@@ -7,8 +7,9 @@ tags: core, nation, nulgath
 /**
  * CoreNation — partial TypeScript port of `Scripts/Nation/CoreNation.cs`.
  *
- * Only the members reachable from `0MaxBags` are ported (the material farms and the quests they
- * use); port more from the C# file as scripts need them.
+ * Only the members reachable from `0MaxBags` and the FarmerJoe tree are ported (the material
+ * farms and the quests they use, Swindles Return, the Shadow Blast medals and emblems, The
+ * Assistant); port more from the C# file as scripts need them.
  *
  * C# `[CanChange]` fields: {@link CoreNation.sellMemVoucher} and
  * {@link CoreNation.returnPolicyDuringSupplies}. The CoreBots Options keys `Nation_SellMemVoucher`,
@@ -17,7 +18,7 @@ tags: core, nation, nulgath
  */
 
 import { bot } from "turu";
-import { ClassType, Core, type RewardItem, type CoreShopItem } from "../core/CoreBots";
+import { ClassType, Core, type QuestData, type RewardItem, type CoreShopItem } from "../core/CoreBots";
 import { CoreFarms } from "../core/CoreFarms";
 
 /** Rewards of Contract Exchange (quest 870), by item ID. */
@@ -28,6 +29,16 @@ export enum ContractExchangeRewards {
     Gem_of_Nulgath = 6136,
     Blood_Gem_of_the_Archfiend = 22332,
     All = 9999,
+}
+
+/** Rewards of Swindles Return Policy (quest 7551), by item ID; `None` for no preference. */
+export enum SwindlesReturnReward {
+    Tainted_Gem = 4769,
+    Dark_Crystal_Shard = 4770,
+    Diamond_of_Nulgath = 4771,
+    Gem_of_Nulgath = 6136,
+    Blood_Gem_of_the_Archfiend = 22332,
+    None = 0,
 }
 
 /** Options of {@link CoreNation.supplies}. */
@@ -115,6 +126,34 @@ export class CoreNation {
     /** Drops from the bosses that used to give acess to tercess. */
     tercessBags: string[] = ["Bone Dust"];
 
+    /** List of Betrayal Blades. */
+    betrayalBlades: string[] = [
+        "1st Betrayal Blade of Nulgath",
+        "2nd Betrayal Blade of Nulgath",
+        "3rd Betrayal Blade of Nulgath",
+        "4th Betrayal Blade of Nulgath",
+        "5th Betrayal Blade of Nulgath",
+        "6th Betrayal Blade of Nulgath",
+        "7th Betrayal Blade of Nulgath",
+        "8th Betrayal Blade of Nulgath",
+    ];
+
+    /** Shadow Blast Arena medals. */
+    nationMedals: string[] = ["Nation Round 1 Medal", "Nation Round 2 Medal", "Nation Round 3 Medal", "Nation Round 4 Medal"];
+
+    receipt: string[] = [
+        "Unidentified 1",
+        "Unidentified 6",
+        "Unidentified 9",
+        "Unidentified 16",
+        "Unidentified 20",
+        "Receipt of Swindle",
+        "Dark Crystal Shard",
+        "Diamond of Nulgath",
+        "Gem of Nulgath",
+        "Blood Gem of the Archfiend",
+    ];
+
     /** Misc items to accept during Bloody Chaos if turned on. */
     bloodyChaosSupplies: string[] = [
         "Tainted Gem",
@@ -126,6 +165,17 @@ export class CoreNation {
         "Unidentified 13",
         "Gem of Nulgath",
         "Relic of Chaos",
+    ];
+
+    swindlesReturn: string[] = ["Unidentified 1", "Unidentified 6", "Unidentified 9", "Unidentified 16", "Unidentified 20"];
+
+    swindlesReturnRewards: string[] = [
+        "Tainted Gem",
+        "Dark Crystal Shard",
+        "Diamond of Nulgath",
+        "Gem of Nulgath",
+        "Blood Gem of the Archfiend",
+        "Receipt of Swindle",
     ];
 
     uni(nr: number): string {
@@ -273,6 +323,40 @@ export class CoreNation {
         }
     }
 
+    /** Farms an item with Swindles Return Policy (quest 7551). */
+    swindleReturn(item: string | null = null, quant = 1000): void {
+        const quest = Core.initializeWithRetries(() => Core.ensureLoad(7551));
+        if (!quest) {
+            Core.logger("Swindles Return Policy quest not found.");
+            return;
+        }
+        const reward = quest.rewards.find((x) => x.name === item);
+
+        if (!reward || Core.checkInventory(reward.name, quant)) return;
+
+        Core.addDrop(...this.receipt);
+        if (item !== null) Core.addDrop(reward.id);
+
+        Core.farmingLogger(reward.name, quant);
+
+        while (!bot.shouldExit && !Core.checkInventory(reward.name, quant)) {
+            Core.ensureAccept(7551);
+            this.supplies("Unidentified 1", 1, { returnItem: item });
+            this.supplies("Unidentified 6", 1, { returnItem: item });
+            this.supplies("Unidentified 9", 1, { returnItem: item });
+            this.supplies("Unidentified 16", 1, { returnItem: item });
+            this.supplies("Unidentified 20", 1, { returnItem: item });
+            Core.resetQuest(7551);
+            Core.darkMakaiItem("Dark Makai Rune");
+            Core.ensureComplete(7551, reward.id);
+            this.sellVoucherOfNulgath(this.sellMemVoucher, item);
+
+            Core.farmingLogger(reward.name, quant);
+        }
+    }
+
+    // C# SwindleBulk: not reached by the ported scripts, not ported yet.
+
     /**
      * Farms items with Contract Exchange (needs "Drudgen the Assistant").
      * @param item The item to farm. If null, it farms every reward.
@@ -333,6 +417,80 @@ export class CoreNation {
             }
         }
     }
+
+    /**
+     * Farms Emblems of Nulgath in Shadow Blast Arena (quest 4748), after the Nation Round medals.
+     * @param quant Desired quantity, 500 = max stack.
+     */
+    emblemofNulgath(quant = 500): void {
+        if (Core.checkInventory("Emblem of Nulgath", quant)) return;
+        this.nationRound4Medal();
+
+        Core.addDrop("Fiend Seal", "Gem of Domination", "Emblem of Nulgath");
+        Core.addDrop(...this.bagDrops);
+        Core.equipClass(ClassType.Farm);
+        Core.farmingLogger("Emblem of Nulgath", quant);
+
+        Core.registerQuests(4748);
+        while (!bot.shouldExit && !Core.checkInventory("Emblem of Nulgath", quant)) {
+            Core.huntMonster("shadowblast", "Shadowrise Guard", "Gem of Domination", 1, { isTemp: false, log: false });
+            Core.huntMonster("shadowblast", "Legion Fenrir", "Fiend Seal", 25, { isTemp: false, log: false });
+        }
+    }
+
+    /** Farms the Nation Round 1 to 4 medals in Shadow Blast Arena (quests 4744-4747). */
+    nationRound4Medal(): void {
+        if (Core.checkInventory("Nation Round 4 Medal")) {
+            Core.logger("Medal 4 owned, no need to farm it");
+            return;
+        }
+
+        for (const medal of ["Nation Round 1 Medal", "Nation Round 2 Medal", "Nation Round 3 Medal", "Nation Round 4 Medal"]) {
+            Core.addDrop(medal);
+            if (Core.checkInventory(medal)) {
+                Core.logger(`"${medal}" owned.`);
+                continue;
+            }
+            switch (medal) {
+                // The Nation Needs YOU!
+                case "Nation Round 1 Medal":
+                    Core.ensureAccept(4744);
+                    Core.huntMonster("shadowblast", "Legion AirStrike", "Legion Rookie Defeated", 5);
+                    Core.huntMonster("shadowblast", "Shadowrise Guard", "Shadowscythe Rookie Defeated", 5);
+                    Core.ensureComplete(4744);
+                    break;
+
+                // Show Me More, Nation-Noob
+                case "Nation Round 2 Medal":
+                    Core.ensureAccept(4745);
+                    Core.huntMonster("shadowblast", "Legion Fenrir", "Legion Veteran Defeated", 7);
+                    Core.huntMonster("shadowblast", "Doombringer", "Shadowscythe Veteran Defeated", 7);
+                    Core.ensureComplete(4745);
+                    break;
+
+                // For the Nation!
+                case "Nation Round 3 Medal":
+                    Core.ensureAccept(4746);
+                    Core.huntMonster("shadowblast", "Legion Cannon", "Legion Elite Defeated", 10);
+                    Core.huntMonster("shadowblast", "Draconic Doomknight", "Shadowscythe Elite Defeated", 10);
+                    Core.ensureComplete(4746);
+                    break;
+
+                // Nulgath Likes Your Style
+                case "Nation Round 4 Medal":
+                    Core.ensureAccept(4747);
+                    Core.huntMonster("shadowblast", "Grimlord Boss", "Grimlord Vanquished");
+                    Core.ensureComplete(4747);
+                    break;
+            }
+
+            bot.wait.forPickup(medal);
+            Core.logger(`Medal ${medal} acquired`);
+            bot.drops.remove(medal);
+        }
+    }
+
+    // C# VoucherItemTotemofNulgath: not reached by the ported scripts, not ported yet.
 
     /**
      * Farms Essences of Nulgath from Dark Makais in Tercessuinotlim.
@@ -615,6 +773,134 @@ export class CoreNation {
 
         // Complete without a selected reward; Receipt of Swindle is guaranteed.
         Core.ensureComplete(7551, -1);
+    }
+
+    /**
+     * "The Assistant" (quest 2859): spends gold on War-Torn Memorabilia for an item, or (`item`
+     * null) maxes every main bag drop. Converts vouchers (quest 4778) on the way.
+     * @param farmGold Farm 1M gold before each turn-in.
+     * @param reward Swindles Return Policy reward to pick when it runs during the farm.
+     */
+    theAssistant(item: string | null = null, quant = 1000, farmGold = true, reward: SwindlesReturnReward = SwindlesReturnReward.None): void {
+        if (item !== null && Core.checkInventory(item, quant)) return;
+
+        // C# retries each load forever (goto Retry...); Core.ensureLoad adds the rewards' max stacks.
+        while (!Core.initializeWithRetries(() => Core.ensureLoad(7551))) {
+            Core.logger("Failed to load quest 7551, retrying...");
+            Core.sleep();
+        }
+        let assistant: QuestData | null;
+        while (!(assistant = Core.initializeWithRetries(() => Core.ensureLoad(2859)))) {
+            Core.logger("Failed to load quest 2859, retrying...");
+            Core.sleep();
+        }
+
+        // List of available drops for "The Assistant" quest
+        const selectedDrops = item !== null ? [item] : this.bagDrops.slice(0, -11);
+        Core.addDrop(...selectedDrops);
+
+        // add `Receipt of Swindle` from swindles return rewards.
+        Core.addDrop("Receipt of Swindle");
+
+        // if running standalone, add the reward selection.
+        if (reward !== SwindlesReturnReward.None) Core.addDrop(reward);
+
+        // handle quant if it goes over max stack.
+        if (item !== null && quant > 0) {
+            const assistantReward = assistant.rewards.find((x) => x.name === item);
+            if (assistantReward) quant = quant > assistantReward.maxStack ? assistantReward.maxStack : quant;
+            else Core.logger(`Reward item "${item}" not found.`);
+        }
+
+        // Check if return policy is active
+        this.returnPolicyDuringSupplies = Core.cboBool("Nation_ReturnPolicyDuringSupplies") === true;
+        Core.logger(this.returnPolicyDuringSupplies ? "Return Policy During Supplies: true" : "Return Policy During Supplies: false");
+
+        if (this.returnPolicyDuringSupplies) {
+            Core.addDrop(this.uni(1), this.uni(6), this.uni(9), this.uni(16), this.uni(20));
+            Core.addDrop("Blood Gem of the Archfiend");
+        }
+
+        // C# passes the enum's name without "_" ("TaintedGem"), which matches no reward name.
+        const rewardName = SwindlesReturnReward[reward].replace(/_/g, "");
+
+        // Register the "Swindles Return Policy" quest if specified
+        if (this.returnPolicyDuringSupplies && reward !== SwindlesReturnReward.None) this.doSwindlesReturnArea(this.returnPolicyDuringSupplies, rewardName);
+
+        const voucherItem = (): void => {
+            if (!Core.checkInventory("Voucher of Nulgath (non-mem)") || !Core.checkInventory("Essence of Nulgath", 60)) return;
+            const diamondsMaxed = Core.checkInventory("Diamond of Nulgath", 1000);
+            const totemsMaxed = Core.checkInventory("Totem of Nulgath", 100);
+
+            if (item?.toLowerCase() === "diamond of nulgath") {
+                if (diamondsMaxed && !totemsMaxed) Core.ensureCompleteMulti(4778, -1, 5357); // Totems
+            } else if (item?.toLowerCase() === "totem of nulgath") {
+                if (totemsMaxed && !diamondsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Diamonds
+            } else if (!totemsMaxed) Core.ensureCompleteMulti(4778, -1, 5357); // Prioritize Totems
+            else if (!diamondsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Then Diamonds
+        };
+
+        if (item === null) {
+            Core.logger("Assistant Item = null, maxing the important rewards.");
+            for (const thing of selectedDrops) {
+                // Find the corresponding item in quest rewards
+                const rewardItem = Core.ensureLoad(2859).rewards.find((x) => x.name === thing);
+                if (!rewardItem) continue;
+
+                Core.farmingLogger(rewardItem.name, rewardItem.maxStack);
+                // Continue farming until the desired item quantity is obtained
+                while (!bot.shouldExit && !Core.checkInventory(rewardItem.name, rewardItem.maxStack)) {
+                    this.logMobItemQuant2(rewardItem.name);
+                    if (farmGold) CoreNation.farm.gold(1000000);
+
+                    Core.ensureAccept(2859);
+                    Core.buyItem("yulgar", 41, "War-Torn Memorabilia", 10);
+                    Core.ensureCompleteMulti(2859);
+
+                    this.doSwindlesReturnArea(this.returnPolicyDuringSupplies, rewardName);
+                    voucherItem();
+                }
+            }
+            Core.cancelRegisteredQuests();
+        } else {
+            Core.farmingLogger(item, quant);
+            while (!bot.shouldExit && !Core.checkInventory(item, quant)) {
+                this.logMobItemQuant(item, quant);
+                if (farmGold) CoreNation.farm.gold(1000000);
+
+                Core.ensureAccept(2859);
+                Core.buyItem("yulgar", 41, "War-Torn Memorabilia", 10);
+                bot.wait.forItemBuy(40);
+                Core.ensureCompleteMulti(2859);
+
+                this.doSwindlesReturnArea(this.returnPolicyDuringSupplies, rewardName);
+                voucherItem();
+            }
+        }
+        if (this.returnPolicyDuringSupplies && reward !== SwindlesReturnReward.None) bot.quests.unregisterQuests(7551);
+    }
+
+    /** Logs the item's quantity when it changed within 1.5 s. */
+    private logMobItemQuant(item: string, quant: number): void {
+        if (!Core.checkInventory(item)) return;
+
+        const startQuant = bot.inventory.getQuantity(item);
+        Core.sleep(1500);
+        const currentQuant = bot.inventory.getQuantity(item);
+
+        if (currentQuant !== startQuant || currentQuant > startQuant) {
+            Core.farmingLogger(item, quant);
+            Core.sleep(1500);
+        }
+    }
+
+    /**
+     * C# `LogMobItemQuant2`: compares the reward object's own quantity, which never changes, so it
+     * only waits 1.5 s when you have the item.
+     */
+    private logMobItemQuant2(item: string): void {
+        if (!Core.checkInventory(item)) return;
+        Core.sleep(1500);
     }
 
     /** Member with Nulgath's Birthday Gift (4809) or Bounty Hunter's Drone Pet (5373). */

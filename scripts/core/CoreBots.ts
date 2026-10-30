@@ -30,7 +30,7 @@ tags: core
  * - `ScriptStopped` is never swallowed: every `catch` rethrows it.
  */
 
-import { bot, ClassUseMode, option, ScriptStopped } from "turu";
+import { bot, ClassUseMode, option, ScriptStopped, SkillUseMode } from "turu";
 import type { Badge, InventoryItem, Monster, Quest, QuestItem } from "turu";
 
 // ---------------------------------------------------------------------------------------
@@ -621,7 +621,8 @@ export class CoreBots {
             }
         }
 
-        // C# Bot.UltraBossHelper.EnableCounterAttack(): API gap, dropped.
+        // Anti-Counter atk Measures for mobs
+        bot.ultraBossHelper.enableCounterAttack();
 
         if (changeTo && bot.player.loggedIn && bot.player.serverIp) {
             if (bot.player.serverIp === "sockpuppet.aq.com")
@@ -1948,6 +1949,37 @@ export class CoreBots {
 
     // C# GhostItem: only used by Join's ghost-item map bypasses, which this port leaves out.
 
+    /**
+     * The value of a boost (e.g. "dmgAll") in the item's meta ("dmgAll:0.3,cp:0.25"); 0 when
+     * the item has none.
+     */
+    getBoostFloat(item: InventoryItem, boostType: string): number {
+        if (!item.meta || !item.meta.includes(boostType)) return 0;
+        return Number.parseFloat(item.meta.split(",").find((meta) => meta.includes(boostType))!.split(":").pop()!);
+    }
+
+    /** Removes the items from the inventory (AC items are banked instead). */
+    trashCan(...items: string[]): void {
+        while (!bot.shouldExit && (bot.player.inCombat || bot.player.hasTarget)) {
+            bot.combat.cancelTarget();
+            bot.combat.exit();
+            bot.wait.forCombatExit();
+            this.jumpWait();
+            this.sleep();
+        }
+
+        for (const item of items) {
+            const trashItem = bot.inventory.getItem(item);
+            if (!trashItem || trashItem.temp) continue;
+
+            if (!trashItem.coins) {
+                bot.send.packet(`%xt%zm%removeItem%${bot.map.roomId}%${trashItem.id}%${bot.player.id}%${trashItem.quantity}%`);
+                this.sleep();
+                this.logger(`Trashed: ${trashItem.name} x${trashItem.quantity}`);
+            } else this.toBank(trashItem.id);
+        }
+    }
+
     // ---------------------------------------------------------------------------------------
     // Drops
     // ---------------------------------------------------------------------------------------
@@ -2261,6 +2293,36 @@ export class CoreBots {
         return true;
     }
 
+    /** Accepts all the quests given (unbanking their required items and adding them to the drops). */
+    ensureAcceptmultiple(...questIds: number[]): void {
+        if (questIds.length === 0) questIds = [0];
+
+        const questData = this.initializeWithRetries(() => this.ensureLoadMany(...questIds.filter((q) => q > 0)));
+        if (!questData) {
+            this.logger("Failed to load quests after multiple attempts.");
+            return;
+        }
+
+        for (const quest of questData) {
+            if (quest.upgrade && !bot.player.isMember) this.logger(`"${quest.name}" [${quest.id}] is member-only, stopping the bot.`, "", { stopBot: true });
+
+            if (bot.quests.isInProgress(quest.id) || quest.id <= 0) continue;
+
+            const items = [...quest.acceptRequirements, ...quest.requirements].filter((x) => x && !x.temp && x.id > 0);
+            for (const item of items) {
+                if (!bot.drops.toPickup.includes(item.name) || !bot.drops.toPickupIds.includes(item.id)) {
+                    this.addDrop(item.name);
+                    this.addDrop(item.id);
+                }
+                if (!bot.inventory.contains(item.id)) this.unbank(item.id);
+            }
+
+            this.sleep(this.actionDelay * 2);
+            bot.quests.ensureAccept(quest.id);
+            bot.wait.forActionCooldown("acceptQuest");
+        }
+    }
+
     /**
      * Completes the quest, with a choose-able reward item.
      * @param questId ID of the quest to complete.
@@ -2296,7 +2358,27 @@ export class CoreBots {
         return false;
     }
 
-    // C# EnsureComplete(params int[]): not used by the ported scripts, dropped.
+    /**
+     * Completes all the quests given (C# `EnsureComplete(params int[])`); no choose-able rewards.
+     * Skips a quest whose requirements you don't have.
+     */
+    ensureCompleteQuests(...questIds: number[]): void {
+        const questData = this.initializeWithRetries(() => this.ensureLoadMany(...questIds));
+        if (!questData) {
+            this.logger("Failed to load quests after multiple attempts.");
+            return;
+        }
+
+        for (const quest of questData) {
+            if (
+                quest.requirements.length === 0 ||
+                (quest.requirements.every((r) => r && r.id > 0) && this.checkInventory(quest.requirements.map((x) => x.id)))
+            ) {
+                bot.quests.ensureComplete(quest.id);
+                bot.wait.forActionCooldown("tryQuestComplete");
+            }
+        }
+    }
 
     // ---- TEMPORARY Game4000 inventory compatibility helpers ----
 
@@ -2883,6 +2965,165 @@ export class CoreBots {
     }
 
     /**
+     * Hunts a monster for several items, each with its own temp flag:
+     * `Core.huntMonsterMulti("map", "Monster", [["Item A", 10, true], ["Item B", 1, false]])`.
+     */
+    huntMonsterMulti(
+        map: string,
+        monster: string,
+        items: readonly (readonly [item: string, quant: number, isTemp: boolean])[],
+        options: { log?: boolean; publicRoom?: boolean } = {},
+    ): void {
+        const { log = true, publicRoom = false } = options;
+        if (!items || items.length === 0) return;
+
+        const done = () => items.every(([item, quant, isTemp]) => (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant)));
+        // Exit early if everything is already obtained
+        if (done()) return;
+
+        if (bot.map.name !== map) {
+            this.join(map, "Enter", "Spawn", { publicRoom });
+            bot.wait.forMapLoad(map);
+        }
+
+        bot.options.aggroAllMonsters = false;
+        bot.options.aggroMonsters = false;
+
+        // Register non-temp drops
+        for (const [item, , isTemp] of items) if (!isTemp) this.addDrop(item);
+
+        let targetMonster = this.findMonster(map, monster);
+        if (!targetMonster) {
+            this.logger(`⚠️ Monster "${monster}" not found in /${map}.`);
+            return;
+        }
+
+        const username = bot.player.username;
+        if (bot.map.playerNames.some((x) => x !== username)) {
+            bot.options.aggroMonsters = true;
+            bot.options.hidePlayers = true;
+        } else bot.options.aggroMonsters = false;
+
+        if (log) {
+            for (const [item, quant, isTemp] of items) {
+                const current = isTemp ? bot.tempInv.getQuantity(item) : bot.inventory.getQuantity(item);
+                this.logger(`Farming "${item}" ${current}/${quant}`, "HuntMonsterMulti");
+            }
+        }
+
+        while (!bot.shouldExit && !done()) {
+            if (!bot.player.alive) bot.wait.forTrue(() => bot.player.alive, 20);
+
+            targetMonster = this.findMonster(map, monster);
+            if (!targetMonster) continue;
+
+            if (bot.player.cell !== targetMonster.cell) {
+                this.jump(targetMonster.cell, "Left");
+                bot.wait.forCellChange(targetMonster.cell);
+            }
+
+            if (!bot.player.hasTarget && targetMonster.hp > 0) bot.combat.attack(targetMonster.name);
+
+            bot.sleep(500);
+        }
+
+        bot.options.attackWithoutTarget = false;
+        bot.options.aggroMonsters = false;
+        bot.options.hidePlayers = false;
+        this.toggleAggro(false);
+
+        const cells = bot.map.cells;
+        bot.map.jump(
+            cells.find((c) => c.toLowerCase().includes("enter")) ??
+                cells.find((c) => !c.toLowerCase().includes("wait") && !c.toLowerCase().includes("blank") && !c.toLowerCase().includes("enter")) ??
+                "Enter",
+            "Spawn",
+            this.inPublicRoom(),
+        );
+
+        this.jumpWait();
+        this.rest();
+    }
+
+    /** Kills a monster by its map ID (once, or until you have `quant` of `item`). */
+    huntMonsterMapID(map: string, monsterMapId: number, item: string | null = null, quant = 1, options: KillOptions & { pad?: string } = {}): void {
+        const { isTemp = true, log = true, publicRoom = false, pad = "Left" } = options;
+        const has = (item: string) => (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant));
+
+        // Join map if needed
+        if (!equalsIgnoreCase(bot.map.name, map)) {
+            this.join(map, "Enter", "Spawn", { publicRoom });
+            bot.wait.forMapLoad(map);
+        }
+
+        if (log && item !== null) this.farmingLogger(`💎 ${item}`, quant);
+
+        if (!isTemp) this.addDrop(item!);
+
+        // Find target monster(s) alive. As in C#, this is a snapshot: it isn't refreshed below.
+        let targets = bot.monsters.mapMonsters.filter((m) => m && m.mapId === monsterMapId && alive(m));
+        if (targets.length === 0) return;
+
+        const username = bot.player.username;
+        if (bot.map.playerNames.some((x) => x !== username)) {
+            bot.options.aggroMonsters = true;
+            bot.options.hidePlayers = true;
+        } else bot.options.aggroMonsters = false;
+
+        // Main attack loop
+        while (!bot.shouldExit && (item === null || !has(item))) {
+            if (!bot.player.alive) bot.wait.forTrue(() => bot.player.alive, 20);
+
+            if (!equalsIgnoreCase(bot.map.name, map)) {
+                this.join(map, "Enter", "Spawn", { publicRoom });
+                bot.wait.forMapLoad(map);
+            }
+
+            // Refresh alive targets
+            targets = targets.filter((t) => alive(t));
+            if (targets.length === 0) break;
+
+            const target = targets[0];
+
+            if (!equalsIgnoreCase(bot.player.cell, target.cell)) {
+                bot.map.jump(target.cell, pad, this.inPublicRoom());
+                bot.wait.forCellChange(target.cell);
+            }
+
+            if (!bot.player.hasTarget || bot.player.target?.mapId !== monsterMapId) bot.combat.attack(target.mapId);
+
+            this.sleep(200);
+
+            const current = bot.player.target;
+            if ((item !== null && has(item)) || (item === null && bot.player.hasTarget && current !== null && current.hp <= 0)) break;
+        }
+
+        if (item !== null) {
+            bot.wait.forDrop(item);
+            bot.wait.forPickup(item);
+        }
+
+        // Reset combat options safely
+        bot.options.attackWithoutTarget = false;
+        bot.options.aggroAllMonsters = false;
+        bot.options.aggroMonsters = false;
+        bot.options.hidePlayers = false;
+
+        // Jump to safe cell after hunt
+        const mapCells = bot.map.cells;
+        const monsterCells = new Set(bot.monsters.mapMonsters.map((m) => m?.cell));
+        const enterCount = mapCells.filter((c) => c.includes("Enter")).length;
+        const safeCell =
+            mapCells.find((c) => !this.blackListedJumptoCells.includes(c) && !monsterCells.has(c) && (enterCount > 1 || !c.includes("Enter"))) ?? "Enter";
+
+        bot.map.jump(safeCell, safeCell === "Enter" ? "Spawn" : "Left", this.inPublicRoom());
+        bot.wait.forCellChange(safeCell);
+        this.sleep();
+        this.jumpWait();
+        this.rest();
+    }
+
+    /**
      * Hunts the monsters for each requirement of a quest (skipping those you already have), then
      * turns it in. With `[map, monster, ClassType]` entries, the n-th missing requirement is hunted
      * with the n-th entry (C# `HuntMonsterQuest(questId, params (map, monster, class)[])`):
@@ -3170,6 +3411,191 @@ export class CoreBots {
         this.jumpWait();
     }
 
+    /** Kill Kitsune (kitsune, Boss), once or for an item. */
+    killKitsune(item: string | null = null, quant = 1, options: { isTemp?: boolean; log?: boolean } = {}): void {
+        const { isTemp = false, log = true } = options;
+        if (item !== null && (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant))) return;
+
+        if (bot.map.name !== "kitsune") {
+            this.join("kitsune");
+            bot.wait.forMapLoad("kitsune");
+        }
+
+        if (bot.player.cell !== "Boss") {
+            this.jump("Boss", "Left");
+            bot.wait.forCellChange("Boss");
+        }
+
+        // C#'s KitsuneListener sets StopAttacking from the "Shapeshifted" aura's `cmd[^0]`, which
+        // is out of range and throws, so it never changes anything in VibeSkua: not ported.
+
+        const insurance = (): void => {
+            if (bot.map.name !== "kitsune") {
+                this.join("kitsune", "Boss", "Left");
+                bot.wait.forMapLoad("kitsune");
+            }
+            if (bot.player.cell !== "Boss") {
+                this.jump("Boss", "Left");
+                bot.wait.forCellChange("Boss");
+            }
+        };
+
+        if (item === null) {
+            if (log) this.logger("🌀 Killing Kitsune");
+            insurance();
+            bot.kill.monster("Kitsune");
+        } else {
+            if (!isTemp) this.addDrop(item);
+            if (log) this.logger(`🌀 Killing Kitsune for ${item} (${this.dynamicQuant(item, isTemp)}/${quant}) [Temp = ${isTemp ? "True" : "False"}]`);
+            while (!bot.shouldExit && !this.checkInventory(item, quant)) {
+                insurance();
+                // C#: `!HasTarget || Target == null || Target?.HP > 0`.
+                const target = bot.player.target;
+                if (!bot.player.hasTarget || target === null || target.hp > 0) bot.combat.attack("*");
+                bot.sleep(500);
+            }
+        }
+    }
+
+    /** Kill Trigoras (phase 1 in r4, phase 2 in r4a) until you have the item. */
+    killTrigoras(item: string, quant = 1, phase = 1, isTemp = false): void {
+        if (item !== null && (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant))) return;
+
+        this.equipClass(ClassType.Solo);
+        this.join("trigoras");
+
+        if (phase === 1) this.logger("⚔️ Killing Trigoras Phase 1");
+        else this.logger("⚔️ Killing Trigoras Phase 2");
+
+        while (!bot.shouldExit && !this.checkInventory(item, quant)) {
+            this.jump(phase === 1 ? "r4" : "r4a", "Left");
+            bot.combat.attack("trigoras");
+            bot.wait.forCellChange(phase === 1 ? "r4a" : "Enter");
+        }
+
+        bot.wait.forCellChange(phase === 1 ? "r4a" : "Enter");
+        this.jumpWait();
+    }
+
+    /** Kill DoomKitten, with a damage-over-time class when you own one. */
+    killDoomKitten(item: string | null = null, quant = 1, options: { isTemp?: boolean; log?: boolean } = {}): void {
+        const { isTemp = false, log = true } = options;
+        // Early exit if item already owned
+        if (item !== null && (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant))) return;
+
+        const dotClasses = [
+            "Dragon of Time",
+            "Blaze Binder",
+            "FireLord Summoner",
+            "ShadowStalker of Time",
+            "ShadowWeaver of Time",
+            "ShadowWalker of Time",
+            "Infinity Knight",
+            "Interstellar Knight",
+            "Timeless Dark Caster",
+            "Frostval Barbarian",
+            "DeathKnight",
+            "DragonSoul Shinobi",
+            "Shadow Dragon Shinobi",
+            "Legion Revenant",
+            "Void Highlord",
+        ];
+
+        // Find all class items currently stored in inventory or bank
+        const ownedClasses = [...bot.inventory.items, ...bot.bank.items].filter((i) => i.category === "Class");
+
+        // Find first owned DoT class
+        const ownedDotClass =
+            dotClasses.map((className) => ownedClasses.find((i) => equalsIgnoreCase(i.name, className))).find((i) => i !== undefined) ?? null;
+
+        // If we own one -> equip it, otherwise keep whatever class is currently equipped
+        if (ownedDotClass !== null) {
+            this.equip(ownedDotClass.name);
+            // Auto-enhance via registered hook
+            if (this.cboBool("DisableAutoEnhance") !== true) {
+                for (const hook of CoreBots.onEquipClass) {
+                    try {
+                        hook(ownedDotClass.name);
+                    } catch (error) {
+                        rethrowIfStopped(error);
+                        bot.log(`[Enhancement] Auto-enhance failed for ${ownedDotClass.name}: ${errorMessage(error)}`);
+                    }
+                }
+            }
+        } else {
+            this.logger("⚠️ No recommended DoT class found — using currently equipped class.");
+            this.logger("--------------------------------");
+            this.logger(`Suggested Classes:\n${dotClasses.join("\n")}`);
+            this.logger("--------------------------------");
+        }
+
+        const usingShinobi = ownedDotClass?.name === "DragonSoul Shinobi" || ownedDotClass?.name === "Shadow Dragon Shinobi";
+        const usingBlazeBinder = ownedDotClass?.name === "Blaze Binder" || ownedDotClass?.name === "FireLord Summoner";
+
+        this.join("doomkitten");
+
+        const special = (skills: string): void => {
+            // C# StartAdvanced(skills): timeout -1, UseIfAvailable.
+            bot.skills.startSkills(skills, -1, SkillUseMode.UseIfAvailable);
+
+            if (item === null) {
+                this.logger("🎯 No item selected, killing DoomKitten once.");
+                bot.kill.monster("*");
+                bot.sleep(500);
+                return;
+            }
+
+            while (!bot.shouldExit && !(isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant))) {
+                // C#: `!HasTarget ?? true || Target?.HP > 0`.
+                const target = bot.player.target;
+                if (!bot.player.hasTarget || (target !== null && target.hp > 0)) bot.combat.attack("*");
+                bot.sleep(500);
+            }
+        };
+
+        if (usingShinobi) {
+            this.logger("🎯 RNG GL due to class + kitten hit range.");
+            special("4 | 1 | 3M<30 | 2H<30");
+            return;
+        }
+
+        // blaze binder special case
+        if (usingBlazeBinder) {
+            this.logger("🎯 RNG GL due to class + kitten hit range.");
+            this.logger("if you cant kill doomkitten, try enhance with healer on all and healer mana vamp");
+            special("3 | 4 | 2");
+            return;
+        }
+
+        // Normal farming path
+        this.huntMonster("doomkitten", "DoomKitten", item, quant, { isTemp, log });
+    }
+
+    /** Kill Chaos Lord Xiang (or Ultra Xiang) in mirrorportal, with a rank 5+ healer class when you have one. */
+    killXiang(item: string, quant = 1, options: { ultra?: boolean; isTemp?: boolean; log?: boolean } = {}): void {
+        const { ultra = false, isTemp = false, log = true } = options;
+        if (item !== null && (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant))) return;
+
+        const rankFiveOrHigher = (className: string): boolean =>
+            [...bot.inventory.items, ...bot.bank.items].some(
+                (classItem) => equalsIgnoreCase(classItem.name, className) && classItem.category === "Class" && classItem.quantity >= 22500,
+            );
+
+        if (rankFiveOrHigher("Dragon of Time")) bot.skills.startAdvanced("Dragon of Time", true, ClassUseMode.Solo);
+        else if (rankFiveOrHigher("Healer (Rare)")) bot.skills.startAdvanced("Healer (Rare)", true, ClassUseMode.Base);
+        else if (rankFiveOrHigher("Healer")) bot.skills.startAdvanced("Healer", true, ClassUseMode.Base);
+
+        this.jumpWait();
+
+        if (log) {
+            const current = item === null ? 0 : this.dynamicQuant(item, isTemp);
+            this.logger(
+                `🔥 Killing ${ultra ? "Ultra Xiang" : "Chaos Lord Xiang"} for ${item ?? "(none)"} (${current}/${quant}) [Temp = ${isTemp ? "True" : "False"}]`,
+            );
+        }
+        this.killMonster("mirrorportal", ultra ? "r6" : "r4", "Right", ultra ? "Ultra Xiang" : "Chaos Lord Xiang", item, quant, { isTemp, log });
+    }
+
     // C# _KillForItem(Monster, ...) and _KillForItem(name, int itemID, ...): not used, dropped.
 
     /**
@@ -3321,11 +3747,23 @@ export class CoreBots {
     dlCallerFilter: string | null = null;
     dlMarkerFilter: string | null = null;
 
+    /** Turns the debug logger on (and the chat logger off). */
+    dlEnable(): void {
+        this.dlEnabled = true;
+        this.loggerInChat = false;
+    }
+
     // C# CompiledScript / Message (message boxes): no equivalent in Turu, dropped.
 
     /** Quantity of an item in the temp inventory, or the inventory+bank. */
     dynamicQuant(item: string, isTemp: boolean): number {
         return isTemp ? bot.tempInv.getQuantity(item) : [...bot.inventory.items, ...bot.bank.items].find((x) => x.name === item)?.quantity ?? 0;
+    }
+
+    /** Sets the aggro status {@link toggleAggro} restores. */
+    configureAggro(status = true): void {
+        this.logger("Configuring aggro");
+        this.lastAggroStatus = status;
     }
 
     private lastAggroStatus = false;
@@ -3639,6 +4077,11 @@ export class CoreBots {
         }
     }
 
+    /** Equips the gear you wore when the bot started. */
+    equipCached(): void {
+        this.equip(...this.equipmentBeforeBot);
+    }
+
     /** Switches the player's alignment. */
     changeAlignment(side: Alignment): void {
         bot.send.packet(`%xt%zm%updateQuest%${bot.map.roomId}%41%${side}%`);
@@ -3739,6 +4182,13 @@ export class CoreBots {
         for (const raw of bot.flash.get<GameItem[] | null>("world.myAvatar.items") ?? [])
             if (raw) result.set(num(raw.ItemID), { wearing: flag(raw.bWear), enhancementPatternId: num(raw.EnhPatternID) });
         return result;
+    }
+
+    /** The integers from `from` to `to`, both included. */
+    fromTo(from: number, to: number): number[] {
+        const toReturn: number[] = [];
+        for (let i = from; i < to + 1; i++) toReturn.push(i);
+        return toReturn;
     }
 
     /**
@@ -4447,11 +4897,54 @@ export class CoreBots {
         }
     }
 
+    /**
+     * Moves between PvP rooms: walks to the door and sends `mtcid` until you're in `cell`.
+     * @param mtcid Last number of the mtcid packet.
+     * @param moveX X position of the door.
+     * @param moveY Y position of the door.
+     */
+    pvpMove(mtcid: number, cell: string, moveX = 0, moveY = 0): void {
+        for (;;) {
+            // Different maps = different walk speeds for pvp apparently
+            bot.send.packet(`%xt%zm%mv%${bot.map.roomId}%${moveX}%${moveY}%${bot.map.name === "dagepvp" ? "10%" : "8%"}`);
+            this.sleep(2500);
+            bot.send.packet(`%xt%zm%mtcid%${bot.map.roomId}%${mtcid}%`);
+            this.sleep(2500);
+
+            if (!bot.player.cell || bot.player.cell === cell) return;
+            this.sleep(1500);
+        }
+    }
+
     /** Whether the room you're in is a public room (room number below 1000). */
     inPublicRoom(): boolean {
         bot.wait.forMapLoad(bot.map.name);
         const nr = Number.parseInt(bot.map.fullName.split("-").pop() ?? "", 10);
         return (Number.isFinite(nr) ? nr : 1) < 1000;
+    }
+
+    /** Kills the attackable monsters of your PvP room (in legionpvp it joins dagepvp instead). */
+    pvpKilling(_monsterMapId = 0): void {
+        if (bot.map.name === "legionpvp") {
+            this.join("dagepvp-999999", "Enter0", "Spawn");
+            bot.wait.forMapLoad("dagepvp");
+            return;
+        }
+
+        // attempt to set monster state
+        for (const target of bot.monsters.currentAvailableMonsters) {
+            if (!target) continue;
+
+            while (!bot.shouldExit) {
+                // C#: `!HasTarget || Target == null || Target?.HP > 0`.
+                const current = bot.player.target;
+                if (!bot.player.hasTarget || current === null || current.hp > 0) bot.combat.attack("*");
+
+                this.sleep();
+
+                if (!bot.player.hasTarget) break;
+            }
+        }
     }
 
     /**
@@ -4468,6 +4961,14 @@ export class CoreBots {
         }
         this.ensureAccept(questId);
         return bot.quests.ensureAccept(questId);
+    }
+
+    /** Equips the boss class (or `additionalClass`), leaving combat first. */
+    useBossClass(additionalClass: string | null = null): void {
+        if (bot.player.inCombat || bot.player.hasTarget) this.jumpWait();
+
+        if (additionalClass) this.equip(additionalClass);
+        else this.equipClass(ClassType.Boss);
     }
 
     /** Kills Dark Makai (tercessuinotlim, or nulgath/evilmarsh) until you have the item. */
@@ -4491,8 +4992,43 @@ export class CoreBots {
         this.equipClass(ClassType.Solo);
     }
 
+    // C# AuraHandling: not reached by the ported scripts, not ported yet.
+
+    /** Uses the potion in your consumable slot (action 5). */
+    usePotion(): void {
+        const raw = bot.flash.call("getArrayObject", "world.actions.active", 5);
+        let skill: unknown = null;
+        try {
+            skill = JSON.parse(raw);
+        } catch {
+            skill = null;
+        }
+        if (!bot.player.alive || skill === null || skill === undefined) return;
+        bot.flash.callGameFunction("world.testAction", skill);
+    }
+
+    // C# ShutdownSkua: closing the app from a script, dropped.
+
     // C# AutoReport / LockedQuestData, Butler log helpers, WriteFile, CollectData: crash
     // reports, Butler and telemetry, dropped.
+
+    // ---------------------------------------------------------------------------------------
+    // Flash-Call Assistance
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * A field of the item's game object: from the shop for a shop item (C# `ShopItem` overload),
+     * else from the inventory, bank or house items.
+     */
+    getItemProperty<T>(item: InventoryItem | CoreShopItem, prop: string): T | null {
+        const fromList = (path: string): T | null =>
+            (bot.flash.get<Record<string, unknown>[] | null>(path)?.find((d) => num(d.ItemID) === item.id)?.[prop] as T | undefined) ?? null;
+        if ("shopItemId" in item) return fromList("world.shopinfo.items");
+        if (bot.inventory.contains(item.id)) return bot.flash.get<T | null>(`world.invTree.${item.id}.${prop}`);
+        // Also covers banked house items
+        if (bot.bank.contains(item.id)) return fromList("world.bankinfo.items");
+        return fromList("world.myAvatar.houseitems");
+    }
 
     // ---------------------------------------------------------------------------------------
     // CoreBots Options values (C# CBO*) and one-time messages

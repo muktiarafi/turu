@@ -8,11 +8,11 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 | Path | What |
 |---|---|
 | `core/CoreBots.ts` | Port of `CoreBots.cs`: `Core` (join, kill/hunt, quests, drops, bank, shops, classes, logging). |
-| `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, alchemy crafting and rep, Good/Vampire rep). |
+| `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, alchemy crafting, the Bludrut and Death Pit brawls, Battle Under B, fishing and its boosts, and the Alchemy, Blacksmithing, Blade of Awe, Chaos, ChronoSpan, Death Pit Brawl, DoomWood, Evil, Fishing, Glacera, Good, Loremaster, Mythsong, SpellCrafting, Swordhaven and Vampire reps). |
 | `core/CoreStory.ts` | Port of `CoreStory.cs`: `killQuest`, `mapItemQuest`, `buyQuest`, `chainQuest`, `questProgression`, `legacyQuestManager`, `preLoad`. Each script makes its own `new CoreStory()`. |
 | `core/CoreDailies.ts` | Port of `CoreDailies.cs`: every daily, weekly and monthly (`checkDailyv2`, `dailyRoutine`, metals, class tokens, boosts, friendships, ...). Each script makes its own `new CoreDailies()`. |
 | `core/CoreAdvanced.ts` | The shop part of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs; `startBuyAllMerge` is the merge-shop template (with `mergeOptions` and `mergeOptionsEnum`). |
-| `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials. |
+| `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials, Swindles Return, The Assistant and the Shadow Blast medals and emblems. |
 | `nation/materials/0MaxBags.ts` | Port of `Nation/Materials/0MaxBags.cs`. |
 | `farm/GoldFarm.ts` | Port of `Farm/GoldFarm.cs`. |
 | `other/mergeshops/SynderesMerge.ts` | Port of `Other/MergeShops/SynderesMerge.cs`: the pattern for every merge script (see below). |
@@ -64,6 +64,11 @@ export default function main(): void {
   `Core.checkInventory(items, 1, { any: true })`, `FarmVoucher(true)` ->
   `Nation.farmVoucher({ member: true })`. On/off switches stay positional (`Core.setOptions(false)`,
   `Core.toggleAggro(true)`).
+- C# overloads whose shapes clash get their own name: `EnsureComplete(params int[])` ->
+  `Core.ensureCompleteQuests(...ids)`, `HuntMonsterMulti(map, mon, (item, quant, isTemp)[])` ->
+  `Core.huntMonsterMulti(map, mon, [[item, quant, isTemp], ...])`.
+- `Bot.UltraBossHelper` is `bot.ultraBossHelper`; `Bot.Combat.StopAttacking` is
+  `bot.combat.stopAttacking`.
 - Game objects read with `bot.flash.get` get an interface (`GameItem`, `InvCatSettings` in
   CoreBots), not `any`; read their fields with `num` / `text` / `flag`.
 - Wait with `Core.sleep()` / `Core.waitForTrue()` rather than `bot.sleep()` in long loops: Core's

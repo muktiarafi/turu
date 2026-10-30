@@ -1,15 +1,17 @@
 /*
 name: CoreFarms
 description: Port of the parts of Scripts/CoreFarms.cs the ported scripts use (gold, experience,
-    alchemy, Good and Vampire reputation).
+    alchemy, the PvP brawls, fishing and boosts, and the reputations the FarmerJoe tree needs).
 tags: core
 */
 /**
  * CoreFarms — partial TypeScript port of `Scripts/CoreFarms.cs`.
  *
  * Only the members reachable from the ported scripts are here (Gold, Experience, IcestormArena,
- * Alchemy crafting and reputation with Gold Vouchers and Dragon Runestones, GoodREP, VampireREP and
- * their helpers); port more from the C# file as scripts need them.
+ * Alchemy crafting and reputation with Gold Vouchers and Dragon Runestones, the Bludrut and Death
+ * Pit brawls, Battle Under B, fishing and its boosts, and the Blacksmithing, Blade of Awe, Chaos,
+ * ChronoSpan, Death Pit Brawl, DoomWood, Evil, Fishing, Glacera, Good, Loremaster, Mythsong,
+ * SpellCrafting, Swordhaven and Vampire reputations); port more from the C# file as scripts need them.
  */
 
 import { bot, BoostType } from "turu";
@@ -22,6 +24,29 @@ export { BoostType };
 /** "1,500,000" (C# `{n:N0}`). */
 function formatN0(value: number): string {
     return String(Math.trunc(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/** C# `CoreFarms.RepThresholds`: `[rank, total rep needed]`. */
+const REP_THRESHOLDS: readonly (readonly [rank: number, repRequired: number])[] = [
+    [1, 0],
+    [2, 900],
+    [3, 3600],
+    [4, 10000],
+    [5, 22500],
+    [6, 44100],
+    [7, 78400],
+    [8, 129600],
+    [9, 202500],
+    [10, 302500],
+];
+
+/** C# `new Random().Next(min, max)`: an integer in [min, max). */
+function randomInt(min: number, max: number): number {
+    return min + Math.floor(Math.random() * (max - min));
+}
+
+function equalsIgnoreCase(a: string | null | undefined, b: string | null | undefined): boolean {
+    return (a ?? "").toLowerCase() === (b ?? "").toLowerCase();
 }
 
 /**
@@ -605,6 +630,235 @@ export class CoreFarms {
         this.toggleBoost(BoostType.Experience, false);
     }
 
+    /** Farms the Black Knight Orb (quest 318). */
+    blackKnightOrb(): void {
+        if (Core.checkInventory("Black Knight Orb")) return;
+
+        Core.addDrop("Black Knight Orb");
+        Core.ensureAccept(318);
+
+        Core.huntMonster("well", "Gell Oh No", "Black Knight Leg Piece");
+        Core.huntMonster("greendragon", "Greenguard Dragon", "Black Knight Chest Piece");
+        Core.huntMonster("deathgazer", "Deathgazer", "Black Knight Shoulder Piece");
+        Core.huntMonster("trunk", "GreenGuard Basilisk", "Black Knight Arm Piece");
+
+        Core.ensureComplete(318);
+        bot.wait.forPickup("Black Knight Orb");
+    }
+
+    // C# TheSecret4: not reached by the ported scripts, not ported yet.
+
+    /**
+     * Defeats the Team B Captain in /BludrutBrawl for `item` ("Combat Trophy" or "Yoshino's
+     * Citrine"). The CBO switch `PvP_SoloPvPBoss` makes it kill the healers too.
+     */
+    bludrutBrawlBoss(item = "Combat Trophy", quant = 5000, _canSoloBoss = true): void {
+        if (Core.checkInventory(item, quant)) return;
+
+        if (bot.map.name === "bludrutbrawl") {
+            Core.logger("Started in PvP map, which doesnt allow us to equip things if needed and can cause issues. Joining whitemap first.");
+            Core.join("whitemap");
+        }
+
+        // C# overwrites canSoloBoss with the CBO lookup's result and uses its out value.
+        const killAds = Core.cboBool("PvP_SoloPvPBoss") === true;
+        Core.logger(
+            `\`Kill Ads\` Enabled? ${killAds ? "True" : "False"}` +
+                (killAds ? "if enabled this will kill the healers aswell for an aditional 3 trophies (totaling 10) but will take longer." : ""),
+        );
+        Core.addDrop(item);
+
+        Core.equipClass(ClassType.Solo);
+        Core.farmingLogger(item, quant);
+        bot.options.aggroAllMonsters = false;
+        bot.options.aggroMonsters = false;
+
+        // Find the first matching amulet in inventory or bank
+        const owned = [...bot.inventory.items, ...bot.bank.items];
+        const amulet = this.acceptablePvPAmulets.find((name) => owned.some((i) => i?.name === name));
+
+        // Equip the amulet if found in inventory or bank
+        if (amulet !== undefined) {
+            Core.unbank(amulet);
+            Core.equip(amulet);
+        }
+
+        // C#'s Start / Exit / RestartOnDeath labels: `continue start` is `goto Start`.
+        start: for (;;) {
+            let exitAttempt = 1;
+            let death = 0;
+            while (!bot.shouldExit && !Core.checkInventory(item, quant)) {
+                // One run: false when you died on the way.
+                const run = (): boolean => {
+                    Core.join("bludrutbrawl-999999", "Enter0", "Spawn");
+                    bot.wait.forMapLoad("bludrutbrawl");
+                    let currentTrophies = bot.inventory.getQuantity("Combat Trophy");
+
+                    Core.pvpMove(5, "Morale0C", randomInt(784, 862), randomInt(254, 274));
+                    Core.pvpMove(4, "Morale0B", randomInt(786, 850), randomInt(262, 287));
+                    Core.pvpMove(7, "Morale0A", randomInt(783, 857), randomInt(263, 293));
+                    Core.pvpMove(9, "Crosslower", randomInt(777, 857), randomInt(254, 290));
+
+                    // If CBO setting for `Kill ads before boss` is enabled do:
+                    if (killAds) {
+                        if (!bot.inventory.items.some((x) => x && Core.checkInventory(this.acceptablePvPAmulets, 1, { any: true }) && x.equipped))
+                            Core.oneTimeMessage("Wheres your amulet retard?", "Hey ChuckleFuck, you forgot your amulet! So now you get to kill the minions.");
+
+                        Core.pvpMove(14, "Crossupper", randomInt(399, 545), randomInt(255, 256));
+                        Core.pvpMove(18, "Resource1A", randomInt(786, 860), randomInt(255, 274));
+
+                        Core.pvpKilling();
+                        if (!bot.player.alive) return false;
+
+                        Core.pvpMove(20, "Resource1B", randomInt(784, 852), randomInt(254, 293));
+
+                        Core.pvpKilling();
+                        if (!bot.player.alive) return false;
+
+                        Core.pvpMove(21, "Resource1A", randomInt(123, 189), randomInt(262, 297));
+                        Core.pvpMove(19, "Crossupper", randomInt(122, 189), randomInt(258, 282));
+                        Core.pvpMove(17, "Crosslower", randomInt(439, 536), randomInt(467, 470));
+                    }
+
+                    Core.pvpMove(15, "Morale1A", randomInt(781, 858), randomInt(258, 290));
+                    bot.kill.monster(13);
+                    if (!bot.player.alive) return false;
+
+                    Core.pvpMove(23, "Morale1B", randomInt(782, 850), randomInt(259, 276));
+                    bot.kill.monster(14);
+                    if (!bot.player.alive) return false;
+
+                    Core.pvpMove(25, "Morale1C", randomInt(802, 865), randomInt(264, 286));
+                    bot.kill.monster(15);
+                    if (!bot.player.alive) return false;
+
+                    Core.pvpMove(28, "Captain1", randomInt(430, 537), randomInt(254, 255));
+                    bot.kill.monster(16);
+                    if (!bot.player.alive) return false;
+
+                    // Wait for drop to appear in stack
+                    bot.wait.forTrue(() => bot.drops.current.some((d) => d.name === item), 40);
+
+                    Core.sleep(1500);
+                    bot.wait.forPickup(item, 40);
+
+                    // Record updated quantity until server actually updates it
+                    let updatedTrophies = bot.inventory.getQuantity(item);
+                    while (!bot.shouldExit && updatedTrophies <= currentTrophies) {
+                        Core.sleep(500); // give server time to process PvP reward
+                        updatedTrophies = bot.inventory.getQuantity(item);
+                    }
+                    // Update baseline so next run compares correctly
+                    currentTrophies = updatedTrophies;
+
+                    if (item) Core.farmingLogger(item, quant);
+
+                    Core.sleep(1500);
+                    return true;
+                };
+
+                if (run()) {
+                    // Exit:
+                    while (!bot.shouldExit && bot.map.name !== "battleon") {
+                        bot.combat.cancelTarget();
+                        bot.wait.forCombatExit();
+                        bot.map.join("battleon-999999");
+                        bot.wait.forMapLoad("battleon");
+                        if (bot.map.name !== "battleon") continue;
+                        else continue start;
+                    }
+                }
+
+                // RestartOnDeath: (C# also falls through to it after Exit when already in battleon)
+                Core.logger(`Death: ${death++}, resetting`);
+                while (!bot.shouldExit) {
+                    bot.wait.forTrue(() => bot.player.alive, 100);
+                    Core.logger(`Attempting Death Exit ${exitAttempt++}.`);
+                    bot.map.join("battleon-999999");
+                    bot.wait.forMapLoad("battleon");
+                    Core.sleep(1500);
+                    if (bot.map.name !== "battleon") Core.logger("Failed!? HOW.. try agian");
+                    else {
+                        Core.logger("Successful!");
+                        continue start;
+                    }
+                }
+            }
+            break;
+        }
+
+        for (const reward of ["Yoshino's Citrine", "The Secret 4"]) {
+            if (item !== reward && bot.inventory.contains(reward)) Core.toBank(reward);
+        }
+    }
+
+    /** Farms `item` in /battleunderb (unlocking Undead Energy drops first when asked for them). */
+    battleUnderB(item = "Bone Dust", quant = 10000, isTemp = false): void {
+        if (isTemp ? bot.tempInv.contains(item, quant) : Core.checkInventory(item, quant)) {
+            Core.farmingLogger(item, quant);
+            return;
+        }
+
+        if (item === "Undead Energy" && !Core.isCompletedBefore(2084)) {
+            Core.logger("Making it so undead energy can drop..");
+
+            // 2066 - Reforging the Blinding Light
+            if (!Core.isCompletedBefore(2066)) {
+                Core.ensureAccept(2066);
+                Core.buyItem("doomwood", 276, "Blinding Light of Destiny Handle");
+                Core.ensureComplete(2066);
+            }
+
+            Core.equipClass(ClassType.Farm);
+            // 2067 - Secret Order of Undead Slayers
+            if (!Core.isCompletedBefore(2067)) {
+                Core.ensureAccept(2067);
+                Core.buyItem("doomwood", 276, "Bonegrinder Medal");
+                Core.ensureComplete(2067);
+            }
+
+            // 2082 - Essential Essences
+            if (!Core.isCompletedBefore(2082)) {
+                Core.ensureAccept(2082);
+                Core.huntMonster("battleunderb", "Skeleton Warrior", "Undead Essence", 25, { isTemp: false });
+                Core.ensureComplete(2082);
+            }
+
+            // 2083 - Bust some Dust
+            if (!Core.isCompletedBefore(2083)) {
+                Core.ensureAccept(2083);
+                Core.huntMonster("battleunderb", "Skeleton Warrior", "Bone Dust", 40, { isTemp: false });
+                Core.ensureComplete(2083);
+            }
+
+            // 2084 - A Loyal Follower
+            if (!Core.isCompletedBefore(2084)) {
+                Core.ensureAccept(2084);
+                this.boneSomeDust(100);
+                Core.huntMonster("timevoid", "Ephemerite", "Celestial Compass");
+                Core.ensureComplete(2084);
+            }
+        }
+
+        Core.addDrop(item);
+        Core.farmingLogger(item, quant);
+        Core.equipClass(ClassType.Farm);
+        Core.killMonster("battleunderb", "Enter", "Spawn", "*", item, quant, { isTemp, log: false });
+    }
+
+    /** Farms Spirit Orbs in /battleunderb (quests 2082 and 2083). */
+    boneSomeDust(quant = 65000): void {
+        if (Core.checkInventory("Spirit Orb", quant)) return;
+
+        Core.addDrop("Bone Dust", "Undead Essence", "Undead Energy", "Spirit Orb");
+        Core.equipClass(ClassType.Farm);
+        Core.farmingLogger("Spirit Orb", quant);
+
+        Core.registerQuests(2082, 2083);
+        while (!bot.shouldExit && !Core.checkInventory("Spirit Orb", quant)) Core.killMonster("battleunderb", "Enter", "Spawn", "*", null, 1, { log: false });
+        Core.cancelRegisteredQuests();
+    }
+
     /**
      * Crafts `reagent1` + `reagent2` (C# `AlchemyPacket`). With `loop`, it keeps crafting while the
      * reagents and Dragon Runestones last, or until you own `item`. Reaches `rank` in Alchemy first
@@ -922,6 +1176,618 @@ export class CoreFarms {
         return AlchemyRunes.Gebo;
     }
 
+    /**
+     * Farms Blacksmithing reputation to `rank`: with `useGold`, by turning in Gold Vouchers 500k
+     * (quest 8737; it farms gold when you can't buy one), else with quests 2777 and 8736.
+     */
+    blacksmithingREP(rank = 10, useGold = false, _bulkFarmGold = false): void {
+        if (this.factionRank("Blacksmithing") >= rank) return;
+
+        this.toggleBoost(BoostType.Reputation);
+        Core.equipClass(ClassType.Farm);
+        Core.logger(`Farming rank ${rank}`);
+
+        if (useGold) {
+            Core.logger("Using Gold Method");
+
+            Core.savedState(true, "alchemyacademy");
+            // Count vouchers already in the bank before deciding how many to buy or whether to farm gold.
+            Core.unbank("Gold Voucher 500k");
+            while (!bot.shouldExit && this.factionRank("Blacksmithing") < rank) {
+                Core.ensureAccept(8737);
+
+                // Rep still needed for the *requested* rank.
+                const targetRep = REP_THRESHOLDS.find(([r]) => r === Math.min(Math.max(rank, 1), 10))![1];
+                const remainingRepXP = Math.max(0, targetRep - this.totalFactionRep("Blacksmithing"));
+                // At least one voucher: a faction that isn't in the list yet (rank 0) reports 0 rep.
+                const itemsNeeded = Math.max(1, Math.trunc((remainingRepXP + 999) / 1000)); // 1 voucher = 1000 rep, round up
+                const currentQuantity = bot.inventory.getQuantity("Gold Voucher 500k");
+
+                Core.logger(`Blacksmithing rep needed for rank ${rank}: ${remainingRepXP} (${itemsNeeded} vouchers, have ${currentQuantity})`);
+
+                let toBuy = Math.max(0, Math.min(itemsNeeded - currentQuantity, Math.min(200, 300 - currentQuantity)));
+                if (toBuy > 0) {
+                    // Buy what the current gold covers; only farm gold when we can't afford a single voucher.
+                    let affordable = Math.trunc(bot.player.gold / 500000);
+                    if (affordable < 1) {
+                        const chunk = Math.min(toBuy, 20);
+                        Core.logger(`Not enough gold for a voucher, farming ${formatN0(chunk * 500000)} gold`);
+                        this.gold(chunk * 500000);
+                        affordable = Math.trunc(bot.player.gold / 500000);
+                    }
+                    toBuy = Math.min(toBuy, affordable);
+                    if (toBuy > 0) Core.buyItem("alchemyacademy", 2036, "Gold Voucher 500k", currentQuantity + toBuy);
+                }
+
+                const turnIns = Math.min(itemsNeeded, bot.inventory.getQuantity("Gold Voucher 500k"));
+                if (turnIns > 0) Core.ensureCompleteMulti(8737, turnIns);
+            }
+
+            this.toggleBoost(BoostType.Reputation, false);
+            Core.savedState(false);
+            Core.logger("Reputation boost deactivated and state saved.");
+            return;
+        }
+        Core.logger("Using Non-Gold Method");
+
+        Core.registerQuests(2777);
+        while (!bot.shouldExit && this.factionRank("Blacksmithing") < 4 && !useGold) {
+            Core.huntMonster("greenguardeast", "Wolf", "Furry Lost Sock", 2, { log: false });
+            Core.huntMonster("greenguardwest", "Slime", "Slimy Lost Sock", 5, { log: false });
+        }
+        Core.cancelRegisteredQuests();
+
+        Core.registerQuests(8736);
+        Core.equipClass(ClassType.Solo);
+        while (!bot.shouldExit && this.factionRank("Blacksmithing") < rank && !useGold) {
+            Core.huntMonster("hydrachallenge", "Hydra Head 25", "Hydra Scale Piece", 75, { isTemp: false, log: false });
+            Core.huntMonster("maul", "Creature Creation", "Creature Shard", 1, { isTemp: false, log: false });
+            Core.huntMonster("towerofdoom", "Dread Klunk", "Monster Trophy", 15, { isTemp: false, log: false });
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+    }
+
+    /**
+     * Farms Blade of Awe reputation (quest 2935 in /castleundead). With `farmBoA`, farms to rank 6
+     * first if needed and buys the Blade of Awe from the museum.
+     */
+    bladeofAweREP(rank = 10, farmBoA = true): void {
+        // Quests will now be done regardless of farmboa bool, purely to unlock them.
+        this.unlockBoA();
+
+        const targetRank = farmBoA && !Core.checkInventory(17585) ? 6 : rank;
+
+        if (this.factionRank("Blade of Awe") < targetRank || (farmBoA && this.factionRank("Blade of Awe") < rank)) {
+            Core.savedState(true, "castleundead");
+            Core.equipClass(ClassType.Farm);
+            Core.logger(`Farming rank ${this.factionRank("Blade of Awe") < targetRank ? targetRank : rank}`);
+
+            Core.registerQuests(2935);
+            // C# checks `targetRank` on both sides of the ||.
+            while (!bot.shouldExit && (this.factionRank("Blade of Awe") < targetRank || (farmBoA && this.factionRank("Blade of Awe") < targetRank))) {
+                if (Core.checkSaveState()) Core.executeSaveState();
+                Core.killMonster("castleundead", "Enter", "Left", "Skeletal Viking");
+            }
+            Core.cancelRegisteredQuests();
+            Core.savedState(false);
+        }
+
+        if (farmBoA && !Core.checkInventory(17585)) Core.buyItem("museum", 631, 17585);
+    }
+
+    /** Unlocks the Blade of Awe quests (2933 to 2937). */
+    unlockBoA(): void {
+        if (Core.isCompletedBefore(2937)) return;
+
+        const step = (questId: number, title: string, classType: ClassType, farm: () => void): void => {
+            if (!Core.isCompletedBefore(questId)) {
+                Core.logger(`Doing Quest: [${questId}] - "${title}"`);
+                Core.equipClass(classType);
+                Core.ensureAccept(questId);
+                farm();
+                Core.ensureComplete(questId);
+                Core.logger(`Completed Quest: [${questId}] - "${title}"`);
+            } else Core.logger(`Already Completed: [${questId}] - "${title}"`);
+        };
+
+        step(2933, "Find the Stonewrit!", ClassType.Solo, () => Core.huntMonster("j6", "Sketchy Dragon", "Stonewrit Found!", 1, { isTemp: false }));
+        step(2934, "Find the Handle!", ClassType.Solo, () => Core.huntMonster("gilead", "Fire Elemental", "Handle Found!", 1, { isTemp: false }));
+        step(2935, "Find the Hilt!", ClassType.Farm, () => Core.huntMonster("castleundead", "Skeletal Viking", "Hilt Found!", 1, { isTemp: false }));
+        step(2936, "Find the Blade!", ClassType.Farm, () => Core.huntMonster("hydra", "Hydra Head", "Blade Found!", 1, { isTemp: false }));
+        if (!Core.isCompletedBefore(2937)) Core.resetQuest(2937);
+        step(2937, "Find the Runes!", ClassType.Solo, () => Core.killEscherion("Runes Found!"));
+    }
+
+    /** Farms Chaos reputation to `rank` (quest 3594 in /mountdoomskull). */
+    chaosREP(rank = 10): void {
+        if (this.factionRank("Chaos") >= rank) return;
+
+        Core.equipClass(ClassType.Farm);
+        Core.savedState(true, "mountdoomskull");
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        Core.registerQuests(3594); // Embrace Your Chaos 3594
+        while (!bot.shouldExit && this.factionRank("Chaos") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.killMonster("mountdoomskull", "b1", "Left", "*", null, 1, { log: false });
+        }
+        bot.wait.forQuestComplete(3594);
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
+    /** Farms ChronoSpan reputation to `rank` (quest 2204 in /thespan). */
+    chronoSpanREP(rank = 10): void {
+        if (this.factionRank("ChronoSpan") >= rank) return;
+
+        Core.equipClass(ClassType.Farm);
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        Core.savedState(true, "thespan");
+        Core.registerQuests(2204); // Do the 'do 2204
+        while (!bot.shouldExit && this.factionRank("ChronoSpan") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.killMonster("thespan", "r6", "Left", "Moglin Ghost", "Tin of Ghost Dust", 2, { log: false });
+            Core.killMonster("thespan", "r4", "Left", "Minx Fairy", "8 oz Fairy Glitter", 3, { log: false });
+            Core.killMonster("thespan", "r4", "Left", "Tog", "Tog Fang", 4, { log: false });
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
+    /** Farms DoomWood reputation to `rank` (quests 1151-1153 in /shadowfallwar). */
+    doomWoodREP(rank = 10): void {
+        if (this.factionRank("DoomWood") >= rank) return;
+
+        Core.equipClass(ClassType.Farm);
+        Core.savedState(true, "shadowfallwar");
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        Core.registerQuests(1151, 1152, 1153); // Minion Morale 1151, Shadowfall is DOOMed 1152, Grave-lyn Danger, 1153
+        while (!bot.shouldExit && this.factionRank("DoomWood") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.killMonster("shadowfallwar", "Garden1", "Left", "*", null, 1, { log: false });
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
+    /** Farms Evil reputation to `rank` (switches your alignment to Evil). */
+    evilREP(rank = 10): void {
+        if (this.factionRank("Evil") >= rank) return;
+
+        Core.changeAlignment(Alignment.Evil);
+        Core.equipClass(ClassType.Farm);
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        Core.savedState(true, "swordhavenbridge");
+        Core.registerQuests(364); // Youthanize 364
+        while (!bot.shouldExit && this.factionRank("Evil") < 4) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.huntMonster("swordhavenbridge", "Slime", "Youthanize", 1, { log: false });
+        }
+        Core.cancelRegisteredQuests();
+        Core.savedState(false);
+
+        Core.savedState(true, Core.isMember ? "sleuthhound" : "castleundead");
+        Core.registerQuests(367);
+        while (!bot.shouldExit && this.factionRank("Evil") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            if (Core.isMember) {
+                Core.ensureAccept(366);
+                Core.huntMonster("sleuthhound", "Chair", "Chair", 4, { log: false });
+                Core.huntMonster("sleuthhound", "Table", "Table", 2, { log: false });
+                Core.huntMonster("sleuthhound", "Bookcase", "Bookcase", 1, { log: false });
+                Core.ensureComplete(366);
+            } else Core.killMonster("castleundead", "Enter", "Left", "*");
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+    }
+
+    /**
+     * Farms Fishing reputation to `rank` with Fishing Dynamite. With `shouldDerp`, fishes until the
+     * Derp Moosefish bites (achievement 14) instead. Trashes the bait and dynamite after with
+     * `trashBait`.
+     */
+    fishingREP(rank = 10, shouldDerp = false, trashBait = true, _getBoosts = true): void {
+        if (this.factionRank("Fishing") >= rank && !shouldDerp) {
+            if (trashBait) Core.trashCan("Fishing Bait", "Fishing Dynamite");
+            return;
+        }
+
+        if (!bot.reputation.factionList.some((f) => f.name === "Fishing")) {
+            Core.trashCan("Fishing Bait", "Fishing Dynamite");
+            this.getBaitandDynamite(0, 1);
+        }
+
+        let waitTimer = 3500;
+        let successful = 1;
+        let hitDerp = false;
+        let derpFound = false;
+        let receivedCastWait = false;
+        let receivedCatchResult = false;
+
+        Core.addDrop("Fishing Bait", "Fishing Dynamite");
+        Core.equipClass(ClassType.Farm);
+        Core.logger(`Farming Fishing rank ${rank}`);
+
+        // C# FishingWaiter
+        const off = bot.events.on("extensionPacket", (packet) => {
+            const parameters = packet?.params;
+            if (!parameters || parameters.type !== "json") return;
+            const data = parameters.dataObj;
+            if (!data) return;
+            switch (String(data.cmd ?? "")) {
+                case "castWait":
+                    if (data.wait !== undefined && data.wait !== null) waitTimer = Math.trunc(Number(data.wait));
+                    hitDerp = data.derp !== undefined && data.derp !== null && (data.derp === true || String(data.derp).toLowerCase() === "true");
+                    receivedCastWait = true;
+                    Core.logger(`Derp Moosefish: ${hitDerp ? "True" : "False"}, CatchTimer: ${waitTimer}ms`);
+                    break;
+                case "CatchResult":
+                    receivedCatchResult = true;
+                    if (!Array.isArray(data.catchResult)) return;
+                    for (const c of data.catchResult) {
+                        if (!c) continue;
+                        const action = String(c.act ?? "");
+                        if (action) Core.logger(action);
+                        if (c.myRep !== undefined && c.myRep !== null) {
+                            const myRep = Math.trunc(Number(c.myRep));
+                            if (myRep !== 0) Core.logger(`${myRep}`);
+                        }
+                    }
+                    break;
+            }
+        });
+
+        try {
+            while (!bot.shouldExit && (shouldDerp || this.factionRank("Fishing") < rank)) {
+                if (Core.checkSaveState()) Core.executeSaveState();
+
+                if (shouldDerp && (Core.hasAchievement(14) || Core.hasWebBadge("Derp Moosefish"))) {
+                    derpFound = true;
+                    break;
+                }
+
+                this.getBaitandDynamite(0, 50);
+
+                Core.join("fishing");
+
+                bot.wait.forCellChange("Enter");
+                bot.wait.forTrue(() => bot.player.loaded, 20);
+
+                Core.logger("Fishing With: Dynamite");
+
+                while (!bot.shouldExit && Core.checkInventory("Fishing Dynamite") && (shouldDerp || this.factionRank("Fishing") < rank)) {
+                    hitDerp = false;
+                    receivedCastWait = false;
+                    receivedCatchResult = false;
+
+                    Core.sleep(1000);
+
+                    Core.logger("Casting Dynamite...");
+                    bot.send.packet("%xt%zm%FishCast%1%Dynamite%30%");
+
+                    // Wait for the server to tell us the actual catch timer.
+                    if (!bot.wait.forTrue(() => receivedCastWait, 10)) {
+                        Core.logger("Timed out waiting for castWait packet.");
+                        continue;
+                    }
+
+                    Core.logger(`Cast timer received: ${waitTimer}ms | Derp: ${hitDerp ? "True" : "False"}`);
+
+                    // do not cast again until the server-provided timer has elapsed.
+                    Core.sleep(waitTimer);
+
+                    // Give the Derp state/packet a little extra time to settle.
+                    if (shouldDerp) Core.sleep(1000);
+
+                    Core.logger(`Getting fish... Derp flag: ${hitDerp}`);
+                    bot.send.packet(`%xt%zm%getFish%1%${hitDerp}%`);
+
+                    // Wait for the server to confirm the catch before evaluating the result.
+                    if (!bot.wait.forTrue(() => receivedCatchResult, 10)) {
+                        Core.logger("Timed out waiting for CatchResult; skipping result evaluation.");
+                        continue;
+                    }
+
+                    if (shouldDerp && hitDerp) {
+                        derpFound = true;
+                        Core.logger("Derp Moosefish detected!");
+                        break;
+                    }
+
+                    if (rank <= 10) Core.logger(`Dynamite cast completed [x${successful++}]`);
+                }
+
+                if (derpFound) break;
+            }
+        } finally {
+            off();
+            if (trashBait) Core.trashCan("Fishing Bait", "Fishing Dynamite");
+        }
+    }
+
+    /** Farms Fishing Bait (Frogzards) and Fishing Dynamite (Slimes) with quest 1682. */
+    getBaitandDynamite(fishingBaitQuant: number, fishingDynamiteQuant: number): void {
+        if (Core.checkInventory("Fishing Bait", fishingBaitQuant) && Core.checkInventory("Fishing Dynamite", fishingDynamiteQuant)) return;
+        Core.registerQuests(1682);
+
+        const farmItem = (itemName: string, quantity: number, map: string, cell: string, pad: string, monster: string): void => {
+            if (quantity <= 0) return;
+            Core.killMonster(map, cell, pad, monster, itemName, quantity, { isTemp: false });
+            bot.wait.forPickup(itemName);
+        };
+
+        farmItem("Fishing Bait", fishingBaitQuant, "greenguardwest", "West3", "Right", "Frogzard");
+        farmItem("Fishing Dynamite", fishingDynamiteQuant, "greenguardwest", "West4", "Right", "Slime");
+
+        Core.cancelRegisteredQuests();
+        Core.logger("Returning to Fishing Map");
+    }
+
+    /** Fishes with dynamite until you have `quant` of the fish `itemId` (a reward of `quest`). */
+    getFish(itemId: number, quant: number, quest: number): void {
+        if (Core.checkInventory(itemId, quant)) return;
+
+        const reward = Core.ensureLoad(quest)?.rewards.find((x) => x.id === itemId);
+        if (reward) Core.farmingLogger(reward.name, quant);
+
+        while (!bot.shouldExit && !Core.checkInventory(itemId, quant)) {
+            if (!Core.checkInventory("Fishing Dynamite")) this.getBaitandDynamite(0, 20);
+
+            Core.join("fishing");
+
+            while (!bot.shouldExit && Core.checkInventory("Fishing Dynamite") && !Core.checkInventory(itemId, quant)) {
+                bot.send.packet("%xt%zm%FishCast%1%Dynamite%30%");
+                Core.sleep(3500);
+                // C# waits for `CurrentDynamiteQuant == CurrentDynamiteQuant - 1` (never true): 2 s.
+                bot.wait.forTrue(() => false, 20);
+                Core.sendPackets("%xt%zm%getFish%1%false");
+                Core.logger(`Dynamite: ${bot.inventory.getQuantity("Fishing Dynamite")} Fish: ${bot.tempInv.getQuantity(itemId)}/${quant}`);
+            }
+        }
+    }
+
+    /** The PvP amulets the Bludrut and Death Pit brawls equip, best first. */
+    readonly acceptablePvPAmulets = ["Mithril PvP Amulet +15000", "Diamond PvP Amulet +5500", "Platinum PvP Amulet +5000"];
+
+    /** Farms Death Pit Brawl reputation to `rank` (unlocking the farm quests 5155-5157 first). */
+    deathPitBrawlREP(rank = 10): void {
+        if (this.factionRank("Death Pit Brawl") >= rank) return;
+
+        Core.logger(`Farming "DeathPitBrawlREP" rank ${rank}`);
+        Core.addDrop("Death Pit Token");
+        Core.equipClass(ClassType.Solo);
+        this.toggleBoost(BoostType.Reputation);
+        Core.toggleAggro(false);
+
+        if (Core.isCompletedBefore(5157)) {
+            Core.logger("Checking if farm quests are unlocked--");
+
+            // Do You Even Brawl
+            if (!Core.isCompletedBefore(5155)) {
+                Core.ensureAccept(5155);
+                this.deathPitToken("Death Pit Token", 1, false, true);
+                Core.ensureComplete(5155);
+            }
+
+            // Flex For Hun'Gar
+            if (!Core.isCompletedBefore(5156)) {
+                Core.ensureAccept(5156);
+                this.deathPitToken("Death Pit Token", 15, false, true);
+                Core.ensureComplete(5156);
+            }
+
+            // Pummel For Hun'Gar
+            if (!Core.isCompletedBefore(5157)) {
+                Core.ensureAccept(5157);
+                this.deathPitToken("Brawler Token", 3, true, true);
+                this.deathPitToken("Restorer Token", 4, true, true);
+                Core.ensureComplete(5157);
+            }
+        }
+
+        Core.logger("Rep Time");
+        this.runDeathPitBrawl();
+
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.toggleAggro(true);
+    }
+
+    /** C# `RunDeathPitBrawl`: brawl runs until the rank, then until you have `item`. */
+    private runDeathPitBrawl(item: string | null = null, quant = 1, isTemp = false, rank = 10, _canSoloBoss = true, forStory = false): void {
+        let runStarted = 0;
+
+        if (!forStory) Core.registerQuests(...[5156, 5165].filter((q) => bot.quests.isUnlocked(q)));
+
+        if (bot.map.name === "deathpitbrawl") {
+            Core.logger("Started in PvP map, warping to whitemap first.");
+            Core.join("whitemap");
+        }
+
+        const owned = [...bot.inventory.items, ...bot.bank.items];
+        const amulet = this.acceptablePvPAmulets.find((name) => owned.some((i) => i?.name === name));
+        if (amulet !== undefined) {
+            Core.unbank(amulet);
+            Core.equip(amulet);
+        }
+
+        if (item !== null) {
+            Core.farmingLogger(item, quant, "RunDeathPitBrawl");
+            if (!isTemp) Core.addDrop(item);
+        }
+
+        let runCount = 1;
+        const elapsed = (): string => {
+            const seconds = Math.trunc((Date.now() - runStarted) / 1000);
+            const pad = (n: number) => String(n).padStart(2, "0");
+            return `${pad(Math.trunc(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+        };
+
+        const executeOneBrawlRun = (): void => {
+            while (!bot.shouldExit && bot.map.name !== "deathpitbrawl") {
+                bot.map.join("deathpitbrawl-999999", "Enter0", "Spawn", false, false);
+                bot.wait.forMapLoad("deathpitbrawl");
+            }
+
+            const steps = (): boolean => {
+                Core.pvpMove(5, "Morale0C", 228, 291);
+                if (!bot.player.alive) return false;
+                Core.pvpMove(4, "Morale0B", 936, 397);
+                Core.pvpMove(7, "Morale0A", 946, 394);
+                Core.pvpMove(9, "Crosslower", 948, 400);
+
+                // Restorers
+                Core.pvpMove(14, "Crossupper", 903, 324);
+
+                Core.pvpMove(18, "Resource1A", 482, 295);
+                Core.pvpKilling();
+                if (!bot.player.alive) return false;
+
+                Core.pvpMove(20, "Resource1B", 938, 400);
+                Core.pvpKilling();
+                if (!bot.player.alive) return false;
+
+                Core.pvpMove(21, "Resource1A", 9, 435);
+                Core.pvpMove(19, "Crossupper", 461, 315);
+                Core.pvpMove(17, "Crosslower", 54, 339);
+
+                // Brawlers
+                Core.pvpMove(15, "Morale1A", 509, 286);
+                Core.pvpKilling();
+                if (!bot.player.alive) return false;
+
+                Core.pvpMove(23, "Morale1B", 941, 406);
+                Core.pvpKilling();
+                if (!bot.player.alive) return false;
+
+                Core.pvpMove(25, "Morale1C", 938, 405);
+                Core.pvpKilling();
+                if (!bot.player.alive) return false;
+
+                // Captain
+                Core.pvpMove(28, "Captain1", 943, 404);
+                Core.pvpKilling();
+                return bot.player.alive;
+            };
+            if (steps()) return;
+
+            // RestartOnDeath
+            if (!bot.shouldExit) {
+                bot.wait.forTrue(() => bot.player.alive, 100);
+                bot.map.join("battleon-100000", "Enter", "Spawn", false, false);
+                bot.wait.forMapLoad("battleon");
+                Core.sleep(1500);
+            }
+        };
+
+        const returnToBattleonAndRestart = (): void => {
+            while (!bot.shouldExit && bot.map.name !== "battleon") {
+                bot.combat.cancelTarget();
+                bot.map.join("battleon-100000", "Enter", "Spawn", false, false);
+                bot.wait.forMapLoad("battleon");
+                if (bot.map.name === "battleon") return;
+                Core.sleep(1500);
+            }
+        };
+
+        const quantity = (name: string): number => (isTemp ? bot.tempInv.getQuantity(name) : bot.inventory.getQuantity(name));
+
+        // C#'s `goto Start` after each run: back to the rank loop.
+        start: for (;;) {
+            // 1) Faction Rank farming
+            while (!bot.shouldExit && this.factionRank("Death Pit Brawl") < rank) {
+                runStarted = Date.now();
+                executeOneBrawlRun();
+                Core.sleep(1500);
+                Core.logger(`Run #${runCount++} completed in ${elapsed()}`);
+                returnToBattleonAndRestart();
+                continue start;
+            }
+
+            // 2) {item} farming (only AFTER rank is done)
+            if (item !== null) {
+                // C# sets canSoloBoss to false for the 2 temp items (it isn't read after).
+                // C# precedence kept: (!ShouldExit && isTemp) ? !TempInv.Contains : !Inventory.Contains
+                while (!bot.shouldExit && isTemp ? !bot.tempInv.contains(item, quant) : !bot.inventory.contains(item, quant)) {
+                    const startQuant = quantity(item);
+
+                    executeOneBrawlRun();
+
+                    bot.wait.forTrue(() => quantity(item) > startQuant, 40);
+
+                    // Wait for delayed PvP reward packet
+                    let updatedQuant = quantity(item);
+                    bot.log(`Updating ${item} Quant`);
+                    while (!bot.shouldExit && updatedQuant <= startQuant) {
+                        Core.sleep(500);
+                        updatedQuant = quantity(item);
+                        bot.sleep(500);
+                        bot.log(`${item} Quant Update Failed`);
+                    }
+                    bot.log(`${item} Quant Updated`);
+                    Core.farmingLogger(item, quant);
+
+                    // C# stops a stopwatch that wasn't started here, so it reads 00:00.
+                    Core.logger(`Run #${runCount++} completed in 00:00`);
+
+                    returnToBattleonAndRestart();
+                    continue start;
+                }
+            }
+            break;
+        }
+
+        for (const reward of ["Yoshino's Citrine", "The Secret 4"]) if (item !== reward && bot.inventory.contains(reward)) Core.toBank(reward);
+    }
+
+    /**
+     * Farms Death Pit Tokens (or the Brawler / Restorer Tokens) in /deathpitbrawl. Don't call it
+     * with registered quests, or it technically never exits.
+     */
+    deathPitToken(item: string | null = "Death Pit Token", quant = 30, isTemp = false, forStory = false): void {
+        if (Core.checkInventory(item, quant)) return;
+        this.runDeathPitBrawl(item, quant, isTemp, 1, true, forStory);
+    }
+
+    /** Farms Glacera reputation to `rank` (quests 5597-5600 in /icewindwar). */
+    glaceraREP(rank = 10): void {
+        if (this.factionRank("Glacera") >= rank) return;
+
+        if (!Core.isCompletedBefore(5601)) {
+            Core.logger('Farming Quests are not unlocked, Please run: "Story/Glacera.cs"');
+            return;
+        }
+
+        Core.equipClass(ClassType.Farm);
+        Core.savedState(true, "icewindwar");
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        if (Core.farmClass === "Generic")
+            Core.logger("FarmClass not set in CBO (options > corebot > tab 2),\nso you'll be getting *very* low Rep Rates without a multi-target class.");
+
+        Core.registerQuests(5597, 5598, 5599, 5600);
+        while (!bot.shouldExit && this.factionRank("Glacera") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.killMonster("icewindwar", "r5", "Left", "*", null, 1, { log: false });
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
     /** Farms Good reputation to `rank` (PoisonForest after its story, else the low-rep quests). */
     goodREP(rank = 10): void {
         if (this.factionRank("Good") >= rank) return;
@@ -968,6 +1834,174 @@ export class CoreFarms {
         Core.savedState(false);
     }
 
+    /** Farms Loremaster reputation to `rank` (members: /druids after rank 3; others: /wardwarf). */
+    loremasterREP(rank = 10): void {
+        if (this.factionRank("Loremaster") >= rank) return;
+
+        this.experience(15);
+        Core.equipClass(ClassType.Farm);
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        Core.equipClass(ClassType.Farm);
+        if (Core.isMember) {
+            Core.savedState(true, "wardwarf");
+            if (this.factionRank("Loremaster") < 3) {
+                if (Core.checkSaveState()) Core.executeSaveState();
+                Core.logger("Geting r3 Loremaster rep for the member quests");
+                Core.registerQuests(7505);
+                while (!bot.shouldExit && this.factionRank("Loremaster") < 3) {
+                    Core.huntMonster("wardwarf", "Drow Assassin", "Poisoned Dagger", 4, { log: false });
+                    Core.huntMonster("wardwarf", "D'wain Jonsen", "Scroll: Opportunity's Strike", 1, { log: false });
+                    bot.wait.forActionCooldown("tryQuestComplete");
+                    bot.wait.forActionCooldown("acceptQuest");
+                    bot.wait.forQuestAccept(7505);
+                }
+            }
+            Core.savedState(false);
+
+            if (!Core.isCompletedBefore(3032)) {
+                Core.logger("Unlocking farming quest.");
+
+                Core.ensureAccept(3029); // Rosetta Stones 3029
+                Core.killMonster("druids", "r2", "Left", "Void Bear", "Voidstone", 6);
+                Core.ensureComplete(3029);
+
+                Core.ensureAccept(3030); // Cull the Foot Soldiers 3030
+                Core.killMonster("druids", "r6", "Left", "Void Larva", "Void Larvae Death Cry", 4);
+                Core.ensureComplete(3030);
+
+                Core.ensureAccept(3031); // Bad Vibes 3031
+                Core.killMonster("druids", "r6", "Left", "Void Ghast", "Ghast's Death Cry", 4);
+                Core.ensureComplete(3031);
+
+                Core.ensureAccept(3032); // Quite the Problem 3032
+                Core.killMonster("druids", "r5", "Left", "Young Void Giant", null, 1, { log: false });
+                Core.ensureComplete(3032);
+            }
+            Core.logger("Member perquisite quests finished.");
+
+            Core.savedState(true, "druids");
+            Core.equipClass(ClassType.Solo);
+            Core.registerQuests(3032);
+            while (!bot.shouldExit && this.factionRank("Loremaster") < rank) {
+                if (Core.checkSaveState()) Core.executeSaveState();
+                Core.killMonster("druids", "r5", "Left", "Young Void Giant", null, 1, { log: false });
+                bot.wait.forActionCooldown("tryQuestComplete");
+                bot.wait.forActionCooldown("acceptQuest");
+                bot.wait.forQuestAccept(3032);
+            }
+            Core.savedState(false);
+        } else {
+            Core.registerQuests(7505); // Studying the Rogue 7505
+            Core.savedState(true, "whitemap");
+            while (!bot.shouldExit && this.factionRank("Loremaster") < rank) {
+                if (Core.checkSaveState()) Core.executeSaveState();
+                Core.huntMonster("wardwarf", "Drow Assassin", "Poisoned Dagger", 4, { log: false });
+                Core.huntMonster("wardwarf", "D'wain Jonsen", "Scroll: Opportunity's Strike", 1, { log: false });
+                bot.wait.forActionCooldown("tryQuestComplete");
+                bot.wait.forActionCooldown("acceptQuest");
+                bot.wait.forQuestAccept(7505);
+            }
+        }
+
+        bot.quests.unregisterQuests(3032, 7505);
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
+    /** Farms Mythsong reputation to `rank` (quest 4829 in /beehive). */
+    mythsongREP(rank = 10): void {
+        if (this.factionRank("Mythsong") >= rank) return;
+
+        if (!bot.quests.isUnlocked(4829)) {
+            Core.logger("Can't do farming quest (Do Lord of Chaos Kimberly)", "", { messageBox: true });
+            return;
+        }
+
+        Core.equipClass(ClassType.Farm);
+        Core.savedState(true, "beehive");
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        Core.registerQuests(4829); // Sugar, Sugar 4829
+        while (!bot.shouldExit && this.factionRank("Mythsong") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.huntMonster("beehive", "Stinger", "Honey Gathered", 10, { log: false });
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
+    /** Farms SpellCrafting reputation to `rank` (Ember Ink to rank 4, then Hallow Ink). */
+    spellCraftingREP(rank = 10): void {
+        if (this.factionRank("SpellCrafting") >= rank) return;
+
+        Core.addDrop("Mystic Quills", "Mystic Parchment");
+        Core.equipClass(ClassType.Farm);
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        if (this.factionRank("SpellCrafting") === 0) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.ensureAccept(2260);
+            Core.getMapItem(1920, 1, "dragonrune");
+            Core.huntMonster("castleundead", "Skeletal Warrior", "Arcane Parchment", 13, { log: false });
+            Core.ensureComplete(2260);
+        }
+
+        if (this.factionRank("SpellCrafting") < 4) {
+            Core.joinSWF("mobius", "ChiralValley/town-Mobius-21Feb14.swf", "Slugfit", "Bottom");
+            Core.huntMonster("mobius", "Slugfit", "Mystic Quills", 10, { isTemp: false });
+            Core.buyItem("dragonrune", 549, "Ember Ink", 50);
+            while (!bot.shouldExit && Core.checkInventory("Ember Ink") && this.factionRank("SpellCrafting") < 4) Core.chainComplete(2299);
+        }
+
+        Core.savedState(true, "underworld");
+        while (!bot.shouldExit && this.factionRank("SpellCrafting") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.huntMonster("underworld", "Skull Warrior", "Mystic Parchment", 10, { isTemp: false });
+            Core.buyItem("dragonrune", 549, "Hallow Ink", 50);
+            while (!bot.shouldExit && Core.checkInventory("Hallow Ink") && this.factionRank("SpellCrafting") < rank) Core.chainComplete(2322);
+        }
+        Core.sellItem("Ember Ink", 1, { all: true });
+        Core.sellItem("Hallow Ink", 1, { all: true });
+
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
+    /** Farms Swordhaven reputation to `rank` (the /castle quests). */
+    swordhavenREP(rank = 10): void {
+        if (this.factionRank("Swordhaven") >= rank) return;
+
+        Core.equipClass(ClassType.Farm);
+        Core.savedState(true, "castle");
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank}`);
+
+        while (!bot.shouldExit && this.factionRank("Swordhaven") < rank) {
+            if (Core.checkSaveState()) Core.executeSaveState();
+            Core.ensureAcceptmultiple(3065, 3066, 3067, 3070, 3085, 3086, 3087);
+            Core.huntMonster("castle", "Castle Spider", "Eradicated Arachnid", 10);
+            Core.huntMonster("castle", "Castle Spider", "Castle Spider Silk", 8);
+            Core.huntMonster("castle", "Castle Spider", "Castle Spider Silk Yarn", 2);
+            Core.huntMonster("castle", "Castle Wraith", "Castle Wraith Defeated", 10);
+            Core.huntMonster("castle", "Castle Wraith", "Jarred Wraith", 5);
+            Core.huntMonster("castle", "Castle Wraith", "Castle Wraith Wool", 2);
+            Core.huntMonster("castle", "Gargoyle", "Stony Plating", 6);
+            Core.huntMonster("castle", "Gargoyle", "Gargoyle Gems", 2);
+            Core.huntMonster("castle", "Dungeon Fiend", "Dungeon Fiend Hair Bow", 5);
+            Core.huntMonster("castle", "Dungeon Fiend", "Dungeon Fiend Bow Tie", 5);
+            Core.huntMonster("castle", "Dungeon Fiend", "Dungeon Fiend Textiles", 2);
+            Core.ensureCompleteQuests(3065, 3066, 3067, 3070, 3085, 3086, 3087);
+        }
+        Core.cancelRegisteredQuests();
+        this.toggleBoost(BoostType.Reputation, false);
+        Core.savedState(false);
+    }
+
     /** Farms Vampire reputation to `rank` (Twisted Paw in /safiria). */
     vampireREP(rank = 10): void {
         if (this.factionRank("Vampire") >= rank) return;
@@ -993,10 +2027,29 @@ export class CoreFarms {
         Core.savedState(false);
     }
 
+    static readonly maxFactionRep = 302500;
+
     /** Rank of a faction (0 if you have no reputation in it). */
     factionRank(faction: string): number {
         if (!faction || faction.trim().length === 0) return 0;
         return Core.factionRank(faction);
+    }
+
+    /** Your reputation in the faction for its current rank (0 without it). */
+    factionRep(faction: string): number {
+        return bot.reputation.factionList.find((f) => equalsIgnoreCase(f.name, faction))?.rep ?? 0;
+    }
+
+    /** Your total reputation in the faction: its rank's threshold plus the rep in that rank. */
+    totalFactionRep(faction: string): number {
+        if (!faction || faction.trim().length === 0) return 0;
+        const factionObj = bot.reputation.factionList.find((f) => equalsIgnoreCase(f.name, faction));
+        if (!factionObj) return 0;
+
+        const rank = Math.min(Math.max(bot.reputation.getRank(faction), 1), 10);
+        const threshold = REP_THRESHOLDS.find(([r]) => r === rank);
+        if (!threshold) return 0;
+        return threshold[1] + factionObj.rep;
     }
 
     /** Unlocks the Undead Giant quest (178) by completing 183, 176 and 177. */
@@ -1016,5 +2069,43 @@ export class CoreFarms {
             Core.huntMonster("swordhavenundead", "Skeletal Ice Mage", "Frozen Bonehead", 6, { log: false });
             Core.ensureComplete(177);
         }
+    }
+
+    /**
+     * Farms XP ("XP") or reputation (any other `type`) 10-minute boosts with the fishing quests
+     * 1614 / 1615. With `doOnce`, does one turn-in whatever you have.
+     */
+    getBoost(type: string, quantity = 1, doOnce = false): void {
+        const quest = type.toLowerCase() === "xp" ? 1614 : 1615;
+        const itemId = quest === 1614 ? 10850 : 10997;
+        const boostName = quest === 1614 ? "XP Boost! (10 min)" : "REPUTATION Boost! (10 min)";
+
+        const boostItem = Core.ensureLoad(quest)?.rewards.find((x) => x.name === boostName);
+        if (boostItem && Core.checkInventory(boostItem.name, quantity) && !doOnce) return;
+
+        Core.farmingLogger(boostName, quantity);
+        Core.addDrop("Fishing Dynamite", boostItem?.name ?? boostName);
+        Core.equipClass(ClassType.Farm);
+        if (this.factionRank("Fishing") < 2) {
+            Core.logger("Fishing Rank 2 required for Boost farm quest.");
+            this.fishingREP(2, false, false, false);
+        }
+        if (!Core.isCompletedBefore(1615)) {
+            Core.ensureAccept(1614);
+            this.getFish(10850, 30, 1614);
+            Core.huntMonster("Greenguardwest", "Slime", "Slime Sauce", 1, { log: false });
+            Core.ensureComplete(1614);
+        }
+
+        while (!bot.shouldExit && (!Core.checkInventory(boostName, quantity) || doOnce)) {
+            Core.ensureAccept(quest);
+            this.getFish(itemId, quest === 1614 ? 30 : 5, quest);
+            if (quest === 1614) Core.killMonster("greenguardwest", "West4", "Right", "Slime", "Slime Sauce");
+            else Core.huntMonster("Greenguardwest", "Frogzard", "Greenguard Seal", 1, { log: false });
+            bot.wait.forPickup(quest === 1614 ? "Slime Sauce" : "Greenguard Seal");
+            Core.ensureComplete(quest);
+        }
+
+        if (!doOnce) Core.trashCan("Fishing Bait", "Fishing Dynamite");
     }
 }

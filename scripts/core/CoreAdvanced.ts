@@ -217,6 +217,45 @@ export class CoreAdvanced {
             case "vampire":
                 Farm.vampireREP(rank);
                 break;
+            case "bladeofawe":
+                Farm.bladeofAweREP(rank, false);
+                break;
+            case "chaos":
+                Farm.chaosREP(rank);
+                break;
+            case "chronospan":
+                Farm.chronoSpanREP(rank);
+                break;
+            case "deathpitbrawl":
+                Farm.deathPitBrawlREP(rank);
+                break;
+            case "doomwood":
+                Farm.doomWoodREP(rank);
+                break;
+            case "evil":
+                Farm.evilREP(rank);
+                break;
+            case "glacera":
+                Farm.glaceraREP(rank);
+                break;
+            case "loremaster":
+                Farm.loremasterREP(rank);
+                break;
+            case "mythsong":
+                Farm.mythsongREP(rank);
+                break;
+            case "spellcrafting":
+                Farm.spellCraftingREP(rank);
+                break;
+            case "swordhaven":
+                Farm.swordhavenREP(rank);
+                break;
+            case "blacksmithing":
+            case "fishing":
+                // C# invokes these by reflection with only the rank; their extra parameters make
+                // that throw, so C# stops here (its "blacksmith" case never matches "Blacksmithing").
+                Core.logger(`Faction ${name} has invalid paramaters, please report`, "", { messageBox: true, stopBot: true });
+                break;
             default:
                 Core.logger(`Failed to find ${name}REP in CoreFarms. It isn't ported to Turu yet.`);
         }
