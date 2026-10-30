@@ -159,5 +159,8 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 Script options (VibeSkua's `Options` and "Edit Script Options") are read when a script is loaded:
 the engine runs the module's top level in a separate runtime where bot calls fail, and reads its
 `scriptOptions` export (`script::options::declaration`). A script that calls the bot at top level
-therefore has no options until that's fixed. Logs are kept in memory; the Logs and Script Loader
+therefore has no options until that's fixed. When the script asks for the window (Start, or
+`bot.config.configure`), the script thread posts a request in `ScriptManager` and waits; the UI
+polls it each frame, opens the window and answers when it closes (`finish_configure`). Without a
+UI (`set_interactive` not called, as with `--headless`) or for a silent start, there's no wait. Logs are kept in memory; the Logs and Script Loader
 windows can save them.

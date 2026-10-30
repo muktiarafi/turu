@@ -86,7 +86,7 @@ pub(crate) fn auto_login(bot: &Arc<Bot>) {
     std::thread::sleep(Duration::from_secs(1));
     if startup.run_script
         && startup.script.is_some()
-        && let Err(e) = crate::script::start(bot)
+        && let Err(e) = crate::script::start_silent(bot)
     {
         bot.log(format!("Couldn't start the script: {e}"));
     }

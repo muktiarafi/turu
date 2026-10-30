@@ -21,14 +21,16 @@ const Adv = new CoreAdvanced();
 const flag = (name: string) => (): boolean => bot.config.get<boolean>(name);
 
 /**
- * The script's options (C# `Options`), shown in Scripts > Edit Script Options. CoreBots'
- * SkipOptions isn't here: it only hides that window before the first run, and Turu never shows it
- * before a run.
+ * The script's options (C# `Options`), shown in Scripts > Edit Script Options. As in the C#
+ * (`DontPreconfigure = true`), `Core.setOptions()` opens that window on start until
+ * `Core.skipOptions` is ticked.
  */
 export const scriptOptions = defineScriptOptions("Potionv2", [
     option.bool("BuyReagents", "Buy Reagents?", "Use gold to buy the reagents for the Potions [this takes ALOT of gold.]."),
     option.int("PotionQuant", "Potion Quantity", "Desired stack amount [max - 300]", 0),
     option.bool("MaxAll", "Max all Potions within the script.", "as the name says"),
+
+    Core.skipOptions,
 
     // Tonic
     option.bool("FarmFate", "Fate", "Should the bot Farm Fate Tonics?"),
@@ -52,7 +54,7 @@ export const scriptOptions = defineScriptOptions("Potionv2", [
     option.bool("FarmLife", "Life", "Should the bot Farm Potent Life Potion?"),
     option.bool("FarmBody", "Body", "Should the bot Farm Body Tonics?"),
     option.bool("FarmSoul", "Soul", "Should the bot Farm Soul Potions?"),
-]);
+], true);
 
 /** Every potion the script farms, in C# order (`MaxAll` farms them all). */
 const allPotions = [

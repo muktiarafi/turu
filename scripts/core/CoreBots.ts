@@ -30,7 +30,7 @@ tags: core
  * - `ScriptStopped` is never swallowed: every `catch` rethrows it.
  */
 
-import { bot, ClassUseMode, ScriptStopped } from "turu";
+import { bot, ClassUseMode, option, ScriptStopped } from "turu";
 import type { InventoryItem, Monster, Quest, QuestItem } from "turu";
 
 // ---------------------------------------------------------------------------------------
@@ -561,8 +561,9 @@ export class CoreBots {
      *
      * Ported: login wait, test-server check, social privacy (CBO `IncognitoMode`), member status,
      * bot/Lite/drop options, safe start map, bank load, AFK handler, prison detector, anti-lag,
-     * start-up banking, skills for the current class and the run-time log on `setOptions(false)`.
-     * Dropped: version check, Bot.Config, telemetry (CollectData), account tags, one-time messages
+     * start-up banking, skills for the current class, the Script Options window (unless
+     * {@link skipOptions} is ticked) and the run-time log on `setOptions(false)`.
+     * Dropped: version check, telemetry (CollectData), account tags, one-time messages
      * (Discord/Christmas/April Fools/user-specific), Butler logs, the quest-limit handler (needs an
      * object `setGameObject`) and anti-counter-attack (`Bot.UltraBossHelper`). Starting also
      * registers {@link stopBotEvent}, which goes to the stop location when the script is stopped.
@@ -589,7 +590,9 @@ export class CoreBots {
                 bot.options.joinMapTries = 3;
             }
 
-            // C# Bot.Config.Configure() for scripts with options: not applicable.
+            if (bot.config.has(this.skipOptions.name) && !bot.config.get<boolean>(this.skipOptions.name)) {
+                bot.config.configure();
+            }
 
             // Pre-calc fallback server once
             const server =
@@ -3693,7 +3696,18 @@ export class CoreBots {
     static readonly reinstallCleanFlash =
         ". If the issue persists, try the following things in the order they are here:\n - Restart the client.\n - Restart your computer.\n - Reinstall the Turu client";
 
-    // C# SkipOptions / RetryCellOnAFK: SetOptions extras, dropped.
+    /**
+     * Add it to a script's options (with `dontPreconfigure`): {@link setOptions} opens the Script
+     * Options window on every start until it's ticked.
+     */
+    readonly skipOptions = option.bool(
+        "SkipOption",
+        "Skip this window next time",
+        "You will be able to return to this screen via [Scripts] -> [Edit Script Options] if you wish to change anything.",
+        false,
+    );
+
+    // C# RetryCellOnAFK: SetOptions extra, dropped.
 
     // ---------------------------------------------------------------------------------------
     // Maps

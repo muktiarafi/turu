@@ -47,7 +47,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   when the script is stopped, and uses boosts from the CBO Boosters switches.
 - **Script options:** a script exports `scriptOptions` (`defineScriptOptions`); Scripts > Edit
   Script Options edits them, saved in `options/<Storage>.cfg` like VibeSkua, and `bot.config.get`
-  reads them (`docs/turu/SCRIPTING.md`, "Options").
+  reads them (`docs/turu/SCRIPTING.md`, "Options"). Start opens the window and waits for it
+  unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
+  `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
   Options, Game and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
 
@@ -69,9 +71,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   consumables in game. The quest-limit handler (an object `setGameObject`) is dropped.
 - **No counter-attack pause** (`Bot.UltraBossHelper`).
 - **No reputation API:** CoreBots reads `world.myAvatar.factions` itself.
-- **Script options:** `DontPreconfigure` isn't ported, so the Script Options window never opens by
-  itself before a run (VibeSkua can show it on Start). Option groups (`MultiOptions`) and enum
-  options aren't ported either.
+- **Script options:** option groups (`MultiOptions`) and enum options aren't ported. The window
+  never opens by itself with `--headless`, or for runs started from the command line, the HTTP API
+  or auto-relogin (VibeSkua's `SilentConfig` covers only the command line and the scheduler; its
+  relogin restart can show it).
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

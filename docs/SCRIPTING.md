@@ -60,7 +60,7 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
 ## Options
 
 A script declares its options as VibeSkua does, and they show in Scripts > Edit Script Options
-once the script is loaded (before Start). Export them as `scriptOptions`:
+once the script is loaded. Export them as `scriptOptions`:
 
 ```ts
 import { bot, defineScriptOptions, option } from "turu";
@@ -82,8 +82,22 @@ export default function main(): void {
   doesn't declare throws. `bot.config.set(name, value)` changes and saves a value.
 - The window's Save writes the file; Cancel drops the changes. Reset Defaults only changes the
   window until you Save.
-- Not ported: VibeSkua's `DontPreconfigure` (the window never opens by itself before a run) and
-  option groups (`MultiOptions`). Enum options aren't supported.
+- Start opens the Script Options window and waits until it closes, as VibeSkua does. Pass `true`
+  as the third argument of `defineScriptOptions` (VibeSkua `DontPreconfigure`) to skip that, and
+  open it yourself with `bot.config.configure()`. That's what CoreBots scripts do: add
+  `Core.skipOptions` to the options, and `Core.setOptions()` opens the window on every start until
+  "Skip this window next time" is ticked:
+
+  ```ts
+  export const scriptOptions = defineScriptOptions("MyScript", [
+      option.bool("BuyReagents", "Buy Reagents?", "Use gold to buy the reagents.", false),
+      Core.skipOptions,
+  ], true);
+  ```
+- `bot.config.has(name)` tells whether the script declares an option.
+- The window doesn't open (`configure` returns at once) with `--headless`, or for runs started
+  from the command line, the HTTP API or auto-relogin: nobody is there to answer it.
+- Not ported: option groups (`MultiOptions`). Enum options aren't supported.
 
 ## CoreBots
 
