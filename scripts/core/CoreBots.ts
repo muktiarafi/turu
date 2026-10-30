@@ -1948,6 +1948,17 @@ export class CoreBots {
 
     // C# GhostItem: only used by Join's ghost-item map bypasses, which this port leaves out.
 
+    /**
+     * The boost of `boostType` an item gives, read from its `meta` ("dmgAll:1.25,gold:1.1"), or 0
+     * when it has none (C# `GetBoostFloat`). 1.25 is a 25% boost.
+     * @param item The item.
+     * @param boostType "cp", "gold", "rep", "exp", "dmgAll" or a race ("Undead", ...).
+     */
+    getBoostFloat(item: InventoryItem, boostType: string): number {
+        if (!item.meta || !item.meta.includes(boostType)) return 0;
+        return parseFloat(item.meta.split(",").find((meta) => meta.includes(boostType))!.split(":").pop()!);
+    }
+
     // ---------------------------------------------------------------------------------------
     // Drops
     // ---------------------------------------------------------------------------------------
@@ -4619,6 +4630,23 @@ export class CoreBots {
         this.logger("Please make sure you read this as it will only be shown once:\n\n" + message, "One Time-Only Message");
         this.oneTimeMessages.add(internalName);
         return false;
+    }
+
+    /**
+     * A field of an item's game object that {@link InventoryItem} doesn't carry (C#
+     * `GetItemProperty`): from `world.invTree` for an inventory item, else from the bank's or the
+     * house's item list.
+     * @param item The item.
+     * @param prop The game's field name ("iEnh", "ProcID", ...).
+     * @returns The value, or null when the item or the field isn't there.
+     */
+    getItemProperty<T>(item: InventoryItem, prop: string): T | null {
+        if (bot.inventory.contains(item.id)) return bot.flash.get<T>(`world.invTree.${item.id}.${prop}`) ?? null;
+        const list = bot.bank.contains(item.id) // Also covers banked house items
+            ? bot.flash.get<GameItem[] | null>("world.bankinfo.items")
+            : bot.flash.get<GameItem[] | null>("world.myAvatar.houseitems");
+        const found = list?.find((d) => num(d.ItemID) === item.id) as Record<string, unknown> | undefined;
+        return (found?.[prop] as T | undefined) ?? null;
     }
 
     // C# AprilFools / EnforceInvariantCulture / UserSpecificMessages: dropped.

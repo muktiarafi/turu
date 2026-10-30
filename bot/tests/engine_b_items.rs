@@ -333,3 +333,22 @@ fn skill_timer_starts_pauses_and_stops() {
             .any(|c| c == "callGameFunction0(world.cancelTarget)")
     );
 }
+
+#[test]
+fn items_carry_their_enhancement_pattern_and_proc() {
+    let item: ItemBase = serde_json::from_value(json!({
+        "ItemID": 7, "sName": "Blade", "sType": "Sword", "sES": "Weapon",
+        "EnhLvl": "100", "EnhPatternID": "9", "ProcID": 14
+    }))
+    .unwrap();
+    assert_eq!(item.enhancement_pattern_id, 9);
+    assert_eq!(item.proc_id, 14);
+    let js = serde_json::to_value(&item).unwrap();
+    assert_eq!(js["enhancementPatternId"], 9);
+    assert_eq!(js["procId"], 14);
+    assert_eq!(js["equipSlot"], "Weapon");
+    assert_eq!(item.game_json()["EnhPatternID"], 9);
+    // Unenhanced items have neither field.
+    let plain: ItemBase = serde_json::from_value(json!({ "ItemID": 8, "sName": "Rock" })).unwrap();
+    assert_eq!((plain.enhancement_pattern_id, plain.proc_id), (0, 0));
+}

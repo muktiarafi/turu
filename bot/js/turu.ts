@@ -57,6 +57,18 @@ export interface InventoryItem {
     maxStack: number;
     level: number;
     enhancementLevel: number;
+    /**
+     * The enhancement type (`EnhPatternID`): 2 Fighter, 3 Thief, 5 Hybrid, 6 Wizard, 7 Healer,
+     * 8 SpellBreaker, 9 Lucky; or the cape/helm special: 10 Forge, 11 Absolution, 12 Avarice,
+     * 24 Vainglory, 25 Vim, 26 Examen, 27 Pneuma, 28 Anima, 29 Penitence, 30 Lament, 32 Hearty.
+     */
+    enhancementPatternId: number;
+    /**
+     * The weapon special (`ProcID`): 2 Spiral Carve, 3 Awe Blast, 4 Health Vamp, 5 Mana Vamp,
+     * 6 Powerword Die, 7 Lacerate, 8 Smite, 9 Valiance, 10 Arcana's Concerto, 11 Acheron,
+     * 12 Elysium, 13 Praxis, 14 Dauntless, 15 Ravenous.
+     */
+    procId: number;
     equipped: boolean;
     /** Member-only item. */
     upgrade: boolean;
@@ -66,6 +78,7 @@ export interface InventoryItem {
     house: boolean;
     /** "Class", "Sword", "Item", "Resource", "Quest Item", ... */
     category: string;
+    /** `sES` (VibeSkua `ItemGroup`): "co" armor/class, "ba" cape, "he" helm, "pe" pet, "Weapon". */
     equipSlot: string;
     meta: string;
 }
