@@ -98,7 +98,8 @@ Startup sequence (same as VibeSkua):
 3. AS3 fetches `https://game.aq.com/game/api/data/gameversion`, loads the game SWF and calls
    `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (the bot marks the game
    loaded and sends `GameLoaded`; its 20 ms timer runs from startup).
-4. The user logs in with the game's own login screen (auto-login via CLI flags comes later).
+4. The user logs in with the game's own login screen, or the bot does with `--user` and
+   `--password` (`startup.rs`: `loaded` → `ensure_relogin(server)`, then `--run-script`).
    Relogins (`api/servers.rs`) reuse that login: `login`, wait for the server list, then
    `clickServer` (or `connectToServer` / `connectTo`), on the script thread or, for
    auto-relogin, on a "Relogin" thread that `cancel_relogin` stops.

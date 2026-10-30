@@ -16,6 +16,7 @@ pub mod options;
 pub mod paths;
 pub mod script;
 pub mod skills;
+pub mod startup;
 pub mod state;
 
 pub use error::{BotError, BotResult};
@@ -54,6 +55,8 @@ pub struct Bot {
     pub boosts: api::boosts::BoostRunner,
     pub quests: api::quests::QuestRunner,
     pub servers: api::servers::ServerRunner,
+    /// The command-line login, until the game has loaded.
+    pub startup: Mutex<Option<startup::Startup>>,
     pub paths: paths::Paths,
 }
 
@@ -76,6 +79,7 @@ impl Bot {
             boosts: api::boosts::BoostRunner::default(),
             quests: api::quests::QuestRunner::default(),
             servers: api::servers::ServerRunner::default(),
+            startup: Mutex::new(None),
             paths,
         });
         background::start(&bot);

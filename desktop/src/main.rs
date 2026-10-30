@@ -211,6 +211,8 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
         unsafe { env::set_var("DISABLE_VULKAN_OBS_CAPTURE", "1") };
     }
     args.retain(|a| !is(a, "--gui"));
+    // Turu: `--user`, `--password`, `--run-script`, ... are ours, not Ruffle's.
+    turu::take_startup_args(&mut args);
     let has_movie = Opt::try_parse_from(&args).map_or(true, |opt| opt.movie_url.is_some());
     if has_movie {
         // A movie was given (or the arguments don't parse; let clap report that): plain Ruffle.

@@ -30,9 +30,18 @@ pub(crate) fn start(bot: &Arc<Bot>) {
         .expect("couldn't start the bot's timer thread");
 }
 
-fn do_work(bot: &Bot, work: Work) {
+fn do_work(bot: &Arc<Bot>, work: Work) {
     let result = match &work {
         Work::LoadClient => bot.flash.call("loadClient", vec![]).map(|_| ()),
+        Work::AutoLogin => {
+            // Logging in takes a while; items added meanwhile still need this thread.
+            let bot = bot.clone();
+            std::thread::Builder::new()
+                .name("Turu Login".into())
+                .spawn(move || crate::startup::auto_login(&bot))
+                .map(|_| ())
+                .map_err(|e| crate::BotError::Other(e.to_string()))
+        }
         Work::SetBackground => {
             std::thread::sleep(Duration::from_secs(1));
             bot.flash

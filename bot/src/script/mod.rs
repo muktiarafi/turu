@@ -313,6 +313,7 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.control.reset();
     bot.scripts.set_status(status);
     bot.scripts.running.store(false, Ordering::Release);
+    bot.events.emit(crate::events::BotEvent::ScriptStopped);
 }
 
 #[cfg(test)]

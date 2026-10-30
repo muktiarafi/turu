@@ -16,6 +16,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   and restarts the script; a loading screen stuck for `LoadTimeout` reloads the map or relogs.
   Logging out yourself (the game's Logout or Change Server, `bot.servers.logout()`) disarms it.
   CoreBots' `relogin()` uses it.
+- **Command-line login** (VibeSkua's flags, long forms only, as Ruffle has `-p` and `-s`):
+  `turu --user <name> --password <password> --server Artix --run-script farm/GoldFarm.ts`
+  logs in once the game has loaded and then starts the script. `TURU_PASSWORD` can replace
+  `--password` (a command line is visible to other users). `--load-script` only loads,
+  `--exit-on-script-stop` logs out and quits when the script stops (not for auto-relogin).
+  `bot/src/startup.rs`, flags in `desktop/src/turu.rs`.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
@@ -38,9 +44,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
-- **No auto-login:** you log in yourself the first time (VibeSkua's command-line login isn't
-  ported); relogins reuse that login. CoreBots' restart after a logout
-  (`Bot.Manager.RestartScriptAsync`) isn't ported either.
+- **No windowless mode yet:** `--user`/`--password` log in without you, but the window still
+  opens (Headless Mode only lowers the frame rate). CoreBots' restart after a logout
+  (`Bot.Manager.RestartScriptAsync`) isn't ported.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
