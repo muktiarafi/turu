@@ -1950,12 +1950,14 @@ export class CoreBots {
     // C# GhostItem: only used by Join's ghost-item map bypasses, which this port leaves out.
 
     /**
-     * The value of a boost (e.g. "dmgAll") in the item's meta ("dmgAll:0.3,cp:0.25"); 0 when
-     * the item has none.
+     * The boost of `boostType` an item gives, read from its `meta` ("dmgAll:1.25,gold:1.1"), or 0
+     * when it has none (C# `GetBoostFloat`). 1.25 is a 25% boost.
+     * @param item The item.
+     * @param boostType "cp", "gold", "rep", "exp", "dmgAll" or a race ("Undead", ...).
      */
     getBoostFloat(item: InventoryItem, boostType: string): number {
         if (!item.meta || !item.meta.includes(boostType)) return 0;
-        return Number.parseFloat(item.meta.split(",").find((meta) => meta.includes(boostType))!.split(":").pop()!);
+        return parseFloat(item.meta.split(",").find((meta) => meta.includes(boostType))!.split(":").pop()!);
     }
 
     /** Removes the items from the inventory (AC items are banked instead). */

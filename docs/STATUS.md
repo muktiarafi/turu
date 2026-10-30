@@ -50,10 +50,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
 - **Scripts:** TypeScript, run in QuickJS after oxc strips the types. Ported: the parts of
-  CoreBots, CoreFarms, CoreAdvanced (shop buying and the merge-shop template) and CoreNation that
-  the ported scripts and the FarmerJoe include tree reach (the Core boss kills, PvP moves, the
-  brawls, fishing, boosts and 17 more reputations, The Assistant, the Shadow Blast medals), all
-  of CoreStory (for the story scripts) and CoreDailies,
+  CoreBots, CoreFarms, CoreAdvanced (shop buying, the merge-shop template, gear and enhancement)
+  and CoreNation that the ported scripts and the FarmerJoe include tree reach (the Core boss kills,
+  PvP moves, the brawls, fishing, boosts and 17 more reputations, The Assistant, the Shadow Blast
+  medals), all of CoreStory (for the story scripts) and CoreDailies,
   `nation/materials/0MaxBags.ts`,
   `farm/GoldFarm.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
@@ -113,6 +113,15 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **The merge template is unverified in game:** its tests run it against a fake shop (picking the
   items, handing a requirement the shop doesn't sell to `findIngredients`); buying and the nested
   merges need a real merge run (SynderesMerge is the smallest).
+- **Enhancement is unverified in game:** CoreAdvanced's `enhanceItem`, `enhanceEquipped`,
+  `smartEnhance`, `gearStore` and `rankUpClass` follow C#, and their tests run them against fake
+  enhancement shops (which shop, which enhancement, the `enhanceItemShop` packet, skipping what's
+  done, locked specials). Check in game the real shops' item names: C# picks a special by its
+  name and, on a tie, the first plain "... Cape/Helm/Weapon" entry would win. C#'s odd spots are
+  kept (Forge = 1 takes the Awe-shop path since the specials were renumbered). Items carry
+  `enhancementPatternId` and `procId` now (`EnhPatternID`, `ProcID`); the weapon proc and the
+  applied enhancement ID are read from `world.invTree` as C# does. `rankUpClass` (Icestorm
+  Arena) needs a real run.
 - **CoreDailies is unverified in game:** its tests check `checkDailyv2` (daily done, max
   stacks, the drop list) against a fake game. The dailies themselves, the friendship packets and
   `bot.player.webBadges` (a request to account.aq.com's character page, for `Core.hasWebBadge`)

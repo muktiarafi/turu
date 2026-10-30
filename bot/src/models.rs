@@ -101,6 +101,21 @@ pub struct ItemBase {
         default
     )]
     pub enhancement_level: i64,
+    /// `EnhPatternID`: the enhancement type (2 Fighter ... 9 Lucky) or the cape/helm special
+    /// (10 Forge, 24 Vainglory, ...).
+    #[serde(
+        rename(deserialize = "EnhPatternID", serialize = "enhancementPatternId"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub enhancement_pattern_id: i64,
+    /// `ProcID`: the weapon special (2 Spiral Carve ... 15 Ravenous).
+    #[serde(
+        rename(deserialize = "ProcID", serialize = "procId"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub proc_id: i64,
     #[serde(
         rename(deserialize = "bEquip", serialize = "equipped"),
         deserialize_with = "lenient_bool",
@@ -181,6 +196,8 @@ impl ItemBase {
             "iStk": self.max_stack,
             "iLvl": self.level,
             "EnhLvl": self.enhancement_level,
+            "EnhPatternID": self.enhancement_pattern_id,
+            "ProcID": self.proc_id,
             "bEquip": flag(self.equipped),
             "bUpg": flag(self.upgrade),
             "bCoins": flag(self.coins),

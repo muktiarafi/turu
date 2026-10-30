@@ -11,7 +11,7 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 | `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, alchemy crafting, the Bludrut and Death Pit brawls, Battle Under B, fishing and its boosts, and the Alchemy, Blacksmithing, Blade of Awe, Chaos, ChronoSpan, Death Pit Brawl, DoomWood, Evil, Fishing, Glacera, Good, Loremaster, Mythsong, SpellCrafting, Swordhaven and Vampire reps). |
 | `core/CoreStory.ts` | Port of `CoreStory.cs`: `killQuest`, `mapItemQuest`, `buyQuest`, `chainQuest`, `questProgression`, `legacyQuestManager`, `preLoad`. Each script makes its own `new CoreStory()`. |
 | `core/CoreDailies.ts` | Port of `CoreDailies.cs`: every daily, weekly and monthly (`checkDailyv2`, `dailyRoutine`, metals, class tokens, boosts, friendships, ...). Each script makes its own `new CoreDailies()`. |
-| `core/CoreAdvanced.ts` | The shop part of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs; `startBuyAllMerge` is the merge-shop template (with `mergeOptions` and `mergeOptionsEnum`). |
+| `core/CoreAdvanced.ts` | The shop, gear and enhancement parts of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs; `startBuyAllMerge` is the merge-shop template (with `mergeOptions` and `mergeOptionsEnum`); `enhanceItem`, `enhanceEquipped`, `smartEnhance` (the class library), `gearStore`, `rankUpClass`, `hasMinimalBoost` and the enums `EnhancementType`, `CapeSpecial`, `HelmSpecial`, `WeaponSpecial`, `GenericGearBoost`, `RacialGearBoost`. Not yet: the Kill region. |
 | `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials, Swindles Return, The Assistant and the Shadow Blast medals and emblems. |
 | `nation/materials/0MaxBags.ts` | Port of `Nation/Materials/0MaxBags.cs`. |
 | `farm/GoldFarm.ts` | Port of `Farm/GoldFarm.cs`. |
@@ -77,6 +77,22 @@ export default function main(): void {
   `Core.setOptions()` fills them from Options > CoreBots (the CBO file), as in VibeSkua. Keys
   read from that file while a script runs can be overridden in `Core.cboValues`
   (e.g. `Core.cboValues["Nation_SellMemVoucher"] = "True"`).
+
+## Enhancing
+
+The specials C# passes positionally or by name become an option object; a list of names is the
+same method:
+
+- `Adv.EnhanceItem(cape, EnhancementType.Lucky, CapeSpecial.Vainglory)` ->
+  `Adv.enhanceItem(cape, EnhancementType.Lucky, { cSpecial: CapeSpecial.Vainglory })`
+- `Adv.EnhanceItem(weapon, EnhancementType.Lucky, wSpecial: WeaponSpecial.Dauntless)` ->
+  `Adv.enhanceItem(weapon, EnhancementType.Lucky, { wSpecial: WeaponSpecial.Dauntless })`
+- `Adv.EnhanceEquipped(type, cape, helm, weapon, true)` ->
+  `Adv.enhanceEquipped(type, { cSpecial: cape, hSpecial: helm, wSpecial: weapon, bypassDisableAutoEnhance: true })`
+- `Adv.SmartEnhance(className, true)` -> `Adv.smartEnhance(className, { forceEnh: true })`
+- `Adv.GearStore(true, EnhAfter: true)` -> `Adv.gearStore(true, { enhAfter: true })`
+- `Adv.RankUpClass("Name", itemid: 36298)` -> `Adv.rankUpClass("Name", { itemId: 36298 })` (or
+  `Adv.rankUpClass(36298)`); `RankUpClass(name, false)` -> `rankUpClass(name, { gearRestore: false })`.
 
 ## Merge scripts
 
