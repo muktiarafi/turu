@@ -24,7 +24,11 @@ use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 use winit::event_loop::EventLoopProxy;
 
 pub const APP_NAME: &str = "Turu";
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The release workflow sets `TURU_VERSION` from the git tag; local builds show Ruffle's version.
+pub const VERSION: &str = match option_env!("TURU_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 /// How long a bot thread waits for the player to answer one call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);

@@ -1,0 +1,258 @@
+name: Release
+
+# Pushing a tag such as `v0.1.0-alpha.1` builds Turu for every platform and publishes a GitHub
+# release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
+# Running it by hand (Actions > Release > Run workflow) only builds; the packages are kept as
+# workflow artifacts.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # The feature set Mugetsu releases with (see CLAUDE.md). Font lookups are guarded by
+  # `cfg(unix)`, so the same list builds on Windows.
+  FEATURES: software_video,external_video,lzma,jpegxr,fontconfig-dlopen
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          prerelease=false
+          [[ "$version" == *-* ]] && prerelease=true
+          echo "version=$version" | tee -a "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" | tee -a "$GITHUB_OUTPUT"
+
+  test:
+    name: Test engine and scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+
+      - name: Test the bot engine
+        run: cargo test --locked -p turu_bot
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Type-check scripts
+        working-directory: scripts
+        run: npx -y -p typescript@5.9.3 tsc --noEmit -p .
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - name: windows-x86_64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+            rustflags: -Ctarget-feature=+crt-static
+          # The two macOS builds are joined into one universal app by `macos-app`.
+          - name: macos-aarch64
+            os: macos-26
+            target: aarch64-apple-darwin
+          - name: macos-x86_64
+            os: macos-26
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Ruffle compiles its Flash classes (playerglobal) with asc.jar.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.name }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $(cat .github/linux-dependencies.txt)
+
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --locked --package turu --profile dist --target ${{ matrix.target }} \
+            --no-default-features --features "$FEATURES"
+        env:
+          TURU_VERSION: ${{ needs.version.outputs.version }}
+          CFG_RELEASE_CHANNEL: stable
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+
+      - name: Package
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          bin=target/${{ matrix.target }}/dist
+          .github/scripts/turu-package-common.sh package
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            cp "$bin/turu.exe" package/
+            (cd package && 7z a "../turu-$VERSION-${{ matrix.name }}.zip" .)
+          else
+            cp "$bin/turu" package/
+            chmod +x package/turu
+            tar -czf "turu-$VERSION-${{ matrix.name }}.tar.gz" -C package .
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: runner.os != 'macOS'
+        with:
+          name: turu-${{ matrix.name }}
+          path: turu-${{ needs.version.outputs.version }}-${{ matrix.name }}.*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'macOS'
+        with:
+          name: bin-${{ matrix.name }}
+          path: target/${{ matrix.target }}/dist/turu
+          if-no-files-found: error
+
+  macos-app:
+    name: Build macos-universal
+    needs: [version, build]
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bin-macos-aarch64
+          path: bin/aarch64
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bin-macos-x86_64
+          path: bin/x86_64
+
+      - name: Make the app bundle
+        run: |
+          app=package/Turu.app
+          .github/scripts/turu-package-common.sh package
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          lipo -create -output "$app/Contents/MacOS/turu" bin/aarch64/turu bin/x86_64/turu
+          chmod +x "$app/Contents/MacOS/turu"
+
+          # iconutil wants a folder named *.iconset.
+          cp -R desktop/assets/Assets.xcassets/RuffleMacIcon.iconset Turu.iconset
+          iconutil -c icns -o "$app/Contents/Resources/Turu.icns" Turu.iconset
+
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>en</string>
+              <key>CFBundleDisplayName</key>
+              <string>Turu</string>
+              <key>CFBundleExecutable</key>
+              <string>turu</string>
+              <key>CFBundleIconFile</key>
+              <string>Turu</string>
+              <key>CFBundleIdentifier</key>
+              <string>io.github.muktiarafi.turu</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>Turu</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION%%-*}</string>
+              <key>CFBundleVersion</key>
+              <string>$VERSION</string>
+              <key>CFBundleSupportedPlatforms</key>
+              <array>
+                  <string>MacOSX</string>
+              </array>
+              <key>LSApplicationCategoryType</key>
+              <string>public.app-category.games</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>11.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$app/Contents/Info.plist"
+
+          # Ad-hoc signature: enough for macOS to run it; not notarized (see README.txt).
+          codesign --force --sign - --timestamp=none "$app"
+
+          # --norsrc: no AppleDouble ("._") files in the zip.
+          ditto -c -k --norsrc package "turu-$VERSION-macos-universal.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: turu-macos-universal
+          path: turu-${{ needs.version.outputs.version }}-macos-universal.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    needs: [version, test, build, macos-app]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: turu-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          flags=(--title "Turu ${{ needs.version.outputs.version }}" --generate-notes)
+          [[ "${{ needs.version.outputs.prerelease }}" == true ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${flags[@]}" dist/*
