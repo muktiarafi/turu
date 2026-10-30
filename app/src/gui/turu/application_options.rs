@@ -1,5 +1,5 @@
 //! Options > Application (VibeSkua's 580x650 `ApplicationOptionsView`): a searchable list of
-//! Turu's own settings in four sections. Changes are saved at once: `settings.json`
+//! Turu's own settings in five sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
 //! just those two fields of `options.json`. Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
@@ -18,10 +18,17 @@ enum Section {
     Updates,
     Webhooks,
     Monitor,
+    Report,
 }
 
 impl Section {
-    const ALL: [Section; 4] = [Self::General, Self::Updates, Self::Webhooks, Self::Monitor];
+    const ALL: [Section; 5] = [
+        Self::General,
+        Self::Updates,
+        Self::Webhooks,
+        Self::Monitor,
+        Self::Report,
+    ];
 
     fn chip(self) -> &'static str {
         match self {
@@ -29,6 +36,7 @@ impl Section {
             Self::Updates => "Updates",
             Self::Webhooks => "Webhooks",
             Self::Monitor => "Monitor",
+            Self::Report => "Report",
         }
     }
 
@@ -38,6 +46,7 @@ impl Section {
             Self::Updates => "Auto Updates & Sync",
             Self::Webhooks => "Webhooks & Alerts",
             Self::Monitor => "Web Monitor",
+            Self::Report => "Report to Another Monitor",
         }
     }
 }
@@ -47,6 +56,8 @@ enum Field {
     /// A number with its suffix, smallest and largest value.
     Int(fn(&mut AppSettings) -> &mut i32, &'static str, i32, i32),
     Text(fn(&mut AppSettings) -> &mut String),
+    /// Text shown as dots (a key).
+    Secret(fn(&mut AppSettings) -> &mut String),
     /// Stored, but nothing reads it yet: shown greyed.
     Unused(fn(&mut AppSettings) -> &mut bool),
     OptionBool(fn(&mut BotOptions) -> &mut bool),
@@ -55,7 +66,11 @@ enum Field {
     ClearFlashCache,
     /// Where the monitor is served, with Open, Copy Link and Copy Key.
     MonitorLinks,
+    /// Show / Hide the phone link's QR code.
+    PhoneQr,
     RegenerateMonitorKey,
+    /// Copy Report Settings and Regenerate, for the push key.
+    PushKey,
 }
 
 struct Entry {
@@ -233,9 +248,45 @@ fn entries() -> Vec<Entry> {
         entry!(Monitor, "Monitor Link", "", Field::MonitorLinks),
         entry!(
             Monitor,
+            "Phone QR Code",
+            "Scan it with your phone's camera: the link on your network, with the key (needs Allow Other Devices)",
+            Field::PhoneQr
+        ),
+        entry!(
+            Monitor,
             "Regenerate Key",
             "Devices given the old key or link lose access",
             Field::RegenerateMonitorKey
+        ),
+        entry!(
+            Monitor,
+            "Push Key",
+            "Other machines report their bots here with it: Copy Report Settings gives their Report To address and key",
+            Field::PushKey
+        ),
+        entry!(
+            Report,
+            "Report To",
+            "Another Turu's monitor, e.g. https://my-pc.tail1234.ts.net or http://100.101.102.103:8790: this machine's bots show on its page. Empty: off",
+            Field::Text(|s| &mut s.monitor_report_to)
+        ),
+        entry!(
+            Report,
+            "Push Key",
+            "The push key from that monitor's Copy Report Settings",
+            Field::Secret(|s| &mut s.monitor_report_key)
+        ),
+        entry!(
+            Report,
+            "Machine Name",
+            "This machine's name on that page; empty: the computer's name",
+            Field::Text(|s| &mut s.monitor_machine_name)
+        ),
+        entry!(
+            Report,
+            "Accept Commands",
+            "Run the commands that monitor sends (start, stop, relog, ...). Its log views work either way",
+            Field::Bool(|s| &mut s.monitor_accept_commands)
         ),
     ]
 }
@@ -252,6 +303,11 @@ pub struct ApplicationOptionsWindow {
     confirm_new_key: bool,
     /// The outcome of the last monitor button (Copy, Regenerate), and whether it worked.
     monitor_message: Option<(String, bool)>,
+    /// "Regenerate" was clicked once for the push key.
+    confirm_new_push_key: bool,
+    show_qr: bool,
+    /// The QR code drawn, and the link it holds.
+    qr: Option<(String, egui::TextureHandle)>,
 }
 
 impl Default for ApplicationOptionsWindow {
@@ -264,6 +320,9 @@ impl Default for ApplicationOptionsWindow {
             cleared: None,
             confirm_new_key: false,
             monitor_message: None,
+            confirm_new_push_key: false,
+            show_qr: false,
+            qr: None,
         }
     }
 }
@@ -273,6 +332,7 @@ impl ApplicationOptionsWindow {
         if !*open {
             self.confirm_clear = false;
             self.confirm_new_key = false;
+            self.confirm_new_push_key = false;
             return;
         }
         super::window(ctx, "Application Options", [580.0, 650.0], 2)
@@ -337,7 +397,7 @@ impl ApplicationOptionsWindow {
                         for i in rows {
                             let entry = &entries[i];
                             let control_width = match entry.field {
-                                Field::Text(_) | Field::MonitorLinks => 230.0,
+                                Field::Text(_) | Field::Secret(_) | Field::MonitorLinks | Field::PushKey => 230.0,
                                 _ => 130.0,
                             };
                             ui.horizontal(|ui| {
@@ -405,10 +465,32 @@ impl ApplicationOptionsWindow {
                                     Field::ClearFlashCache => {
                                         self.clear_flash_cache(ui);
                                     }
+                                    Field::Secret(access) => {
+                                        let edit = egui::TextEdit::singleline(access(&mut settings))
+                                            .password(true)
+                                            .desired_width(220.0)
+                                            .margin(egui::Margin::symmetric(8, 4));
+                                        settings_changed |= ui.add(edit).changed();
+                                    }
                                     Field::MonitorLinks => self.monitor_links(ui, &settings),
+                                    Field::PhoneQr => {
+                                        let label = if self.show_qr { "Hide" } else { "Show" };
+                                        if widgets::button(ui, label, Kind::Normal, true, vec2(80.0, 24.0), "")
+                                            .clicked()
+                                        {
+                                            self.show_qr = !self.show_qr;
+                                        }
+                                    }
                                     Field::RegenerateMonitorKey => self.regenerate_key(ui),
+                                    Field::PushKey => self.push_key(ui, &settings),
                                 });
                             });
+                        }
+                        if section == Section::Monitor && self.show_qr {
+                            self.phone_qr(ui, &settings);
+                        }
+                        if section == Section::Report {
+                            report_status(ui, &settings);
                         }
                         if section == Section::Monitor {
                             monitor_status(ui);
@@ -514,6 +596,109 @@ impl ApplicationOptionsWindow {
         }
     }
 
+    /// The QR code of the link a phone opens: this computer's network address and the key.
+    fn phone_qr(&mut self, ui: &mut Ui, settings: &AppSettings) {
+        let link = match (crate::turu::monitor_status(), crate::turu::lan_address()) {
+            (crate::turu::MonitorStatus::Serving(addr), Some(ip)) if settings.monitor_allow_other_devices => {
+                let host = if ip.is_ipv6() {
+                    format!("[{ip}]")
+                } else {
+                    ip.to_string()
+                };
+                crate::turu::monitor_key().map(|key| format!("http://{host}:{}/#key={key}", addr.port()))
+            }
+            (crate::turu::MonitorStatus::Serving(_), _) if settings.monitor_allow_other_devices => {
+                Err("this computer has no network address".into())
+            }
+            _ => Err("turn on Enable Web Monitor and Allow Other Devices first".into()),
+        };
+        let link = match link {
+            Ok(link) => link,
+            Err(e) => {
+                ui.label(RichText::new(format!("No QR code: {e}.")).small().color(MUTED));
+                return;
+            }
+        };
+        if self.qr.as_ref().is_none_or(|(shown, _)| *shown != link) {
+            match qr_image(&link) {
+                Some(image) => {
+                    let texture = ui
+                        .ctx()
+                        .load_texture("turu-monitor-qr", image, egui::TextureOptions::NEAREST);
+                    self.qr = Some((link, texture));
+                }
+                None => {
+                    ui.label(
+                        RichText::new("The link is too long for a QR code.")
+                            .small()
+                            .color(DANGER),
+                    );
+                    return;
+                }
+            }
+        }
+        if let Some((_, texture)) = &self.qr {
+            ui.horizontal(|ui| {
+                ui.add(egui::Image::new(texture).fit_to_exact_size(vec2(180.0, 180.0)));
+                ui.label(
+                    RichText::new(
+                        "Holds the key: anyone who scans it can see your bots (and control them with Allow Control). \
+                         Over Tailscale, open the Tailscale address instead and enter the key with Copy Key.",
+                    )
+                    .small()
+                    .color(MUTED),
+                );
+            });
+        }
+    }
+
+    /// Copy Report Settings (this monitor's address and the push key, for another machine's
+    /// Report To) and Regenerate, asking once.
+    fn push_key(&mut self, ui: &mut Ui, settings: &AppSettings) {
+        let (label, kind) = if self.confirm_new_push_key {
+            ("Confirm", Kind::Danger)
+        } else {
+            ("Regenerate", Kind::Normal)
+        };
+        if widgets::button(ui, label, kind, true, vec2(90.0, 24.0), "").clicked() {
+            if self.confirm_new_push_key {
+                self.confirm_new_push_key = false;
+                self.monitor_message = Some(match crate::turu::regenerate_push_key() {
+                    Ok(()) => (
+                        "New push key made: reporting machines need it in their Push Key.".into(),
+                        true,
+                    ),
+                    Err(e) => (format!("Couldn't make a new push key: {e}"), false),
+                });
+            } else {
+                self.confirm_new_push_key = true;
+            }
+        }
+        if widgets::button(ui, "Copy Report Settings", Kind::Normal, true, vec2(130.0, 24.0), "").clicked() {
+            let address = match crate::turu::lan_address() {
+                Some(ip) if settings.monitor_allow_other_devices => {
+                    let host = if ip.is_ipv6() {
+                        format!("[{ip}]")
+                    } else {
+                        ip.to_string()
+                    };
+                    format!("http://{host}:{}", settings.monitor_port)
+                }
+                _ => format!("http://<this computer>:{}", settings.monitor_port),
+            };
+            self.monitor_message = Some(match crate::turu::monitor_push_key() {
+                Ok(key) => {
+                    ui.ctx().copy_text(format!("Report To: {address}\nPush Key: {key}"));
+                    (
+                        "Copied for the other machine's Report To and Push Key. Over Tailscale, use this computer's Tailscale name or 100.x address instead.".into(),
+                        true,
+                    )
+                }
+                Err(e) => (format!("Couldn't read the push key: {e}"), false),
+            });
+        }
+    }
+
     /// Asks once before replacing the key.
     fn regenerate_key(&mut self, ui: &mut Ui) {
         let (label, kind) = if self.confirm_new_key {
@@ -534,6 +719,52 @@ impl ApplicationOptionsWindow {
             Err(e) => (format!("Couldn't make a new key: {e}"), false),
         });
     }
+}
+
+/// The QR code of `text`, black on white with a quiet zone, 4 pixels a module.
+fn qr_image(text: &str) -> Option<egui::ColorImage> {
+    let code = qrcode::QrCode::new(text.as_bytes()).ok()?;
+    let (modules, quiet, scale) = (code.width(), 4, 4);
+    let side = (modules + 2 * quiet) * scale;
+    let colors = code.to_colors();
+    let mut pixels = vec![egui::Color32::WHITE; side * side];
+    for (i, color) in colors.iter().enumerate() {
+        if *color != qrcode::Color::Dark {
+            continue;
+        }
+        let (x, y) = (i % modules + quiet, i / modules + quiet);
+        for dy in 0..scale {
+            let row = (y * scale + dy) * side;
+            pixels[row + x * scale..row + (x + 1) * scale].fill(egui::Color32::BLACK);
+        }
+    }
+    Some(egui::ColorImage::new([side, side], pixels))
+}
+
+fn report_status(ui: &mut Ui, settings: &AppSettings) {
+    if turu_bot::monitor::push::insecure(&settings.monitor_report_to) {
+        ui.label(
+            RichText::new("Plain http:// across the internet: reports and the push key travel unencrypted. Use https:// or Tailscale.")
+                .small()
+                .color(DANGER),
+        );
+    }
+    let (text, color) = match crate::turu::report_state() {
+        crate::turu::ReportState::Off => (
+            format!(
+                "Not reporting. This machine would be \"{}\".",
+                crate::turu::default_machine_name()
+            ),
+            MUTED,
+        ),
+        crate::turu::ReportState::Failed(e) => (format!("Not reporting: {e}"), DANGER),
+        crate::turu::ReportState::Reporting(machine, status) => match (status.error, status.last_ok) {
+            (Some(e), _) => (format!("Reporting as \"{machine}\" fails: {e}"), DANGER),
+            (None, Some(_)) => (format!("Reporting as \"{machine}\"."), SUCCESS),
+            (None, None) => (format!("Reporting as \"{machine}\": connecting…"), MUTED),
+        },
+    };
+    ui.label(RichText::new(text).small().color(color));
 }
 
 fn monitor_status(ui: &mut Ui) {

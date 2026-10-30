@@ -54,8 +54,16 @@ static MONITOR: Mutex<Monitor> = Mutex::new(Monitor {
     running: None,
     error: None,
     key: None,
+    push_key: None,
+    reporter: None,
+    reporting: None,
+    report_error: None,
     generation: 0,
 });
+/// `--monitor[=address]` (empty without an address) and `--report-to`'s URL: they override
+/// Options > Application > Monitor for this run.
+static MONITOR_FLAG: Mutex<Option<String>> = Mutex::new(None);
+static REPORT_FLAG: Mutex<Option<String>> = Mutex::new(None);
 
 /// Ruffle's SharedObjects folder (`--save-directory`): what "Clear Flash Cache" empties.
 static SAVE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
@@ -301,6 +309,8 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         exit_with_parent,
         headless,
         api,
+        monitor,
+        report_to,
     } = parse_startup_args(args);
     if exit_with_parent {
         LAUNCHED_BY_ARMY.store(true, Ordering::Relaxed);
@@ -310,6 +320,13 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     if let Ok(mut slot) = API.lock() {
         *slot = api;
     }
+    if let Some(addr) = monitor.as_deref().filter(|a| !a.is_empty())
+        && addr.parse::<std::net::SocketAddr>().is_err()
+    {
+        tracing::warn!("--monitor={addr}: expected an address like 0.0.0.0:8790; using the settings' port");
+    }
+    *MONITOR_FLAG.lock().unwrap_or_else(|e| e.into_inner()) = monitor;
+    *REPORT_FLAG.lock().unwrap_or_else(|e| e.into_inner()) = report_to;
     if startup.password.is_none() {
         startup.password = std::env::var("TURU_PASSWORD").ok().filter(|p| !p.is_empty());
     }
@@ -365,6 +382,12 @@ struct Monitor {
     /// Why it isn't running.
     error: Option<String>,
     key: Option<Arc<turu_bot::monitor::server::Key>>,
+    push_key: Option<Arc<turu_bot::monitor::server::Key>>,
+    /// Reporting to another machine's monitor, and what to.
+    reporter: Option<turu_bot::monitor::push::Reporter>,
+    reporting: Option<turu_bot::monitor::push::ReportTo>,
+    /// Why Report To didn't start.
+    report_error: Option<String>,
     /// Bumped by every `apply_monitor`; only the latest one applies.
     generation: u64,
 }
@@ -395,16 +418,41 @@ pub fn monitor_status() -> MonitorStatus {
     }
 }
 
-/// Starts the web monitor at launch when Options > Application has it on. Only this process
-/// serves it: clients launched by Army > Accounts don't.
+/// How reporting to another machine's monitor goes, for Options > Application.
+pub enum ReportState {
+    Off,
+    Failed(String),
+    /// As this machine name, with its last report.
+    Reporting(String, turu_bot::monitor::push::ReportStatus),
+}
+
+pub fn report_state() -> ReportState {
+    let monitor = monitor_lock();
+    match (&monitor.reporter, &monitor.reporting, &monitor.report_error) {
+        (Some(reporter), Some(to), _) => ReportState::Reporting(to.machine.clone(), reporter.status()),
+        (_, _, Some(error)) => ReportState::Failed(error.clone()),
+        _ => ReportState::Off,
+    }
+}
+
+/// This computer's name, as reports use it when Machine Name is empty (asked once).
+pub fn default_machine_name() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(turu_bot::monitor::push::default_machine_name)
+}
+
+/// Starts the web monitor and Report To at launch when Options > Application (or `--monitor`,
+/// `--report-to`) has them on. Only this process does: clients launched by Army > Accounts
+/// don't.
 pub fn start_monitor() {
     let settings = bot().settings.read().clone();
     let generation = monitor_lock().generation;
     apply_monitor_now(&settings, generation);
 }
 
-/// Starts, restarts or stops the web monitor for these settings, half a second later (dragging
-/// the port changes it every frame), off the UI thread (stopping waits for the server's thread).
+/// Starts, restarts or stops the web monitor and Report To for these settings, half a second
+/// later (dragging the port changes it every frame), off the UI thread (stopping waits for the
+/// server's thread).
 pub fn apply_monitor(settings: &turu_bot::settings::AppSettings) {
     let generation = {
         let mut monitor = monitor_lock();
@@ -418,15 +466,72 @@ pub fn apply_monitor(settings: &turu_bot::settings::AppSettings) {
     });
 }
 
+/// The settings with `--monitor`, `--report-to` and `TURU_MONITOR_PUSH_KEY` applied.
+fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::settings::AppSettings {
+    let mut settings = settings.clone();
+    let flag = |slot: &Mutex<Option<String>>| slot.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(addr) = flag(&MONITOR_FLAG) {
+        settings.monitor_enabled = true;
+        if let Ok(addr) = addr.parse::<std::net::SocketAddr>() {
+            settings.monitor_port = i32::from(addr.port());
+            settings.monitor_allow_other_devices = !addr.ip().is_loopback();
+        }
+    }
+    if let Some(url) = flag(&REPORT_FLAG) {
+        settings.monitor_report_to = url;
+    }
+    if let Some(key) = std::env::var("TURU_MONITOR_PUSH_KEY").ok().filter(|k| !k.trim().is_empty()) {
+        settings.monitor_report_key = key;
+    }
+    settings
+}
+
 fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64) {
-    use turu_bot::monitor::server::{Key, Server, load_key};
+    use turu_bot::monitor::push::{ReportTo, Reporter};
+    use turu_bot::monitor::server::{Server, load_key, load_push_key};
     if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
         return;
     }
+    let settings = monitor_settings(settings);
     let mut monitor = monitor_lock();
     if monitor.generation != generation {
         return;
     }
+
+    // Report To.
+    let url = settings.monitor_report_to.trim();
+    let report = (!url.is_empty()).then(|| ReportTo {
+        url: url.to_owned(),
+        push_key: settings.monitor_report_key.trim().to_owned(),
+        machine: match settings.monitor_machine_name.trim() {
+            "" => default_machine_name().to_owned(),
+            name => turu_bot::monitor::hub::machine_name(name),
+        },
+        accept_commands: settings.monitor_accept_commands,
+        version: VERSION.into(),
+    });
+    if report != monitor.reporting {
+        // Stopping waits for the report in flight: not while holding the lock.
+        if let Some(old) = monitor.reporter.take() {
+            let _ = std::thread::Builder::new().name("Turu Monitor Report Stop".into()).spawn(move || drop(old));
+        }
+        monitor.report_error = None;
+        monitor.reporting.clone_from(&report);
+        if let Some(to) = report {
+            match Reporter::start(monitor_hub().clone(), to.clone()) {
+                Ok(reporter) => {
+                    tracing::info!("Reporting to the monitor at {} as {}", to.url, to.machine);
+                    monitor.reporter = Some(reporter);
+                }
+                Err(e) => {
+                    tracing::error!("Report To: {e}");
+                    monitor.report_error = Some(e);
+                }
+            }
+        }
+    }
+
+    // The server.
     let port = u16::try_from(settings.monitor_port).unwrap_or(turu_bot::monitor::DEFAULT_PORT);
     let wanted = settings.monitor_enabled.then_some((settings.monitor_allow_other_devices, port));
     if wanted == monitor.running && (monitor.server.is_some() || wanted.is_none()) {
@@ -443,19 +548,14 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
         tracing::info!("Web monitor stopped");
         return;
     };
-    let key = match &monitor.key {
-        Some(key) => key.clone(),
-        None => match load_key(&bot().paths) {
-            Ok(key) => {
-                let key = Key::new(key);
-                monitor.key = Some(key.clone());
-                key
-            }
-            Err(e) => {
-                monitor.error = Some(format!("couldn't read the monitor key: {e}"));
-                return;
-            }
-        },
+    let keys = loaded_key(&mut monitor.key, load_key)
+        .and_then(|key| Ok((key, loaded_key(&mut monitor.push_key, load_push_key)?)));
+    let (key, push_key) = match keys {
+        Ok(keys) => keys,
+        Err(e) => {
+            monitor.error = Some(format!("couldn't read the monitor keys: {e}"));
+            return;
+        }
     };
     let ip = if others {
         std::net::Ipv4Addr::UNSPECIFIED
@@ -463,7 +563,8 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
         std::net::Ipv4Addr::LOCALHOST
     };
     let hub = monitor_hub().clone();
-    match Server::start((ip, port).into(), key, hub, VERSION.into(), settings.monitor_allow_control) {
+    let control = settings.monitor_allow_control;
+    match Server::start((ip, port).into(), key, push_key, hub, VERSION.into(), control) {
         Ok(server) => {
             tracing::info!("Web monitor on http://{}", server.addr());
             monitor.server = Some(server);
@@ -476,25 +577,46 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
     }
 }
 
+type KeyLoader = fn(&turu_bot::paths::Paths) -> Result<String, String>;
+
+/// The key in `slot`, read from its file (made the first time) when it's not there yet.
+fn loaded_key(
+    slot: &mut Option<Arc<turu_bot::monitor::server::Key>>,
+    load: KeyLoader,
+) -> Result<Arc<turu_bot::monitor::server::Key>, String> {
+    if let Some(key) = slot {
+        return Ok(key.clone());
+    }
+    let key = turu_bot::monitor::server::Key::new(load(&bot().paths)?);
+    *slot = Some(key.clone());
+    Ok(key)
+}
+
 /// The monitor's key, made the first time it's asked for.
 pub fn monitor_key() -> Result<String, String> {
     let mut monitor = monitor_lock();
-    if let Some(key) = &monitor.key {
-        return Ok(key.get());
-    }
-    let key = turu_bot::monitor::server::load_key(&bot().paths)?;
-    monitor.key = Some(turu_bot::monitor::server::Key::new(key.clone()));
-    Ok(key)
+    loaded_key(&mut monitor.key, turu_bot::monitor::server::load_key).map(|k| k.get())
+}
+
+/// The key other machines report with (Copy Report Settings).
+pub fn monitor_push_key() -> Result<String, String> {
+    let mut monitor = monitor_lock();
+    loaded_key(&mut monitor.push_key, turu_bot::monitor::server::load_push_key).map(|k| k.get())
 }
 
 /// A new key: devices given the old one are cut off at their next request.
 pub fn regenerate_monitor_key() -> Result<(), String> {
     let key = turu_bot::monitor::server::new_key(&bot().paths)?;
     let mut monitor = monitor_lock();
-    match &monitor.key {
-        Some(current) => current.set(key),
-        None => monitor.key = Some(turu_bot::monitor::server::Key::new(key)),
-    }
+    loaded_key(&mut monitor.key, |_| Ok(String::new()))?.set(key);
+    Ok(())
+}
+
+/// A new push key: machines reporting with the old one are refused from their next report.
+pub fn regenerate_push_key() -> Result<(), String> {
+    let key = turu_bot::monitor::server::new_push_key(&bot().paths)?;
+    let mut monitor = monitor_lock();
+    loaded_key(&mut monitor.push_key, |_| Ok(String::new()))?.set(key);
     Ok(())
 }
 
@@ -521,6 +643,10 @@ struct Flags {
     headless: bool,
     /// `--api`'s address.
     api: Option<String>,
+    /// `--monitor[=address]`: empty without an address.
+    monitor: Option<String>,
+    /// `--report-to`'s URL.
+    report_to: Option<String>,
 }
 
 /// Removes Turu's flags from `args` and returns them.
@@ -560,6 +686,9 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             "--exit-with-parent" => flags.exit_with_parent = true,
             // The address only inline (`--api=...`): the next argument may be anything.
             "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:8791".into())),
+            // Likewise: `--monitor` alone takes Options > Application's port.
+            "--monitor" => flags.monitor = Some(inline.unwrap_or_default()),
+            "--report-to" => flags.report_to = value(),
             _ => rest.push(arg),
         }
     }
@@ -749,6 +878,20 @@ impl ExternalInterfaceProvider for TuruExternalInterface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn takes_the_monitor_flags() {
+        let mut args: Vec<OsString> = ["turu", "--monitor", "--report-to", "http://pc:8790", "x.swf"]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        let flags = parse_startup_args(&mut args);
+        assert_eq!(args, ["turu", "x.swf"]);
+        assert_eq!(flags.monitor.as_deref(), Some(""));
+        assert_eq!(flags.report_to.as_deref(), Some("http://pc:8790"));
+        let mut args: Vec<OsString> = ["turu", "--monitor=0.0.0.0:9000"].into_iter().map(Into::into).collect();
+        assert_eq!(parse_startup_args(&mut args).monitor.as_deref(), Some("0.0.0.0:9000"));
+    }
 
     #[test]
     fn takes_turu_flags_and_leaves_ruffle_ones() {

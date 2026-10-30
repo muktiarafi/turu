@@ -1,6 +1,6 @@
 # Proposal: Turu Monitor, a built-in web dashboard
 
-Status: phases 1 to 3 built (see "As built" below); phase 4 not started. Replaces the "Skua Nexus Webhook URL" in Options > Application
+Status: phases 1 to 4 built (see "As built" below); browser notifications aren't. Replaces the "Skua Nexus Webhook URL" in Options > Application
 with a dashboard Turu serves itself. Reference: `../Skua-Nexus` (`relay.py`, `index.html`,
 `dashboard_gui.py`).
 
@@ -222,6 +222,15 @@ Differences from the plan above:
   site can't send one through a browser on this computer, and DNS rebinding fails the `Host`
   check first. `POST /script/start` starts only the loaded script (no `path`), so the page can't
   run an arbitrary file.
+* **Phase 4.** A reporting machine (`monitor::push::Reporter`) posts its hub's live tabs and
+  Army clients, with their new events, to `POST /api/ingest`. The monitor holds the reply up to
+  4 s for a command, then the reporter waits up to 1 s for results before the next report, so
+  reports come about every 5 s and commands (and log requests, which are queued commands too)
+  arrive at once. Entries are `remote:<machine>:<id>`; a machine's report is its whole list, and
+  an entry goes offline 15 s after its last report. One push key (`monitor-push-key`) for every
+  machine. The reporting machine checks each command again (`hub::allowed_route`), and refuses
+  POSTs with Accept Commands off (logs still come through). `--monitor[=address]` and
+  `--report-to <url>` (key in `TURU_MONITOR_PUSH_KEY`) override the settings for one run.
 * The page reads the event stream with `fetch`, which sends the key in `Authorization`, so no
   tickets are needed.
 * No `--monitor` flag yet; a headless client serves it when `settings.json` has it on.

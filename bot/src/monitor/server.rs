@@ -9,20 +9,22 @@
 //! | `GET /api/bots/<id>/log?type=script\|debug[&since=]` | Its log lines from number `since` (the control API's `/log`). |
 //! | `POST /api/bots/<id>/script/start\|stop\|pause\|resume`, `/login`, `/logout`, `/relogin[?server=]`, `/map/join?map=[&cell=][&pad=]`, `/house` | Control: the control API's route of that name, for a tab or an Army client. |
 //! | `POST /api/bots/<id>/forget` | Control: drops an offline entry. |
+//! | `POST /api/ingest` | Another machine's [`Report`] (needs the push key, nothing else does). The reply carries the commands waiting for it, held up to 4 s for one to come. |
 //!
 //! The `api` routes need the key (`Authorization: Bearer <key>`), except for a browser on this
 //! computer: a loopback connection whose `Host` is a loopback name. Tailscale Serve and other
 //! proxies connect from loopback too, but with their own host name, so they need the key; so
 //! does a page that rebinds its DNS name to 127.0.0.1. A POST also needs Allow Control, and
-//! either an `Origin` that is the page's own (no other site can send one) or the key.
+//! either an `Origin` that is the page's own (no other site can send one) or the key. The push
+//! key only lets a machine report its bots and pick up their commands.
 
-use super::hub::{Control, Hub};
+use super::hub::{Hub, Report, ReportReply, allowed_route, machine_name};
 use super::{Watching, touch};
 use crate::control_api::{authorized, saved_token};
 use crate::paths::Paths;
 use http_body_util::channel::Channel;
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, HeaderMap, HeaderValue, ORIGIN};
 use hyper::server::conn::http1;
@@ -43,18 +45,10 @@ const PAGE: &str = include_str!("../../assets/monitor/index.html");
 const STREAM_EVERY: Duration = Duration::from_secs(1);
 /// How often the accept loop and the streams look at the stop flag.
 const STOP_CHECK: Duration = Duration::from_millis(250);
-/// The control API routes a POST may name, after `/api/bots/<id>`.
-const COMMANDS: [&str; 9] = [
-    "/script/start",
-    "/script/stop",
-    "/script/pause",
-    "/script/resume",
-    "/login",
-    "/logout",
-    "/relogin",
-    "/map/join",
-    "/house",
-];
+/// How long `/api/ingest` holds its reply waiting for a command.
+const INGEST_HOLD: Duration = Duration::from_secs(4);
+/// Reports larger than this are refused.
+const MAX_REPORT: usize = 4 * 1024 * 1024;
 
 /// The key other devices need; it can change while the server runs.
 #[derive(Default)]
@@ -87,6 +81,7 @@ struct State {
 
 struct Shared {
     key: Arc<Key>,
+    push_key: Arc<Key>,
     hub: Arc<Hub>,
     version: String,
     allow_control: AtomicBool,
@@ -114,17 +109,18 @@ pub struct Server {
 }
 
 impl Server {
-    /// Listens on `addr` on a thread of its own. `key` can change while it runs
+    /// Listens on `addr` on a thread of its own. The keys can change while it runs
     /// ([`new_key`]), and so can whether commands are allowed ([`Server::set_allow_control`]).
     pub fn start(
         addr: SocketAddr,
         key: Arc<Key>,
+        push_key: Arc<Key>,
         hub: Arc<Hub>,
         version: String,
         allow_control: bool,
     ) -> Result<Self, String> {
-        if key.get().len() < 16 {
-            return Err("the monitor key must be at least 16 characters".into());
+        if key.get().len() < 16 || push_key.get().len() < 16 {
+            return Err("the monitor keys must be at least 16 characters".into());
         }
         let listener = std::net::TcpListener::bind(addr)
             .map_err(|e| format!("couldn't listen on {addr}: {e}"))?;
@@ -136,6 +132,7 @@ impl Server {
             .map_err(|e| e.to_string())?;
         let shared = Arc::new(Shared {
             key,
+            push_key,
             hub,
             version,
             allow_control: AtomicBool::new(allow_control),
@@ -177,16 +174,29 @@ pub fn load_key(paths: &Paths) -> Result<String, String> {
     saved_token(&paths.monitor_key_file())
 }
 
+/// The push key in `monitor-push-key`, made the first time.
+pub fn load_push_key(paths: &Paths) -> Result<String, String> {
+    saved_token(&paths.monitor_push_key_file())
+}
+
 /// Replaces the key: every device has to be given the new one.
 pub fn new_key(paths: &Paths) -> Result<String, String> {
-    let file = paths.monitor_key_file();
-    match std::fs::remove_file(&file) {
+    replace_key(&paths.monitor_key_file())
+}
+
+/// Replaces the push key: every reporting machine has to be given the new one.
+pub fn new_push_key(paths: &Paths) -> Result<String, String> {
+    replace_key(&paths.monitor_push_key_file())
+}
+
+fn replace_key(file: &std::path::Path) -> Result<String, String> {
+    match std::fs::remove_file(file) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             return Err(format!("{}: {e}", file.display()));
         }
         _ => {}
     }
-    saved_token(&file)
+    saved_token(file)
 }
 
 async fn serve(listener: std::net::TcpListener, shared: Arc<Shared>) {
@@ -252,6 +262,9 @@ async fn handle(
 ) -> Response<Body> {
     let path = request.uri().path().to_owned();
     let post = request.method() == Method::POST;
+    if post && path == "/api/ingest" {
+        return ingest(shared, request).await;
+    }
     if !post && request.method() != Method::GET {
         return error(StatusCode::METHOD_NOT_ALLOWED, "GET or POST only");
     }
@@ -368,7 +381,7 @@ async fn bot_route(shared: &Arc<Shared>, post: bool, rest: &str, query: &str) ->
             let route = format!("/log?type={kind}&since={since}");
             forward(hub, &id, false, route).await
         }
-        (true, command) if COMMANDS.contains(&command) => {
+        (true, command) if allowed_route(true, command) => {
             let route = if query.is_empty() {
                 command.to_owned()
             } else {
@@ -380,20 +393,14 @@ async fn bot_route(shared: &Arc<Shared>, post: bool, rest: &str, query: &str) ->
     }
 }
 
-/// Runs a control API route for the entry: in this process for a tab, over HTTP for an Army
-/// client. Off the runtime's thread: a login can take a minute.
+/// Runs a control API route for the entry ([`Hub::run`]), off the runtime's thread: a login can
+/// take a minute, and a remote machine answers at its next report.
 async fn forward(hub: &Arc<Hub>, id: &str, post: bool, route: String) -> Response<Body> {
     let Some(control) = hub.control(id) else {
         return error(StatusCode::NOT_FOUND, "that bot isn't running");
     };
-    let result = tokio::task::spawn_blocking(move || match control {
-        Control::Tab(bot) => crate::control_api::local(&bot, post, &route, b""),
-        Control::Army(army, client) => match army.forward(&client, post, &route, Vec::new()) {
-            Ok(value) => (200, value),
-            Err(e) => (502, json!({ "error": e })),
-        },
-    })
-    .await;
+    let hub = hub.clone();
+    let result = tokio::task::spawn_blocking(move || hub.run(control, post, &route)).await;
     match result {
         Ok((status, value)) => json_reply(
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
@@ -401,6 +408,38 @@ async fn forward(hub: &Arc<Hub>, id: &str, post: bool, route: String) -> Respons
         ),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     }
+}
+
+/// `POST /api/ingest`: a machine's report in, its waiting commands out.
+async fn ingest(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Body> {
+    if !authorized(request.headers(), &shared.push_key.get()) {
+        return error(StatusCode::UNAUTHORIZED, "missing or wrong push key");
+    }
+    let body = match Limited::new(request.into_body(), MAX_REPORT)
+        .collect()
+        .await
+    {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return error(StatusCode::PAYLOAD_TOO_LARGE, "the report is too large"),
+    };
+    let report: Report = match serde_json::from_slice(&body) {
+        Ok(report) => report,
+        Err(e) => return error(StatusCode::BAD_REQUEST, &format!("not a report: {e}")),
+    };
+    let machine = machine_name(&report.machine);
+    shared.hub.record_report(report);
+    let held = tokio::time::Instant::now();
+    let commands = loop {
+        let commands = shared.hub.take_commands(&machine);
+        if !commands.is_empty()
+            || held.elapsed() >= INGEST_HOLD
+            || shared.stop.load(Ordering::Relaxed)
+        {
+            break commands;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    json_reply(StatusCode::OK, &ReportReply { commands })
 }
 
 fn json_reply(status: StatusCode, value: &impl Serialize) -> Response<Body> {

@@ -45,6 +45,11 @@ impl Paths {
         self.root.join("monitor-key")
     }
 
+    /// The key other machines report to the web monitor with, readable by you only.
+    pub fn monitor_push_key_file(&self) -> PathBuf {
+        self.root.join("monitor-push-key")
+    }
+
     /// The web monitor's bots as last seen (`monitor::Hub`), shown offline after a restart.
     pub fn monitor_file(&self) -> PathBuf {
         self.root.join("monitor.json")

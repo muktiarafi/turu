@@ -119,7 +119,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook; the skill-set and junk-item update switches are stored only.
-- **Web monitor** (phases 1 to 3 of `docs/turu/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
+- **Web monitor** (`docs/turu/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
   Nexus webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`)
   on `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
   and the clients Army > Accounts launched, live: Skua Nexus's cards (state, map, level and class,
@@ -132,16 +132,25 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   ones that interrupt), and Forget for offline entries. The hub (`monitor/hub.rs`) keeps every
   entry: tabs from their sampler, Army clients from the Army poll's `GET /snapshot`; it saves to
   `monitor.json` every minute, so after a restart the last characters show offline for a day.
-  Army Control reads the clients from the hub. Each tab's sampler reads a `Snapshot` every 2 s
+  Army Control reads the clients from the hub. **Other machines** report to it (Options >
+  Application > Report, or `--report-to <url>` with `TURU_MONITOR_PUSH_KEY`; `monitor/push.rs`):
+  their tabs and Army clients show under the machine's name and take the same commands, which
+  ride back in the reply to the next report (the monitor holds it up to 4 s, so they land at
+  once; their logs too). Reports need the monitor's push key (`monitor-push-key`, Copy Report
+  Settings), which opens nothing else; Accept Commands on the reporting machine can refuse
+  commands. `--monitor[=address]` serves the monitor without the setting. Options shows the
+  phone link as a QR code. Each tab's sampler reads a `Snapshot` every 2 s
   only while a page is open (items and quests every 30 s or after they change); Army clients are
   read every 2 s, their slow fields only while a page is open. The webhooks format the same
   `Snapshot`. The `api` routes need the key from `monitor-key` except from a loopback connection
   naming a loopback host (so Tailscale Serve needs it); a command also needs the page's own
   `Origin` or the key. Clients launched by Army don't serve it. Checked: the tests (a real
   Army client reaching the hub is an ignored test, `TURU_EXE=target/debug/turu cargo test -p
-  turu_bot --test monitor -- --ignored`) and the page against the headless client at the login
-  screen; the in-game cards, commands and history only with sample data. Not built: phase 4
-  (remote clients pushing to the monitor, `--monitor`, QR pairing) and browser notifications.
+  turu_bot --test monitor -- --ignored`), the page against the headless client at the login
+  screen, and two headless processes (`--monitor` and `--report-to`): the remote's card, a
+  command (about 0.1 s) and its log. The in-game cards, commands and history only with sample
+  data; the Options window's Report section and QR code only built, not looked at. Not built:
+  browser notifications.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
   Options, Game, Application and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
 

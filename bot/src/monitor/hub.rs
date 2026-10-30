@@ -5,6 +5,9 @@
 //!   from its [`Sampler`](super::Sampler) every second. A closed tab's entry goes.
 //! * **Army clients:** the Army poll (`crate::army`) hands over what each client's
 //!   `GET /snapshot` answered. Army > Army Control reads them back from here.
+//! * **Remote clients:** Turu on other machines reporting here (`POST /api/ingest`,
+//!   [`super::push`]): their tabs and Army clients, as [`Report`]s. Commands for them wait in
+//!   a queue that the next report's reply carries; the results come with the report after.
 //! * **Offline:** what was saved in `monitor.json` (every minute) for a character that isn't
 //!   live now; at most a day old. A live entry for the same character replaces it.
 //!
@@ -15,14 +18,16 @@ use super::snapshot::now_ms;
 use super::{EVENTS_KEPT, Event, Snapshot};
 use crate::Bot;
 use crate::army::{Army, Client};
+use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, VecDeque};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-/// An Army client that hasn't answered for this long is offline.
+/// An Army client or a remote machine that hasn't answered for this long is offline.
 pub const OFFLINE_AFTER_MS: u64 = 15_000;
 /// Six hours of one point a minute.
 pub const HISTORY_KEPT: usize = 360;
@@ -31,6 +36,28 @@ const SAVED_FOR_MS: u64 = 24 * 60 * 60 * 1000;
 const SAVE_EVERY: Duration = Duration::from_secs(60);
 /// Events a card shows.
 const RECENT: usize = 3;
+/// The control API routes a command may name: the page's buttons, and the log.
+pub const COMMANDS: [&str; 9] = [
+    "/script/start",
+    "/script/stop",
+    "/script/pause",
+    "/script/resume",
+    "/login",
+    "/logout",
+    "/relogin",
+    "/map/join",
+    "/house",
+];
+
+/// A command or log request the monitor may pass on: a listed POST, or `GET /log`.
+pub fn allowed_route(post: bool, route: &str) -> bool {
+    let path = route.split('?').next().unwrap_or_default();
+    if post {
+        COMMANDS.contains(&path) && (path != "/script/start" || !route.contains("path="))
+    } else {
+        path == "/log"
+    }
+}
 
 /// A tab the page shows.
 pub struct Source {
@@ -44,11 +71,13 @@ pub struct Source {
 /// This window's tabs now; the app answers.
 pub type Sources = Arc<dyn Fn() -> Vec<Source> + Send + Sync>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
     Tab,
     Army,
+    /// On another machine that reports here.
+    Remote,
     Offline,
 }
 
@@ -66,16 +95,24 @@ pub struct Point {
 pub enum Control {
     Tab(Arc<Bot>),
     Army(Arc<Army>, Arc<Client>),
+    /// The machine's queue, and the bot's id there.
+    Remote {
+        machine: String,
+        bot: String,
+    },
 }
 
 enum Target {
     Tab(Weak<Bot>),
     Army(Weak<Army>, Weak<Client>),
+    Remote { machine: String, bot: String },
     None,
 }
 
 struct Entry {
     label: String,
+    /// The machine of a remote entry (or of the offline entry it became).
+    machine: Option<String>,
     kind: Kind,
     target: Target,
     snapshot: Option<Snapshot>,
@@ -91,6 +128,7 @@ impl Entry {
     fn new(label: String, kind: Kind, target: Target) -> Self {
         Self {
             label,
+            machine: None,
             kind,
             target,
             snapshot: None,
@@ -108,6 +146,7 @@ impl Entry {
                 client.upgrade().is_some_and(|c| c.is_running())
                     && now.saturating_sub(self.last_seen) < OFFLINE_AFTER_MS
             }
+            (Kind::Remote, _) => now.saturating_sub(self.last_seen) < OFFLINE_AFTER_MS,
             _ => false,
         }
     }
@@ -148,6 +187,7 @@ impl Entry {
         View {
             id: id.to_owned(),
             label: self.label.clone(),
+            machine: self.machine.clone(),
             kind: self.kind,
             online: self.online(now),
             last_seen: self.last_seen,
@@ -172,6 +212,8 @@ impl Entry {
 pub struct View {
     pub id: String,
     pub label: String,
+    /// `None` for this machine's bots.
+    pub machine: Option<String>,
     pub kind: Kind,
     pub online: bool,
     pub last_seen: u64,
@@ -194,14 +236,77 @@ pub struct Detail {
 #[serde(rename_all = "camelCase")]
 struct Saved {
     label: String,
+    #[serde(default)]
+    machine: Option<String>,
     snapshot: Snapshot,
     last_seen: u64,
     events: Vec<Event>,
     history: Vec<Point>,
 }
 
+/// What a machine reporting here sends (`POST /api/ingest`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Report {
+    /// Its name on the page ("vps-1").
+    pub machine: String,
+    pub version: String,
+    /// Its live tabs and Army clients.
+    pub bots: Vec<Pushed>,
+    /// What the commands of earlier replies did.
+    pub results: Vec<CommandResult>,
+}
+
+/// One bot in a [`Report`]: its snapshot, and its events from the last number acknowledged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pushed {
+    /// Its id where it runs (`tab:0`, `army:alt`).
+    pub id: String,
+    pub label: String,
+    pub snapshot: Option<Snapshot>,
+    pub events: Vec<Event>,
+    pub next: u64,
+}
+
+/// A command waiting for a remote machine's next report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCommand {
+    pub seq: u64,
+    /// The bot's id on that machine.
+    pub bot: String,
+    pub post: bool,
+    /// A control API route ([`allowed_route`]).
+    pub route: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandResult {
+    pub seq: u64,
+    pub status: u16,
+    pub body: Value,
+}
+
+/// The reply to a [`Report`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ReportReply {
+    pub commands: Vec<RemoteCommand>,
+}
+
+#[derive(Default)]
+struct Queue {
+    next_seq: u64,
+    /// By machine (lowercase).
+    pending: HashMap<String, Vec<RemoteCommand>>,
+    /// Who waits for each command's result.
+    waiting: HashMap<u64, Sender<(u16, Value)>>,
+}
+
 pub struct Hub {
     entries: Mutex<BTreeMap<String, Entry>>,
+    queue: Mutex<Queue>,
     tabs: Mutex<Option<Sources>>,
     file: Option<PathBuf>,
     started: Instant,
@@ -223,6 +328,7 @@ impl Hub {
             }
             let id = offline_id(&saved.snapshot.name);
             let mut entry = Entry::new(saved.label, Kind::Offline, Target::None);
+            entry.machine = saved.machine;
             entry.snapshot = Some(saved.snapshot);
             entry.last_seen = saved.last_seen;
             entry.events = saved.events.into();
@@ -231,6 +337,7 @@ impl Hub {
         }
         Arc::new(Self {
             entries: Mutex::new(entries),
+            queue: Mutex::default(),
             tabs: Mutex::new(None),
             file,
             started: Instant::now(),
@@ -335,6 +442,124 @@ impl Hub {
         }
     }
 
+    /// Takes in a remote machine's report: its bots replace the machine's entries, and the
+    /// results go to whoever waits for them.
+    pub fn record_report(&self, report: Report) {
+        let machine = machine_name(&report.machine);
+        {
+            let mut entries = self.entries.lock();
+            let prefix = format!("remote:{}:", machine.to_lowercase());
+            let ids: Vec<String> = report
+                .bots
+                .iter()
+                .map(|b| format!("{prefix}{}", b.id))
+                .collect();
+            entries.retain(|id, _| !id.starts_with(&prefix) || ids.contains(id));
+            for (pushed, id) in report.bots.into_iter().zip(ids) {
+                let target = || Target::Remote {
+                    machine: machine.clone(),
+                    bot: pushed.id.clone(),
+                };
+                let entry = entries
+                    .entry(id)
+                    .or_insert_with(|| Entry::new(pushed.label.clone(), Kind::Remote, target()));
+                entry.target = target();
+                entry.machine = Some(machine.clone());
+                entry.label = pushed.label;
+                entry.record(pushed.snapshot, pushed.events, pushed.next);
+                let character = entry.character().map(str::to_owned);
+                if let Some(name) = character {
+                    entries.remove(&offline_id(&name));
+                }
+            }
+        }
+        let mut queue = self.queue.lock();
+        for result in report.results {
+            if let Some(waiter) = queue.waiting.remove(&result.seq) {
+                let _ = waiter.send((result.status, result.body));
+            }
+        }
+    }
+
+    /// The commands waiting for `machine`, for the reply to its report.
+    pub fn take_commands(&self, machine: &str) -> Vec<RemoteCommand> {
+        let key = machine_name(machine).to_lowercase();
+        self.queue.lock().pending.remove(&key).unwrap_or_default()
+    }
+
+    /// Runs a control API route (checked with [`allowed_route`]) for an entry and waits for its
+    /// answer: in this process for a tab, over HTTP for an Army client, through the queue for a
+    /// remote one. Blocks up to a couple of minutes (a login).
+    pub fn run(&self, control: Control, post: bool, route: &str) -> (u16, Value) {
+        if !allowed_route(post, route) {
+            return (403, json!({ "error": "the monitor doesn't pass that on" }));
+        }
+        match control {
+            Control::Tab(bot) => crate::control_api::local(&bot, post, route, b""),
+            Control::Army(army, client) => match army.forward(&client, post, route, Vec::new()) {
+                Ok(value) => (200, value),
+                Err(e) => (502, json!({ "error": e })),
+            },
+            Control::Remote { machine, bot } => {
+                let (tx, rx) = bounded(1);
+                let seq = {
+                    let mut queue = self.queue.lock();
+                    let seq = queue.next_seq;
+                    queue.next_seq += 1;
+                    queue.waiting.insert(seq, tx);
+                    let command = RemoteCommand {
+                        seq,
+                        bot,
+                        post,
+                        route: route.to_owned(),
+                    };
+                    queue
+                        .pending
+                        .entry(machine.to_lowercase())
+                        .or_default()
+                        .push(command);
+                    seq
+                };
+                match rx.recv_timeout(crate::army::COMMAND_TIMEOUT) {
+                    Ok(answer) => answer,
+                    Err(_) => {
+                        let mut queue = self.queue.lock();
+                        queue.waiting.remove(&seq);
+                        for list in queue.pending.values_mut() {
+                            list.retain(|c| c.seq != seq);
+                        }
+                        (504, json!({ "error": format!("{machine} didn't answer") }))
+                    }
+                }
+            }
+        }
+    }
+
+    /// This machine's live bots for a report, with their events from the numbers in `sent`.
+    pub fn export(&self, sent: &HashMap<String, u64>) -> Vec<Pushed> {
+        let now = now_ms();
+        self.entries
+            .lock()
+            .iter()
+            .filter(|(_, e)| matches!(e.kind, Kind::Tab | Kind::Army) && e.online(now))
+            .map(|(id, e)| {
+                let since = sent.get(id).copied().unwrap_or(0);
+                Pushed {
+                    id: id.clone(),
+                    label: e.label.clone(),
+                    snapshot: e.snapshot.clone(),
+                    events: e
+                        .events
+                        .iter()
+                        .filter(|ev| ev.seq >= since)
+                        .cloned()
+                        .collect(),
+                    next: e.next_event,
+                }
+            })
+            .collect()
+    }
+
     /// The event number an Army client's next `/snapshot` asks from.
     pub(crate) fn next_event(&self, username: &str) -> u64 {
         self.entries
@@ -368,7 +593,7 @@ impl Hub {
             .and_then(|e| e.snapshot.clone())
     }
 
-    /// Every entry: tabs, then Army clients, then offline ones.
+    /// Every entry: tabs, then Army clients, then remote ones by machine, then offline ones.
     pub fn views(&self) -> Vec<View> {
         let now = now_ms();
         let entries = self.entries.lock();
@@ -376,20 +601,23 @@ impl Hub {
         let rank = |v: &View| match v.kind {
             Kind::Tab => 0,
             Kind::Army => 1,
-            Kind::Offline => 2,
+            Kind::Remote => 2,
+            Kind::Offline => 3,
         };
         let tab_number = |v: &View| {
             v.id.strip_prefix("tab:")
                 .and_then(|n| n.parse::<u64>().ok())
                 .unwrap_or(0)
         };
-        views.sort_by(|a, b| {
-            (rank(a), tab_number(a), a.label.to_lowercase()).cmp(&(
-                rank(b),
-                tab_number(b),
-                b.label.to_lowercase(),
-            ))
-        });
+        let key = |v: &View| {
+            (
+                rank(v),
+                v.machine.as_deref().unwrap_or_default().to_lowercase(),
+                tab_number(v),
+                v.label.to_lowercase(),
+            )
+        };
+        views.sort_by_key(key);
         views
     }
 
@@ -411,6 +639,12 @@ impl Hub {
             Target::Army(army, client) => {
                 let client = client.upgrade().filter(|c| c.is_running())?;
                 Some(Control::Army(army.upgrade()?, client))
+            }
+            Target::Remote { machine, bot } => {
+                entries.get(id)?.online(now_ms()).then(|| Control::Remote {
+                    machine: machine.clone(),
+                    bot: bot.clone(),
+                })
             }
             Target::None => None,
         }
@@ -435,6 +669,7 @@ impl Hub {
                 key,
                 Saved {
                     label: entry.label.clone(),
+                    machine: entry.machine.clone(),
                     snapshot: snapshot.clone(),
                     last_seen: entry.last_seen,
                     events: entry.events.iter().cloned().collect(),
@@ -463,6 +698,29 @@ pub fn army_id(username: &str) -> String {
 
 fn offline_id(name: &str) -> String {
     format!("offline:{}", name.to_lowercase())
+}
+
+/// A machine name as the page shows it: letters, digits, `-`, `_`, `.` and spaces, at most 40;
+/// "remote" when nothing is left.
+pub fn machine_name(name: &str) -> String {
+    let clean: String = name
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ' ') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(40)
+        .collect();
+    let clean = clean.trim().to_owned();
+    if clean.is_empty() {
+        "remote".into()
+    } else {
+        clean
+    }
 }
 
 #[cfg(test)]
@@ -556,6 +814,94 @@ mod tests {
         assert_eq!(ids, ["tab:0"]);
         assert!(!again.forget("offline:hero"));
         let _ = std::fs::remove_file(file);
+    }
+
+    fn pushed(id: &str, name: &str) -> Pushed {
+        Pushed {
+            id: id.into(),
+            label: "Tab 1".into(),
+            snapshot: Some(playing(name, 1)),
+            events: Vec::new(),
+            next: 0,
+        }
+    }
+
+    #[test]
+    fn remote_machines_come_and_go() {
+        let hub = Hub::new(None);
+        let report = |bots: Vec<Pushed>| Report {
+            machine: "VPS/1".into(),
+            version: "test".into(),
+            bots,
+            results: Vec::new(),
+        };
+        hub.record_report(report(vec![
+            pushed("tab:0", "Hero"),
+            pushed("army:alt", "Alt"),
+        ]));
+        let views = hub.views();
+        assert_eq!(views.len(), 2);
+        assert_eq!(views[0].machine.as_deref(), Some("VPS-1"));
+        assert!(views.iter().all(|v| v.kind == Kind::Remote && v.online));
+        // The machine's report is the whole list: a bot left out has gone.
+        hub.record_report(report(vec![pushed("tab:0", "Hero")]));
+        assert_eq!(hub.views().len(), 1);
+        // A machine that stops reporting goes offline, and loses its control.
+        hub.entries
+            .lock()
+            .values_mut()
+            .for_each(|e| e.last_seen -= OFFLINE_AFTER_MS);
+        assert!(!hub.views()[0].online);
+        assert!(hub.control("remote:vps-1:tab:0").is_none());
+        assert!(hub.forget("remote:vps-1:tab:0"));
+    }
+
+    #[test]
+    fn remote_commands_wait_for_the_next_report() {
+        let hub = Hub::new(None);
+        let report = |results| Report {
+            machine: "vps".into(),
+            version: "test".into(),
+            bots: vec![pushed("tab:0", "Hero")],
+            results,
+        };
+        hub.record_report(report(Vec::new()));
+        let control = hub.control("remote:vps:tab:0").expect("online");
+        let waiting = {
+            let hub = hub.clone();
+            std::thread::spawn(move || hub.run(control, true, "/script/stop"))
+        };
+        let commands = loop {
+            let commands = hub.take_commands("VPS");
+            if !commands.is_empty() {
+                break commands;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(
+            (commands[0].bot.as_str(), commands[0].route.as_str()),
+            ("tab:0", "/script/stop")
+        );
+        hub.record_report(report(vec![CommandResult {
+            seq: commands[0].seq,
+            status: 200,
+            body: json!({ "stopping": true }),
+        }]));
+        assert_eq!(waiting.join().unwrap(), (200, json!({ "stopping": true })));
+        // Routes the page can't send aren't queued.
+        let control = hub.control("remote:vps:tab:0").unwrap();
+        assert_eq!(hub.run(control, true, "/options").0, 403);
+        assert!(hub.take_commands("vps").is_empty());
+    }
+
+    #[test]
+    fn checks_routes() {
+        assert!(allowed_route(true, "/script/stop"));
+        assert!(allowed_route(true, "/map/join?map=battleon"));
+        assert!(!allowed_route(true, "/script/start?path=/tmp/evil.ts"));
+        assert!(!allowed_route(true, "/options"));
+        assert!(allowed_route(false, "/log?type=script&since=0"));
+        assert!(!allowed_route(false, "/script/stop"));
     }
 
     #[test]

@@ -10,6 +10,7 @@
 //! * [`server`] serves the page, the hub's entries, and commands for them.
 
 pub mod hub;
+pub mod push;
 pub mod server;
 pub mod snapshot;
 

@@ -116,7 +116,12 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   one). Failures go to the Debug log. Monitor (in place of VibeSkua's Skua Nexus webhook):
   Enable Web Monitor, Allow Other Devices, Allow Control (on by default: the page can start,
   stop and relog bots), Monitor Port (applied half a second after the last change), Monitor Link (Open, Copy Link with the key after `#`, the network address with Allow
-  Other Devices; Copy Key) and Regenerate Key (asks twice), with the server's state below.
+  Other Devices; Copy Key), Phone QR Code (Show / Hide: that link as a QR code, needs Allow
+  Other Devices), Regenerate Key (asks twice) and Push Key (Copy Report Settings: this monitor's
+  address and push key for another machine; Regenerate, asking twice), with the server's state
+  below. Report (to another machine's monitor): Report To, Push Key (hidden), Machine Name
+  (empty: the computer's name) and Accept Commands, with the reporter's state and a warning for
+  plain `http://` across the internet.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread), the list (check box, a green dot
   while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /

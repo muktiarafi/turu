@@ -8,9 +8,11 @@ use std::time::{Duration, Instant};
 use turu_bot::Bot;
 use turu_bot::monitor::Hub;
 use turu_bot::monitor::hub::Source;
+use turu_bot::monitor::push::{ReportTo, Reporter};
 use turu_bot::monitor::server::{Key, Server};
 
 const KEY: &str = "0123456789abcdef0123456789abcdef";
+const PUSH_KEY: &str = "fedcba9876543210fedcba9876543210";
 
 fn start() -> (Arc<Bot>, Server, String) {
     start_with(true)
@@ -34,6 +36,7 @@ fn start_with(allow_control: bool) -> (Arc<Bot>, Server, String) {
     let server = Server::start(
         "127.0.0.1:0".parse().unwrap(),
         Key::new(KEY.into()),
+        Key::new(PUSH_KEY.into()),
         hub,
         "test".into(),
         allow_control,
@@ -227,6 +230,7 @@ fn frees_its_port_when_dropped() {
     let again = Server::start(
         addr,
         Key::new(KEY.into()),
+        Key::new(PUSH_KEY.into()),
         Hub::new(None),
         "test".into(),
         true,
@@ -236,6 +240,7 @@ fn frees_its_port_when_dropped() {
     let short = Server::start(
         addr,
         Key::new("short".into()),
+        Key::new(PUSH_KEY.into()),
         Hub::new(None),
         "".into(),
         true,
@@ -285,4 +290,125 @@ fn army_clients_reach_the_hub() {
     drop(snapshot);
     army.close("monitortest");
     assert!(hub.views().is_empty());
+}
+
+/// Waits up to 20 s for `check`.
+fn eventually(what: &str, mut check: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !check() {
+        assert!(Instant::now() < deadline, "timed out: {what}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// A remote machine's hub with one tab, reporting to the monitor at `base`.
+fn remote(base: &str, accept_commands: bool) -> (Arc<Bot>, Arc<Hub>, Reporter) {
+    let bot = Bot::new();
+    let tab = bot.clone();
+    let hub = Hub::new(None);
+    hub.set_tabs(Arc::new(move || {
+        vec![Source {
+            id: "tab:0".into(),
+            label: "Tab 1".into(),
+            bot: tab.clone(),
+        }]
+    }));
+    hub.start();
+    let reporter = Reporter::start(
+        hub.clone(),
+        ReportTo {
+            url: format!("{base}/"),
+            push_key: PUSH_KEY.into(),
+            machine: "vps 1".into(),
+            accept_commands,
+            version: "test".into(),
+        },
+    )
+    .unwrap();
+    (bot, hub, reporter)
+}
+
+#[test]
+fn remote_machines_report_and_take_commands() {
+    let (_bot, _server, base) = start();
+    let (remote_bot, _remote_hub, reporter) = remote(&base, true);
+    remote_bot.log("hello from the vps");
+    let id = "remote:vps 1:tab:0";
+    eventually("the remote tab on the page", || {
+        let (_, body) = get(&format!("{base}/api/state"), None, None);
+        let state: Value = serde_json::from_str(&body).unwrap();
+        state["bots"].as_array().unwrap().iter().any(|b| {
+            b["id"] == id
+                && b["online"] == true
+                && b["machine"] == "vps 1"
+                && !b["snapshot"].is_null()
+        })
+    });
+    assert!(reporter.status().error.is_none());
+
+    // A command makes the round trip: queued here, run there, answered with the next report.
+    let url = format!(
+        "{base}/api/bots/{}/script/stop",
+        id.replace(':', "%3A").replace(' ', "%20")
+    );
+    let started = Instant::now();
+    assert_eq!(
+        post(&url, Some(&base), None),
+        (200, serde_json::json!({ "stopping": false }))
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(8),
+        "took {:?}",
+        started.elapsed()
+    );
+    // So does the log.
+    let (status, body) = get(
+        &format!("{base}/api/bots/{}/log", id.replace(' ', "%20")),
+        None,
+        None,
+    );
+    assert_eq!(status, 200);
+    assert!(body.contains("hello from the vps"));
+}
+
+#[test]
+fn remote_commands_need_accept_commands() {
+    let (_bot, _server, base) = start();
+    let (_remote_bot, _hub, _reporter) = remote(&base, false);
+    let id = "remote%3Avps%201%3Atab%3A0";
+    eventually("the remote tab", || {
+        get(&format!("{base}/api/bots/{id}"), None, None).0 == 200
+    });
+    let (status, body) = post(
+        &format!("{base}/api/bots/{id}/script/stop"),
+        Some(&base),
+        None,
+    );
+    assert_eq!(status, 403, "{body}");
+    // Reading the log still works.
+    assert_eq!(get(&format!("{base}/api/bots/{id}/log"), None, None).0, 200);
+}
+
+#[test]
+fn reports_need_the_push_key() {
+    let (_bot, _server, base) = start();
+    let report = |key: &str| {
+        Client::new()
+            .post(format!("{base}/api/ingest"))
+            .bearer_auth(key)
+            .body(r#"{"machine":"x","bots":[]}"#)
+            .send()
+            .unwrap()
+            .status()
+            .as_u16()
+    };
+    assert_eq!(report(KEY), 401, "the view key isn't the push key");
+    assert_eq!(report("wrong-wrong-wrong-wrong"), 401);
+    assert_eq!(report(PUSH_KEY), 200);
+    // The push key doesn't open the page's routes.
+    let other = Some("my-pc.tail1234.ts.net");
+    assert_eq!(
+        get(&format!("{base}/api/state"), other, Some(PUSH_KEY)).0,
+        401
+    );
 }

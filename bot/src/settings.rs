@@ -41,6 +41,14 @@ pub struct AppSettings {
     pub monitor_port: i32,
     /// The page can start, stop and relog bots.
     pub monitor_allow_control: bool,
+    /// Report this machine's bots to another machine's monitor (`monitor::push`): its address.
+    pub monitor_report_to: String,
+    /// That monitor's push key (its Copy Report Settings).
+    pub monitor_report_key: String,
+    /// This machine's name on that page; empty: the computer's name.
+    pub monitor_machine_name: String,
+    /// Run the commands that monitor sends.
+    pub monitor_accept_commands: bool,
 }
 
 impl Default for AppSettings {
@@ -67,6 +75,10 @@ impl Default for AppSettings {
             monitor_allow_other_devices: false,
             monitor_port: crate::monitor::DEFAULT_PORT as i32,
             monitor_allow_control: true,
+            monitor_report_to: String::new(),
+            monitor_report_key: String::new(),
+            monitor_machine_name: String::new(),
+            monitor_accept_commands: true,
         }
     }
 }
