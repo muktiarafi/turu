@@ -40,7 +40,7 @@ export class CoreFarms {
                     Core.logger("💰 Gold boost activated!");
                     break;
                 case BoostType.Class:
-                    if (Core.cboBool("doClassBoost") !== true || bot.boosts.uses(BoostType.Class) || Core.checkClassRank(true) === 10) return;
+                    if (Core.cboBool("doClassBoost") !== true || bot.boosts.uses(BoostType.Class) || Core.checkClassRank({ currentClass: true }) === 10) return;
                     bot.boosts.setBoostIdFromInventory(BoostType.Class);
                     bot.boosts.setUses(BoostType.Class, true);
                     Core.logger("🛡️ Class boost activated!");
@@ -165,7 +165,7 @@ export class CoreFarms {
         while (!bot.shouldExit && bot.player.gold < goldQuant) {
             if (Core.checkSaveState()) Core.executeSaveState();
             Core.killMonster("greenguardwest", "West12", "Up", "*");
-            Core.sellItem("Berserker Bunny", 1, true);
+            Core.sellItem("Berserker Bunny", 1, { all: true });
         }
         Core.cancelRegisteredQuests();
         Core.savedState(false);

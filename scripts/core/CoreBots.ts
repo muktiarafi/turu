@@ -139,8 +139,49 @@ interface QuestLoop {
     threshold: number;
 }
 
-/** Raw JSON from the game: values may be strings, numbers or booleans. */
-type Raw = Record<string, any>;
+/**
+ * An item object as the game stores it (`world.myAvatar.items`, `world.shopinfo.items`,
+ * `world.bankinfo.items`, quest rewards). Numbers and flags may arrive as strings, so read the
+ * fields through `num`, `text` and `flag`.
+ */
+interface GameItem {
+    ItemID?: unknown;
+    ShopItemID?: unknown;
+    sName?: unknown;
+    sType?: unknown;
+    sMeta?: unknown;
+    sES?: unknown;
+    sFaction?: unknown;
+    iQty?: unknown;
+    iStk?: unknown;
+    iCost?: unknown;
+    iLvl?: unknown;
+    iReqRep?: unknown;
+    iRate?: unknown;
+    iType?: unknown;
+    bTemp?: unknown;
+    bHouse?: unknown;
+    bCoins?: unknown;
+    bUpg?: unknown;
+    bWear?: unknown;
+    EnhPatternID?: unknown;
+    TokID?: unknown;
+    TokQty?: unknown;
+    /** What a shop item costs in items. */
+    turnin?: GameItem[];
+}
+
+/** A `world.myAvatar.factions` entry. */
+interface GameFaction {
+    sName?: unknown;
+    iRank?: unknown;
+}
+
+/** The game's `InvCat` class (Game4000 inventory settings). */
+interface InvCatSettings {
+    MISC_SLOTS?: unknown;
+    MISC_TYPES?: unknown;
+}
 
 const QUEST_WATCHER = "Quest Watcher";
 const QUEST_MANAGER = "Quest Manager";
@@ -269,7 +310,7 @@ function alive(monster: Monster | null | undefined): boolean {
     return !!monster && monster.hp > 0 && monster.state > 0;
 }
 
-function toRewardItem(raw: Raw): RewardItem {
+function toRewardItem(raw: GameItem): RewardItem {
     return {
         id: num(raw.ItemID),
         name: text(raw.sName),
@@ -279,8 +320,8 @@ function toRewardItem(raw: Raw): RewardItem {
     };
 }
 
-function toShopItem(raw: Raw): CoreShopItem {
-    const turnin: Raw[] = Array.isArray(raw.turnin) ? raw.turnin : [];
+function toShopItem(raw: GameItem): CoreShopItem {
+    const turnin = Array.isArray(raw.turnin) ? raw.turnin : [];
     return {
         id: num(raw.ItemID),
         shopItemId: num(raw.ShopItemID),
@@ -307,12 +348,12 @@ function toShopItem(raw: Raw): CoreShopItem {
  * an item uses and whether it's full.
  */
 class GameInventoryCategories {
-    private readonly items: Raw[];
+    private readonly items: GameItem[];
     private readonly miscTypes: Set<string>;
     readonly miscSlots: number;
 
     constructor() {
-        const settings = bot.flash.callGameFunction<Raw | null>("loaderInfo.applicationDomain.getDefinition", "InvCat");
+        const settings = bot.flash.callGameFunction<InvCatSettings | null>("loaderInfo.applicationDomain.getDefinition", "InvCat");
         if (!settings || typeof settings !== "object")
             throw new Error("Cannot read the game misc inventory settings.");
         const miscSlots = settings.MISC_SLOTS ?? bot.flash.get<number | null>("world.myAvatar.objData.iBagSlots");
@@ -321,16 +362,16 @@ class GameInventoryCategories {
         this.miscSlots = num(miscSlots);
         if (!Array.isArray(settings.MISC_TYPES)) throw new Error("The game misc inventory types are unavailable.");
         this.miscTypes = new Set((settings.MISC_TYPES as unknown[]).map(text));
-        const items = bot.flash.get<Raw[] | null>("world.myAvatar.items");
+        const items = bot.flash.get<GameItem[] | null>("world.myAvatar.items");
         if (!items) throw new Error("The game inventory is unavailable.");
         this.items = items;
     }
 
-    private static isClass(item: Raw): boolean {
+    private static isClass(item: GameItem): boolean {
         return text(item.sType) === "Class";
     }
 
-    private isMisc(item: Raw): boolean {
+    private isMisc(item: GameItem): boolean {
         const type = item.sType as string | undefined;
         return (
             type !== undefined &&
@@ -340,12 +381,12 @@ class GameInventoryCategories {
         );
     }
 
-    static isHouse(item: Raw): boolean {
+    static isHouse(item: GameItem): boolean {
         const type = text(item.sType);
         return num(item.bHouse) === 1 || type === "House" || type === "Wall Item" || type === "Floor Item" || type === "Guild";
     }
 
-    private isBag(item: Raw): boolean {
+    private isBag(item: GameItem): boolean {
         return !GameInventoryCategories.isClass(item) && !this.isMisc(item) && !GameInventoryCategories.isHouse(item);
     }
 
@@ -357,15 +398,15 @@ class GameInventoryCategories {
         return this.items.filter((item) => this.isMisc(item)).length;
     }
 
-    poolOf(item: Raw): string {
+    poolOf(item: GameItem): string {
         return GameInventoryCategories.isClass(item) ? "class" : GameInventoryCategories.isHouse(item) ? "house" : this.isMisc(item) ? "misc" : "bag";
     }
 
-    private owned(id: number): Raw | undefined {
+    private owned(id: number): GameItem | undefined {
         return this.items.find((item) => Math.trunc(num(item.ItemID)) === id);
     }
 
-    isFullFor(item: Raw, bagSlots: number, freedSlots = 0): boolean {
+    isFullFor(item: GameItem, bagSlots: number, freedSlots = 0): boolean {
         if (GameInventoryCategories.isClass(item)) return false;
         const owned = this.owned(Math.trunc(num(item.ItemID)));
         if (owned && num(owned.iQty) < num(owned.iStk)) return false;
@@ -373,7 +414,7 @@ class GameInventoryCategories {
     }
 
     /** Match InvCat.freedBy: only consumed stacks from the output pool count. */
-    freedBy(item: Raw, quantity: number): number {
+    freedBy(item: GameItem, quantity: number): number {
         if (this.owned(Math.trunc(num(item.ItemID)))) return 0;
         const pool = this.poolOf(item);
         if (pool !== "bag" && pool !== "misc") return 0;
@@ -388,7 +429,7 @@ class GameInventoryCategories {
         const tokenNeed = Math.trunc(num(item.TokQty) * batches);
 
         if (Array.isArray(item.turnin)) {
-            for (const requirement of item.turnin as Raw[]) {
+            for (const requirement of item.turnin) {
                 const id = Math.trunc(num(requirement.ItemID));
                 let consumed = num(requirement.iQty) * batches;
                 if (isToken && id === tokenId) {
@@ -521,8 +562,9 @@ export class CoreBots {
      * object `setGameObject`) and anti-counter-attack (`Bot.UltraBossHelper`). Starting also
      * registers {@link stopBotEvent}, which goes to the stop location when the script is stopped.
      * @param changeTo Value the options will be changed to.
+     * @param options `disableClassSwap` is accepted but unused, as in the C#.
      */
-    setOptions(changeTo = true, _disableClassSwap = false): void {
+    setOptions(changeTo = true, _options: { disableClassSwap?: boolean } = {}): void {
         // C# EnforceInvariantCulture / SkuaVersionCheckerAsync: dropped.
 
         // Clear Handlers incase script starts a 2nd time somehow whilst the script is running
@@ -882,33 +924,23 @@ export class CoreBots {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * Check the Bank, Inventory, House and Temp Inventory for the item (name or ID).
-     * Unbanks it when found in the bank (unless `toInv` is false). `null` counts as owned.
-     * @param item Name or ID of the item.
+     * Check the Bank, Inventory, House and Temp Inventory for the item (name or ID), or for all
+     * (with `any`, at least one) of the listed items. Unbanks what it finds in the bank (unless
+     * `toInv` is false). `null` counts as owned, and so does an empty list.
+     * @param item Name or ID of the item, or a list of them.
      * @param quant Desired quantity.
-     * @param toInv Whether or not send the item to Inventory.
+     * @param options `any`: true when any of the listed items exists. `toInv`: whether or not to
+     *   send the items to the Inventory (default true).
      */
-    checkInventory(item: string | number | null | undefined, quant?: number, toInv?: boolean): boolean;
-    /**
-     * Check if the Bank/Inventory has all (or, with `any`, at least one) of the listed items.
-     * @param items Names or IDs of the items.
-     * @param quant Desired quantity.
-     * @param any If any of the items exist, returns true.
-     * @param toInv Whether or not send the items to Inventory.
-     */
-    checkInventory(items: (string | number)[] | null | undefined, quant?: number, any?: boolean, toInv?: boolean): boolean;
     checkInventory(
         item: string | number | (string | number)[] | null | undefined,
         quant = 1,
-        anyOrToInv?: boolean,
-        toInvArg?: boolean,
+        { any = false, toInv = true }: { any?: boolean; toInv?: boolean } = {},
     ): boolean {
         if (Array.isArray(item)) {
-            const any = anyOrToInv ?? false;
-            const toInv = toInvArg ?? true;
             if (item.length === 0) return true;
             for (const name of item) {
-                if (this.checkInventory(name, quant, toInv)) {
+                if (this.checkInventory(name, quant, { toInv })) {
                     if (any) return true;
                     continue;
                 }
@@ -917,7 +949,6 @@ export class CoreBots {
             return !any;
         }
 
-        const toInv = anyOrToInv ?? true;
         if (item === null || item === undefined) return true;
 
         if (bot.tempInv.contains(item, quant)) return true;
@@ -1473,7 +1504,7 @@ export class CoreBots {
                 this.bankInventoryPoolFor(item);
                 if (!this.hasSpaceFor(item, actualQuantity)) return false;
             }
-        } else if (!this.hasSpace && !this.checkInventory(item.id, 1, false)) {
+        } else if (!this.hasSpace && !this.checkInventory(item.id, 1, { toInv: false })) {
             // Attempt to bank something
             this.bankACMisc(1);
             // Recheck for space
@@ -1604,7 +1635,7 @@ export class CoreBots {
             return 0;
         }
 
-        let data: Raw | null = null;
+        let data: GameItem | null = null;
         for (let i = 0; i < 5; i++) {
             data = this.initializeWithRetries(() => this.getShopItemData(item.id, item.shopItemId));
             if (data) break;
@@ -1622,8 +1653,8 @@ export class CoreBots {
     }
 
     /** The raw `world.shopinfo.items` entry of an item (shopItemId 0 = any). */
-    private getShopItemData(itemId: number, shopItemId = 0, log = true): Raw | null {
-        const shopItems = bot.flash.get<Raw[] | null>("world.shopinfo.items");
+    private getShopItemData(itemId: number, shopItemId = 0, log = true): GameItem | null {
+        const shopItems = bot.flash.get<GameItem[] | null>("world.shopinfo.items");
         if (!shopItems) {
             if (log) this.logger("Shop items data could not be retrieved.", "GetShopItemData");
             return null;
@@ -1741,9 +1772,9 @@ export class CoreBots {
      * Sells an item (name or ID) till you have the desired quantity.
      * @param item Name or ID of the item.
      * @param quant How many to sell.
-     * @param all Set to true if you wish to sell all the items.
+     * @param options `all`: set to true if you wish to sell all the items.
      */
-    sellItem(item: string | number, quant = 1, all = false): void {
+    sellItem(item: string | number, quant = 1, { all = false }: { all?: boolean } = {}): void {
         let invItem: InventoryItem | null;
         let itemName: string;
         if (typeof item === "string") {
@@ -1810,7 +1841,7 @@ export class CoreBots {
 
     /** The loaded shop's items (raw `world.shopinfo.items`, falling back to `bot.shops.items`). */
     private readShopItems(): CoreShopItem[] {
-        const raw = bot.flash.get<Raw[] | null>("world.shopinfo.items");
+        const raw = bot.flash.get<GameItem[] | null>("world.shopinfo.items");
         if (Array.isArray(raw)) return raw.filter((x) => x).map(toShopItem);
         return bot.shops.items.map((x) => ({
             id: x.id,
@@ -2238,7 +2269,7 @@ export class CoreBots {
                 this.checkInventory(questData.acceptRequirements.map((x) => x.id)))
         ) {
             if (itemId === -1 && questData.simpleRewards.length > 0) {
-                const availableReward = questData.simpleRewards.find((x) => x.id > 0 && !this.checkInventory(x.id, x.maxStack, false));
+                const availableReward = questData.simpleRewards.find((x) => x.id > 0 && !this.checkInventory(x.id, x.maxStack, { toInv: false }));
                 itemId = availableReward?.id ?? -1;
                 if (availableReward && itemId !== -1 && !bot.drops.toPickupIds.includes(itemId)) this.addDrop(availableReward.id);
                 return bot.quests.ensureComplete(questId, itemId);
@@ -2287,10 +2318,10 @@ export class CoreBots {
         return this.usesCategoryInventory() ? new GameInventoryCategories() : null;
     }
 
-    /** Raw item data (keeps fields such as bHouse, TokID and TokQty that the API omits). */
-    private inventorySpaceItemData(item: InventoryItem | CoreShopItem, rawItems?: Raw[] | null): Raw {
+    /** GameItem item data (keeps fields such as bHouse, TokID and TokQty that the API omits). */
+    private inventorySpaceItemData(item: InventoryItem | CoreShopItem, rawItems?: GameItem[] | null): GameItem {
         const isShop = "shopItemId" in item;
-        const items = rawItems ?? bot.flash.get<Raw[] | null>(isShop ? "world.shopinfo.items" : "world.bankinfo.items");
+        const items = rawItems ?? bot.flash.get<GameItem[] | null>(isShop ? "world.shopinfo.items" : "world.bankinfo.items");
         const found = items?.find((c) => c && num(c.ItemID) === item.id && (!isShop || num(c.ShopItemID) === item.shopItemId));
         return (
             found ?? {
@@ -2314,7 +2345,7 @@ export class CoreBots {
         if (pool === null || items.length === 0) return items;
         const categories = this.openInventoryCategories();
         if (!categories) return items;
-        const rawItems = bot.flash.get<Raw[] | null>("world.myAvatar.items");
+        const rawItems = bot.flash.get<GameItem[] | null>("world.myAvatar.items");
         return items.filter((item) => categories.poolOf(this.inventorySpaceItemData(item, rawItems)) === pool);
     }
 
@@ -2392,8 +2423,8 @@ export class CoreBots {
 
     private withRewardDetails(quest: Quest): QuestData {
         const path = `world.questTree.${quest.id}`;
-        const oRewards = bot.flash.get<Record<string, Record<string, Raw>> | null>(`${path}.oRewards`);
-        const reward = bot.flash.get<Raw[] | null>(`${path}.reward`);
+        const oRewards = bot.flash.get<Record<string, Record<string, GameItem>> | null>(`${path}.oRewards`);
+        const reward = bot.flash.get<GameItem[] | null>(`${path}.reward`);
 
         const rewards: RewardItem[] = [];
         if (oRewards && typeof oRewards === "object")
@@ -3179,8 +3210,11 @@ export class CoreBots {
         }
     }
 
-    /** Rank of the equipped class, or of `className` from its class points (1 when not found). */
-    checkClassRank(currentClass = false, className: string | null = null): number {
+    /**
+     * Rank of the equipped class (`currentClass`), or of `className` from its class points (1 when
+     * not found).
+     */
+    checkClassRank({ currentClass = false, className = null }: { currentClass?: boolean; className?: string | null } = {}): number {
         if (currentClass && bot.player.currentClass !== null) {
             this.debugLogger(`Current Class: ${bot.player.currentClass} | Current Rank: ${bot.player.currentClassRank}`);
             return bot.player.currentClassRank;
@@ -3432,7 +3466,7 @@ export class CoreBots {
 
     /** C# `Bot.Reputation.GetRank(faction)` (API gap: read from `world.myAvatar.factions`). */
     factionRank(faction: string): number {
-        const factions = bot.flash.get<Raw[] | null>("world.myAvatar.factions") ?? [];
+        const factions = bot.flash.get<GameFaction[] | null>("world.myAvatar.factions") ?? [];
         const found = factions.find((f) => f && text(f.sName) === faction);
         return found ? num(found.iRank) : 0;
     }
@@ -3497,7 +3531,7 @@ export class CoreBots {
     /** `bWear` and `EnhPatternID` of the inventory items (not in turu's InventoryItem). */
     private inventoryWearAndPattern(): Map<number, { wearing: boolean; enhancementPatternId: number }> {
         const result = new Map<number, { wearing: boolean; enhancementPatternId: number }>();
-        for (const raw of bot.flash.get<Raw[] | null>("world.myAvatar.items") ?? [])
+        for (const raw of bot.flash.get<GameItem[] | null>("world.myAvatar.items") ?? [])
             if (raw) result.set(num(raw.ItemID), { wearing: flag(raw.bWear), enhancementPatternId: num(raw.EnhPatternID) });
         return result;
     }
