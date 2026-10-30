@@ -391,6 +391,9 @@ fn main() -> Result<(), Error> {
         }
     });
 
+    // Turu: the control API (`--api`), now that its messages can be logged.
+    turu::start_api();
+
     // Turu: `--headless` runs the game without a window.
     if turu::headless() {
         let Some(movie_url) = preferences.cli.movie_url.clone() else {

@@ -32,6 +32,8 @@ pub struct LogBuffer {
     capacity: usize,
     /// Bumped on every change, so the UI can tell when to scroll.
     version: AtomicU64,
+    /// Lines pushed so far: the next line's number (the control API's `since`).
+    pushed: AtomicU64,
 }
 
 impl LogBuffer {
@@ -41,6 +43,7 @@ impl LogBuffer {
             lines: Mutex::new(VecDeque::new()),
             capacity,
             version: AtomicU64::new(0),
+            pushed: AtomicU64::new(0),
         }
     }
 
@@ -58,6 +61,7 @@ impl LogBuffer {
             text,
         });
         self.version.fetch_add(1, Ordering::Relaxed);
+        self.pushed.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn clear(&self) {
@@ -67,6 +71,16 @@ impl LogBuffer {
 
     pub fn snapshot(&self) -> Vec<LogLine> {
         self.lines.lock().iter().cloned().collect()
+    }
+
+    /// The lines numbered `from` and later that are still kept, and the next line's number.
+    /// Lines are numbered from 0 in the order they were pushed.
+    pub fn since(&self, from: u64) -> (Vec<LogLine>, u64) {
+        let lines = self.lines.lock();
+        let next = self.pushed.load(Ordering::Relaxed);
+        let first = next - lines.len() as u64;
+        let skip = from.saturating_sub(first) as usize;
+        (lines.iter().skip(skip).cloned().collect(), next)
     }
 
     pub fn len(&self) -> usize {

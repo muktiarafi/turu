@@ -31,6 +31,8 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 static BOT: OnceLock<Arc<Bot>> = OnceLock::new();
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
+/// `--api`'s address, until `start_api`.
+static API: Mutex<Option<String>> = Mutex::new(None);
 
 /// The bot of this client (one per process, like VibeSkua).
 pub fn bot() -> &'static Arc<Bot> {
@@ -62,13 +64,19 @@ pub fn skua_swf_url() -> anyhow::Result<String> {
 /// * `--exit-on-script-stop` (or `--exit-on-finish`): log out and quit when the script stops
 ///   (not when auto-relogin stops it).
 /// * `--headless`: no window (see `headless.rs`).
+/// * `--api` (or `--api=<address>`, default `127.0.0.1:8791`): the control API (see
+///   `turu_bot::control_api`), started by [`start_api`].
 pub fn take_startup_args(args: &mut Vec<OsString>) {
     let Flags {
         mut startup,
         exit_on_stop,
         headless,
+        api,
     } = parse_startup_args(args);
     HEADLESS.store(headless, Ordering::Relaxed);
+    if let Ok(mut slot) = API.lock() {
+        *slot = api;
+    }
     if startup.password.is_none() {
         startup.password = std::env::var("TURU_PASSWORD").ok().filter(|p| !p.is_empty());
     }
@@ -78,6 +86,42 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     turu_bot::startup::configure(bot(), startup);
     if exit_on_stop {
         exit_on_script_stop();
+    }
+}
+
+/// Starts the control API if `--api` was given (once logging is up, so its messages show). The
+/// token is `TURU_API_TOKEN`, else the one in the data folder's `api-token` (made the first time).
+pub fn start_api() {
+    let Some(addr) = API.lock().ok().and_then(|mut a| a.take()) else {
+        return;
+    };
+    let addr: std::net::SocketAddr = match addr.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:8791)");
+            return;
+        }
+    };
+    let token = match std::env::var("TURU_API_TOKEN").ok().filter(|t| !t.trim().is_empty()) {
+        Some(token) => {
+            tracing::info!("Control API token: from TURU_API_TOKEN");
+            Ok(token.trim().to_owned())
+        }
+        None => {
+            let file = bot().paths.api_token_file();
+            let token = turu_bot::control_api::saved_token(&file);
+            tracing::info!("Control API token: in {}", file.display());
+            token
+        }
+    };
+    match token.and_then(|token| turu_bot::control_api::start(bot(), addr, token)) {
+        Ok(local) => {
+            tracing::info!("Control API on http://{local}");
+            if !local.ip().is_loopback() {
+                tracing::warn!("The control API is reachable from other computers: keep the token secret");
+            }
+        }
+        Err(e) => tracing::error!("Control API: {e}"),
     }
 }
 
@@ -92,6 +136,8 @@ struct Flags {
     startup: Startup,
     exit_on_stop: bool,
     headless: bool,
+    /// `--api`'s address.
+    api: Option<String>,
 }
 
 /// Removes Turu's flags from `args` and returns them.
@@ -128,6 +174,8 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             }
             "--exit-on-script-stop" | "--exit-on-finish" => flags.exit_on_stop = true,
             "--headless" => flags.headless = true,
+            // The address only inline (`--api=...`): the next argument may be anything.
+            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:8791".into())),
             _ => rest.push(arg),
         }
     }
@@ -309,6 +357,7 @@ mod tests {
             "farm/GoldFarm.ts",
             "--exit-on-finish",
             "--headless",
+            "--api",
             "-g",
             "metal",
         ])
@@ -318,9 +367,11 @@ mod tests {
             startup,
             exit_on_stop: exit,
             headless,
+            api,
         } = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-p", "low", "-g", "metal"]);
         assert!(headless);
+        assert_eq!(api.as_deref(), Some("127.0.0.1:8791"));
         assert_eq!(startup.username.as_deref(), Some("Hero"));
         assert_eq!(startup.password.as_deref(), Some("a=b"));
         assert_eq!(startup.server.as_deref(), Some("Artix"));
