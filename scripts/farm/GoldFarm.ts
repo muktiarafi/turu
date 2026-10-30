@@ -13,7 +13,7 @@ import { CoreFarms } from "../core/CoreFarms";
 const Farm = new CoreFarms();
 
 export default function main(): void {
-    Core.setOptions(true, true);
+    Core.setOptions(true, { disableClassSwap: true });
 
     doFarmGold();
 

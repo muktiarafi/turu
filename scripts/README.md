@@ -54,7 +54,13 @@ export default function main(): void {
 - Use `bot.*` (see `bot/js/turu.ts`) for raw actions and `Core.*` for the C# CoreBots helpers.
 - Relative imports without extension (`"../core/CoreBots"`).
 - C# named arguments for flags become option objects: `KillMonster(..., isTemp: false, log: false)`
-  -> `Core.killMonster(..., null, 1, { isTemp: false, log: false })`.
+  -> `Core.killMonster(..., null, 1, { isTemp: false, log: false })`. So do boolean parameters
+  whose meaning a call doesn't show: `CheckInventory(items, 1, true)` ->
+  `Core.checkInventory(items, 1, { any: true })`, `FarmVoucher(true)` ->
+  `Nation.farmVoucher({ member: true })`. On/off switches stay positional (`Core.setOptions(false)`,
+  `Core.toggleAggro(true)`).
+- Game objects read with `bot.flash.get` get an interface (`GameItem`, `GameFaction` in
+  CoreBots), not `any`; read their fields with `num` / `text` / `flag`.
 - Wait with `Core.sleep()` / `Core.waitForTrue()` rather than `bot.sleep()` in long loops: Core's
   background handlers (registered quests, the AFK check) only run while the script waits in Core.
 - Configuration (`soloClass`, `farmClass`, `privateRooms`, ...) are fields on `Core`.

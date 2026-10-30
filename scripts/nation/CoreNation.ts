@@ -184,7 +184,7 @@ export class CoreNation {
      * @param quant Desired quantity to get.
      */
     newWorldsNewOpportunities(item: string | null = null, quant = 1): void {
-        if ((item !== null && Core.checkInventory(item, quant)) || !Core.checkInventory(["Nulgath's Birthday Gift", "Bounty Hunter's Drone Pet"], 1, true)) return;
+        if ((item !== null && Core.checkInventory(item, quant)) || !Core.checkInventory(["Nulgath's Birthday Gift", "Bounty Hunter's Drone Pet"], 1, { any: true })) return;
 
         Core.addDrop(...Core.questRewards(Core.checkInventory("Bounty Hunter's Drone Pet") ? 6183 : 6697));
         Core.equipClass(ClassType.Farm);
@@ -378,7 +378,6 @@ export class CoreNation {
         ultraAlteon = ultraAlteon || Core.cboBool("UltraAlteonForSupplies") === true;
         returnPolicyDuringSupplies = returnPolicyDuringSupplies || Core.cboBool("Nation_ReturnPolicyDuringSupplies") === true;
 
-        // Voucher logic cleanup
         if (keepVoucher) this.sellMemVoucher = false;
         else if (this.sellMemVoucher && bot.player.gold >= 100000000) this.sellMemVoucher = false;
 
@@ -540,7 +539,7 @@ export class CoreNation {
 
         if (Core.checkInventory("Voucher of Nulgath")) {
             Core.jump("Enter", "Spawn");
-            Core.sellItem("Voucher of Nulgath", 1, true);
+            Core.sellItem("Voucher of Nulgath", 1, { all: true });
         }
     }
 
@@ -620,7 +619,7 @@ export class CoreNation {
 
     /** Member with Nulgath's Birthday Gift (4809) or Bounty Hunter's Drone Pet (5373). */
     get hasOBoNPet(): boolean {
-        return bot.player.isMember && Core.checkInventory([4809, 5373], 1, true);
+        return bot.player.isMember && Core.checkInventory([4809, 5373], 1, { any: true });
     }
 
     /**
@@ -726,7 +725,7 @@ export class CoreNation {
      * @param item The item to obtain (null: max every reward).
      */
     voidKnightSwordQuest(item: string | null = null, quant = 1): void {
-        if ((item !== null && Core.checkInventory(item, quant)) || !Core.checkInventory([38275, 38254], 1, true)) return;
+        if ((item !== null && Core.checkInventory(item, quant)) || !Core.checkInventory([38275, 38254], 1, { any: true })) return;
 
         Core.addDrop(...this.bagDrops);
         if (item !== null) Core.addDrop(item);
@@ -1280,8 +1279,8 @@ export class CoreNation {
             Core.ensureComplete(receiptOfNulgathQuest);
             bot.wait.forPickup("Receipt of Nulgath");
 
-            this.farmVoucher(true, true);
-            this.farmVoucher(false, true);
+            this.farmVoucher({ member: true, keepVoucher: true });
+            this.farmVoucher({ member: false, keepVoucher: true });
             this.essenceofNulgath(100);
             this.farmTotemofNulgath(1);
             Core.equipClass(ClassType.Solo);
@@ -1408,9 +1407,10 @@ export class CoreNation {
 
     /**
      * Farms Voucher of Nulgath (member or not) with the best method available.
-     * @param member If true will farm Voucher of Nulgath; false Voucher of Nulgath (non-mem).
+     * @param options `member`: if true will farm Voucher of Nulgath; false Voucher of Nulgath
+     *   (non-mem). `keepVoucher`: don't sell the voucher.
      */
-    farmVoucher(member: boolean, keepVoucher = false): void {
+    farmVoucher({ member, keepVoucher = false }: { member: boolean; keepVoucher?: boolean }): void {
         if ((Core.checkInventory("Voucher of Nulgath (non-mem)") && !member) || (Core.checkInventory("Voucher of Nulgath") && member)) return;
 
         const voucher = member ? "Voucher of Nulgath" : "Voucher of Nulgath (non-mem)";

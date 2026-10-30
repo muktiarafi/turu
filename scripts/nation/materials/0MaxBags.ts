@@ -30,6 +30,6 @@ function maxBags(): void {
     Nation.farmTaintedGem();
     Nation.farmUni10();
     Nation.farmUni13();
-    Nation.farmVoucher(true);
-    Nation.farmVoucher(false);
+    Nation.farmVoucher({ member: true });
+    Nation.farmVoucher({ member: false });
 }
