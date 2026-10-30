@@ -36,6 +36,7 @@ cargo build -p turu --no-default-features --features software_video,external_vid
 cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
 cargo clippy -p turu_bot -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
+cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (their CI checks it)
 ```
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
