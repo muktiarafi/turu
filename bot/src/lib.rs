@@ -53,6 +53,7 @@ pub struct Bot {
     pub handlers: api::handlers::HandlerRunner,
     pub boosts: api::boosts::BoostRunner,
     pub quests: api::quests::QuestRunner,
+    pub servers: api::servers::ServerRunner,
     pub paths: paths::Paths,
 }
 
@@ -74,6 +75,7 @@ impl Bot {
             handlers: api::handlers::HandlerRunner::default(),
             boosts: api::boosts::BoostRunner::default(),
             quests: api::quests::QuestRunner::default(),
+            servers: api::servers::ServerRunner::default(),
             paths,
         });
         background::start(&bot);

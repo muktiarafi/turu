@@ -231,6 +231,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "afk" => ok(f.get_or::<bool>("world.myAvatar.dataLeaf.afk", false)?),
         "username" => ok(username(bot)?),
         "serverIp" => ok(server_ip(bot)?),
+        "kicked" => ok(super::servers::kicked(bot)?),
         "cell" => ok(cell(bot)?),
         "pad" => ok(pad(bot)?),
         "id" => ok(f.get_or::<i64>("world.myAvatar.uid", 0)?),

@@ -21,6 +21,7 @@ pub mod packets;
 pub mod player;
 pub mod quests;
 pub mod send;
+pub mod servers;
 pub mod shops;
 pub mod skills;
 pub mod wait;
@@ -54,6 +55,7 @@ pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value
         "skills" => skills::dispatch(bot, name, args),
         "wait" => wait::dispatch(bot, name, args),
         "send" => send::dispatch(bot, name, args),
+        "servers" => servers::dispatch(bot, name, args),
         "lite" => lite::dispatch(bot, name, args),
         "options" => options::dispatch(bot, name, args),
         "config" => config::dispatch(bot, name, args),

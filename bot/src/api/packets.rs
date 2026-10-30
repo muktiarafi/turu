@@ -234,6 +234,7 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
                 part(2)
             ));
             bot.state.lock().intentional_logout = true;
+            crate::api::servers::cancel_relogin(bot);
             crate::script::stop(bot);
         }
         "moveToCell" => {
@@ -254,6 +255,8 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
             bot.state.lock().stats.quests_accepted += 1;
             bot.events.emit(BotEvent::QuestAccepted { quest_id });
         }
+        // An auto-relogin's own logout.
+        "cmd" if part(4) == "logout" && bot.servers.is_relogging() => {}
         "cmd" if part(4) == "logout" => {
             let intentional = {
                 let mut state = bot.state.lock();
@@ -261,10 +264,16 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
                 state.intentional_logout
             };
             bot.events.emit(BotEvent::Logout);
-            if !intentional {
-                // TODO(turu): auto-relogin (VibeSkua `BeginLogout(logoutNotified: true)`)
-                // needs the servers API.
-                bot.logs.debug.push("Server logout command detected.");
+            if intentional {
+                bot.logs
+                    .debug
+                    .push("Intentional logout confirmed. Auto re-login skipped.");
+                crate::api::servers::cancel_relogin(bot);
+            } else {
+                bot.logs
+                    .debug
+                    .push("Server logout command detected. Triggering auto re-login.");
+                crate::api::servers::begin_logout(bot, true);
             }
         }
         _ => {}

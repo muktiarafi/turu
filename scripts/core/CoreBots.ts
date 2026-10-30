@@ -591,13 +591,20 @@ export class CoreBots {
 
             // C# Bot.Config.Configure() for scripts with options: not applicable.
 
+            // Pre-calc fallback server once
+            const server =
+                bot.options.reloginServer ||
+                bot.servers.cachedServers.find(
+                    (s) => s.name !== "Class Test Realm" && s.online && s.playerCount < s.maxPlayers,
+                )?.name ||
+                "Twilly";
+
             let loadAttempts = 0;
             while (bot.player.loggedIn && !bot.player.loaded && !bot.shouldExit) {
                 if (loadAttempts >= 30) {
                     this.logger("Player stuck in spirit state after 30s, reconnecting.", "SetOptions");
                     bot.options.autoRelogin = true;
-                    // API gap: no Bot.Servers.Relogin; log out and let auto-relogin reconnect.
-                    this.logout();
+                    bot.servers.relogin(server);
                     loadAttempts = 0;
                     bot.sleep(1000);
                     continue;
@@ -3266,38 +3273,72 @@ export class CoreBots {
         }
     }
 
-    /** Logs out (C# `Bot.Servers.Logout()`, the game's `logout` function). */
+    /** Logs out (C# `Bot.Servers.Logout()`). */
     logout(): void {
-        bot.flash.callGameFunction("logout");
+        bot.servers.logout();
     }
 
     /**
-     * Relogs and goes to the house (falls back to battleon-100000).
-     * API gap: turu has no `bot.servers` (C# `Bot.Servers.EnsureRelogin` with the cached login and
-     * fallback servers). This logs out with auto-relogin on and waits for the engine to reconnect;
-     * the script stops if the player isn't back within ~60 s.
+     * Relogs and goes to the house (falls back to battleon-100000), then the fallback servers.
+     * The first try is `bot.servers.relogin`: C# calls `EnsureRelogin`, which does nothing while
+     * you're still logged in, so its relogin only sent you to the house.
      */
     relogin(reason = ""): void {
         bot.log(`⚡ Relogin Triggered${reason.trim() ? `: ${reason}` : ""}`);
 
+        // Save original options
         const origAutoRelog = bot.options.autoRelogin;
+        const origAutoRelogAny = bot.options.autoReloginAny;
+        const origRetryRelogin = bot.options.retryRelogin;
+        const origSafeRelogin = bot.options.safeRelogin;
+
         try {
-            bot.options.autoRelogin = true;
-            this.logout();
-            this.waitForTrue(() => !bot.player.loggedIn, 20);
-            if (this.waitForTrue(() => bot.player.loggedIn && bot.player.loaded, 600)) {
-                bot.log(`🏠 Relogin successful! Sending to house${reason.trim() ? `: ${reason}` : ""} ✨`);
-                bot.send.packet(`%xt%zm%house%1%${this.username()}%`);
-                if (!bot.wait.forMapLoad("house", 20)) {
-                    bot.log("⚠️ Failed to load house map, falling back to Battleon. 🏰");
-                    this.join("battleon-100000");
-                }
+            // C# SetLoginInfo(username, password): the engine relogs with the game's remembered
+            // login already.
+
+            // Reset relogin options
+            bot.options.autoRelogin = false;
+            bot.options.autoReloginAny = false;
+            bot.options.retryRelogin = false;
+            bot.options.safeRelogin = false;
+
+            // Try preferred server first (the last server or Twilly)
+            const preferredServer = bot.servers.lastName || "Twilly";
+            bot.log(`🎯 Attempting relogin to: ${preferredServer} 🌐`);
+            if (bot.servers.relogin(preferredServer) && this.waitForTrue(() => bot.player.loaded, 20)) {
+                this.sendPlayerToHouse(preferredServer, reason);
                 return;
             }
+
+            // Fallback servers
+            for (const server of ["Twilly", "Twig", "Safiria"].filter((s) => s !== preferredServer)) {
+                bot.log(`⚡ Trying fallback server: ${server} 🔄`);
+                if (bot.servers.ensureRelogin(server) && this.waitForTrue(() => bot.player.loaded, 20)) {
+                    bot.log(`✅ Fallback relogin to ${server} successful! 🎉`);
+                    this.sendPlayerToHouse(server, reason);
+                    return;
+                }
+                bot.sleep(1000); // Brief delay between attempts
+            }
+
             bot.log("❌ Relogin failed after all attempts. 🛑");
             bot.stop();
         } finally {
+            // Restore original options
             bot.options.autoRelogin = origAutoRelog;
+            bot.options.autoReloginAny = origAutoRelogAny;
+            bot.options.retryRelogin = origRetryRelogin;
+            bot.options.safeRelogin = origSafeRelogin;
+        }
+    }
+
+    private sendPlayerToHouse(serverName: string, reason = ""): void {
+        bot.log(`🏠 Relogin successful! Sending to house from ${serverName}${reason.trim() ? `: ${reason}` : ""} ✨`);
+        bot.send.packet(`%xt%zm%house%1%${this.username()}%`);
+
+        if (!bot.wait.forMapLoad("house", 20)) {
+            bot.log("⚠️ Failed to load house map, falling back to Battleon. 🏰");
+            this.join("battleon-100000");
         }
     }
 

@@ -119,6 +119,7 @@ fn entries() -> Vec<Entry> {
         n!(Relogin, "Relogin Tries", relogin_tries),
         n!(Relogin, "Relogin Try Delay", relogin_try_delay, "ms"),
         n!(Relogin, "Login Timeout", login_timeout, "ms"),
+        b!(Relogin, "Relogin Watchdog", relogin_watchdog),
     ];
     let mut gameplay = vec![
         b!(Gameplay, "Private Rooms", private_rooms),
@@ -159,7 +160,7 @@ fn entries() -> Vec<Entry> {
     list
 }
 
-/// VibeSkua's fallback server list for the Relogin Server box.
+/// VibeSkua's fallback server list for the Relogin Server box (until the game's list arrives).
 const SERVERS: [&str; 12] = [
     "Artix",
     "Twilly",
@@ -317,7 +318,13 @@ fn edit(ui: &mut Ui, field: &Field, snapshot: &mut BotOptions, bot: &std::sync::
                 .selected_text(&current)
                 .width(150.0)
                 .show_ui(ui, |ui| {
-                    let mut names: Vec<&str> = SERVERS.to_vec();
+                    turu_bot::api::servers::refresh_in_background(bot);
+                    let cached = bot.servers.cached();
+                    let mut names: Vec<&str> = if cached.is_empty() {
+                        SERVERS.to_vec()
+                    } else {
+                        cached.iter().map(|s| s.name.as_str()).collect()
+                    };
                     if !names.contains(&current.as_str()) {
                         names.insert(0, &current);
                     }
