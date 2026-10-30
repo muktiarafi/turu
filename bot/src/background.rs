@@ -247,7 +247,8 @@ fn check_stuck_loading(bot: &Arc<Bot>, load: &mut LoadWatch) {
     let relogging = bot.servers.is_relogging();
     let timeout = Duration::from_millis(bot.opts().load_timeout.max(0) as u64);
     if detail.contains("has been lost") && !relogging {
-        if !bot.state.lock().intentional_logout {
+        // Checked 10 times a second: without auto-relogin there's nothing to start (or log).
+        if bot.opts().auto_relogin && !bot.state.lock().intentional_logout {
             bot.log("Connection lost detected. Triggering auto re-login.");
             servers::begin_logout(bot, false);
         }
