@@ -40,14 +40,25 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
 - **Several accounts** (Army > Accounts and Army > Army Control; `bot/src/accounts.rs`,
   `bot/src/army.rs`): the account list and groups (VibeSkua Manager's Accounts tab) in
   `accounts.json`, with the passwords in the system keychain (`keyring`: Keychain, Credential
-  Manager, Secret Service) instead of in the clear. Start launches one `turu` process per
-  account, as VibeSkua does, 500-900 ms apart: `--user`, `--server`, the script, optionally
-  `--headless`, the password in `TURU_PASSWORD`, the control API on a free local port with
-  its own token, and `--exit-with-parent` (the client quits when the launcher's stdin pipe
-  closes, even if the launcher crashed). Army Control polls each client's `/status` every 2 s
-  and sends VibeSkua's Army Control commands to all of them, and to this client unless
-  "Include this client" is off. Each account still has its own window; tabs in one window are
-  the next step (see Known gaps).
+  Manager, Secret Service) instead of in the clear. Start launches the accounts 500-900 ms
+  apart, by default each in a **tab** of this window (below), else ("In its own window",
+  "Without a window") in a `turu` process of its own, as VibeSkua does: `--user`, `--server`,
+  the script, optionally `--headless`, the password in `TURU_PASSWORD`, the control API on a
+  free local port with its own token, and `--exit-with-parent` (the client quits when the
+  launcher's stdin pipe closes, even if the launcher crashed). Army Control polls each process's
+  `/status` every 2 s and sends VibeSkua's Army Control commands to all of them, and to every
+  tab unless "Include this window's tabs" is off.
+- **Tabs** (`desktop/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
+  client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
+  tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
+  the players run on the event loop thread and are ticked every loop; only the active one is
+  drawn and heard (the others are muted). Flash calls name their tab, and `turu::bot()` is the
+  active tab's bot, so the UI and `spawn_action` act on the tab you look at; each tab keeps its
+  own tool windows, Auto Attack and nav bar state (Accounts and Army Control are shared). The
+  tab strip shows above the nav bar once there are two tabs: the name (character, else login),
+  a dot while its script or Auto Attack runs, × to close (stops its script), + for a new tab at
+  the login screen (also Army > New Tab). Checked by hand: opening, switching and closing a
+  second tab at the login screen.
 - **Reputation and auras:** `bot.reputation` (VibeSkua `Bot.Reputation`: `factionList`, `getRank`,
   `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
   `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in
@@ -95,12 +106,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 ## Known gaps
 
-- **No account tabs yet:** launched accounts run in their own windows (or none). VibeSkua's
-  tabbed host embeds each client's Win32 window, which macOS and Wayland don't allow; the plan
-  is several players in one process, each on its own thread drawing off screen (the
-  `headless.rs` loop with a wgpu `TextureTarget`), with `turu::bot()` becoming the active
-  tab's bot. Army Control lacks VibeSkua's Start/Stop Auto-Attack for All, Army Scheduler,
-  Grid View and per-squad Army Queue. Launching is unverified with real accounts.
+- **Tabs share one thread and one process:** every tab's game runs on the event loop thread, so
+  many busy tabs slow each other down (VibeSkua's processes use several cores), and a crash in
+  one (release builds abort on panic) closes them all; "In its own window" keeps an account
+  apart. A script's Script Options window or message box in a background tab waits until you
+  open that tab. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
+  login), as VibeSkua's processes do. `--api` steers the first tab only. Not built: VibeSkua's
+  Grid View, Start/Stop Auto-Attack for All, Army Scheduler and per-squad Army Queue. Logging
+  in and farming in several tabs is unverified with real accounts.
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).

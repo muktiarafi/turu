@@ -7,7 +7,8 @@
 //!   closes, so clients don't outlive the window that launched them (even when it crashes).
 //! * It runs the control API (`crate::control_api`) on a free local port with a token made
 //!   for it (`TURU_API_TOKEN`). Army commands are requests to that API, where VibeSkua sends
-//!   window messages; this process's own client takes them through `control_api::local`.
+//!   window messages; this process's own clients (its tabs) take them through
+//!   `control_api::local`.
 //! * A "Turu Army" thread asks every client for `/status` every [`POLL_INTERVAL`].
 
 use crate::Bot;
@@ -327,9 +328,7 @@ impl Army {
             .spawn(move || {
                 for (i, launch) in launches.into_iter().enumerate() {
                     if i > 0 {
-                        std::thread::sleep(Duration::from_millis(
-                            LAUNCH_DELAY_MS + jitter(LAUNCH_JITTER_MS),
-                        ));
+                        std::thread::sleep(launch_delay());
                     }
                     let username = launch.username.clone();
                     army.dequeue(&username);
@@ -382,12 +381,12 @@ impl Army {
         self.request(client, post, &path, body, COMMAND_TIMEOUT)
     }
 
-    /// Sends the command to every running client, and to `local` (this process's own client)
-    /// when given, all at once; `done` gets each one's outcome, labelled, as it comes.
+    /// Sends the command to every running client, and to `local` (this process's own clients,
+    /// named), all at once; `done` gets each one's outcome, labelled, as it comes.
     pub fn broadcast(
         self: &Arc<Self>,
         command: Command,
-        local: Option<Arc<Bot>>,
+        local: Vec<(String, Arc<Bot>)>,
         done: impl Fn(&str, Result<Value, String>) + Send + Sync + 'static,
     ) {
         let done = Arc::new(done);
@@ -403,10 +402,10 @@ impl Army {
                 done(&name, Err(e.to_string()));
             }
         };
-        if let Some(bot) = local {
+        for (name, bot) in local {
             let command = command.clone();
             spawn(
-                "this client".into(),
+                name,
                 Box::new(move || {
                     let (post, path, body) = command.request();
                     let (status, reply) = crate::control_api::local(&bot, post, &path, &body);
@@ -502,6 +501,11 @@ fn reply_result(status: u16, reply: Value) -> Result<Value, String> {
             .and_then(Value::as_str)
             .map_or_else(|| format!("HTTP {status}"), str::to_owned))
     }
+}
+
+/// How long to wait between two launches: 500-900 ms (VibeSkua's batch launch).
+pub fn launch_delay() -> Duration {
+    Duration::from_millis(LAUNCH_DELAY_MS + jitter(LAUNCH_JITTER_MS))
 }
 
 /// A local port nobody listens on (the client binds it a moment later).

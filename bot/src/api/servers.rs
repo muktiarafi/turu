@@ -190,6 +190,16 @@ pub fn cached_username(bot: &Bot) -> BotResult<Option<String>> {
     Ok((!username.trim().is_empty() && username != "loginInfo.strUsername").then_some(username))
 }
 
+/// The `setLoginInfo` username, without asking the game (callable from any thread).
+pub fn login_name(bot: &Bot) -> Option<String> {
+    bot.servers
+        .login_info
+        .lock()
+        .as_ref()
+        .map(|(username, _)| username.clone())
+        .filter(|u| !u.trim().is_empty())
+}
+
 pub fn set_login_info(bot: &Bot, username: &str, password: &str) {
     *bot.servers.login_info.lock() = Some((username.to_owned(), password.to_owned()));
 }

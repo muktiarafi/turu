@@ -6,12 +6,14 @@ use super::files::{self, Pending};
 use super::theme::{MUTED, SUCCESS};
 use super::widgets::{self, Kind};
 use crate::gui::FilePicker;
+use crate::turu::TabRequest;
 use egui::{Align, ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use rfd::AsyncFileDialog;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use turu_bot::accounts::{self, Account, Accounts};
+use turu_bot::accounts::{self, Account, Accounts, LaunchMode};
 use turu_bot::army::Launch;
+use turu_bot::startup::Startup;
 
 /// The add / edit form.
 #[derive(Default)]
@@ -192,7 +194,6 @@ impl AccountsWindow {
     }
 
     fn list_card(&mut self, ui: &mut Ui) {
-        let army = crate::turu::army();
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -239,7 +240,7 @@ impl AccountsWindow {
                         }
                         ui.horizontal(|ui| {
                             changed |= ui.checkbox(&mut account.selected, "").changed();
-                            if army.client(&account.username).is_some() {
+                            if is_running(&account.username) {
                                 widgets::dot(ui, SUCCESS, 4.0);
                             }
                             ui.label(RichText::new(account.label()).strong());
@@ -264,7 +265,7 @@ impl AccountsWindow {
                                 if widgets::small_button(ui, "Edit", true).clicked() {
                                     action = Some((Row::Edit, account.username.clone()));
                                 }
-                                let running = army.client(&account.username).is_some();
+                                let running = is_running(&account.username);
                                 if widgets::small_button(ui, "Start", !running).clicked() {
                                     action = Some((Row::Start, account.username.clone()));
                                 }
@@ -370,11 +371,22 @@ impl AccountsWindow {
                     self.save();
                 }
                 ui.add_space(8.0);
-                if widgets::switch(ui, &mut self.list.headless).changed() {
+                let before = self.list.mode;
+                ComboBox::from_id_salt("turu_accounts_mode")
+                    .selected_text(self.list.mode.label())
+                    .show_ui(ui, |ui| {
+                        for mode in LaunchMode::ALL {
+                            ui.selectable_value(&mut self.list.mode, mode, mode.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "A tab of this window, or a turu process of its own (with a window, or \
+                         --headless); Army Control steers them all",
+                    );
+                if self.list.mode != before {
                     self.save();
                 }
-                ui.label("Without a window")
-                    .on_hover_text("--headless: no window, steer it from Army Control");
             });
             ui.horizontal(|ui| {
                 let script = self.list.script.as_ref().map_or_else(
@@ -433,10 +445,7 @@ impl AccountsWindow {
     /// Launches the accounts that aren't running, staggered, with their saved passwords.
     fn launch(&self, accounts: Vec<Account>) {
         let army = crate::turu::army().clone();
-        let accounts: Vec<Account> = accounts
-            .into_iter()
-            .filter(|a| army.client(&a.username).is_none())
-            .collect();
+        let accounts: Vec<Account> = accounts.into_iter().filter(|a| !is_running(&a.username)).collect();
         if accounts.is_empty() {
             set_status(&self.status, "Those accounts are running already.");
             return;
@@ -446,9 +455,10 @@ impl AccountsWindow {
             server: Some(list.server.trim().to_owned()).filter(|s| !s.is_empty()),
             script: list.script.clone(),
             run_script: list.auto_start,
-            headless: list.headless,
+            headless: list.mode == LaunchMode::Headless,
             ..Default::default()
         };
+        let in_tabs = list.mode == LaunchMode::Tab;
         set_status(&self.status, format!("Starting {} account(s)…", accounts.len()));
         let status = self.status.clone();
         // The keychain may ask the user to unlock it: not on the UI thread.
@@ -468,6 +478,10 @@ impl AccountsWindow {
                     }
                 })
                 .collect();
+            if in_tabs {
+                open_tabs(launches, &status);
+                return;
+            }
             army.launch_all(launches, move |username, result| {
                 let text = match result {
                     Ok(()) => format!("Started {username}."),
@@ -477,6 +491,42 @@ impl AccountsWindow {
                 set_status(&status, text);
             });
         });
+    }
+}
+
+/// The account plays in a tab, or in a client Army launched.
+fn is_running(username: &str) -> bool {
+    crate::turu::army().client(username).is_some()
+        || crate::turu::tabs().iter().any(|(_, bot)| {
+            turu_bot::api::servers::login_name(bot).is_some_and(|name| name.eq_ignore_ascii_case(username))
+        })
+}
+
+/// Opens a tab for each launch, 500-900 ms apart; each logs in once its game has loaded.
+fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>) {
+    for (i, launch) in launches.into_iter().enumerate() {
+        if i > 0 {
+            std::thread::sleep(turu_bot::army::launch_delay());
+        }
+        let startup = Startup {
+            username: Some(launch.username.clone()),
+            password: launch.password,
+            server: launch.server,
+            script: launch.script,
+            run_script: launch.run_script,
+        };
+        if !startup.logs_in() {
+            crate::turu::bot().logs.debug.push(format!(
+                "{}: no saved password, log in yourself in its tab",
+                launch.username
+            ));
+        }
+        let text = if crate::turu::request_tab(TabRequest::Open(Box::new(startup))) {
+            format!("Opened a tab for {}.", launch.username)
+        } else {
+            format!("{}: couldn't open a tab", launch.username)
+        };
+        set_status(status, text);
     }
 }
 

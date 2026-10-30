@@ -36,8 +36,13 @@ The windows are not scaled with the window height (Mugetsu's `z`): they keep Vib
 (Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
 Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
 Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
-Interceptor), **Plugins** (View Plugins), **Army** (Accounts, Army Control; Turu's: VibeSkua has
-them in its Manager app and its tabbed host). Right side: **Auto**, **Jump**, a divider, **+**.
+Interceptor), **Plugins** (View Plugins), **Army** (Accounts, Army Control, New Tab; Turu's:
+VibeSkua has them in its Manager app and its tabbed host). Right side: **Auto**, **Jump**, a
+divider, **+**.
+
+With two tabs or more, a 30 px tab strip (`tab_strip.rs`) sits above the nav bar
+(`gui::top_height`): rounded tabs with a status dot, the name and ×, the active one in the
+panel colour with an accent line on top, and + at the end.
 
 | Item | State |
 |---|---|
@@ -98,10 +103,12 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread), the list (check box, a green dot
   while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /
-  Unselect All, Add Selected to Group and Select group, and Launch: Server, Without a window,
+  Unselect All, Add Selected to Group and Select group, and Launch: Server, where (In a tab, In
+  its own window, Without a window),
   the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
 * **Army Control** (`army.rs`): the launched clients (state, server, map, cell, HP, script;
-  Close, Clear Ended, Close All), "Include this client", Start / Stop All Scripts, Load Script
+  Close, Clear Ended, Close All) after this window's tabs (script, last map; Show), "Include
+  this window's tabs", Start / Stop All Scripts, Load Script
   to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
   Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,
   and each client's outcome under RESULTS.

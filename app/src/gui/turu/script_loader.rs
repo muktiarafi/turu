@@ -166,7 +166,7 @@ impl ScriptLoader {
             *options_open = true;
         }
         ui.horizontal(|ui| {
-            let auto = super::auto::running();
+            let auto = super::auto::running(&crate::turu::bot());
             if active {
                 // While stopping, CoreBots may still be going to the stop location; a second
                 // press interrupts that.
@@ -183,7 +183,7 @@ impl ScriptLoader {
                     })
                     .clicked()
                 {
-                    script::stop(bot);
+                    script::stop(&bot);
                 }
             } else {
                 let tip = if auto {
@@ -200,7 +200,7 @@ impl ScriptLoader {
                     tip,
                 )
                 .clicked()
-                    && let Err(e) = script::start(bot)
+                    && let Err(e) = script::start(&bot)
                 {
                     bot.log(format!("Couldn't start the script: {e}"));
                 }
@@ -221,7 +221,7 @@ impl ScriptLoader {
             )
             .clicked()
             {
-                script::set_paused(bot, status != ScriptStatus::Paused);
+                script::set_paused(&bot, status != ScriptStatus::Paused);
             }
         });
 

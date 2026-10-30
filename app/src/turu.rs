@@ -1,9 +1,12 @@
 //! Turu: connects the bot engine (`turu_bot`) to the player.
 //!
-//! * [`TuruExternalInterface`] receives `skua.swf`'s `ExternalInterface.call(...)`s.
+//! * Tabs: every tab is a game client of its own, a player and its [`Bot`] (VibeSkua runs one
+//!   process per tab instead). All the players run on the event loop thread; the window shows
+//!   the active tab's, and [`bot()`] is the active tab's bot, which the UI shows.
+//! * [`TuruExternalInterface`] receives a tab's `skua.swf`'s `ExternalInterface.call(...)`s.
 //! * [`DesktopFlashHost`] lets bot threads call `skua.swf`'s callbacks: each call is sent to
 //!   the event loop as [`RuffleEvent::TuruFlashCall`] (without a window, to the `headless`
-//!   loop) and answered by [`answer_flash_call`].
+//!   loop), names its tab, and is answered by [`answer_flash_call`] with that tab's player.
 //!
 //! See docs/turu/ARCHITECTURE.md.
 
@@ -33,7 +36,9 @@ pub const VERSION: &str = match option_env!("TURU_VERSION") {
 /// How long a bot thread waits for the player to answer one call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
-static BOT: OnceLock<Arc<Bot>> = OnceLock::new();
+static TABS: Mutex<Option<Tabs>> = Mutex::new(None);
+/// Where tab requests go ([`request_tab`]); set when the window opens.
+static EVENT_LOOP: Mutex<Option<EventLoopProxy<RuffleEvent>>> = Mutex::new(None);
 static ARMY: OnceLock<Arc<turu_bot::army::Army>> = OnceLock::new();
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
@@ -43,9 +48,129 @@ static API: Mutex<Option<String>> = Mutex::new(None);
 /// Ruffle's SharedObjects folder (`--save-directory`): what "Clear Flash Cache" empties.
 static SAVE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
 
-/// The bot of this client (one per process, like VibeSkua).
-pub fn bot() -> &'static Arc<Bot> {
-    BOT.get_or_init(Bot::new)
+/// A tab: one game client, with its own player and bot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TabId(u64);
+
+struct Tabs {
+    list: Vec<(TabId, Arc<Bot>)>,
+    active: TabId,
+    next: u64,
+}
+
+fn tabs_lock() -> std::sync::MutexGuard<'static, Option<Tabs>> {
+    let mut tabs = TABS.lock().unwrap_or_else(|e| e.into_inner());
+    // The first tab: the one the window (or `--headless`) opens with.
+    tabs.get_or_insert_with(|| Tabs {
+        list: vec![(TabId(0), Bot::new())],
+        active: TabId(0),
+        next: 1,
+    });
+    tabs
+}
+
+/// The active tab's bot: what the UI shows and acts on. Threads that work for one tab keep
+/// that tab's bot (`spawn_action` does) rather than calling this again.
+pub fn bot() -> Arc<Bot> {
+    let tabs = tabs_lock();
+    let tabs = tabs.as_ref().expect("made by tabs_lock");
+    tabs.list
+        .iter()
+        .find(|(id, _)| *id == tabs.active)
+        .or(tabs.list.first())
+        .map(|(_, bot)| bot.clone())
+        .expect("there is always a tab")
+}
+
+/// The active tab.
+pub fn active_tab() -> TabId {
+    tabs_lock().as_ref().expect("made by tabs_lock").active
+}
+
+/// Every tab and its bot, in order.
+pub fn tabs() -> Vec<(TabId, Arc<Bot>)> {
+    tabs_lock().as_ref().expect("made by tabs_lock").list.clone()
+}
+
+/// The tab's bot; `None` once it was closed.
+pub fn tab_bot(tab: TabId) -> Option<Arc<Bot>> {
+    tabs().into_iter().find(|(id, _)| *id == tab).map(|(_, bot)| bot)
+}
+
+/// Adds a tab with a new bot (its player is the event loop's job: [`request_tab`]). With a
+/// login, the bot logs in once its game has loaded, as with `--user`.
+pub(crate) fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
+    let bot = Bot::new();
+    bot.scripts.set_interactive(!headless());
+    turu_bot::startup::configure(&bot, startup);
+    let mut tabs = tabs_lock();
+    let tabs = tabs.as_mut().expect("made by tabs_lock");
+    let id = TabId(tabs.next);
+    tabs.next += 1;
+    tabs.list.push((id, bot.clone()));
+    (id, bot)
+}
+
+/// Removes the tab (never the last one): stops its script and Auto Attack.
+pub(crate) fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
+    let removed = {
+        let mut tabs = tabs_lock();
+        let tabs = tabs.as_mut().expect("made by tabs_lock");
+        if tabs.list.len() < 2 {
+            return None;
+        }
+        let i = tabs.list.iter().position(|(id, _)| *id == tab)?;
+        let (_, bot) = tabs.list.remove(i);
+        if tabs.active == tab {
+            tabs.active = tabs.list[i.min(tabs.list.len() - 1)].0;
+        }
+        bot
+    };
+    turu_bot::script::stop(&removed);
+    removed.control.request_stop();
+    Some(removed)
+}
+
+/// Makes the tab the active one; false when there's no such tab.
+pub(crate) fn set_active_tab(tab: TabId) -> bool {
+    let mut tabs = tabs_lock();
+    let tabs = tabs.as_mut().expect("made by tabs_lock");
+    if !tabs.list.iter().any(|(id, _)| *id == tab) {
+        return false;
+    }
+    tabs.active = tab;
+    true
+}
+
+/// What the UI asks of the event loop, which owns the players.
+pub enum TabRequest {
+    /// Open a new tab (at the login screen, or logging in with `Startup`'s login).
+    Open(Box<Startup>),
+    Select(TabId),
+    Close(TabId),
+}
+
+pub fn set_event_loop(event_loop: EventLoopProxy<RuffleEvent>) {
+    *EVENT_LOOP.lock().unwrap_or_else(|e| e.into_inner()) = Some(event_loop);
+}
+
+/// Hands the request to the event loop; false without a window (`--headless` has one tab).
+pub fn request_tab(request: TabRequest) -> bool {
+    EVENT_LOOP
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|e| e.send_event(RuffleEvent::TuruTab(request)).is_ok())
+}
+
+/// A tab's name: the character once in game, else the login name it was opened with.
+pub fn tab_label(bot: &Bot) -> String {
+    let state = bot.state.lock();
+    if let Some(name) = state.username.as_deref().filter(|n| state.in_game && !n.trim().is_empty()) {
+        return name.to_owned();
+    }
+    drop(state);
+    turu_bot::api::servers::login_name(bot).unwrap_or_else(|| "Login".into())
 }
 
 /// The accounts this client launched (Army > Accounts), each in its own `turu` process.
@@ -68,7 +193,7 @@ pub fn save_directory() -> Option<&'static Path> {
 /// "Show Username in Title" is on (VibeSkua names its tab after the character).
 pub fn window_title() -> String {
     let title = crate::mugetsu::window_title();
-    let Some(bot) = BOT.get() else { return title };
+    let bot = bot();
     if !bot.settings.read().show_username_in_title {
         return title;
     }
@@ -129,7 +254,7 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     if startup.username.is_some() && !startup.logs_in() {
         tracing::warn!("--user without --password (or TURU_PASSWORD): log in yourself");
     }
-    turu_bot::startup::configure(bot(), startup);
+    turu_bot::startup::configure(&bot(), startup);
     if exit_on_stop {
         exit_on_script_stop();
     }
@@ -160,7 +285,7 @@ pub fn start_api() {
             token
         }
     };
-    match token.and_then(|token| turu_bot::control_api::start(bot(), addr, token)) {
+    match token.and_then(|token| turu_bot::control_api::start(&bot(), addr, token)) {
         Ok(local) => {
             tracing::info!("Control API on http://{local}");
             if !local.ip().is_loopback() {
@@ -233,26 +358,37 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
 
 /// VibeSkua `--exit-on-script-stop`: 2 s after the script stops, log out; 1 s later, quit.
 fn exit_on_script_stop() {
-    bot().events.subscribe(|event| {
-        if !matches!(event, BotEvent::ScriptStopped) || bot().servers.is_relogging() {
+    let first = bot();
+    let watched = Arc::downgrade(&first);
+    first.events.subscribe(move |event| {
+        let Some(bot) = watched.upgrade() else { return };
+        if !matches!(event, BotEvent::ScriptStopped) || bot.servers.is_relogging() {
             return;
         }
-        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(|| {
+        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(move || {
             std::thread::sleep(Duration::from_secs(2));
-            let _ = turu_bot::api::servers::logout(bot());
+            let _ = turu_bot::api::servers::logout(&bot);
             std::thread::sleep(Duration::from_secs(1));
             std::process::exit(0);
         });
     });
 }
 
-/// Runs a bot action off the UI thread (bot calls block until the player answers, and the
-/// player is driven by the UI thread).
+/// Runs a bot action for the active tab off the UI thread (bot calls block until the player
+/// answers, and the player is driven by the UI thread).
 pub fn spawn_action(name: &str, action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult<()> + Send + 'static) {
+    spawn_action_for(bot(), name, action);
+}
+
+/// [`spawn_action`] for a given tab's bot.
+pub fn spawn_action_for(
+    bot: Arc<Bot>,
+    name: &str,
+    action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult<()> + Send + 'static,
+) {
     let label = name.to_owned();
     let spawned = std::thread::Builder::new().name(format!("Turu {name}")).spawn(move || {
-        let bot = bot();
-        if let Err(e) = action(bot) {
+        if let Err(e) = action(&bot) {
             bot.logs.debug.push(format!("{label}: {e}"));
         }
     });
@@ -263,9 +399,17 @@ pub fn spawn_action(name: &str, action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotR
 
 /// A call from a bot thread waiting to run on the event loop.
 pub struct TuruFlashCall {
+    tab: TabId,
     name: String,
     args: Vec<ExternalValue>,
     reply: SyncSender<Option<ExternalValue>>,
+}
+
+impl TuruFlashCall {
+    /// The tab whose player must answer.
+    pub fn tab(&self) -> TabId {
+        self.tab
+    }
 }
 
 /// Runs a bot call on the event loop thread. `player` is `None` when no movie is open.
@@ -275,14 +419,16 @@ pub fn answer_flash_call(call: TuruFlashCall, player: Option<&mut Player>) {
 }
 
 pub struct DesktopFlashHost {
+    tab: TabId,
     /// Hands a call to the thread that runs the player; false when it's gone.
     send: Box<dyn Fn(TuruFlashCall) -> bool + Send + Sync>,
 }
 
 impl DesktopFlashHost {
-    pub fn new(event_loop: EventLoopProxy<RuffleEvent>) -> Self {
+    pub fn new(event_loop: EventLoopProxy<RuffleEvent>, tab: TabId) -> Self {
         let event_loop = Mutex::new(event_loop);
         Self {
+            tab,
             send: Box::new(move |call| {
                 event_loop
                     .lock()
@@ -294,6 +440,7 @@ impl DesktopFlashHost {
     /// For the windowless loop.
     pub fn headless(sender: std::sync::mpsc::Sender<crate::headless::HeadlessEvent>) -> Self {
         Self {
+            tab: active_tab(),
             send: Box::new(move |call| sender.send(crate::headless::HeadlessEvent::TuruFlashCall(call)).is_ok()),
         }
     }
@@ -307,6 +454,7 @@ impl FlashHost for DesktopFlashHost {
         }
         let (reply, answer) = sync_channel(1);
         let call = TuruFlashCall {
+            tab: self.tab,
             name: name.to_owned(),
             args: args.into_iter().map(to_external).collect(),
             reply,
@@ -368,13 +516,15 @@ fn to_json(value: ExternalValue) -> serde_json::Value {
     }
 }
 
-/// Receives `skua.swf`'s calls to the host.
-pub struct TuruExternalInterface;
+/// Receives a tab's `skua.swf`'s calls to the host.
+pub struct TuruExternalInterface {
+    pub bot: Arc<Bot>,
+}
 
 impl ExternalInterfaceProvider for TuruExternalInterface {
     fn call_method(&self, _context: &mut UpdateContext<'_>, name: &str, args: &[ExternalValue]) -> ExternalValue {
         let args = args.iter().cloned().map(to_json).collect();
-        bot().on_flash_call(name, args);
+        self.bot.on_flash_call(name, args);
         ExternalValue::Undefined
     }
 
@@ -418,6 +568,7 @@ mod tests {
             exit_on_stop: exit,
             headless,
             api,
+            ..
         } = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-p", "low", "-g", "metal"]);
         assert!(headless);

@@ -52,6 +52,10 @@ docs/turu/               these docs
 
 ## Process and threads
 
+One window can hold several tabs, each a game client of its own: a `Player` and its `Bot`
+(`desktop/src/turu.rs`). Every tab's player lives on the event loop thread below; Flash calls
+carry their tab, and the window draws the active tab's player.
+
 ```
 winit event loop thread (main)          script thread ("Script Thread")      background threads
 ───────────────────────────────         ───────────────────────────────      ────────────────────

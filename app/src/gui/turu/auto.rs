@@ -2,26 +2,48 @@
 //! `ScriptAuto` (`_DoActionAuto` + `_Attack`).
 
 use serde_json::json;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use turu_bot::api::{NameOrId, combat, dispatch, inventory, kill, monsters, player};
 use turu_bot::control::mark_script_thread;
 use turu_bot::{Bot, BotError, BotResult};
 
-static RUNNING: AtomicBool = AtomicBool::new(false);
+/// The bots (by address: one per tab) whose Auto Attack runs.
+static RUNNING: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
 
-pub fn running() -> bool {
-    RUNNING.load(Ordering::Acquire)
+fn key(bot: &Bot) -> usize {
+    std::ptr::from_ref(bot) as usize
+}
+
+/// Marks Auto Attack as running (or not) for the bot; returns whether it was.
+fn set_running(bot: &Bot, on: bool) -> bool {
+    let mut running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+    let running = running.get_or_insert_with(HashSet::new);
+    if on {
+        !running.insert(key(bot))
+    } else {
+        running.remove(&key(bot))
+    }
+}
+
+/// Whether the bot's Auto Attack runs.
+pub fn running(bot: &Bot) -> bool {
+    RUNNING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|r| r.contains(&key(bot)))
 }
 
 /// Starts Auto Attack with `class`'s skill set in `mode` (VibeSkua passes both only when both
 /// were picked; otherwise the equipped class in "Base"). `map_ids`, when given, are attacked
 /// in that priority order.
 pub fn start(class: Option<String>, mode: String, map_ids: Vec<i64>) {
-    if RUNNING.swap(true, Ordering::AcqRel) {
+    let bot = crate::turu::bot();
+    if set_running(&bot, true) {
         return;
     }
-    crate::turu::spawn_action("Auto Attack", move |bot| {
+    crate::turu::spawn_action_for(bot, "Auto Attack", move |bot| {
         // Like the script thread: Stop (`request_stop`) makes the next bot call fail.
         mark_script_thread(true);
         bot.control.reset();
@@ -32,7 +54,7 @@ pub fn start(class: Option<String>, mode: String, map_ids: Vec<i64>) {
         }
         let _ = dispatch(bot, "skills.stop", &[]);
         bot.log("[Auto Attack] Stopped");
-        RUNNING.store(false, Ordering::Release);
+        set_running(bot, false);
         match result {
             Err(BotError::Stopped) => Ok(()),
             other => other,
@@ -42,8 +64,9 @@ pub fn start(class: Option<String>, mode: String, map_ids: Vec<i64>) {
 
 /// Stops Auto Attack (no-op when it isn't running).
 pub fn stop() {
-    if running() {
-        crate::turu::bot().control.request_stop();
+    let bot = crate::turu::bot();
+    if running(&bot) {
+        bot.control.request_stop();
     }
 }
 

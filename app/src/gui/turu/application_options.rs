@@ -393,7 +393,7 @@ impl ApplicationOptionsWindow {
             bot.save_settings();
         }
         if options_changed {
-            save_relogin_options(bot, &options);
+            save_relogin_options(&bot, &options);
         }
     }
 

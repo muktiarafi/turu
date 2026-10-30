@@ -211,6 +211,10 @@ impl NavBar {
             if item(ui, "Army Control", true) {
                 windows.army = true;
             }
+            // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
+            if item(ui, "New Tab", true) {
+                crate::turu::request_tab(crate::turu::TabRequest::Open(Box::default()));
+            }
         });
     }
 
@@ -242,7 +246,7 @@ impl NavBar {
     }
 
     fn auto_toggle(&mut self, ui: &mut Ui) {
-        let running = auto::running();
+        let running = auto::running(&crate::turu::bot());
         let response = toggle_button(ui, "Auto", running.then_some(SUCCESS), self.auto_open);
         if response.clicked() {
             self.auto_open = !self.auto_open;
@@ -258,7 +262,7 @@ impl NavBar {
 
     fn auto_panel(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
-        let running = auto::running();
+        let running = auto::running(&crate::turu::bot());
         let script_active = bot.scripts.status().is_active();
         ui.set_width(256.0);
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);

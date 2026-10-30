@@ -40,6 +40,31 @@ pub struct Group {
     pub accounts: Vec<String>,
 }
 
+/// Where a launched account plays.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LaunchMode {
+    /// A tab of this window (VibeSkua's tabbed host).
+    #[default]
+    Tab,
+    /// A `turu` process with its own window (VibeSkua's "in a separate window").
+    Window,
+    /// A `turu --headless` process.
+    Headless,
+}
+
+impl LaunchMode {
+    pub const ALL: [Self; 3] = [Self::Tab, Self::Window, Self::Headless];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Tab => "In a tab",
+            Self::Window => "In its own window",
+            Self::Headless => "Without a window",
+        }
+    }
+}
+
 /// `accounts.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -52,8 +77,7 @@ pub struct Accounts {
     pub script: Option<PathBuf>,
     /// Start the script once logged in, not only load it.
     pub auto_start: bool,
-    /// Launch without a window (`--headless`).
-    pub headless: bool,
+    pub mode: LaunchMode,
 }
 
 impl Default for Accounts {
@@ -64,7 +88,7 @@ impl Default for Accounts {
             server: "Twilly".into(),
             script: None,
             auto_start: false,
-            headless: false,
+            mode: LaunchMode::Tab,
         }
     }
 }

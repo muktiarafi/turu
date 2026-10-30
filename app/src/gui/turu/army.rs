@@ -28,7 +28,8 @@ const MISC_OPTIONS: [(&str, &str); 7] = [
 ];
 
 pub struct ArmyWindow {
-    include_self: bool,
+    /// Commands also go to this window's tabs.
+    include_tabs: bool,
     map: String,
     cell: String,
     player: String,
@@ -42,7 +43,7 @@ pub struct ArmyWindow {
 impl Default for ArmyWindow {
     fn default() -> Self {
         Self {
-            include_self: true,
+            include_tabs: true,
             map: String::new(),
             cell: String::new(),
             player: String::new(),
@@ -73,7 +74,14 @@ impl ArmyWindow {
     fn send(&self, command: Command) {
         let label = command.label();
         let results = self.results.clone();
-        let local = self.include_self.then(|| crate::turu::bot().clone());
+        let local = if self.include_tabs {
+            crate::turu::tabs()
+                .into_iter()
+                .map(|(_, bot)| (format!("{} (tab)", crate::turu::tab_label(&bot)), bot))
+                .collect()
+        } else {
+            Vec::new()
+        };
         crate::turu::army().broadcast(command, local, move |name, result| {
             let line = match result {
                 Ok(_) => format!("{name}: {label}: done"),
@@ -119,8 +127,11 @@ impl ArmyWindow {
                 .max_height(180.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
+                    for (tab, bot) in crate::turu::tabs() {
+                        tab_row(ui, tab, &bot);
+                    }
                     if clients.is_empty() && queued.is_empty() {
-                        ui.label(RichText::new("No clients: start accounts from Army > Accounts.").color(MUTED));
+                        ui.label(RichText::new("No other clients: start accounts from Army > Accounts.").color(MUTED));
                     }
                     for client in &clients {
                         client_row(ui, client);
@@ -138,8 +149,8 @@ impl ArmyWindow {
             ui.horizontal(|ui| {
                 widgets::section_label(ui, "ARMY CONTROL");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label("Include this client");
-                    widgets::switch(ui, &mut self.include_self);
+                    ui.label("Include this window's tabs");
+                    widgets::switch(ui, &mut self.include_tabs);
                 });
             });
             let width = (ui.available_width() - 12.0) / 3.0;
@@ -279,6 +290,35 @@ impl ArmyWindow {
                 });
         });
     }
+}
+
+/// One of this window's tabs: a dot while its script runs, its name, its script, and Show.
+/// (Only what the bot keeps: asking its game would mean a Flash call from the UI thread.)
+fn tab_row(ui: &mut Ui, tab: crate::turu::TabId, bot: &turu_bot::Bot) {
+    let status = bot.scripts.status();
+    let active = tab == crate::turu::active_tab();
+    ui.horizontal(|ui| {
+        widgets::dot(ui, if status.is_active() { SUCCESS } else { MUTED }, 4.0);
+        ui.label(RichText::new(crate::turu::tab_label(bot)).strong().color(TEXT));
+        widgets::pill(ui, |ui| ui.label(RichText::new("tab").size(10.0).color(MUTED)));
+        let map = bot.state.lock().last_map.clone();
+        if let Some(map) = map {
+            ui.label(RichText::new(map).small().color(MUTED));
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if widgets::small_button(ui, "Show", !active).clicked() {
+                crate::turu::request_tab(crate::turu::TabRequest::Select(tab));
+            }
+            if let Some(path) = bot.scripts.loaded() {
+                let name = path
+                    .file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                let color = if status.is_active() { SUCCESS } else { MUTED };
+                ui.label(RichText::new(name).monospace().size(11.0).color(color))
+                    .on_hover_text(status.label());
+            }
+        });
+    });
 }
 
 /// One client: a dot, its name, where it is, its script, and Close.

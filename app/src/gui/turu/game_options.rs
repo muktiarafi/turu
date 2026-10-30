@@ -258,7 +258,7 @@ impl GameOptionsWindow {
                                 ui.set_min_height(26.0);
                                 ui.label(RichText::new(entry.label).color(TEXT));
                                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                                    edit(ui, &entry.field, &mut snapshot, bot);
+                                    edit(ui, &entry.field, &mut snapshot, &bot);
                                 });
                             });
                         }

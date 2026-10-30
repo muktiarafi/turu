@@ -75,7 +75,7 @@ fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<
         }))
         .with_ui(NullUiBackend::new())
         .with_storage(preferences.storage_backend().create_backend(&opt))
-        .with_external_interface(Box::new(turu::TuruExternalInterface))
+        .with_external_interface(Box::new(turu::TuruExternalInterface { bot: turu::bot() }))
         .with_autoplay(true)
         .with_quality(StageQuality::Low)
         .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
