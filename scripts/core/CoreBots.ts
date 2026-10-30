@@ -197,6 +197,35 @@ export function rethrowIfStopped(error: unknown): void {
     if (error instanceof ScriptStopped) throw error;
 }
 
+/** `false` -> `boolean`, `0` -> `number`, an enum member -> `string`, for {@link configOr}. */
+type Widen<T> = T extends boolean ? boolean : T extends number ? number : T extends string ? string : T;
+
+/**
+ * `bot.config.get(name)` as VibeSkua's `Bot.Config.Get<T>(name)` reads it from a script that may
+ * not be the one running: `fallback` (C# `default(T)`: `false`, `0`, `null` or the enum's first
+ * member) when the running script doesn't declare the option. Content scripts read their own
+ * options this way, as FarmerJoe's DoAll calls them with its own options loaded.
+ * `configOr(group, name, fallback)` reads an option of a group.
+ */
+export function configOr<T extends boolean | number | string | null>(name: string, fallback: T): Widen<T>;
+export function configOr<T extends boolean | number | string | null>(group: string, name: string, fallback: T): Widen<T>;
+export function configOr(...args: unknown[]): unknown {
+    const fallback = args.pop();
+    const key = args as [string] | [string, string];
+    if (!bot.config.has(...(key as [string, string]))) return fallback;
+    const value = bot.config.get(...(key as [string, string]));
+    return value === "" ? fallback : value;
+}
+
+/**
+ * {@link configOr} for an option of a numeric enum (`option.choice(name, ..., choices(MyEnum))`, read
+ * in C# as `Bot.Config.Get<MyEnum>(name)`): the member the saved name stands for, or `fallback`.
+ */
+export function configEnum<E extends Record<string, string | number>>(name: string, enumObject: E, fallback: E[keyof E]): E[keyof E] {
+    const value = String(configOr(name, "")).replaceAll(" ", "_");
+    return value !== "" && value in enumObject && !/^\d+$/.test(value) ? enumObject[value as keyof E] : fallback;
+}
+
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -254,7 +283,7 @@ function timeOfDay(): string {
 }
 
 /** Random integer in [min, max). */
-function randomInt(min: number, max: number): number {
+export function randomInt(min: number, max: number): number {
     return min + Math.floor(Math.random() * (max - min));
 }
 
@@ -522,6 +551,11 @@ export class CoreBots {
     bossGearOn = true;
     /** [Can Change] Names of your bossing equipment. */
     bossGear: string[] = [];
+    /**
+     * [Can Change] Some Sagas use the hero alignment to give extra reputation, change to your
+     * desired rep (`Alignment.Evil` or `Alignment.Good`).
+     */
+    heroAlignment: number = Alignment.Evil;
     /** [Can Change] Member status (set by {@link setOptions} from `iUpgDays`). */
     isMember = false;
     autoEnhance = true;
@@ -2794,7 +2828,19 @@ export class CoreBots {
      * @param item Item to kill the monster for, if null will just kill the monster 1 time.
      * @param quant Desired quantity of the item.
      */
-    killMonster(map: string, cell: string, pad: string, monster: string, item: string | null = null, quant = 1, options: KillOptions = {}): void {
+    killMonster(map: string, cell: string, pad: string, monster: string, item?: string | null, quant?: number, options?: KillOptions): void;
+    /**
+     * C# `KillMonster(map, cell, pad, int MonsterMapID, ...)`: kills the monsters with that map ID
+     * (once, or until you have `quant` of `item`, a name or an item ID).
+     */
+    killMonster(map: string, cell: string, pad: string, monsterMapId: number, item?: string | number | null, quant?: number, options?: KillOptions): void;
+    killMonster(map: string, cell: string, pad: string, monster: string | number, item: string | number | null = null, quant = 1, options: KillOptions = {}): void {
+        if (typeof monster === "number") {
+            if (typeof item === "number") this.killMonsterItemId(map, cell, pad, monster, item, quant, options);
+            else this.killMonsterMapId(map, cell, pad, monster, item, quant, options);
+            return;
+        }
+        if (typeof item === "number") throw new Error("killMonster: an item ID needs a monster map ID");
         const { isTemp = true, log = true, publicRoom = false } = options;
         if (item !== null && (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant))) return;
 
@@ -2869,7 +2915,145 @@ export class CoreBots {
         bot.options.hidePlayers = false;
     }
 
-    // C# KillMonster(map, cell, pad, int MonsterMapID, ...) overloads: not used by the ported scripts, dropped.
+    /** C# `KillMonster(map, cell, pad, int MonsterMapID, string? item, ...)`. */
+    private killMonsterMapId(map: string, cell: string, pad: string, monsterMapId: number, item: string | null, quant: number, options: KillOptions): void {
+        const { isTemp = true, log = true, publicRoom = false } = options;
+        pad = toTitleCase(pad);
+        cell = bot.map.cells.find((c) => equalsIgnoreCase(c, cell)) ?? cell;
+        const have = () => item !== null && (isTemp ? bot.tempInv.contains(item, quant) : this.checkInventory(item, quant));
+        // Already has item? Exit early
+        if (have()) return;
+
+        if (log && item !== null) this.farmingLogger(item, quant);
+
+        if (item !== null && !isTemp) this.addDrop(item);
+
+        // Ensure player is in the map and cell
+        if (bot.map.name !== map) this.join(map, cell, pad, { publicRoom });
+
+        if (bot.player.cell !== cell) {
+            bot.map.jump(cell, pad, this.inPublicRoom());
+            bot.wait.forCellChange(cell);
+        }
+
+        // Disable aggro while positioning
+        bot.options.aggroAllMonsters = false;
+        bot.options.aggroMonsters = false;
+
+        // Get all target monsters by ID
+        const targetMonsters = this.findMonstersList(map, "*", monsterMapId);
+
+        if (targetMonsters.length === 0) {
+            if (log) this.logger(`⚠️ No monsters with ID ${monsterMapId} found in cell ${cell}.`);
+            return;
+        }
+
+        // Main kill loop
+        while (!bot.shouldExit && (item === null || !have())) {
+            // Respawn check
+            while (!bot.shouldExit && !bot.player.alive) this.sleep(500);
+
+            // Ensure correct position
+            if (bot.map.name !== map) this.join(map, cell, pad, { publicRoom });
+
+            if (bot.player.cell !== cell) {
+                bot.map.jump(cell, pad, this.inPublicRoom());
+                bot.wait.forCellChange(cell);
+            }
+
+            // Attack monsters
+            for (const monster of [...targetMonsters]) {
+                if (monster === null) continue;
+                if (!bot.player.alive) continue;
+
+                bot.combat.attack(monster.mapId);
+                this.sleep(500);
+
+                // Stop if we collected enough
+                if (have()) break;
+            }
+        }
+
+        // Pickup item if needed
+        if (item !== null) bot.wait.forPickup(item);
+
+        this.rest(); // Recover if necessary
+
+        // Reset options
+        bot.options.attackWithoutTarget = false;
+        bot.options.aggroAllMonsters = true;
+        bot.options.aggroMonsters = true;
+    }
+
+    /** C# `KillMonster(map, cell, pad, int MonsterMapID, int ItemID = 0, ...)`. */
+    private killMonsterItemId(map: string, cell: string, pad: string, monsterMapId: number, itemId: number, quant: number, options: KillOptions): void {
+        const { isTemp = true, log = true, publicRoom = false } = options;
+        pad = toTitleCase(pad);
+        cell = bot.map.cells.find((c) => equalsIgnoreCase(c, cell)) ?? cell;
+        const have = () => itemId !== 0 && (isTemp ? bot.tempInv.contains(itemId, quant) : this.checkInventory(itemId, quant));
+
+        // Exit if item already collected
+        if (have()) return;
+
+        if (log && itemId !== 0) this.farmingLogger(bot.inventory.getItem(itemId)?.name ?? `${itemId}`, quant);
+
+        if (itemId !== 0 && !isTemp) this.addDrop(itemId);
+
+        // Join map and cell if needed
+        if (bot.map.name !== map) this.join(map, cell, pad, { publicRoom });
+
+        if (bot.player.cell !== cell) {
+            bot.map.jump(cell, pad, this.inPublicRoom());
+            bot.wait.forCellChange(cell);
+        }
+
+        // Store original combat settings
+        const prevAggroAll = bot.options.aggroAllMonsters;
+        const prevAggro = bot.options.aggroMonsters;
+        bot.options.aggroAllMonsters = false;
+        bot.options.aggroMonsters = false;
+
+        // Get all monsters with the MapID (C# `Monster.Alive`: state != 0)
+        const alive = (id: number) => bot.monsters.mapMonsters.some((m) => m !== null && m.mapId === id && m.state !== 0);
+        if (!alive(monsterMapId)) {
+            this.logger(`⚠️ No monsters with MapID ${monsterMapId} found in /${map} (${cell}, ${pad})`);
+            // Restore settings
+            bot.options.aggroAllMonsters = prevAggroAll;
+            bot.options.aggroMonsters = prevAggro;
+            return;
+        }
+
+        // Kill until item obtained (or once if no item)
+        while (!bot.shouldExit && (itemId === 0 || !have())) {
+            if (!bot.player.alive) bot.wait.forTrue(() => bot.player.alive, 20);
+
+            if (bot.map.name !== map) this.join(map, cell, pad, { publicRoom });
+
+            if (bot.player.cell !== cell) {
+                bot.map.jump(cell, pad, this.inPublicRoom());
+                bot.wait.forCellChange(cell);
+            }
+
+            // Refresh alive targets
+            if (!alive(monsterMapId)) {
+                this.logger(`⚠️ No alive monsters with MapID ${monsterMapId} left in /${map}`);
+                break;
+            }
+
+            if (!bot.player.alive) continue;
+            bot.combat.attack(monsterMapId);
+            this.sleep(500);
+        }
+
+        if (itemId !== 0) bot.wait.forPickup(itemId);
+
+        this.rest();
+
+        // Restore original combat settings
+        bot.options.attackWithoutTarget = false;
+        bot.options.aggroAllMonsters = prevAggroAll;
+        bot.options.aggroMonsters = prevAggro;
+    }
 
     /**
      * Joins a map and hunts for the monster (jumping to its cell).
@@ -4971,6 +5155,76 @@ export class CoreBots {
         }
         this.ensureAccept(questId);
         return bot.quests.ensureAccept(questId);
+    }
+
+    /**
+     * Whether a seasonal map can be joined: joins it and watches for the game's "not available"
+     * warnings (C# `isSeasonalMapActive`).
+     */
+    isSeasonalMapActive(map: string, log = true): boolean {
+        map = map.toLowerCase().replaceAll(" ", "");
+
+        if (bot.map.name != null && bot.map.name.toLowerCase() === map)
+            return true;
+
+        this.jumpWait();
+
+        let seasonalMessageProc = false;
+        const mapIsNotAvailableListener = (packet: any): void => {
+            const type = packet?.params?.type;
+            const data = packet?.params?.dataObj;
+
+            if (type !== "str")
+                return;
+
+            const cmd = data?.[0];
+            if (cmd !== "warning")
+                return;
+
+            const bLower = JSON.stringify(packet).toLowerCase();
+
+            if (bLower.includes("is not available.") || bLower.includes("map is locked until event begins") || bLower.includes("house item from /basecamp")) {
+                if (log)
+                    this.logger(`[${map}] Seasonal Message: ${data[2]}`);
+
+                seasonalMessageProc = true;
+            }
+        };
+        const off = bot.events.on("extensionPacket", mapIsNotAvailableListener);
+
+        try {
+            for (let i = 0; i < 20 && !bot.shouldExit; i++) {
+                if (seasonalMessageProc)
+                    return false;
+
+                if (bot.map.name != null && bot.map.name.toLowerCase() !== map)
+                    bot.map.join(!this.privateRooms ? map : `${map}-${this.privateRoomNumber}`, "Enter", "Spawn", false, this.inPublicRoom());
+
+                // Poll for up to 2 seconds, checking for an unavailable warning every 100 ms.
+                for (let wait = 0; wait < 20 && !bot.shouldExit; wait++) {
+                    if (seasonalMessageProc)
+                        return false;
+
+                    const currentMap = bot.map.name;
+                    if (currentMap && currentMap.toLowerCase() === map) {
+                        bot.wait.forMapLoad(map, 2);
+                        return bot.map.name != null && bot.map.name.toLowerCase() === map;
+                    }
+
+                    this.sleep();
+                }
+
+                if (seasonalMessageProc)
+                    return false;
+
+                if (i === 19)
+                    this.logger(`Failed to join ${map}`);
+            }
+
+            return false;
+        } finally {
+            off();
+        }
     }
 
     /** Equips the boss class (or `additionalClass`), leaving combat first. */
