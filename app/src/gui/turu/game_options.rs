@@ -164,7 +164,8 @@ fn entries() -> Vec<Entry> {
     list
 }
 
-/// VibeSkua's fallback server list for the Relogin Server box (until the game's list arrives).
+/// VibeSkua's fallback server list for the Relogin Server box (when neither the server list API
+/// nor the game's login screen gave one).
 const SERVERS: [&str; 12] = [
     "Artix",
     "Twilly",
@@ -179,6 +180,28 @@ const SERVERS: [&str; 12] = [
     "Yokai",
     "Zorbot",
 ];
+
+/// VibeSkua `ServersList`: the names from the server list API, else from the game's login
+/// screen, else [`SERVERS`]; without duplicates (ignoring case), sorted.
+fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
+    let names = |servers: Vec<turu_bot::models::Server>| -> Vec<String> {
+        servers
+            .into_iter()
+            .map(|s| s.name.trim().to_owned())
+            .filter(|n| !n.is_empty())
+            .collect()
+    };
+    let mut list = names(bot.servers.cached());
+    if list.is_empty() {
+        list = names(bot.servers.listed());
+    }
+    if list.is_empty() {
+        list = SERVERS.iter().map(|&n| n.to_owned()).collect();
+    }
+    list.sort_by_key(|n| n.to_lowercase());
+    list.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    list
+}
 
 pub struct GameOptionsWindow {
     entries: Vec<Entry>,
@@ -336,18 +359,16 @@ fn edit(ui: &mut Ui, field: &Field, snapshot: &mut BotOptions, bot: &std::sync::
                 .width(150.0)
                 .show_ui(ui, |ui| {
                     turu_bot::api::servers::refresh_in_background(bot);
-                    let cached = bot.servers.cached();
-                    let mut names: Vec<&str> = if cached.is_empty() {
-                        SERVERS.to_vec()
-                    } else {
-                        cached.iter().map(|s| s.name.as_str()).collect()
-                    };
-                    if !names.contains(&current.as_str()) {
-                        names.insert(0, &current);
+                    if bot.servers.is_refreshing() {
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+                    }
+                    let mut names = server_names(bot);
+                    if !names.iter().any(|n| n.eq_ignore_ascii_case(&current)) {
+                        names.insert(0, current.clone());
                     }
                     for name in names {
-                        if ui.selectable_label(current == name, name).clicked() {
-                            bot.options.write().relogin_server = name.to_owned();
+                        if ui.selectable_label(current == name, &name).clicked() {
+                            bot.options.write().relogin_server = name;
                         }
                     }
                 });

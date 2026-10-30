@@ -21,6 +21,11 @@ use std::time::{Duration, Instant};
 pub const SERVERS_URL: &str = "http://content.aq.com/game/api/data/servers";
 /// The game server port when a server doesn't say.
 const DEFAULT_PORT: i64 = 5588;
+/// Cloudflare in front of [`SERVERS_URL`] refuses requests without a User-Agent. This is the one
+/// the player sends for the game's own requests (Ruffle's navigator), so the bot's look the same.
+const USER_AGENT: &str = concat!("Ruffle/", env!("CARGO_PKG_VERSION"), " (https://ruffle.rs)");
+/// How long the UI waits before fetching a list that failed again.
+const REFRESH_RETRY: Duration = Duration::from_secs(30);
 
 type Fetcher = Arc<dyn Fn() -> Result<Vec<Server>, String> + Send + Sync>;
 
@@ -28,6 +33,9 @@ type Fetcher = Arc<dyn Fn() -> Result<Vec<Server>, String> + Send + Sync>;
 pub struct ServerRunner {
     /// VibeSkua `CachedServers`: the last list from [`SERVERS_URL`].
     cached: Mutex<Vec<Server>>,
+    /// VibeSkua `ServerList` (`serialCmd.servers`) as the last background refresh read it, for
+    /// the UI, which can't call into Flash.
+    listed: Mutex<Vec<Server>>,
     /// VibeSkua `SetLoginInfo`: the login relogins use instead of the game's `loginInfo`.
     login_info: Mutex<Option<(String, String)>>,
     last_ip: Mutex<String>,
@@ -35,6 +43,8 @@ pub struct ServerRunner {
     fetcher: Mutex<Fetcher>,
     /// A background refresh of the list (for the UI) is running.
     refreshing: AtomicBool,
+    /// When the last background refresh started.
+    refreshed_at: Mutex<Option<Instant>>,
     /// VibeSkua `_waitForLogin`: an auto-relogin is under way.
     waiting_for_login: AtomicBool,
     /// Cancels the running auto-relogin (VibeSkua `_reloginCTS`).
@@ -45,11 +55,13 @@ impl Default for ServerRunner {
     fn default() -> Self {
         Self {
             cached: Mutex::new(Vec::new()),
+            listed: Mutex::new(Vec::new()),
             login_info: Mutex::new(None),
             last_ip: Mutex::new(String::new()),
             last_name: Mutex::new(String::new()),
             fetcher: Mutex::new(Arc::new(fetch_servers)),
             refreshing: AtomicBool::new(false),
+            refreshed_at: Mutex::new(None),
             waiting_for_login: AtomicBool::new(false),
             cancel: Mutex::new(None),
         }
@@ -60,6 +72,16 @@ impl ServerRunner {
     /// The servers from the last fetch of the server list (empty before the first).
     pub fn cached(&self) -> Vec<Server> {
         self.cached.lock().clone()
+    }
+
+    /// The game's own server list (`serialCmd.servers`) as the last background refresh read it.
+    pub fn listed(&self) -> Vec<Server> {
+        self.listed.lock().clone()
+    }
+
+    /// A background refresh of the list is running.
+    pub fn is_refreshing(&self) -> bool {
+        self.refreshing.load(Ordering::Acquire)
     }
 
     /// Replaces how the server list is fetched (tests use a fixed list).
@@ -97,6 +119,7 @@ impl ServerRunner {
 fn fetch_servers() -> Result<Vec<Server>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
+        .user_agent(USER_AGENT)
         .build()
         .map_err(|e| e.to_string())?;
     let text = client
@@ -133,17 +156,30 @@ pub fn get_servers(bot: &Bot, force: bool) -> Vec<Server> {
     }
 }
 
-/// Fetches the server list on another thread if it isn't cached yet (for the UI).
+/// Fetches the server list on another thread if it isn't cached yet (for the UI), and reads
+/// the game's own list for when the fetch fails. A failed fetch is retried after 30 s.
 pub fn refresh_in_background(bot: &Arc<Bot>) {
-    if !bot.servers.cached.lock().is_empty() || bot.servers.refreshing.swap(true, Ordering::AcqRel)
+    if !bot.servers.cached.lock().is_empty()
+        || bot
+            .servers
+            .refreshed_at
+            .lock()
+            .is_some_and(|at| at.elapsed() < REFRESH_RETRY)
+        || bot.servers.refreshing.swap(true, Ordering::AcqRel)
     {
         return;
     }
+    *bot.servers.refreshed_at.lock() = Some(Instant::now());
     let thread_bot = bot.clone();
     let spawned = std::thread::Builder::new()
         .name("Turu Servers".into())
         .spawn(move || {
-            get_servers(&thread_bot, false);
+            if get_servers(&thread_bot, false).is_empty() {
+                let listed = server_list(&thread_bot).unwrap_or_default();
+                if !listed.is_empty() {
+                    *thread_bot.servers.listed.lock() = listed;
+                }
+            }
             thread_bot
                 .servers
                 .refreshing
