@@ -149,7 +149,8 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 |---|---|
 | `skua.swf` | written from the embedded copy at start |
 | `api-token` | the control API's token (`--api` without `TURU_API_TOKEN`), owner-readable only |
-| `options.json` | bot options (Options > Game, Save) |
+| `options.json` | bot options (Options > Game, Save; Relogin Try Delay and Relogin Watchdog are saved from Options > Application) |
+| `settings.json` | application settings (Options > Application, `bot/src/settings.rs`), saved on every change |
 | `scripts/` | default scripts folder (the repo's `scripts/` can be used directly) |
 | `options/CBO_Storage(<username>).txt` | CoreBots Options (`Key: Value` lines), written by Options > CoreBots and read by CoreBots' `setOptions()` through `bot.coreBotsOptions()` (`bot/src/cbo.rs`) |
 | `options/<Storage>.cfg` | a script's option values (VibeSkua's `<Storage>.cfg`: `Options:Name=Value` lines), written by Scripts > Edit Script Options and `bot.config.set` (`bot/src/script/options.rs`) |

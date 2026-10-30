@@ -16,9 +16,11 @@ pub mod models;
 pub mod options;
 pub mod paths;
 pub mod script;
+pub mod settings;
 pub mod skills;
 pub mod startup;
 pub mod state;
+pub mod webhooks;
 
 pub use error::{BotError, BotResult};
 pub use host::{FlashArg, FlashHost, HostError};
@@ -29,6 +31,7 @@ use flash::Flash;
 use log::Logs;
 use options::BotOptions;
 use parking_lot::{Mutex, RwLock};
+use settings::AppSettings;
 use state::GameState;
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,6 +50,8 @@ pub struct Bot {
     pub control: Arc<ScriptControl>,
     pub state: Mutex<GameState>,
     pub options: RwLock<BotOptions>,
+    /// Options > Application (`settings.json`).
+    pub settings: RwLock<AppSettings>,
     pub events: EventBus,
     pub logs: Logs,
     pub scripts: script::ScriptManager,
@@ -58,6 +63,7 @@ pub struct Bot {
     pub servers: api::servers::ServerRunner,
     /// The command-line login, until the game has loaded.
     pub startup: Mutex<Option<startup::Startup>>,
+    pub webhooks: webhooks::Webhooks,
     pub paths: paths::Paths,
 }
 
@@ -66,11 +72,13 @@ impl Bot {
         let control = Arc::new(ScriptControl::default());
         let paths = paths::Paths::new();
         let options = paths.load_options().unwrap_or_default();
+        let settings = paths.load_settings().unwrap_or_default();
         let bot = Arc::new(Self {
             flash: Flash::new(control.clone()),
             control,
             state: Mutex::new(GameState::default()),
             options: RwLock::new(options),
+            settings: RwLock::new(settings),
             events: EventBus::default(),
             logs: Logs::default(),
             scripts: script::ScriptManager::new(paths.clone()),
@@ -81,9 +89,11 @@ impl Bot {
             quests: api::quests::QuestRunner::default(),
             servers: api::servers::ServerRunner::default(),
             startup: Mutex::new(None),
+            webhooks: webhooks::Webhooks::default(),
             paths,
         });
         background::start(&bot);
+        webhooks::start(&bot);
         bot
     }
 
@@ -124,6 +134,12 @@ impl Bot {
     pub fn save_options(&self) {
         if let Err(e) = self.paths.save_options(&self.options.read()) {
             tracing::warn!("Couldn't save the bot options: {e}");
+        }
+    }
+
+    pub fn save_settings(&self) {
+        if let Err(e) = self.paths.save_settings(&self.settings.read()) {
+            tracing::warn!("Couldn't save the application settings: {e}");
         }
     }
 }

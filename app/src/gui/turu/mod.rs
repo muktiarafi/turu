@@ -4,6 +4,7 @@
 //! Everything here runs on the UI thread and only reads the bot's cached state (locks held
 //! briefly). Anything that touches the game goes through `crate::turu::spawn_action`.
 
+mod application_options;
 mod auto;
 mod core_bots;
 mod current_drops;
@@ -28,6 +29,7 @@ pub struct Windows {
     pub script_loader: bool,
     pub script_options: bool,
     pub game_options: bool,
+    pub application_options: bool,
     pub core_bots: bool,
     pub skills: bool,
     pub stats: bool,
@@ -61,6 +63,7 @@ pub struct TuruUi {
     script_loader: script_loader::ScriptLoader,
     script_options: script_options::ScriptOptionsWindow,
     game_options: game_options::GameOptionsWindow,
+    application_options: application_options::ApplicationOptionsWindow,
     core_bots: core_bots::CoreBotsWindow,
     skills: skills::SkillsWindow,
     stats: stats::StatsWindow,
@@ -81,6 +84,7 @@ impl TuruUi {
             script_loader: Default::default(),
             script_options: Default::default(),
             game_options: Default::default(),
+            application_options: Default::default(),
             core_bots: Default::default(),
             skills: Default::default(),
             stats: Default::default(),
@@ -111,6 +115,7 @@ impl TuruUi {
             .show(ctx, &self.picker, &mut w.script_loader, &mut w.script_options);
         self.script_options.show(ctx, &mut w.script_options);
         self.game_options.show(ctx, &mut w.game_options);
+        self.application_options.show(ctx, &mut w.application_options);
         self.core_bots.show(ctx, &mut w.core_bots);
         self.current_drops.show(ctx, &mut w.current_drops);
         self.stats.show(ctx, &mut w.stats);

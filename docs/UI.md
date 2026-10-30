@@ -40,7 +40,7 @@ Interceptor), **Plugins** (View Plugins). Right side: **Auto**, **Jump**, a divi
 
 | Item | State |
 |---|---|
-| Script Loader, Game, CoreBots, Current Drops, Skills, Stats, Logs, Logger | implemented |
+| Script Loader, Game, Application, CoreBots, Current Drops, Skills, Stats, Logs, Logger | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -73,9 +73,22 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button). Edits are written to
   `bot.options` at once; footer Defaults / Reset (reload `options.json`) / Save. Differences from
-  VibeSkua: no Optimize Players, Upgrade/Staff Name Colour (not in `BotOptions`); Relogin Try
-  Delay sits in the Relogin section because the Application window is not built; the server combo
-  uses VibeSkua's fallback list (plus the current value).
+  VibeSkua: no Optimize Players, Upgrade/Staff Name Colour (not in `BotOptions`); the server combo
+  uses VibeSkua's fallback list (plus the current value); Set FPS defaults to 24, the rate
+  AQW's `Game.swf` is made for (VibeSkua: 30, skua.swf's rate).
+* **Application Options** (`application_options.rs`, 580x650, VibeSkua `ApplicationOptionsView`):
+  search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
+  Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title
+  (the window title gets " – <character>" while you play), Client Animation Frame-rate (the
+  `stage.frameRate` set when the client loads, default 24; Set FPS takes over in game; VibeSkua
+  stores it and never reads it), Relogin Try Delay and Relogin Watchdog (bot options: applied
+  and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
+  folder after a second click, then restart). Updates: the six switches are stored but greyed
+  ("Coming soon"): Turu downloads no updates. Webhooks: Discord and Skua Nexus URLs with Test
+  buttons, the notify switches, Drop List, Health Pings and their interval, sent by
+  `bot/src/webhooks.rs` (VibeSkua `DiscordWebhookService`): one thread posting embeds, two a
+  second, retrying on 429; the Nexus snapshot and health pings read the game on that thread. The
+  drop alert has no screenshot (VibeSkua attaches one). Failures go to the Debug log.
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
@@ -103,7 +116,7 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
-Not built at all (greyed in the menus): Scheduler, Application, Application Themes,
+Not built at all (greyed in the menus): Scheduler, Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Runtime, Console, Spammer,
 Interceptor, Plugins, Script Repo (Search Scripts), Auto Hunt.
 

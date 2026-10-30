@@ -117,9 +117,7 @@ fn entries() -> Vec<Entry> {
         b!(Relogin, "Retry Relogin", retry_relogin),
         b!(Relogin, "Safe Relogin", safe_relogin),
         n!(Relogin, "Relogin Tries", relogin_tries),
-        n!(Relogin, "Relogin Try Delay", relogin_try_delay, "ms"),
         n!(Relogin, "Login Timeout", login_timeout, "ms"),
-        b!(Relogin, "Relogin Watchdog", relogin_watchdog),
     ];
     let mut gameplay = vec![
         b!(Gameplay, "Private Rooms", private_rooms),

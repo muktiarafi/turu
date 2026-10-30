@@ -158,7 +158,9 @@ impl NavBar {
             if item(ui, "Game", true) {
                 windows.game_options = true;
             }
-            item(ui, "Application", false);
+            if item(ui, "Application", true) {
+                windows.application_options = true;
+            }
             if item(ui, "CoreBots", true) {
                 windows.core_bots = true;
             }
@@ -509,8 +511,7 @@ impl NavBar {
     fn refresh_cells(&self) {
         let state = self.jump.clone();
         crate::turu::spawn_action("Fast Map Jump cells", move |bot| {
-            let cells: Vec<String> =
-                serde_json::from_value(dispatch(bot, "map.cells", &[])?).unwrap_or_default();
+            let cells: Vec<String> = serde_json::from_value(dispatch(bot, "map.cells", &[])?).unwrap_or_default();
             let mut state = lock(&state);
             if state.cells != cells {
                 state.cells = cells;

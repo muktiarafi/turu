@@ -12,6 +12,7 @@ use ruffle_core::Player;
 use ruffle_core::context::UpdateContext;
 use ruffle_core::external::{ExternalInterfaceProvider, Value as ExternalValue};
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -34,9 +35,35 @@ static HEADLESS: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
 static API: Mutex<Option<String>> = Mutex::new(None);
 
+/// Ruffle's SharedObjects folder (`--save-directory`): what "Clear Flash Cache" empties.
+static SAVE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+
 /// The bot of this client (one per process, like VibeSkua).
 pub fn bot() -> &'static Arc<Bot> {
     BOT.get_or_init(Bot::new)
+}
+
+pub fn set_save_directory(dir: PathBuf) {
+    let _ = SAVE_DIRECTORY.set(dir);
+}
+
+pub fn save_directory() -> Option<&'static Path> {
+    SAVE_DIRECTORY.get().map(PathBuf::as_path)
+}
+
+/// Mugetsu's title, plus the character's name while you play when Options > Application >
+/// "Show Username in Title" is on (VibeSkua names its tab after the character).
+pub fn window_title() -> String {
+    let title = crate::mugetsu::window_title();
+    let Some(bot) = BOT.get() else { return title };
+    if !bot.settings.read().show_username_in_title {
+        return title;
+    }
+    let state = bot.state.lock();
+    match &state.username {
+        Some(name) if state.in_game && !name.trim().is_empty() => format!("{title} – {name}"),
+        _ => title,
+    }
 }
 
 /// Remembers the event loop thread: calls from it would wait for themselves.

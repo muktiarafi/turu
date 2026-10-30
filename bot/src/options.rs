@@ -75,7 +75,8 @@ impl Default for BotOptions {
             disable_fx: false,
             disable_collisions: false,
             show_fps: false,
-            set_fps: 30,
+            // VibeSkua: 30 (skua.swf's rate); the game itself is made for 24.
+            set_fps: crate::settings::GAME_FRAME_RATE,
             aggro_monsters: false,
             aggro_all_monsters: false,
             attack_without_target: false,

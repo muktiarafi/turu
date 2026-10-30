@@ -50,8 +50,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   reads them (`docs/turu/SCRIPTING.md`, "Options"). Start opens the window and waits for it
   unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
+- **Application options and webhooks:** Options > Application (`settings.json`): username in
+  the title, the client's starting frame rate (24 by default, as is Set FPS: AQW's own rate),
+  relogin delay and watchdog, Clear Flash Cache, and Discord / Skua Nexus webhooks for script
+  start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
+  Unverified against a real webhook; the update switches are stored only.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
-  Options, Game and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
+  Options, Game, Application and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
@@ -79,7 +84,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
-- Not built in the UI: Scheduler, Application options, Themes, HotKeys, Loadouts, Fast Travel,
+- Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
   Loader, Grabber, Junk Items, Runtime, Console, Spammer, Interceptor, Plugins, the script
   browser, the skills editor, Auto Hunt (`docs/turu/UI.md` has the full list).
 - No release packaging yet: Mugetsu's `../mugetsu/source/build-*.sh` still need a Turu version.

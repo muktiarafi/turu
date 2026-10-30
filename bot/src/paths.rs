@@ -1,6 +1,7 @@
 //! Where Turu keeps its files (see docs/turu/ARCHITECTURE.md, "Data directory").
 
 use crate::options::BotOptions;
+use crate::settings::AppSettings;
 use serde_json::Value;
 use std::fs;
 use std::io;
@@ -149,6 +150,22 @@ impl Paths {
         });
         fs::read_to_string(self.user_advanced_skills_file())
             .unwrap_or_else(|_| crate::DEFAULT_ADVANCED_SKILLS.to_owned())
+    }
+
+    /// Options > Application (`AppSettings`).
+    pub fn settings_file(&self) -> PathBuf {
+        self.root.join("settings.json")
+    }
+
+    pub fn load_settings(&self) -> Option<AppSettings> {
+        let text = fs::read_to_string(self.settings_file()).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    pub fn save_settings(&self, settings: &AppSettings) -> io::Result<()> {
+        self.ensure()?;
+        let text = serde_json::to_string_pretty(settings).map_err(io::Error::other)?;
+        fs::write(self.settings_file(), text)
     }
 
     pub fn load_options(&self) -> Option<BotOptions> {

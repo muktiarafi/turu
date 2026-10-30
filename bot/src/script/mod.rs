@@ -9,6 +9,7 @@ use crate::Bot;
 use crate::control::{ScriptControl, mark_script_thread};
 use crate::error::{BotError, BotResult};
 use crate::paths::Paths;
+use crate::webhooks::Notice;
 use options::ScriptOptions;
 use parking_lot::{Condvar, Mutex};
 use serde_json::Value;
@@ -335,6 +336,9 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
                 .file_name()
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             bot.log(format!("Started script {name}"));
+            bot.webhooks.send(Notice::ScriptStarted {
+                script: script_stem(&path),
+            });
             bot.state.lock().stats.started = Some(std::time::Instant::now());
             let result = match bot.scripts.preconfigure(&bot.control) {
                 Ok(()) => runtime::run(&bot, &path),
@@ -386,6 +390,7 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.quests.unregister_all();
     bot.handlers.clear();
     bot.options.write().reset_after_script();
+    let mut error = None;
     let status = match result {
         Ok(()) => {
             bot.log(format!("Script {name} finished"));
@@ -397,6 +402,7 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
         }
         Err(runtime::RunError::Failed(message)) => {
             bot.log(format!("Script {name} failed:\n{message}"));
+            error = Some(message);
             ScriptStatus::Error
         }
     };
@@ -404,6 +410,17 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.scripts.set_status(status);
     bot.scripts.running.store(false, Ordering::Release);
     bot.events.emit(crate::events::BotEvent::ScriptStopped);
+    let script = bot
+        .scripts
+        .loaded()
+        .map_or_else(String::new, |p| script_stem(&p));
+    bot.webhooks.send(Notice::ScriptStopped { script, error });
+}
+
+/// The script's name as the webhooks show it (VibeSkua: the file name without extension).
+fn script_stem(path: &Path) -> String {
+    path.file_stem()
+        .map_or_else(|| "a script".into(), |s| s.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
