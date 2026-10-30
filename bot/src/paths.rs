@@ -34,6 +34,11 @@ impl Paths {
         Ok(())
     }
 
+    /// The control API's token (`control_api::saved_token`), readable by you only.
+    pub fn api_token_file(&self) -> PathBuf {
+        self.root.join("api-token")
+    }
+
     pub fn skua_swf(&self) -> PathBuf {
         self.root.join("skua.swf")
     }

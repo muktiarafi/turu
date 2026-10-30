@@ -29,6 +29,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   (debug build, macOS): ~6% CPU and ~96 MB against ~21% and ~420 MB with the window. Device
   fonts aren't loaded, so text in them isn't laid out (reading a text field still works).
   The Headless Mode option is separate: it lowers the game's frame rate in either mode.
+- **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
+  VibeSkua-Docker's for status, loading/starting/stopping/pausing scripts, logs (`since`
+  paging), the bot options, login, relogin and logout (`bot/src/control_api.rs` lists them).
+  Every request needs the token (`Authorization: Bearer` or `X-Api-Token`): `TURU_API_TOKEN`,
+  else the data folder's `api-token`, made on first use and readable by you only. Works with
+  or without the window. Example:
+  `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8791/status`.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
@@ -52,9 +59,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
-  farm without a window still need a run. There's no way to steer it while it runs (the UI
-  lives in the window); Ctrl+C quits. CoreBots' restart after a logout
-  (`Bot.Manager.RestartScriptAsync`) isn't ported.
+  farm without a window still need a run. The control API is the only way to steer it.
+  CoreBots' restart after a logout (`Bot.Manager.RestartScriptAsync`) isn't ported.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.

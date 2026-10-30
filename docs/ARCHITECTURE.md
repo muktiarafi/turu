@@ -26,6 +26,7 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
     flash.rs             `Flash`: typed calls into skua.swf's ExternalInterface callbacks
     host.rs              `FlashHost` trait (implemented by desktop) + `FlashArg`
     control.rs           Stop and Pause (`ScriptControl`), script-thread marking
+    control_api.rs       the HTTP control API (`--api`): hyper on its own thread, token auth
     events.rs            inbound Flash calls (`pext`, `packet`, `loaded`, ...) -> state + event bus
     state.rs             game state derived from packets (drops, map, counters, ...)
     options.rs           bot options (VibeSkua `IScriptOption`) + persistence
@@ -147,6 +148,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | Path | Contents |
 |---|---|
 | `skua.swf` | written from the embedded copy at start |
+| `api-token` | the control API's token (`--api` without `TURU_API_TOKEN`), owner-readable only |
 | `options.json` | bot options (Options > Game, Save) |
 | `scripts/` | default scripts folder (the repo's `scripts/` can be used directly) |
 | `options/CBO_Storage(<username>).txt` | CoreBots Options (`Key: Value` lines), written by Options > CoreBots and read by CoreBots' `setOptions()` through `bot.coreBotsOptions()` (`bot/src/cbo.rs`) |
