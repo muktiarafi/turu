@@ -9,7 +9,7 @@ use egui::{Align, Context, Layout, RichText, Ui, vec2};
 use rfd::AsyncFileDialog;
 use std::path::PathBuf;
 use std::time::Duration;
-use turu_bot::script::{self, ScriptStatus};
+use turu_bot::script::{self, ScriptOptionsState, ScriptStatus};
 
 #[derive(Default)]
 pub struct ScriptLoader {
@@ -20,7 +20,7 @@ pub struct ScriptLoader {
 }
 
 impl ScriptLoader {
-    pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool) {
+    pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool, options_open: &mut bool) {
         let bot = crate::turu::bot();
         self.save.poll();
         if let Some(path) = self.pending_load.poll() {
@@ -32,15 +32,16 @@ impl ScriptLoader {
         }
         super::window(ctx, "Script Loader", [370.0, 500.0], 0)
             .open(open)
-            .show(ctx, |ui| self.ui(ui, picker));
+            .show(ctx, |ui| self.ui(ui, picker, options_open));
         // The script writes its log and changes status from its own thread.
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker, options_open: &mut bool) {
         let bot = crate::turu::bot();
         let status = bot.scripts.status();
         let loaded = bot.scripts.loaded();
+        let options = bot.scripts.options();
         let active = status.is_active();
         let code = self.vscode.get_or_insert_with(files::find_vscode).clone();
         self.log.refresh(&bot.logs.script);
@@ -146,14 +147,24 @@ impl ScriptLoader {
                 "Coming soon",
             );
         });
-        widgets::button(
+        let (has_options, options_tip) = match (&loaded, &options) {
+            (None, _) => (false, "Load a script first"),
+            (Some(_), ScriptOptionsState::Loaded(_)) => (true, ""),
+            (Some(_), ScriptOptionsState::Failed(_)) => (false, "The script's options couldn't be read"),
+            (Some(_), ScriptOptionsState::NoOptions) => (false, "This script declares no options"),
+        };
+        if widgets::button(
             ui,
             "Edit Script Options",
             Kind::Normal,
-            false,
+            has_options,
             vec2(full, 30.0),
-            "Coming soon",
-        );
+            options_tip,
+        )
+        .clicked()
+        {
+            *options_open = true;
+        }
         ui.horizontal(|ui| {
             let auto = super::auto::running();
             if active {

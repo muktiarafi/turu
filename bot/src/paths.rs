@@ -62,6 +62,11 @@ impl Paths {
             .join(format!("CBO_Storage({username}).txt"))
     }
 
+    /// The saved values of a script's options (VibeSkua `<Storage>.cfg`).
+    pub fn script_options_file(&self, storage: &str) -> PathBuf {
+        self.script_options_dir().join(format!("{storage}.cfg"))
+    }
+
     pub fn options_file(&self) -> PathBuf {
         self.root.join("options.json")
     }

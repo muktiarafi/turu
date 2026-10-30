@@ -32,7 +32,7 @@ The windows are not scaled with the window height (Mugetsu's `z`): they keep Vib
 
 ## Nav bar (`nav_bar.rs`)
 
-34 px high, left to right as in VibeSkua: **Scripts** (Script Loader, Scheduler), **Options**
+34 px high, left to right as in VibeSkua: **Scripts** (Script Loader, Edit Script Options, Scheduler), **Options**
 (Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
 Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
 Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
@@ -58,9 +58,15 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Load Script (rfd dialog filtered to .ts/.js, starting in the repo's `scripts/` found next to the
   working directory or above the executable, else the bot's scripts folder); Open VSCode (enabled
   when `code` is on PATH, or the macOS app bundle is found); Edit Script (OS default app);
-  Search Scripts and Edit Script Options (disabled); Start/Stop Script (primary/danger; "Force
+  Search Scripts (disabled); Edit Script Options (enabled once a script with options is loaded);
+  Start/Stop Script (primary/danger; "Force
   Stop" while stopping handlers run); Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
   The "Report Issues" footer is omitted.
+* **Script Options** (`script_options.rs`, 560x460; VibeSkua's "Script Options" dialog): the loaded
+  script's options in one list, each with its name, description and editor (switch, number box or
+  text box; the default shows on hover). Reset Defaults, Cancel and Save. The window edits a copy
+  taken when it opens, so Cancel and closing it drop the changes; Save writes `options/<Storage>.cfg`.
+  Opened from Scripts > Edit Script Options or the Script Loader's button.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button). Edits are written to

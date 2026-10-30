@@ -57,6 +57,34 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
 - **Missing API**: `bot.flash.get("world.strMapName")`, `bot.flash.callGameFunction(...)` and
   `bot.send.packet("%xt%zm%...%")` reach the game directly, using the same paths VibeSkua uses.
 
+## Options
+
+A script declares its options as VibeSkua does, and they show in Scripts > Edit Script Options
+once the script is loaded (before Start). Export them as `scriptOptions`:
+
+```ts
+import { bot, defineScriptOptions, option } from "turu";
+
+export const scriptOptions = defineScriptOptions("MyScript", [
+    option.bool("BuyReagents", "Buy Reagents?", "Use gold to buy the reagents.", false),
+    option.int("PotionQuant", "Potion Quantity", "Desired stack amount [max - 300]", 0),
+    option.text("Label", "Label", "Shown in the log", "start"),
+]);
+
+export default function main(): void {
+    if (bot.config.get<boolean>("BuyReagents")) bot.log("buying");
+}
+```
+
+- `storage` is the file the values are saved in: `options/<storage>.cfg`, in VibeSkua's format,
+  so a file from VibeSkua's options folder can be copied over.
+- `bot.config.get<T>(name)` reads a value (the saved one, or the default). A name the script
+  doesn't declare throws. `bot.config.set(name, value)` changes and saves a value.
+- The window's Save writes the file; Cancel drops the changes. Reset Defaults only changes the
+  window until you Save.
+- Not ported: VibeSkua's `DontPreconfigure` (the window never opens by itself before a run) and
+  option groups (`MultiOptions`). Enum options aren't supported.
+
 ## CoreBots
 
 `scripts/core/CoreBots.ts` is the port of the C# `CoreBots` (`Core.join`, `Core.killMonster`,

@@ -68,7 +68,7 @@ impl Bot {
             options: RwLock::new(options),
             events: EventBus::default(),
             logs: Logs::default(),
-            scripts: script::ScriptManager::default(),
+            scripts: script::ScriptManager::new(paths.clone()),
             skills: skills::SkillRunner::default(),
             drops: api::drops::DropRunner::default(),
             handlers: api::handlers::HandlerRunner::default(),
