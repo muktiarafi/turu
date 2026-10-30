@@ -17,6 +17,7 @@ pub mod log;
 pub mod models;
 pub mod options;
 pub mod paths;
+pub mod repo;
 pub mod script;
 pub mod settings;
 pub mod skills;

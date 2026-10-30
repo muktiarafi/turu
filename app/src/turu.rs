@@ -40,6 +40,9 @@ static TABS: Mutex<Option<Tabs>> = Mutex::new(None);
 /// Where tab requests go ([`request_tab`]); set when the window opens.
 static EVENT_LOOP: Mutex<Option<EventLoopProxy<RuffleEvent>>> = Mutex::new(None);
 static ARMY: OnceLock<Arc<turu_bot::army::Army>> = OnceLock::new();
+// Turu: Search Scripts' repository, and whether Army > Accounts launched this client.
+static SCRIPT_REPO: OnceLock<Arc<turu_bot::repo::ScriptRepo>> = OnceLock::new();
+static LAUNCHED_BY_ARMY: AtomicBool = AtomicBool::new(false);
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
@@ -173,6 +176,32 @@ pub fn tab_label(bot: &Bot) -> String {
     turu_bot::api::servers::login_name(bot).unwrap_or_else(|| "Login".into())
 }
 
+/// Search Scripts' repository and scripts folder, shared by the tabs (they share the data
+/// folder).
+pub fn script_repo() -> &'static Arc<turu_bot::repo::ScriptRepo> {
+    SCRIPT_REPO.get_or_init(|| {
+        turu_bot::repo::ScriptRepo::new(bot().paths.clone(), Box::new(turu_bot::repo::GitHub::from_env()))
+    })
+}
+
+/// At launch, Options > Application's Check for Script Updates / Auto Update Scripts (VibeSkua's
+/// Manager does them). Clients launched by Army > Accounts skip it: their launcher has the same
+/// scripts folder.
+pub fn start_script_updates() {
+    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+        return;
+    }
+    let settings = bot().settings.read().clone();
+    if !settings.check_bot_scripts_updates {
+        return;
+    }
+    script_repo().spawn("Script update", move |repo| {
+        let message = repo.startup(&settings)?;
+        tracing::info!("Scripts: {message}");
+        Ok(message)
+    });
+}
+
 /// The accounts this client launched (Army > Accounts), each in its own `turu` process.
 pub fn army() -> &'static Arc<turu_bot::army::Army> {
     ARMY.get_or_init(|| {
@@ -242,6 +271,7 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         api,
     } = parse_startup_args(args);
     if exit_with_parent {
+        LAUNCHED_BY_ARMY.store(true, Ordering::Relaxed);
         turu_bot::army::exit_with_parent(|| std::process::exit(0));
     }
     HEADLESS.store(headless, Ordering::Relaxed);

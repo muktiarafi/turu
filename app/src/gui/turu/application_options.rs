@@ -114,14 +114,14 @@ fn entries() -> Vec<Entry> {
         entry!(
             Updates,
             "Check for Script Updates",
-            "Whether to check for scripts updates when launching the Manager",
-            Field::Unused(|s| &mut s.check_bot_scripts_updates)
+            "Whether to check for scripts updates when launching Turu",
+            Field::Bool(|s| &mut s.check_bot_scripts_updates)
         ),
         entry!(
             Updates,
             "Auto Update Scripts",
-            "Whether to auto update scripts when launching the Manager, needs \"Check for Scripts Updates\" to be true",
-            Field::Unused(|s| &mut s.auto_update_bot_scripts)
+            "Whether to auto update scripts when launching Turu, needs \"Check for Scripts Updates\" to be true",
+            Field::Bool(|s| &mut s.auto_update_bot_scripts)
         ),
         entry!(
             Updates,
@@ -326,7 +326,7 @@ impl ApplicationOptionsWindow {
                                     Field::Unused(access) => {
                                         ui.add_enabled_ui(false, |ui| widgets::switch(ui, access(&mut settings)))
                                             .inner
-                                            .on_disabled_hover_text("Coming soon: Turu doesn't download updates yet");
+                                            .on_disabled_hover_text("Coming soon: Turu doesn't update these yet");
                                     }
                                     Field::Int(access, suffix, min) => {
                                         let drag = DragValue::new(access(&mut settings))

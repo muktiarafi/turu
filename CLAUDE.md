@@ -20,7 +20,7 @@ This repo is a Ruffle fork (branch `turu`, based on Ruffle `fda41800` = Mugetsu 
 | `bot/assets/skua.swf` | VibeSkua's AS3 host (`Skua.AS3/skua/bin/skua.swf`), unchanged. |
 | `desktop/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
 | `desktop/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
-| `scripts/` | TypeScript scripts: `core/` (CoreBots/CoreFarms ports), `nation/`, `farm/`, `tsconfig.json`. |
+| `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |
 | `patches/` | Mugetsu's patched crates (`[patch.crates-io]`). Don't edit; re-apply from Mugetsu instead. |
 | Everything else | Upstream Ruffle + Mugetsu's changes (marked `AQW build:`). Keep Turu changes out of `core/` and `render/` unless a Flash API is missing. |
 

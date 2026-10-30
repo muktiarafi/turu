@@ -64,10 +64,23 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Load Script (rfd dialog filtered to .ts/.js, starting in the repo's `scripts/` found next to the
   working directory or above the executable, else the bot's scripts folder); Open VSCode (enabled
   when `code` is on PATH, or the macOS app bundle is found); Edit Script (OS default app);
-  Search Scripts (disabled); Edit Script Options (enabled once a script with options is loaded);
+  Search Scripts (opens the window below); Edit Script Options (enabled once a script with options is loaded);
   Start/Stop Script (primary/danger; "Force
   Stop" while stopping handlers run); Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
   The "Report Issues" footer is omitted.
+* **Search Scripts** (`script_repo.rs`, 969x500; VibeSkua's Script Repo; also Scripts > Search
+  Scripts): search box ("Search scripts by name, path or tag") with a clear button, scope (All,
+  Name, Tag, Description, File), category (All, Pinned, Local and the top folders), sort (Name or
+  Date added, up or down); a count line; the list, pinned first, then the sort, then the search
+  rank (VibeSkua's `SearchRank`). Each row: star when pinned, name, badges (Downloaded, Update,
+  Modified, Local, Removed), path, description, tag chips, Start (primary), Load and a "…" menu
+  with Pin/Unpin, Download / Update / "Replace with the repository's", Open in VS Code and Delete.
+  Start and Load download the script and what it imports first, then load it in the active tab.
+  Empty states "Loading scripts..." and "No scripts found" (with Clear search). Bottom bar: Update
+  all, Download all, refresh, a "…" menu (Reset Scripts..., which asks first; Open the scripts
+  folder; the same in VS Code), and on the right the running task with its progress bar and
+  Cancel, or the last result with the index's commit and when it was checked. Not built:
+  Queue (no Scheduler), "Update dates from Git" (the index has the dates), custom script folders.
 * **Script Options** (`script_options.rs`, 560x460; VibeSkua's "Script Options" dialog): the loaded
   script's options in one list, each with its name, description and editor (switch, number box,
   text box or a drop-down for a choice, its names with `_` as spaces; the default shows on hover).
@@ -141,7 +154,7 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
 
 Not built at all (greyed in the menus): Scheduler, Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Runtime, Console, Spammer,
-Interceptor, Plugins, Script Repo (Search Scripts), Auto Hunt.
+Interceptor, Plugins, Auto Hunt.
 
 ## Adding a window
 

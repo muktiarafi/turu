@@ -153,3 +153,11 @@ porting conventions (C# named flags become option objects, wait inside `Core.sle
    needs that aren't ported yet, in C# order.
 4. Type-check: `cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .`. Then also run
    `cargo test -p turu_bot --test scripts_transpile`.
+
+## Publishing
+
+`scripts/` is the `muktiarafi/turu-scripts` submodule. Commit a script there and push it to
+`main`: its CI type-checks everything and republishes the index, and Search Scripts lists the
+script on the next refresh. The header block is what the list shows (name, description, tags),
+so keep it first in the file; imports must be relative so the index can follow them and a
+download brings them along. `scripts/README.md` ("The index") has the details.

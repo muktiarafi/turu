@@ -36,6 +36,7 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
     skills.rs            skill rotations (advanced skill sets) + the background `Worker` loops
     cbo.rs               the CoreBots Options file (`CBO_Storage(<user>).txt`)
     paths.rs, log.rs     data directory, skill set files; log buffers
+    repo.rs              Search Scripts: the script repository's index, downloads, update, reset
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
                          monsters, quests, reputation, auras (self and target), drops, boosts,
                          inventory (also bank, tempInv, house, invHelper), shops, skills, wait,
@@ -46,7 +47,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
 desktop/src/turu.rs      desktop integration: FlashHost impl, ExternalInterface provider, spawn_action
 desktop/src/gui/turu/    egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
-scripts/                 TypeScript scripts (types, Core libraries, ported farms)
+scripts/                 submodule: muktiarafi/turu-scripts, the TypeScript scripts (Core libraries,
+                         ported farms) and their index generator
 docs/turu/               these docs
 ```
 
@@ -159,11 +161,42 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `options.json` | bot options (Options > Game, Save; Relogin Try Delay and Relogin Watchdog are saved from Options > Application) |
 | `accounts.json` | Army > Accounts: accounts, groups, the launch setup (no passwords: those are in the system keychain, service "Turu") |
 | `settings.json` | application settings (Options > Application, `bot/src/settings.rs`), saved on every change |
-| `scripts/` | default scripts folder (the repo's `scripts/` can be used directly) |
+| `scripts/` | the scripts folder: Search Scripts downloads here (the repo's `scripts/` can be used directly) |
+| `scripts-index.json` | the last script list (`index.json` of the scripts repository) and its ETag |
+| `scripts-manifest.json` | the sha256 of every script as Search Scripts wrote it: tells an outdated script from one you edited |
+| `pinned-scripts.json` | the scripts pinned in Search Scripts |
+| `scripts-backup/<time>/` | what Reset Scripts moved aside |
 | `options/CBO_Storage(<username>).txt` | CoreBots Options (`Key: Value` lines), written by Options > CoreBots and read by CoreBots' `setOptions()` through `bot.coreBotsOptions()` (`bot/src/cbo.rs`) |
 | `options/<Storage>.cfg` | a script's option values (VibeSkua's `<Storage>.cfg`: `Options:Name=Value` lines), written by Scripts > Edit Script Options and `bot.config.set` (`bot/src/script/options.rs`) |
 | `AdvancedSkills.json` | the shipped skill sets (from `auqw/Scripts` `Skills/AdvancedSkills.json`, rewritten from the app's copy) |
 | `UserAdvancedSkills.json` | your skill sets, used by the bot: seeded from the shipped ones, then only gaining the shipped classes and modes it lacks (VibeSkua's merge) |
+
+## Script repository
+
+Turu's scripts live in their own repository, `muktiarafi/turu-scripts` (the `scripts/`
+submodule here; `TURU_SCRIPTS_REPO=owner/name` points the client at another). Its CI type-checks
+the scripts and publishes `index.json` as the only file of its `index` branch: per script the
+path, the header block (name, description, tags), size, sha256, the dates it was added and
+changed (from `git log`) and `deps`, every file it imports. `bot/src/repo.rs` (`ScriptRepo`, one
+per app, `turu::script_repo()`) reads it, and the Search Scripts window shows its snapshot.
+
+Differences from VibeSkua's `scripts.json`, which its CI commits to the working branch on every
+push: the index stays off `main`; it is ~77 KB for the 139 ports, where VibeSkua's is 1.1 MB for
+1,943 C# files, and a refresh that finds nothing new is an ETag 304; dates come with it (VibeSkua
+asks the GitHub API once per script, at 60 requests an hour); and `deps` lets one download bring
+the Core files a script imports. Files are fetched from the index's commit and checked against
+its sha256, each from raw.githubusercontent.com, or as one zip from codeload.github.com from 25
+files up; neither counts against the API limit.
+
+The manifest (`scripts-manifest.json`) records what Turu wrote, which gives each script a status:
+missing, up to date, outdated (untouched since, the repository changed), modified (edited here:
+Update all and Download all keep it, VibeSkua overwrites it), local (your own) or removed (gone
+from the repository). Reset Scripts moves the downloaded files to `scripts-backup/<time>/` and
+downloads everything again, leaving your own scripts (VibeSkua deletes the whole folder). At
+launch, Check for Script Updates fetches the index and Auto Update Scripts downloads what's
+missing or outdated, as VibeSkua's Manager does; clients launched by Army > Accounts skip it.
+
+## Script options
 
 Script options (VibeSkua's `Options` and "Edit Script Options") are read when a script is loaded:
 the engine runs the module's top level in a separate runtime where bot calls fail, and reads its

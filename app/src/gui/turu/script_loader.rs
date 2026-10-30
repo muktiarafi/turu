@@ -20,7 +20,14 @@ pub struct ScriptLoader {
 }
 
 impl ScriptLoader {
-    pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool, options_open: &mut bool) {
+    pub fn show(
+        &mut self,
+        ctx: &Context,
+        picker: &FilePicker,
+        open: &mut bool,
+        options_open: &mut bool,
+        repo_open: &mut bool,
+    ) {
         let bot = crate::turu::bot();
         self.save.poll();
         if let Some(path) = self.pending_load.poll() {
@@ -32,12 +39,12 @@ impl ScriptLoader {
         }
         super::window(ctx, "Script Loader", [370.0, 500.0], 0)
             .open(open)
-            .show(ctx, |ui| self.ui(ui, picker, options_open));
+            .show(ctx, |ui| self.ui(ui, picker, options_open, repo_open));
         // The script writes its log and changes status from its own thread.
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker, options_open: &mut bool) {
+    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker, options_open: &mut bool, repo_open: &mut bool) {
         let bot = crate::turu::bot();
         let status = bot.scripts.status();
         let loaded = bot.scripts.loaded();
@@ -138,14 +145,9 @@ impl ScriptLoader {
             {
                 files::open_with_default(path);
             }
-            widgets::button(
-                ui,
-                "Search Scripts",
-                Kind::Normal,
-                false,
-                vec2(half, 30.0),
-                "Coming soon",
-            );
+            if widgets::button(ui, "Search Scripts", Kind::Normal, true, vec2(half, 30.0), "").clicked() {
+                *repo_open = true;
+            }
         });
         let (has_options, options_tip) = match (&loaded, &options) {
             (None, _) => (false, "Load a script first"),

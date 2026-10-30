@@ -14,7 +14,8 @@ pub struct AppSettings {
     /// VibeSkua's "Client Animation Frame-rate": the frame rate the client starts with, until
     /// the game's own FPS setting (or Options > Game > Set FPS) applies in game.
     pub animation_frame_rate: i32,
-    // Auto Updates & Sync (stored only: Turu doesn't download updates yet)
+    // Auto Updates & Sync. The script ones are read at launch (`repo::ScriptRepo::startup`);
+    // the skill-set and junk-item ones are stored only.
     pub check_bot_scripts_updates: bool,
     pub auto_update_bot_scripts: bool,
     pub check_advance_skill_sets_updates: bool,

@@ -140,6 +140,9 @@ impl NavBar {
             if item(ui, "Script Loader", true) {
                 windows.script_loader = true;
             }
+            if item(ui, "Search Scripts", true) {
+                windows.script_repo = true;
+            }
             let has_options = crate::turu::bot().scripts.has_options();
             let mut edit = ui.add_enabled(
                 has_options,

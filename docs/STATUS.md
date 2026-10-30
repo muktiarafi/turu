@@ -92,12 +92,18 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   reads them (`docs/turu/SCRIPTING.md`, "Options"). Start opens the window and waits for it
   unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
+- **Search Scripts** (`bot/src/repo.rs`, `desktop/src/gui/turu/script_repo.rs`): VibeSkua's
+  Script Repo for the scripts in `muktiarafi/turu-scripts` (the `scripts/` submodule): search,
+  categories, pins, Start/Load (downloading the script and what it imports), Update all,
+  Download all and Reset Scripts, and the launch-time check and auto update (Options >
+  Application). Edited scripts are kept by updates and backed up by a reset.
+  `docs/turu/ARCHITECTURE.md` ("Script repository") has the design.
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
   the title, the client's starting frame rate (24 by default, AQW's own rate; Set FPS defaults to
   0, leaving the game's own FPS setting alone),
   relogin delay and watchdog, Clear Flash Cache, and Discord / Skua Nexus webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
-  Unverified against a real webhook; the update switches are stored only.
+  Unverified against a real webhook; the skill-set and junk-item update switches are stored only.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
   Options, Game, Application and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
 
@@ -184,13 +190,23 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
+- **Search Scripts is unverified against GitHub:** `muktiarafi/turu-scripts` isn't published
+  yet, so the tests run it against a fake repository (statuses, deps, the zip, reset, bad paths
+  and hashes). Until it is, the launch-time update logs a failed fetch. Check the raw and
+  codeload URLs, the ETag 304 and the CI's `index` branch once it's pushed. Scripts made for a
+  newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
-  Loader, Grabber, Junk Items, Runtime, Console, Spammer, Interceptor, Plugins, the script
-  browser, the skills editor, Auto Hunt (`docs/turu/UI.md` has the full list).
+  Loader, Grabber, Junk Items, Runtime, Console, Spammer, Interceptor, Plugins, the skills
+  editor, Auto Hunt (`docs/turu/UI.md` has the full list).
 - No release packaging yet: Mugetsu's `../mugetsu/source/build-*.sh` still need a Turu version.
 
 ## Things to know
+
+- **`scripts/` is a submodule** (`muktiarafi/turu-scripts`): clone with `--recursive` or run
+  `git submodule update --init`; the tests that load scripts read it. Commit script changes in
+  the submodule, then the new pointer here. Its `types/turu.ts` is a copy of `bot/js/turu.ts`
+  for type-checking outside Turu; copy it again when the API changes (`script_repo` tests check).
 
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).

@@ -26,6 +26,9 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 tokio = { workspace = true, features = ["rt", "net", "time"] }
 getrandom = "0.3"
+# Search Scripts (`repo.rs`): checking downloads, and the repository zip.
+sha2 = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
 
 # Account passwords (`accounts.rs`), in the system's keychain: Keychain, Credential Manager,
 # the Secret Service (pure Rust on Linux: no libdbus to build against).

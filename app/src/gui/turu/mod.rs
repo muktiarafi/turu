@@ -18,6 +18,7 @@ mod nav_bar;
 mod packet_logger;
 mod script_loader;
 mod script_options;
+mod script_repo;
 mod skills;
 mod stats;
 mod tab_strip;
@@ -34,6 +35,7 @@ use std::collections::HashMap;
 pub struct Windows {
     pub script_loader: bool,
     pub script_options: bool,
+    pub script_repo: bool,
     pub game_options: bool,
     pub application_options: bool,
     pub core_bots: bool,
@@ -71,6 +73,7 @@ struct TabUi {
     nav: nav_bar::NavBar,
     script_loader: script_loader::ScriptLoader,
     script_options: script_options::ScriptOptionsWindow,
+    script_repo: script_repo::ScriptRepoWindow,
     game_options: game_options::GameOptionsWindow,
     application_options: application_options::ApplicationOptionsWindow,
     core_bots: core_bots::CoreBotsWindow,
@@ -98,6 +101,7 @@ impl TuruUi {
         // Scripts may now ask for the Script Options window (`bot.config.configure`) and show
         // message boxes (`bot.showMessageBox`). New tabs' bots are set up by `turu::add_tab`.
         crate::turu::bot().scripts.set_interactive(true);
+        crate::turu::start_script_updates();
         Self {
             themed: false,
             picker,
@@ -140,9 +144,15 @@ impl TuruUi {
         let picker = self.picker.clone();
         let tab = self.active();
         let w = &mut tab.windows;
-        tab.script_loader
-            .show(ctx, &picker, &mut w.script_loader, &mut w.script_options);
+        tab.script_loader.show(
+            ctx,
+            &picker,
+            &mut w.script_loader,
+            &mut w.script_options,
+            &mut w.script_repo,
+        );
         tab.script_options.show(ctx, &mut w.script_options);
+        tab.script_repo.show(ctx, &mut w.script_repo);
         tab.game_options.show(ctx, &mut w.game_options);
         tab.application_options.show(ctx, &mut w.application_options);
         tab.core_bots.show(ctx, &mut w.core_bots);
