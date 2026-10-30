@@ -71,6 +71,8 @@ pub struct TuruUi {
 
 impl TuruUi {
     pub fn new(picker: FilePicker) -> Self {
+        // Scripts may now ask for the Script Options window (`bot.config.configure`).
+        crate::turu::bot().scripts.set_interactive(true);
         Self {
             themed: false,
             picker,

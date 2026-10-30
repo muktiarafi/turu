@@ -66,7 +66,9 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   script's options in one list, each with its name, description and editor (switch, number box or
   text box; the default shows on hover). Reset Defaults, Cancel and Save. The window edits a copy
   taken when it opens, so Cancel and closing it drop the changes; Save writes `options/<Storage>.cfg`.
-  Opened from Scripts > Edit Script Options or the Script Loader's button.
+  Opened from Scripts > Edit Script Options or the Script Loader's button, and by itself when the
+  script asks (on Start unless it sets `dontPreconfigure`, or `bot.config.configure()`): the script
+  waits until Save or Cancel, and Stop closes it.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button). Edits are written to

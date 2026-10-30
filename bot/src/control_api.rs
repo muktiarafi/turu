@@ -200,7 +200,7 @@ fn route(bot: &Arc<Bot>, method: &Method, uri: &Uri, body: &[u8]) -> Reply {
             {
                 return e;
             }
-            match crate::script::start(bot) {
+            match crate::script::start_silent(bot) {
                 Ok(()) => ok(json!({ "started": bot.scripts.loaded() })),
                 Err(e) => error(409, e),
             }

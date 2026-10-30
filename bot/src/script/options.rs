@@ -62,9 +62,14 @@ pub struct OptionDecl {
 
 /// A script's options: the file they're saved in (VibeSkua `OptionsStorage`) and their list.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Declaration {
     pub storage: String,
     pub options: Vec<OptionDecl>,
+    /// Don't show the Script Options window before each run (VibeSkua `DontPreconfigure`):
+    /// the script opens it itself (CoreBots' `SkipOption`).
+    #[serde(default)]
+    pub dont_preconfigure: bool,
 }
 
 impl Declaration {

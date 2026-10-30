@@ -625,6 +625,11 @@ export interface ScriptOptions {
     /** The saved values go to `options/<storage>.cfg`, as in VibeSkua (`OptionsStorage`). */
     storage: string;
     options: ScriptOption[];
+    /**
+     * Don't open the Script Options window before each run (VibeSkua `DontPreconfigure`). Set it
+     * when the script opens the window itself, as CoreBots does with `Core.skipOptions`.
+     */
+    dontPreconfigure?: boolean;
 }
 
 /** Makers for {@link ScriptOption}s, named as VibeSkua's `Option<T>` types. */
@@ -646,15 +651,16 @@ export const option = {
 /**
  * Declares a script's options (VibeSkua `OptionsStorage` and `Options`). Export the result as
  * `scriptOptions`: the Script Options window (Scripts > Edit Script Options) shows the options
- * once the script is loaded, before it starts, and `bot.config.get` reads the values.
+ * once the script is loaded, and `bot.config.get` reads the values. Start opens the window and
+ * waits for it to close, unless `dontPreconfigure` is true.
  *
  * @example
  * export const scriptOptions = defineScriptOptions("MyScript", [
  *     option.int("PotionQuant", "Potion Quantity", "Desired stack amount", 300),
  * ]);
  */
-export function defineScriptOptions(storage: string, options: ScriptOption[]): ScriptOptions {
-    return { storage, options };
+export function defineScriptOptions(storage: string, options: ScriptOption[], dontPreconfigure = false): ScriptOptions {
+    return { storage, options, dontPreconfigure };
 }
 
 /** `bot.config`: the values of the script's options (VibeSkua `Bot.Config`). */
@@ -666,6 +672,14 @@ export class Config {
     get<T extends boolean | number | string = boolean | number | string>(name: string): T { return call("config.get", name); }
     /** Sets an option and saves it to the script's options file (VibeSkua `Config.Set`). */
     set(name: string, value: boolean | number | string): void { call("config.set", name, value); }
+    /** Whether the script declares the option (VibeSkua `Config.Options.Contains`). */
+    has(name: string): boolean { return call("config.has", name); }
+    /**
+     * Opens the Script Options window and waits until the user saves or cancels it (VibeSkua
+     * `Config.Configure()`). Returns at once when the script declares no options, or nobody can
+     * answer it: `--headless`, and runs started from the command line, the HTTP API or auto-relogin.
+     */
+    configure(): void { call("config.configure"); }
 }
 
 /** The bot's options (Options > Game). Changes apply at once and last until the script stops. */

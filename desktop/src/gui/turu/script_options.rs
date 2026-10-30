@@ -1,6 +1,8 @@
 //! Scripts > Edit Script Options (VibeSkua's "Script Options" dialog): the loaded script's options,
 //! each with its description and an editor. The window edits a copy taken when it opens. Save
 //! writes the values to `options/<Storage>.cfg`; Cancel (or closing the window) drops them.
+//! It also opens by itself when the script asks (before a run, or `bot.config.configure`); the
+//! script waits until it closes.
 
 use super::theme::{DANGER, MUTED, TEXT};
 use super::widgets::{self, Kind as ButtonKind};
@@ -15,11 +17,27 @@ pub struct ScriptOptionsWindow {
     draft: Option<ScriptOptions>,
     /// Why the last Save failed.
     error: Option<String>,
+    /// The script's request (`bot.config.configure`, or before a run) the window is open for.
+    request: Option<u64>,
 }
 
 impl ScriptOptionsWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
+        let scripts = &crate::turu::bot().scripts;
+        let pending = scripts.configure_request();
+        if pending.is_some() && pending != self.request {
+            // The script waits for the window (VibeSkua's options dialog on Start).
+            self.request = pending;
+            *open = true;
+        } else if self.request.is_some() && pending != self.request {
+            // The script was stopped while it waited.
+            self.request = None;
+            *open = false;
+        }
         if !*open {
+            if let Some(request) = self.request.take() {
+                scripts.finish_configure(request);
+            }
             self.draft = None;
             self.error = None;
             return;

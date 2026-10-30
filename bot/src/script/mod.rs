@@ -6,14 +6,16 @@ mod runtime;
 pub mod transpile;
 
 use crate::Bot;
-use crate::control::mark_script_thread;
+use crate::control::{ScriptControl, mark_script_thread};
+use crate::error::{BotError, BotResult};
 use crate::paths::Paths;
 use options::ScriptOptions;
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
 pub use loader::normalize;
 
@@ -108,6 +110,14 @@ pub struct ScriptManager {
     running: AtomicBool,
     paths: Paths,
     options: Mutex<ScriptOptionsState>,
+    /// A UI is there to show the Script Options window (not `--headless`, not the tests).
+    interactive: AtomicBool,
+    /// This run shows no Script Options window (VibeSkua `SilentConfig`).
+    silent: AtomicBool,
+    /// The open request for the Script Options window, until the UI closes it.
+    configure: Mutex<Option<u64>>,
+    configured: Condvar,
+    next_configure: AtomicU64,
 }
 
 impl ScriptManager {
@@ -118,6 +128,11 @@ impl ScriptManager {
             running: AtomicBool::new(false),
             paths,
             options: Mutex::new(ScriptOptionsState::NoOptions),
+            interactive: AtomicBool::new(false),
+            silent: AtomicBool::new(false),
+            configure: Mutex::new(None),
+            configured: Condvar::new(),
+            next_configure: AtomicU64::new(1),
         }
     }
 
@@ -175,6 +190,11 @@ impl ScriptManager {
         matches!(*self.options.lock(), ScriptOptionsState::Loaded(_))
     }
 
+    /// `bot.config.has`: whether the loaded script declares the option.
+    pub fn has_option(&self, name: &str) -> bool {
+        matches!(&*self.options.lock(), ScriptOptionsState::Loaded(o) if o.get(name).is_some())
+    }
+
     /// `bot.config.get`: the value of one of the loaded script's options.
     pub fn option_value(&self, name: &str) -> Result<Value, String> {
         self.with_options(|options| {
@@ -212,6 +232,62 @@ impl ScriptManager {
         Ok(())
     }
 
+    /// Called by the desktop UI: it shows the Script Options window when a script asks for it.
+    pub fn set_interactive(&self, interactive: bool) {
+        self.interactive.store(interactive, Ordering::Release);
+    }
+
+    /// The request the UI should answer by showing the Script Options window, if any.
+    pub fn configure_request(&self) -> Option<u64> {
+        *self.configure.lock()
+    }
+
+    /// The UI closed the Script Options window it opened for `request` (Save or Cancel).
+    pub fn finish_configure(&self, request: u64) {
+        let mut pending = self.configure.lock();
+        if *pending == Some(request) {
+            *pending = None;
+            self.configured.notify_all();
+        }
+    }
+
+    /// `bot.config.configure` (VibeSkua `Config.Configure()`): shows the Script Options window
+    /// and waits until it closes. Returns at once when the script declares no options, the run
+    /// is silent or there is no UI; Stop ends the wait.
+    pub fn configure(&self, control: &ScriptControl) -> BotResult<()> {
+        if !self.has_options()
+            || self.silent.load(Ordering::Acquire)
+            || !self.interactive.load(Ordering::Acquire)
+        {
+            return Ok(());
+        }
+        let request = self.next_configure.fetch_add(1, Ordering::Relaxed);
+        let mut pending = self.configure.lock();
+        *pending = Some(request);
+        while *pending == Some(request) {
+            if control.should_exit() {
+                *pending = None;
+                return Err(BotError::Stopped);
+            }
+            self.configured
+                .wait_for(&mut pending, Duration::from_millis(100));
+        }
+        Ok(())
+    }
+
+    /// Before the run (VibeSkua `StartScript`): shows the window unless the script set
+    /// `dontPreconfigure`.
+    fn preconfigure(&self, control: &ScriptControl) -> BotResult<()> {
+        let needs_config = matches!(
+            &*self.options.lock(),
+            ScriptOptionsState::Loaded(o) if !o.declaration().dont_preconfigure
+        );
+        if needs_config {
+            self.configure(control)?;
+        }
+        Ok(())
+    }
+
     fn with_options<T>(
         &self,
         f: impl FnOnce(&mut ScriptOptions) -> Result<T, String>,
@@ -228,12 +304,23 @@ impl ScriptManager {
 
 /// "Start Script": runs the loaded script on a new "Script Thread".
 pub fn start(bot: &Arc<Bot>) -> Result<(), String> {
+    start_with(bot, false)
+}
+
+/// Starts the script without showing the Script Options window (VibeSkua `SilentConfig`): for
+/// runs nobody is there to answer it, such as the command line, the HTTP API and auto-relogin.
+pub fn start_silent(bot: &Arc<Bot>) -> Result<(), String> {
+    start_with(bot, true)
+}
+
+fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
     let Some(path) = bot.scripts.loaded() else {
         return Err("No script loaded".into());
     };
     if bot.scripts.running.swap(true, Ordering::AcqRel) {
         return Err("A script is already running".into());
     }
+    bot.scripts.silent.store(silent, Ordering::Release);
     bot.control.reset();
     // VibeSkua's `Handlers.Clear()` before the script thread starts.
     bot.handlers.clear();
@@ -249,7 +336,10 @@ pub fn start(bot: &Arc<Bot>) -> Result<(), String> {
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             bot.log(format!("Started script {name}"));
             bot.state.lock().stats.started = Some(std::time::Instant::now());
-            let result = runtime::run(&bot, &path);
+            let result = match bot.scripts.preconfigure(&bot.control) {
+                Ok(()) => runtime::run(&bot, &path),
+                Err(_) => Err(runtime::RunError::Stopped),
+            };
             mark_script_thread(false);
             finish(&bot, &name, result);
         })

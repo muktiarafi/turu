@@ -196,6 +196,117 @@ export default function main(): void {{
     assert!(saved.contains("Options:Count=7"), "{saved}");
 }
 
+/// A script with one option that logs "in main" and calls `body`.
+fn options_script(name: &str, dont_preconfigure: bool, body: &str) -> std::path::PathBuf {
+    let dir = temp_dir(name);
+    let path = dir.join("main.ts");
+    std::fs::write(
+        &path,
+        format!(
+            r#"import {{ bot, defineScriptOptions, option }} from "turu";
+export const scriptOptions = defineScriptOptions("Runtime{name}", [option.bool("On", "On", "")], {dont_preconfigure});
+export default function main(): void {{
+    bot.log("in main");
+    {body}
+    bot.log("done");
+}}
+"#
+        ),
+    )
+    .unwrap();
+    path
+}
+
+fn wait_for_request(bot: &Bot) -> u64 {
+    let start = Instant::now();
+    loop {
+        if let Some(request) = bot.scripts.configure_request() {
+            return request;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "no configure request"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn start_waits_for_the_options_window_unless_dont_preconfigure() {
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.set_interactive(true);
+    bot.scripts.load(&options_script("Preconfigure", false, ""));
+    script::start(&bot).unwrap();
+    let request = wait_for_request(&bot);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        !bot.logs.script.text().contains("in main"),
+        "main ran before the window closed"
+    );
+    bot.scripts.finish_configure(request);
+    wait_until_done(&bot);
+    assert!(bot.logs.script.text().contains("done"));
+
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.set_interactive(true);
+    bot.scripts
+        .load(&options_script("DontPreconfigure", true, ""));
+    script::start(&bot).unwrap();
+    wait_until_done(&bot);
+    assert!(bot.logs.script.text().contains("done"));
+}
+
+#[test]
+fn config_configure_waits_for_the_window_and_stop_ends_the_wait() {
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.set_interactive(true);
+    bot.scripts.load(&options_script(
+        "Configure",
+        true,
+        r#"bot.log(`has=${bot.config.has("On")} missing=${bot.config.has("Off")}`);
+    bot.config.configure();"#,
+    ));
+    script::start(&bot).unwrap();
+    let request = wait_for_request(&bot);
+    bot.scripts.finish_configure(request);
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(log.contains("has=true missing=false"), "{log}");
+    assert!(log.contains("done"), "{log}");
+
+    script::start(&bot).unwrap();
+    wait_for_request(&bot);
+    script::stop(&bot);
+    wait_until_done(&bot);
+    assert_eq!(bot.scripts.configure_request(), None);
+    let log = bot.logs.script.text();
+    assert_eq!(log.matches("done").count(), 1, "{log}");
+    assert!(log.contains("stopped"), "{log}");
+}
+
+#[test]
+fn silent_runs_and_runs_without_a_ui_dont_show_the_window() {
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts
+        .load(&options_script("NoUi", false, "bot.config.configure();"));
+    script::start(&bot).unwrap();
+    wait_until_done(&bot);
+    assert!(bot.logs.script.text().contains("done"));
+
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.set_interactive(true);
+    bot.scripts
+        .load(&options_script("Silent", false, "bot.config.configure();"));
+    script::start_silent(&bot).unwrap();
+    wait_until_done(&bot);
+    assert!(bot.logs.script.text().contains("done"));
+}
+
 #[test]
 fn a_bot_call_outside_main_makes_the_options_fail() {
     let dir = temp_dir("options-toplevel");
@@ -264,9 +375,11 @@ fn potions_declares_its_csharp_options() {
         .unwrap()
         .expect("Potions declares options");
     assert_eq!(declaration.storage, "Potionv2");
-    assert_eq!(declaration.options.len(), 20);
+    assert_eq!(declaration.options.len(), 21);
     assert_eq!(declaration.options[0].name, "BuyReagents");
     assert_eq!(declaration.options[1].name, "PotionQuant");
+    assert_eq!(declaration.options[3].name, "SkipOption");
+    assert!(declaration.dont_preconfigure);
     assert!(declaration.options.iter().any(|o| o.name == "FarmSoul"));
 }
 

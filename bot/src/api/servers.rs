@@ -1118,7 +1118,7 @@ fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>)
     let relogged = ensure_relogin(&ctx, None)?;
     ctx.check()?;
     if was_running && relogged {
-        if let Err(e) = crate::script::start(bot) {
+        if let Err(e) = crate::script::start_silent(bot) {
             bot.log(format!("Couldn't restart the script: {e}"));
         }
     } else if was_running {
