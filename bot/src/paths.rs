@@ -45,6 +45,11 @@ impl Paths {
         self.root.join("monitor-key")
     }
 
+    /// The web monitor's bots as last seen (`monitor::Hub`), shown offline after a restart.
+    pub fn monitor_file(&self) -> PathBuf {
+        self.root.join("monitor.json")
+    }
+
     /// The account list (`accounts::Accounts`); passwords are in the system keychain.
     pub fn accounts_file(&self) -> PathBuf {
         self.root.join("accounts.json")

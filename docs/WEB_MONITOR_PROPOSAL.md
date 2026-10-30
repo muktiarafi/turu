@@ -1,6 +1,6 @@
 # Proposal: Turu Monitor, a built-in web dashboard
 
-Status: phase 1 built (see "Phase 1 as built" below). Replaces the "Skua Nexus Webhook URL" in Options > Application
+Status: phases 1 to 3 built (see "As built" below); phase 4 not started. Replaces the "Skua Nexus Webhook URL" in Options > Application
 with a dashboard Turu serves itself. Reference: `../Skua-Nexus` (`relay.py`, `index.html`,
 `dashboard_gui.py`).
 
@@ -203,15 +203,25 @@ Options > Application gets a **Monitor** chip (in place of the Nexus entries und
 note in the Webhooks chip; the Discord webhook keeps everything it does now. Command line:
 `--monitor[=<address>]` for headless servers, like `--api`.
 
-## Phase 1 as built
+## As built
 
-Differences from the plan above, kept for the later phases:
+Differences from the plan above:
 
-* The hub is the bots themselves: each `Bot` has a `monitor::Sampler` (its latest snapshot and a
-  "Turu Monitor" thread), and the server asks the app for the bots (`server::Sources`: this
-  window's tabs). The hub of decision 4 comes with Army children in phase 2.
-* One route, `GET /api/state` (version, uptime, every bot), instead of `/api/bots` and
-  `/api/usage`; `GET /api/events` sends the same state every second as `event: state`.
+* Each `Bot` has a `monitor::Sampler`: its latest snapshot, its last 200 events, and a "Turu
+  Monitor" thread that samples while the page is watched. The control API's `GET /snapshot`
+  samples on demand (Army polls it with `since` for the events and `slow=1` while watched).
+* The `monitor::Hub` (decision 4) holds the entries: tabs copied from their samplers every
+  second, Army clients from the poll, offline ones from `monitor.json`. Army's `ClientState`
+  keeps only the process (`answered`, `error`, `exited`); Army Control reads the game from the
+  hub.
+* One route, `GET /api/state` (version, uptime, `allowControl`, every entry), instead of
+  `/api/bots` and `/api/usage`; `GET /api/events` sends the same state every second as
+  `event: state`; `GET /api/bots/<id>` has the events and history.
+* **Control is on by default** (Allow Control), and there is one key, not view / control / push
+  keys. A command is refused unless it carries the page's own `Origin` or the key, so another
+  site can't send one through a browser on this computer, and DNS rebinding fails the `Host`
+  check first. `POST /script/start` starts only the loaded script (no `path`), so the page can't
+  run an arbitrary file.
 * The page reads the event stream with `fetch`, which sends the key in `Authorization`, so no
   tickets are needed.
 * No `--monitor` flag yet; a headless client serves it when `settings.json` has it on.

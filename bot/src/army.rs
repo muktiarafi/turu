@@ -9,7 +9,8 @@
 //!   for it (`TURU_API_TOKEN`). Army commands are requests to that API, where VibeSkua sends
 //!   window messages; this process's own clients (its tabs) take them through
 //!   `control_api::local`.
-//! * A "Turu Army" thread asks every client for `/status` every [`POLL_INTERVAL`].
+//! * A "Turu Army" thread asks every client for `/snapshot` every [`POLL_INTERVAL`] and hands
+//!   the answer to the web monitor's hub ([`crate::monitor::Hub`]), where Army Control reads it.
 
 use crate::Bot;
 use parking_lot::Mutex;
@@ -27,9 +28,9 @@ pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// VibeSkua's staggered launch: 500 ms plus up to 400 ms between two accounts.
 const LAUNCH_DELAY_MS: u64 = 500;
 const LAUNCH_JITTER_MS: u64 = 400;
-/// `/status` answers at once; logins and joins can take a minute.
+/// `/snapshot` answers at once; logins and joins can take a minute.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// What to launch.
 #[derive(Debug, Clone, Default)]
@@ -46,11 +47,11 @@ pub struct Launch {
     pub headless: bool,
 }
 
-/// What a client last said.
+/// How a client's process is doing; its game is in the hub.
 #[derive(Debug, Clone, Default)]
 pub struct ClientState {
-    /// `GET /status`, while it answers.
-    pub status: Option<Value>,
+    /// Its control API has answered once.
+    pub answered: bool,
     /// Why it didn't answer.
     pub error: Option<String>,
     /// The process ended, with this description of its exit status.
@@ -105,7 +106,6 @@ impl Client {
             Ok(Some(status)) => {
                 let mut state = self.state.lock();
                 state.exited = Some(status.to_string());
-                state.status = None;
                 true
             }
             Ok(None) => false,
@@ -214,6 +214,8 @@ pub struct Army {
     polling: AtomicBool,
     /// Launches waiting for their turn (the staggered batch).
     queued: Mutex<Vec<String>>,
+    /// Where the clients' snapshots go.
+    hub: Mutex<Option<Arc<crate::monitor::Hub>>>,
 }
 
 impl Army {
@@ -224,7 +226,18 @@ impl Army {
             http: reqwest::blocking::Client::new(),
             polling: AtomicBool::new(false),
             queued: Mutex::default(),
+            hub: Mutex::default(),
         })
+    }
+
+    pub fn set_hub(&self, hub: Arc<crate::monitor::Hub>) {
+        *self.hub.lock() = Some(hub);
+    }
+
+    fn forget_in_hub(&self, username: &str) {
+        if let Some(hub) = self.hub.lock().clone() {
+            hub.remove(&crate::monitor::hub::army_id(username));
+        }
     }
 
     pub fn clients(&self) -> Vec<Arc<Client>> {
@@ -361,11 +374,24 @@ impl Army {
         for client in removed {
             client.kill();
         }
+        self.forget_in_hub(username);
     }
 
     /// Forgets the clients that have ended.
     pub fn clear_exited(&self) {
-        self.clients.lock().retain(|c| c.is_running());
+        let ended: Vec<String> = {
+            let mut clients = self.clients.lock();
+            let ended = clients
+                .iter()
+                .filter(|c| !c.is_running())
+                .map(|c| c.username.clone())
+                .collect();
+            clients.retain(|c| c.is_running());
+            ended
+        };
+        for username in ended {
+            self.forget_in_hub(&username);
+        }
     }
 
     /// Ends every client (the window is closing).
@@ -422,6 +448,17 @@ impl Army {
         }
     }
 
+    /// Sends any control API request to one client (the web monitor's commands and logs).
+    pub fn forward(
+        &self,
+        client: &Client,
+        post: bool,
+        path: &str,
+        body: Vec<u8>,
+    ) -> Result<Value, String> {
+        self.request(client, post, path, body, COMMAND_TIMEOUT)
+    }
+
     fn request(
         &self,
         client: &Client,
@@ -461,19 +498,8 @@ impl Army {
             .spawn(move || {
                 while let Some(army) = army.upgrade() {
                     for client in army.clients() {
-                        if client.reap() {
-                            continue;
-                        }
-                        let status =
-                            army.request(&client, false, "/status", Vec::new(), STATUS_TIMEOUT);
-                        let mut state = client.state.lock();
-                        match status {
-                            Ok(status) => {
-                                state.status = Some(status);
-                                state.error = None;
-                            }
-                            // Starting up (the API isn't listening yet), or busy.
-                            Err(e) => state.error = Some(e),
+                        if !client.reap() {
+                            army.poll(&client);
                         }
                     }
                     drop(army);
@@ -482,6 +508,39 @@ impl Army {
             });
         if spawned.is_err() {
             self.polling.store(false, Ordering::Release);
+        }
+    }
+}
+
+impl Army {
+    /// Asks the client for its snapshot and new events (the slow fields only while someone
+    /// watches the monitor) and hands them to the hub.
+    fn poll(self: &Arc<Self>, client: &Arc<Client>) {
+        let hub = self.hub.lock().clone();
+        let since = hub.as_ref().map_or(0, |h| h.next_event(&client.username));
+        let slow = u8::from(crate::monitor::watched());
+        let path = format!("/snapshot?since={since}&slow={slow}");
+        let reply = self.request(client, false, &path, Vec::new(), STATUS_TIMEOUT);
+        let reply = match reply {
+            Ok(reply) => reply,
+            Err(e) => {
+                // Starting up (the API isn't listening yet), or busy.
+                client.state.lock().error = Some(e);
+                return;
+            }
+        };
+        {
+            let mut state = client.state.lock();
+            state.answered = true;
+            state.error = None;
+        }
+        let Some(hub) = hub else { return };
+        let snapshot = serde_json::from_value(reply["snapshot"].clone());
+        let events = serde_json::from_value(reply["events"].clone()).unwrap_or_default();
+        let next = reply["next"].as_u64().unwrap_or(since);
+        match snapshot {
+            Ok(snapshot) => hub.record_army(self, client, snapshot, events, next),
+            Err(e) => client.state.lock().error = Some(format!("a snapshot I can't read: {e}")),
         }
     }
 }

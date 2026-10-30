@@ -40,6 +40,7 @@ static TABS: Mutex<Option<Tabs>> = Mutex::new(None);
 /// Where tab requests go ([`request_tab`]); set when the window opens.
 static EVENT_LOOP: Mutex<Option<EventLoopProxy<RuffleEvent>>> = Mutex::new(None);
 static ARMY: OnceLock<Arc<turu_bot::army::Army>> = OnceLock::new();
+static MONITOR_HUB: OnceLock<Arc<turu_bot::monitor::Hub>> = OnceLock::new();
 // Turu: Search Scripts' repository, and whether Army > Accounts launched this client.
 static SCRIPT_REPO: OnceLock<Arc<turu_bot::repo::ScriptRepo>> = OnceLock::new();
 static LAUNCHED_BY_ARMY: AtomicBool = AtomicBool::new(false);
@@ -214,7 +215,30 @@ pub fn start_script_updates() {
 pub fn army() -> &'static Arc<turu_bot::army::Army> {
     ARMY.get_or_init(|| {
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(APP_NAME.to_lowercase()));
-        turu_bot::army::Army::new(exe)
+        let army = turu_bot::army::Army::new(exe);
+        army.set_hub(monitor_hub().clone());
+        army
+    })
+}
+
+/// The web monitor's hub: this window's tabs and the Army clients, kept even while the monitor
+/// is off (Army Control reads the clients from it).
+pub fn monitor_hub() -> &'static Arc<turu_bot::monitor::Hub> {
+    MONITOR_HUB.get_or_init(|| {
+        let hub = turu_bot::monitor::Hub::new(Some(bot().paths.monitor_file()));
+        hub.set_tabs(Arc::new(|| {
+            tabs()
+                .into_iter()
+                .enumerate()
+                .map(|(i, (id, bot))| turu_bot::monitor::hub::Source {
+                    id: format!("tab:{}", id.0),
+                    label: format!("Tab {}", i + 1),
+                    bot,
+                })
+                .collect()
+        }));
+        hub.start();
+        hub
     })
 }
 
@@ -395,7 +419,7 @@ pub fn apply_monitor(settings: &turu_bot::settings::AppSettings) {
 }
 
 fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64) {
-    use turu_bot::monitor::server::{Key, Server, Source, load_key};
+    use turu_bot::monitor::server::{Key, Server, load_key};
     if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
         return;
     }
@@ -406,6 +430,9 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
     let port = u16::try_from(settings.monitor_port).unwrap_or(turu_bot::monitor::DEFAULT_PORT);
     let wanted = settings.monitor_enabled.then_some((settings.monitor_allow_other_devices, port));
     if wanted == monitor.running && (monitor.server.is_some() || wanted.is_none()) {
+        if let Some(server) = &monitor.server {
+            server.set_allow_control(settings.monitor_allow_control);
+        }
         return;
     }
     // Closes the old listener before binding the new one (the same port, maybe).
@@ -435,18 +462,8 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
     } else {
         std::net::Ipv4Addr::LOCALHOST
     };
-    let sources = Arc::new(|| {
-        tabs()
-            .into_iter()
-            .enumerate()
-            .map(|(i, (id, bot))| Source {
-                id: format!("tab:{}", id.0),
-                label: format!("Tab {}", i + 1),
-                bot,
-            })
-            .collect()
-    });
-    match Server::start((ip, port).into(), key, sources, VERSION.into()) {
+    let hub = monitor_hub().clone();
+    match Server::start((ip, port).into(), key, hub, VERSION.into(), settings.monitor_allow_control) {
         Ok(server) => {
             tracing::info!("Web monitor on http://{}", server.addr());
             monitor.server = Some(server);

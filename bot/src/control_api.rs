@@ -6,6 +6,7 @@
 //! | Route | What |
 //! |---|---|
 //! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats. |
+//! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, and `next`. Army polls it. |
 //! | `POST /script/load?path=` | Load a script (relative to the scripts folder, or absolute). |
 //! | `POST /script/start[?path=]` | Start the loaded script, or load and start `path`. |
 //! | `POST /script/stop`, `/script/pause`, `/script/resume` | |
@@ -203,6 +204,12 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
     };
     match (url.path(), post) {
         ("/status", false) => ok(status(bot)),
+        ("/snapshot", false) => {
+            let since = query("since").and_then(|s| s.parse().ok()).unwrap_or(0);
+            let snapshot = crate::monitor::sample(bot, query("slow").as_deref() == Some("1"));
+            let (events, next) = bot.monitor.events_since(since);
+            ok(json!({ "snapshot": snapshot, "events": events, "next": next }))
+        }
         ("/script/load", true) => match query("path") {
             Some(path) => load(bot, &path).map_or_else(|e| e, |path| ok(json!({ "loaded": path }))),
             None => error(400, "path is missing"),
@@ -288,9 +295,9 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             ok(json!({ "registered": bot.quests.registered() }))
         }
         (
-            "/status" | "/script/load" | "/script/start" | "/script/stop" | "/script/pause"
-            | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout" | "/map/join"
-            | "/player/goto" | "/house" | "/quests/register",
+            "/status" | "/snapshot" | "/script/load" | "/script/start" | "/script/stop"
+            | "/script/pause" | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout"
+            | "/map/join" | "/player/goto" | "/house" | "/quests/register",
             _,
         ) => error(405, "wrong method"),
         _ => error(404, "no such route"),

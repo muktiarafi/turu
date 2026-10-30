@@ -114,8 +114,8 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   `DiscordWebhookService`): one thread posting embeds, two a second, retrying on 429; the health
   pings' snapshot is read on that thread. The drop alert has no screenshot (VibeSkua attaches
   one). Failures go to the Debug log. Monitor (in place of VibeSkua's Skua Nexus webhook):
-  Enable Web Monitor, Allow Other Devices, Monitor Port (applied half a second after the last
-  change), Monitor Link (Open, Copy Link with the key after `#`, the network address with Allow
+  Enable Web Monitor, Allow Other Devices, Allow Control (on by default: the page can start,
+  stop and relog bots), Monitor Port (applied half a second after the last change), Monitor Link (Open, Copy Link with the key after `#`, the network address with Allow
   Other Devices; Copy Key) and Regenerate Key (asks twice), with the server's state below.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread), the list (check box, a green dot
@@ -123,8 +123,8 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Unselect All, Add Selected to Group and Select group, and Launch: Server (the same drop-down
   as Relogin Server, `widgets::server_combo`), where (In a tab, In its own window, Without a
   window), the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
-* **Army Control** (`army.rs`): the launched clients (state, server, map, cell, HP, script;
-  Close, Clear Ended, Close All) after this window's tabs (script, last map; Show), "Include
+* **Army Control** (`army.rs`): the launched clients (state, server, map, cell, HP, script, from
+  the web monitor's hub, which the Army poll feeds; Close, Clear Ended, Close All) after this window's tabs (script, last map; Show), "Include
   this window's tabs", Start / Stop All Scripts, Load Script
   to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
   Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,

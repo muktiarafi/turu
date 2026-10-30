@@ -119,19 +119,29 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook; the skill-set and junk-item update switches are stored only.
-- **Web monitor** (phase 1 of `docs/turu/WEB_MONITOR_PROPOSAL.md`, replacing the Skua Nexus
-  webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`) on
-  `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
-  live: Skua Nexus's cards (state, map, level and class, gold, AC, bag slots, script and run time,
-  HP / MP / target bars, quests, equipment, the Combat > Stats counters) plus gold and XP per hour
-  since the monitor saw the script start, and its Scripts / Accounts / Resources tables, a filter
-  and streamer mode. Each bot's sampler (`bot/src/monitor/`) reads a `Snapshot` every 2 s only
-  while a page is open (items and quests every 30 s or after they change); the webhooks format
-  the same `Snapshot`. The server (`monitor/server.rs`) is read only: `/api/state` and an SSE
-  stream, the key from `monitor-key` required except from a loopback connection naming a
-  loopback host (so Tailscale Serve needs it too). Clients launched by Army don't serve it.
-  Checked in a browser with the headless client at the login screen; the in-game cards only with
-  sample data. Not built: phases 2 to 4 (Army children, events, history, control, remote clients).
+- **Web monitor** (phases 1 to 3 of `docs/turu/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
+  Nexus webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`)
+  on `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
+  and the clients Army > Accounts launched, live: Skua Nexus's cards (state, map, level and class,
+  gold, AC, bag slots, script and run time, HP / MP / target bars, quests, equipment, the Combat >
+  Stats counters) plus gold and XP per hour and the last events, its Scripts / Accounts /
+  Resources tables, a filter and streamer mode. A bot's detail view has its events, its script and
+  debug log, and an hour-by-hour history (gold, XP, kills, drops; a point a minute, 6 h).
+  **Control** (Allow Control, on by default): Start / Pause / Resume / Stop the loaded script, Log
+  in, Relogin, Log out, House and Join map, on one bot or the selected ones (asking first for the
+  ones that interrupt), and Forget for offline entries. The hub (`monitor/hub.rs`) keeps every
+  entry: tabs from their sampler, Army clients from the Army poll's `GET /snapshot`; it saves to
+  `monitor.json` every minute, so after a restart the last characters show offline for a day.
+  Army Control reads the clients from the hub. Each tab's sampler reads a `Snapshot` every 2 s
+  only while a page is open (items and quests every 30 s or after they change); Army clients are
+  read every 2 s, their slow fields only while a page is open. The webhooks format the same
+  `Snapshot`. The `api` routes need the key from `monitor-key` except from a loopback connection
+  naming a loopback host (so Tailscale Serve needs it); a command also needs the page's own
+  `Origin` or the key. Clients launched by Army don't serve it. Checked: the tests (a real
+  Army client reaching the hub is an ignored test, `TURU_EXE=target/debug/turu cargo test -p
+  turu_bot --test monitor -- --ignored`) and the page against the headless client at the login
+  screen; the in-game cards, commands and history only with sample data. Not built: phase 4
+  (remote clients pushing to the monitor, `--monitor`, QR pairing) and browser notifications.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
   Options, Game, Application and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
 

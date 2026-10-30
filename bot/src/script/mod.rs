@@ -426,6 +426,10 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
                 .file_name()
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             bot.log(format!("Started script {name}"));
+            bot.monitor.event(
+                crate::monitor::EventKind::ScriptStarted,
+                format!("Started {name}"),
+            );
             bot.webhooks.send(Notice::ScriptStarted {
                 script: script_stem(&path),
             });
@@ -482,18 +486,26 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.quests.unregister_all();
     bot.handlers.clear();
     bot.options.write().reset_after_script();
+    use crate::monitor::EventKind;
     let mut error = None;
     let status = match result {
         Ok(()) => {
             bot.log(format!("Script {name} finished"));
+            bot.monitor
+                .event(EventKind::ScriptStopped, format!("{name} finished"));
             ScriptStatus::Loaded
         }
         Err(runtime::RunError::Stopped) => {
             bot.log(format!("Script {name} stopped"));
+            bot.monitor
+                .event(EventKind::ScriptStopped, format!("{name} stopped"));
             ScriptStatus::Loaded
         }
         Err(runtime::RunError::Failed(message)) => {
             bot.log(format!("Script {name} failed:\n{message}"));
+            let first = message.lines().next().unwrap_or_default();
+            bot.monitor
+                .event(EventKind::ScriptError, format!("{name} failed: {first}"));
             error = Some(message);
             ScriptStatus::Error
         }

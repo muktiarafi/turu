@@ -7,11 +7,13 @@ use super::widgets::{self, Kind};
 use crate::gui::FilePicker;
 use egui::{Align, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use rfd::AsyncFileDialog;
-use serde_json::{Value, json};
+use serde_json::json;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use turu_bot::army::{Client, Command};
+use turu_bot::monitor::Snapshot;
+use turu_bot::monitor::snapshot::BotState;
 
 /// How many command outcomes the window keeps.
 const RESULTS: usize = 40;
@@ -321,13 +323,15 @@ fn tab_row(ui: &mut Ui, tab: crate::turu::TabId, bot: &turu_bot::Bot) {
     });
 }
 
-/// One client: a dot, its name, where it is, its script, and Close.
+/// One client: a dot, its name, where it is, its script, and Close. Its game comes from the
+/// monitor's hub, which the Army poll feeds.
 fn client_row(ui: &mut Ui, client: &Arc<Client>) {
     let state = client.state();
-    let (color, summary) = match (&state.exited, &state.status) {
-        (Some(exit), _) => (DANGER, format!("ended ({exit})")),
-        (None, None) => (MUTED, "starting…".to_owned()),
-        (None, Some(status)) => (SUCCESS, summarize(status)),
+    let snapshot = crate::turu::monitor_hub().army_snapshot(&client.username);
+    let (color, summary) = match (&state.exited, state.answered, &snapshot) {
+        (Some(exit), _, _) => (DANGER, format!("ended ({exit})")),
+        (None, true, Some(snapshot)) => (SUCCESS, summarize(snapshot)),
+        (None, _, _) => (MUTED, "starting…".to_owned()),
     };
     ui.horizontal(|ui| {
         widgets::dot(ui, color, 4.0);
@@ -346,44 +350,35 @@ fn client_row(ui: &mut Ui, client: &Arc<Client>) {
             {
                 crate::turu::army().close(&client.username);
             }
-            if let Some(status) = &state.status {
-                let script = &status["script"];
-                if let Some(path) = script["path"].as_str() {
-                    let name = std::path::Path::new(path)
-                        .file_name()
-                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                    let running = script["running"].as_bool().unwrap_or(false);
-                    let color = if running { SUCCESS } else { MUTED };
-                    ui.label(RichText::new(name).monospace().size(11.0).color(color))
-                        .on_hover_text(script["status"].as_str().unwrap_or_default());
-                }
+            if state.exited.is_none()
+                && let Some(snapshot) = &snapshot
+                && let Some(path) = &snapshot.script.path
+            {
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                let color = if snapshot.script.running { SUCCESS } else { MUTED };
+                ui.label(RichText::new(name).monospace().size(11.0).color(color))
+                    .on_hover_text(&snapshot.script.status);
             }
         });
     });
 }
 
 /// "battleon, Enter · 2400/2400 HP", "login screen", "relogging", ...
-fn summarize(status: &Value) -> String {
-    if status["relogging"].as_bool() == Some(true) {
+fn summarize(snapshot: &Snapshot) -> String {
+    if snapshot.relogging {
         return "relogging".into();
     }
-    if status["gameLoaded"].as_bool() != Some(true) {
-        return "loading the game".into();
-    }
-    if status["loggedIn"].as_bool() != Some(true) {
-        return "login screen".into();
-    }
-    let Some(map) = status["map"].as_str() else {
-        return "joining".into();
+    let map = match snapshot.state {
+        BotState::NotLoaded => return "loading the game".into(),
+        BotState::LoggedOut => return "login screen".into(),
+        _ if snapshot.map.is_empty() => return "joining".into(),
+        _ => &snapshot.map,
     };
-    let cell = status["cell"].as_str().unwrap_or_default();
-    let (hp, max) = (
-        status["health"].as_i64().unwrap_or(0),
-        status["maxHealth"].as_i64().unwrap_or(0),
-    );
-    let mut text = format!("{map}, {cell} · {hp}/{max} HP");
-    if let Some(server) = status["server"].as_str().filter(|s| !s.is_empty()) {
-        text = format!("{server} · {text}");
+    let mut text = format!("{map}, {} · {}/{} HP", snapshot.cell, snapshot.hp.cur, snapshot.hp.max);
+    if !snapshot.server.is_empty() {
+        text = format!("{} · {text}", snapshot.server);
     }
     text
 }

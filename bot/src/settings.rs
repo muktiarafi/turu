@@ -39,6 +39,8 @@ pub struct AppSettings {
     /// Listen on every network interface (other devices, Tailscale), not only this computer.
     pub monitor_allow_other_devices: bool,
     pub monitor_port: i32,
+    /// The page can start, stop and relog bots.
+    pub monitor_allow_control: bool,
 }
 
 impl Default for AppSettings {
@@ -64,6 +66,7 @@ impl Default for AppSettings {
             monitor_enabled: false,
             monitor_allow_other_devices: false,
             monitor_port: crate::monitor::DEFAULT_PORT as i32,
+            monitor_allow_control: true,
         }
     }
 }

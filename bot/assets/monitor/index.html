@@ -32,18 +32,22 @@ body {
   background: var(--bg); color: var(--text);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 button {
   background: var(--card); border: 1px solid var(--edge); border-radius: var(--small);
   padding: 6px 12px; cursor: pointer;
 }
 button:hover { background: var(--hover); }
-button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-input[type=text], input[type=password] {
+button:disabled { opacity: .45; cursor: default; }
+button.on, button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--edge)); }
+button.small { padding: 3px 9px; font-size: 13px; }
+input[type=text], input[type=password], select {
   background: var(--inset); border: 1px solid var(--edge); border-radius: var(--small);
   padding: 6px 10px; min-width: 0;
 }
-input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+input:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 header {
   position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--edge);
@@ -64,8 +68,10 @@ header {
 .tools { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .bar-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px 0; }
-.bar-row input { flex: 1 1 180px; max-width: 320px; }
+.bar-row input[type=text] { flex: 1 1 180px; max-width: 320px; }
 .views { display: flex; gap: 4px; flex-wrap: wrap; }
+.bulk { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+.bulk[hidden] { display: none; }
 .notice {
   margin: 12px 16px 0; padding: 10px 14px; border-radius: var(--small);
   background: color-mix(in srgb, var(--warn) 14%, var(--card)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--edge));
@@ -73,12 +79,16 @@ header {
 main { padding: 12px 16px 24px; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
 .empty { color: var(--muted); padding: 32px 0; text-align: center; }
+h2.group { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin: 18px 0 8px; }
+h2.group:first-child { margin-top: 0; }
 
-.card { background: var(--card); border: 1px solid var(--edge); border-radius: var(--radius); padding: 14px; min-width: 0; }
-.card.stale { opacity: .6; }
+.card { background: var(--card); border: 1px solid var(--edge); border-radius: var(--radius); padding: 14px; min-width: 0; display: flex; flex-direction: column; }
+.card.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.card.stale, .card.offline { opacity: .65; }
 .card .hd { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .chip { font-size: 12px; color: var(--muted); background: var(--inset); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
-.name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; }
+.name:hover { color: var(--accent); background: none; }
 .pill { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
 .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
 .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
@@ -105,6 +115,15 @@ details ul { margin: 6px 0 0; padding-left: 18px; }
 .stats div { background: var(--inset); border-radius: var(--small); padding: 6px 2px; }
 .stats b { display: block; font-variant-numeric: tabular-nums; }
 .stats small { color: var(--muted); font-size: 11px; }
+.recent { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.recent li, .events li { display: flex; gap: 8px; min-width: 0; }
+.recent li span:last-child, .events li span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.when { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ev-scriptError, .ev-death, .ev-connectionLost { color: var(--bad); }
+.ev-relogin, .ev-logout { color: var(--warn); }
+.ev-drop { color: var(--ok); }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 12px; }
+.actions .spacer { flex: 1; }
 
 .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--edge); border-radius: var(--radius); }
 table { width: 100%; border-collapse: collapse; }
@@ -119,13 +138,31 @@ dialog { background: var(--panel); color: var(--text); border: 1px solid var(--e
 dialog::backdrop { background: rgb(0 0 0 / .5); }
 dialog h2 { margin: 0 0 6px; font-size: 16px; }
 dialog p { color: var(--muted); margin: 0 0 12px; }
-dialog input { width: 100%; }
+dialog input[type=password] { width: 100%; }
 dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+#detail { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; }
+#detail[open] { display: flex; flex-direction: column; }
+.d-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--edge); }
+.d-head h2 { margin: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-body { padding: 14px 18px; overflow: auto; display: grid; gap: 14px; }
+.d-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.d-controls input { width: 120px; }
+.d-tabs { display: flex; gap: 4px; }
+.log { background: var(--inset); border: 1px solid var(--edge); border-radius: var(--small); height: 320px; overflow: auto; padding: 8px 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+.events { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 320px; overflow: auto; }
+.chart { display: grid; gap: 10px; }
+.chart figure { margin: 0; background: var(--inset); border: 1px solid var(--edge); border-radius: var(--small); padding: 10px 12px; }
+.chart figcaption { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.chart figcaption b { color: var(--text); font-variant-numeric: tabular-nums; }
+.chart svg { display: block; width: 100%; height: 80px; }
+.toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; max-width: calc(100vw - 32px); }
+.toast { background: var(--panel); border: 1px solid var(--edge); border-left: 3px solid var(--ok); border-radius: var(--small); padding: 8px 12px; box-shadow: 0 6px 20px rgb(0 0 0 / .3); }
+.toast.bad { border-left-color: var(--bad); }
 
 body.streamer .priv { filter: blur(6px); }
 @media (max-width: 560px) {
-  header { padding: 10px 16px; }
   .summary { order: 3; width: 100%; }
+  .bulk { margin-left: 0; }
 }
 </style>
 </head>
@@ -144,19 +181,36 @@ body.streamer .priv { filter: blur(6px); }
 <div class="bar-row">
   <input type="text" id="filter" placeholder="Filter bots" aria-label="Filter bots">
   <div class="views" id="views" role="tablist"></div>
+  <div class="bulk" id="bulk" hidden></div>
 </div>
 <main id="main"></main>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <dialog id="keyDialog">
   <form method="dialog">
     <h2>Monitor key</h2>
-    <p>Other devices need the key from Turu: Options &gt; Application &gt; Web Monitor &gt; Copy Link or Copy Key.</p>
+    <p>Other devices need the key from Turu: Options &gt; Application &gt; Monitor &gt; Copy Link or Copy Key.</p>
     <input type="password" id="keyInput" autocomplete="off" aria-label="Monitor key">
-    <div class="row"><button value="cancel">Cancel</button><button value="save" class="on" id="keySave">Save</button></div>
+    <div class="row"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>
   </form>
+</dialog>
+<dialog id="confirmDialog">
+  <form method="dialog">
+    <h2 id="confirmTitle">Are you sure?</h2>
+    <p id="confirmText"></p>
+    <div class="row"><button value="cancel">Cancel</button><button value="ok" class="primary" id="confirmOk">OK</button></div>
+  </form>
+</dialog>
+<dialog id="detail" aria-labelledby="dTitle">
+  <div class="d-head"><span class="chip" id="dChip"></span><h2 id="dTitle" class="priv"></h2><span class="pill" id="dPill"></span><button type="button" id="dClose" aria-label="Close">✕</button></div>
+  <div class="d-body">
+    <div class="d-controls" id="dControls"></div>
+    <div class="d-tabs" id="dTabs" role="tablist"></div>
+    <div id="dPane"></div>
+  </div>
 </dialog>
 <script>
 "use strict";
-// Display only: the bots' snapshots come from GET /api/events (bot/src/monitor/server.rs).
+// The bots come from GET /api/events; commands go to POST /api/bots/<id>/... (bot/src/monitor/server.rs).
 const $ = s => document.querySelector(s);
 const STALE_MS = 15000;
 const KEY = "turu-monitor-key";
@@ -169,6 +223,8 @@ const fmt = n => (n ?? 0).toLocaleString();
 const pct = (a, b) => b > 0 ? Math.max(0, Math.min(100, a / b * 100)) : 0;
 const clock = s => s == null ? "-" : `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 const perHour = (n, s) => s >= 60 ? Math.round(n * 3600 / s) : null;
+const ago = ms => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`; };
+const time = at => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 // A link from Turu carries the key after "#key=": the browser never sends it to a server.
 (() => {
@@ -181,7 +237,11 @@ const perHour = (n, s) => s >= 60 ? Math.round(n * 3600 / s) : null;
 let key = store.get(KEY) || "";
 let state = null, view = store.get("turu-monitor-view") || "cards";
 let sort = { col: null, dir: 1 };
+const picked = new Set();
 const openSections = new Map(Object.entries(JSON.parse(store.get("turu-monitor-sections") || "{}")));
+const headers = () => key ? { Authorization: `Bearer ${key}` } : {};
+const control = () => state?.allowControl === true;
+const byId = id => state?.bots.find(b => b.id === id);
 
 const STATES = {
   playing: ["Playing", "ok"], dead: ["Dead", "bad"], loading: ["Loading", "warn"],
@@ -189,13 +249,15 @@ const STATES = {
 };
 function status(b) {
   const s = b.snapshot;
-  if (!s) return ["Waiting…", "off"];
-  if (state.now - s.sampledAt > STALE_MS) return ["Not responding", "bad"];
+  if (!b.online) return [b.lastSeen ? `Offline · ${ago(state.now - b.lastSeen)}` : "Offline", "off"];
+  if (!s) return [b.kind === "army" ? "Starting…" : "Waiting…", "off"];
+  if (b.kind === "tab" && state.now - s.sampledAt > STALE_MS) return ["Not responding", "bad"];
   if (s.relogging) return ["Relogging", "warn"];
   if (s.script.status === "[Error]") return ["Script error", "bad"];
   const [label, kind] = STATES[s.state] || [s.state, "off"];
   return [s.state === "playing" && s.script.running ? (s.script.status === "[Paused]" ? "Paused" : "Running") : label, kind];
 }
+const chip = b => b.kind === "offline" ? "Last run" : b.kind === "army" ? `Army · ${b.label}` : b.label;
 const meter = (cur, max, color, label) =>
   `<div class="meter" role="meter" aria-label="${label}" aria-valuenow="${cur ?? 0}" aria-valuemax="${max ?? 0}"><i style="width:${pct(cur, max)}%;background:${color}"></i><em>${label} ${fmt(cur)} / ${fmt(max)}</em></div>`;
 function section(b, title, items) {
@@ -204,13 +266,44 @@ function section(b, title, items) {
   const list = items.length ? `<ul>${items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : `<div class="empty" style="padding:6px 0;text-align:left">None</div>`;
   return `<details data-id="${esc(id)}"${open ? " open" : ""}><summary><span>${title}</span><small>${esc(items[0] ?? "-")}${items.length > 1 ? ` +${items.length - 1}` : ""}</small></summary>${list}</details>`;
 }
+const eventRow = e => `<li class="ev-${esc(e.kind)}"><span class="when">${time(e.at)}</span><span>${esc(e.text)}</span></li>`;
+
+// The buttons a bot gets: [label, route, confirm text or null, style].
+function actionsFor(b, full) {
+  if (!control()) return [];
+  if (!b.online) return b.kind === "tab" ? [] : [["Forget", "/forget", `Forget ${b.snapshot?.name ?? b.label}? Its saved events and history go too.`, "danger"]];
+  const s = b.snapshot, list = [];
+  if (s?.script.running) {
+    list.push(s.script.status === "[Paused]" ? ["Resume", "/script/resume", null, ""] : ["Pause", "/script/pause", null, ""]);
+    list.push(["Stop", "/script/stop", `Stop ${s.script.name ?? "the script"} on ${s.name}?`, "danger"]);
+  } else if (s?.script.name) {
+    list.push([`Start ${s.script.name}`, "/script/start", null, "primary"]);
+  }
+  if (full) {
+    if (s && s.state !== "loggedOut" && s.state !== "notLoaded") {
+      list.push(["Relogin", "/relogin", `Log ${s.name} out and back in?`, ""]);
+      list.push(["House", "/house", null, ""]);
+      list.push(["Log out", "/logout", `Log ${s.name} out? Auto Relogin won't bring it back.`, "danger"]);
+    } else if (s?.state === "loggedOut") {
+      list.push(["Log in", "/login", null, "primary"]);
+    }
+  }
+  return list;
+}
+const buttons = (b, list, cls = "small") => list.map(([label, route, , style]) =>
+  `<button type="button" class="${cls} ${style}" data-act="${esc(route)}" data-id="${esc(b.id)}">${esc(label)}</button>`).join("");
 
 function card(b) {
   const s = b.snapshot, [label, kind] = status(b);
-  const head = `<div class="hd"><span class="chip">${esc(b.label)}</span><span class="name priv">${esc(s?.name ?? "")}</span><span class="pill ${kind}">${esc(label)}</span></div>`;
-  if (!s || s.state !== "playing" && s.state !== "dead" && s.state !== "loading") {
+  const on = picked.has(b.id);
+  const head = `<div class="hd"><input type="checkbox" data-pick="${esc(b.id)}" aria-label="Select ${esc(s?.name ?? b.label)}"${on ? " checked" : ""}><span class="chip">${esc(chip(b))}</span><button type="button" class="name priv" data-open="${esc(b.id)}" title="Details">${esc(s?.name ?? b.label)}</button><span class="pill ${kind}">${esc(label)}</span></div>`;
+  const acts = actionsFor(b, false);
+  const foot = `<div class="actions">${buttons(b, acts)}<span class="spacer"></span><button type="button" class="small" data-open="${esc(b.id)}">Details</button></div>`;
+  const cls = `card${on ? " picked" : ""}${b.online ? "" : " offline"}${b.online && b.kind === "tab" && s && state.now - s.sampledAt > STALE_MS ? " stale" : ""}`;
+  const recent = b.recent?.length ? `<ul class="recent">${b.recent.map(eventRow).join("")}</ul>` : "";
+  if (!s || !["playing", "dead", "loading"].includes(s.state)) {
     const script = s?.script?.name ? `<div class="kv"><span>Script</span><span>${esc(s.script.name)} ${esc(s.script.status)}</span></div>` : "";
-    return `<article class="card">${head}${script}</article>`;
+    return `<article class="${cls}">${head}${script}${recent}${foot}</article>`;
   }
   const inv = s.inventory.slots ? `${fmt(s.inventory.used)} / ${fmt(s.inventory.slots)}` : `${fmt(s.inventory.items)} items`;
   const run = s.stats.runSeconds;
@@ -218,7 +311,7 @@ function card(b) {
   const gph = sess && perHour(sess.gold, sess.seconds), xph = sess && perHour(sess.xp, sess.seconds);
   const map = s.map.match(/^(.*?)(-\d+)$/);
   const target = s.target ? meter(s.target.hp, s.target.maxHp, "var(--tg)", esc(s.target.name)) : "";
-  return `<article class="card${state.now - s.sampledAt > STALE_MS ? " stale" : ""}">${head}
+  return `<article class="${cls}">${head}
   <div class="kv">
     <span>Map</span><span>${map ? `${esc(map[1])}<span class="priv">${esc(map[2])}</span>` : esc(s.map || "-")}</span>
     <span>Cell</span><span>${esc(s.cell)} · ${esc(s.pad)}</span>
@@ -229,27 +322,29 @@ function card(b) {
     <span>Inventory</span><span>${inv}</span>
     <span>Script</span><span>${esc(s.script.name ?? "None")}${s.script.running && run != null ? ` · ${clock(run)}` : ""}</span>
   </div>
-  <div class="bars">${meter(s.hp.cur, s.hp.max, "var(--hp)", "HP")}${meter(s.mp.cur, s.mp.max, "var(--mp)", "MP")}${target}</div>
+  <div class="bars">${meter(s.hp.cur, s.hp.max, "var(--hp)", "HP")}${meter(s.mp.cur, s.mp.max, "var(--mp)", "MP")}${b.online ? target : ""}</div>
   ${sess ? `<div class="session"><span>Gold <b>+${fmt(sess.gold)}</b>${gph != null ? ` (${fmt(gph)}/h)` : ""}</span><span>XP <b>+${fmt(sess.xp)}</b>${xph != null ? ` (${fmt(xph)}/h)` : ""}</span></div>` : ""}
   ${section(b, "Quests", s.quests)}${section(b, "Equipment", s.equipment)}
   <div class="stats">${[["kills", "Kills"], ["drops", "Drops"], ["questsCompleted", "Quests"], ["deaths", "Deaths"], ["relogins", "Relogins"]]
     .map(([k, l]) => `<div><b>${fmt(s.stats[k])}</b><small>${l}</small></div>`).join("")}</div>
+  ${recent}${foot}
 </article>`;
 }
 
 // Table views (Skua Nexus's three): [title, value for sorting, html, numeric].
-const name = b => b.snapshot?.name ?? "";
+const name = b => b.snapshot?.name ?? b.label;
+const nameCell = b => `<button type="button" class="name priv" data-open="${esc(b.id)}">${esc(name(b))}</button>`;
 const TABLES = {
   scripts: [
-    ["Bot", b => b.label, b => esc(b.label)],
-    ["Character", name, b => `<span class="priv">${esc(name(b))}</span>`],
+    ["Bot", b => chip(b), b => esc(chip(b))],
+    ["Character", name, nameCell],
     ["Script", b => b.snapshot?.script.name ?? "", b => esc(b.snapshot?.script.name ?? "-")],
     ["Status", b => status(b)[0], b => { const [l, k] = status(b); return `<span class="pill ${k}">${esc(l)}</span>`; }],
     ["Run time", b => b.snapshot?.stats.runSeconds ?? -1, b => clock(b.snapshot?.stats.runSeconds), true],
     ["Gold / h", b => perHour(b.snapshot?.session?.gold ?? 0, b.snapshot?.session?.seconds ?? 0) ?? -1, b => { const s = b.snapshot?.session; const v = s && perHour(s.gold, s.seconds); return v == null ? "-" : fmt(v); }, true],
   ],
   accounts: [
-    ["Character", name, b => `<span class="priv">${esc(name(b))}</span>`],
+    ["Character", name, nameCell],
     ["Level", b => b.snapshot?.level ?? 0, b => fmt(b.snapshot?.level), true],
     ["Class", b => b.snapshot?.class ?? "", b => esc(b.snapshot?.class ?? "-")],
     ["Gold", b => b.snapshot?.gold ?? 0, b => `<span class="priv">${fmt(b.snapshot?.gold)}</span>`, true],
@@ -258,7 +353,7 @@ const TABLES = {
     ["Map", b => b.snapshot?.map ?? "", b => `<span class="priv">${esc(b.snapshot?.map || "-")}</span>`],
   ],
   resources: [
-    ["Character", name, b => `<span class="priv">${esc(name(b))}</span>`],
+    ["Character", name, nameCell],
     ...[["Kills", "kills"], ["Drops", "drops"], ["Quests", "questsCompleted"], ["Deaths", "deaths"], ["Relogins", "relogins"]]
       .map(([t, k]) => [t, b => b.snapshot?.stats[k] ?? 0, b => fmt(b.snapshot?.stats[k]), true]),
   ],
@@ -276,34 +371,63 @@ function table(list) {
   return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Bulk actions on the selected bots: [label, route, which bots it applies to, style].
+const BULK = [
+  ["Start", "/script/start", b => b.online && !b.snapshot?.script.running && b.snapshot?.script.name, "primary"],
+  ["Stop", "/script/stop", b => b.online && b.snapshot?.script.running, "danger"],
+  ["Relogin", "/relogin", b => b.online && ["playing", "dead", "loading"].includes(b.snapshot?.state), ""],
+  ["Forget", "/forget", b => !b.online && b.kind !== "tab", "danger"],
+];
+function renderBulk() {
+  const bulk = $("#bulk");
+  for (const id of picked) if (!byId(id)) picked.delete(id);
+  bulk.hidden = !picked.size;
+  if (!picked.size) return;
+  const chosen = [...picked].map(byId);
+  bulk.innerHTML = `<span class="when">${picked.size} selected</span>` + (control() ? BULK.map(([l, r, ok, style]) => {
+    const n = chosen.filter(ok).length;
+    return `<button type="button" class="small ${style}" data-bulk="${r}"${n ? "" : " disabled"}>${l}${n ? ` (${n})` : ""}</button>`;
+  }).join("") : "") + `<button type="button" class="small" data-bulk="clear">Clear</button>`;
+}
+
 function render() {
   $("#views").innerHTML = VIEWS.map(([v, l]) => `<button type="button" role="tab" aria-selected="${v === view}" class="${v === view ? "on" : ""}" data-view="${v}">${l}</button>`).join("");
   if (!state) return;
   const q = $("#filter").value.trim().toLowerCase();
-  const list = state.bots.filter(b => !q || `${b.label} ${name(b)} ${b.snapshot?.script.name ?? ""} ${b.snapshot?.map ?? ""}`.toLowerCase().includes(q));
-  const playing = state.bots.filter(b => b.snapshot?.state === "playing").length;
-  const running = state.bots.filter(b => b.snapshot?.script.running).length;
-  const kills = state.bots.reduce((n, b) => n + (b.snapshot?.stats.kills ?? 0), 0);
-  const gph = state.bots.reduce((n, b) => { const s = b.snapshot?.session; return n + ((s && perHour(s.gold, s.seconds)) ?? 0); }, 0);
-  $("#summary").innerHTML = `<span><b>${playing}</b>/${state.bots.length} playing</span><span><b>${running}</b> running</span><span><b>${fmt(kills)}</b> kills</span><span><b>${fmt(gph)}</b> gold/h</span><span>Turu ${esc(state.version)} · up ${clock(state.uptimeSeconds)}</span>`;
+  const list = state.bots.filter(b => !q || `${chip(b)} ${name(b)} ${b.snapshot?.script.name ?? ""} ${b.snapshot?.map ?? ""}`.toLowerCase().includes(q));
+  const live = state.bots.filter(b => b.online);
+  const playing = live.filter(b => b.snapshot?.state === "playing").length;
+  const running = live.filter(b => b.snapshot?.script.running).length;
+  const kills = live.reduce((n, b) => n + (b.snapshot?.stats.kills ?? 0), 0);
+  const gph = live.reduce((n, b) => { const s = b.snapshot?.session; return n + ((s && perHour(s.gold, s.seconds)) ?? 0); }, 0);
+  $("#summary").innerHTML = `<span><b>${playing}</b>/${live.length} playing</span><span><b>${running}</b> running</span><span><b>${fmt(kills)}</b> kills</span><span><b>${fmt(gph)}</b> gold/h</span><span>Turu ${esc(state.version)} · up ${clock(state.uptimeSeconds)}</span>`;
   const main = $("#main");
   if (!list.length) {
     main.innerHTML = `<p class="empty">${state.bots.length ? "No bot matches the filter." : "No bots."}</p>`;
   } else if (view === "cards") {
-    main.innerHTML = `<div class="grid">${list.map(card).join("")}</div>`;
+    const groups = [["Running here", list.filter(b => b.online)], ["Offline", list.filter(b => !b.online)]].filter(g => g[1].length);
+    main.innerHTML = groups.map(([t, l]) => `${groups.length > 1 ? `<h2 class="group">${t}</h2>` : ""}<div class="grid">${l.map(card).join("")}</div>`).join("");
   } else {
     main.innerHTML = table(list);
   }
+  renderBulk();
+  if ($("#detail").open) renderDetailHead();
 }
 
 function setLive(text, kind) { const l = $("#live"); l.textContent = text; l.className = `live ${kind}`; }
 function notice(html) { const n = $("#notice"); n.hidden = !html; n.innerHTML = html || ""; }
+function toast(text, bad) {
+  const t = document.createElement("div");
+  t.className = `toast${bad ? " bad" : ""}`;
+  t.textContent = text;
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), bad ? 6000 : 3000);
+}
 function receive(text) {
   try { state = JSON.parse(text); } catch { return; }
   notice("");
   render();
 }
-const headers = () => key ? { Authorization: `Bearer ${key}` } : {};
 function unauthorized() {
   setLive("Key needed", "warn");
   notice(key ? "The monitor key is wrong or was regenerated. <button type=\"button\" data-key>Enter the key</button>" : "This device needs the monitor key. <button type=\"button\" data-key>Enter the key</button>");
@@ -347,14 +471,170 @@ function setKey(value) {
   keyWaiters.splice(0).forEach(r => r());
 }
 
+// Commands -----------------------------------------------------------------------------------
+let confirmResolve = null;
+function confirmBox(title, text, ok = "OK") {
+  $("#confirmTitle").textContent = title;
+  $("#confirmText").textContent = text;
+  $("#confirmOk").textContent = ok;
+  $("#confirmDialog").returnValue = "";
+  $("#confirmDialog").showModal();
+  return new Promise(r => { confirmResolve = r; });
+}
+$("#confirmDialog").addEventListener("close", () => { confirmResolve?.($("#confirmDialog").returnValue === "ok"); confirmResolve = null; });
+
+async function send(id, route) {
+  const b = byId(id);
+  const who = b?.snapshot?.name ?? b?.label ?? id;
+  try {
+    const r = await fetch(`/api/bots/${encodeURIComponent(id)}${route}`, { method: "POST", headers: headers() });
+    const body = await r.json().catch(() => ({}));
+    if (r.status === 401) { unauthorized(); return false; }
+    if (!r.ok) { toast(`${who}: ${body.error ?? `HTTP ${r.status}`}`, true); return false; }
+    if (route === "/forget") { picked.delete(id); if (detailId === id) $("#detail").close(); }
+    return true;
+  } catch (e) {
+    toast(`${who}: ${e.message}`, true);
+    return false;
+  }
+}
+async function act(id, route) {
+  const b = byId(id);
+  const entry = actionsFor(b, true).find(a => a[1] === route) || actionsFor(b, false).find(a => a[1] === route);
+  const label = entry?.[0] ?? route;
+  if (entry?.[2] && !await confirmBox(label, entry[2], label)) return;
+  if (await send(id, route)) toast(`${b?.snapshot?.name ?? b?.label}: ${label}`);
+  if (detailId === id) refreshDetail();
+}
+async function bulk(route) {
+  const [label, , ok] = BULK.find(x => x[1] === route);
+  const ids = [...picked].filter(id => { const b = byId(id); return b && ok(b); });
+  if (!ids.length) return;
+  if (route !== "/script/start" && !await confirmBox(`${label} ${ids.length} bot${ids.length > 1 ? "s" : ""}?`, ids.map(id => byId(id)?.snapshot?.name ?? id).join(", "), label)) return;
+  const results = await Promise.all(ids.map(id => send(id, route)));
+  const done = results.filter(Boolean).length;
+  toast(`${label}: ${done} of ${ids.length} done`, done < ids.length);
+}
+
+// Details -------------------------------------------------------------------------------------
+let detailId = null, detailTab = "events", detail = null, logKind = "script", logNext = 0, detailTimer = null;
+function openDetail(id) {
+  detailId = id; detail = null; logNext = 0; logKind = "script";
+  $("#dPane").innerHTML = `<p class="empty">Loading…</p>`;
+  renderDetailHead();
+  $("#detail").showModal();
+  refreshDetail();
+  clearInterval(detailTimer);
+  detailTimer = setInterval(refreshDetail, 2000);
+}
+$("#detail").addEventListener("close", () => { clearInterval(detailTimer); detailId = null; });
+function renderDetailHead() {
+  const b = byId(detailId);
+  if (!b) return;
+  const [label, kind] = status(b);
+  $("#dChip").textContent = chip(b);
+  $("#dTitle").textContent = b.snapshot?.name ?? b.label;
+  $("#dPill").className = `pill ${kind}`;
+  $("#dPill").textContent = label;
+  const acts = actionsFor(b, true);
+  const s = b.snapshot;
+  const canJoin = control() && b.online && s && ["playing", "dead"].includes(s.state);
+  const join = canJoin ? `<span class="spacer"></span><input type="text" id="dMap" placeholder="map-room" aria-label="Map"><input type="text" id="dCell" placeholder="Cell" aria-label="Cell" style="width:80px"><button type="button" data-join>Join</button>` : "";
+  const controls = $("#dControls");
+  // Keep what's typed in the join boxes.
+  const typed = ["dMap", "dCell"].map(i => document.getElementById(i)?.value ?? "");
+  const html = buttons(b, acts, "") + join || `<span class="when">${control() ? "Nothing to do while it's offline." : "Allow Control is off in Turu (Options > Application > Monitor)."}</span>`;
+  if (controls.dataset.html !== html) {
+    controls.dataset.html = html;
+    controls.innerHTML = html;
+    ["dMap", "dCell"].forEach((i, n) => { const el = document.getElementById(i); if (el) el.value = typed[n]; });
+  }
+  $("#dTabs").innerHTML = [["events", "Events"], ["log", "Log"], ["history", "History"]]
+    .map(([t, l]) => `<button type="button" role="tab" class="small ${t === detailTab ? "on" : ""}" aria-selected="${t === detailTab}" data-dtab="${t}">${l}</button>`).join("");
+}
+async function refreshDetail() {
+  const id = detailId;
+  if (!id) return;
+  try {
+    const r = await fetch(`/api/bots/${encodeURIComponent(id)}`, { headers: headers(), cache: "no-store" });
+    if (!r.ok) { if (r.status === 404) $("#dPane").innerHTML = `<p class="empty">This bot is gone.</p>`; return; }
+    detail = await r.json();
+  } catch { return; }
+  if (id !== detailId) return;
+  renderDetailHead();
+  if (detailTab === "events") renderEvents();
+  else if (detailTab === "history") renderHistory();
+  else await pollLog();
+}
+function renderEvents() {
+  const list = [...(detail?.events ?? [])].reverse();
+  $("#dPane").innerHTML = list.length ? `<ul class="events">${list.map(eventRow).join("")}</ul>` : `<p class="empty">No events yet.</p>`;
+}
+function renderLogFrame() {
+  $("#dPane").innerHTML = `<div class="d-tabs" style="margin-bottom:8px">${["script", "debug"].map(k => `<button type="button" class="small ${k === logKind ? "on" : ""}" data-log="${k}">${k === "script" ? "Script log" : "Debug log"}</button>`).join("")}</div><div class="log" id="dLog" tabindex="0" aria-label="Log"></div>`;
+}
+async function pollLog() {
+  const b = byId(detailId);
+  if (!b?.online) { $("#dPane").innerHTML = `<p class="empty">The log is only there while the bot runs.</p>`; return; }
+  if (!document.getElementById("dLog")) { renderLogFrame(); logNext = 0; }
+  try {
+    const r = await fetch(`/api/bots/${encodeURIComponent(detailId)}/log?type=${logKind}&since=${logNext}`, { headers: headers(), cache: "no-store" });
+    if (!r.ok) return;
+    const { lines, next } = await r.json();
+    const box = document.getElementById("dLog");
+    if (!box) return;
+    const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 20;
+    if (logNext === 0) box.textContent = "";
+    for (const l of lines) box.append(`${new Date(l.time).toLocaleTimeString()}  ${l.text}\n`);
+    logNext = next;
+    if (atEnd) box.scrollTop = box.scrollHeight;
+  } catch {}
+}
+function spark(points, field, color) {
+  const w = 600, h = 80;
+  const vs = points.map(p => p[field]);
+  const min = Math.min(...vs), max = Math.max(...vs), span = max - min || 1;
+  const t0 = points[0].at, t1 = points.at(-1).at, dt = t1 - t0 || 1;
+  const d = points.map((p, i) => `${i ? "L" : "M"}${((p.at - t0) / dt * w).toFixed(1)},${(h - 4 - (p[field] - min) / span * (h - 8)).toFixed(1)}`).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${field} over time"><path d="${d}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function renderHistory() {
+  const pts = detail?.history ?? [];
+  if (pts.length < 2) { $("#dPane").innerHTML = `<p class="empty">History builds up a point a minute while the bot plays and someone watches (or Army polls it).</p>`; return; }
+  const hours = (pts.at(-1).at - pts[0].at) / 3600000;
+  const rate = f => hours > 0 ? fmt(Math.round((pts.at(-1)[f] - pts[0][f]) / hours)) : "-";
+  const fig = (title, f, color, priv) => `<figure><figcaption><span>${title}</span><span>${rate(f)}/h · now <b class="${priv ? "priv" : ""}">${fmt(pts.at(-1)[f])}</b></span></figcaption>${spark(pts, f, color)}</figure>`;
+  $("#dPane").innerHTML = `<div class="chart">${fig("Gold", "gold", "var(--warn)", true)}${fig("XP", "xp", "var(--mp)")}${fig("Kills", "kills", "var(--ok)")}${fig("Drops", "drops", "var(--accent)")}</div><p class="when" style="margin:8px 0 0">${time(pts[0].at)} – ${time(pts.at(-1).at)}, ${pts.length} points</p>`;
+}
+
+// Wiring --------------------------------------------------------------------------------------
 $("#filter").addEventListener("input", render);
 $("#views").addEventListener("click", e => {
   const v = e.target.closest("[data-view]")?.dataset.view;
   if (v) { view = v; sort = { col: null, dir: 1 }; store.set("turu-monitor-view", v); render(); }
 });
-$("#main").addEventListener("click", e => {
-  const th = e.target.closest("th[data-col]");
-  if (th) { const c = +th.dataset.col; sort = { col: c, dir: sort.col === c ? -sort.dir : 1 }; render(); }
+document.addEventListener("click", e => {
+  const t = e.target.closest("button, th[data-col]");
+  if (!t) return;
+  if (t.dataset.col != null) { const c = +t.dataset.col; sort = { col: c, dir: sort.col === c ? -sort.dir : 1 }; render(); }
+  else if (t.dataset.open) openDetail(t.dataset.open);
+  else if (t.dataset.act) act(t.dataset.id, t.dataset.act);
+  else if (t.dataset.bulk === "clear") { picked.clear(); render(); }
+  else if (t.dataset.bulk) bulk(t.dataset.bulk);
+  else if (t.dataset.dtab) { detailTab = t.dataset.dtab; logNext = 0; $("#dPane").innerHTML = ""; renderDetailHead(); refreshDetail(); }
+  else if (t.dataset.log) { logKind = t.dataset.log; logNext = 0; renderLogFrame(); pollLog(); }
+  else if (t.dataset.join != null) {
+    const map = $("#dMap").value.trim(), cell = $("#dCell").value.trim();
+    if (!map) { $("#dMap").focus(); return; }
+    act(detailId, `/map/join?map=${encodeURIComponent(map)}${cell ? `&cell=${encodeURIComponent(cell)}` : ""}`);
+  }
+  else if (t.dataset.key != null) openKey();
+});
+$("#main").addEventListener("change", e => {
+  const id = e.target.dataset?.pick;
+  if (id == null) return;
+  e.target.checked ? picked.add(id) : picked.delete(id);
+  render();
 });
 $("#main").addEventListener("toggle", e => {
   const d = e.target;
@@ -363,6 +643,7 @@ $("#main").addEventListener("toggle", e => {
     store.set("turu-monitor-sections", JSON.stringify(Object.fromEntries(openSections)));
   }
 }, true);
+$("#dClose").addEventListener("click", () => $("#detail").close());
 const streamer = store.get("turu-monitor-streamer") === "1";
 document.body.classList.toggle("streamer", streamer);
 $("#streamer").classList.toggle("on", streamer);
@@ -375,7 +656,6 @@ $("#streamer").addEventListener("click", () => {
 });
 const openKey = () => { $("#keyInput").value = key; $("#keyDialog").showModal(); };
 $("#keyButton").addEventListener("click", openKey);
-$("#notice").addEventListener("click", e => { if (e.target.closest("[data-key]")) openKey(); });
 $("#keyDialog").addEventListener("close", () => { if ($("#keyDialog").returnValue === "save") setKey($("#keyInput").value); });
 
 render();

@@ -27,7 +27,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
     host.rs              `FlashHost` trait (implemented by desktop) + `FlashArg`
     control.rs           Stop and Pause (`ScriptControl`), script-thread marking
     control_api.rs       the HTTP control API (`--api`): hyper on its own thread, token auth
-    monitor/             the web monitor: a `Snapshot` sampler per bot, the read-only page server
+    monitor/             the web monitor: a `Snapshot` sampler per bot, the hub (tabs and Army
+                         clients, events, history, `monitor.json`), the page server and its commands
     accounts.rs          the account list (`accounts.json`); passwords in the system keychain
     army.rs              launching one `turu` process per account and steering them via their API
     butler/              Butler (VibeSkua's ButlerV5 plugin): sync files, summons, the follower
@@ -161,6 +162,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `skua.swf` | written from the embedded copy at start |
 | `api-token` | the control API's token (`--api` without `TURU_API_TOKEN`), owner-readable only |
 | `monitor-key` | the web monitor's key (Options > Application > Monitor), owner-readable only |
+| `monitor.json` | the web monitor's bots as last seen (snapshot, events, history), shown offline for a day after a restart |
 | `options.json` | bot options (Options > Game, Save; Relogin Try Delay and Relogin Watchdog are saved from Options > Application) |
 | `accounts.json` | Army > Accounts: accounts, groups, the launch setup (no passwords: those are in the system keychain, service "Turu") |
 | `settings.json` | application settings (Options > Application, `bot/src/settings.rs`), saved on every change |

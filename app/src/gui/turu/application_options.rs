@@ -220,6 +220,12 @@ fn entries() -> Vec<Entry> {
         ),
         entry!(
             Monitor,
+            "Allow Control",
+            "The page can start, stop, pause and relog bots, send them to a map and forget offline ones",
+            Field::Bool(|s| &mut s.monitor_allow_control)
+        ),
+        entry!(
+            Monitor,
             "Monitor Port",
             "The port the page is served on",
             Field::Int(|s| &mut s.monitor_port, "", 1024, 65535)

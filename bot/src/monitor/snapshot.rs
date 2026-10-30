@@ -6,10 +6,10 @@
 
 use crate::Bot;
 use crate::api::{inventory, map, player, quests, servers};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BotState {
     /// No player, or `skua.swf` hasn't loaded the game yet.
@@ -24,8 +24,8 @@ pub enum BotState {
     Playing,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Snapshot {
     /// VibeSkua `GetBotName`: the character, else the remembered login, else "Turu Bot".
     pub name: String,
@@ -59,7 +59,7 @@ pub struct Snapshot {
     pub sampled_at: u64,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptInfo {
     /// The file name without `.ts`.
@@ -70,13 +70,13 @@ pub struct ScriptInfo {
     pub running: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Pair {
     pub cur: i64,
     pub max: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Target {
     pub name: String,
@@ -85,7 +85,7 @@ pub struct Target {
 }
 
 /// Combat > Stats (`GameState::stats`).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {
     pub kills: u64,
@@ -97,7 +97,7 @@ pub struct Stats {
     pub run_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub seconds: u64,
@@ -105,7 +105,7 @@ pub struct Session {
     pub xp: i64,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Inventory {
     /// Every item in the inventory, equipped ones too (what the webhooks count).
