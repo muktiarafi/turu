@@ -3,7 +3,7 @@
 use super::{Args, ok, wait};
 use crate::Bot;
 use crate::error::{BotError, BotResult};
-use crate::models::{Monster, lenient_bool, lenient_i64, lenient_string};
+use crate::models::{Badge, Monster, lenient_bool, lenient_i64, lenient_string};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -219,6 +219,28 @@ pub fn goto(bot: &Bot, name: &str) -> BotResult<()> {
         .call_game_function("world.goto", vec![name.into()])
 }
 
+/// Your character's badges from its character page (CoreBots `Badges`: a GET to
+/// `account.aq.com/CharPage/Badges?ccid=<CharID>`). Empty without a character.
+pub fn web_badges(bot: &Bot) -> BotResult<Vec<Badge>> {
+    let id: i64 = bot.flash.get_or("world.myAvatar.objData.CharID", 0)?;
+    if id <= 0 {
+        return Ok(Vec::new());
+    }
+    let url = format!("https://account.aq.com/CharPage/Badges?ccid={id}");
+    let failed = |e: reqwest::Error| BotError::Other(format!("couldn't read the badges: {e}"));
+    let text = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("Mozilla/5.0")
+        .build()
+        .map_err(failed)?
+        .get(url)
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::text)
+        .map_err(failed)?;
+    Ok(serde_json::from_str(&text).unwrap_or_default())
+}
+
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
     let f = &bot.flash;
     match name {
@@ -242,6 +264,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "maxMana" => ok(max_mana(bot)?),
         "gold" => ok(f.get_or::<i64>("world.myAvatar.objData.intGold", 0)?),
         "isMember" => ok(f.get_or::<i64>("world.myAvatar.objData.iUpgDays", -1)? >= 0),
+        "webBadges" => ok(web_badges(bot)?),
         "currentClass" => {
             if !playing(bot)? {
                 return ok(Value::Null);

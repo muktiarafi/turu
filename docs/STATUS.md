@@ -45,7 +45,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
 - **Scripts:** TypeScript, run in QuickJS after oxc strips the types. Ported: the parts of
   CoreBots, CoreFarms, CoreAdvanced (shop buying and the merge-shop template) and CoreNation that
-  the ported scripts reach, all of CoreStory (for the story scripts), `nation/materials/0MaxBags.ts`,
+  the ported scripts reach, all of CoreStory (for the story scripts) and CoreDailies,
+  `nation/materials/0MaxBags.ts`,
   `farm/GoldFarm.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
   `setOptions()`, starts from your house when you are in battleon, goes to the CBO stop map
@@ -97,6 +98,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **The merge template is unverified in game:** its tests run it against a fake shop (picking the
   items, handing a requirement the shop doesn't sell to `findIngredients`); buying and the nested
   merges need a real merge run (SynderesMerge is the smallest).
+- **CoreDailies is unverified in game:** its tests check `checkDailyv2` (daily done, max
+  stacks, the drop list) against a fake game. The dailies themselves, the friendship packets and
+  `bot.player.webBadges` (a request to account.aq.com's character page, for `Core.hasWebBadge`)
+  need real runs.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

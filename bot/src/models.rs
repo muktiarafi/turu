@@ -907,3 +907,27 @@ impl AuraSnapshot {
         !self.persistent && self.duration > 0.0 && self.remaining_time <= 0.0
     }
 }
+
+/// A badge on your character page (CoreBots `Badge`, from `account.aq.com/CharPage/Badges`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub struct Badge {
+    #[serde(
+        rename(deserialize = "badgeID", serialize = "id"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub id: i64,
+    #[serde(
+        rename(deserialize = "sTitle", serialize = "name"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub name: String,
+    #[serde(
+        rename(deserialize = "sCategory", serialize = "category"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub category: String,
+}

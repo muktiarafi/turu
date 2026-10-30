@@ -10,6 +10,7 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 | `core/CoreBots.ts` | Port of `CoreBots.cs`: `Core` (join, kill/hunt, quests, drops, bank, shops, classes, logging). |
 | `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, alchemy crafting and rep, Good/Vampire rep). |
 | `core/CoreStory.ts` | Port of `CoreStory.cs`: `killQuest`, `mapItemQuest`, `buyQuest`, `chainQuest`, `questProgression`, `legacyQuestManager`, `preLoad`. Each script makes its own `new CoreStory()`. |
+| `core/CoreDailies.ts` | Port of `CoreDailies.cs`: every daily, weekly and monthly (`checkDailyv2`, `dailyRoutine`, metals, class tokens, boosts, friendships, ...). Each script makes its own `new CoreDailies()`. |
 | `core/CoreAdvanced.ts` | The shop part of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs; `startBuyAllMerge` is the merge-shop template (with `mergeOptions` and `mergeOptionsEnum`). |
 | `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials. |
 | `nation/materials/0MaxBags.ts` | Port of `Nation/Materials/0MaxBags.cs`. |

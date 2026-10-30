@@ -85,6 +85,13 @@ export interface Monster {
     level: number;
 }
 
+/** A badge on your character page (CoreBots `Badge`). */
+export interface Badge {
+    id: number;
+    name: string;
+    category: string;
+}
+
 /** A faction you have reputation in (VibeSkua `Faction`). */
 export interface Faction {
     id: number;
@@ -221,6 +228,11 @@ export class Player {
     get maxMana(): number { return call("player.maxMana"); }
     get gold(): number { return call("player.gold"); }
     get isMember(): boolean { return call("player.isMember"); }
+    /**
+     * Your character's badges from its character page on account.aq.com (CoreBots `Badges`).
+     * Each read is a web request; empty before you're logged in.
+     */
+    get webBadges(): Badge[] { return call("player.webBadges"); }
     /** Name of the equipped class, or null. */
     get currentClass(): string | null { return call("player.currentClass"); }
     get currentClassRank(): number { return call("player.currentClassRank"); }

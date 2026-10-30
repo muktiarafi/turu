@@ -31,7 +31,7 @@ tags: core
  */
 
 import { bot, ClassUseMode, option, ScriptStopped } from "turu";
-import type { InventoryItem, Monster, Quest, QuestItem } from "turu";
+import type { Badge, InventoryItem, Monster, Quest, QuestItem } from "turu";
 
 // ---------------------------------------------------------------------------------------
 // Enums and data types
@@ -105,6 +105,9 @@ export interface CoreShopItem {
     requiredReputation: number;
     requirements: ShopRequirement[];
 }
+
+/** `[map, monster, ClassType]`: one requirement's hunt in {@link CoreBots.huntMonsterQuest}. */
+export type HuntPair = readonly [mapName: string, monsterName: string, classType: ClassType];
 
 /** Options of {@link CoreBots.join}. */
 export interface JoinOptions {
@@ -205,7 +208,8 @@ function num(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function flag(value: unknown): boolean {
+/** A game flag (`true`, `1`, `"1"`, `"true"`) as a boolean. */
+export function flag(value: unknown): boolean {
     return value === true || value === 1 || value === "1" || value === "true" || value === "True";
 }
 
@@ -2382,6 +2386,100 @@ export class CoreBots {
     }
 
     /**
+     * Completes a quest and chooses any item from it that you don't have (automatically accepts
+     * the drop). Returns false when a requirement is missing, every reward is owned, or nothing
+     * could be turned in.
+     * @param questId ID of the quest.
+     * @param itemList Names of the rewards to get; null for all of them.
+     */
+    ensureCompleteChoose(questId: number, itemList: string[] | null = null): boolean {
+        const quest = this.initializeWithRetries(() => this.ensureLoad(questId));
+        if (quest === null) {
+            this.logger(`Failed to load quest [${questId}] after multiple attempts.`);
+            return false;
+        }
+
+        if (itemList !== null && itemList.length > 0) bot.drops.add(...itemList);
+
+        // Check turnin requirements
+        if (!quest.requirements.every((req) => req && this.checkInventory(req.id, req.quantity))) {
+            const missing = quest.requirements
+                .filter((req) => req && !this.checkInventory(req.id, req.quantity))
+                .map((req) => `"${req.name}"`)
+                .join(", ");
+
+            if (quest.requirements.some((x) => bot.bank.contains(x.id)))
+                this.logger("Missing turnin requirements, and something is in the bank. Unbank it then restart.");
+            else this.logger(`Missing ${missing}`);
+
+            return false;
+        }
+
+        let hasAllRewardItems = true;
+        let questCompleted = false;
+
+        // Filter rewards by provided list, unless null
+        const rewards = itemList === null ? quest.rewards : quest.rewards.filter((item) => itemList.includes(item.name));
+
+        // If no reward matches, still complete the quest normally.
+        if (rewards.length === 0) {
+            if (!bot.quests.ensureComplete(questId)) {
+                this.logger(`Failed to complete quest [${questId}] (no rewards matched).`);
+                return false;
+            }
+
+            bot.wait.forQuestComplete(questId);
+            return true;
+        }
+
+        // Handle actual reward selection
+        for (const item of rewards) {
+            if (this.checkInventory(item.id, item.maxStack, { toInv: false })) continue;
+
+            // Ensure inventory space
+            if (!this.hasSpace && !this.checkInventory(item.id, 1, { toInv: false })) {
+                this.bankACMisc(1);
+                if (!this.hasSpace) {
+                    this.logger(`Skipping "${item.name}" from quest [${questId}] due to no space.`);
+                    continue;
+                }
+            }
+
+            hasAllRewardItems = false;
+
+            if (!bot.quests.ensureComplete(questId, item.id)) continue;
+
+            bot.wait.forQuestComplete(questId);
+
+            if (!bot.drops.toPickup.includes(item.name)) bot.drops.add(item.name);
+
+            if (bot.drops.exists(item.id)) bot.drops.pickup(item.id);
+            else if (bot.drops.exists(item.name)) bot.drops.pickup(item.name);
+
+            bot.wait.forPickup(item.id);
+            questCompleted = true;
+        }
+
+        if (hasAllRewardItems) {
+            this.logger(`Quest [${questId}] not completed. All reward items already owned.`);
+            return false;
+        }
+
+        if (!questCompleted) {
+            this.logger(
+                `Could not complete quest [${questId}]. Some items may be missing or unavailable.\n` +
+                    quest.rewards
+                        .filter((x) => (x.temp ? bot.tempInv.contains(x.id) : !bot.inventory.contains(x.id)))
+                        .map((x) => `"${x.name}"`)
+                        .join("\n"),
+            );
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Turns a quest in as many times as possible (or `amount` times), with a choose-able reward.
      * @param questId ID of the quest.
      * @param amount How many turn-ins, -1 is the maximum possible.
@@ -2784,15 +2882,62 @@ export class CoreBots {
         }
     }
 
-    // C# HuntMonsterQuest(questId, params (map, monster, ClassType)[]) overloads: not used, dropped.
-
     /**
      * Hunts the monsters for each requirement of a quest (skipping those you already have), then
-     * turns it in.
+     * turns it in. With `[map, monster, ClassType]` entries, the n-th missing requirement is hunted
+     * with the n-th entry (C# `HuntMonsterQuest(questId, params (map, monster, class)[])`):
+     * `Core.huntMonsterQuest(9896, ["trygve", "Vindicator Recruit", ClassType.Farm], ["greed", "Cursed Treasure", ClassType.Solo])`.
      * @param mapName Map to hunt in (default: the current map).
      * @param monsterName Monster to hunt (default "*").
      */
-    huntMonsterQuest(questId: number, mapName: string | null = null, monsterName: string | null = null): void {
+    huntMonsterQuest(questId: number, mapName?: string | null, monsterName?: string | null): void;
+    huntMonsterQuest(questId: number, ...mapMonsterClassPairs: HuntPair[]): void;
+    huntMonsterQuest(questId: number, ...args: (string | null | undefined | HuntPair)[]): void {
+        if (args.length > 0 && Array.isArray(args[0])) this.huntMonsterQuestPairs(questId, true, args as HuntPair[]);
+        else this.huntMonsterQuestIn(questId, (args[0] as string | null | undefined) ?? null, (args[1] as string | null | undefined) ?? null);
+    }
+
+    /**
+     * C# `HuntMonsterQuest(int questId, bool log, params (string, string, ClassType)[])`: hunts each
+     * missing requirement with the matching entry's map, monster and class, then turns it in.
+     */
+    huntMonsterQuestPairs(questId: number, log: boolean, mapMonsterClassPairs: HuntPair[]): void {
+        const quest = this.initializeWithRetries(() => this.ensureLoad(questId));
+        if (quest === null) {
+            this.logger(`❌ Failed to load quest with ID [${questId}] after multiple attempts.`, "", { stopBot: true });
+            return;
+        }
+
+        const all = [...quest.acceptRequirements, ...quest.requirements];
+        this.unbank(...unique(all.map((x) => x.id)));
+
+        // Add the non-temp items to the drop pickup list
+        bot.drops.add(...unique(all.filter((x) => x && !x.temp).map((x) => x.id)));
+
+        // If no MapMonsterClassPairs are provided, auto-generate default values
+        if (mapMonsterClassPairs.length === 0) mapMonsterClassPairs = quest.requirements.map((): HuntPair => ["Fill ME", "Fill ME", ClassType.Solo]);
+
+        let pairIndex = 0;
+
+        for (const requirement of quest.requirements) {
+            if (this.checkInventory(requirement.id, requirement.quantity)) continue;
+
+            if (pairIndex >= mapMonsterClassPairs.length) break;
+
+            const [mapName, monsterName, classType] = mapMonsterClassPairs[pairIndex++];
+
+            this.equipClass(classType);
+
+            if (!bot.quests.isInProgress(questId)) this.ensureAccept(questId);
+
+            this.huntMonster(mapName ?? bot.map.name, monsterName ?? "*", requirement.name ?? "", requirement.quantity, { isTemp: requirement.temp, log });
+        }
+
+        this.ensureCompleteMulti(questId);
+    }
+
+    /** C# `HuntMonsterQuest(int questId, string? mapName, string? monsterName)`. */
+    private huntMonsterQuestIn(questId: number, mapName: string | null, monsterName: string | null): void {
         const quest = this.initializeWithRetries(() => this.loadQuest(questId));
         if (!quest) {
             this.logger(`⚠️ Quest ${questId} not found`);
@@ -3509,7 +3654,17 @@ export class CoreBots {
         if (!this.hasAchievement(id, ia)) bot.send.packet(`%xt%zm%setAchievement%${bot.map.roomId}%${ia}%${id}%1%`);
     }
 
-    // C# WebClient / GetRequest: HTTP for SetOptions extras, dropped.
+    /** Whether your character page lists the web badge, by ID or exact name. */
+    hasWebBadge(badge: string | number): boolean {
+        return this.badges.some((b) => (typeof badge === "number" ? b.id === badge : b.name === badge));
+    }
+
+    /** Your character page's badges (`bot.player.webBadges`; each read is a web request). */
+    get badges(): Badge[] {
+        return bot.player.webBadges;
+    }
+
+    // C# WebClient / GetRequest: HTTP for SetOptions extras, dropped (badges go through the engine).
 
     /** C# `Bot.Reputation.GetRank(faction)`. */
     factionRank(faction: string): number {
