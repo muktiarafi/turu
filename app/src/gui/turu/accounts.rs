@@ -367,7 +367,9 @@ impl AccountsWindow {
             widgets::section_label(ui, "LAUNCH");
             ui.horizontal(|ui| {
                 ui.label("Server");
-                if widgets::text_box(ui, &mut self.list.server, "Twilly", 120.0).lost_focus() {
+                let bot = crate::turu::bot();
+                if let Some(server) = widgets::server_combo(ui, "turu_accounts_server", &bot, &self.list.server) {
+                    self.list.server = server;
                     self.save();
                 }
                 ui.add_space(8.0);

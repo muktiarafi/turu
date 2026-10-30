@@ -103,9 +103,9 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread), the list (check box, a green dot
   while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /
-  Unselect All, Add Selected to Group and Select group, and Launch: Server, where (In a tab, In
-  its own window, Without a window),
-  the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
+  Unselect All, Add Selected to Group and Select group, and Launch: Server (the same drop-down
+  as Relogin Server, `widgets::server_combo`), where (In a tab, In its own window, Without a
+  window), the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
 * **Army Control** (`army.rs`): the launched clients (state, server, map, cell, HP, script;
   Close, Clear Ended, Close All) after this window's tabs (script, last map; Show), "Include
   this window's tabs", Start / Stop All Scripts, Load Script
