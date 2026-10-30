@@ -140,7 +140,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `configOr`/`configEnum`, `bot.quests.updateQuest(value, slot)`) only have fake-game or no
   tests. Content scripts read options of their own that DoAll doesn't declare as C#'s defaults
   (`configOr`), as VibeSkua does. Turu scripts can't ask Yes/No: Legion's join keeps the "Undead
-  Warrior" armor instead of asking to sell it.
+  Warrior" armor instead of asking to sell it. Three C# bugs are fixed on purpose (marked `C#`):
+  FarmerJoe's pet step reads its real option, TheLeeryContract uses the reward it's given, and
+  Dage PvP reads the CBO solo-boss switch's value.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

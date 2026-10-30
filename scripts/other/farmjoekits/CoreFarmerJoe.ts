@@ -682,12 +682,15 @@ export class CoreFarmerJoe {
      *   - **Akriloth Pet:** Acquires and equips the "Akriloth Pet" if selected and not already in inventory.
      * @param petChoice Selected pet choice
      */
-    pets(_petChoice: PetChoice = PetChoice.None): void {
-        // C# reads the option "Pets", which no script declares (the option is "PetChoice"), so
-        // this is always None and returns: kept as is.
-        const configPetChoice = configOr("Pets", PetChoice.None);
+    pets(petChoice: PetChoice = PetChoice.None): void {
+        // C# reads the option "Pets", which no script declares, so this always returned: fixed to
+        // read "PetChoice". `petChoice` (unused in C#) limits a call to that pet, so DoAll's
+        // pets(HotMama) and pets(Akriloth) each get the chosen pet only.
+        const configPetChoice = configOr("PetChoice", PetChoice.None);
 
         if (configPetChoice === PetChoice.None)
+            return;
+        if (petChoice !== PetChoice.None && petChoice !== configPetChoice)
             return;
 
         if (configPetChoice === PetChoice.HotMama && !Core.checkInventory("Hot Mama")) {

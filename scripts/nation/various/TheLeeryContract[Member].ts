@@ -6,8 +6,7 @@ tags: null
 // Port of Scripts/Nation/Various/TheLeeryContract[Member].cs.
 
 import { choices, defineScriptOptions, option } from "turu";
-import type { InventoryItem } from "turu";
-import { Core, configEnum, configOr } from "../../core/CoreBots";
+import { Core, configEnum } from "../../core/CoreBots";
 import type { RewardItem } from "../../core/CoreBots";
 import { CoreNation } from "../CoreNation";
 
@@ -28,16 +27,15 @@ export class TheLeeryContract {
 
         const RewardOptions = Core.ensureLoad(554).rewards.map(x => x.name);
         Core.addDrop(...RewardOptions);
-        const getAll = configEnum("RewardSelect", RewardsSelection, 0 as RewardsSelection) === 9999;
+        // C# reads the "RewardSelect" option here and ignores `reward`, so DirtlickersMerge's
+        // Corpse Maker request did nothing from DoAll: fixed, main() passes the option instead.
+        const getAll = reward === RewardsSelection.All;
 
-        // C# reads the option here, not `reward` (callers' rewards are ignored): kept.
         let item: RewardItem | null = null;
         if (!getAll) {
-            item = Core.ensureLoad(554)
-                .rewards.find(x => x.id === configEnum("RewardSelect", RewardsSelection, 0 as RewardsSelection)) ?? null;
+            item = Core.ensureLoad(554).rewards.find(x => x.id === reward) ?? null;
             if (item == null) {
-                Core.logger(
-                    `${configEnum("RewardSelect", RewardsSelection, 0 as RewardsSelection)} not found in Quest Rewards`);
+                Core.logger(`${RewardsSelection[reward] ?? reward} not found in Quest Rewards`);
                 return;
             }
             if (Core.checkInventory(item.name))
@@ -72,9 +70,9 @@ export const scriptOptions = defineScriptOptions("The Leery Contract", [
 
 export default function main(): void {
     const script = new TheLeeryContract();
-        Core.setOptions();
-        Core.bankingBlackList.push(...script.rewards);
-        script.questItems();
+    Core.setOptions();
+    Core.bankingBlackList.push(...script.rewards);
+    script.questItems(configEnum("RewardSelect", RewardsSelection, RewardsSelection.All));
 
-        Core.setOptions(false);
+    Core.setOptions(false);
 }

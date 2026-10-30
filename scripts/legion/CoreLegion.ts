@@ -641,8 +641,9 @@ export class CoreLegion {
         if (checkInventoryCompletion())
             return;
 
-        // C# assigns CBOBool's result, which is whether the key is set, not its value.
-        canSoloBoss = Core.cboBool("PvP_SoloPvPBoss") !== null;
+        // C# assigns CBOBool's result, which is whether the key is set, not its value: fixed, the
+        // CBO value wins when set, else the argument.
+        canSoloBoss = Core.cboBool("PvP_SoloPvPBoss") ?? canSoloBoss;
 
         Core.addDrop("Legion Combat Trophy", "Technique Observed", "Sword Scroll Fragment");
         Core.equipClass(ClassType.Solo);
