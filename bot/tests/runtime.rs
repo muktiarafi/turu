@@ -503,6 +503,31 @@ fn potions_loads_and_stops() {
     assert!(log.contains("stopped") || log.contains("finished"), "{log}");
 }
 
+#[test]
+fn farmer_joe_do_all_loads_and_stops() {
+    // The whole FarmerJoe tree (~125 modules) has to import and construct without error.
+    temp_dir("farmerjoe");
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts/other/farmjoekits/0FarmerJoeDoAll.ts");
+    let declaration = turu_bot::script::options::declaration(&script)
+        .unwrap()
+        .expect("DoAll declares CoreFarmerJoe's options");
+    assert_eq!(declaration.storage, "FarmerJoePet");
+    assert!(declaration.dont_preconfigure);
+    assert!(declaration.options.iter().any(|o| o.name == "PetChoice"));
+
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&script);
+    script::start(&bot).unwrap();
+    std::thread::sleep(Duration::from_secs(2));
+    script::stop(&bot);
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(!log.contains("failed"), "{log}");
+    assert!(log.contains("stopped") || log.contains("finished"), "{log}");
+}
+
 /// Runs `body` as `main` with a `scriptStopping` handler that uses the bot; `stop` presses Stop.
 fn run_with_stopping_handler(name: &str, body: &str, stop: bool) -> String {
     let dir = temp_dir(name);
