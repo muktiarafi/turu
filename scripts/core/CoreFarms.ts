@@ -664,7 +664,7 @@ export class CoreFarms {
         const killAds = Core.cboBool("PvP_SoloPvPBoss") === true;
         Core.logger(
             `\`Kill Ads\` Enabled? ${killAds ? "True" : "False"}` +
-                (killAds ? "if enabled this will kill the healers aswell for an aditional 3 trophies (totaling 10) but will take longer." : ""),
+                (killAds ? " - if enabled this will kill the healers aswell for an aditional 3 trophies (totaling 10) but will take longer." : ""),
         );
         Core.addDrop(item);
 
@@ -692,7 +692,9 @@ export class CoreFarms {
                 const run = (): boolean => {
                     Core.join("bludrutbrawl-999999", "Enter0", "Spawn");
                     bot.wait.forMapLoad("bludrutbrawl");
-                    let currentTrophies = bot.inventory.getQuantity("Combat Trophy");
+                    // C# reads "Combat Trophy" here, so farming Yoshino's Citrine compared the
+                    // citrine count against the trophy count and waited forever below.
+                    let currentTrophies = bot.inventory.getQuantity(item);
 
                     Core.pvpMove(5, "Morale0C", randomInt(784, 862), randomInt(254, 274));
                     Core.pvpMove(4, "Morale0B", randomInt(786, 850), randomInt(262, 287));
@@ -701,7 +703,8 @@ export class CoreFarms {
 
                     // If CBO setting for `Kill ads before boss` is enabled do:
                     if (killAds) {
-                        if (!bot.inventory.items.some((x) => x && Core.checkInventory(this.acceptablePvPAmulets, 1, { any: true }) && x.equipped))
+                        // C# checks "owns an amulet and has anything equipped"; this checks an amulet is equipped.
+                        if (!bot.inventory.items.some((x) => x?.equipped && this.acceptablePvPAmulets.includes(x.name)))
                             Core.oneTimeMessage("Wheres your amulet retard?", "Hey ChuckleFuck, you forgot your amulet! So now you get to kill the minions.");
 
                         Core.pvpMove(14, "Crossupper", randomInt(399, 545), randomInt(255, 256));
@@ -743,11 +746,13 @@ export class CoreFarms {
                     bot.wait.forPickup(item, 40);
 
                     // Record updated quantity until server actually updates it
+                    // (C# waits without a limit, which hangs forever when the drop never came.)
                     let updatedTrophies = bot.inventory.getQuantity(item);
-                    while (!bot.shouldExit && updatedTrophies <= currentTrophies) {
+                    for (let tries = 0; !bot.shouldExit && updatedTrophies <= currentTrophies && tries < 60; tries++) {
                         Core.sleep(500); // give server time to process PvP reward
                         updatedTrophies = bot.inventory.getQuantity(item);
                     }
+                    if (updatedTrophies <= currentTrophies) Core.logger(`No ${item} from this run, trying again.`);
                     // Update baseline so next run compares correctly
                     currentTrophies = updatedTrophies;
 
