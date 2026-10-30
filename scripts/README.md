@@ -17,6 +17,7 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 | `farm/GoldFarm.ts` | Port of `Farm/GoldFarm.cs`. |
 | `other/mergeshops/SynderesMerge.ts` | Port of `Other/MergeShops/SynderesMerge.cs`: the pattern for every merge script (see below). |
 | `other/various/Potions.ts` | Port of `Other/Various/Potions.cs`. Its options are declared in `scriptOptions` and edited in Scripts > Edit Script Options. |
+| `other/farmjoekits/0FarmerJoeDoAll.ts` | Port of `Other/FarmJoeKits/0FarmerJoeDoAll.cs`: the level 1 to 100 progression. `CoreFarmerJoe.ts` next to it holds the steps and the options; the rest of its tree is listed under [FarmerJoe](#farmerjoe). |
 | `tsconfig.json` | Type-check config; `"turu"` maps to `../bot/js/turu.ts` (the script API). |
 
 Folders follow the C# repo (`Nation/Materials/0MaxBags.cs` -> `nation/materials/0MaxBags.ts`).
@@ -107,5 +108,38 @@ A C# merge script (`Adv.StartBuyAllMerge` + `MultiOptions = { "Generic", "Select
   `defineScriptOptions(Adv.optionsStorage, [], true, { Generic: Adv.mergeOptions, Select: ... })`.
   VibeSkua's `MergeOptionStorage.cfg` reads as is.
 - `Adv.MergeItemisinShopExceptions.AddRange(...)` becomes `Adv.mergeItemisinShopExceptions.push(...)`.
+
+## FarmerJoe
+
+`other/farmjoekits/0FarmerJoeDoAll.ts` and everything its `DoAll` reaches are ported: 128 files
+under `chaos/`, `dailies/`, `darkon/`, `enhancement/`, `evil/`, `good/`, `hollowborn/`, `legion/`,
+`nation/`, `other/`, `seasonal/`, `shadowsofwar/` and `story/`, each at its C# path. None of it
+has run in game yet; it type-checks, and `bot/tests/runtime.rs` loads DoAll against a fake game.
+
+- A file holds the methods DoAll reaches plus what its own `ScriptMain` reaches (its `main()`);
+  its header lists the C# methods it leaves out. Port those from the C# file when another
+  script needs them.
+- Not ported: the classes the C# tree includes but DoAll never calls. `Dailies/0AllDailies`,
+  `Dailies/MineCrafting`, `Enhancement/InventoryEnhancer`, `Tools/BankAllItems` (only in a
+  commented-out line of DoAll), `Story/Friendship`, `Story/Hollowborn/CoreHollowbornStory`,
+  `Story/ElegyofMadness(Darkon)/DarkonGarden`, `Story/TowerOfDoom`,
+  `Story/QueenofMonsters/Extra/BrightOak`, `Nation/NationLoyaltyRewarded`,
+  `Nation/MergeShops/NationMerge`, `Nation/Various/DragonBlade[mem]`, `Other/Classes/Necromancer`,
+  `Other/Classes/REP-based/{EternalInversionist,StoneCrusher,DarkbloodStormKing}`,
+  `Other/MergeShops/CelestialChampMerge`, `Other/Weapons/{DualChainSawKatanas,EnchantedVictoryBladeWeapons}`.
+- Options another script reads (C# `Bot.Config.Get<T>(name)` in a content script, which DoAll
+  calls with its own options loaded) go through `configOr(name, fallback)` from CoreBots: the
+  fallback is C#'s `default(T)`. Enums whose members are item or quest IDs (the reward choices of
+  JuggernautItems, TheLeeryContract, ArchfiendDeathLord, AssistingCragAndBamboozle, CoreSDKA's
+  quest) stay numeric and are read with `configEnum(name, MyEnum, fallback)`; the other option
+  enums are string enums.
+- C# local functions are closures at the top of their method (`const findIngredients = ...`).
+  Packet and flash-call listeners use `bot.events.on("extensionPacket", ...)` / `off`.
+- Kept on purpose (C# behaviour): `CoreFarmerJoe.pets()` reads the undeclared option `"Pets"` and
+  so never runs; `TheLeeryContract.questItems(reward)` ignores `reward`; `CoreLegion.dagePvP`
+  takes `canSoloBoss` from whether the CBO key is set. Changed: `CoreLegion.joinLegion` never
+  sells "Undead Warrior" (C# asks with a Yes/No box, which Turu scripts can't show); the
+  "You will not resist!" watch in `CoreAOR.fightVoiceInTheSea` reads the parsed packet instead of
+  the raw `pext` flash call.
 
 A fuller guide is in `docs/turu/SCRIPTING.md`.

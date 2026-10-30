@@ -56,6 +56,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   medals), all of CoreStory (for the story scripts) and CoreDailies,
   `nation/materials/0MaxBags.ts`,
   `farm/GoldFarm.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
+- **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
+  progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
+  UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
+  `scripts/README.md` ("FarmerJoe") lists what each file leaves out, the 19 included files that
+  aren't ported (DoAll never calls them) and the spots that differ from C#.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
   `setOptions()`, starts from your house when you are in battleon, goes to the CBO stop map
   when the script is stopped, and uses boosts from the CBO Boosters switches.
@@ -128,6 +133,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   stacks, the drop list) against a fake game. The dailies themselves, the friendship packets and
   `bot.player.webBadges` (a request to account.aq.com's character page, for `Core.hasWebBadge`)
   need real runs.
+- **FarmerJoe is unverified in game:** nothing of the tree has run. It type-checks and its
+  runtime test only loads DoAll (all 128 modules), runs `setOptions` and stops. The C# was
+  converted by a script and fixed by hand, so expect wrong arguments in calls no test reaches;
+  the Core members it added (`killMonster` by monster map ID, `isSeasonalMapActive`,
+  `configOr`/`configEnum`, `bot.quests.updateQuest(value, slot)`) only have fake-game or no
+  tests. Content scripts read options of their own that DoAll doesn't declare as C#'s defaults
+  (`configOr`), as VibeSkua does. Turu scripts can't ask Yes/No: Legion's join keeps the "Undead
+  Warrior" armor instead of asking to sell it.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
