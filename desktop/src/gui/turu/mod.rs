@@ -13,6 +13,7 @@ mod logs;
 mod nav_bar;
 mod packet_logger;
 mod script_loader;
+mod script_options;
 mod skills;
 mod stats;
 pub mod theme;
@@ -25,6 +26,7 @@ use egui::{Context, Window, pos2, vec2};
 #[derive(Default)]
 pub struct Windows {
     pub script_loader: bool,
+    pub script_options: bool,
     pub game_options: bool,
     pub core_bots: bool,
     pub skills: bool,
@@ -57,6 +59,7 @@ pub struct TuruUi {
     windows: Windows,
     nav: nav_bar::NavBar,
     script_loader: script_loader::ScriptLoader,
+    script_options: script_options::ScriptOptionsWindow,
     game_options: game_options::GameOptionsWindow,
     core_bots: core_bots::CoreBotsWindow,
     skills: skills::SkillsWindow,
@@ -74,6 +77,7 @@ impl TuruUi {
             windows: Windows::default(),
             nav: Default::default(),
             script_loader: Default::default(),
+            script_options: Default::default(),
             game_options: Default::default(),
             core_bots: Default::default(),
             skills: Default::default(),
@@ -101,7 +105,9 @@ impl TuruUi {
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
         let w = &mut self.windows;
-        self.script_loader.show(ctx, &self.picker, &mut w.script_loader);
+        self.script_loader
+            .show(ctx, &self.picker, &mut w.script_loader, &mut w.script_options);
+        self.script_options.show(ctx, &mut w.script_options);
         self.game_options.show(ctx, &mut w.game_options);
         self.core_bots.show(ctx, &mut w.core_bots);
         self.current_drops.show(ctx, &mut w.current_drops);

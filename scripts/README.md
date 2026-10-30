@@ -8,10 +8,12 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 | Path | What |
 |---|---|
 | `core/CoreBots.ts` | Port of `CoreBots.cs`: `Core` (join, kill/hunt, quests, drops, bank, shops, classes, logging). |
-| `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, Good/Vampire rep). |
+| `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, alchemy crafting and rep, Good/Vampire rep). |
+| `core/CoreAdvanced.ts` | The shop part of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs. |
 | `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials. |
 | `nation/materials/0MaxBags.ts` | Port of `Nation/Materials/0MaxBags.cs`. |
 | `farm/GoldFarm.ts` | Port of `Farm/GoldFarm.cs`. |
+| `other/various/Potions.ts` | Port of `Other/Various/Potions.cs`. Its options are declared in `scriptOptions` and edited in Scripts > Edit Script Options. |
 | `tsconfig.json` | Type-check config; `"turu"` maps to `../bot/js/turu.ts` (the script API). |
 
 Folders follow the C# repo (`Nation/Materials/0MaxBags.cs` -> `nation/materials/0MaxBags.ts`).

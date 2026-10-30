@@ -544,6 +544,70 @@ export class Lite {
     set quantityWarnings(v: boolean) { call("lite.setOption", "termsAgree", v); }
 }
 
+/** The kind of a script option: a checkbox, a whole number, or a text box. */
+export type ScriptOptionKind = "bool" | "int" | "text";
+
+/** One of a script's options (VibeSkua `Option<T>`), as the Script Options window shows it. */
+export interface ScriptOption {
+    /** The name `bot.config.get` reads (VibeSkua `Name`). */
+    name: string;
+    /** The label in the window (VibeSkua `DisplayName`). */
+    displayName: string;
+    /** The text under the label (VibeSkua `Description`). */
+    description: string;
+    kind: ScriptOptionKind;
+    /** The value until the user saves another one (VibeSkua `DefaultValue`). */
+    defaultValue: boolean | number | string;
+}
+
+/** A script's options: the file the values are saved in, and the options (see {@link defineScriptOptions}). */
+export interface ScriptOptions {
+    /** The saved values go to `options/<storage>.cfg`, as in VibeSkua (`OptionsStorage`). */
+    storage: string;
+    options: ScriptOption[];
+}
+
+/** Makers for {@link ScriptOption}s, named as VibeSkua's `Option<T>` types. */
+export const option = {
+    /** A checkbox. */
+    bool(name: string, displayName: string, description: string, defaultValue = false): ScriptOption {
+        return { name, displayName, description, kind: "bool", defaultValue };
+    },
+    /** A whole number. */
+    int(name: string, displayName: string, description: string, defaultValue = 0): ScriptOption {
+        return { name, displayName, description, kind: "int", defaultValue };
+    },
+    /** A text box. */
+    text(name: string, displayName: string, description: string, defaultValue = ""): ScriptOption {
+        return { name, displayName, description, kind: "text", defaultValue };
+    },
+};
+
+/**
+ * Declares a script's options (VibeSkua `OptionsStorage` and `Options`). Export the result as
+ * `scriptOptions`: the Script Options window (Scripts > Edit Script Options) shows the options
+ * once the script is loaded, before it starts, and `bot.config.get` reads the values.
+ *
+ * @example
+ * export const scriptOptions = defineScriptOptions("MyScript", [
+ *     option.int("PotionQuant", "Potion Quantity", "Desired stack amount", 300),
+ * ]);
+ */
+export function defineScriptOptions(storage: string, options: ScriptOption[]): ScriptOptions {
+    return { storage, options };
+}
+
+/** `bot.config`: the values of the script's options (VibeSkua `Bot.Config`). */
+export class Config {
+    /**
+     * The value of an option: the one the user saved in the Script Options window, or its
+     * default. Throws for a name the script doesn't declare.
+     */
+    get<T extends boolean | number | string = boolean | number | string>(name: string): T { return call("config.get", name); }
+    /** Sets an option and saves it to the script's options file (VibeSkua `Config.Set`). */
+    set(name: string, value: boolean | number | string): void { call("config.set", name, value); }
+}
+
 /** The bot's options (Options > Game). Changes apply at once and last until the script stops. */
 export interface OptionValues {
     lagKiller: boolean;
@@ -793,6 +857,7 @@ export class Bot {
     readonly wait = new Wait();
     readonly send = new Send();
     readonly lite = new Lite();
+    readonly config = new Config();
     readonly options: Options = makeOptions();
     readonly events = new Events();
     readonly handlers = new Handlers();

@@ -1,17 +1,19 @@
 /*
 name: CoreFarms
-description: Port of the parts of Scripts/CoreFarms.cs the Nation scripts use (gold, experience,
-    Good and Vampire reputation).
+description: Port of the parts of Scripts/CoreFarms.cs the ported scripts use (gold, experience,
+    alchemy, Good and Vampire reputation).
 tags: core
 */
 /**
  * CoreFarms — partial TypeScript port of `Scripts/CoreFarms.cs`.
  *
  * Only the members reachable from the ported scripts are here (Gold, Experience, IcestormArena,
- * GoodREP, VampireREP and their helpers); port more from the C# file as scripts need them.
+ * Alchemy crafting and reputation with Gold Vouchers and Dragon Runestones, GoodREP, VampireREP and
+ * their helpers); port more from the C# file as scripts need them.
  */
 
 import { bot, BoostType } from "turu";
+import type { ShopItem } from "turu";
 import { Alignment, ClassType, Core } from "./CoreBots";
 
 /** C# `Skua.Core.Models.BoostType` (the engine's, re-exported for scripts that import it here). */
@@ -22,7 +24,79 @@ function formatN0(value: number): string {
     return String(Math.trunc(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+/**
+ * C# `CoreFarms.AlchemyTraits`: the trait of an alchemy craft. The value is the name the craft
+ * packet carries (the C# packet interpolates the enum).
+ */
+export enum AlchemyTraits {
+    /** Potent Honor Potion, Malice Potion, Might Tonic, Soul Potion. */
+    Dam = "Dam",
+    /** Potent Battle Elixir, Unstable Battle Elixir. */
+    APw = "APw",
+    /** Fate Tonic, Unstable Fate Tonic. */
+    Luc = "Luc",
+    /** Sage Tonic. */
+    Int = "Int",
+    /** Potent Malevolence Elixir. */
+    SPw = "SPw",
+    /** Healer Elixir / Potent Guard Potion / Unstable Healer Elixir: the rep farm (use with Jera). */
+    hOu = "hOu",
+    /** Potent Revitalize Elixir. */
+    hRe = "hRe",
+    /** Potent Destruction Elixir. */
+    mRe = "mRe",
+    /** Body Tonic, Fortitude Tonic, Unstable Body Tonic. */
+    End = "End",
+    Eva = "Eva",
+    /** Unstable Might Tonic. */
+    Str = "Str",
+    /** Unstable Keen Elixir. */
+    Cri = "Cri",
+    /** Unstable Mastery Tonic. */
+    Dex = "Dex",
+    /** Unstable Wise Tonic, Judgment Tonic. */
+    Wis = "Wis",
+    /** Potent Life Potion. */
+    Hea = "Hea",
+}
+
+/** C# `AlchemyRunes`: the rune of an alchemy craft (the packet carries its name). */
+export enum AlchemyRunes {
+    Dragon = "Dragon",
+    Jera = "Jera",
+    Uruz = "Uruz",
+    Fehu = "Fehu",
+    Gebo = "Gebo",
+}
+
+/** Options of {@link CoreFarms.alchemyPacket} (the C# named arguments). */
+export interface AlchemyPacketOptions {
+    /** Alchemy rank to reach first (0 for none). */
+    rank?: number;
+    /** Keep crafting while the reagents and Dragon Runestones last. */
+    loop?: boolean;
+    /** Only logged, as in C#. */
+    modifier?: string;
+    trait?: AlchemyTraits;
+    /** Stop once you own this item (`quant` of it). */
+    item?: string | null;
+    quant?: number;
+}
+
+/** The Gold Vouchers and the shop that sells each one (C# `CoreFarms.Voucher`). */
+const goldVouchers = new Map<string, { id: number; map: string; shopId: number }>([
+    ["Gold Voucher 500k", { id: 61043, map: "alchemyacademy", shopId: 2036 }],
+    ["Gold Voucher 100k", { id: 62749, map: "alchemyacademy", shopId: 2036 }],
+    ["Gold Voucher 200k", { id: 62748, map: "titanattack", shopId: 2149 }],
+    ["Gold Voucher 25k", { id: 62747, map: "hydrachallenge", shopId: 1597 }],
+    ["Gold Voucher 7.5k", { id: 62747, map: "alchemyacademy", shopId: 2116 }],
+]);
+
 export class CoreFarms {
+    private alchemyCraftStarted = false;
+    private alchemyCraftCompleted = false;
+    private alchemyCraftFailed = false;
+
     /**
      * Enables or disables a boost. Enabling needs the matching CoreBots Options switch (Other >
      * Boosters: `doGoldBoost`, `doClassBoost`, `doRepBoost`, `doExpBoost`); it finds the boost item
@@ -529,6 +603,323 @@ export class CoreFarms {
         // Disable any active boosts
         if (rankUpClass) this.toggleBoost(BoostType.Class, false);
         this.toggleBoost(BoostType.Experience, false);
+    }
+
+    /**
+     * Crafts `reagent1` + `reagent2` (C# `AlchemyPacket`). With `loop`, it keeps crafting while the
+     * reagents and Dragon Runestones last, or until you own `item`. Reaches `rank` in Alchemy first
+     * when asked, and buys Dragon Runestones when you're short.
+     */
+    alchemyPacket(reagent1: string, reagent2: string, rune = AlchemyRunes.Gebo, options: AlchemyPacketOptions = {}): void {
+        const { rank = 0, loop = true, modifier = "Moose", trait = AlchemyTraits.APw, item = null, quant = 1 } = options;
+
+        const offPacket = bot.events.on("extensionPacket", (packet) => this.alchemyPacketCheck(packet));
+        try {
+            if ((rank !== 0 && this.factionRank("Alchemy") < rank) || (item !== null && Core.checkInventory(item, quant))) {
+                this.alchemyREP(rank);
+            }
+
+            const reg1 = bot.inventory.getItem(reagent1);
+            if (!Core.checkInventory(reagent1) || !reg1) {
+                Core.logger(`Something went wrong, you do not own ${reagent1}`, "", { messageBox: true, stopBot: true });
+                return;
+            }
+
+            const reg2 = bot.inventory.getItem(reagent2);
+            if (!Core.checkInventory(reagent2) || !reg2) {
+                Core.logger(`Something went wrong, you do not own ${reagent2}`, "", { messageBox: true, stopBot: true });
+                return;
+            }
+
+            const reagentId1 = reg1.id;
+            const reagentId2 = reg2.id;
+            const quantR1 = bot.inventory.getQuantity(reagentId1);
+            const quantR2 = bot.inventory.getQuantity(reagentId2);
+            // Buy Dragon Runestones (if not owned) for the lowest ingredient quantity
+            this.dragonRunestone(Math.min(quantR1, quantR2));
+
+            if (!Core.checkInventory("Dragon Runestone")) {
+                Core.logger("Missing Dragon Runestone. Cannot continue alchemy!");
+                return;
+            }
+
+            // C# also sets reg1.ID to 11475 for Dragon Scale here, but the craft uses the IDs read above.
+            Core.logger(`Reagents: [${reagent1}], [${reagent2}].`);
+            Core.logger(`Rune: ${rune}.`);
+            Core.logger(`Modifier: ${modifier}.`);
+            Core.join("alchemy");
+
+            let i = 1;
+            if (loop) {
+                const reagents = [reagent1, reagent2, "Dragon Runestone"];
+                while (!bot.shouldExit && Core.checkInventory(reagents)) {
+                    if (!Core.checkInventory(reagents) || (item !== null && Core.checkInventory(item, quant))) break;
+
+                    if (!this.alchemyCraft(reagentId1, reagentId2, rune, trait)) {
+                        Core.logger("Alchemy craft failed, stopping loop");
+                        if (!Core.checkInventory([reagentId1, reagentId2])) Core.logger("We've ran out of reagents.");
+                        break;
+                    }
+                    Core.logger(`Completed alchemy x${i++}`);
+                }
+            } else {
+                this.alchemyCraft(reagentId1, reagentId2, rune, trait);
+            }
+        } finally {
+            offPacket();
+        }
+    }
+
+    /** One craft: start it, wait out the mixing, then finish it (C# `AlchemyPacket`'s `Packet()`). */
+    private alchemyCraft(reagentId1: number, reagentId2: number, rune: AlchemyRunes, trait: AlchemyTraits): boolean {
+        const mixTimeMs = 16000;
+
+        // Reset flags at the start of each craft
+        this.alchemyCraftStarted = false;
+        this.alchemyCraftCompleted = false;
+        this.alchemyCraftFailed = false;
+
+        // Initiate potion craft
+        Core.sendPackets(`%xt%zm%crafting%1%alchStart%${reagentId1}%${reagentId2}%${rune}%1%${trait}%`);
+
+        // Wait for the server to accept alchStart
+        if (!this.waitForAlchemyFlag(() => this.alchemyCraftStarted || this.alchemyCraftFailed, 10000)) {
+            Core.logger("Failed to receive server craft start confirmation (10s timeout)");
+            return false;
+        }
+
+        if (this.alchemyCraftFailed) return false;
+
+        Core.logger(`Mixing for ${mixTimeMs / 1000} seconds before completion`);
+        if (this.waitForAlchemyFlag(() => this.alchemyCraftFailed, mixTimeMs) || bot.shouldExit) return false;
+
+        // Send completion packet
+        Core.sendPackets("%xt%zm%crafting%1%alchDone%");
+
+        // Wait for completion (single log)
+        const completed = this.waitForAlchemyFlag(() => this.alchemyCraftCompleted || this.alchemyCraftFailed, 10000);
+
+        if (this.alchemyCraftFailed) return false;
+
+        if (!completed) {
+            Core.logger("Warning: Did not receive completion confirmation within 10s");
+            return false;
+        }
+
+        // Only log once per craft
+        if (this.alchemyCraftCompleted) Core.logger("Server confirmed craft completion");
+
+        // Reset flags for the next craft
+        this.alchemyCraftStarted = false;
+        this.alchemyCraftCompleted = false;
+
+        Core.sleep(500);
+        return true;
+    }
+
+    /** Polls the flag every 100 ms until it is set or `timeoutMs` pass (C# `WaitForAlchemyFlag`). */
+    private waitForAlchemyFlag(flag: () => boolean, timeoutMs: number): boolean {
+        let elapsed = 0;
+        const checkInterval = 100;
+
+        while (elapsed < timeoutMs && !bot.shouldExit) {
+            if (flag()) return true;
+
+            Core.sleep(checkInterval);
+            elapsed += checkInterval;
+        }
+
+        return false;
+    }
+
+    /** Server replies to a craft (`alchStart`, `alchDone`, `alchError`) set the flags above. */
+    private alchemyPacketCheck(packet: any): void {
+        const type = packet?.params?.type;
+        const data = packet?.params?.dataObj;
+        if (type !== "json" || data == null) return;
+
+        switch (data.cmd) {
+            case "alchStart":
+                this.alchemyCraftStarted = data.ok === 1;
+                this.alchemyCraftFailed = !this.alchemyCraftStarted;
+                if (this.alchemyCraftStarted) Core.logger("Alchemy craft started (confirmed by server)");
+                else Core.logger(`Alchemy start rejected: ${data.msg}`);
+                break;
+
+            case "alchDone":
+                if (data.ok !== 1) {
+                    this.alchemyCraftFailed = true;
+                    Core.logger(`Alchemy craft rejected: ${data.msg}`);
+                } else if (!this.alchemyCraftCompleted) {
+                    // Only log once
+                    this.alchemyCraftCompleted = true;
+                    Core.logger("Alchemy craft completed (confirmed by server)");
+                }
+                break;
+
+            case "alchError":
+                this.alchemyCraftStarted = false;
+                this.alchemyCraftCompleted = false;
+                this.alchemyCraftFailed = true;
+                Core.logger(`Alchemy error: ${data.error ?? "Unknown error"}`);
+                break;
+        }
+    }
+
+    /**
+     * Buys a Gold Voucher (C# `Voucher`), farming the gold for each batch when you can't afford
+     * it. Each voucher is sold in its own shop.
+     * @param voucherName One of "Gold Voucher 500k", "100k", "200k", "25k" or "7.5k".
+     * @param quant How many you need in total.
+     */
+    voucher(voucherName: string, quant: number): void {
+        if (bot.bank.contains(voucherName)) Core.unbank(voucherName);
+
+        const current = bot.inventory.getQuantity(voucherName);
+        let needed = quant - current;
+
+        if (needed <= 0) {
+            bot.log(`x${current}/${needed} Vouchers Owned`);
+            return;
+        }
+
+        Core.logger(`${voucherName} [Current: ${current}/${quant}] - Buying x${needed}`);
+
+        const voucher = goldVouchers.get(voucherName);
+        if (!voucher) {
+            Core.logger(`Invalid Gold Voucher: ${voucherName}`);
+            return;
+        }
+        const { id: voucherId, map, shopId } = voucher;
+
+        if (bot.map.name !== map) Core.join(map);
+
+        let retry = 0;
+        let item: ShopItem | undefined;
+        while (!item) {
+            while (!bot.shouldExit && bot.shops.id !== shopId) {
+                bot.shops.load(shopId);
+                bot.wait.forActionCooldown("loadShop");
+                bot.wait.forTrue(() => bot.shops.isLoaded && bot.shops.id === shopId, 20);
+                Core.sleep(1000);
+                if (bot.shops.id === shopId || retry++ >= 20) break;
+            }
+
+            item = bot.shops.items.find((x) => x && x.id === voucherId);
+            if (!item) {
+                if (retry >= 5) {
+                    Core.logger(`Item "${voucherName}" not found in the shop.`);
+                    return;
+                }
+                retry++;
+            }
+        }
+
+        const GOLD_CAP = 100_000_000;
+
+        while (!bot.shouldExit && needed > 0) {
+            if (!item.name) break;
+
+            const maxStackBuy = Math.min(needed, item.maxStack);
+            if (maxStackBuy <= 0) break;
+
+            // Extract voucher value from item name ("Gold Voucher 7.5k" -> 7.5 thousand)
+            const lastSpaceIndex = item.name.lastIndexOf(" ");
+            const valuePart = lastSpaceIndex >= 0 ? item.name.slice(lastSpaceIndex + 1) : "";
+            const parsed = Number(valuePart.toLowerCase().replace("k", "").replace(/,/g, ""));
+            const thousands = parsed > 0 ? parsed : 100;
+            const pricePerVoucher = Math.round(thousands * 1000);
+
+            // ----- SMART GOLD FARMING -----
+            const goldForBatch = maxStackBuy * pricePerVoucher;
+            if (bot.player.gold < goldForBatch) this.gold(Math.min(GOLD_CAP, goldForBatch));
+
+            // After farming, buy only what we can afford
+            const affordable = Math.floor(bot.player.gold / pricePerVoucher);
+            if (affordable <= 0) continue;
+
+            const buyAmount = Math.min(maxStackBuy, affordable);
+            Core.buyItem(map, shopId, item.name, buyAmount);
+            needed -= buyAmount;
+        }
+    }
+
+    /** Buys Dragon Runestones from the Alchemy Academy (C# `DragonRunestone`). */
+    dragonRunestone(quant = 100): void {
+        if (Core.checkInventory("Dragon Runestone", quant)) return;
+
+        Core.farmingLogger("Dragon Runestone", quant);
+
+        if (bot.map.name !== "alchemyacademy") Core.join("alchemyacademy");
+
+        this.voucher("Gold Voucher 100k", quant);
+        Core.buyItem("alchemyacademy", 395, "Dragon Runestone", quant, 7679, 0);
+    }
+
+    /**
+     * Farms Alchemy reputation to `rank` (C# `AlchemyREP`): by buying the reagents with gold
+     * (`goldMethod`), or by killing the Lair monsters for the Dragon Scales.
+     */
+    alchemyREP(rank = 10, goldMethod = true): void {
+        if (this.factionRank("Alchemy") >= rank) return;
+
+        Core.logger("Start by Selling all items named dragon scale (there are 2...) sorta fucks it all up, if u have the wrong one");
+        for (const item of ["Dragon Scale", "Ice Vapor"]) {
+            if (!Core.checkInventory(item)) continue;
+
+            Core.sellItem(item, 1, { all: true });
+        }
+
+        if (!Core.hasFaction("Alchemy")) {
+            Core.logger("Getting Pre-Ranking XP");
+            // ice vapor, dragon scape, dragon runestone
+            if (!Core.checkInventory([11478, 11475, 7132])) {
+                this.dragonRunestone(3);
+                Core.buyItem("alchemy", 397, 11475, 2, 1232);
+                Core.buyItem("alchemy", 397, 11478, 2, 1235);
+            }
+            Core.join("alchemy");
+            this.alchemyPacket("Dragon Scale", "Ice Vapor", AlchemyRunes.Jera, { trait: AlchemyTraits.hOu });
+        }
+
+        // ice vapor, dragon scape, dragon runestone
+        Core.addDrop(11478, 11475, 7132);
+        this.toggleBoost(BoostType.Reputation);
+        Core.logger(`Farming rank ${rank} Alchemy`);
+
+        let i = 1;
+        while (!bot.shouldExit && this.factionRank("Alchemy") < rank) {
+            if (goldMethod) {
+                if (!Core.checkInventory([11475, 11478, 7132])) {
+                    // 10 Dragonstones for alchemy itself + enough to buy 10 mats (1 Dstone -> 2 mats)
+                    this.dragonRunestone(20);
+                    // each set of 10 should cost 5 Dstones
+                    Core.buyItem("alchemy", 397, 11475, 10, 1232); // Dragon Scape
+                    Core.buyItem("alchemy", 397, 11478, 10, 1235); // Ice Vapor
+                }
+
+                this.alchemyPacket("Dragon Scale", "Ice Vapor", this.alchemyRune(), { trait: AlchemyTraits.hOu });
+            } else {
+                Core.equipClass(ClassType.Farm);
+                while (!bot.shouldExit && !Core.checkInventory(11475, 30)) {
+                    Core.killMonster("lair", "Hole", "Center", "*", null, 1, { log: false });
+                }
+                Core.killMonster("lair", "Enter", "Spawn", "*", "Ice Vapor", 30, { isTemp: false, log: false });
+                this.dragonRunestone(30);
+
+                this.alchemyPacket("Dragon Scale", "Ice Vapor", this.alchemyRune(), { trait: AlchemyTraits.hOu });
+            }
+            Core.logger(`Iteration ${i++} completed`);
+        }
+        this.toggleBoost(BoostType.Reputation, false);
+    }
+
+    /** The rune for the Alchemy rep farm: Jera below rank 5, Fehu below rank 8, else Gebo. */
+    private alchemyRune(): AlchemyRunes {
+        const rank = this.factionRank("Alchemy");
+        if (rank < 5) return AlchemyRunes.Jera;
+        if (rank < 8) return AlchemyRunes.Fehu;
+        return AlchemyRunes.Gebo;
     }
 
     /** Farms Good reputation to `rank` (PoisonForest after its story, else the low-rep quests). */

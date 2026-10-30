@@ -7,6 +7,7 @@
 
 pub mod boosts;
 pub mod combat;
+pub mod config;
 pub mod drops;
 pub mod handlers;
 pub mod hunt;
@@ -55,6 +56,7 @@ pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value
         "send" => send::dispatch(bot, name, args),
         "lite" => lite::dispatch(bot, name, args),
         "options" => options::dispatch(bot, name, args),
+        "config" => config::dispatch(bot, name, args),
         "flash" => flash_dispatch(bot, name, args),
         _ => Err(BotError::UnknownMethod(method.to_owned())),
     }

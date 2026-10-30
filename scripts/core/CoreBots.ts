@@ -83,6 +83,8 @@ export interface ShopRequirement {
     id: number;
     name: string;
     quantity: number;
+    /** A temporary (quest) item. */
+    temp: boolean;
 }
 
 /** A shop item with the fields CoreBots needs (read from `world.shopinfo.items`). */
@@ -97,6 +99,8 @@ export interface CoreShopItem {
     upgrade: boolean;
     coins: boolean;
     cost: number;
+    /** The player level needed to buy it (C# `ShopItem.Level`). */
+    level: number;
     faction: string;
     requiredReputation: number;
     requirements: ShopRequirement[];
@@ -332,9 +336,10 @@ function toShopItem(raw: GameItem): CoreShopItem {
         upgrade: flag(raw.bUpg),
         coins: flag(raw.bCoins),
         cost: num(raw.iCost),
+        level: num(raw.iLvl),
         faction: text(raw.sFaction),
         requiredReputation: num(raw.iReqRep),
-        requirements: turnin.map((r) => ({ id: num(r.ItemID), name: text(r.sName), quantity: num(r.iQty) })),
+        requirements: turnin.map((r) => ({ id: num(r.ItemID), name: text(r.sName), quantity: num(r.iQty), temp: flag(r.bTemp) })),
     };
 }
 
@@ -1853,6 +1858,7 @@ export class CoreBots {
             upgrade: x.upgrade,
             coins: x.coins,
             cost: x.cost,
+            level: x.level,
             faction: "",
             requiredReputation: 0,
             requirements: [],
@@ -3469,6 +3475,12 @@ export class CoreBots {
         const factions = bot.flash.get<GameFaction[] | null>("world.myAvatar.factions") ?? [];
         const found = factions.find((f) => f && text(f.sName) === faction);
         return found ? num(found.iRank) : 0;
+    }
+
+    /** C# `Bot.Reputation.FactionList.Exists(f => f.Name == faction)`: you have a reputation in it. */
+    hasFaction(faction: string): boolean {
+        const factions = bot.flash.get<GameFaction[] | null>("world.myAvatar.factions") ?? [];
+        return factions.some((f) => f && text(f.sName) === faction);
     }
 
     // ---------------------------------------------------------------------------------------

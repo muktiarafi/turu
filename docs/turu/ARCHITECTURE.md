@@ -38,7 +38,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
                          invHelper), shops, skills, wait, send, lite, options, packets
     background.rs        startup calls (`loadClient`, ...) and the 20 ms "ScriptInterface" timer:
                          login tracking, rest packets, option enforcement (no watchdog yet)
-    script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings
+    script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
+                         script options (`options.rs`: the `scriptOptions` declaration and its values)
 desktop/src/turu.rs      desktop integration: FlashHost impl, ExternalInterface provider, spawn_action
 desktop/src/gui/turu/    egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 scripts/                 TypeScript scripts (types, Core libraries, ported farms)
@@ -141,8 +142,12 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `options.json` | bot options (Options > Game, Save) |
 | `scripts/` | default scripts folder (the repo's `scripts/` can be used directly) |
 | `options/CBO_Storage(<username>).txt` | CoreBots Options (`Key: Value` lines), written by Options > CoreBots and read by CoreBots' `setOptions()` through `bot.coreBotsOptions()` (`bot/src/cbo.rs`) |
+| `options/<Storage>.cfg` | a script's option values (VibeSkua's `<Storage>.cfg`: `Options:Name=Value` lines), written by Scripts > Edit Script Options and `bot.config.set` (`bot/src/script/options.rs`) |
 | `AdvancedSkills.json` | the shipped skill sets (from `auqw/Scripts` `Skills/AdvancedSkills.json`, rewritten from the app's copy) |
 | `UserAdvancedSkills.json` | your skill sets, used by the bot: seeded from the shipped ones, then only gaining the shipped classes and modes it lacks (VibeSkua's merge) |
 
-Per-script options (VibeSkua's script config, "Edit Script Options") aren't built yet. Logs are
-kept in memory; the Logs and Script Loader windows can save them.
+Script options (VibeSkua's `Options` and "Edit Script Options") are read when a script is loaded:
+the engine runs the module's top level in a separate runtime where bot calls fail, and reads its
+`scriptOptions` export (`script::options::declaration`). A script that calls the bot at top level
+therefore has no options until that's fixed. Logs are kept in memory; the Logs and Script Loader
+windows can save them.
