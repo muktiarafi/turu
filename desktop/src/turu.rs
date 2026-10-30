@@ -2,7 +2,8 @@
 //!
 //! * [`TuruExternalInterface`] receives `skua.swf`'s `ExternalInterface.call(...)`s.
 //! * [`DesktopFlashHost`] lets bot threads call `skua.swf`'s callbacks: each call is sent to
-//!   the event loop as [`RuffleEvent::TuruFlashCall`] and answered by [`answer_flash_call`].
+//!   the event loop as [`RuffleEvent::TuruFlashCall`] (without a window, to the `headless`
+//!   loop) and answered by [`answer_flash_call`].
 //!
 //! See docs/turu/ARCHITECTURE.md.
 
@@ -11,6 +12,7 @@ use ruffle_core::Player;
 use ruffle_core::context::UpdateContext;
 use ruffle_core::external::{ExternalInterfaceProvider, Value as ExternalValue};
 use std::ffi::OsString;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::ThreadId;
@@ -28,6 +30,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
 static BOT: OnceLock<Arc<Bot>> = OnceLock::new();
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
+static HEADLESS: AtomicBool = AtomicBool::new(false);
 
 /// The bot of this client (one per process, like VibeSkua).
 pub fn bot() -> &'static Arc<Bot> {
@@ -58,8 +61,14 @@ pub fn skua_swf_url() -> anyhow::Result<String> {
 ///   only loads it.
 /// * `--exit-on-script-stop` (or `--exit-on-finish`): log out and quit when the script stops
 ///   (not when auto-relogin stops it).
+/// * `--headless`: no window (see `headless.rs`).
 pub fn take_startup_args(args: &mut Vec<OsString>) {
-    let (mut startup, exit_on_stop) = parse_startup_args(args);
+    let Flags {
+        mut startup,
+        exit_on_stop,
+        headless,
+    } = parse_startup_args(args);
+    HEADLESS.store(headless, Ordering::Relaxed);
     if startup.password.is_none() {
         startup.password = std::env::var("TURU_PASSWORD").ok().filter(|p| !p.is_empty());
     }
@@ -72,10 +81,23 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     }
 }
 
-/// Removes Turu's flags from `args`; returns them and whether to exit when the script stops.
-fn parse_startup_args(args: &mut Vec<OsString>) -> (Startup, bool) {
-    let mut startup = Startup::default();
-    let mut exit_on_stop = false;
+/// `--headless` was given: run without a window.
+pub fn headless() -> bool {
+    HEADLESS.load(Ordering::Relaxed)
+}
+
+/// Turu's flags.
+#[derive(Default)]
+struct Flags {
+    startup: Startup,
+    exit_on_stop: bool,
+    headless: bool,
+}
+
+/// Removes Turu's flags from `args` and returns them.
+fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
+    let mut flags = Flags::default();
+    let startup = &mut flags.startup;
     let mut rest = Vec::with_capacity(args.len());
     let mut iter = std::mem::take(args).into_iter();
     while let Some(arg) = iter.next() {
@@ -104,12 +126,13 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> (Startup, bool) {
                 startup.script = value().map(Into::into);
                 startup.run_script = false;
             }
-            "--exit-on-script-stop" | "--exit-on-finish" => exit_on_stop = true,
+            "--exit-on-script-stop" | "--exit-on-finish" => flags.exit_on_stop = true,
+            "--headless" => flags.headless = true,
             _ => rest.push(arg),
         }
     }
     *args = rest;
-    (startup, exit_on_stop)
+    flags
 }
 
 /// VibeSkua `--exit-on-script-stop`: 2 s after the script stops, log out; 1 s later, quit.
@@ -156,13 +179,26 @@ pub fn answer_flash_call(call: TuruFlashCall, player: Option<&mut Player>) {
 }
 
 pub struct DesktopFlashHost {
-    event_loop: Mutex<EventLoopProxy<RuffleEvent>>,
+    /// Hands a call to the thread that runs the player; false when it's gone.
+    send: Box<dyn Fn(TuruFlashCall) -> bool + Send + Sync>,
 }
 
 impl DesktopFlashHost {
     pub fn new(event_loop: EventLoopProxy<RuffleEvent>) -> Self {
+        let event_loop = Mutex::new(event_loop);
         Self {
-            event_loop: Mutex::new(event_loop),
+            send: Box::new(move |call| {
+                event_loop
+                    .lock()
+                    .is_ok_and(|e| e.send_event(RuffleEvent::TuruFlashCall(call)).is_ok())
+            }),
+        }
+    }
+
+    /// For the windowless loop.
+    pub fn headless(sender: std::sync::mpsc::Sender<crate::headless::HeadlessEvent>) -> Self {
+        Self {
+            send: Box::new(move |call| sender.send(crate::headless::HeadlessEvent::TuruFlashCall(call)).is_ok()),
         }
     }
 }
@@ -179,11 +215,9 @@ impl FlashHost for DesktopFlashHost {
             args: args.into_iter().map(to_external).collect(),
             reply,
         };
-        self.event_loop
-            .lock()
-            .map_err(|_| HostError::Closed)?
-            .send_event(RuffleEvent::TuruFlashCall(call))
-            .map_err(|_| HostError::Closed)?;
+        if !(self.send)(call) {
+            return Err(HostError::Closed);
+        }
         match answer.recv_timeout(CALL_TIMEOUT) {
             Ok(Some(value)) => Ok(from_external(value)),
             Ok(None) => Err(HostError::NoPlayer),
@@ -270,11 +304,23 @@ mod tests {
             "Artix",
         ]
         .into_iter()
-        .chain(["--run-script", "farm/GoldFarm.ts", "--exit-on-finish", "-g", "metal"])
+        .chain([
+            "--run-script",
+            "farm/GoldFarm.ts",
+            "--exit-on-finish",
+            "--headless",
+            "-g",
+            "metal",
+        ])
         .map(Into::into)
         .collect();
-        let (startup, exit) = parse_startup_args(&mut args);
+        let Flags {
+            startup,
+            exit_on_stop: exit,
+            headless,
+        } = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-p", "low", "-g", "metal"]);
+        assert!(headless);
         assert_eq!(startup.username.as_deref(), Some("Hero"));
         assert_eq!(startup.password.as_deref(), Some("a=b"));
         assert_eq!(startup.server.as_deref(), Some("Artix"));

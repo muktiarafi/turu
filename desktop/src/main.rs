@@ -12,6 +12,7 @@ mod cli;
 mod custom_event;
 mod dbus;
 mod gui;
+mod headless;
 mod heap_census;
 mod log;
 mod mugetsu;
@@ -27,7 +28,7 @@ mod linux;
 mod windows;
 
 use crate::preferences::GlobalPreferences;
-use anyhow::{Context, Error};
+use anyhow::{Context, Error, anyhow};
 use app::App;
 #[cfg(feature = "shell-completions")]
 use clap::CommandFactory;
@@ -389,6 +390,14 @@ fn main() -> Result<(), Error> {
             );
         }
     });
+
+    // Turu: `--headless` runs the game without a window.
+    if turu::headless() {
+        let Some(movie_url) = preferences.cli.movie_url.clone() else {
+            return Err(anyhow!("--headless needs skua.swf"));
+        };
+        return headless::run(preferences, movie_url);
+    }
 
     let result = App::new(preferences).and_then(|(mut app, event_loop)| {
         event_loop.run_app(&mut app).context("Event loop failure")

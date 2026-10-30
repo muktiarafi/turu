@@ -62,6 +62,9 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
                             never locks Player)       and block on a reply channel
 ```
 
+* **Without a window** (`--headless`, `desktop/src/headless.rs`) there is no winit event loop:
+  the main thread builds the player with the null renderer and UI and runs its own loop, and
+  `Flash::call` sends to that loop's channel instead of the `EventLoopProxy`.
 * **Ruffle's `Player` is `!Send` in practice** (its futures are `spawn_local` on the event
   loop). Every call into Flash is therefore marshalled to the event loop thread:
   `Flash::call` sends `RuffleEvent::TuruFlashCall { name, args, reply }` through the winit
