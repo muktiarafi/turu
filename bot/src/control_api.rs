@@ -165,7 +165,7 @@ async fn handle(
     Ok(response)
 }
 
-fn authorized(headers: &HeaderMap, token: &str) -> bool {
+pub(crate) fn authorized(headers: &HeaderMap, token: &str) -> bool {
     let bearer = headers
         .get_all(AUTHORIZATION)
         .iter()

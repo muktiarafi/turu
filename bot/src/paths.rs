@@ -40,6 +40,11 @@ impl Paths {
         self.root.join("api-token")
     }
 
+    /// The web monitor's access key (`monitor::server`), readable by you only.
+    pub fn monitor_key_file(&self) -> PathBuf {
+        self.root.join("monitor-key")
+    }
+
     /// The account list (`accounts::Accounts`); passwords are in the system keychain.
     pub fn accounts_file(&self) -> PathBuf {
         self.root.join("accounts.json")

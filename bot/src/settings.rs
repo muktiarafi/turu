@@ -24,7 +24,6 @@ pub struct AppSettings {
     pub auto_update_junk_items: bool,
     // Webhooks & Alerts (`crate::webhooks`)
     pub discord_webhook_url: String,
-    pub nexus_webhook_url: String,
     pub webhook_notify_started: bool,
     pub webhook_notify_stopped: bool,
     pub webhook_notify_crashed: bool,
@@ -35,6 +34,11 @@ pub struct AppSettings {
     pub webhook_notify_health_ping: bool,
     /// Minutes between health pings.
     pub webhook_ping_interval: i32,
+    // Web Monitor (`crate::monitor`)
+    pub monitor_enabled: bool,
+    /// Listen on every network interface (other devices, Tailscale), not only this computer.
+    pub monitor_allow_other_devices: bool,
+    pub monitor_port: i32,
 }
 
 impl Default for AppSettings {
@@ -49,7 +53,6 @@ impl Default for AppSettings {
             check_junk_items_updates: true,
             auto_update_junk_items: true,
             discord_webhook_url: String::new(),
-            nexus_webhook_url: String::new(),
             webhook_notify_started: true,
             webhook_notify_stopped: true,
             webhook_notify_crashed: true,
@@ -58,6 +61,9 @@ impl Default for AppSettings {
             webhook_notify_item_drops_list: "Unidentified 34, Void Aura".into(),
             webhook_notify_health_ping: false,
             webhook_ping_interval: 10,
+            monitor_enabled: false,
+            monitor_allow_other_devices: false,
+            monitor_port: crate::monitor::DEFAULT_PORT as i32,
         }
     }
 }

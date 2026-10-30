@@ -109,11 +109,14 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   stores it and never reads it), Relogin Try Delay and Relogin Watchdog (bot options: applied
   and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
   folder after a second click, then restart). Updates: the six switches are stored but greyed
-  ("Coming soon"): Turu downloads no updates. Webhooks: Discord and Skua Nexus URLs with Test
-  buttons, the notify switches, Drop List, Health Pings and their interval, sent by
-  `bot/src/webhooks.rs` (VibeSkua `DiscordWebhookService`): one thread posting embeds, two a
-  second, retrying on 429; the Nexus snapshot and health pings read the game on that thread. The
-  drop alert has no screenshot (VibeSkua attaches one). Failures go to the Debug log.
+  ("Coming soon"): Turu downloads no updates. Webhooks: the Discord URL with Test, the notify
+  switches, Drop List, Health Pings and their interval, sent by `bot/src/webhooks.rs` (VibeSkua
+  `DiscordWebhookService`): one thread posting embeds, two a second, retrying on 429; the health
+  pings' snapshot is read on that thread. The drop alert has no screenshot (VibeSkua attaches
+  one). Failures go to the Debug log. Monitor (in place of VibeSkua's Skua Nexus webhook):
+  Enable Web Monitor, Allow Other Devices, Monitor Port (applied half a second after the last
+  change), Monitor Link (Open, Copy Link with the key after `#`, the network address with Allow
+  Other Devices; Copy Key) and Regenerate Key (asks twice), with the server's state below.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread), the list (check box, a green dot
   while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /

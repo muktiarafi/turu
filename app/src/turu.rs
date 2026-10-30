@@ -47,6 +47,14 @@ static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
 static API: Mutex<Option<String>> = Mutex::new(None);
+/// The web monitor (Options > Application > Web Monitor); [`apply_monitor`] starts and stops it.
+static MONITOR: Mutex<Monitor> = Mutex::new(Monitor {
+    server: None,
+    running: None,
+    error: None,
+    key: None,
+    generation: 0,
+});
 
 /// Ruffle's SharedObjects folder (`--save-directory`): what "Clear Flash Cache" empties.
 static SAVE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
@@ -324,6 +332,162 @@ pub fn start_api() {
         }
         Err(e) => tracing::error!("Control API: {e}"),
     }
+}
+
+struct Monitor {
+    server: Option<turu_bot::monitor::server::Server>,
+    /// What `server` was started with: allow other devices, port.
+    running: Option<(bool, u16)>,
+    /// Why it isn't running.
+    error: Option<String>,
+    key: Option<Arc<turu_bot::monitor::server::Key>>,
+    /// Bumped by every `apply_monitor`; only the latest one applies.
+    generation: u64,
+}
+
+fn monitor_lock() -> std::sync::MutexGuard<'static, Monitor> {
+    MONITOR.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What the web monitor is doing, for Options > Application.
+pub enum MonitorStatus {
+    Off,
+    /// Served here; for this computer and, with Allow Other Devices, for others.
+    Serving(std::net::SocketAddr),
+    Failed(String),
+    /// Army > Accounts launched this client: its launcher's monitor shows it.
+    LaunchedByArmy,
+}
+
+pub fn monitor_status() -> MonitorStatus {
+    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+        return MonitorStatus::LaunchedByArmy;
+    }
+    let monitor = monitor_lock();
+    match (&monitor.server, &monitor.error) {
+        (Some(server), _) => MonitorStatus::Serving(server.addr()),
+        (None, Some(error)) => MonitorStatus::Failed(error.clone()),
+        (None, None) => MonitorStatus::Off,
+    }
+}
+
+/// Starts the web monitor at launch when Options > Application has it on. Only this process
+/// serves it: clients launched by Army > Accounts don't.
+pub fn start_monitor() {
+    let settings = bot().settings.read().clone();
+    let generation = monitor_lock().generation;
+    apply_monitor_now(&settings, generation);
+}
+
+/// Starts, restarts or stops the web monitor for these settings, half a second later (dragging
+/// the port changes it every frame), off the UI thread (stopping waits for the server's thread).
+pub fn apply_monitor(settings: &turu_bot::settings::AppSettings) {
+    let generation = {
+        let mut monitor = monitor_lock();
+        monitor.generation += 1;
+        monitor.generation
+    };
+    let settings = settings.clone();
+    let _ = std::thread::Builder::new().name("Turu Monitor Apply".into()).spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        apply_monitor_now(&settings, generation);
+    });
+}
+
+fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64) {
+    use turu_bot::monitor::server::{Key, Server, Source, load_key};
+    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+        return;
+    }
+    let mut monitor = monitor_lock();
+    if monitor.generation != generation {
+        return;
+    }
+    let port = u16::try_from(settings.monitor_port).unwrap_or(turu_bot::monitor::DEFAULT_PORT);
+    let wanted = settings.monitor_enabled.then_some((settings.monitor_allow_other_devices, port));
+    if wanted == monitor.running && (monitor.server.is_some() || wanted.is_none()) {
+        return;
+    }
+    // Closes the old listener before binding the new one (the same port, maybe).
+    monitor.server = None;
+    monitor.running = None;
+    monitor.error = None;
+    let Some((others, port)) = wanted else {
+        tracing::info!("Web monitor stopped");
+        return;
+    };
+    let key = match &monitor.key {
+        Some(key) => key.clone(),
+        None => match load_key(&bot().paths) {
+            Ok(key) => {
+                let key = Key::new(key);
+                monitor.key = Some(key.clone());
+                key
+            }
+            Err(e) => {
+                monitor.error = Some(format!("couldn't read the monitor key: {e}"));
+                return;
+            }
+        },
+    };
+    let ip = if others {
+        std::net::Ipv4Addr::UNSPECIFIED
+    } else {
+        std::net::Ipv4Addr::LOCALHOST
+    };
+    let sources = Arc::new(|| {
+        tabs()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (id, bot))| Source {
+                id: format!("tab:{}", id.0),
+                label: format!("Tab {}", i + 1),
+                bot,
+            })
+            .collect()
+    });
+    match Server::start((ip, port).into(), key, sources, VERSION.into()) {
+        Ok(server) => {
+            tracing::info!("Web monitor on http://{}", server.addr());
+            monitor.server = Some(server);
+            monitor.running = wanted;
+        }
+        Err(e) => {
+            tracing::error!("Web monitor: {e}");
+            monitor.error = Some(e);
+        }
+    }
+}
+
+/// The monitor's key, made the first time it's asked for.
+pub fn monitor_key() -> Result<String, String> {
+    let mut monitor = monitor_lock();
+    if let Some(key) = &monitor.key {
+        return Ok(key.get());
+    }
+    let key = turu_bot::monitor::server::load_key(&bot().paths)?;
+    monitor.key = Some(turu_bot::monitor::server::Key::new(key.clone()));
+    Ok(key)
+}
+
+/// A new key: devices given the old one are cut off at their next request.
+pub fn regenerate_monitor_key() -> Result<(), String> {
+    let key = turu_bot::monitor::server::new_key(&bot().paths)?;
+    let mut monitor = monitor_lock();
+    match &monitor.key {
+        Some(current) => current.set(key),
+        None => monitor.key = Some(turu_bot::monitor::server::Key::new(key)),
+    }
+    Ok(())
+}
+
+/// This computer's address on its network (the interface its default route uses), for links
+/// other devices open. Nothing is sent: connecting a UDP socket only picks the route.
+pub fn lan_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:80").ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
 /// `--headless` was given: run without a window.

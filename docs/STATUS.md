@@ -116,9 +116,22 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
   the title, the client's starting frame rate (24 by default, AQW's own rate; Set FPS defaults to
   0, leaving the game's own FPS setting alone),
-  relogin delay and watchdog, Clear Flash Cache, and Discord / Skua Nexus webhooks for script
+  relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook; the skill-set and junk-item update switches are stored only.
+- **Web monitor** (phase 1 of `docs/turu/WEB_MONITOR_PROPOSAL.md`, replacing the Skua Nexus
+  webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`) on
+  `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
+  live: Skua Nexus's cards (state, map, level and class, gold, AC, bag slots, script and run time,
+  HP / MP / target bars, quests, equipment, the Combat > Stats counters) plus gold and XP per hour
+  since the monitor saw the script start, and its Scripts / Accounts / Resources tables, a filter
+  and streamer mode. Each bot's sampler (`bot/src/monitor/`) reads a `Snapshot` every 2 s only
+  while a page is open (items and quests every 30 s or after they change); the webhooks format
+  the same `Snapshot`. The server (`monitor/server.rs`) is read only: `/api/state` and an SSE
+  stream, the key from `monitor-key` required except from a loopback connection naming a
+  loopback host (so Tailscale Serve needs it too). Clients launched by Army don't serve it.
+  Checked in a browser with the headless client at the login screen; the in-game cards only with
+  sample data. Not built: phases 2 to 4 (Army children, events, history, control, remote clients).
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
   Options, Game, Application and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
 

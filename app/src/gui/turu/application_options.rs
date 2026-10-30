@@ -1,7 +1,7 @@
 //! Options > Application (VibeSkua's 580x650 `ApplicationOptionsView`): a searchable list of
-//! Turu's own settings in three sections. Changes are saved at once: `settings.json`
+//! Turu's own settings in four sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
-//! just those two fields of `options.json`.
+//! just those two fields of `options.json`. Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
@@ -17,16 +17,18 @@ enum Section {
     General,
     Updates,
     Webhooks,
+    Monitor,
 }
 
 impl Section {
-    const ALL: [Section; 3] = [Self::General, Self::Updates, Self::Webhooks];
+    const ALL: [Section; 4] = [Self::General, Self::Updates, Self::Webhooks, Self::Monitor];
 
     fn chip(self) -> &'static str {
         match self {
             Self::General => "General",
             Self::Updates => "Updates",
             Self::Webhooks => "Webhooks",
+            Self::Monitor => "Monitor",
         }
     }
 
@@ -35,23 +37,25 @@ impl Section {
             Self::General => "General & Performance",
             Self::Updates => "Auto Updates & Sync",
             Self::Webhooks => "Webhooks & Alerts",
+            Self::Monitor => "Web Monitor",
         }
     }
 }
 
 enum Field {
     Bool(fn(&mut AppSettings) -> &mut bool),
-    /// A number with its suffix and smallest value.
-    Int(fn(&mut AppSettings) -> &mut i32, &'static str, i32),
+    /// A number with its suffix, smallest and largest value.
+    Int(fn(&mut AppSettings) -> &mut i32, &'static str, i32, i32),
     Text(fn(&mut AppSettings) -> &mut String),
     /// Stored, but nothing reads it yet: shown greyed.
     Unused(fn(&mut AppSettings) -> &mut bool),
     OptionBool(fn(&mut BotOptions) -> &mut bool),
     OptionInt(fn(&mut BotOptions) -> &mut i32, &'static str),
-    Test {
-        nexus: bool,
-    },
+    Test,
     ClearFlashCache,
+    /// Where the monitor is served, with Open, Copy Link and Copy Key.
+    MonitorLinks,
+    RegenerateMonitorKey,
 }
 
 struct Entry {
@@ -90,7 +94,7 @@ fn entries() -> Vec<Entry> {
                 General,
                 "Client Animation Frame-rate",
                 "The frame rate the game client starts with; the game's own FPS setting, or Set FPS (Game options), takes over in game. AQW is made for 24",
-                Field::Int(|s| &mut s.animation_frame_rate, "FPS", 1)
+                Field::Int(|s| &mut s.animation_frame_rate, "FPS", 1, i32::MAX)
             )
         },
         entry!(
@@ -153,14 +157,7 @@ fn entries() -> Vec<Entry> {
             "URL to send Discord notifications and live statistics when scripts start, stop, or crash",
             Field::Text(|s| &mut s.discord_webhook_url)
         ),
-        entry!(Webhooks, "Test Discord Webhook", "", Field::Test { nexus: false }),
-        entry!(
-            Webhooks,
-            "Skua Nexus Webhook URL",
-            "URL to send Skua Nexus notifications and live bot statistics",
-            Field::Text(|s| &mut s.nexus_webhook_url)
-        ),
-        entry!(Webhooks, "Test Skua Nexus Webhook", "", Field::Test { nexus: true }),
+        entry!(Webhooks, "Test Discord Webhook", "", Field::Test),
         entry!(
             Webhooks,
             "Notify on Script Started",
@@ -207,7 +204,32 @@ fn entries() -> Vec<Entry> {
             Webhooks,
             "Health Ping Interval",
             "Minutes between health pings (e.g. 5, 10, 30)",
-            Field::Int(|s| &mut s.webhook_ping_interval, "Min", 1)
+            Field::Int(|s| &mut s.webhook_ping_interval, "Min", 1, i32::MAX)
+        ),
+        entry!(
+            Monitor,
+            "Enable Web Monitor",
+            "Show every tab's bot, live, on a web page: in a browser here, or on your phone",
+            Field::Bool(|s| &mut s.monitor_enabled)
+        ),
+        entry!(
+            Monitor,
+            "Allow Other Devices",
+            "Listen on your network too, for phones and Tailscale Serve (tailscale serve --bg <port>). They need the key; don't forward the port on your router",
+            Field::Bool(|s| &mut s.monitor_allow_other_devices)
+        ),
+        entry!(
+            Monitor,
+            "Monitor Port",
+            "The port the page is served on",
+            Field::Int(|s| &mut s.monitor_port, "", 1024, 65535)
+        ),
+        entry!(Monitor, "Monitor Link", "", Field::MonitorLinks),
+        entry!(
+            Monitor,
+            "Regenerate Key",
+            "Devices given the old key or link lose access",
+            Field::RegenerateMonitorKey
         ),
     ]
 }
@@ -220,6 +242,10 @@ pub struct ApplicationOptionsWindow {
     confirm_clear: bool,
     /// The outcome of Clear Flash Cache, and whether it worked.
     cleared: Option<(String, bool)>,
+    /// "Regenerate" was clicked once; the next click replaces the key.
+    confirm_new_key: bool,
+    /// The outcome of the last monitor button (Copy, Regenerate), and whether it worked.
+    monitor_message: Option<(String, bool)>,
 }
 
 impl Default for ApplicationOptionsWindow {
@@ -230,6 +256,8 @@ impl Default for ApplicationOptionsWindow {
             filter: None,
             confirm_clear: false,
             cleared: None,
+            confirm_new_key: false,
+            monitor_message: None,
         }
     }
 }
@@ -238,6 +266,7 @@ impl ApplicationOptionsWindow {
     pub fn show(&mut self, ctx: &egui::Context, open: &mut bool) {
         if !*open {
             self.confirm_clear = false;
+            self.confirm_new_key = false;
             return;
         }
         super::window(ctx, "Application Options", [580.0, 650.0], 2)
@@ -302,7 +331,7 @@ impl ApplicationOptionsWindow {
                         for i in rows {
                             let entry = &entries[i];
                             let control_width = match entry.field {
-                                Field::Text(_) => 230.0,
+                                Field::Text(_) | Field::MonitorLinks => 230.0,
                                 _ => 130.0,
                             };
                             ui.horizontal(|ui| {
@@ -328,9 +357,9 @@ impl ApplicationOptionsWindow {
                                             .inner
                                             .on_disabled_hover_text("Coming soon: Turu doesn't update these yet");
                                     }
-                                    Field::Int(access, suffix, min) => {
+                                    Field::Int(access, suffix, min, max) => {
                                         let drag = DragValue::new(access(&mut settings))
-                                            .range(*min..=i32::MAX)
+                                            .range(*min..=*max)
                                             .suffix(format!(" {suffix}"));
                                         settings_changed |= ui.add(drag).changed();
                                     }
@@ -352,13 +381,8 @@ impl ApplicationOptionsWindow {
                                             .suffix(format!(" {suffix}"));
                                         options_changed |= ui.add(drag).changed();
                                     }
-                                    Field::Test { nexus } => {
-                                        let url = if *nexus {
-                                            &settings.nexus_webhook_url
-                                        } else {
-                                            &settings.discord_webhook_url
-                                        };
-                                        let enabled = !url.trim().is_empty();
+                                    Field::Test => {
+                                        let enabled = !settings.discord_webhook_url.trim().is_empty();
                                         if widgets::button(
                                             ui,
                                             "Test",
@@ -369,14 +393,22 @@ impl ApplicationOptionsWindow {
                                         )
                                         .clicked()
                                         {
-                                            bot.webhooks.send(Notice::Test { nexus: *nexus });
+                                            bot.webhooks.send(Notice::Test);
                                         }
                                     }
                                     Field::ClearFlashCache => {
                                         self.clear_flash_cache(ui);
                                     }
+                                    Field::MonitorLinks => self.monitor_links(ui, &settings),
+                                    Field::RegenerateMonitorKey => self.regenerate_key(ui),
                                 });
                             });
+                        }
+                        if section == Section::Monitor {
+                            monitor_status(ui);
+                            if let Some((text, ok)) = &self.monitor_message {
+                                ui.label(RichText::new(text).small().color(if *ok { SUCCESS } else { DANGER }));
+                            }
                         }
                         if section == Section::General
                             && let Some((text, ok)) = &self.cleared
@@ -389,6 +421,7 @@ impl ApplicationOptionsWindow {
 
         self.entries = entries;
         if settings_changed {
+            crate::turu::apply_monitor(&settings);
             *bot.settings.write() = settings;
             bot.save_settings();
         }
@@ -423,6 +456,95 @@ impl ApplicationOptionsWindow {
             Err(e) => (format!("Couldn't clear {}: {e}", dir.display()), false),
         });
     }
+}
+
+impl ApplicationOptionsWindow {
+    /// Open, Copy Link (this computer's, or the network's with Allow Other Devices) and Copy
+    /// Key. Links carry the key after `#`, which browsers don't send.
+    fn monitor_links(&mut self, ui: &mut Ui, settings: &AppSettings) {
+        let serving = match crate::turu::monitor_status() {
+            crate::turu::MonitorStatus::Serving(addr) => Some(addr),
+            _ => None,
+        };
+        let size = vec2(72.0, 24.0);
+        let why = "Enable Web Monitor first";
+        // Right to left: Copy Key, Copy Link, Open.
+        if widgets::button(ui, "Copy Key", Kind::Normal, true, size, "").clicked() {
+            self.monitor_message = Some(match crate::turu::monitor_key() {
+                Ok(key) => {
+                    ui.ctx().copy_text(key);
+                    (
+                        "Key copied. Paste it in the page's Key button on the other device.".into(),
+                        true,
+                    )
+                }
+                Err(e) => (format!("Couldn't read the key: {e}"), false),
+            });
+        }
+        if widgets::button(ui, "Copy Link", Kind::Normal, serving.is_some(), size, why).clicked()
+            && let Some(addr) = serving
+        {
+            let host = match crate::turu::lan_address() {
+                Some(ip) if settings.monitor_allow_other_devices => ip.to_string(),
+                _ => "127.0.0.1".into(),
+            };
+            self.monitor_message = Some(match crate::turu::monitor_key() {
+                Ok(key) => {
+                    let host = if host.contains(':') { format!("[{host}]") } else { host };
+                    ui.ctx().copy_text(format!("http://{host}:{}/#key={key}", addr.port()));
+                    (
+                        "Link copied, with the key: share it only with your own devices.".into(),
+                        true,
+                    )
+                }
+                Err(e) => (format!("Couldn't read the key: {e}"), false),
+            });
+        }
+        if widgets::button(ui, "Open", Kind::Normal, serving.is_some(), size, why).clicked()
+            && let Some(addr) = serving
+            && let Ok(url) = url::Url::parse(&format!("http://127.0.0.1:{}/", addr.port()))
+        {
+            crate::util::open_url(&url);
+        }
+    }
+
+    /// Asks once before replacing the key.
+    fn regenerate_key(&mut self, ui: &mut Ui) {
+        let (label, kind) = if self.confirm_new_key {
+            ("Confirm", Kind::Danger)
+        } else {
+            ("Regenerate", Kind::Normal)
+        };
+        if !widgets::button(ui, label, kind, true, vec2(96.0, 24.0), "").clicked() {
+            return;
+        }
+        if !self.confirm_new_key {
+            self.confirm_new_key = true;
+            return;
+        }
+        self.confirm_new_key = false;
+        self.monitor_message = Some(match crate::turu::regenerate_monitor_key() {
+            Ok(()) => ("New key made: copy the link again for your devices.".into(), true),
+            Err(e) => (format!("Couldn't make a new key: {e}"), false),
+        });
+    }
+}
+
+fn monitor_status(ui: &mut Ui) {
+    let (text, color) = match crate::turu::monitor_status() {
+        crate::turu::MonitorStatus::Off => ("The web monitor is off.".to_owned(), MUTED),
+        crate::turu::MonitorStatus::Serving(addr) if addr.ip().is_unspecified() => (
+            format!("Serving on port {}, for this computer and your network.", addr.port()),
+            SUCCESS,
+        ),
+        crate::turu::MonitorStatus::Serving(addr) => (format!("Serving on http://{addr}, for this computer."), SUCCESS),
+        crate::turu::MonitorStatus::Failed(e) => (format!("Not running: {e}"), DANGER),
+        crate::turu::MonitorStatus::LaunchedByArmy => (
+            "Army > Accounts launched this client: the window that launched it serves the monitor.".to_owned(),
+            MUTED,
+        ),
+    };
+    ui.label(RichText::new(text).small().color(color));
 }
 
 /// Applies Relogin Try Delay and Relogin Watchdog now and saves them, leaving the other saved

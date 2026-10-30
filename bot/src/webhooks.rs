@@ -1,13 +1,16 @@
-//! Discord and Skua Nexus webhooks (VibeSkua `DiscordWebhookService`): embeds when a script
-//! starts, stops or crashes, on relogins and on listed drops, plus periodic health pings with
-//! a snapshot of the character. Settings: Options > Application (`AppSettings`).
+//! Discord webhooks (VibeSkua `DiscordWebhookService`): embeds when a script starts, stops or
+//! crashes, on relogins and on listed drops, plus periodic health pings with a snapshot of the
+//! character ([`crate::monitor::Snapshot`]). Settings: Options > Application (`AppSettings`).
+//! VibeSkua's Skua Nexus webhook is replaced by the web monitor ([`crate::monitor`]).
 //!
 //! One thread posts everything, at most two messages a second. It reads the game itself for
 //! the snapshots, so the threads that report events never wait for Flash or the network.
 
 use crate::Bot;
-use crate::api::{inventory, map, player, quests, servers};
+use crate::api::player;
 use crate::events::BotEvent;
+use crate::monitor::Snapshot;
+use crate::monitor::snapshot::bot_name;
 use crate::settings::AppSettings;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use serde_json::{Value, json};
@@ -39,10 +42,8 @@ pub enum Notice {
         name: String,
         quantity: i64,
     },
-    /// The window's Test buttons.
-    Test {
-        nexus: bool,
-    },
+    /// The window's Test button.
+    Test,
 }
 
 pub struct Webhooks {
@@ -130,18 +131,14 @@ fn run(weak: Weak<Bot>, rx: Receiver<Notice>) {
     }
 }
 
-/// VibeSkua `StartPingTimer`: pings go to Nexus whenever it's set, to Discord with Health
-/// Pings on. `None` when there's nowhere to send them.
+/// VibeSkua `StartPingTimer`: with Health Pings on. `None` when there's nowhere to send them.
 fn ping_interval(settings: &AppSettings) -> Option<Duration> {
-    let nexus = !settings.nexus_webhook_url.trim().is_empty();
-    let discord = discord_pings(settings);
-    if !nexus && !discord {
+    if !discord_pings(settings) {
         return None;
     }
     let minutes = match settings.webhook_ping_interval {
         n if n > 0 => n as u64,
-        _ if discord => 10,
-        _ => 1,
+        _ => 10,
     };
     Some(Duration::from_secs(minutes * 60))
 }
@@ -158,8 +155,7 @@ fn handle(
     next_ping: &mut Option<Instant>,
 ) {
     let discord = settings.discord_webhook_url.trim();
-    let nexus = settings.nexus_webhook_url.trim();
-    if discord.is_empty() && nexus.is_empty() {
+    if discord.is_empty() {
         // Nowhere to send anything: don't read the game either.
         *session = None;
         *next_ping = None;
@@ -175,15 +171,10 @@ fn handle(
             });
             if settings.webhook_notify_started {
                 let text = format!("**{}** has begun execution of **{script}**.", out.name());
-                out.broadcast(settings, embed("Script Started", &text, GREEN, None));
+                out.post(discord, embed("Script Started", &text, GREEN, None));
             }
             let text = format!("**{}** is running.", out.name());
-            if !nexus.is_empty() {
-                out.post(
-                    nexus,
-                    embed("Health Ping", &text, GREY, Some(out.snapshot())),
-                );
-            } else if discord_pings(settings) {
+            if discord_pings(settings) {
                 out.post(
                     discord,
                     embed("Health Ping", &text, GREY, Some(out.snapshot())),
@@ -194,19 +185,12 @@ fn handle(
         Notice::ScriptStopped { script, error } => {
             let started = session.take();
             *next_ping = None;
-            if let Some(error) = error {
-                if settings.webhook_notify_crashed {
-                    let fields = vec![field("Exception", &format!("```{error}```"), false)];
-                    let text = format!("**{}** crashed unexpectedly.", out.name());
-                    out.broadcast(settings, embed("Script Error", &text, RED, Some(fields)));
-                }
-                if !nexus.is_empty() {
-                    let text = format!("**{}** crashed.", out.name());
-                    out.post(
-                        nexus,
-                        embed("Health Ping", &text, RED, Some(out.snapshot())),
-                    );
-                }
+            if let Some(error) = error
+                && settings.webhook_notify_crashed
+            {
+                let fields = vec![field("Exception", &format!("```{error}```"), false)];
+                let text = format!("**{}** crashed unexpectedly.", out.name());
+                out.post(discord, embed("Script Error", &text, RED, Some(fields)));
             }
             if settings.webhook_notify_stopped
                 && let Some(started) = started
@@ -227,16 +211,9 @@ fn handle(
                     false,
                 ));
                 let text = format!("**{}** has stopped execution of **{script}**.", out.name());
-                out.broadcast(
-                    settings,
-                    embed("Farming Session Concluded", &text, RED, Some(fields)),
-                );
-            }
-            if !nexus.is_empty() {
-                let text = format!("**{}** has stopped.", out.name());
                 out.post(
-                    nexus,
-                    embed("Health Ping", &text, GREY, Some(out.snapshot())),
+                    discord,
+                    embed("Farming Session Concluded", &text, RED, Some(fields)),
                 );
             }
         }
@@ -248,7 +225,7 @@ fn handle(
                     "Disconnected & Relogging"
                 };
                 let text = format!("**{}** is attempting to reconnect.", out.name());
-                out.broadcast(settings, embed(title, &text, ORANGE, None));
+                out.post(discord, embed(title, &text, ORANGE, None));
             }
         }
         Notice::ItemDropped { name, quantity } => {
@@ -268,27 +245,13 @@ fn handle(
                     "🏆 **Rare Drop!** - **{}** just got **[{name}]({wiki})** x{quantity}!",
                     out.name()
                 );
-                out.broadcast(settings, json!({ "description": text, "color": GOLD }));
+                out.post(discord, json!({ "description": text, "color": GOLD }));
             }
         }
-        Notice::Test { nexus: to_nexus } => {
-            let (url, title, text) = if to_nexus {
-                (
-                    nexus,
-                    "Skua Nexus Webhook Test Successful!",
-                    "Your Turu Nexus Webhooks are perfectly configured.",
-                )
-            } else {
-                (
-                    discord,
-                    "Discord Webhook Test Successful!",
-                    "Your Turu Discord Webhooks are perfectly configured.",
-                )
-            };
-            if url.is_empty() {
-                return;
-            }
-            if out.post(url, embed(title, text, GREEN, Some(out.snapshot()))) {
+        Notice::Test => {
+            let title = "Discord Webhook Test Successful!";
+            let text = "Your Turu Discord Webhooks are perfectly configured.";
+            if out.post(discord, embed(title, text, GREEN, Some(out.snapshot()))) {
                 out.bot
                     .logs
                     .debug
@@ -308,38 +271,14 @@ struct Outbox<'a> {
 impl Outbox<'_> {
     /// VibeSkua `GetBotName`.
     fn name(&self) -> String {
-        if let Ok(name) = player::username(self.bot)
-            && !name.trim().is_empty()
-            && name != "loginInfo.strUsername"
-        {
-            return name;
-        }
-        servers::cached_username(self.bot)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| "Turu Bot".into())
-    }
-
-    /// VibeSkua `SendEmbedAsync`: to Discord and Nexus, whichever are set.
-    fn broadcast(&mut self, settings: &AppSettings, embed: Value) {
-        for url in [&settings.discord_webhook_url, &settings.nexus_webhook_url] {
-            let url = url.trim();
-            if !url.is_empty() {
-                self.post(url, embed.clone());
-            }
-        }
+        bot_name(self.bot)
     }
 
     /// VibeSkua `OnPingTimerElapsed`.
     fn ping(&mut self, settings: &AppSettings, status: &str) {
         let text = format!("**{}** {status}", self.name());
         let message = embed("Health Ping", &text, GREY, Some(self.snapshot()));
-        if discord_pings(settings) {
-            self.post(settings.discord_webhook_url.trim(), message.clone());
-        }
-        if !settings.nexus_webhook_url.trim().is_empty() {
-            self.post(settings.nexus_webhook_url.trim(), message);
-        }
+        self.post(settings.discord_webhook_url.trim(), message);
     }
 
     /// VibeSkua `PostJsonToUrlAsync`: up to 3 tries, waiting on 429. True when it went through.
@@ -379,96 +318,58 @@ impl Outbox<'_> {
     /// VibeSkua `BuildDashboardSnapshotFields`: character, location, script, equipment, quests
     /// and the Combat > Stats counters.
     fn snapshot(&self) -> Vec<Value> {
-        let bot = self.bot;
-        let name = self.name();
-        if !player::playing(bot).unwrap_or(false) {
-            return vec![
-                field("Character", &name, true),
-                field("Status", "Idle / Not in World", true),
-            ];
-        }
-        let f = &bot.flash;
-        let mut fields = vec![field("Character", &name, true)];
-        let map_name = map::full_name(bot).unwrap_or_default();
-        let map_name = if map_name.is_empty() {
-            "Unknown".into()
-        } else {
-            map_name
-        };
-        fields.push(field("Map", &map_name, true));
-        let room = format!(
-            "{}-{} (Room {})",
-            player::cell(bot).unwrap_or_default(),
-            player::pad(bot).unwrap_or_default(),
-            map::room_id(bot).unwrap_or(0)
-        );
-        fields.push(field("Room", &room, true));
-        let script = bot
-            .scripts
-            .loaded()
-            .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "None".into());
-        fields.push(field("Script", &script, true));
-        let level = f
-            .get_or::<i64>("world.myAvatar.dataLeaf.intLevel", 0)
-            .unwrap_or(0);
-        fields.push(field("Level", &level.to_string(), true));
-        fields.push(field("Gold", &thousands(gold(bot)), true));
-        let coins = f
-            .get_or::<i64>("world.myAvatar.objData.intCoins", 0)
-            .unwrap_or(0);
-        fields.push(field("AC", &thousands(coins), true));
-        let hp = format!(
-            "{}/{}",
-            player::health(bot).unwrap_or(0),
-            player::max_health(bot).unwrap_or(0)
-        );
-        fields.push(field("HP", &hp, true));
-        let mp = format!(
-            "{}/{}",
-            player::mana(bot).unwrap_or(0),
-            player::max_mana(bot).unwrap_or(0)
-        );
-        fields.push(field("MP", &mp, true));
-
-        let items = inventory::inventory_items(bot).unwrap_or_default();
-        let equipped: Vec<&str> = items
-            .iter()
-            .filter(|i| i.equipped && !i.name.trim().is_empty())
-            .map(|i| i.name.as_str())
-            .collect();
-        let equipment = if equipped.is_empty() {
-            "No equipped items reported.".into()
-        } else {
-            truncate(equipped.join("\n"))
-        };
-        let active: Vec<String> = quests::tree(bot)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|q| q.active() && !q.name.trim().is_empty())
-            .map(|q| q.name)
-            .collect();
-        let quests = if active.is_empty() {
-            "No active quests reported.".into()
-        } else {
-            truncate(active.join("\n"))
-        };
-        fields.push(field("Equipment", &equipment, false));
-        fields.push(field("Inventory", &format!("{} items", items.len()), true));
-        fields.push(field("Quest", &quests, false));
-
-        let stats = bot.state.lock().stats.clone();
-        for (label, value) in [
-            ("Kills", stats.kills),
-            ("Drops", stats.drops),
-            ("Quests", stats.quests_completed),
-            ("Deaths", stats.deaths),
-            ("Relogins", stats.relogins),
-        ] {
-            fields.push(field(label, &value.to_string(), true));
-        }
-        fields
+        let mut snapshot = Snapshot::read(self.bot);
+        snapshot.read_slow(self.bot);
+        snapshot_fields(&snapshot)
     }
+}
+
+fn snapshot_fields(s: &Snapshot) -> Vec<Value> {
+    if !s.playing() {
+        return vec![
+            field("Character", &s.name, true),
+            field("Status", "Idle / Not in World", true),
+        ];
+    }
+    let mut fields = vec![field("Character", &s.name, true)];
+    let map_name = if s.map.is_empty() { "Unknown" } else { &s.map };
+    fields.push(field("Map", map_name, true));
+    let room = format!("{}-{} (Room {})", s.cell, s.pad, s.room_id);
+    fields.push(field("Room", &room, true));
+    let script = s.script.name.as_deref().unwrap_or("None");
+    fields.push(field("Script", script, true));
+    fields.push(field("Level", &s.level.to_string(), true));
+    fields.push(field("Gold", &thousands(s.gold), true));
+    fields.push(field("AC", &thousands(s.coins), true));
+    fields.push(field("HP", &format!("{}/{}", s.hp.cur, s.hp.max), true));
+    fields.push(field("MP", &format!("{}/{}", s.mp.cur, s.mp.max), true));
+    let equipment = if s.equipment.is_empty() {
+        "No equipped items reported.".into()
+    } else {
+        truncate(s.equipment.join("\n"))
+    };
+    let quests = if s.quests.is_empty() {
+        "No active quests reported.".into()
+    } else {
+        truncate(s.quests.join("\n"))
+    };
+    fields.push(field("Equipment", &equipment, false));
+    fields.push(field(
+        "Inventory",
+        &format!("{} items", s.inventory.items),
+        true,
+    ));
+    fields.push(field("Quest", &quests, false));
+    for (label, value) in [
+        ("Kills", s.stats.kills),
+        ("Drops", s.stats.drops),
+        ("Quests", s.stats.quests_completed),
+        ("Deaths", s.stats.deaths),
+        ("Relogins", s.stats.relogins),
+    ] {
+        fields.push(field(label, &value.to_string(), true));
+    }
+    fields
 }
 
 fn gold(bot: &Bot) -> i64 {
@@ -551,6 +452,61 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_fields_match_vibeskua() {
+        use crate::monitor::snapshot::{BotState, Pair};
+        let names = |fields: Vec<Value>| -> Vec<String> {
+            fields
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{}={}",
+                        f["name"].as_str().unwrap(),
+                        f["value"].as_str().unwrap()
+                    )
+                })
+                .collect()
+        };
+        let mut s = Snapshot {
+            name: "Hero".into(),
+            ..Snapshot::default()
+        };
+        assert_eq!(
+            names(snapshot_fields(&s)),
+            ["Character=Hero", "Status=Idle / Not in World"]
+        );
+        s.state = BotState::Playing;
+        s.map = "battleon-12".into();
+        (s.cell, s.pad, s.room_id) = ("Enter".into(), "Spawn".into(), 7);
+        (s.level, s.gold, s.coins) = (100, 1_234_567, 50);
+        (s.hp, s.mp) = (Pair { cur: 10, max: 20 }, Pair { cur: 5, max: 100 });
+        s.equipment = vec!["Sword".into(), "Helm".into()];
+        s.inventory.items = 42;
+        s.stats.kills = 3;
+        assert_eq!(
+            names(snapshot_fields(&s)),
+            [
+                "Character=Hero",
+                "Map=battleon-12",
+                "Room=Enter-Spawn (Room 7)",
+                "Script=None",
+                "Level=100",
+                "Gold=1,234,567",
+                "AC=50",
+                "HP=10/20",
+                "MP=5/100",
+                "Equipment=Sword\nHelm",
+                "Inventory=42 items",
+                "Quest=No active quests reported.",
+                "Kills=3",
+                "Drops=0",
+                "Quests=0",
+                "Deaths=0",
+                "Relogins=0",
+            ]
+        );
+    }
+
+    #[test]
     fn pings_only_with_somewhere_to_send() {
         let mut settings = AppSettings::default();
         assert_eq!(ping_interval(&settings), None);
@@ -561,7 +517,6 @@ mod tests {
         settings.webhook_ping_interval = 0;
         assert_eq!(ping_interval(&settings), Some(Duration::from_secs(600)));
         settings.webhook_notify_health_ping = false;
-        settings.nexus_webhook_url = "https://example.invalid/nexus".into();
-        assert_eq!(ping_interval(&settings), Some(Duration::from_secs(60)));
+        assert_eq!(ping_interval(&settings), None);
     }
 }
