@@ -53,6 +53,12 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   stopped (Stop, `bot.stop()`) or failed (`error` is the message), but not when `main` returns,
   like VibeSkua's `ScriptStopping`. The handler can still use the bot; the Script Loader shows
   "Stopping..." and its Force Stop button interrupts it.
+- **Message boxes** (VibeSkua `ShowMessageBox`): `bot.showMessageBox(message, caption, true)`
+  shows No/Yes and returns true for Yes; without `true` it shows OK. With your own buttons,
+  `bot.showMessageBox(message, caption, "A", "B")` returns `{ text, value }` (the button and its
+  index). The script waits for the click; closing the box is No (`{ text: "Cancel", value: -1 }`),
+  and Stop ends the wait. Nobody can answer runs started from the command line, the HTTP API or
+  a relogin, or `--headless`: there the message is logged and the box counts as closed.
 - **Imports** are relative, without extension: `import { Core } from "../core/CoreBots";`.
 - **Missing API**: `bot.flash.get("world.strMapName")`, `bot.flash.callGameFunction(...)` and
   `bot.send.packet("%xt%zm%...%")` reach the game directly, using the same paths VibeSkua uses.

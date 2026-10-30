@@ -70,6 +70,9 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Opened from Scripts > Edit Script Options or the Script Loader's button, and by itself when the
   script asks (on Start unless it sets `dontPreconfigure`, or `bot.config.configure()`): the script
   waits until Save or Cancel, and Stop closes it.
+* **Message boxes** (`message_box.rs`): what a script shows with `bot.showMessageBox`, as an egui
+  modal over the windows (caption, message, the buttons left to right, the last one primary).
+  The script waits for the click; Escape or a click outside answers "closed", and Stop closes it.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button). Edits are written to

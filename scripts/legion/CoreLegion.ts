@@ -473,9 +473,11 @@ export class CoreLegion {
         if (Core.isCompletedBefore(793))
             return;
 
-        // C# asks with a Yes/No message box; Turu has none for scripts, so it keeps the armor.
-        Core.logger("Not selling \"Undead Warrior\" after joining the Legion (C# asks with a message box; sell it yourself for 1080 AC).");
-        const SellUW = false as boolean;
+        const SellUW = bot.showMessageBox(
+            "Do you want the bot to sell the \"Undead Warrior\" armor after it has succesfully joined the legion. This will return 1080 AC to you",
+            "Sell \"Undead Warrior\"?",
+            true,
+        );
 
         if (!Core.isCompletedBefore(792))
             Farm.bludrutBrawlBoss(undefined, 200);

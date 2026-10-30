@@ -139,8 +139,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   the Core members it added (`killMonster` by monster map ID, `isSeasonalMapActive`,
   `configOr`/`configEnum`, `bot.quests.updateQuest(value, slot)`) only have fake-game or no
   tests. Content scripts read options of their own that DoAll doesn't declare as C#'s defaults
-  (`configOr`), as VibeSkua does. Turu scripts can't ask Yes/No: Legion's join keeps the "Undead
-  Warrior" armor instead of asking to sell it. Three C# bugs are fixed on purpose (marked `C#`):
+  (`configOr`), as VibeSkua does. Legion's join asks whether to
+  sell the "Undead Warrior" armor (`bot.showMessageBox`), as C# does; with nobody to answer it
+  keeps the armor. Three C# bugs are fixed on purpose (marked `C#`):
   FarmerJoe's pet step reads its real option, TheLeeryContract uses the reward it's given, and
   Dage PvP reads the CBO solo-boss switch's value.
 - **Nation fixes that differ from VibeSkua (unverified in game):** 11 bugs still in VibeSkua's

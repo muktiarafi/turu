@@ -11,6 +11,7 @@ mod current_drops;
 mod files;
 mod game_options;
 mod logs;
+mod message_box;
 mod nav_bar;
 mod packet_logger;
 mod script_loader;
@@ -74,7 +75,8 @@ pub struct TuruUi {
 
 impl TuruUi {
     pub fn new(picker: FilePicker) -> Self {
-        // Scripts may now ask for the Script Options window (`bot.config.configure`).
+        // Scripts may now ask for the Script Options window (`bot.config.configure`) and show
+        // message boxes (`bot.showMessageBox`).
         crate::turu::bot().scripts.set_interactive(true);
         Self {
             themed: false,
@@ -122,6 +124,8 @@ impl TuruUi {
         self.skills.show(ctx, &mut w.skills);
         self.logs.show(ctx, &self.picker, &mut w.logs);
         self.packet_logger.show(ctx, &self.picker, &mut w.packet_logger);
+        // Last, so the script's message box sits over the other windows.
+        message_box::show(ctx);
     }
 
     /// Whether the bot is doing something the UI shows live (a script runs, Auto Attack).

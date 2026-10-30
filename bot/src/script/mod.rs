@@ -119,6 +119,27 @@ pub struct ScriptManager {
     configure: Mutex<Option<u64>>,
     configured: Condvar,
     next_configure: AtomicU64,
+    /// The message box a script waits on (`bot.showMessageBox`), and the UI's answer.
+    message_box: Mutex<MessageBoxSlot>,
+    message_box_answered: Condvar,
+    next_message_box: AtomicU64,
+}
+
+/// A message box a script asked for (VibeSkua `ShowMessageBox`), until the UI answers it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageBox {
+    pub id: u64,
+    pub caption: String,
+    pub message: String,
+    /// At least one: `["OK"]`, `["No", "Yes"]` or the script's own.
+    pub buttons: Vec<String>,
+}
+
+#[derive(Default)]
+struct MessageBoxSlot {
+    open: Option<MessageBox>,
+    /// The request answered last and the index of the clicked button (`None`: closed).
+    answer: Option<(u64, Option<usize>)>,
 }
 
 impl ScriptManager {
@@ -134,6 +155,9 @@ impl ScriptManager {
             configure: Mutex::new(None),
             configured: Condvar::new(),
             next_configure: AtomicU64::new(1),
+            message_box: Mutex::new(MessageBoxSlot::default()),
+            message_box_answered: Condvar::new(),
+            next_message_box: AtomicU64::new(1),
         }
     }
 
@@ -278,6 +302,68 @@ impl ScriptManager {
                 .wait_for(&mut pending, Duration::from_millis(100));
         }
         Ok(())
+    }
+
+    /// The message box the UI should show for the script, if any.
+    pub fn message_box(&self) -> Option<MessageBox> {
+        self.message_box.lock().open.clone()
+    }
+
+    /// The UI answered message box `id`: the index of the clicked button, or `None` when it was
+    /// closed without one.
+    pub fn answer_message_box(&self, id: u64, button: Option<usize>) {
+        let mut slot = self.message_box.lock();
+        if slot.open.as_ref().is_some_and(|m| m.id == id) {
+            slot.open = None;
+            slot.answer = Some((id, button));
+            self.message_box_answered.notify_all();
+        }
+    }
+
+    /// `bot.showMessageBox` (VibeSkua `ShowMessageBox`): shows a message box with `buttons`
+    /// and waits for the click. Returns the clicked button's index, or `None` when the box was
+    /// closed. With no one to answer (no UI, or a silent run) it logs the message and returns
+    /// `None` at once; Stop ends the wait.
+    pub fn show_message_box(
+        &self,
+        bot: &Bot,
+        caption: &str,
+        message: &str,
+        buttons: Vec<String>,
+    ) -> BotResult<Option<usize>> {
+        if self.silent.load(Ordering::Acquire) || !self.interactive.load(Ordering::Acquire) {
+            bot.log(format!(
+                "[Message box, no one to answer] {caption}: {message}"
+            ));
+            return Ok(None);
+        }
+        let buttons = if buttons.is_empty() {
+            vec!["OK".to_owned()]
+        } else {
+            buttons
+        };
+        let id = self.next_message_box.fetch_add(1, Ordering::Relaxed);
+        let mut slot = self.message_box.lock();
+        slot.open = Some(MessageBox {
+            id,
+            caption: caption.to_owned(),
+            message: message.to_owned(),
+            buttons,
+        });
+        loop {
+            if let Some((answered, button)) = slot.answer
+                && answered == id
+            {
+                slot.answer = None;
+                return Ok(button);
+            }
+            if bot.control.should_exit() {
+                slot.open = None;
+                return Err(BotError::Stopped);
+            }
+            self.message_box_answered
+                .wait_for(&mut slot, Duration::from_millis(100));
+        }
     }
 
     /// Before the run (VibeSkua `StartScript`): shows the window unless the script set

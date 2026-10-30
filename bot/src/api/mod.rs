@@ -80,6 +80,16 @@ fn root(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(())
         }
         "shouldExit" => ok(bot.should_exit()),
+        // `showMessageBox(message, caption, buttons)`: the clicked button's index, or null.
+        "showMessageBox" => {
+            let button = bot.scripts.show_message_box(
+                bot,
+                args.str_or(1, ""),
+                args.str(0)?,
+                args.strings(2),
+            )?;
+            ok(button)
+        }
         "coreBotsOptions" => {
             let username = player::username(bot)?;
             if username.is_empty() {

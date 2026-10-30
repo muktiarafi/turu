@@ -203,6 +203,14 @@ export interface Server {
     level: number;
 }
 
+/** The answer to a message box with your own buttons (VibeSkua `DialogResult`). */
+export interface DialogResult {
+    /** The clicked button's text; "Cancel" when the box was closed. */
+    text: string;
+    /** The clicked button's index in the list you gave; -1 when the box was closed. */
+    value: number;
+}
+
 export interface Skill {
     index: number;
     name: string;
@@ -1220,6 +1228,29 @@ export class Bot {
             call("sleep", slice);
             left -= slice;
         } while (left > 0);
+    }
+    /**
+     * Shows a message box and waits until it's answered (VibeSkua `ShowMessageBox`). With
+     * `yesAndNo` it has "No" and "Yes" buttons, else an "OK" one. Returns true for Yes or OK,
+     * false for No or when the box is closed. Nobody can answer a run started from the command
+     * line, the HTTP API or a relogin: there the message is logged and it returns false.
+     */
+    showMessageBox(message: string, caption: string, yesAndNo?: boolean): boolean;
+    /**
+     * Shows a message box with your buttons and waits for the click (VibeSkua
+     * `ShowMessageBox(message, caption, params buttons)`). Returns `{ text: "Cancel", value: -1 }`
+     * when the box is closed, or when nobody can answer it (see the other overload).
+     */
+    showMessageBox(message: string, caption: string, ...buttons: [string, ...string[]]): DialogResult;
+    showMessageBox(message: string, caption: string, ...rest: (boolean | string | undefined)[]): boolean | DialogResult {
+        if (typeof rest[0] === "string") {
+            const buttons = rest as string[];
+            const index = call<number | null>("showMessageBox", message, caption, buttons);
+            return index === null ? { text: "Cancel", value: -1 } : { text: buttons[index], value: index };
+        }
+        const buttons = rest[0] === true ? ["No", "Yes"] : ["OK"];
+        const index = call<number | null>("showMessageBox", message, caption, buttons);
+        return index !== null && buttons[index] !== "No";
     }
     /** True once Stop was pressed. */
     get shouldExit(): boolean { return call("shouldExit"); }

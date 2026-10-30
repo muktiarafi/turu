@@ -363,6 +363,82 @@ fn silent_runs_and_runs_without_a_ui_dont_show_the_window() {
     assert!(bot.logs.script.text().contains("done"));
 }
 
+fn wait_for_message_box(bot: &Bot) -> turu_bot::script::MessageBox {
+    let start = Instant::now();
+    loop {
+        if let Some(message_box) = bot.scripts.message_box() {
+            return message_box;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "no message box");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+const MESSAGE_BOXES: &str = r#"const yes = bot.showMessageBox("Sell it?", "Sell", true);
+    const ok = bot.showMessageBox("Just so you know", "Note");
+    const pick = bot.showMessageBox("Which?", "Pick", "A", "B", "C");
+    bot.log(`yes=${yes} ok=${ok} pick=${pick.text}/${pick.value}`);"#;
+
+#[test]
+fn message_boxes_wait_for_the_click() {
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.set_interactive(true);
+    bot.scripts
+        .load(&options_script("MessageBoxes", true, MESSAGE_BOXES));
+    script::start(&bot).unwrap();
+
+    let message_box = wait_for_message_box(&bot);
+    assert_eq!(message_box.caption, "Sell");
+    assert_eq!(message_box.message, "Sell it?");
+    assert_eq!(message_box.buttons, ["No", "Yes"]);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        !bot.logs.script.text().contains("yes="),
+        "the script didn't wait"
+    );
+    // An answer to an older box changes nothing.
+    bot.scripts
+        .answer_message_box(message_box.id + 100, Some(0));
+    bot.scripts.answer_message_box(message_box.id, Some(1));
+
+    let message_box = wait_for_message_box(&bot);
+    assert_eq!(message_box.buttons, ["OK"]);
+    // Closed without a click.
+    bot.scripts.answer_message_box(message_box.id, None);
+
+    let message_box = wait_for_message_box(&bot);
+    assert_eq!(message_box.buttons, ["A", "B", "C"]);
+    bot.scripts.answer_message_box(message_box.id, Some(2));
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(log.contains("yes=true ok=false pick=C/2"), "{log}");
+
+    // Stop ends the wait.
+    script::start(&bot).unwrap();
+    wait_for_message_box(&bot);
+    script::stop(&bot);
+    wait_until_done(&bot);
+    assert_eq!(bot.scripts.message_box(), None);
+    let log = bot.logs.script.text();
+    assert_eq!(log.matches("done").count(), 1, "{log}");
+    assert!(log.contains("stopped"), "{log}");
+}
+
+#[test]
+fn message_boxes_nobody_can_answer_are_logged_and_closed() {
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.set_interactive(true);
+    bot.scripts
+        .load(&options_script("MessageBoxesSilent", true, MESSAGE_BOXES));
+    script::start_silent(&bot).unwrap();
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(log.contains("yes=false ok=false pick=Cancel/-1"), "{log}");
+    assert!(log.contains("Sell: Sell it?"), "{log}");
+}
+
 #[test]
 fn a_bot_call_outside_main_makes_the_options_fail() {
     let dir = temp_dir("options-toplevel");

@@ -148,9 +148,8 @@ has run in game yet; it type-checks, and `bot/tests/runtime.rs` loads DoAll agai
   `gemStonesOfnulgath` needed the Gemstone *or* membership (now both); `approvalAndFavor`
   ignored Stop for the Favors; `uni27` didn't farm quest 584's Tainted Gems; PrimeFiendShard's
   finale unbanked quest 8916's items; `VoidPaladin.cyberSet` accepted 6625 without its items;
-  `assistingCandB` tried several turn-ins per farm round (now one). Changed:
-  `CoreLegion.joinLegion` never sells "Undead Warrior" (C# asks with a Yes/No box, which Turu
-  scripts can't show); the "You will not resist!" watch in `CoreAOR.fightVoiceInTheSea` reads the
-  parsed packet instead of the raw `pext` flash call.
+  `assistingCandB` tried several turn-ins per farm round (now one). Changed: the "You will not
+  resist!" watch in `CoreAOR.fightVoiceInTheSea` reads the parsed packet instead of the raw
+  `pext` flash call.
 
 A fuller guide is in `docs/turu/SCRIPTING.md`.
