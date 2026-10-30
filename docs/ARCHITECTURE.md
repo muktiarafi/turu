@@ -85,7 +85,8 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
 `skua.swf` registers ~70 callbacks (full list: `docs/turu/VIBESKUA_SPEC.md`, section 2). The calling
 convention matches VibeSkua's `FlashUtil.Call`:
 
-* Arguments are strings, numbers, booleans or null (`FlashArg`).
+* Arguments are strings, numbers, booleans, null, arrays or objects (`FlashArg`; the last two become
+  AS3 `Array`s and `Object`s, as VibeSkua passes .NET lists and objects).
 * Nearly every callback returns a **String**: JSON (`getGameObject`, `callGameFunction`, ...)
   or `"true"`/`"false"`. `Flash` offers typed helpers:
   `call_str`, `call_bool`, `call_json<T>`, `get<T>(path)`, `get_static<T>(path)`,

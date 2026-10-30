@@ -3,6 +3,7 @@
 //! The desktop frontend implements [`FlashHost`] by marshalling each call to the winit event
 //! loop thread (where Ruffle's `Player` lives) and blocking until it answers.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// An argument passed to one of `skua.swf`'s ExternalInterface callbacks.
@@ -12,6 +13,10 @@ pub enum FlashArg {
     Bool(bool),
     Number(f64),
     String(String),
+    /// An AS3 `Array` (VibeSkua passes a .NET array or list as one).
+    List(Vec<FlashArg>),
+    /// An AS3 `Object` (VibeSkua passes any other .NET object, e.g. `new ExpandoObject()`, as one).
+    Object(BTreeMap<String, FlashArg>),
 }
 
 impl From<&str> for FlashArg {
@@ -56,7 +61,12 @@ impl From<serde_json::Value> for FlashArg {
             serde_json::Value::Bool(b) => Self::Bool(b),
             serde_json::Value::Number(n) => Self::Number(n.as_f64().unwrap_or_default()),
             serde_json::Value::String(s) => Self::String(s),
-            other => Self::String(other.to_string()),
+            serde_json::Value::Array(items) => {
+                Self::List(items.into_iter().map(Self::from).collect())
+            }
+            serde_json::Value::Object(map) => {
+                Self::Object(map.into_iter().map(|(k, v)| (k, Self::from(v))).collect())
+            }
         }
     }
 }
@@ -89,4 +99,23 @@ impl fmt::Display for HostError {
 /// strings are converted: booleans to `"true"`/`"false"`, null/undefined to `"null"`).
 pub trait FlashHost: Send + Sync {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn json_arrays_and_objects_become_flash_lists_and_objects() {
+        let arg = FlashArg::from(json!({"a": [1, "x"], "b": {}}));
+        let expected = FlashArg::Object(BTreeMap::from([
+            (
+                "a".to_owned(),
+                FlashArg::List(vec![FlashArg::Number(1.0), FlashArg::String("x".into())]),
+            ),
+            ("b".to_owned(), FlashArg::Object(BTreeMap::new())),
+        ]));
+        assert_eq!(arg, expected);
+    }
 }

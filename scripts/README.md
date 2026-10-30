@@ -9,10 +9,12 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 |---|---|
 | `core/CoreBots.ts` | Port of `CoreBots.cs`: `Core` (join, kill/hunt, quests, drops, bank, shops, classes, logging). |
 | `core/CoreFarms.ts` | The parts of `CoreFarms.cs` the ported scripts use (gold, experience, alchemy crafting and rep, Good/Vampire rep). |
-| `core/CoreAdvanced.ts` | The shop part of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs. |
+| `core/CoreStory.ts` | Port of `CoreStory.cs`: `killQuest`, `mapItemQuest`, `buyQuest`, `chainQuest`, `questProgression`, `legacyQuestManager`, `preLoad`. Each script makes its own `new CoreStory()`. |
+| `core/CoreAdvanced.ts` | The shop part of `CoreAdvanced.cs`: `buyItem` farms the reputation, level, gold, vouchers and runestones a purchase needs; `startBuyAllMerge` is the merge-shop template (with `mergeOptions` and `mergeOptionsEnum`). |
 | `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials. |
 | `nation/materials/0MaxBags.ts` | Port of `Nation/Materials/0MaxBags.cs`. |
 | `farm/GoldFarm.ts` | Port of `Farm/GoldFarm.cs`. |
+| `other/mergeshops/SynderesMerge.ts` | Port of `Other/MergeShops/SynderesMerge.cs`: the pattern for every merge script (see below). |
 | `other/various/Potions.ts` | Port of `Other/Various/Potions.cs`. Its options are declared in `scriptOptions` and edited in Scripts > Edit Script Options. |
 | `tsconfig.json` | Type-check config; `"turu"` maps to `../bot/js/turu.ts` (the script API). |
 
@@ -69,5 +71,19 @@ export default function main(): void {
   `Core.setOptions()` fills them from Options > CoreBots (the CBO file), as in VibeSkua. Keys
   read from that file while a script runs can be overridden in `Core.cboValues`
   (e.g. `Core.cboValues["Nation_SellMemVoucher"] = "True"`).
+
+## Merge scripts
+
+A C# merge script (`Adv.StartBuyAllMerge` + `MultiOptions = { "Generic", "Select" }`) ports as in
+`other/mergeshops/SynderesMerge.ts`:
+
+- The class keeps `buyAllMerge(buyOnlyThis, buyMode)` (other scripts call it) and its
+  `findIngredients` switch on `Adv.externalItem.name` / `Adv.externalQuant`.
+- `Adv.StartBuyAllMerge(map, shop, findIngredients, buyOnlyThis, buyMode: buyMode)` becomes
+  `Adv.startBuyAllMerge(map, shop, () => this.findIngredients(), buyOnlyThis, { buyMode })`.
+- The `Select` list becomes a static list of `option.bool("<itemId>", ...)`, and the options are
+  `defineScriptOptions(Adv.optionsStorage, [], true, { Generic: Adv.mergeOptions, Select: ... })`.
+  VibeSkua's `MergeOptionStorage.cfg` reads as is.
+- `Adv.MergeItemisinShopExceptions.AddRange(...)` becomes `Adv.mergeItemisinShopExceptions.push(...)`.
 
 A fuller guide is in `docs/turu/SCRIPTING.md`.

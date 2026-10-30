@@ -3,8 +3,9 @@
 //! A script declares them with `export const scriptOptions = defineScriptOptions(storage, [...])`
 //! (bot/js/turu.ts). On load the engine reads that export with [`declaration`], without running
 //! `main`, so the Script Options window can show them before the script starts. The values are
-//! saved in `options/<storage>.cfg` in VibeSkua's format (`Options:Name=Value` lines), so a file
-//! from VibeSkua's options folder can be copied over.
+//! saved in `options/<storage>.cfg` in VibeSkua's format (`Options:Name=Value` lines, and
+//! `Group:Name=Value` for the options of a group), so a file from VibeSkua's options folder can be
+//! copied over.
 
 use super::loader::{ScriptLoader, ScriptResolver, normalize};
 use rquickjs::{CatchResultExt, Context, Function, Module, Object, Runtime};
@@ -19,34 +20,23 @@ use std::time::{Duration, Instant};
 /// How long reading a script's declaration may take. A top-level loop is stopped after this.
 const READ_LIMIT: Duration = Duration::from_secs(5);
 
-/// The kinds of option: a checkbox, a whole number, or text (VibeSkua's `bool`, `int`, `string`).
+/// The category of the options that aren't in a group (VibeSkua's `Options` list): the prefix of
+/// their lines in the options file.
+pub const MAIN: &str = "Options";
+
+/// The kinds of option: a checkbox, a whole number, text, or one of a list of names (VibeSkua's
+/// `bool`, `int`, `string` and enum options).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Bool,
     Int,
     Text,
+    Choice,
 }
 
-impl Kind {
-    fn accepts(self, value: &Value) -> bool {
-        match self {
-            Self::Bool => value.is_boolean(),
-            Self::Int => value.is_i64(),
-            Self::Text => value.is_string(),
-        }
-    }
-
-    fn describe(self) -> &'static str {
-        match self {
-            Self::Bool => "true or false",
-            Self::Int => "a whole number",
-            Self::Text => "text",
-        }
-    }
-}
-
-/// One option as the script declares it (`option.bool(...)`, `option.int(...)`, `option.text(...)`).
+/// One option as the script declares it (`option.bool(...)`, `option.int(...)`, `option.text(...)`,
+/// `option.choice(...)`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OptionDecl {
@@ -58,6 +48,39 @@ pub struct OptionDecl {
     pub description: String,
     pub kind: Kind,
     pub default_value: Value,
+    /// The names a `Choice` can take (VibeSkua: the enum's members). Shown with `_` as spaces.
+    #[serde(default)]
+    pub choices: Vec<String>,
+}
+
+impl OptionDecl {
+    fn accepts(&self, value: &Value) -> bool {
+        match self.kind {
+            Kind::Bool => value.is_boolean(),
+            Kind::Int => value.is_i64(),
+            Kind::Text => value.is_string(),
+            Kind::Choice => value
+                .as_str()
+                .is_some_and(|v| self.choices.iter().any(|c| c == v)),
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self.kind {
+            Kind::Bool => "true or false".into(),
+            Kind::Int => "a whole number".into(),
+            Kind::Text => "text".into(),
+            Kind::Choice => format!("one of {}", self.choices.join(", ")),
+        }
+    }
+}
+
+/// A named list of options (VibeSkua `MultiOptions`: each name there is a field holding a list).
+/// The window shows it under its own title, the name with `_` as spaces.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct OptionGroup {
+    pub name: String,
+    pub options: Vec<OptionDecl>,
 }
 
 /// A script's options: the file they're saved in (VibeSkua `OptionsStorage`) and their list.
@@ -66,6 +89,9 @@ pub struct OptionDecl {
 pub struct Declaration {
     pub storage: String,
     pub options: Vec<OptionDecl>,
+    /// The option groups (VibeSkua `MultiOptions`), after `options`.
+    #[serde(default)]
+    pub groups: Vec<OptionGroup>,
     /// Don't show the Script Options window before each run (VibeSkua `DontPreconfigure`):
     /// the script opens it itself (CoreBots' `SkipOption`).
     #[serde(default)]
@@ -73,8 +99,9 @@ pub struct Declaration {
 }
 
 impl Declaration {
-    /// Checks what the script declared: the storage must be a plain file name, option names must
-    /// be unique and not empty, and each default must be of its option's kind.
+    /// Checks what the script declared: the storage must be a plain file name, group names must be
+    /// unique, option names must be unique within their group and not empty, and each default
+    /// must be of its option's kind.
     pub fn check(&self) -> Result<(), String> {
         let storage = self.storage.as_str();
         let plain_name = !storage.is_empty()
@@ -87,29 +114,66 @@ impl Declaration {
                 "the storage \"{storage}\" must be a plain file name"
             ));
         }
-        let mut names = HashSet::new();
-        for option in &self.options {
-            if option.name.is_empty() || !names.insert(option.name.as_str()) {
+        let mut groups = HashSet::new();
+        for group in &self.groups {
+            let plain = !group.name.is_empty() && !group.name.contains([':', '=', '\n', '\r']);
+            if !plain || group.name == MAIN || !groups.insert(group.name.as_str()) {
                 return Err(format!(
-                    "the option name \"{}\" is empty or used twice",
-                    option.name
+                    "the group name \"{}\" is empty, has ':' or '=', or is used twice",
+                    group.name
                 ));
             }
-            if !option.kind.accepts(&option.default_value) {
-                return Err(format!(
-                    "the default of \"{}\" must be {}",
-                    option.name,
-                    option.kind.describe()
-                ));
+        }
+        for (_, options) in self.categories() {
+            let mut names = HashSet::new();
+            for option in options {
+                if option.name.is_empty()
+                    || option.name.contains(['=', '\n', '\r'])
+                    || !names.insert(option.name.as_str())
+                {
+                    return Err(format!(
+                        "the option name \"{}\" is empty, has '=', or is used twice",
+                        option.name
+                    ));
+                }
+                if option.kind == Kind::Choice && option.choices.is_empty() {
+                    return Err(format!("\"{}\" has no choices", option.name));
+                }
+                if !option.accepts(&option.default_value) {
+                    return Err(format!(
+                        "the default of \"{}\" must be {}",
+                        option.name,
+                        option.describe()
+                    ));
+                }
             }
         }
         Ok(())
     }
 
-    fn option(&self, name: &str) -> Option<&OptionDecl> {
-        self.options.iter().find(|o| o.name == name)
+    /// Every category with its options: [`MAIN`] first, then the groups in order.
+    pub fn categories(&self) -> impl Iterator<Item = (&str, &[OptionDecl])> {
+        std::iter::once((MAIN, self.options.as_slice())).chain(
+            self.groups
+                .iter()
+                .map(|g| (g.name.as_str(), g.options.as_slice())),
+        )
+    }
+
+    /// The options of a category ([`MAIN`] or a group's name).
+    fn category(&self, category: &str) -> Option<&[OptionDecl]> {
+        self.categories()
+            .find(|(name, _)| *name == category)
+            .map(|(_, options)| options)
+    }
+
+    fn option(&self, category: &str, name: &str) -> Option<&OptionDecl> {
+        self.category(category)?.iter().find(|o| o.name == name)
     }
 }
+
+/// Where an option's value is kept: its category and its name.
+type Key = (String, String);
 
 /// Reads the `scriptOptions` export of the script at `path`. `Ok(None)` when it declares none.
 ///
@@ -160,7 +224,7 @@ pub fn declaration(path: &Path) -> Result<Option<Declaration>, String> {
 #[derive(Debug, Clone)]
 pub struct ScriptOptions {
     decl: Declaration,
-    values: BTreeMap<String, Value>,
+    values: BTreeMap<Key, Value>,
     path: PathBuf,
 }
 
@@ -189,20 +253,34 @@ impl ScriptOptions {
         &self.path
     }
 
-    /// The value of an option, or `None` when the script doesn't declare it.
+    /// The value of an option outside the groups, or `None` when the script doesn't declare it.
     pub fn get(&self, name: &str) -> Option<&Value> {
-        self.values.get(name)
+        self.get_in(MAIN, name)
     }
 
-    /// Sets an option's value (VibeSkua `Config.Set`). Fails for an unknown name or a value of
-    /// the wrong kind. Text can't have line breaks, since the file has one option per line.
+    /// The value of an option of a category ([`MAIN`] or a group's name; VibeSkua
+    /// `Config.Get<T>(category, name)`), or `None` when the script doesn't declare it.
+    pub fn get_in(&self, category: &str, name: &str) -> Option<&Value> {
+        self.values.get(&(category.to_owned(), name.to_owned()))
+    }
+
+    /// Sets the value of an option outside the groups (VibeSkua `Config.Set`).
     pub fn set(&mut self, name: &str, value: Value) -> Result<(), String> {
-        let decl = self
-            .decl
-            .option(name)
-            .ok_or_else(|| format!("this script has no option named \"{name}\""))?;
-        if !decl.kind.accepts(&value) {
-            return Err(format!("\"{name}\" must be {}", decl.kind.describe()));
+        self.set_in(MAIN, name, value)
+    }
+
+    /// Sets an option's value. Fails for an unknown name or a value of the wrong kind. Text can't
+    /// have line breaks, since the file has one option per line.
+    pub fn set_in(&mut self, category: &str, name: &str, value: Value) -> Result<(), String> {
+        let decl = self.decl.option(category, name).ok_or_else(|| {
+            if category == MAIN {
+                format!("this script has no option named \"{name}\"")
+            } else {
+                format!("this script has no option named \"{name}\" in \"{category}\"")
+            }
+        })?;
+        if !decl.accepts(&value) {
+            return Err(format!("\"{name}\" must be {}", decl.describe()));
         }
         if value
             .as_str()
@@ -210,7 +288,8 @@ impl ScriptOptions {
         {
             return Err(format!("\"{name}\" can't have line breaks"));
         }
-        self.values.insert(name.to_owned(), value);
+        self.values
+            .insert((category.to_owned(), name.to_owned()), value);
         Ok(())
     }
 
@@ -224,49 +303,54 @@ impl ScriptOptions {
         if let Some(dir) = self.path.parent() {
             fs::create_dir_all(dir)?;
         }
-        let text: String = self
-            .decl
-            .options
-            .iter()
-            .map(|option| {
+        let mut text = String::new();
+        for (category, options) in self.decl.categories() {
+            for option in options {
                 let value = self
-                    .values
-                    .get(&option.name)
+                    .get_in(category, &option.name)
                     .map(saved_text)
                     .unwrap_or_default();
-                format!("Options:{}={value}\n", option.name)
-            })
-            .collect();
+                text.push_str(&format!("{category}:{}={value}\n", option.name));
+            }
+        }
         fs::write(&self.path, text)
     }
 
     fn apply_saved(&mut self, text: &str) {
         for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-            // VibeSkua's lines are "Options:Name=Value"; "Name=Value" is read too.
+            // VibeSkua's lines are "Options:Name=Value" or "Group:Name=Value"; "Name=Value" is
+            // read too.
             let parts: Vec<&str> = line.splitn(3, [':', '=']).collect();
-            let (name, value) = match parts.as_slice() {
-                ["Options", name, value] | [name, value] => (*name, *value),
+            let (category, name, value) = match parts.as_slice() {
+                [category, name, value] => (*category, *name, *value),
+                [name, value] => (MAIN, *name, *value),
                 _ => continue,
             };
             let Some(decl) = self
                 .decl
-                .options
-                .iter()
-                .find(|o| o.name.eq_ignore_ascii_case(name))
+                .category(category)
+                .and_then(|options| options.iter().find(|o| o.name.eq_ignore_ascii_case(name)))
             else {
                 continue;
             };
-            if let Some(value) = parse_saved(decl.kind, value) {
-                self.values.insert(decl.name.clone(), value);
+            if let Some(value) = parse_saved(decl, value) {
+                self.values
+                    .insert((category.to_owned(), decl.name.clone()), value);
             }
         }
     }
 }
 
-fn defaults(decl: &Declaration) -> BTreeMap<String, Value> {
-    decl.options
-        .iter()
-        .map(|o| (o.name.clone(), o.default_value.clone()))
+fn defaults(decl: &Declaration) -> BTreeMap<Key, Value> {
+    decl.categories()
+        .flat_map(|(category, options)| {
+            options.iter().map(move |o| {
+                (
+                    (category.to_owned(), o.name.clone()),
+                    o.default_value.clone(),
+                )
+            })
+        })
         .collect()
 }
 
@@ -280,14 +364,29 @@ fn saved_text(value: &Value) -> String {
     }
 }
 
-/// Reads a saved value of `kind`; `None` when the text doesn't fit.
-fn parse_saved(kind: Kind, text: &str) -> Option<Value> {
-    match kind {
+/// Reads a saved value of `option`; `None` when the text doesn't fit. A choice is saved by its
+/// name (VibeSkua writes the enum member, and reads it back with spaces as `_`).
+fn parse_saved(option: &OptionDecl, text: &str) -> Option<Value> {
+    match option.kind {
         Kind::Bool if text.eq_ignore_ascii_case("true") => Some(Value::Bool(true)),
         Kind::Bool if text.eq_ignore_ascii_case("false") => Some(Value::Bool(false)),
         Kind::Bool => None,
         Kind::Int => text.trim().parse::<i64>().ok().map(Value::from),
         Kind::Text => Some(Value::String(text.to_owned())),
+        Kind::Choice => {
+            let name = text.trim().replace(' ', "_");
+            option
+                .choices
+                .iter()
+                .find(|c| **c == name)
+                .or_else(|| {
+                    option
+                        .choices
+                        .iter()
+                        .find(|c| c.eq_ignore_ascii_case(&name))
+                })
+                .map(|c| Value::String(c.clone()))
+        }
     }
 }
 
@@ -385,5 +484,74 @@ mod tests {
         decl.options[1].default_value = json!(0);
         decl.options[2].name = "BuyReagents".into();
         assert!(decl.check().unwrap_err().contains("used twice"));
+    }
+
+    const GROUPED: &str = r#"{
+        "storage": "Merge",
+        "options": [
+            {"name": "Pet", "displayName": "Pet", "description": "", "kind": "choice", "defaultValue": "None", "choices": ["None", "Dragon_Pet", "Cat"]}
+        ],
+        "groups": [
+            {"name": "Generic", "options": [
+                {"name": "mode", "displayName": "Mode", "description": "", "kind": "choice", "defaultValue": "all", "choices": ["all", "acOnly", "mergeMats", "select"]}
+            ]},
+            {"name": "Select", "options": [
+                {"name": "1234", "displayName": "Item", "description": "", "kind": "bool", "defaultValue": false},
+                {"name": "mode", "displayName": "Same name, other group", "description": "", "kind": "int", "defaultValue": 3}
+            ]}
+        ]
+    }"#;
+
+    #[test]
+    fn groups_and_choices_save_like_vibeskua() {
+        let path = temp_file("groups");
+        let mut options = ScriptOptions::load(declaration_of(GROUPED), path.clone()).unwrap();
+        assert_eq!(options.get("Pet"), Some(&json!("None")));
+        assert_eq!(options.get_in("Generic", "mode"), Some(&json!("all")));
+        assert_eq!(options.get_in("Select", "mode"), Some(&json!(3)));
+        assert_eq!(options.get("mode"), None);
+        options.set_in("Generic", "mode", json!("select")).unwrap();
+        options.set_in("Select", "1234", json!(true)).unwrap();
+        options.set("Pet", json!("Dragon_Pet")).unwrap();
+        options.save().unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "Options:Pet=Dragon_Pet\nGeneric:mode=select\nSelect:1234=True\nSelect:mode=3\n"
+        );
+        let back = ScriptOptions::load(declaration_of(GROUPED), path).unwrap();
+        assert_eq!(back.get_in("Generic", "mode"), Some(&json!("select")));
+        assert_eq!(back.get_in("Select", "1234"), Some(&json!(true)));
+        assert_eq!(back.get("Pet"), Some(&json!("Dragon_Pet")));
+    }
+
+    #[test]
+    fn choices_read_spaces_and_reject_unknown_names() {
+        let path = temp_file("choices");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "Options:Pet=Dragon Pet\nGeneric:mode=nope\nUnknown:mode=x\n",
+        )
+        .unwrap();
+        let mut options = ScriptOptions::load(declaration_of(GROUPED), path).unwrap();
+        assert_eq!(options.get("Pet"), Some(&json!("Dragon_Pet")));
+        assert_eq!(options.get_in("Generic", "mode"), Some(&json!("all")));
+        assert!(options.set("Pet", json!("Dog")).is_err());
+        assert!(options.set_in("Nope", "mode", json!("all")).is_err());
+    }
+
+    #[test]
+    fn check_rejects_bad_groups_and_choices() {
+        let mut decl = declaration_of(GROUPED);
+        assert!(decl.check().is_ok());
+        decl.groups[1].name = "Generic".into();
+        assert!(decl.check().unwrap_err().contains("Generic"));
+        decl.groups[1].name = "Options".into();
+        assert!(decl.check().is_err());
+        decl.groups[1].name = "Select".into();
+        decl.options[0].default_value = json!("Dog");
+        assert!(decl.check().unwrap_err().contains("Pet"));
+        decl.options[0].choices.clear();
+        assert!(decl.check().unwrap_err().contains("no choices"));
     }
 }

@@ -97,7 +97,30 @@ export default function main(): void {
 - `bot.config.has(name)` tells whether the script declares an option.
 - The window doesn't open (`configure` returns at once) with `--headless`, or for runs started
   from the command line, the HTTP API or auto-relogin: nobody is there to answer it.
-- Not ported: option groups (`MultiOptions`). Enum options aren't supported.
+- **Choices** (VibeSkua's enum options, `Option<MyEnum>`): `option.choice(name, displayName,
+  description, names, default)` shows a drop-down. `choices(MyEnum)` lists a TypeScript enum's
+  member names, and `bot.config.get` returns the picked name, saved as VibeSkua saves the enum
+  member:
+
+  ```ts
+  enum PetChoice { None = "None", Dragon_Pet = "Dragon_Pet" }
+  option.choice("PetChoice", "Choose Your Pet", "", choices(PetChoice), PetChoice.None),
+  // ...
+  if (bot.config.get<PetChoice>("PetChoice") === PetChoice.Dragon_Pet) { /* ... */ }
+  ```
+- **Option groups** (VibeSkua `MultiOptions`): pass them as the fourth argument of
+  `defineScriptOptions`, keyed by the group's name. They show after the other options under that
+  name (`_` as spaces) and are saved as `Group:Name=Value` lines. Read and write them with
+  `bot.config.get(group, name)`, `bot.config.set(group, name, value)` and
+  `bot.config.has(group, name)`:
+
+  ```ts
+  export const scriptOptions = defineScriptOptions("MergeStorage", [], true, {
+      Generic: [option.choice("mode", "Mode", "", ["all", "acOnly", "mergeMats", "select"])],
+      Select: [option.bool("1234", "Some Item", "")],
+  });
+  const mode = bot.config.get<string>("Generic", "mode");
+  ```
 
 ## CoreBots
 

@@ -308,6 +308,8 @@ fn to_external(arg: FlashArg) -> ExternalValue {
         FlashArg::Bool(b) => ExternalValue::Bool(b),
         FlashArg::Number(n) => ExternalValue::Number(n),
         FlashArg::String(s) => ExternalValue::String(s),
+        FlashArg::List(items) => ExternalValue::List(items.into_iter().map(to_external).collect()),
+        FlashArg::Object(map) => ExternalValue::Object(map.into_iter().map(|(k, v)| (k, to_external(v))).collect()),
     }
 }
 

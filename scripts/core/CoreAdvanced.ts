@@ -9,11 +9,13 @@ tags: core
  *
  * {@link CoreAdvanced.buyItem} is C# `BuyItem`: unlike CoreBots' `buyItem`, which gives up when a
  * requirement is missing, it farms the reputation, level, gold, Gold Vouchers and Dragon Runestones
- * the item needs first. Only the shop path is here.
+ * the item needs first. {@link CoreAdvanced.startBuyAllMerge} is the merge-shop template the merge
+ * scripts use. Only the shop path is here.
  */
 
-import { bot } from "turu";
-import { Core, type CoreShopItem } from "./CoreBots";
+import { bot, choices, option } from "turu";
+import type { ScriptOption } from "turu";
+import { Core, type CoreShopItem, type ShopRequirement } from "./CoreBots";
 import { CoreFarms } from "./CoreFarms";
 
 const Farm = new CoreFarms();
@@ -219,4 +221,335 @@ export class CoreAdvanced {
                 Core.logger(`Failed to find ${name}REP in CoreFarms. It isn't ported to Turu yet.`);
         }
     }
+
+    //#region Merge
+
+    /**
+     * The merge-shop template (C# `StartBuyAllMerge`): buys every item of a merge shop the mode
+     * picks, farming what each needs first. A requirement the shop sells is bought (or merged
+     * itself, recursively); anything else is left to `findIngredients`, which reads
+     * {@link externalItem} and {@link externalQuant} to know what to get.
+     *
+     * The mode comes from `buyOnlyThis` (only that item), `buyMode`, or the script's `Generic`
+     * option group ({@link mergeOptions}). With `select`, the `Select` group's switches (named by
+     * item ID) say which items to buy.
+     * @param map Map of the shop.
+     * @param shopId ID of the shop.
+     * @param findIngredients Gets {@link externalItem} x {@link externalQuant}.
+     * @param buyOnlyThis Buy only this item.
+     * @param options `itemBlackList`: items not to buy. `buyMode`: the mode, instead of the
+     *   script's options. `group`: "First" or "Last", which entry to keep when the shop lists an
+     *   item twice. `log`: log the purchases.
+     */
+    startBuyAllMerge(
+        map: string,
+        shopId: number,
+        findIngredients: () => void,
+        buyOnlyThis: string | null = null,
+        {
+            itemBlackList = null,
+            buyMode = null,
+            group = "First",
+            log = true,
+        }: { itemBlackList?: string[] | null; buyMode?: mergeOptionsEnum | null; group?: "First" | "Last"; log?: boolean } = {},
+    ): void {
+        //#region Setup and Initialization
+        // C# Get<bool>(SkipOptions) finds the option in any group; merge scripts have it in Generic.
+        if (buyOnlyThis === null && buyMode === null && bot.config.has("Generic", Core.skipOptions.name) && !bot.config.get<boolean>("Generic", Core.skipOptions.name))
+            bot.config.configure();
+
+        let mode: mergeOptionsEnum = mergeOptionsEnum.all;
+        if (buyOnlyThis !== null) mode = mergeOptionsEnum.all;
+        else if (buyMode !== null) mode = buyMode;
+        else if (bot.config.has("Generic", "mode")) mode = mergeOptionsEnum[bot.config.get<keyof typeof mergeOptionsEnum>("Generic", "mode")];
+        else Core.logger("Invalid setup detected for StartBuyAllMerge. Please report", "", { messageBox: true, stopBot: true });
+
+        this.matsOnly = mode === mergeOptionsEnum.mergeMats;
+
+        // Set for tracking unique item IDs to prevent redundant operations
+        const uniqueItemIds = new Set([...bot.bank.items, ...bot.tempInv.items, ...bot.house.items, ...bot.inventory.items].map((item) => item.id));
+
+        // Filter shop items based on various conditions: one entry per (name, ID, ShopItemID)
+        const groups = new Map<string, CoreShopItem[]>();
+        for (const item of Core.getShopItems(map, shopId)) {
+            const key = `${item.name}\u0000${item.id}\u0000${item.shopItemId}`;
+            groups.set(key, [...(groups.get(key) ?? []), item]);
+        }
+        const shopItems = [...groups.values()]
+            .map((entries) => (group === "First" ? entries[0] : entries[entries.length - 1]))
+            .filter((x) => !x.name.toLowerCase().endsWith("insignia"))
+            .filter((x) => !uniqueItemIds.has(x.id));
+
+        const items: CoreShopItem[] = [];
+        let memSkipped = false;
+        const selected = (item: CoreShopItem) => bot.config.has("Select", `${item.id}`) && bot.config.get<boolean>("Select", `${item.id}`);
+
+        // Process shop items based on various conditions
+        for (const item of shopItems) {
+            if (
+                this.miscCatagories.includes(item.category) ||
+                (buyOnlyThis && buyOnlyThis !== item.name) ||
+                (itemBlackList !== null && itemBlackList.some((x) => x.toLowerCase() === item.name.toLowerCase()))
+            )
+                continue;
+
+            if (Core.isMember || !item.upgrade || (item.requirements.length > 0 && Core.readShopItems().some((x) => x.upgrade && !Core.isMember))) {
+                if (mode === mergeOptionsEnum.select) {
+                    if (selected(item)) items.push(item);
+                } else if (mode !== mergeOptionsEnum.acOnly) items.push(item);
+                else if (item.coins) items.push(item);
+            } else if (mode === mergeOptionsEnum.select && selected(item)) {
+                Core.logger(`"${item.name}" will be skipped, as you aren't a member.`);
+                memSkipped = true;
+            }
+        }
+
+        if (items.length <= 0) {
+            this.handleNoItemsFound(shopItems, buyOnlyThis, mode, memSkipped);
+            return;
+        }
+        //#endregion
+
+        const acquiredItems = new Map<number, number>();
+        let t = 0;
+
+        for (const item of items) {
+            if (Core.checkInventory(item.id, 1, { toInv: false })) {
+                Core.logger(`${item.name} Owned x${bot.inventory.getQuantity(item.id)}/${1}`);
+                continue;
+            }
+
+            if (item.upgrade && !Core.isMember) {
+                Core.logger(`Skipping ${item.name} [${item.id}] as it is member-only.`);
+                continue;
+            }
+
+            if (!this.matsOnly) Core.logger(`Farming to buy ${item.name} (#${t++}/${items.length})`);
+
+            // Process all requirements for this item
+            this.processItemWithDependencies(item, 1, map, shopId, findIngredients, 0, acquiredItems);
+
+            // After dependencies are handled, check if we can buy the main item
+            this.ensureShopLoaded(map, shopId);
+            if (item.requirements.every((x) => x && Core.checkInventory(x.id, x.quantity))) {
+                if (!this.matsOnly) Core.logger(`Buying ${item.name} (#${t}/${items.length})`);
+
+                this.buyItem(map, shopId, item.id, 1, item.shopItemId, 0, log);
+                bot.wait.forPickup(item.id);
+
+                if (!Core.checkInventory(item.id, item.quantity)) {
+                    const missing = item.requirements.filter((x) => x && !Core.checkInventory(x.id, x.quantity)).map((x) => `"${x.name} x${x.quantity}"`);
+
+                    Core.logger(`Failed to meet requirements for ${item.name} [${item.id}] due to missing: ${missing.join(", ")}.`);
+                }
+            }
+        }
+    }
+
+    //#region Helper Methods
+
+    /** Joins `map` and loads the shop until it is the loaded one. */
+    private ensureShopLoaded(map: string | null, shopId: number): boolean {
+        if (map === null) {
+            Core.logger("Map is null, unable to load shop.");
+            return false;
+        }
+        Core.join(map);
+        bot.wait.forMapLoad(map);
+        while (!bot.shouldExit && bot.shops.id !== shopId) {
+            bot.shops.load(shopId);
+            bot.wait.forActionCooldown("loadShop");
+            bot.wait.forTrue(() => bot.shops.isLoaded && bot.shops.id === shopId, 20);
+            Core.sleep(1000);
+            if (bot.shops.id === shopId) return true;
+        }
+        return true;
+    }
+
+    /** Gets `quantity` of a shop item: its requirements first (recursively for merge items), then buys it. */
+    private processItemWithDependencies(
+        item: { id: number; name: string },
+        quantity: number,
+        map: string,
+        shopId: number,
+        findIngredients: () => void,
+        depth = 0,
+        acquiredItems = new Map<number, number>(),
+    ): void {
+        const MAX_DEPTH = 15;
+
+        if (depth > MAX_DEPTH) {
+            Core.logger(`Max recursion depth reached for ${item.name}`);
+            return;
+        }
+
+        // If already have enough, skip
+        if (Core.checkInventory(item.id, quantity)) return;
+
+        this.ensureShopLoaded(map, shopId);
+
+        // Look up the item in the shop to get its requirements
+        const shopItem = Core.readShopItems().find((x) => x.id === item.id);
+        if (!shopItem) {
+            Core.logger("ShopItem Returned null.. some how", "ProcessItemWithDependencies");
+            return;
+        }
+
+        // Process all requirements first
+        for (const req of shopItem.requirements) {
+            if (!req) continue;
+
+            let requiredQty = req.quantity * quantity;
+            Core.farmingLogger(req.name, requiredQty);
+            // Check if already have it
+            if (Core.checkInventory(req.id, requiredQty)) {
+                Core.logger(`${req.name} Owned x${bot.inventory.getQuantity(req.id)}/${requiredQty}`);
+                continue;
+            }
+            this.ensureShopLoaded(map, shopId);
+            const reqInShop = Core.readShopItems().find((x) => x.id === req.id);
+
+            // Check exceptions first - these should always be farmed/merged, never bought
+            if (this.mergeItemisinShopExceptions.includes(req.name)) {
+                Core.logger(`${req.name} [${req.id}] is in merge exceptions, using merge script.`);
+                this.externalItem = req;
+                this.externalQuant = requiredQty;
+                Core.addDrop(this.externalItem.id);
+                findIngredients();
+                bot.wait.forPickup(req.id);
+                acquiredItems.set(req.id, bot.inventory.getQuantity(req.id));
+                continue;
+            }
+
+            if (req.name.includes("Dragon Runestone")) {
+                Core.logger(`Farming Dragon Runestone x${requiredQty}`);
+                Farm.dragonRunestone(requiredQty);
+            }
+            if (req.name.includes("Gold Voucher")) {
+                Core.logger(`Farming Gold Voucher x${requiredQty}`);
+                Farm.voucher(req.name, requiredQty);
+            }
+            if (reqInShop) {
+                Core.logger(`Requirement "${reqInShop.name}" [${reqInShop.id}] is in shop.`, "ProcessItemWithDependencies");
+                requiredQty = Math.min(requiredQty, reqInShop.maxStack);
+
+                // If requirement has no dependencies, buy it directly
+                if (reqInShop.requirements.length === 0 && ((reqInShop.coins && reqInShop.cost <= 0) || !reqInShop.coins)) {
+                    if (reqInShop.upgrade && !bot.player.isMember) {
+                        Core.logger(`${reqInShop.name} is MEMBERS ONLY, you are not.... we can't buy it >.>`);
+                        return;
+                    }
+                    this.buyItem(map, shopId, reqInShop.id, requiredQty, reqInShop.shopItemId);
+                    bot.wait.forPickup(reqInShop.id);
+                } else if (reqInShop.requirements.length > 0) {
+                    // Recurse for nested requirements
+                    this.processItemWithDependencies(reqInShop, requiredQty, map, shopId, findIngredients, depth + 1, acquiredItems);
+                    bot.wait.forPickup(req.id);
+                }
+            } else {
+                // Item not in current shop - must be farmed/crafted externally
+                this.externalItem = req;
+                this.externalQuant = requiredQty;
+                Core.addDrop(this.externalItem.id);
+                Core.logger(`${this.externalItem.name} [${this.externalItem.id}] not in shop, using merge script.`);
+                findIngredients();
+                bot.wait.forPickup(req.id);
+            }
+
+            // Verify we got it
+            if (!Core.checkInventory(req.id, requiredQty)) Core.logger(`Warning: Failed to acquire ${req.name} x${requiredQty}.`);
+        }
+
+        this.ensureShopLoaded(map, shopId);
+        if (shopItem.requirements.every((x) => Core.checkInventory(x.id, x.quantity))) this.buyItem(map, shopId, shopItem.id, quantity, shopItem.shopItemId);
+    }
+
+    private handleNoItemsFound(shopItems: CoreShopItem[], buyOnlyThis: string | null, mode: mergeOptionsEnum, memSkipped: boolean): void {
+        if (buyOnlyThis !== null) return;
+
+        switch (mode) {
+            case mergeOptionsEnum.all:
+            case mergeOptionsEnum.mergeMats:
+                Core.logger("The bot fetched 0 items to farm. Something must have gone wrong.");
+                break;
+            case mergeOptionsEnum.acOnly:
+                if (shopItems.every((x) => !x.coins)) Core.logger("The bot fetched 0 items to farm. This is because none of the items in this shop are AC tagged.");
+                else
+                    Core.logger(
+                        "The bot fetched 0 items to farm. Something must have gone wrong. Try re-checking your options, if you picked specificly items, then you'll want stop the script (if it isnt) and change the `Mode` to `Select`, and rerun this script",
+                    );
+                break;
+            case mergeOptionsEnum.select:
+                if (memSkipped) Core.logger("The bot fetched 0 items to farm. This is because you aren't a member.");
+                else
+                    Core.logger(
+                        "The bot fetched 0 items to farm. Something must have gone wrong. Try re-checking your options, if you picked specificly items, then you'll want stop the script (if it isnt) and change the `Mode` to `Select`, and rerun this script",
+                    );
+                break;
+        }
+    }
+
+    //#endregion
+
+    /**
+     * Items the shop sells that should still come from `findIngredients` (else the template loops
+     * buying them). Add to it in the merge script, before `startBuyAllMerge`.
+     */
+    mergeItemisinShopExceptions: string[] = [];
+
+    /** Shop categories the template never buys (C# `ItemCategory` Note, Item, QuestItem, ServerUse). */
+    miscCatagories: string[] = ["Note", "Item", "Quest Item", "ServerUse"];
+    /** The item `findIngredients` should get. */
+    externalItem: ShopRequirement = { id: 0, name: "", quantity: 0, temp: false };
+    /** How many of {@link externalItem} `findIngredients` should get. */
+    externalQuant = 0;
+    /** The mode is `mergeMats`: farm the materials, don't buy the items. */
+    matsOnly = false;
+    maxStackOneItems: string[] = [];
+    altFarmItems: string[] = [];
+
+    /**
+     * The `Generic` option group of every merge script (C# `MergeOptions`):
+     * `defineScriptOptions(Adv.optionsStorage, [], true, { Generic: Adv.mergeOptions, Select: [...] })`.
+     * C# names the four explanation lines " "; they have their own names here, as option names
+     * must be unique (they're labels, never read).
+     */
+    readonly mergeOptions: ScriptOption[] = [
+        Core.skipOptions,
+        option.choice(
+            "mode",
+            "Select the mode to use",
+            "Regardless of the mode you pick, the bot wont (attempt to) buy Legend-only items if you're not a Legend.\n" +
+                "Select the Mode Explanation item to get more information",
+            choices(mergeOptionsEnum),
+            "all",
+        ),
+        option.text("modeExplanationAll", "Mode Explanation [all]", "Mode [all]: \t\tYou get all the items from shop, even if non-AC ones if any.", "click here"),
+        option.text("modeExplanationAcOnly", "Mode Explanation [acOnly]", "Mode [acOnly]: \tYou get all the AC tagged items from the shop.", "click here"),
+        option.text(
+            "modeExplanationMergeMats",
+            "Mode Explanation [mergeMats]",
+            "Mode [mergeMats]: \tYou dont buy any items but instead get the materials to buy them yourself, this way you can choose.",
+            "click here",
+        ),
+        option.text(
+            "modeExplanationSelect",
+            "Mode Explanation [select]",
+            "Mode [select]: \tYou are able to select what items you get and which ones you dont in the Select Category below.",
+            "click here",
+        ),
+    ];
+
+    /** The options file of every merge script (C# `OptionsStorage`). */
+    readonly optionsStorage = "MergeOptionStorage";
+
+    //#endregion
+}
+
+/** The modes of {@link CoreAdvanced.startBuyAllMerge} (C# `mergeOptionsEnum`). */
+export enum mergeOptionsEnum {
+    all = 0,
+    acOnly = 1,
+    mergeMats = 2,
+    select = 3,
 }

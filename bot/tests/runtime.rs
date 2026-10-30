@@ -196,6 +196,62 @@ export default function main(): void {{
     assert!(saved.contains("Options:Count=7"), "{saved}");
 }
 
+#[test]
+fn choice_options_and_groups_read_and_save_like_vibeskua() {
+    let dir = temp_dir("option-groups");
+    let storage = "RuntimeOptionGroupsTest";
+    let file = turu_bot::paths::Paths::new().script_options_file(storage);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "Options:Pet=Dragon Pet\nGeneric:mode=mergeMats\n").unwrap();
+    std::fs::write(
+        dir.join("main.ts"),
+        format!(
+            r#"import {{ bot, choices, defineScriptOptions, option }} from "turu";
+enum Pet {{ None = "None", Dragon_Pet = "Dragon_Pet" }}
+enum Mode {{ all, acOnly, mergeMats, select }}
+export const scriptOptions = defineScriptOptions("{storage}", [
+    option.choice("Pet", "Pet", "", choices(Pet), Pet.None),
+], true, {{
+    Generic: [option.choice("mode", "Mode", "", choices(Mode))],
+    Select: [option.bool("1234", "Item", "")],
+}});
+export default function main(): void {{
+    const mode = bot.config.get<string>("Generic", "mode");
+    bot.log(`pet=${{bot.config.get<Pet>("Pet")}} mode=${{mode}} index=${{Mode[mode as keyof typeof Mode]}} item=${{bot.config.get("Select", "1234")}}`);
+    bot.log(`has=${{bot.config.has("Select", "1234")}} main=${{bot.config.has("1234")}}`);
+    bot.config.set("Select", "1234", true);
+    try {{
+        bot.config.set("Pet", "Cat");
+    }} catch (error) {{
+        bot.log(`bad: ${{(error as Error).message}}`);
+    }}
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&dir.join("main.ts"));
+    script::start(&bot).unwrap();
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(
+        log.contains("pet=Dragon_Pet mode=mergeMats index=2 item=false"),
+        "{log}"
+    );
+    assert!(log.contains("has=true main=false"), "{log}");
+    assert!(
+        log.contains("bad: config.set: \"Pet\" must be one of None, Dragon_Pet"),
+        "{log}"
+    );
+    let saved = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(
+        saved,
+        "Options:Pet=Dragon_Pet\nGeneric:mode=mergeMats\nSelect:1234=True\n"
+    );
+}
+
 /// A script with one option that logs "in main" and calls `body`.
 fn options_script(name: &str, dont_preconfigure: bool, body: &str) -> std::path::PathBuf {
     let dir = temp_dir(name);
@@ -381,6 +437,53 @@ fn potions_declares_its_csharp_options() {
     assert_eq!(declaration.options[3].name, "SkipOption");
     assert!(declaration.dont_preconfigure);
     assert!(declaration.options.iter().any(|o| o.name == "FarmSoul"));
+}
+
+#[test]
+fn merge_scripts_read_vibeskuas_merge_options_file() {
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts/other/mergeshops/SynderesMerge.ts");
+    let declaration = turu_bot::script::options::declaration(&script)
+        .unwrap()
+        .expect("SynderesMerge declares options");
+    assert_eq!(declaration.storage, "MergeOptionStorage");
+    assert!(declaration.options.is_empty());
+    assert!(declaration.dont_preconfigure);
+    let names: Vec<&str> = declaration.groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["Generic", "Select"]);
+    assert_eq!(declaration.groups[0].options[0].name, "SkipOption");
+    assert_eq!(declaration.groups[0].options[1].name, "mode");
+    assert_eq!(
+        declaration.groups[0].options[1].choices,
+        ["all", "acOnly", "mergeMats", "select"]
+    );
+
+    // A file VibeSkua wrote: its four explanation lines are all named " ".
+    let dir = temp_dir("merge-options");
+    let file = dir.join("MergeOptionStorage.cfg");
+    std::fs::write(
+        &file,
+        "Generic:SkipOption=True\nGeneric:mode=select\nGeneric: =click here\nGeneric: =click here\n\
+         Select:29576=True\nSelect:29711=False\n",
+    )
+    .unwrap();
+    let options = turu_bot::script::options::ScriptOptions::load(declaration, file).unwrap();
+    assert_eq!(
+        options.get_in("Generic", "SkipOption"),
+        Some(&serde_json::json!(true))
+    );
+    assert_eq!(
+        options.get_in("Generic", "mode"),
+        Some(&serde_json::json!("select"))
+    );
+    assert_eq!(
+        options.get_in("Select", "29576"),
+        Some(&serde_json::json!(true))
+    );
+    assert_eq!(
+        options.get_in("Select", "29574"),
+        Some(&serde_json::json!(false))
+    );
 }
 
 #[test]

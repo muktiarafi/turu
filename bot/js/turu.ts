@@ -604,8 +604,8 @@ export class Lite {
     set quantityWarnings(v: boolean) { call("lite.setOption", "termsAgree", v); }
 }
 
-/** The kind of a script option: a checkbox, a whole number, or a text box. */
-export type ScriptOptionKind = "bool" | "int" | "text";
+/** The kind of a script option: a checkbox, a whole number, a text box, or a list of names. */
+export type ScriptOptionKind = "bool" | "int" | "text" | "choice";
 
 /** One of a script's options (VibeSkua `Option<T>`), as the Script Options window shows it. */
 export interface ScriptOption {
@@ -618,6 +618,15 @@ export interface ScriptOption {
     kind: ScriptOptionKind;
     /** The value until the user saves another one (VibeSkua `DefaultValue`). */
     defaultValue: boolean | number | string;
+    /** For a `"choice"`: the names it can take (VibeSkua: the enum's members). */
+    choices?: string[];
+}
+
+/** A named list of options (one entry of VibeSkua's `MultiOptions`). */
+export interface ScriptOptionGroup {
+    /** The group's name: `bot.config.get(name, option)` and the `Name:` prefix in the options file. */
+    name: string;
+    options: ScriptOption[];
 }
 
 /** A script's options: the file the values are saved in, and the options (see {@link defineScriptOptions}). */
@@ -625,6 +634,8 @@ export interface ScriptOptions {
     /** The saved values go to `options/<storage>.cfg`, as in VibeSkua (`OptionsStorage`). */
     storage: string;
     options: ScriptOption[];
+    /** Option groups (VibeSkua `MultiOptions`), after `options`. See {@link defineScriptOptions}. */
+    groups?: ScriptOptionGroup[];
     /**
      * Don't open the Script Options window before each run (VibeSkua `DontPreconfigure`). Set it
      * when the script opens the window itself, as CoreBots does with `Core.skipOptions`.
@@ -646,7 +657,29 @@ export const option = {
     text(name: string, displayName: string, description: string, defaultValue = ""): ScriptOption {
         return { name, displayName, description, kind: "text", defaultValue };
     },
+    /**
+     * One of a list of names, picked from a drop-down (VibeSkua's enum options, `Option<MyEnum>`).
+     * The window shows `_` as spaces; `bot.config.get` returns the name. Pass the members of a
+     * TypeScript enum with `choices(MyEnum)`. The default is the first name when not given.
+     *
+     * @example
+     * enum PetChoice { None = "None", Dragon_Pet = "Dragon_Pet" }
+     * option.choice("PetChoice", "Choose Your Pet", "", choices(PetChoice), PetChoice.None)
+     * // later: bot.config.get<PetChoice>("PetChoice")
+     */
+    choice(name: string, displayName: string, description: string, choices: readonly string[], defaultValue?: string): ScriptOption {
+        return { name, displayName, description, kind: "choice", defaultValue: defaultValue ?? choices[0] ?? "", choices: [...choices] };
+    },
 };
+
+/**
+ * The member names of a TypeScript enum, in order, for {@link option.choice}. For a string enum
+ * whose values are its names (`enum Mode { all = "all" }`), these are also its values.
+ */
+export function choices(enumObject: Record<string, string | number>): string[] {
+    // A numeric enum maps its values back to its names too: keep the names only.
+    return Object.keys(enumObject).filter((key) => !/^\d+$/.test(key));
+}
 
 /**
  * Declares a script's options (VibeSkua `OptionsStorage` and `Options`). Export the result as
@@ -654,13 +687,27 @@ export const option = {
  * once the script is loaded, and `bot.config.get` reads the values. Start opens the window and
  * waits for it to close, unless `dontPreconfigure` is true.
  *
+ * `groups` are VibeSkua's `MultiOptions`: each key is a group, shown after `options` under its
+ * name (with `_` as spaces) and saved as `Group:Name=Value`. Read them with
+ * `bot.config.get(group, name)`.
+ *
  * @example
  * export const scriptOptions = defineScriptOptions("MyScript", [
  *     option.int("PotionQuant", "Potion Quantity", "Desired stack amount", 300),
  * ]);
+ * // With groups (VibeSkua `MultiOptions = { "Generic", "Select" }`):
+ * export const scriptOptions = defineScriptOptions("MergeStorage", [], true, {
+ *     Generic: [option.choice("mode", "Mode", "", ["all", "acOnly", "mergeMats", "select"])],
+ *     Select: [option.bool("1234", "Some Item", "")],
+ * });
  */
-export function defineScriptOptions(storage: string, options: ScriptOption[], dontPreconfigure = false): ScriptOptions {
-    return { storage, options, dontPreconfigure };
+export function defineScriptOptions(
+    storage: string,
+    options: ScriptOption[],
+    dontPreconfigure = false,
+    groups: Record<string, ScriptOption[]> = {},
+): ScriptOptions {
+    return { storage, options, dontPreconfigure, groups: Object.entries(groups).map(([name, list]) => ({ name, options: list })) };
 }
 
 /** `bot.config`: the values of the script's options (VibeSkua `Bot.Config`). */
@@ -669,11 +716,20 @@ export class Config {
      * The value of an option: the one the user saved in the Script Options window, or its
      * default. Throws for a name the script doesn't declare.
      */
-    get<T extends boolean | number | string = boolean | number | string>(name: string): T { return call("config.get", name); }
+    get<T extends boolean | number | string = boolean | number | string>(name: string): T;
+    /** The value of an option of a group (VibeSkua `Config.Get<T>(category, name)`). */
+    get<T extends boolean | number | string = boolean | number | string>(group: string, name: string): T;
+    get(...args: string[]): unknown { return call("config.get", ...args); }
     /** Sets an option and saves it to the script's options file (VibeSkua `Config.Set`). */
-    set(name: string, value: boolean | number | string): void { call("config.set", name, value); }
+    set(name: string, value: boolean | number | string): void;
+    /** Sets an option of a group and saves it (VibeSkua `Config.Set(category, name, value)`). */
+    set(group: string, name: string, value: boolean | number | string): void;
+    set(...args: (boolean | number | string)[]): void { call("config.set", ...args); }
     /** Whether the script declares the option (VibeSkua `Config.Options.Contains`). */
-    has(name: string): boolean { return call("config.has", name); }
+    has(name: string): boolean;
+    /** Whether the script declares the option in that group. */
+    has(group: string, name: string): boolean;
+    has(...args: string[]): boolean { return call("config.has", ...args); }
     /**
      * Opens the Script Options window and waits until the user saves or cancels it (VibeSkua
      * `Config.Configure()`). Returns at once when the script declares no options, or nobody can
@@ -830,7 +886,11 @@ export class Events {
 export class Flash {
     get<T = unknown>(path: string): T { return call("flash.get", path); }
     getStatic<T = unknown>(path: string): T { return call("flash.getStatic", path); }
-    set(path: string, value: boolean | number | string | null): void { call("flash.set", path, value); }
+    /**
+     * Sets a game value (VibeSkua `Flash.SetGameObject`). Arrays and objects reach the game as AS3
+     * arrays and objects: `bot.flash.set("world.questTree", {})` empties the quest tree.
+     */
+    set(path: string, value: unknown): void { call("flash.set", path, value); }
     isNull(path: string): boolean { return call("flash.isNull", path); }
     callGameFunction<T = unknown>(path: string, ...args: unknown[]): T { return call("flash.callGameFunction", path, ...args); }
     /** Calls one of skua.swf's ExternalInterface callbacks and returns its raw string. */

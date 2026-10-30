@@ -40,8 +40,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
 - **Scripts:** TypeScript, run in QuickJS after oxc strips the types. Ported: the parts of
-  CoreBots, CoreFarms, CoreAdvanced (shop buying) and CoreNation that the ported scripts reach,
-  `nation/materials/0MaxBags.ts`, `farm/GoldFarm.ts` and `other/various/Potions.ts`.
+  CoreBots, CoreFarms, CoreAdvanced (shop buying and the merge-shop template) and CoreNation that
+  the ported scripts reach, all of CoreStory (for the story scripts), `nation/materials/0MaxBags.ts`,
+  `farm/GoldFarm.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
   `setOptions()`, starts from your house when you are in battleon, goes to the CBO stop map
   when the script is stopped, and uses boosts from the CBO Boosters switches.
@@ -72,14 +73,21 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
   Closing it needs the script's JS context inside those waits; the handler table is ready for it.
-- **`FlashArg` has no object variant:** equipping goes through the `equipItem` packet; check
-  consumables in game. The quest-limit handler (an object `setGameObject`) is dropped.
+- **Objects for Flash are new:** `FlashArg` carries arrays and objects now (`bot.flash.set(path,
+  {})`, used by CoreStory's `preLoad`), but nothing has sent one in game yet. Equipping still goes
+  through the `equipItem` packet (check consumables in game), and CoreBots' quest-limit handler
+  isn't restored.
 - **No counter-attack pause** (`Bot.UltraBossHelper`).
 - **No reputation API:** CoreBots reads `world.myAvatar.factions` itself.
-- **Script options:** option groups (`MultiOptions`) and enum options aren't ported. The window
-  never opens by itself with `--headless`, or for runs started from the command line, the HTTP API
+- **Script options:** the window never opens by itself with `--headless`, or for runs started from the command line, the HTTP API
   or auto-relogin (VibeSkua's `SilentConfig` covers only the command line and the scheduler; its
   relogin restart can show it).
+- **CoreStory is unverified in game:** its test only checks that `preLoad` finds the quests of a
+  story function. `killQuest`, `mapItemQuest` and the unlock-recovery loop of `questProgression`
+  need a story run.
+- **The merge template is unverified in game:** its tests run it against a fake shop (picking the
+  items, handing a requirement the shop doesn't sell to `findIngredients`); buying and the nested
+  merges need a real merge run (SynderesMerge is the smallest).
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

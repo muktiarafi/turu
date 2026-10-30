@@ -191,25 +191,29 @@ impl ScriptManager {
         matches!(*self.options.lock(), ScriptOptionsState::Loaded(_))
     }
 
-    /// `bot.config.has`: whether the loaded script declares the option.
-    pub fn has_option(&self, name: &str) -> bool {
-        matches!(&*self.options.lock(), ScriptOptionsState::Loaded(o) if o.get(name).is_some())
+    /// `bot.config.has`: whether the loaded script declares the option. `category` is
+    /// [`options::MAIN`] or a group's name.
+    pub fn has_option(&self, category: &str, name: &str) -> bool {
+        matches!(&*self.options.lock(), ScriptOptionsState::Loaded(o) if o.get_in(category, name).is_some())
     }
 
     /// `bot.config.get`: the value of one of the loaded script's options.
-    pub fn option_value(&self, name: &str) -> Result<Value, String> {
+    pub fn option_value(&self, category: &str, name: &str) -> Result<Value, String> {
         self.with_options(|options| {
-            options
-                .get(name)
-                .cloned()
-                .ok_or_else(|| format!("this script has no option named \"{name}\""))
+            options.get_in(category, name).cloned().ok_or_else(|| {
+                if category == options::MAIN {
+                    format!("this script has no option named \"{name}\"")
+                } else {
+                    format!("this script has no option named \"{name}\" in \"{category}\"")
+                }
+            })
         })
     }
 
     /// `bot.config.set`: sets an option of the loaded script and saves it.
-    pub fn set_option_value(&self, name: &str, value: Value) -> Result<(), String> {
+    pub fn set_option_value(&self, category: &str, name: &str, value: Value) -> Result<(), String> {
         self.with_options(|options| {
-            options.set(name, value)?;
+            options.set_in(category, name, value)?;
             options
                 .save()
                 .map_err(|e| format!("couldn't save the options: {e}"))

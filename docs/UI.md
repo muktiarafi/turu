@@ -63,8 +63,9 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Stop" while stopping handlers run); Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
   The "Report Issues" footer is omitted.
 * **Script Options** (`script_options.rs`, 560x460; VibeSkua's "Script Options" dialog): the loaded
-  script's options in one list, each with its name, description and editor (switch, number box or
-  text box; the default shows on hover). Reset Defaults, Cancel and Save. The window edits a copy
+  script's options in one list, each with its name, description and editor (switch, number box,
+  text box or a drop-down for a choice, its names with `_` as spaces; the default shows on hover).
+  Each option group (`MultiOptions`) follows in its own card under its name. Reset Defaults, Cancel and Save. The window edits a copy
   taken when it opens, so Cancel and closing it drop the changes; Save writes `options/<Storage>.cfg`.
   Opened from Scripts > Edit Script Options or the Script Loader's button, and by itself when the
   script asks (on Start unless it sets `dontPreconfigure`, or `bot.config.configure()`): the script

@@ -1854,8 +1854,11 @@ export class CoreBots {
         }
     }
 
-    /** The loaded shop's items (raw `world.shopinfo.items`, falling back to `bot.shops.items`). */
-    private readShopItems(): CoreShopItem[] {
+    /**
+     * The loaded shop's items with their requirements (raw `world.shopinfo.items`, falling back to
+     * `bot.shops.items`); C# reads these as `Bot.Shops.Items`.
+     */
+    readShopItems(): CoreShopItem[] {
         const raw = bot.flash.get<GameItem[] | null>("world.shopinfo.items");
         if (Array.isArray(raw)) return raw.filter((x) => x).map(toShopItem);
         return bot.shops.items.map((x) => ({
@@ -4217,7 +4220,86 @@ export class CoreBots {
         // C# retries when Bot.Map is null, which never happens here.
     }
 
-    // C# GetMapItem: only used by Join map cases this port leaves out, dropped.
+    /**
+     * Picks up a map item (`getMapItem` packet) until you have `quant` of it in the temp inventory.
+     * @param itemId ID of the map item.
+     * @param quant Desired quantity of the item.
+     * @param map Map where the item is (joined first when given).
+     */
+    getMapItem(itemId: number, quant = 1, map: string | null = null): void {
+        // Early exit if item already present in sufficient quantity
+        if (bot.tempInv.contains(itemId, quant)) {
+            this.logger(`Map item ${itemId} already acquired (${quant})`);
+            return;
+        }
+
+        //if aggro/aggroall is enabled when joining a map, disable it [forced]
+        bot.options.aggroMonsters = false;
+        bot.options.aggroAllMonsters = false;
+
+        if (map !== null) this.join(map);
+
+        this.jumpWait();
+        this.sleep();
+
+        this.grabMapItem(itemId, quant);
+        this.logger(`Map item ${itemId} (${quant}) acquired`);
+    }
+
+    /**
+     * Picks up several map items, each until you have its quantity in the temp inventory.
+     * @param items `[itemId, quantity]` pairs.
+     * @param map Map where the items are (joined first when given).
+     */
+    getMapItems(items: readonly (readonly [itemId: number, quantity: number])[], map: string | null = null): void {
+        //if aggro/aggroall is enabled when joining a map, disable it [forced]
+        bot.options.aggroMonsters = false;
+        bot.options.aggroAllMonsters = false;
+
+        if (map !== null) this.join(map);
+
+        this.jumpWait();
+        this.sleep();
+
+        for (const [itemId, quant] of items) {
+            if (bot.tempInv.contains(itemId, quant)) {
+                this.logger(`Map item ${itemId} already acquired (${quant})`);
+                continue;
+            }
+            this.grabMapItem(itemId, quant);
+            this.logger(`Map item ${itemId} (${quant}) acquired`);
+        }
+    }
+
+    /** The pickup loop C# repeats in GetMapItem and GetMapItems. */
+    private grabMapItem(itemId: number, quant: number): void {
+        const initialIds = new Set(bot.tempInv.items.map((x) => x.id));
+        let newItem: InventoryItem | null = null;
+
+        for (let i = 0; i < quant; i++) {
+            bot.map.getMapItem(itemId);
+            this.sleep(1000);
+
+            if (newItem !== null) continue;
+
+            // Try to find the newly acquired item
+            const newItems = bot.tempInv.items.filter((x) => !initialIds.has(x.id));
+            newItem = newItems.find((x) => x.id === itemId) ?? newItems[0] ?? null;
+        }
+
+        if (quant > 1 && newItem !== null) {
+            let attempts = 0;
+            for (;;) {
+                const item = bot.tempInv.getItem(newItem.name);
+                if (bot.tempInv.getQuantity(newItem.name) >= quant || item === null || item.quantity >= item.maxStack) break;
+                bot.map.getMapItem(itemId);
+                this.sleep(1000);
+                attempts++;
+
+                if (attempts > quant + 10 || bot.tempInv.contains(newItem.name, quant)) break;
+            }
+        }
+    }
 
     /** Whether the room you're in is a public room (room number below 1000). */
     inPublicRoom(): boolean {
