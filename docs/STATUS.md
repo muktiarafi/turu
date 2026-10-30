@@ -22,6 +22,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   `--password` (a command line is visible to other users). `--load-script` only loads,
   `--exit-on-script-stop` logs out and quits when the script stops (not for auto-relogin).
   `bot/src/startup.rs`, flags in `desktop/src/turu.rs`.
+- **Windowless mode** (`--headless`, `desktop/src/headless.rs`): no window, GPU or sound; the
+  player draws nothing (Ruffle's null renderer) and a loop on the main thread runs it, its
+  network tasks and the bot's calls. With the login flags and `--run-script` it farms on its
+  own, logging to the terminal; it needs no display (a Linux server). At the login screen
+  (debug build, macOS): ~6% CPU and ~96 MB against ~21% and ~420 MB with the window. Device
+  fonts aren't loaded, so text in them isn't laid out (reading a text field still works).
+  The Headless Mode option is separate: it lowers the game's frame rate in either mode.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
@@ -44,8 +51,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
-- **No windowless mode yet:** `--user`/`--password` log in without you, but the window still
-  opens (Headless Mode only lowers the frame rate). CoreBots' restart after a logout
+- **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
+  farm without a window still need a run. There's no way to steer it while it runs (the UI
+  lives in the window); Ctrl+C quits. CoreBots' restart after a logout
   (`Bot.Manager.RestartScriptAsync`) isn't ported.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
