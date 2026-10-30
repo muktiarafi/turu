@@ -8,6 +8,7 @@ mod accounts;
 mod application_options;
 mod army;
 mod auto;
+mod butler;
 mod core_bots;
 mod current_drops;
 mod files;
@@ -46,6 +47,7 @@ pub struct Windows {
     pub current_drops: bool,
     pub accounts: bool,
     pub army: bool,
+    pub butler: bool,
 }
 
 /// A tool window below the nav bar; `slot` staggers the default positions.
@@ -82,6 +84,7 @@ struct TabUi {
     logs: logs::LogsWindow,
     packet_logger: packet_logger::PacketLogger,
     current_drops: current_drops::CurrentDrops,
+    butler: butler::ButlerWindow,
 }
 
 pub struct TuruUi {
@@ -161,6 +164,8 @@ impl TuruUi {
         tab.skills.show(ctx, &mut w.skills);
         tab.logs.show(ctx, &picker, &mut w.logs);
         tab.packet_logger.show(ctx, &picker, &mut w.packet_logger);
+        tab.butler.show(ctx, &mut w.butler);
+        stop_auto_while_following();
         let (accounts, army) = (std::mem::take(&mut w.accounts), std::mem::take(&mut w.army));
         self.accounts_open |= accounts;
         self.army_open |= army;
@@ -175,5 +180,17 @@ impl TuruUi {
         crate::turu::tabs()
             .iter()
             .any(|(_, bot)| bot.scripts.status().is_active() || auto::running(bot))
+    }
+}
+
+/// Auto Attack fights the butler's own movement and skills: a tab that follows stops it
+/// (VibeSkua ButlerV5 `StopUserAuto`). Not while a script runs: the follow is suspended then,
+/// and Stop would stop the script.
+fn stop_auto_while_following() {
+    for (_, bot) in crate::turu::tabs() {
+        if auto::running(&bot) && !bot.scripts.is_running() && bot.butler.following().is_some() {
+            bot.log("[Butler] Stopped Auto Attack: it conflicts with following.");
+            bot.control.request_stop();
+        }
     }
 }

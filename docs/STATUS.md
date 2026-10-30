@@ -59,6 +59,21 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   a dot while its script or Auto Attack runs, × to close (stops its script), + for a new tab at
   the login screen (also Army > New Tab). Checked by hand: opening, switching and closing a
   second tab at the login screen.
+- **Butler** (Plugins > Butler, `bot/src/butler/`, VibeSkua's ButlerV5 plugin): each client writes
+  its account's state to `butler/<username>.state` every 500 ms (when it changed, else every
+  5 s as a heartbeat; 15 s old is offline, as tabs share a PID). A master summons accounts by
+  listing them (`butler::toggle_follower`, `summon_all`, `release_all`); a listed account
+  follows it unless a script runs, it declined, or Obey Summons is off for it
+  (`butler.json`, per account in Turu). The follower does V5's goto, the rescue join of the
+  master's `map-room` (houses by name), the cell jump, fighting (passive and leech modes),
+  the packet warnings (locked zone, room full, ignoring goto), the CoreBots class type,
+  Infinite Range and Skip Cutscenes while following, relogin re-arm, suspending while a script
+  runs, and parking (house, whitemap, stay). Its test runs a master and a butler against two
+  fake games. The window (`docs/turu/UI.md`) lists the other online accounts with
+  Follow and Summon, and edits the options; following stops the tab's Auto Attack. Not built:
+  AntiLag while following, the quest bypass table, quest cloning, the level fake, V5's debug
+  log viewer (Butler logs to the script and debug logs), the suspend message box, and an offline write when the window
+  closes (the heartbeat ages out instead). Unverified in game.
 - **Reputation and auras:** `bot.reputation` (VibeSkua `Bot.Reputation`: `factionList`, `getRank`,
   `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
   `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in
@@ -208,6 +223,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   the submodule, then the new pointer here. Its `types/turu.ts` is a copy of `bot/js/turu.ts`
   for type-checking outside Turu; copy it again when the API changes (`script_repo` tests check).
 
+- **Never hold a lock the UI reads across a Flash call.** The UI thread answers Flash calls, so
+  a bot thread that waits on Flash while holding such a lock, and a UI frame that waits on the
+  lock, freeze each other until the call times out; meanwhile no game runs and the server
+  drops every tab (Butler's broadcast did this; `butler_state_reads_never_wait_for_a_game_call`
+  tests for it). Read the game first, then lock.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy on the desktop crate** stops at an existing error in Ruffle's

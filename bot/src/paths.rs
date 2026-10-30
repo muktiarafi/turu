@@ -162,6 +162,16 @@ impl Paths {
         self.root.join("settings.json")
     }
 
+    /// Butler's sync files, one per account (`butler::sync`).
+    pub fn butler_dir(&self) -> PathBuf {
+        self.root.join("butler")
+    }
+
+    /// Butler's options (`butler::ButlerSettings`), shared by every client.
+    pub fn butler_settings_file(&self) -> PathBuf {
+        self.root.join("butler.json")
+    }
+
     pub fn load_settings(&self) -> Option<AppSettings> {
         let text = fs::read_to_string(self.settings_file()).ok()?;
         serde_json::from_str(&text).ok()

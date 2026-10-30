@@ -36,7 +36,7 @@ The windows are not scaled with the window height (Mugetsu's `z`): they keep Vib
 (Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
 Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
 Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
-Interceptor), **Plugins** (View Plugins), **Army** (Accounts, Army Control, New Tab; Turu's:
+Interceptor), **Plugins** (View Plugins, Butler), **Army** (Accounts, Army Control, New Tab; Turu's:
 VibeSkua has them in its Manager app and its tabbed host). Right side: **Auto**, **Jump**, a
 divider, **+**.
 
@@ -125,6 +125,15 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
   Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,
   and each client's outcome under RESULTS.
+* **Butler** (`butler.rs`, 520x560; VibeSkua ButlerV5's roster and settings windows, one per
+  tab): this account and whom it follows or summons (Stop following, Release all, the last
+  action's outcome); ACCOUNTS, the other online accounts read from the sync files every second,
+  with chips (fighting, following me / following X / summoned, busy: script, parking, other
+  server), map-room, server and class, and Follow/Stop and Summon/Release, disabled with
+  V5's reasons; the online count, Summon all and Settings. Settings for every client (Enable,
+  passive attack, leech mode, always goto, goto delay, rescue threshold, park location) and
+  for this account (class type, obey summons), saved on change. Following stops the tab's Auto
+  Attack.
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.

@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod api;
 pub mod army;
 mod background;
+pub mod butler;
 pub mod cbo;
 pub mod control;
 pub mod control_api;
@@ -69,6 +70,8 @@ pub struct Bot {
     /// The command-line login, until the game has loaded.
     pub startup: Mutex<Option<startup::Startup>>,
     pub webhooks: webhooks::Webhooks,
+    /// Following other accounts and summoning them (VibeSkua's ButlerV5 plugin).
+    pub butler: butler::Butler,
     pub paths: paths::Paths,
 }
 
@@ -96,10 +99,12 @@ impl Bot {
             servers: api::servers::ServerRunner::default(),
             startup: Mutex::new(None),
             webhooks: webhooks::Webhooks::default(),
+            butler: butler::Butler::new(&paths),
             paths,
         });
         background::start(&bot);
         webhooks::start(&bot);
+        butler::start(&bot);
         bot
     }
 

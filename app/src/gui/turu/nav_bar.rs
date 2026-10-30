@@ -205,6 +205,10 @@ impl NavBar {
         });
         ui.menu_button("Plugins", |ui| {
             item(ui, "View Plugins", false);
+            // Turu: VibeSkua's ButlerV5 plugin, built in.
+            if item(ui, "Butler", true) {
+                windows.butler = true;
+            }
         });
         // Turu: VibeSkua has these in its Manager app and its tabbed host's "Army Control" menu.
         ui.menu_button("Army", |ui| {
