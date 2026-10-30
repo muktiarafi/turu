@@ -58,10 +58,12 @@ export class NulgathDemandsWork {
                 // Ensure we *Always* have 1 for the accepting, and 1 for the quest
                 Nation.farmUni13(2);
                 this.uni27();
-                Nation.farmVoucher({ member:true });
                 Nation.farmGemofNulgath(15);
                 Nation.farmBloodGem(2);
                 GHV.getGHV();
+                // C# farms the voucher before the three above, whose Supplies/Kiss the Void/Bamblooze
+                // sell it when "Sell Voucher of Nulgath" is on (the default).
+                Nation.farmVoucher({ member:true });
 
                 // Try to buy U35 with fragments BEFORE completing quest
                 if (item.name === "Unidentified 35"
@@ -112,6 +114,7 @@ export class NulgathDemandsWork {
 
         Core.addDrop("Unidentified 27");
         Nation.supplies("Unidentified 26", 1);
+        Nation.farmTaintedGem(5); // C# doesn't farm quest 584's 5 Tainted Gems
         Core.ensureAccept(584);
         Core.resetQuest(7551);
         Core.darkMakaiItem("Dark Makai Sigil");

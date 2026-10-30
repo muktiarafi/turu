@@ -126,14 +126,20 @@ export class VoidPaladin {
             return;
 
         Core.addDrop(...this.cyberVoidSet);
-        Core.checkInventory(
-            [
-                "Void Light of Destiny",
-                "Void Paladin",
-                "Void Paladin Helm",
-                "Void Paladin Katana",
-                "Void Paladin Katana Cape",
-            ]);
+        // C# ignores this check; quest 6625 can't be accepted without them.
+        if (
+            !Core.checkInventory(
+                [
+                    "Void Light of Destiny",
+                    "Void Paladin",
+                    "Void Paladin Helm",
+                    "Void Paladin Katana",
+                    "Void Paladin Katana Cape",
+                ])
+        ) {
+            Core.logger("Missing the Void Paladin items quest 6625 needs (run the other Void Paladin quests first).");
+            return;
+        }
         Core.ensureAccept(6625);
         Core.huntMonster("dreadspace", "Undead Space Warrior", "Powerpack", 5);
         Core.ensureComplete(6625);

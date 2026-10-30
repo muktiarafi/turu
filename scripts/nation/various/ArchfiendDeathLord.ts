@@ -58,7 +58,7 @@ export class ArchfiendDeathLord {
             }
         } else {
             Core.logger(`Section: AFDL2 (Archfiend DeathLord)`);
-            Core.farmingLogger(Reward.toString().replaceAll("_", " "), 1);
+            Core.farmingLogger(RewardChoice[Reward]!.replaceAll("_", " "), 1); // C# Reward.ToString(): the name
             while (!bot.shouldExit && !Core.checkInventory(Reward, 1, { toInv: false })) {
                 Core.ensureAccept(7900);
                 Nation.farmBloodGem(20);

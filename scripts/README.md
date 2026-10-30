@@ -139,7 +139,16 @@ has run in game yet; it type-checks, and `bot/tests/runtime.rs` loads DoAll agai
 - Fixed C# bugs (each marked in the code): `CoreFarmerJoe.pets()` read the undeclared option
   `"Pets"` and never ran (it reads `"PetChoice"` now); `TheLeeryContract.questItems(reward)`
   ignored `reward` for the option (its `main()` passes the option now); `CoreLegion.dagePvP`
-  took `canSoloBoss` from whether the CBO key is set (it takes the key's value now). Changed:
+  took `canSoloBoss` from whether the CBO key is set (it takes the key's value now).
+  Nation (still in VibeSkua's C#): the voucher turn-ins (quest 4778) checked the Diamonds' stack
+  before taking Gems of Nulgath (they check the Gems now); `kisstheVoid` sold the voucher when
+  told to keep it, and `bambloozevsDrudgen` ignored `keepVoucher`; `NulgathDemandsWork` and
+  `gemStoneReceiptOfNulgath` farmed the member voucher before steps that sell it (it's farmed
+  last now); the Dwobo shop was bought from the map "crashedruins" (now `crashruins`);
+  `gemStonesOfnulgath` needed the Gemstone *or* membership (now both); `approvalAndFavor`
+  ignored Stop for the Favors; `uni27` didn't farm quest 584's Tainted Gems; PrimeFiendShard's
+  finale unbanked quest 8916's items; `VoidPaladin.cyberSet` accepted 6625 without its items;
+  `assistingCandB` tried several turn-ins per farm round (now one). Changed:
   `CoreLegion.joinLegion` never sells "Undead Warrior" (C# asks with a Yes/No box, which Turu
   scripts can't show); the "You will not resist!" watch in `CoreAOR.fightVoiceInTheSea` reads the
   parsed packet instead of the raw `pext` flash call.

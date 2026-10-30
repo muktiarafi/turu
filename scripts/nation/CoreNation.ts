@@ -307,8 +307,8 @@ export class CoreNation {
         Core.farmingLogger("Archfiend's Favor", quantFavor);
 
         Core.equipClass(ClassType.Farm);
-        // C# precedence kept: (!ShouldExit && approvals < quant) || favors < quant
-        while ((!bot.shouldExit && bot.inventory.getQuantity("Nulgath's Approval") < quantApproval) || bot.inventory.getQuantity("Archfiend's Favor") < quantFavor) {
+        // C# checks ShouldExit only with the Approvals: `(!ShouldExit && approvals < quant) || favors < quant`.
+        while (!bot.shouldExit && (bot.inventory.getQuantity("Nulgath's Approval") < quantApproval || bot.inventory.getQuantity("Archfiend's Favor") < quantFavor)) {
             if (bot.map.name !== "evilwarnul") {
                 Core.join("evilwarnul");
                 bot.wait.forMapLoad("evilwarnul");
@@ -650,20 +650,25 @@ export class CoreNation {
         }
     }
 
-    /** Turns vouchers into Totems/Diamonds (quest 4778) when you have a non-mem voucher and 60 essences. */
+    /**
+     * Turns vouchers into Totems/Gems (quest 4778) when you have a non-mem voucher and 60 essences.
+     * C# checks the Diamonds' stack before picking the Gem of Nulgath (6136): quest 4778 gives no
+     * Diamonds, so it kept spending vouchers on Gems that were already maxed.
+     */
     private handleVoucherConversions(item: string): void {
         if (!Core.checkInventory("Voucher of Nulgath (non-mem)") || !Core.checkInventory("Essence of Nulgath", 60)) return;
 
         const diamondsMaxed = Core.checkInventory("Diamond of Nulgath", 1000);
+        const gemsMaxed = Core.checkInventory("Gem of Nulgath", 1000);
         const totemsMaxed = Core.checkInventory("Totem of Nulgath", 100);
 
         if (item.toLowerCase() === "diamond of nulgath") {
             if (diamondsMaxed && !totemsMaxed) Core.ensureCompleteMulti(4778, 100, 5357);
         } else if (item.toLowerCase() === "totem of nulgath") {
-            if (totemsMaxed && !diamondsMaxed) Core.ensureCompleteMulti(4778, 1000, 6136);
+            if (totemsMaxed && !gemsMaxed) Core.ensureCompleteMulti(4778, 1000, 6136);
         } else {
             if (!totemsMaxed) Core.ensureCompleteMulti(4778, 100, 5357);
-            else if (!diamondsMaxed) Core.ensureCompleteMulti(4778, 1000, 6136);
+            else if (!gemsMaxed) Core.ensureCompleteMulti(4778, 1000, 6136);
         }
     }
 
@@ -831,14 +836,16 @@ export class CoreNation {
         const voucherItem = (): void => {
             if (!Core.checkInventory("Voucher of Nulgath (non-mem)") || !Core.checkInventory("Essence of Nulgath", 60)) return;
             const diamondsMaxed = Core.checkInventory("Diamond of Nulgath", 1000);
+            // C# checks the Diamonds here; 6136 is Gem of Nulgath (see handleVoucherConversions).
+            const gemsMaxed = Core.checkInventory("Gem of Nulgath", 1000);
             const totemsMaxed = Core.checkInventory("Totem of Nulgath", 100);
 
             if (item?.toLowerCase() === "diamond of nulgath") {
                 if (diamondsMaxed && !totemsMaxed) Core.ensureCompleteMulti(4778, -1, 5357); // Totems
             } else if (item?.toLowerCase() === "totem of nulgath") {
-                if (totemsMaxed && !diamondsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Diamonds
+                if (totemsMaxed && !gemsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Gems
             } else if (!totemsMaxed) Core.ensureCompleteMulti(4778, -1, 5357); // Prioritize Totems
-            else if (!diamondsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Then Diamonds
+            else if (!gemsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Then Gems
         };
 
         if (item === null) {
@@ -926,7 +933,8 @@ export class CoreNation {
         Core.addDrop(...(!item ? this.bagDrops : [item]));
 
         const returnPolicyDuringSupplies = Core.cboBool("Nation_ReturnPolicyDuringSupplies") === true;
-        const sellMemVoucher = Core.cboBool("Nation_SellMemVoucher") === true;
+        // C# ignores keepVoucher here (supplies honours it), so farmVoucher({ keepVoucher }) sold vouchers.
+        const sellMemVoucher = !keepVoucher && Core.cboBool("Nation_SellMemVoucher") === true;
 
         if (!camefromSupplies)
             Core.logger(`Bamblooze mode → Item: ${item ?? "All"} | Keep:${keepVoucher ? "True" : "False"} Assist:${assistantDuring ? "True" : "False"}`);
@@ -989,16 +997,18 @@ export class CoreNation {
                 Core.pause(500);
                 if (Core.checkInventory("Voucher of Nulgath (non-mem)") && Core.checkInventory("Essence of Nulgath", 60)) {
                     const diamondsMaxed = Core.checkInventory("Diamond of Nulgath", 1000);
+                    // C# checks the Diamonds here; 6136 is Gem of Nulgath (see handleVoucherConversions).
+                    const gemsMaxed = Core.checkInventory("Gem of Nulgath", 1000);
                     const totemsMaxed = Core.checkInventory("Totem of Nulgath", 100);
 
                     if (item?.toLowerCase() === "diamond of nulgath") {
                         if (diamondsMaxed && !totemsMaxed) Core.ensureCompleteMulti(4778, -1, 5357); // Totems
                     } else if (item?.toLowerCase() === "totem of nulgath") {
-                        if (totemsMaxed && !diamondsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Diamonds
+                        if (totemsMaxed && !gemsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Gems
                     } else {
                         // item == null or any other item
                         if (!totemsMaxed) Core.ensureCompleteMulti(4778, -1, 5357); // Prioritize Totems
-                        else if (!diamondsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Then Diamonds
+                        else if (!gemsMaxed) Core.ensureCompleteMulti(4778, -1, 6136); // Then Gems
                     }
                 }
                 break;
@@ -1503,19 +1513,21 @@ export class CoreNation {
             bot.wait.forDrop(itemToPickup);
             bot.wait.forPickup(itemToPickup);
 
-            this.sellVoucherOfNulgath(keepVoucher || this.sellMemVoucher, itemToPickup);
+            // C# passes `KeepVoucher || sellMemVoucher`, so keepVoucher made it sell.
+            this.sellVoucherOfNulgath(!keepVoucher && this.sellMemVoucher, itemToPickup);
 
             // if `Blood Gem of the Archfiend` isnt max stack, do the quest if enabled.
             if (!Core.checkInventory("Blood Gem of the Archfiend", 100)) this.doSwindlesReturnArea(returnPolicyDuringSupplies, "Blood Gem of the Archfiend");
+            // C# checks the Diamonds here; 6136 is Gem of Nulgath (see handleVoucherConversions).
             if (
                 Core.checkInventory("Voucher of Nulgath (non-mem)") &&
                 Core.checkInventory("Essence of Nulgath", 60) &&
-                (!Core.checkInventory("Diamond of Nulgath", 1000) || !Core.checkInventory("Totem of Nulgath", 100))
+                (!Core.checkInventory("Gem of Nulgath", 1000) || !Core.checkInventory("Totem of Nulgath", 100))
             ) {
                 Core.ensureCompleteMulti(
                     4778,
-                    !Core.checkInventory("Diamond of Nulgath", 1000) ? 1000 : 100,
-                    !Core.checkInventory("Diamond of Nulgath", 1000) ? 6136 : 5357,
+                    !Core.checkInventory("Gem of Nulgath", 1000) ? 1000 : 100,
+                    !Core.checkInventory("Gem of Nulgath", 1000) ? 6136 : 5357,
                 );
             }
 
@@ -1552,7 +1564,7 @@ export class CoreNation {
 
             if (!Core.checkInventory(receiptItemId)) {
                 this.dwoboCoin(100);
-                Core.buyItem("crashedruins", 1212, receiptItemId);
+                Core.buyItem("crashruins", 1212, receiptItemId); // C#: "crashedruins", no such map
             }
 
             Core.ensureAccept(receiptOfNulgathQuest);
@@ -1566,10 +1578,12 @@ export class CoreNation {
             Core.ensureComplete(receiptOfNulgathQuest);
             bot.wait.forPickup("Receipt of Nulgath");
 
-            this.farmVoucher({ member: true, keepVoucher: true });
-            this.farmVoucher({ member: false, keepVoucher: true });
             this.essenceofNulgath(100);
             this.farmTotemofNulgath(1);
+            // C# farms the vouchers first, then farmTotemofNulgath's Supplies sold the member one;
+            // the non-mem farm can sell it too (Bamblooze), so the member voucher comes last.
+            this.farmVoucher({ member: false, keepVoucher: true });
+            this.farmVoucher({ member: true, keepVoucher: true });
             Core.equipClass(ClassType.Solo);
             Core.huntMonster("ShadowfallWar", "Bonemuncher", "Ultimate Darkness Gem", 5, { isTemp: false });
             Core.ensureComplete(demandingApprovalQuest);
@@ -1614,7 +1628,8 @@ export class CoreNation {
         const skeletalWarriorQuest2 = 375;
         const boneTerrorQuest = 376;
 
-        if (!Core.checkInventory("Gemstone of Nulgath") && !Core.isMember) {
+        // C# `&&`: went on with only one of the two (forgeTaintedGems has `||`).
+        if (!Core.checkInventory("Gemstone of Nulgath") || !Core.isMember) {
             Core.logger("This quest requires you to have Gemstone of Nulgath and membership to be able to accept it.");
             return;
         }

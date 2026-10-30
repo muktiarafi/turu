@@ -143,6 +143,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   Warrior" armor instead of asking to sell it. Three C# bugs are fixed on purpose (marked `C#`):
   FarmerJoe's pet step reads its real option, TheLeeryContract uses the reward it's given, and
   Dage PvP reads the CBO solo-boss switch's value.
+- **Nation fixes that differ from VibeSkua (unverified in game):** 11 bugs still in VibeSkua's
+  C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/README.md`): voucher
+  turn-ins check the Gems not the Diamonds, the member voucher isn't sold before the quests that
+  need it, the Dwobo shop map name, and smaller guard and loop fixes. Only type-checked.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

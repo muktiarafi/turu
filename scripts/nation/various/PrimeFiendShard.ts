@@ -191,7 +191,8 @@ export class PrimeFiendShard {
             if (Core.checkInventory("Roentgenium of Nulgath", 10))
             { // Ensure requirements are unbanked
                 const quest = Core.initializeWithRetries(() => Core.ensureLoad(9559));
-                Core.unbank(...Core.ensureLoad(8916).requirements.map(x => x.id));
+                // C# unbanks quest 8916's requirements (Book of Aether: Supernova).
+                Core.unbank(...quest!.requirements.map(x => x.id));
                 Core.ensureComplete(9559);
             } else
                 Core.logger(

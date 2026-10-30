@@ -107,6 +107,10 @@ export class AssistingCragAndBamboozle {
                     Core.logger(`Stopped early after completing ${target.name}`);
                     return;
                 }
+
+                // C# tries every target here, but a turn-in uses up the Favors, Approvals,
+                // Fiend Seals and Essences, so only the first could complete: farm them again.
+                break;
             }
 
             // prune finished items in one go (fast + clean)
