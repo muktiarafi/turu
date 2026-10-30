@@ -6,13 +6,18 @@
 use super::files;
 use super::theme::{MUTED, SUCCESS, TRACK, WARNING};
 use super::widgets::{self, Kind};
-use egui::{Align, ComboBox, Context, Layout, Modal, RichText, ScrollArea, Ui, vec2};
+use egui::{Align, ComboBox, Context, CornerRadius, FontId, Layout, Modal, RichText, ScrollArea, Sense, Ui, vec2};
 use std::path::PathBuf;
 use std::time::Duration;
 use turu_bot::repo::{self, Entry, Scope, Snapshot, Status};
 
 /// One row of the list.
 const ROW_HEIGHT: f32 = 66.0;
+
+/// Tag chips: height, padding left and right of the text, gap between chips.
+const CHIP_HEIGHT: f32 = 16.0;
+const CHIP_PADDING: f32 = 6.0;
+const CHIP_GAP: f32 = 4.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum Sort {
@@ -237,34 +242,35 @@ impl ScriptRepoWindow {
         let ui = &mut child;
         ui.horizontal(|ui| {
             let buttons = 64.0 + 56.0 + 30.0 + 18.0;
-            ui.allocate_ui(vec2(ui.available_width() - buttons, ROW_HEIGHT - 8.0), |ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 3.0;
-                    ui.horizontal(|ui| {
-                        if entry.pinned {
-                            ui.label(RichText::new("★").color(WARNING));
-                        }
-                        ui.label(RichText::new(&info.name).strong());
-                        badges(ui, entry.status);
-                        ui.label(RichText::new(&info.path).monospace().size(10.5).color(MUTED));
+            ui.allocate_ui(
+                vec2((ui.available_width() - buttons).max(0.0), ROW_HEIGHT - 8.0),
+                |ui| {
+                    // Long names and paths stop at the buttons.
+                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 3.0;
+                        ui.horizontal(|ui| {
+                            if entry.pinned {
+                                ui.label(RichText::new("★").color(WARNING));
+                            }
+                            ui.label(RichText::new(&info.name).strong());
+                            badges(ui, entry.status);
+                            ui.add(
+                                egui::Label::new(RichText::new(&info.path).monospace().size(10.5).color(MUTED))
+                                    .truncate(),
+                            );
+                        });
+                        let description = if info.description.is_empty() {
+                            "No description provided."
+                        } else {
+                            &info.description
+                        };
+                        ui.add(egui::Label::new(RichText::new(description).color(MUTED)).truncate())
+                            .on_hover_text(description);
+                        tag_chips(ui, &info.tags);
                     });
-                    let description = if info.description.is_empty() {
-                        "No description provided."
-                    } else {
-                        &info.description
-                    };
-                    ui.add(egui::Label::new(RichText::new(description).color(MUTED)).truncate())
-                        .on_hover_text(description);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        for tag in info.tags.iter().take(8) {
-                            widgets::pill(ui, |ui| {
-                                ui.label(RichText::new(tag).size(10.0).color(MUTED));
-                            });
-                        }
-                    });
-                });
-            });
+                },
+            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 self.row_menu(ui, entry, busy);
                 let bot = crate::turu::bot();
@@ -489,6 +495,56 @@ fn load(path: &str, start: bool) {
     });
 }
 
+/// The tags as chips on one line: as many as fit in the width left, then "+N", whose hover
+/// lists the others. One line keeps the rows the same height (the list only lays out the rows
+/// in view).
+fn tag_chips(ui: &mut Ui, tags: &[String]) {
+    let font = FontId::proportional(10.0);
+    let layout = |text: String| ui.painter().layout_no_wrap(text, font.clone(), MUTED);
+    let galleys: Vec<_> = tags.iter().map(|t| layout(t.clone())).collect();
+    let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + 2.0 * CHIP_PADDING).collect();
+    let shown = fit_chips(&widths, ui.available_width(), |hidden| {
+        layout(format!("+{hidden}")).size().x + 2.0 * CHIP_PADDING
+    });
+    let hidden = tags.len() - shown;
+    let more = (hidden > 0).then(|| layout(format!("+{hidden}")));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = CHIP_GAP;
+        for (galley, width) in galleys.into_iter().zip(widths).take(shown) {
+            chip(ui, galley, width);
+        }
+        if let Some(galley) = more {
+            let width = galley.size().x + 2.0 * CHIP_PADDING;
+            chip(ui, galley, width).on_hover_text(tags[shown..].join(", "));
+        }
+    });
+}
+
+/// How many chips of `widths` fit in `available`, leaving room for the "+N" chip (`more(N)`
+/// wide) when some don't.
+fn fit_chips(widths: &[f32], available: f32, more: impl Fn(usize) -> f32) -> usize {
+    let mut used = 0.0;
+    for (i, width) in widths.iter().enumerate() {
+        let next = used + if i > 0 { CHIP_GAP } else { 0.0 } + width;
+        let rest = widths.len() - i - 1;
+        let reserve = if rest > 0 { CHIP_GAP + more(rest) } else { 0.0 };
+        if next + reserve > available {
+            return i;
+        }
+        used = next;
+    }
+    widths.len()
+}
+
+fn chip(ui: &mut Ui, galley: std::sync::Arc<egui::Galley>, width: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, CHIP_HEIGHT), Sense::hover());
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same((CHIP_HEIGHT / 2.0) as u8), TRACK);
+    let text = rect.center() - galley.size() / 2.0;
+    ui.painter().galley(text, galley, MUTED);
+    response
+}
+
 /// VibeSkua's "Update" and "Local" badges, and Turu's Modified and Removed.
 fn badges(ui: &mut Ui, status: Status) {
     let (label, color, tip) = match status {
@@ -548,6 +604,48 @@ mod tests {
 
     /// VibeSkua's order: pinned first, then the sort; a search orders by rank; the categories
     /// are the top folders.
+    /// Tags fill the line, then "+N" takes the place of the rest.
+    #[test]
+    fn tags_that_dont_fit_become_plus_n() {
+        let more = |_: usize| 20.0;
+        // 3 x 30 + 2 gaps = 98: all fit in 100, no "+N" needed.
+        assert_eq!(fit_chips(&[30.0, 30.0, 30.0], 100.0, more), 3);
+        // In 90, two chips (64) leave no room for the third; with "+1" (24) they take 88.
+        assert_eq!(fit_chips(&[30.0, 30.0, 30.0], 90.0, more), 2);
+        // In 60, one chip (30) and "+2" (24).
+        assert_eq!(fit_chips(&[30.0, 30.0, 30.0], 60.0, more), 1);
+        assert_eq!(fit_chips(&[30.0, 30.0, 30.0], 10.0, more), 0);
+        assert_eq!(fit_chips(&[], 10.0, more), 0);
+    }
+
+    /// The chips stay inside the width they're given, whatever the tags.
+    #[test]
+    fn tag_chips_stay_in_their_width() {
+        let ctx = egui::Context::default();
+        let tags: Vec<String> = [
+            "gold",
+            "battle ground e",
+            "honor hall",
+            "berserker bunny",
+            "farm",
+            "a very long tag indeed",
+        ]
+        .map(String::from)
+        .into();
+        for width in [40.0, 120.0, 260.0, 600.0] {
+            let mut right = 0.0;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.allocate_ui(vec2(width, 30.0), |ui| {
+                    let left = ui.min_rect().left();
+                    tag_chips(ui, &tags);
+                    right = ui.min_rect().right() - left;
+                });
+            });
+            output.textures_delta.clear();
+            assert!(right <= width + 0.5, "{right} > {width}");
+        }
+    }
+
     #[test]
     fn filters_and_sorts_like_vibeskua() {
         let snapshot = Snapshot {
