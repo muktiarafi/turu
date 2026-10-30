@@ -10,6 +10,7 @@
 //! trailing `S` skips the skill (takes the next one) when a rule fails.
 
 use crate::Bot;
+use crate::api::auras::{self, Subject};
 use crate::api::{inventory, player};
 use crate::control::mark_script_thread;
 use crate::error::{BotError, BotResult};
@@ -931,19 +932,15 @@ fn aura_stacks(bot: &Bot, target: bool, name: &str) -> BotResult<f32> {
     if target && !player::has_target(bot)? {
         return Ok(0.0);
     }
-    let raw = bot.flash.call(
-        "GetAuraSnapshots",
-        vec![if target { "Target" } else { "Self" }.into()],
-    )?;
-    let snapshots: Vec<Value> = serde_json::from_str(raw.trim()).unwrap_or_default();
-    Ok(snapshots
-        .iter()
-        .find(|s| {
-            s.get("nam")
-                .and_then(Value::as_str)
-                .is_some_and(|n| n.eq_ignore_ascii_case(name))
-        })
-        .map_or(0.0, |s| field(s, "n") as f32))
+    let subject = if target {
+        Subject::Target
+    } else {
+        Subject::Self_
+    };
+    Ok(auras::snapshots(bot, subject)?
+        .into_iter()
+        .find(|s| s.name.eq_ignore_ascii_case(name))
+        .map_or(0.0, |s| s.stacks as f32))
 }
 
 /// VibeSkua `AuraUseRule` / `MultiAuraUseRule`.

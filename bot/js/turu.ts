@@ -85,6 +85,50 @@ export interface Monster {
     level: number;
 }
 
+/** A faction you have reputation in (VibeSkua `Faction`). */
+export interface Faction {
+    id: number;
+    name: string;
+    rank: number;
+    /** The total amount of rep you have for this faction. */
+    totalRep: number;
+    /** The amount of rep you have for your current rank. */
+    rep: number;
+    /** The rep needed to rank up from your current rank. */
+    requiredRep: number;
+    /** `requiredRep - rep`. */
+    remainingRep: number;
+}
+
+/** An aura on you or a monster (VibeSkua `Aura`). */
+export interface Aura {
+    name: string;
+    /** The aura's value; its stack count for most auras. */
+    value: number;
+    type: string;
+    category: string;
+    /** Seconds it lasts. */
+    duration: number;
+    /** When it was applied, in Unix milliseconds (0 when unknown). */
+    timeStamp: number;
+    passive: boolean;
+    potionType: string;
+    icon: string;
+}
+
+/** An aura as the HUD shows it (VibeSkua `AuraSnapshot`). */
+export interface AuraSnapshot {
+    name: string;
+    stacks: number;
+    /** Seconds it lasts. */
+    duration: number;
+    /** Seconds left. */
+    remainingTime: number;
+    persistent: boolean;
+    icon: string;
+    description: string;
+}
+
 export interface QuestItem {
     id: number;
     name: string;
@@ -277,6 +321,51 @@ export class GameMap {
     reload(): void { call("map.reload"); }
     /** Picks up a map item (`world.getMapItem`). */
     getMapItem(id: number): void { call("map.getMapItem", id); }
+}
+
+/** `bot.reputation` (VibeSkua `Bot.Reputation`): your factions and ranks. */
+export class Reputation {
+    /** Every faction you have at least 1 point of reputation in. */
+    get factionList(): Faction[] { return call("reputation.factionList"); }
+    /** Your rank in a faction, by its exact name or its ID; 0 without reputation in it. */
+    getRank(faction: string | number): number { return call("reputation.getRank", faction); }
+    /** Whether your rank in the faction is at least `rank`. */
+    hasRank(faction: string | number, rank = 1): boolean { return call("reputation.hasRank", faction, rank); }
+}
+
+/** The aura members `bot.self` and `bot.target` share (VibeSkua `IScriptSelfAuras`/`IScriptTargetAuras`). */
+abstract class SubjectAuras {
+    protected abstract readonly module: "self" | "target";
+    /** The active auras (names compare without case below). */
+    get auras(): Aura[] { return call(`${this.module}.auras`); }
+    /** The auras as the HUD shows them, with their stacks and time left. */
+    get snapshots(): AuraSnapshot[] { return call(`${this.module}.snapshots`); }
+    /** An active aura by name, or null. */
+    getAura(name: string): Aura | null { return call(`${this.module}.getAura`, name); }
+    /** An aura of {@link snapshots} by name, or null. */
+    getAuraSnapshot(name: string): AuraSnapshot | null { return call(`${this.module}.getAuraSnapshot`, name); }
+    /** The stacks of an aura (0 when it isn't there). */
+    getAuraStacks(name: string): number { return call(`${this.module}.getAuraStacks`, name); }
+    /** Whether the aura is active. */
+    hasActiveAura(name: string): boolean { return call(`${this.module}.hasActiveAura`, name); }
+    /** The aura's value as skua.swf sums it (`GetAurasValue`); 0 when it isn't there. */
+    getAuraValue(name: string): number { return call(`${this.module}.getAuraValue`, name); }
+    /** Whether any of these auras is active. */
+    hasAnyActiveAura(...names: string[]): boolean { return call(`${this.module}.hasAnyActiveAura`, names); }
+}
+
+/** `bot.self` (VibeSkua `Bot.Self`): the auras on you. */
+export class SelfAuras extends SubjectAuras {
+    protected readonly module = "self";
+    /** The auras on a player in your map, by name (C# returns the raw JSON). */
+    getPlayerAura(playerName: string): Aura[] { return call("self.getPlayerAura", playerName); }
+}
+
+/** `bot.target` (VibeSkua `Bot.Target`): the auras on your target. */
+export class TargetAuras extends SubjectAuras {
+    protected readonly module = "target";
+    /** The auras on a monster, by name or map ID (C# returns the raw JSON). */
+    getMonsterAura(monster: string | number): Aura[] { return call("target.getMonsterAura", monster); }
 }
 
 /** `bot.combat`: targeting and attacking. */
@@ -985,6 +1074,12 @@ export class Bot {
     readonly hunt = new Hunt();
     readonly monsters = new Monsters();
     readonly quests = new Quests();
+    /** Your factions and ranks (VibeSkua `Bot.Reputation`). */
+    readonly reputation = new Reputation();
+    /** The auras on you (VibeSkua `Bot.Self`). */
+    readonly self = new SelfAuras();
+    /** The auras on your target (VibeSkua `Bot.Target`). */
+    readonly target = new TargetAuras();
     readonly drops = new Drops();
     readonly boosts = new Boosts();
     readonly inventory = new Inventory();

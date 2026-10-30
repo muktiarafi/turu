@@ -175,12 +175,6 @@ interface GameItem {
     turnin?: GameItem[];
 }
 
-/** A `world.myAvatar.factions` entry. */
-interface GameFaction {
-    sName?: unknown;
-    iRank?: unknown;
-}
-
 /** The game's `InvCat` class (Game4000 inventory settings). */
 interface InvCatSettings {
     MISC_SLOTS?: unknown;
@@ -3517,17 +3511,14 @@ export class CoreBots {
 
     // C# WebClient / GetRequest: HTTP for SetOptions extras, dropped.
 
-    /** C# `Bot.Reputation.GetRank(faction)` (API gap: read from `world.myAvatar.factions`). */
+    /** C# `Bot.Reputation.GetRank(faction)`. */
     factionRank(faction: string): number {
-        const factions = bot.flash.get<GameFaction[] | null>("world.myAvatar.factions") ?? [];
-        const found = factions.find((f) => f && text(f.sName) === faction);
-        return found ? num(found.iRank) : 0;
+        return bot.reputation.getRank(faction);
     }
 
     /** C# `Bot.Reputation.FactionList.Exists(f => f.Name == faction)`: you have a reputation in it. */
     hasFaction(faction: string): boolean {
-        const factions = bot.flash.get<GameFaction[] | null>("world.myAvatar.factions") ?? [];
-        return factions.some((f) => f && text(f.sName) === faction);
+        return bot.reputation.factionList.some((f) => f.name === faction);
     }
 
     // ---------------------------------------------------------------------------------------

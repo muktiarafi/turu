@@ -17,6 +17,17 @@ pub fn lenient_i64<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
     })
 }
 
+/// Accepts numbers, numeric strings, booleans and null as an f64.
+pub fn lenient_f64<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(match v {
+        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().unwrap_or(0.0),
+        serde_json::Value::Bool(b) => b as i64 as f64,
+        _ => 0.0,
+    })
+}
+
 /// Accepts `true`, `1`, `"1"`, `"true"` as true.
 pub fn lenient_bool<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
@@ -744,4 +755,146 @@ impl Server {
         })
         .to_string()
     }
+}
+
+/// A faction you have reputation in (VibeSkua `Faction`, from `world.myAvatar.factions`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub struct Faction {
+    #[serde(
+        rename(deserialize = "FactionID", serialize = "id"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub id: i64,
+    #[serde(
+        rename(deserialize = "sName", serialize = "name"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub name: String,
+    #[serde(
+        rename(deserialize = "iRank"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub rank: i64,
+    /// The total amount of rep you have for this faction.
+    #[serde(
+        rename(deserialize = "iRep"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub total_rep: i64,
+    /// The amount of rep you have for your current rank.
+    #[serde(
+        rename(deserialize = "iSpillRep"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub rep: i64,
+    /// The rep needed to rank up from your current rank.
+    #[serde(
+        rename(deserialize = "iRepToRank"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub required_rep: i64,
+    /// `required_rep - rep` (VibeSkua `RemainingRep`), filled when read.
+    #[serde(skip_deserializing)]
+    pub remaining_rep: i64,
+}
+
+/// An aura on a player or a monster (VibeSkua `Aura`, from skua.swf's `GetPlayerAura` and
+/// `GetMonsterAuraByID`/`ByName`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub struct Aura {
+    #[serde(
+        rename(deserialize = "nam"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub name: String,
+    /// The aura's value, its stack count for most auras (VibeSkua defaults it to 1).
+    #[serde(
+        rename(deserialize = "val"),
+        deserialize_with = "lenient_f64",
+        default = "one"
+    )]
+    pub value: f64,
+    #[serde(
+        rename(deserialize = "t"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub r#type: String,
+    #[serde(
+        rename(deserialize = "cat"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub category: String,
+    /// Seconds it lasts.
+    #[serde(rename(deserialize = "dur"), deserialize_with = "lenient_i64", default)]
+    pub duration: i64,
+    /// When it was applied, in Unix milliseconds (0 when unknown).
+    #[serde(
+        rename(deserialize = "ts", serialize = "timeStamp"),
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub time_stamp: i64,
+    #[serde(deserialize_with = "lenient_bool", default)]
+    pub passive: bool,
+    #[serde(
+        rename(deserialize = "potionType"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub potion_type: String,
+    #[serde(deserialize_with = "lenient_string", default)]
+    pub icon: String,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+/// An aura as the HUD shows it (VibeSkua `AuraSnapshot`, from skua.swf's `GetAuraSnapshots`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub struct AuraSnapshot {
+    #[serde(
+        rename(deserialize = "nam"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub name: String,
+    #[serde(rename(deserialize = "n"), deserialize_with = "lenient_i64", default)]
+    pub stacks: i64,
+    /// Seconds it lasts.
+    #[serde(rename(deserialize = "dur"), deserialize_with = "lenient_f64", default)]
+    pub duration: f64,
+    /// Seconds left.
+    #[serde(
+        rename(deserialize = "remaining", serialize = "remainingTime"),
+        deserialize_with = "lenient_f64",
+        default
+    )]
+    pub remaining_time: f64,
+    #[serde(
+        rename(deserialize = "persist"),
+        deserialize_with = "lenient_bool",
+        default
+    )]
+    pub persistent: bool,
+    #[serde(deserialize_with = "lenient_string", default)]
+    pub icon: String,
+    #[serde(
+        rename(deserialize = "desc"),
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub description: String,
 }

@@ -36,6 +36,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   else the data folder's `api-token`, made on first use and readable by you only. Works with
   or without the window. Example:
   `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8791/status`.
+- **Reputation and auras:** `bot.reputation` (VibeSkua `Bot.Reputation`: `factionList`, `getRank`,
+  `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
+  `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in
+  `bot/src/api/reputation.rs` and `auras.rs`. Skill rules read aura stacks through the same code.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
@@ -78,7 +82,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   through the `equipItem` packet (check consumables in game), and CoreBots' quest-limit handler
   isn't restored.
 - **No counter-attack pause** (`Bot.UltraBossHelper`).
-- **No reputation API:** CoreBots reads `world.myAvatar.factions` itself.
+- **Auras are unverified in game:** `bot.self` and `bot.target` call skua.swf's `Auras.as`
+  callbacks as VibeSkua does, but only a fake game has answered them. The same goes for
+  `bot.reputation` (`world.myAvatar.factions`), which CoreBots' `factionRank` now uses.
 - **Script options:** the window never opens by itself with `--headless`, or for runs started from the command line, the HTTP API
   or auto-relogin (VibeSkua's `SilentConfig` covers only the command line and the scheduler; its
   relogin restart can show it).

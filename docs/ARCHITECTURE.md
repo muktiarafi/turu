@@ -35,9 +35,9 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
     cbo.rs               the CoreBots Options file (`CBO_Storage(<user>).txt`)
     paths.rs, log.rs     data directory, skill set files; log buffers
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
-                         monsters, quests, drops, boosts, inventory (also bank, tempInv, house,
-                         invHelper), shops, skills, wait, send, servers (and auto-relogin), lite,
-                         options, packets
+                         monsters, quests, reputation, auras (self and target), drops, boosts,
+                         inventory (also bank, tempInv, house, invHelper), shops, skills, wait,
+                         send, servers (and auto-relogin), lite, options, packets
     background.rs        startup calls (`loadClient`, ...) and the 20 ms "ScriptInterface" timer:
                          login tracking, rest packets, option enforcement, the relogin watchdog
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,

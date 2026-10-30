@@ -63,7 +63,7 @@ export default function main(): void {
   `Core.checkInventory(items, 1, { any: true })`, `FarmVoucher(true)` ->
   `Nation.farmVoucher({ member: true })`. On/off switches stay positional (`Core.setOptions(false)`,
   `Core.toggleAggro(true)`).
-- Game objects read with `bot.flash.get` get an interface (`GameItem`, `GameFaction` in
+- Game objects read with `bot.flash.get` get an interface (`GameItem`, `InvCatSettings` in
   CoreBots), not `any`; read their fields with `num` / `text` / `flag`.
 - Wait with `Core.sleep()` / `Core.waitForTrue()` rather than `bot.sleep()` in long loops: Core's
   background handlers (registered quests, the AFK check) only run while the script waits in Core.
