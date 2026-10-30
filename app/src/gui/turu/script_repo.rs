@@ -11,8 +11,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 use turu_bot::repo::{self, Entry, Scope, Snapshot, Status};
 
-/// One row of the list.
-const ROW_HEIGHT: f32 = 66.0;
+/// One row of the list, at least: the text takes 69 px with Turu's theme, plus the margins
+/// ([`ROW_MARGIN`] above and below). A row whose text needs more makes every row taller.
+const ROW_HEIGHT: f32 = 78.0;
+const ROW_MARGIN: f32 = 4.0;
 
 /// Tag chips: height, padding left and right of the text, gap between chips.
 const CHIP_HEIGHT: f32 = 16.0;
@@ -49,6 +51,8 @@ pub struct ScriptRepoWindow {
     filter: Option<Filter>,
     categories: Vec<String>,
     confirm_reset: bool,
+    /// The rows' height: [`ROW_HEIGHT`], or more once a row's text needed it.
+    row_height: f32,
     vscode: Option<Option<PathBuf>>,
 }
 
@@ -169,7 +173,7 @@ impl ScriptRepoWindow {
                 let busy = snapshot.busy.is_some();
                 ScrollArea::vertical().auto_shrink([false, false]).show_rows(
                     ui,
-                    ROW_HEIGHT,
+                    self.row_height.max(ROW_HEIGHT),
                     self.filtered.len(),
                     |ui, rows| {
                         for i in rows {
@@ -237,38 +241,23 @@ impl ScriptRepoWindow {
 
     fn row(&mut self, ui: &mut Ui, entry: &Entry, busy: bool) {
         let info = &entry.info;
-        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), egui::Sense::hover());
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(4.0, 4.0))));
+        let height = self.row_height.max(ROW_HEIGHT);
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), egui::Sense::hover());
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(4.0, ROW_MARGIN))));
         let ui = &mut child;
         ui.horizontal(|ui| {
             let buttons = 64.0 + 56.0 + 30.0 + 18.0;
             ui.allocate_ui(
-                vec2((ui.available_width() - buttons).max(0.0), ROW_HEIGHT - 8.0),
+                vec2((ui.available_width() - buttons).max(0.0), height - 2.0 * ROW_MARGIN),
                 |ui| {
                     // Long names and paths stop at the buttons.
                     ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 3.0;
-                        ui.horizontal(|ui| {
-                            if entry.pinned {
-                                ui.label(RichText::new("★").color(WARNING));
-                            }
-                            ui.label(RichText::new(&info.name).strong());
-                            badges(ui, entry.status);
-                            ui.add(
-                                egui::Label::new(RichText::new(&info.path).monospace().size(10.5).color(MUTED))
-                                    .truncate(),
-                            );
-                        });
-                        let description = if info.description.is_empty() {
-                            "No description provided."
-                        } else {
-                            &info.description
-                        };
-                        ui.add(egui::Label::new(RichText::new(description).color(MUTED)).truncate())
-                            .on_hover_text(description);
-                        tag_chips(ui, &info.tags);
-                    });
+                    // The list needs one height for every row: grow them all if this one needs more.
+                    let needed = row_text(ui, entry) + 2.0 * ROW_MARGIN;
+                    if needed > height + 0.5 {
+                        self.row_height = needed.ceil();
+                        ui.ctx().request_repaint();
+                    }
                 },
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -495,6 +484,33 @@ fn load(path: &str, start: bool) {
     });
 }
 
+/// A row's left side: name, badges and path; the description; the tags. Returns its height.
+fn row_text(ui: &mut Ui, entry: &Entry) -> f32 {
+    let info = &entry.info;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 3.0;
+        ui.horizontal(|ui| {
+            if entry.pinned {
+                ui.label(RichText::new("★").color(WARNING));
+            }
+            ui.label(RichText::new(&info.name).strong());
+            badges(ui, entry.status);
+            ui.add(egui::Label::new(RichText::new(&info.path).monospace().size(10.5).color(MUTED)).truncate());
+        });
+        let description = if info.description.is_empty() {
+            "No description provided."
+        } else {
+            &info.description
+        };
+        ui.add(egui::Label::new(RichText::new(description).color(MUTED)).truncate())
+            .on_hover_text(description);
+        tag_chips(ui, &info.tags);
+    })
+    .response
+    .rect
+    .height()
+}
+
 /// The tags as chips on one line: as many as fit in the width left, then "+N", whose hover
 /// lists the others. One line keeps the rows the same height (the list only lays out the rows
 /// in view).
@@ -604,6 +620,27 @@ mod tests {
 
     /// VibeSkua's order: pinned first, then the sort; a search orders by rank; the categories
     /// are the top folders.
+    /// A row's text fits the default row height with Turu's theme (so rows don't grow on the
+    /// first frame), tags included.
+    #[test]
+    fn row_text_fits_the_row() {
+        let ctx = egui::Context::default();
+        super::super::theme::install(&ctx);
+        let mut e = entry("farm/GoldFarm.ts", "Gold Farm", "", Status::Outdated, true);
+        e.info.tags = vec!["gold".into(), "farm".into()];
+        for _ in 0..2 {
+            let mut height = 0.0;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                height = ui.allocate_ui(vec2(500.0, 200.0), |ui| row_text(ui, &e)).inner;
+            });
+            output.textures_delta.clear();
+            assert!(
+                height + 2.0 * ROW_MARGIN <= ROW_HEIGHT,
+                "the row's text is {height} px: raise ROW_HEIGHT"
+            );
+        }
+    }
+
     /// Tags fill the line, then "+N" takes the place of the rest.
     #[test]
     fn tags_that_dont_fit_become_plus_n() {
