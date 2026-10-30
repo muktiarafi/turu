@@ -1548,10 +1548,12 @@ export class CoreFarms {
             Core.join("fishing");
 
             while (!bot.shouldExit && Core.checkInventory("Fishing Dynamite") && !Core.checkInventory(itemId, quant)) {
+                const currentDynamiteQuant = bot.inventory.getQuantity("Fishing Dynamite");
                 bot.send.packet("%xt%zm%FishCast%1%Dynamite%30%");
                 Core.sleep(3500);
-                // C# waits for `CurrentDynamiteQuant == CurrentDynamiteQuant - 1` (never true): 2 s.
-                bot.wait.forTrue(() => false, 20);
+                // C# compares the count with itself minus 1 (never true, so always 2 s): wait for
+                // the cast to use a stick instead.
+                bot.wait.forTrue(() => bot.inventory.getQuantity("Fishing Dynamite") < currentDynamiteQuant, 20);
                 Core.sendPackets("%xt%zm%getFish%1%false");
                 Core.logger(`Dynamite: ${bot.inventory.getQuantity("Fishing Dynamite")} Fish: ${bot.tempInv.getQuantity(itemId)}/${quant}`);
             }

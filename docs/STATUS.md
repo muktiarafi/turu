@@ -96,8 +96,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `killDoomKitten`, `huntMonsterMapID`, `pvpMove`, `usePotion`, ...), CoreFarms (the Bludrut and
   Death Pit brawls, `fishingREP`, `getBoost`, the new REPs) and CoreNation (`theAssistant`,
   `swindleReturn`, `emblemofNulgath`) members only type-check. `usePotion` sends the action
-  object to `world.testAction` (an object for Flash, see below). CoreAdvanced's `runRep` stops
-  the script for Blacksmithing and Fishing, as VibeSkua's reflection call does.
+  object to `world.testAction` (an object for Flash, see below). Four C# bugs are fixed on
+  purpose (marked `C#` in the code): `runRep` farms Blacksmithing (gold method) and Fishing
+  instead of stopping, `huntMonsterMapID` without an item stops after one kill, `theAssistant`
+  runs its return policy, and `getFish` waits for the dynamite to be used.
 - **Auras are unverified in game:** `bot.self` and `bot.target` call skua.swf's `Auras.as`
   callbacks as VibeSkua does, but only a fake game has answered them. Unlike VibeSkua,
   `snapshots` (and so `getAuraStacks` and skill aura rules) drops a timed, non-persistent aura

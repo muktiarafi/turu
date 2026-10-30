@@ -821,8 +821,9 @@ export class CoreNation {
             Core.addDrop("Blood Gem of the Archfiend");
         }
 
-        // C# passes the enum's name without "_" ("TaintedGem"), which matches no reward name.
-        const rewardName = SwindlesReturnReward[reward].replace(/_/g, "");
+        // C# passes the enum's name without "_" ("TaintedGem", "None"), which matches no reward, so
+        // its return policy never runs here. Turu passes the reward's name, or null (any) for None.
+        const rewardName = reward === SwindlesReturnReward.None ? null : SwindlesReturnReward[reward].replace(/_/g, " ");
 
         // Register the "Swindles Return Policy" quest if specified
         if (this.returnPolicyDuringSupplies && reward !== SwindlesReturnReward.None) this.doSwindlesReturnArea(this.returnPolicyDuringSupplies, rewardName);
