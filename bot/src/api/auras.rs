@@ -95,12 +95,14 @@ fn monster_auras(bot: &Bot, monster: NameOrId) -> BotResult<Vec<Aura>> {
     Ok(parse_list(&raw))
 }
 
-/// VibeSkua `Snapshots`: the auras as the HUD shows them (`GetAuraSnapshots`).
+/// VibeSkua `Snapshots`: the auras as the HUD shows them (`GetAuraSnapshots`), without the
+/// expired ones (see [`AuraSnapshot::expired`]).
 pub fn snapshots(bot: &Bot, subject: Subject) -> BotResult<Vec<AuraSnapshot>> {
-    Ok(parse_list(
+    let list: Vec<AuraSnapshot> = parse_list(
         &bot.flash
             .call("GetAuraSnapshots", vec![subject.name().into()])?,
-    ))
+    );
+    Ok(list.into_iter().filter(|s| !s.expired()).collect())
 }
 
 /// A JSON list from skua.swf; empty when it's missing or malformed (VibeSkua catches the same).

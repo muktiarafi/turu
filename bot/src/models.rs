@@ -898,3 +898,12 @@ pub struct AuraSnapshot {
     )]
     pub description: String,
 }
+
+impl AuraSnapshot {
+    /// Turu: a timed aura whose time ran out. The game can keep it on the HUD when no `aura-`
+    /// packet arrives, and counting its stacks breaks class combos (Grimlite-Li's `AuraManager`
+    /// drops them the same way). VibeSkua counts them.
+    pub fn expired(&self) -> bool {
+        !self.persistent && self.duration > 0.0 && self.remaining_time <= 0.0
+    }
+}

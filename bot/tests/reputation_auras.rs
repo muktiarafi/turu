@@ -29,7 +29,12 @@ impl FlashHost for FakeGame {
             ("getTargetMonster", _) => r#"{"MonID": 1, "MonMapID": 9, "strMonName": "Boss", "intHP": 10, "intState": 2}"#.into(),
             ("GetPlayerAura", "hero") => r#"[{"nam": "Focus", "val": "3", "dur": 10, "ts": 1700000000000}]"#.into(),
             ("GetMonsterAuraByID", "9") => r#"[{"nam": "Counter Attack", "passive": true}]"#.into(),
-            ("GetAuraSnapshots", "Self") => r#"[{"nam": "Focus", "n": 3, "dur": 10, "remaining": 4.5}]"#.into(),
+            ("GetAuraSnapshots", "Self") => r#"[
+                {"nam": "Focus", "n": 3, "dur": 10, "remaining": 4.5},
+                {"nam": "Rage", "n": 5, "dur": 8, "remaining": 0},
+                {"nam": "Elixir", "n": 1, "dur": 0, "remaining": 0, "persist": true}
+            ]"#
+            .into(),
             ("GetAuraSnapshots", "Target") => "not json".into(),
             ("GetAurasValue", "Self") => "\"3\"".into(),
             ("HasAnyActiveAura", "Target") => "true".into(),
@@ -99,6 +104,19 @@ fn self_auras_use_your_lowercase_name() {
         call(&bot, "self.getAuraSnapshot", json!(["Focus"]))["remainingTime"],
         4.5
     );
+    // A timed aura with no time left is gone; one without a duration stays.
+    assert_eq!(call(&bot, "self.getAuraStacks", json!(["Rage"])), json!(0));
+    assert_eq!(
+        call(&bot, "self.getAuraSnapshot", json!(["Rage"])),
+        Value::Null
+    );
+    let names: Vec<Value> = call(&bot, "self.snapshots", json!([]))
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].clone())
+        .collect();
+    assert_eq!(names, [json!("Focus"), json!("Elixir")]);
     assert_eq!(
         call(&bot, "self.getAuraValue", json!(["Focus"])),
         json!(3.0)

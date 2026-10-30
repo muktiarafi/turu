@@ -338,7 +338,11 @@ abstract class SubjectAuras {
     protected abstract readonly module: "self" | "target";
     /** The active auras (names compare without case below). */
     get auras(): Aura[] { return call(`${this.module}.auras`); }
-    /** The auras as the HUD shows them, with their stacks and time left. */
+    /**
+     * The auras as the HUD shows them, with their stacks and time left. A timed aura whose time
+     * ran out is left out even if the HUD still has it (VibeSkua keeps it), so skill rules and
+     * {@link getAuraStacks} don't count stale stacks.
+     */
     get snapshots(): AuraSnapshot[] { return call(`${this.module}.snapshots`); }
     /** An active aura by name, or null. */
     getAura(name: string): Aura | null { return call(`${this.module}.getAura`, name); }

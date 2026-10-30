@@ -83,7 +83,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   isn't restored.
 - **No counter-attack pause** (`Bot.UltraBossHelper`).
 - **Auras are unverified in game:** `bot.self` and `bot.target` call skua.swf's `Auras.as`
-  callbacks as VibeSkua does, but only a fake game has answered them. The same goes for
+  callbacks as VibeSkua does, but only a fake game has answered them. Unlike VibeSkua,
+  `snapshots` (and so `getAuraStacks` and skill aura rules) drops a timed, non-persistent aura
+  with no time left, as Grimlite-Li's `AuraManager` does; check in game that `remaining` is set
+  for every timed aura, or live auras would read as gone. The same goes for
   `bot.reputation` (`world.myAvatar.factions`), which CoreBots' `factionRank` now uses.
 - **Script options:** the window never opens by itself with `--headless`, or for runs started from the command line, the HTTP API
   or auto-relogin (VibeSkua's `SilentConfig` covers only the command line and the scheduler; its
