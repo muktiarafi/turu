@@ -15,6 +15,7 @@ TypeScript ports of the AQW bot scripts (VibeSkua's C# `Scripts` repo). The engi
 | `nation/CoreNation.ts` | The parts of `Nation/CoreNation.cs` that farm the Nulgath materials, Swindles Return, The Assistant and the Shadow Blast medals and emblems. |
 | `nation/materials/0MaxBags.ts` | Port of `Nation/Materials/0MaxBags.cs`. |
 | `farm/GoldFarm.ts` | Port of `Farm/GoldFarm.cs`. |
+| `farm/CombatTrophy.ts` | Port of `Farm/CombatTrophy.cs` (`Farm.bludrutBrawlBoss`). |
 | `other/mergeshops/SynderesMerge.ts` | Port of `Other/MergeShops/SynderesMerge.cs`: the pattern for every merge script (see below). |
 | `other/various/Potions.ts` | Port of `Other/Various/Potions.cs`. Its options are declared in `scriptOptions` and edited in Scripts > Edit Script Options. |
 | `other/farmjoekits/0FarmerJoeDoAll.ts` | Port of `Other/FarmJoeKits/0FarmerJoeDoAll.cs`: the level 1 to 100 progression. `CoreFarmerJoe.ts` next to it holds the steps and the options; the rest of its tree is listed under [FarmerJoe](#farmerjoe). |

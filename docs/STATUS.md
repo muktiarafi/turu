@@ -55,7 +55,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   PvP moves, the brawls, fishing, boosts and 17 more reputations, The Assistant, the Shadow Blast
   medals), all of CoreStory (for the story scripts) and CoreDailies,
   `nation/materials/0MaxBags.ts`,
-  `farm/GoldFarm.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
+  `farm/GoldFarm.ts`, `farm/CombatTrophy.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
 - **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
   progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
   UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
