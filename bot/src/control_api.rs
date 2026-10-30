@@ -14,16 +14,23 @@
 //! | `POST /options` | Body `{"name": value, ...}`: set options (until the script stops, as scripts do). |
 //! | `POST /login[?server=]` | Log in (the remembered login), on `server` or the best one. |
 //! | `POST /logout`, `POST /relogin[?server=]` | |
+//! | `POST /map/join?map=[&cell=][&pad=]` | Join `map` (or jump, when you're in it already), at `cell` (Enter) and `pad` (Spawn). |
+//! | `POST /player/goto?name=` | Go to a player (`/goto`). |
+//! | `POST /house` | Go to your house. |
+//! | `POST /quests/register?id=[&reward=]` | Accept and turn in a quest in the background (`bot.quests.registerQuests`). |
+//!
+//! The Army window sends these to the clients it launched (`crate::army`), and to its own
+//! client through [`local`].
 
 use crate::Bot;
-use crate::api::{map, player, servers};
+use crate::api::{map, player, send, servers};
 use crate::log::LogKind;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Method, Request, Response, Uri};
+use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
 use std::convert::Infallible;
@@ -143,7 +150,8 @@ async fn handle(
             Err(_) => error(413, "the body is too large or was cut off"),
             // Bot calls block (a relogin for up to a minute): off the runtime's thread.
             Ok(body) => tokio::task::spawn_blocking(move || {
-                route(&bot, &parts.method, &parts.uri, &body.to_bytes())
+                let path = parts.uri.path_and_query().map_or("/", |p| p.as_str());
+                route(&bot, parts.method == Method::POST, path, &body.to_bytes())
             })
             .await
             .unwrap_or_else(|e| error(500, e.to_string())),
@@ -176,8 +184,14 @@ fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-fn route(bot: &Arc<Bot>, method: &Method, uri: &Uri, body: &[u8]) -> Reply {
-    let path_and_query = uri.path_and_query().map_or("/", |p| p.as_str());
+/// Answers a request without HTTP (for this process's own bot): the status and the body.
+/// Blocks as long as the route does (a login up to a minute).
+pub fn local(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> (u16, Value) {
+    let reply = route(bot, post, path_and_query, body);
+    (reply.status, reply.body)
+}
+
+fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply {
     let Ok(url) = reqwest::Url::parse(&format!("http://turu{path_and_query}")) else {
         return error(400, "bad URL");
     };
@@ -187,7 +201,6 @@ fn route(bot: &Arc<Bot>, method: &Method, uri: &Uri, body: &[u8]) -> Reply {
             .map(|(_, v)| v.into_owned())
             .filter(|v| !v.is_empty())
     };
-    let post = method == Method::POST;
     match (url.path(), post) {
         ("/status", false) => ok(status(bot)),
         ("/script/load", true) => match query("path") {
@@ -253,13 +266,61 @@ fn route(bot: &Arc<Bot>, method: &Method, uri: &Uri, body: &[u8]) -> Reply {
             Ok(()) => ok(json!({ "loggedOut": true })),
             Err(e) => error(500, e.to_string()),
         },
+        ("/map/join", true) => {
+            let Some(map) = query("map") else {
+                return error(400, "map is missing");
+            };
+            let cell = query("cell").unwrap_or_else(|| "Enter".into());
+            let pad = query("pad").unwrap_or_else(|| "Spawn".into());
+            game_action(join_or_jump(bot, &map, &cell, &pad))
+        }
+        ("/player/goto", true) => match query("name") {
+            Some(name) => game_action(player::goto(bot, &name)),
+            None => error(400, "name is missing"),
+        },
+        ("/house", true) => game_action(join_house(bot)),
+        ("/quests/register", true) => {
+            let Some(id) = query("id").and_then(|id| id.parse::<i64>().ok()) else {
+                return error(400, "id is missing or isn't a number");
+            };
+            let reward = query("reward").and_then(|r| r.parse().ok()).unwrap_or(-1);
+            bot.quests.register(bot, &[(id, reward)]);
+            ok(json!({ "registered": bot.quests.registered() }))
+        }
         (
             "/status" | "/script/load" | "/script/start" | "/script/stop" | "/script/pause"
-            | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout",
+            | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout" | "/map/join"
+            | "/player/goto" | "/house" | "/quests/register",
             _,
         ) => error(405, "wrong method"),
         _ => error(404, "no such route"),
     }
+}
+
+fn game_action(result: crate::BotResult<()>) -> Reply {
+    match result {
+        Ok(()) => ok(json!({ "done": true })),
+        Err(e) => error(500, e.to_string()),
+    }
+}
+
+/// VibeSkua's "Jump All to Map": a jump when you're in that map already, else a join.
+fn join_or_jump(bot: &Bot, map: &str, cell: &str, pad: &str) -> crate::BotResult<()> {
+    let here = map::name(bot)?;
+    if here.eq_ignore_ascii_case(map.split('-').next().unwrap_or_default()) {
+        map::jump(bot, cell, pad, false, false)
+    } else {
+        map::join(bot, map, cell, pad, true, false)
+    }
+}
+
+/// The packet CoreBots joins your own house with.
+fn join_house(bot: &Bot) -> crate::BotResult<()> {
+    if !player::logged_in(bot)? {
+        return Err(crate::BotError::Other("not logged in".into()));
+    }
+    let name = player::username(bot)?;
+    send::packet(bot, &format!("%xt%zm%house%1%{name}%"), "String")
 }
 
 fn status(bot: &Bot) -> Value {

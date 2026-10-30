@@ -40,6 +40,11 @@ impl Paths {
         self.root.join("api-token")
     }
 
+    /// The account list (`accounts::Accounts`); passwords are in the system keychain.
+    pub fn accounts_file(&self) -> PathBuf {
+        self.root.join("accounts.json")
+    }
+
     pub fn skua_swf(&self) -> PathBuf {
         self.root.join("skua.swf")
     }

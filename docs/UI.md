@@ -36,7 +36,8 @@ The windows are not scaled with the window height (Mugetsu's `z`): they keep Vib
 (Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
 Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
 Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
-Interceptor), **Plugins** (View Plugins). Right side: **Auto**, **Jump**, a divider, **+**.
+Interceptor), **Plugins** (View Plugins), **Army** (Accounts, Army Control; Turu's: VibeSkua has
+them in its Manager app and its tabbed host). Right side: **Auto**, **Jump**, a divider, **+**.
 
 | Item | State |
 |---|---|
@@ -94,6 +95,16 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   second, retrying on 429; the Nexus snapshot and health pings read the game on that thread. The
   drop alert has no screenshot (VibeSkua attaches one). Failures go to the Debug log.
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
+* **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
+  the password goes to the system keychain off the UI thread), the list (check box, a green dot
+  while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /
+  Unselect All, Add Selected to Group and Select group, and Launch: Server, Without a window,
+  the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
+* **Army Control** (`army.rs`): the launched clients (state, server, map, cell, HP, script;
+  Close, Clear Ended, Close All), "Include this client", Start / Stop All Scripts, Load Script
+  to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
+  Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,
+  and each client's outcome under RESULTS.
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
 * **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,

@@ -2,7 +2,9 @@
 //!
 //! Start at [`Bot`]. Architecture: docs/turu/ARCHITECTURE.md.
 
+pub mod accounts;
 pub mod api;
+pub mod army;
 mod background;
 pub mod cbo;
 pub mod control;

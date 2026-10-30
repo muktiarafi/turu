@@ -203,6 +203,15 @@ impl NavBar {
         ui.menu_button("Plugins", |ui| {
             item(ui, "View Plugins", false);
         });
+        // Turu: VibeSkua has these in its Manager app and its tabbed host's "Army Control" menu.
+        ui.menu_button("Army", |ui| {
+            if item(ui, "Accounts", true) {
+                windows.accounts = true;
+            }
+            if item(ui, "Army Control", true) {
+                windows.army = true;
+            }
+        });
     }
 
     /// Right to left: "+", a divider, Jump, Auto.

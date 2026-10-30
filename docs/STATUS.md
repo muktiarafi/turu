@@ -36,6 +36,18 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   else the data folder's `api-token`, made on first use and readable by you only. Works with
   or without the window. Example:
   `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8791/status`.
+  Army Control also uses `/map/join`, `/player/goto`, `/house` and `/quests/register`.
+- **Several accounts** (Army > Accounts and Army > Army Control; `bot/src/accounts.rs`,
+  `bot/src/army.rs`): the account list and groups (VibeSkua Manager's Accounts tab) in
+  `accounts.json`, with the passwords in the system keychain (`keyring`: Keychain, Credential
+  Manager, Secret Service) instead of in the clear. Start launches one `turu` process per
+  account, as VibeSkua does, 500-900 ms apart: `--user`, `--server`, the script, optionally
+  `--headless`, the password in `TURU_PASSWORD`, the control API on a free local port with
+  its own token, and `--exit-with-parent` (the client quits when the launcher's stdin pipe
+  closes, even if the launcher crashed). Army Control polls each client's `/status` every 2 s
+  and sends VibeSkua's Army Control commands to all of them, and to this client unless
+  "Include this client" is off. Each account still has its own window; tabs in one window are
+  the next step (see Known gaps).
 - **Reputation and auras:** `bot.reputation` (VibeSkua `Bot.Reputation`: `factionList`, `getRank`,
   `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
   `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in
@@ -83,6 +95,13 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 ## Known gaps
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
+- **No account tabs yet:** launched accounts run in their own windows (or none). VibeSkua's
+  tabbed host embeds each client's Win32 window, which macOS and Wayland don't allow; the plan
+  is several players in one process, each on its own thread drawing off screen (the
+  `headless.rs` loop with a wgpu `TextureTarget`), with `turu::bot()` becoming the active
+  tab's bot. Army Control lacks VibeSkua's Start/Stop Auto-Attack for All, Army Scheduler,
+  Grid View and per-squad Army Queue. Launching is unverified with real accounts.
+
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
   farm without a window still need a run. The control API is the only way to steer it.

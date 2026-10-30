@@ -34,6 +34,7 @@ pub const VERSION: &str = match option_env!("TURU_VERSION") {
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
 static BOT: OnceLock<Arc<Bot>> = OnceLock::new();
+static ARMY: OnceLock<Arc<turu_bot::army::Army>> = OnceLock::new();
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
@@ -45,6 +46,14 @@ static SAVE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
 /// The bot of this client (one per process, like VibeSkua).
 pub fn bot() -> &'static Arc<Bot> {
     BOT.get_or_init(Bot::new)
+}
+
+/// The accounts this client launched (Army > Accounts), each in its own `turu` process.
+pub fn army() -> &'static Arc<turu_bot::army::Army> {
+    ARMY.get_or_init(|| {
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(APP_NAME.to_lowercase()));
+        turu_bot::army::Army::new(exe)
+    })
 }
 
 pub fn set_save_directory(dir: PathBuf) {
@@ -95,15 +104,21 @@ pub fn skua_swf_url() -> anyhow::Result<String> {
 /// * `--exit-on-script-stop` (or `--exit-on-finish`): log out and quit when the script stops
 ///   (not when auto-relogin stops it).
 /// * `--headless`: no window (see `headless.rs`).
+/// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
+///   their stdin a pipe from the launcher: see `turu_bot::army`).
 /// * `--api` (or `--api=<address>`, default `127.0.0.1:8791`): the control API (see
 ///   `turu_bot::control_api`), started by [`start_api`].
 pub fn take_startup_args(args: &mut Vec<OsString>) {
     let Flags {
         mut startup,
         exit_on_stop,
+        exit_with_parent,
         headless,
         api,
     } = parse_startup_args(args);
+    if exit_with_parent {
+        turu_bot::army::exit_with_parent(|| std::process::exit(0));
+    }
     HEADLESS.store(headless, Ordering::Relaxed);
     if let Ok(mut slot) = API.lock() {
         *slot = api;
@@ -166,6 +181,7 @@ pub fn headless() -> bool {
 struct Flags {
     startup: Startup,
     exit_on_stop: bool,
+    exit_with_parent: bool,
     headless: bool,
     /// `--api`'s address.
     api: Option<String>,
@@ -205,6 +221,7 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             }
             "--exit-on-script-stop" | "--exit-on-finish" => flags.exit_on_stop = true,
             "--headless" => flags.headless = true,
+            "--exit-with-parent" => flags.exit_with_parent = true,
             // The address only inline (`--api=...`): the next argument may be anything.
             "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:8791".into())),
             _ => rest.push(arg),

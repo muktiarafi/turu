@@ -4,7 +4,9 @@
 //! Everything here runs on the UI thread and only reads the bot's cached state (locks held
 //! briefly). Anything that touches the game goes through `crate::turu::spawn_action`.
 
+mod accounts;
 mod application_options;
+mod army;
 mod auto;
 mod core_bots;
 mod current_drops;
@@ -37,6 +39,8 @@ pub struct Windows {
     pub logs: bool,
     pub packet_logger: bool,
     pub current_drops: bool,
+    pub accounts: bool,
+    pub army: bool,
 }
 
 /// A tool window below the nav bar; `slot` staggers the default positions.
@@ -71,6 +75,8 @@ pub struct TuruUi {
     logs: logs::LogsWindow,
     packet_logger: packet_logger::PacketLogger,
     current_drops: current_drops::CurrentDrops,
+    accounts: accounts::AccountsWindow,
+    army: army::ArmyWindow,
 }
 
 impl TuruUi {
@@ -93,6 +99,8 @@ impl TuruUi {
             logs: Default::default(),
             packet_logger: Default::default(),
             current_drops: Default::default(),
+            accounts: Default::default(),
+            army: Default::default(),
         }
     }
 
@@ -124,6 +132,8 @@ impl TuruUi {
         self.skills.show(ctx, &mut w.skills);
         self.logs.show(ctx, &self.picker, &mut w.logs);
         self.packet_logger.show(ctx, &self.picker, &mut w.packet_logger);
+        self.accounts.show(ctx, &self.picker, &mut w.accounts);
+        self.army.show(ctx, &self.picker, &mut w.army);
         // Last, so the script's message box sits over the other windows.
         message_box::show(ctx);
     }
