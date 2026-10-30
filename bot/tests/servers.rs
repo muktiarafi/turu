@@ -343,3 +343,46 @@ fn scripted_relogin_picks_the_named_server_and_restores_auto_relogin() {
         "Twilly"
     );
 }
+
+#[test]
+fn startup_logs_in_once_the_game_has_loaded() {
+    let game = FakeGame::new();
+    game.leave_world();
+    let bot = new_bot(&game);
+    turu_bot::startup::configure(
+        &bot,
+        turu_bot::startup::Startup {
+            username: Some("Alt".into()),
+            password: Some("pw".into()),
+            server: Some("Artix".into()),
+            ..Default::default()
+        },
+    );
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        !game.game_functions().contains(&"login".to_owned()),
+        "waits for the game"
+    );
+
+    bot.on_flash_call("loaded", vec![]);
+    assert!(wait_until(Duration::from_secs(10), || game
+        .logged_in
+        .load(Ordering::SeqCst)));
+    let login = game
+        .calls_to("callGameFunction")
+        .into_iter()
+        .find(|a| arg(a, 0) == "login")
+        .expect("logged in");
+    assert_eq!(
+        (arg(&login, 1), arg(&login, 2)),
+        ("Alt".into(), "pw".into())
+    );
+    assert_eq!(arg(&game.calls_to("clickServer")[0], 0), "Artix");
+    // Relogins use the same login.
+    assert_eq!(
+        turu_bot::api::servers::cached_username(&bot)
+            .unwrap()
+            .as_deref(),
+        Some("Alt")
+    );
+}

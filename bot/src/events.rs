@@ -82,6 +82,8 @@ pub enum BotEvent {
     ExtensionPacket(Value),
     /// A client-to-server `%xt%zm%...%` packet.
     PacketSent(String),
+    /// The script finished, failed or was stopped (VibeSkua `ScriptStoppedMessage`).
+    ScriptStopped,
 }
 
 impl BotEvent {
@@ -112,6 +114,7 @@ impl BotEvent {
             Self::RunToArea { .. } => "runToArea",
             Self::ExtensionPacket(_) => "extensionPacket",
             Self::PacketSent(_) => "packetSent",
+            Self::ScriptStopped => "scriptStopped",
         }
     }
 
@@ -161,6 +164,8 @@ pub enum Work {
     LoadClient,
     /// `pre-load`: call `setBackgroundValues`.
     SetBackground,
+    /// `loaded`: the command-line login (`startup`).
+    AutoLogin,
     /// `addItems`: look the item up in the inventory, temp inventory or bank and emit
     /// [`BotEvent::ItemAdded`] / [`BotEvent::ItemAddedToBank`]. `fallback` is what the
     /// packet itself said about the item.
@@ -236,6 +241,7 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             bot.state.lock().game_loaded = true;
             bot.logs.debug.push("Game client loaded");
             bot.events.emit(BotEvent::GameLoaded);
+            crate::startup::on_game_loaded(bot);
         }
         "pext" => match serde_json::from_str::<Value>(arg_str(0)) {
             Ok(packet) => crate::api::packets::on_extension_packet(bot, packet),
