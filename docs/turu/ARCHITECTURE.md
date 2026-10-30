@@ -35,9 +35,10 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
     paths.rs, log.rs     data directory, skill set files; log buffers
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
                          monsters, quests, drops, boosts, inventory (also bank, tempInv, house,
-                         invHelper), shops, skills, wait, send, lite, options, packets
+                         invHelper), shops, skills, wait, send, servers (and auto-relogin), lite,
+                         options, packets
     background.rs        startup calls (`loadClient`, ...) and the 20 ms "ScriptInterface" timer:
-                         login tracking, rest packets, option enforcement (no watchdog yet)
+                         login tracking, rest packets, option enforcement, the relogin watchdog
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
 desktop/src/turu.rs      desktop integration: FlashHost impl, ExternalInterface provider, spawn_action
@@ -98,6 +99,9 @@ Startup sequence (same as VibeSkua):
    `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (the bot marks the game
    loaded and sends `GameLoaded`; its 20 ms timer runs from startup).
 4. The user logs in with the game's own login screen (auto-login via CLI flags comes later).
+   Relogins (`api/servers.rs`) reuse that login: `login`, wait for the server list, then
+   `clickServer` (or `connectToServer` / `connectTo`), on the script thread or, for
+   auto-relogin, on a "Relogin" thread that `cancel_relogin` stops.
 
 ## Scripts
 

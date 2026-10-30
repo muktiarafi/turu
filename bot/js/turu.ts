@@ -122,15 +122,21 @@ export interface ShopItem extends InventoryItem {
     requirements: string;
 }
 
+/** A game server (VibeSkua `Server`). */
 export interface Server {
     name: string;
     ip: string;
     port: number;
     online: boolean;
+    /** Member-only. */
     upgrade: boolean;
     playerCount: number;
     maxPlayers: number;
+    /** "en" or "pt". */
     language: string;
+    /** Canned chat 0, free chat 2. */
+    chatLevel: number;
+    level: number;
 }
 
 export interface Skill {
@@ -160,6 +166,8 @@ export class Player {
     get id(): number { return call("player.id"); }
     get username(): string { return call("player.username"); }
     get serverIp(): string { return call("player.serverIp"); }
+    /** The login screen shows the "you were kicked" warning. */
+    get kicked(): boolean { return call("player.kicked"); }
     get cell(): string { return call("player.cell"); }
     get pad(): string { return call("player.pad"); }
     get level(): number { return call("player.level"); }
@@ -187,6 +195,58 @@ export class Player {
     walkTo(x: number, y: number, speed = 8): void { call("player.walkTo", x, y, speed); }
     /** Teleports to another player in the same server (`world.goto`). */
     goto(name: string): void { call("player.goto", name); }
+}
+
+/**
+ * `bot.servers`: logging in and out, and relogins (VibeSkua `Bot.Servers`). The relogins log
+ * out, log back in with the game's remembered login (or `setLoginInfo`'s) and connect;
+ * auto-relogin (`bot.options.autoRelogin`) is off while they run. A server is a `Server` or a
+ * name.
+ */
+export class Servers {
+    /** The servers the game's login screen lists (`serialCmd.servers`). */
+    get serverList(): Server[] { return call("servers.serverList"); }
+    /** The servers from the last `getServers` (the game's server list API). */
+    get cachedServers(): Server[] { return call("servers.cachedServers"); }
+    /** Fetches the server list from the game's API (the cached one unless `forceUpdate`). */
+    getServers(forceUpdate = false): Server[] { return call("servers.getServers", forceUpdate); }
+    /** The IP of the server you were last on. */
+    get lastIp(): string { return call("servers.lastIp"); }
+    /** The name of the server you were last on. */
+    get lastName(): string { return call("servers.lastName"); }
+    /** You logged out yourself (auto-relogin doesn't bring you back). */
+    get isIntentionalLogout(): boolean { return call("servers.isIntentionalLogout"); }
+    set isIntentionalLogout(value: boolean) { call("servers.setIntentionalLogout", value); }
+    /** Connected to a game server. */
+    get isConnected(): boolean { return call("servers.isConnected"); }
+    /** The `setLoginInfo` username, else the game's; null before a login. */
+    get cachedUsername(): string | null { return call("servers.cachedUsername"); }
+
+    /** The login relogins use instead of the game's remembered one. */
+    setLoginInfo(username: string, password: string): void { call("servers.setLoginInfo", username, password); }
+    /** Logs in (to the server list); without arguments, with the game's remembered login. */
+    login(username?: string, password?: string): void { call("servers.login", username ?? null, password ?? null); }
+    /** Logs out to the login screen. Auto-relogin doesn't bring you back. */
+    logout(): void { call("servers.logout"); }
+    /** Back to the login screen without an intentional logout. */
+    disconnectForRelogin(): void { call("servers.disconnectForRelogin"); }
+    /** From the server list: connects to a server and waits for the world (`loginTimeout`). */
+    connect(server: string | Server): boolean { return call("servers.connect", server); }
+    connectIp(ip: string, port?: number): boolean { return call("servers.connectIp", ip, port ?? null); }
+    /** Logs in, waits `loginDelay` ms and connects. */
+    reconnect(server: string | Server, loginDelay = 2000): boolean { return call("servers.reconnect", server, loginDelay); }
+    /**
+     * Logs out and back in, on `server` when it can be used (online, not full, not a test
+     * server, not member-only for free players), else on the best other one. Returns true
+     * when you're back in game.
+     */
+    relogin(server?: string | Server): boolean { return call("servers.relogin", server ?? null); }
+    reloginIp(ip: string): boolean { return call("servers.reloginIp", ip); }
+    /**
+     * Logs in, trying other servers, up to `options.reloginTries` times. Does nothing while
+     * you're playing: log out (or `disconnectForRelogin`) first.
+     */
+    ensureRelogin(serverName?: string): boolean { return call("servers.ensureRelogin", serverName ?? null); }
 }
 
 /** `bot.map`: the current map. */
@@ -634,7 +694,10 @@ export interface OptionValues {
     retryRelogin: boolean;
     safeRelogin: boolean;
     reloginTries: number;
+    reloginTryDelay: number;
     loginTimeout: number;
+    /** Start auto-relogin on an unexpected disconnect or a lost connection (VibeSkua's "Relogin Watchdog"). */
+    reloginWatchdog: boolean;
     privateRooms: boolean;
     privateNumber: number;
     skipCutscenes: boolean;
@@ -694,6 +757,8 @@ export interface EventMap {
     bankLoaded: null;
     shopLoaded: null;
     connectionLost: null;
+    /** Auto-relogin started; `wasKicked` when the login screen showed the kick warning. */
+    reloginTriggered: { wasKicked: boolean };
     /** A server packet: `{ params: { type: "json" | "str", dataObj } }`. */
     extensionPacket: any;
     /** A client packet, "%xt%zm%...%". */
@@ -856,6 +921,7 @@ export class Bot {
     readonly skills = new Skills();
     readonly wait = new Wait();
     readonly send = new Send();
+    readonly servers = new Servers();
     readonly lite = new Lite();
     readonly config = new Config();
     readonly options: Options = makeOptions();

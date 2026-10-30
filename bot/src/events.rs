@@ -59,6 +59,11 @@ pub enum BotEvent {
     BankLoaded,
     ShopLoaded,
     ConnectionLost,
+    /// Auto-relogin started (VibeSkua `ReloginTriggered`); `was_kicked` when the login screen
+    /// showed the kick warning.
+    ReloginTriggered {
+        was_kicked: bool,
+    },
     /// `loginResponse`: logged in as `username`.
     Login {
         username: String,
@@ -100,6 +105,7 @@ impl BotEvent {
             Self::BankLoaded => "bankLoaded",
             Self::ShopLoaded => "shopLoaded",
             Self::ConnectionLost => "connectionLost",
+            Self::ReloginTriggered { .. } => "reloginTriggered",
             Self::Login { .. } => "login",
             Self::CounterAttack { .. } => "counterAttack",
             Self::PlayerAfk => "playerAFK",
@@ -135,6 +141,7 @@ impl BotEvent {
             } => {
                 json!({ "shopId": shop_id, "itemId": item_id, "shopItemId": shop_item_id })
             }
+            Self::ReloginTriggered { was_kicked } => json!({ "wasKicked": was_kicked }),
             Self::Login { username } => json!({ "username": username }),
             Self::CounterAttack { faded } => json!({ "faded": faded }),
             Self::RunToArea { zone } => json!({ "zone": zone }),
@@ -243,10 +250,15 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         }
         "packetFromServer" => {}
         "connectionLost" => {
-            // TODO(turu): auto-relogin (VibeSkua `BeginLogout` when AutoRelogin and the
-            // watchdog are on) needs the servers API.
-            bot.logs.debug.push("Connection lost");
+            bot.logs
+                .debug
+                .push("Flash socket connection lost event received.");
             bot.events.emit(BotEvent::ConnectionLost);
+            // Never block here: a script may hold the options lock while it waits on Flash.
+            let watchdog = bot.options.try_read().is_none_or(|o| o.relogin_watchdog);
+            if watchdog && !bot.servers.is_relogging() {
+                crate::api::servers::begin_logout(bot, false);
+            }
         }
         "userIntentionalAction" => match arg_str(0) {
             "logout" | "changeServer" => {
@@ -255,9 +267,15 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
                     arg_str(0)
                 ));
                 bot.state.lock().intentional_logout = true;
+                crate::api::servers::cancel_relogin(bot);
                 crate::script::stop(bot);
             }
-            "selectServer" => bot.state.lock().intentional_logout = false,
+            "selectServer" => {
+                bot.logs
+                    .debug
+                    .push("Server chosen by user on server list. Watchdog armed.");
+                bot.state.lock().intentional_logout = false;
+            }
             _ => {}
         },
         "openWebsite" => {

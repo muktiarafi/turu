@@ -46,6 +46,9 @@ pub struct BotOptions {
     pub relogin_tries: i32,
     pub relogin_try_delay: i32,
     pub login_timeout: i32,
+    /// VibeSkua's "Relogin Watchdog" (Application options): an unexpected disconnect or a
+    /// lost connection starts auto-relogin.
+    pub relogin_watchdog: bool,
     // Gameplay & Character
     pub private_rooms: bool,
     pub private_number: i32,
@@ -94,6 +97,7 @@ impl Default for BotOptions {
             relogin_tries: 5,
             relogin_try_delay: 800,
             login_timeout: 30000,
+            relogin_watchdog: true,
             private_rooms: false,
             private_number: 100000,
             skip_cutscenes: false,

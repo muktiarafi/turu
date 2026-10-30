@@ -18,6 +18,8 @@ chrono = { workspace = true, features = ["clock"] }
 regex = "1"
 rquickjs = { version = "0.14", features = ["loader", "macro"] }
 oxc = { version = "0.156", features = ["transformer", "codegen", "semantic"] }
+# The server list (`bot.servers.getServers`); the desktop already builds it.
+reqwest = { workspace = true, features = ["blocking"] }
 
 [lints]
 workspace = true

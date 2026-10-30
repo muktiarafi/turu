@@ -9,6 +9,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   VibeSkua's `skua.swf`, which loads AQW. You log in with the game's own screen.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
   background loops for drops, registered quests, skills and boosts; Stop and Pause.
+- **Servers and auto-relogin:** `bot.servers` (VibeSkua `Bot.Servers`: server list, login,
+  logout, connect, `relogin`, `ensureRelogin`) in `bot/src/api/servers.rs`. With Auto Relogin on,
+  a server logout, a kick, a lost connection or an unexpected disconnect (the last two need
+  Options > Relogin Watchdog) stops the script, logs back in with the game's remembered login
+  and restarts the script; a loading screen stuck for `LoadTimeout` reloads the map or relogs.
+  Logging out yourself (the game's Logout or Change Server, `bot.servers.logout()`) disarms it.
+  CoreBots' `relogin()` uses it.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
   (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
   `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
@@ -29,9 +36,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 ## Known gaps
 
-- **No servers API:** no auto-relogin or watchdog (`background.rs` has the TODO). `Core.relogin`
-  logs out and waits for a relogin that never comes; VibeSkua's restart of a script after a
-  logout is missing too.
+- **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
+  in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
+- **No auto-login:** you log in yourself the first time (VibeSkua's command-line login isn't
+  ported); relogins reuse that login. CoreBots' restart after a logout
+  (`Bot.Manager.RestartScriptAsync`) isn't ported either.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.

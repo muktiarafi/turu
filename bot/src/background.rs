@@ -1,9 +1,10 @@
 //! The bot's own threads (VibeSkua: the 20 ms "ScriptInterface" timer and the startup
-//! handler): answers `skua.swf`'s startup calls, finishes packet work that needs Flash, and
-//! keeps the options applied in game.
+//! handler): answers `skua.swf`'s startup calls, finishes packet work that needs Flash, keeps
+//! the options applied in game and watches for disconnects (auto-relogin).
 
 use crate::Bot;
 use crate::api::inventory::{self, Container};
+use crate::api::{map, servers};
 use crate::events::{BotEvent, Work};
 use crate::models::ItemBase;
 use std::sync::{Arc, Weak};
@@ -106,14 +107,14 @@ fn item_added(bot: &Bot, item_id: i64, quantity_now: i64, fallback: &ItemBase) {
 
 /// 20 ms tick (VibeSkua `ScriptInterface.ScriptTimer`): tracks login state, calls
 /// `catchPackets` once per login, sends rest packets every 1200 ms and applies the options
-/// every 250 ms while playing.
-///
-/// TODO(turu): VibeSkua's watchdog (auto-relogin on an unexpected disconnect, kick
-/// detection every 1 s, stuck-on-loading detection through `mcConnDetail.txtDetail.text`)
-/// and script handlers (`Handlers.RegisterHandler`) need the servers/handlers APIs.
+/// every 250 ms while playing. Its watchdog starts auto-relogin on an unexpected disconnect,
+/// a kick (checked every 1 s) or a loading screen that's stuck (checked every 100 ms).
 fn timer(weak: Weak<Bot>) {
     let mut last_options = Instant::now();
     let mut last_rest = Instant::now();
+    let mut last_kick_check = Instant::now();
+    let mut last_load_check = Instant::now();
+    let mut load = LoadWatch::default();
     loop {
         std::thread::sleep(Duration::from_millis(20));
         let Some(bot) = weak.upgrade() else { break };
@@ -121,7 +122,7 @@ fn timer(weak: Weak<Bot>) {
             continue;
         }
         let in_game = crate::api::player::is_in_game(&bot).unwrap_or(false);
-        let catching = {
+        let (was_in_game, catching, intentional) = {
             let mut state = bot.state.lock();
             let was = state.in_game;
             state.in_game = in_game;
@@ -129,11 +130,42 @@ fn timer(weak: Weak<Bot>) {
                 // The session ended: its drops are gone.
                 state.drops.clear();
             }
-            if !in_game {
+            if in_game {
+                state.intentional_logout = false;
+            } else {
                 state.catching_packets = false;
             }
-            state.catching_packets
+            (was, state.catching_packets, state.intentional_logout)
         };
+        if !in_game
+            && (was_in_game || bot.scripts.is_running())
+            && !intentional
+            && !bot.servers.is_relogging()
+        {
+            let (auto, watchdog) = {
+                let o = bot.opts();
+                (o.auto_relogin, o.relogin_watchdog)
+            };
+            if auto && watchdog {
+                bot.log("Unexpected disconnection detected by watchdog. Triggering auto re-login.");
+                servers::begin_logout(&bot, false);
+            }
+        }
+        if last_kick_check.elapsed() >= Duration::from_secs(1) {
+            last_kick_check = Instant::now();
+            if !bot.servers.is_relogging()
+                && bot.opts().auto_relogin
+                && !bot.state.lock().intentional_logout
+                && servers::kicked(&bot).unwrap_or(false)
+            {
+                bot.log("Player kick detected. Triggering auto re-login.");
+                servers::begin_logout(&bot, false);
+            }
+        }
+        if last_load_check.elapsed() >= Duration::from_millis(100) {
+            last_load_check = Instant::now();
+            check_stuck_loading(&bot, &mut load);
+        }
         if !in_game {
             continue;
         }
@@ -163,7 +195,7 @@ fn timer(weak: Weak<Bot>) {
     }
 }
 
-/// Once per login: `catchPackets` and remember who we are.
+/// Once per login: `catchPackets` and remember who we are and where.
 fn on_login(bot: &Bot) {
     if let Err(e) = bot.flash.call("catchPackets", vec![]) {
         tracing::debug!("catchPackets failed: {e}");
@@ -172,9 +204,95 @@ fn on_login(bot: &Bot) {
     let username = crate::api::player::username(bot)
         .ok()
         .filter(|u| !u.is_empty());
+    bot.servers.set_last(
+        crate::api::player::server_ip(bot).unwrap_or_default(),
+        bot.flash
+            .get_or("objServerInfo.sName", String::new())
+            .unwrap_or_default(),
+    );
     let mut state = bot.state.lock();
     state.catching_packets = true;
     if username.is_some() {
         state.username = username;
     }
+}
+
+/// The loading screen's message and since when it shows.
+struct LoadWatch {
+    detail: String,
+    since: Instant,
+}
+
+impl Default for LoadWatch {
+    fn default() -> Self {
+        Self {
+            detail: String::new(),
+            since: Instant::now(),
+        }
+    }
+}
+
+/// VibeSkua `CheckStuckonLoading`: "Connection has been lost" starts auto-relogin; a message
+/// that doesn't change for `LoadTimeout` gets the map reloaded ("loading map") or a relogin
+/// (a logout without auto-relogin).
+fn check_stuck_loading(bot: &Arc<Bot>, load: &mut LoadWatch) {
+    let detail = servers::conn_detail(bot);
+    if detail == "null" {
+        *load = LoadWatch {
+            detail,
+            since: Instant::now(),
+        };
+        return;
+    }
+    let relogging = bot.servers.is_relogging();
+    let timeout = Duration::from_millis(bot.opts().load_timeout.max(0) as u64);
+    if detail.contains("has been lost") && !relogging {
+        if !bot.state.lock().intentional_logout {
+            bot.log("Connection lost detected. Triggering auto re-login.");
+            servers::begin_logout(bot, false);
+        }
+    } else if load.since.elapsed() >= timeout && detail == load.detail && !relogging {
+        bot.log(format!(
+            "Stuck on the loading screen (\"{detail}\"). Recovering."
+        ));
+        recover_stuck_loading(bot, detail.contains("loading map"));
+        // Turu: wait another LoadTimeout before trying again (VibeSkua's timer is blocked by
+        // the recovery instead).
+        load.since = Instant::now();
+    }
+    if detail != load.detail {
+        *load = LoadWatch {
+            detail,
+            since: Instant::now(),
+        };
+    }
+}
+
+/// Off the timer thread, as joining a map waits.
+fn recover_stuck_loading(bot: &Arc<Bot>, loading_map: bool) {
+    let bot = bot.clone();
+    let _ = std::thread::Builder::new()
+        .name("Turu Load Watchdog".into())
+        .spawn(move || {
+            if loading_map {
+                let last_map = bot.state.lock().last_map.clone();
+                let _ = map::join(&bot, "battleon", "Enter", "Spawn", false, true);
+                let _ = map::reload(&bot);
+                // VibeSkua checks again in a 500-tick handler (10 s).
+                std::thread::sleep(Duration::from_secs(10));
+                if servers::conn_detail(&bot) != "loading map" {
+                    if let Some(map) = last_map {
+                        let _ = map::join(&bot, &map, "Enter", "Spawn", false, true);
+                    }
+                    return;
+                }
+            }
+            if bot.opts().auto_relogin {
+                servers::begin_logout(&bot, false);
+            } else if let Err(e) = servers::logout(&bot) {
+                bot.logs
+                    .debug
+                    .push(format!("Logout after a stuck load failed: {e}"));
+            }
+        });
 }

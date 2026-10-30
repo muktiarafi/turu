@@ -648,3 +648,100 @@ impl Skill {
             .collect()
     }
 }
+
+/// A game server (VibeSkua `Server`): from the server list API, `serialCmd.servers`, or a script.
+/// Reads the game's names (`sName`, `sIP`, ...) and the camelCase names scripts send back.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Server {
+    #[serde(
+        rename = "name",
+        alias = "sName",
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub name: String,
+    #[serde(
+        rename = "ip",
+        alias = "sIP",
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub ip: String,
+    /// Canned chat 0, free chat 2.
+    #[serde(
+        rename = "chatLevel",
+        alias = "iChat",
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub chat_level: i64,
+    #[serde(
+        rename = "port",
+        alias = "iPort",
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub port: i64,
+    #[serde(
+        rename = "online",
+        alias = "bOnline",
+        deserialize_with = "lenient_bool",
+        default
+    )]
+    pub online: bool,
+    #[serde(
+        rename = "language",
+        alias = "sLang",
+        deserialize_with = "lenient_string",
+        default
+    )]
+    pub language: String,
+    #[serde(
+        rename = "playerCount",
+        alias = "iCount",
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub player_count: i64,
+    /// Member-only.
+    #[serde(
+        rename = "upgrade",
+        alias = "bUpg",
+        deserialize_with = "lenient_bool",
+        default
+    )]
+    pub upgrade: bool,
+    #[serde(
+        rename = "maxPlayers",
+        alias = "iMax",
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub max_players: i64,
+    #[serde(
+        rename = "level",
+        alias = "iLevel",
+        deserialize_with = "lenient_i64",
+        default
+    )]
+    pub level: i64,
+}
+
+impl Server {
+    /// The server in the game's own field names, for `connectToServer`.
+    pub fn to_game_json(&self) -> String {
+        serde_json::json!({
+            "sName": self.name,
+            "sIP": self.ip,
+            "iChat": self.chat_level,
+            "iPort": self.port,
+            "bOnline": self.online as i64,
+            "sLang": self.language,
+            "iCount": self.player_count,
+            "bUpg": self.upgrade as i64,
+            "iMax": self.max_players,
+            "iLevel": self.level,
+        })
+        .to_string()
+    }
+}
