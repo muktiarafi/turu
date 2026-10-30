@@ -56,6 +56,8 @@ pub struct Bot {
     pub logs: Logs,
     pub scripts: script::ScriptManager,
     pub skills: skills::SkillRunner,
+    /// The counter-attack pause (`Combat.StopAttacking`, `UltraBossHelper`).
+    pub combat: api::combat::CombatState,
     pub drops: api::drops::DropRunner,
     pub handlers: api::handlers::HandlerRunner,
     pub boosts: api::boosts::BoostRunner,
@@ -83,6 +85,7 @@ impl Bot {
             logs: Logs::default(),
             scripts: script::ScriptManager::new(paths.clone()),
             skills: skills::SkillRunner::default(),
+            combat: api::combat::CombatState::default(),
             drops: api::drops::DropRunner::default(),
             handlers: api::handlers::HandlerRunner::default(),
             boosts: api::boosts::BoostRunner::default(),

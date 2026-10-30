@@ -176,6 +176,9 @@ pub enum Work {
     },
     /// `getDrop` with `bBank`: look the item up in the bank and emit `ItemAddedToBank`.
     BankItemAdded { item_id: i64, quantity_now: i64 },
+    /// A counter attack began (save and cancel the target) or faded (attack it again), with
+    /// the counter handler on (VibeSkua `ScriptCombat.CounterAttack`).
+    CounterAttack { faded: bool },
 }
 
 pub struct EventBus {

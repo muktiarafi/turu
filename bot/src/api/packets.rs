@@ -156,6 +156,8 @@ fn on_combat_tick(bot: &Arc<Bot>, data: &Value) {
         && num(me.get("intHP")) == Some(0)
     {
         bot.state.lock().stats.deaths += 1;
+        // VibeSkua `ScriptCombat.PlayerDead`.
+        bot.combat.set_stop_attacking(false);
         bot.events.emit(BotEvent::PlayerDeath);
         return;
     }
@@ -165,6 +167,7 @@ fn on_combat_tick(bot: &Arc<Bot>, data: &Value) {
         .and_then(|a| a.get("msg"))
         .and_then(Value::as_str);
     if anim_msg.is_some_and(|m| m.contains("prepares a counter attack!")) {
+        super::combat::on_counter_attack(bot, false);
         bot.events.emit(BotEvent::CounterAttack { faded: false });
         return;
     }
@@ -176,6 +179,7 @@ fn on_combat_tick(bot: &Arc<Bot>, data: &Value) {
                 == Some("Counter Attack")
         });
         if faded {
+            super::combat::on_counter_attack(bot, true);
             bot.events.emit(BotEvent::CounterAttack { faded: true });
         }
     }

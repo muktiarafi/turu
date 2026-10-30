@@ -1044,6 +1044,8 @@ impl Default for SkillRunner {
 
 /// VibeSkua `SkillInterval`.
 const SKILL_INTERVAL: u64 = 100;
+/// How long the skill timer waits for a counter attack to fade (VibeSkua: 10 s).
+const COUNTER_ATTACK_WAIT: u64 = 10_000;
 
 impl SkillRunner {
     /// VibeSkua `TimerRunning`.
@@ -1206,6 +1208,18 @@ fn skill_timer(weak: &Weak<Bot>, shared: &SkillShared, cancel: &AtomicBool) {
             if cancel.load(Ordering::Acquire) {
                 return Ok(false);
             }
+            if bot.combat.stop_attacking() {
+                // VibeSkua `_counterAttack.WaitOne(10000)`: wait for the counter attack to fade.
+                for _ in 0..COUNTER_ATTACK_WAIT / SKILL_INTERVAL {
+                    if bot.combat.take_faded() {
+                        break;
+                    }
+                    if !nap(&bot, SKILL_INTERVAL, cancel)? {
+                        return Ok(false);
+                    }
+                }
+                bot.combat.set_stop_attacking(false);
+            }
             let Some((provider, use_mode)) = current(shared) else {
                 return nap(&bot, SKILL_INTERVAL, cancel);
             };
@@ -1305,12 +1319,14 @@ fn poll(
     let without_target = bot.opts().attack_without_target;
     match use_mode {
         SkillUseMode::UseIfAvailable => {
-            if without_target || can_use_skill(bot, slot)? {
+            if (without_target || can_use_skill(bot, slot)?) && !bot.combat.stop_attacking() {
                 use_skill(bot, slot)?;
             }
         }
         SkillUseMode::WaitForCooldown => {
-            if without_target || wait_for_cooldown(bot, shared, slot, cancel)? {
+            if without_target
+                || (wait_for_cooldown(bot, shared, slot, cancel)? && !bot.combat.stop_attacking())
+            {
                 use_skill(bot, slot)?;
             }
         }

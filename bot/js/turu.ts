@@ -395,6 +395,81 @@ export class Combat {
     untargetSelf(): void { call("combat.untargetSelf"); }
     /** Leaves combat (jumps in place until the player is idle). */
     exit(): void { call("combat.exit"); }
+    /**
+     * While true, {@link attack} cancels the target and returns false, and the skill timer
+     * holds its skills until a counter attack fades (10 s at most, then it clears this). A
+     * death or the end of the script clears it.
+     */
+    get stopAttacking(): boolean { return call("combat.stopAttacking"); }
+    set stopAttacking(value: boolean) { call("combat.setStopAttacking", value); }
+    /**
+     * When a monster prepares a counter attack, sets {@link stopAttacking} and drops the target;
+     * once its "Counter Attack" aura fades, attacks that target again. Usually turned on with
+     * `bot.ultraBossHelper.enableCounterAttack()`.
+     */
+    get enableCounterHandler(): boolean { return call("combat.enableCounterHandler"); }
+    set enableCounterHandler(value: boolean) { call("combat.setEnableCounterHandler", value); }
+}
+
+/** `bot.ultraBossHelper` (VibeSkua `Bot.UltraBossHelper`): the counter-attack pause and aura checks for ultra bosses. */
+export class UltraBossHelper {
+    /**
+     * Turns the counter-attack pause on ({@link Combat.enableCounterHandler}): attacks stop while
+     * a monster's counter attack is up and resume on the same target after. It stays on after
+     * the script ends, as in VibeSkua; CoreBots' `setOptions()` turns it on.
+     */
+    enableCounterAttack(): void { call("combat.enableCounterAttack"); }
+    /** Turns the counter-attack pause off. */
+    disableCounterAttack(): void { call("combat.disableCounterAttack"); }
+    /** Whether {@link enableCounterAttack} is on. */
+    get isCounterAttackEnabled(): boolean { return call("combat.isCounterAttackEnabled"); }
+    /** VibeSkua's flag for a counter attack in progress (VibeSkua never sets it, so it reads false). */
+    get isCounterAttackActive(): boolean { return call("combat.isCounterAttackActive"); }
+    /** Sets {@link Combat.stopAttacking} by hand, for your own counter-attack logic. */
+    setAttacksStopped(shouldStop: boolean): void { call("combat.setAttacksStopped", shouldStop); }
+    /**
+     * Which of a positive and a negative charge aura are active, and whether either one with
+     * `reversedSuffix` appended (e.g. "?") is.
+     */
+    analyzeChargeMechanics(
+        auras: SelfAuras | TargetAuras, positiveChargeName: string, negativeChargeName: string, reversedSuffix?: string,
+    ): { hasPositive: boolean; hasNegative: boolean; hasReversed: boolean } {
+        const hasPositive = auras.hasActiveAura(positiveChargeName);
+        const hasNegative = auras.hasActiveAura(negativeChargeName);
+        const hasReversed = reversedSuffix
+            ? auras.hasAnyActiveAura(positiveChargeName + reversedSuffix, negativeChargeName + reversedSuffix)
+            : false;
+        return { hasPositive, hasNegative, hasReversed };
+    }
+    /** Compares an aura's value (`getAuraValue`) with `threshold`; throws on an unknown operator. */
+    checkAuraThreshold(
+        auras: SelfAuras | TargetAuras, auraName: string, threshold: number,
+        comparison: "<" | ">" | "<=" | ">=" | "==" | "!=" = ">=",
+    ): boolean {
+        const value = auras.getAuraValue(auraName);
+        switch (comparison) {
+            case "<": return value < threshold;
+            case ">": return value > threshold;
+            case "<=": return value <= threshold;
+            case ">=": return value >= threshold;
+            case "==": return value === threshold;
+            case "!=": return value !== threshold;
+            default: throw new Error(`Invalid comparison operator: ${comparison}`);
+        }
+    }
+    /** The auras whose name matches `namePattern` without case; `*` matches anything. */
+    getAurasMatchingPattern(auras: Aura[], namePattern: string): Aura[] {
+        if (namePattern.includes("*")) {
+            // As in C#, the rest of the pattern is a regular expression.
+            const regex = new RegExp(`^${namePattern.split("*").join(".*")}$`, "i");
+            return auras.filter((a) => regex.test(a.name));
+        }
+        return auras.filter((a) => a.name.toLowerCase() === namePattern.toLowerCase());
+    }
+    /** Whether every condition holds for its aura's value (`getAuraValue`, 0 when absent). */
+    shouldUseSkill(auras: SelfAuras | TargetAuras, conditions: Record<string, (value: number) => boolean>): boolean {
+        return Object.entries(conditions).every(([name, condition]) => condition(auras.getAuraValue(name)));
+    }
 }
 
 /** `bot.kill`: kill monsters in your cell. */
@@ -1086,6 +1161,8 @@ export class Bot {
     readonly player = new Player();
     readonly map = new GameMap();
     readonly combat = new Combat();
+    /** The counter-attack pause and aura checks for ultra bosses. */
+    readonly ultraBossHelper = new UltraBossHelper();
     readonly kill = new Kill();
     readonly hunt = new Hunt();
     readonly monsters = new Monsters();

@@ -83,6 +83,7 @@ fn do_work(bot: &Arc<Bot>, work: Work) {
             });
             Ok(())
         }
+        Work::CounterAttack { faded } => crate::api::combat::counter_attack_work(bot, *faded),
     };
     if let Err(e) = result {
         bot.logs

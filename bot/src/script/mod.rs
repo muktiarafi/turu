@@ -389,6 +389,8 @@ pub(crate) fn set_stopping(bot: &Bot) {
 /// Cleanup after `main` returns, throws or is stopped (VibeSkua: ScriptStopping/Stopped).
 fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.skills.stop();
+    // VibeSkua `ScriptCombat.ScriptStopped` (the counter handler itself stays on).
+    bot.combat.set_stop_attacking(false);
     bot.drops.stop();
     bot.boosts.reset();
     bot.quests.unregister_all();
