@@ -308,8 +308,10 @@ impl NavBar {
             let combo = ComboBox::from_id_salt("auto_class")
                 .selected_text(self.auto_class.as_deref().unwrap_or("Select Class..."))
                 .width(half - 18.0)
-                .height(320.0)
+                .height(420.0)
                 .show_ui(ui, |ui| {
+                    // The drop-down is as wide as its button; class names need more room.
+                    ui.set_min_width(260.0);
                     if owned.is_empty() {
                         ui.label(RichText::new("No classes (not logged in?)").small().color(MUTED));
                     }
