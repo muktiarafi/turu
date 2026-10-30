@@ -554,13 +554,19 @@ pub fn update_quest(bot: &Bot, id: i64) -> BotResult<bool> {
     let Some(quest) = ensure_load(bot, id)? else {
         return Ok(false);
     };
+    update_quest_slot(bot, quest.value, quest.slot)?;
+    Ok(true)
+}
+
+/// VibeSkua `UpdateQuest(value, slot)`: the same fake `updateQuest` packet with a chain value and
+/// quest slot of your own.
+pub fn update_quest_slot(bot: &Bot, value: i64, slot: i64) -> BotResult<()> {
     let packet = format!(
-        "{{\"t\":\"xt\",\"b\":{{\"r\":-1,\"o\":{{\"cmd\":\"updateQuest\",\"iValue\":{},\"iIndex\":{}}}}}}}",
-        quest.value, quest.slot
+        "{{\"t\":\"xt\",\"b\":{{\"r\":-1,\"o\":{{\"cmd\":\"updateQuest\",\"iValue\":{value},\"iIndex\":{slot}}}}}}}"
     );
     bot.flash
         .call("sendClientPacket", vec![packet.into(), "json".into()])?;
-    Ok(true)
+    Ok(())
 }
 
 fn with_quest(bot: &Bot, id: i64, f: impl FnOnce(&Quest) -> BotResult<bool>) -> BotResult<bool> {
@@ -616,7 +622,11 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "isDailyComplete" => ok(with_quest(bot, args.i64(0)?, |q| daily_complete(bot, q))?),
         "isAvailable" => ok(is_available(bot, args.i64(0)?)?),
         "updateQuest" => {
-            update_quest(bot, args.i64(0)?)?;
+            if args.is_missing(1) {
+                update_quest(bot, args.i64(0)?)?;
+            } else {
+                update_quest_slot(bot, args.i64(0)?, args.i64(1)?)?;
+            }
             ok(())
         }
         "registerQuests" => {

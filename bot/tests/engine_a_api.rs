@@ -3,7 +3,7 @@
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use turu_bot::api::{NameOrId, kill, map, monsters, options};
+use turu_bot::api::{NameOrId, kill, map, monsters, options, quests};
 use turu_bot::models::Monster;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
@@ -162,6 +162,22 @@ fn join_uses_a_private_room_and_jumps() {
     assert_eq!(jumps.len(), 1);
     assert_eq!(arg(&jumps[0], 0), "Room");
     assert_eq!(bot.state.lock().last_map.as_deref(), Some("Yulgar"));
+}
+
+#[test]
+fn update_quest_with_a_slot_sends_the_client_packet() {
+    // VibeSkua `UpdateQuest(value, slot)`, as DragonOfTime calls it.
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    quests::update_quest_slot(&bot, 9, 159).unwrap();
+
+    let sent = game.calls_to("sendClientPacket");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(
+        arg(&sent[0], 0),
+        r#"{"t":"xt","b":{"r":-1,"o":{"cmd":"updateQuest","iValue":9,"iIndex":159}}}"#
+    );
+    assert_eq!(arg(&sent[0], 1), "json");
 }
 
 #[test]

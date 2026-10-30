@@ -556,7 +556,10 @@ export class Quests {
     isDailyComplete(id: number): boolean { return call("quests.isDailyComplete", id); }
     isAvailable(id: number): boolean { return call("quests.isAvailable", id); }
     /** Tells the client a quest chain value changed (fixes stale quest locks). */
-    updateQuest(id: number): void { call("quests.updateQuest", id); }
+    updateQuest(id: number): void;
+    /** Tells the client a quest slot holds `value` (VibeSkua `UpdateQuest(value, slot)`). */
+    updateQuest(value: number, slot: number): void;
+    updateQuest(...args: number[]): void { call("quests.updateQuest", ...args); }
     /** Accepts and turns these in automatically in the background while you farm. */
     registerQuests(...ids: number[]): void { call("quests.registerQuests", ids); }
     unregisterQuests(...ids: number[]): void { call("quests.unregisterQuests", ids); }
