@@ -50,9 +50,11 @@ cargo run -p turu
 The window opens with VibeSkua's top bar and loads AQW. Then:
 
 1. Log in with the game's own login screen.
-2. Open **Scripts > Script Loader** and click **Load Script**.
-3. Pick a `.ts` file, e.g. `scripts/nation/materials/0MaxBags.ts`.
-4. Click **Start Script**. Progress shows in the SCRIPT LOG.
+2. Open **Scripts > Search Scripts**, find a script (e.g. "0MaxBags") and click **Start**. It is
+   downloaded, with the files it imports, from
+   [turu-scripts](https://github.com/muktiarafi/turu-scripts). Or open **Scripts > Script
+   Loader**, click **Load Script**, pick a `.ts` file and click **Start Script**.
+3. Progress shows in the Script Loader's SCRIPT LOG.
 
 **Stop Script** stops it; **Pause Script** pauses it.
 
@@ -83,6 +85,9 @@ follows Mugetsu's scripts in `../mugetsu/source/build-*.sh` / `build-windows.ps1
 version of those scripts isn't written yet.
 
 ## Test
+
+`scripts/` is a submodule ([turu-scripts](https://github.com/muktiarafi/turu-scripts)); the tests
+and the type-check need it: clone with `--recursive`, or run `git submodule update --init`.
 
 ```bash
 cargo test -p turu_bot                                   # engine + script runtime (fake game, no login needed)

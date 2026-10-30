@@ -44,7 +44,12 @@ jobs:
     name: Test engine and scripts
     runs-on: ubuntu-24.04
     steps:
+      # scripts/ is the turu-scripts submodule: the engine tests load its scripts, and they are
+      # type-checked against this commit's bot/js/turu.ts. The packages don't ship it (Search
+      # Scripts downloads the scripts), so the build jobs check out without it.
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
 
