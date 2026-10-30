@@ -71,6 +71,9 @@ pub struct ScriptInfo {
     pub updated: String,
     /// Every repository file it imports, directly or through others.
     pub deps: Vec<String>,
+    /// No `export default`, so nothing to run (CoreBots, CoreFarms, ...): Search Scripts doesn't
+    /// list it, and it comes with the scripts that import it. VibeSkua lists its Core files.
+    pub library: bool,
 }
 
 impl ScriptInfo {
@@ -214,6 +217,22 @@ pub struct Header {
     pub name: String,
     pub description: String,
     pub tags: Vec<String>,
+}
+
+/// Whether `source` is a library: no line starts with `export default` (the engine runs the
+/// default export). The index generator (`tools/build-index.mjs`, `isLibrary`) checks the same.
+pub fn is_library(source: &str) -> bool {
+    !source.lines().any(|line| {
+        line.trim_start()
+            .strip_prefix("export")
+            .and_then(|rest| rest.strip_prefix(char::is_whitespace))
+            .is_some_and(|rest| {
+                let rest = rest.trim_start();
+                rest.strip_prefix("default").is_some_and(|after| {
+                    !after.starts_with(|c: char| c.is_alphanumeric() || c == '_')
+                })
+            })
+    })
 }
 
 /// The `/* name: ... description: ... tags: ... */` block a script starts with (kept from the
@@ -974,6 +993,7 @@ impl ScriptRepo {
                     description: header.description,
                     tags: header.tags,
                     size: source.len() as u64,
+                    library: is_library(&source),
                     path: relative,
                     ..Default::default()
                 },

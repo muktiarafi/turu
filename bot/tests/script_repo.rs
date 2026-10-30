@@ -91,6 +91,7 @@ impl Remote for Shared {
 
 const CORE: &str =
     "/*\nname: CoreBots\ndescription: the shared helpers\ntags: core\n*/\nexport const a = 1;\n";
+const FARM_MAIN: &str = "import { bot } from \"turu\";\nexport default function main(): void {\n    bot.log(\"hi\");\n}\n";
 const FARM: &str = "/*\nname: Gold Farm\ndescription: honor hall for members,\n    BGE for f2p\ntags: gold, farm\n*/\nimport { a } from \"../core/CoreBots\";\n";
 
 fn setup() -> (tempfile::TempDir, Arc<Fake>, Arc<ScriptRepo>) {
@@ -125,6 +126,38 @@ fn header_reads_continued_lines_and_tags() {
     assert_eq!(header.description, "honor hall for members, BGE for f2p");
     assert_eq!(header.tags, ["gold", "farm"]);
     assert_eq!(parse_header("// no header\n"), Default::default());
+}
+
+/// A file without `export default` is a library; the index generator says the same.
+#[test]
+fn libraries_have_no_default_export() {
+    assert!(repo::is_library(CORE));
+    assert!(!repo::is_library(FARM_MAIN));
+    assert!(!repo::is_library("export   default function main() {}\n"));
+    // Not at the start of a line, or another name.
+    assert!(repo::is_library(
+        "// export default function main\nconst a = 1;\n"
+    ));
+    assert!(repo::is_library("export defaultValue = 1;\n"));
+}
+
+#[test]
+fn local_libraries_are_marked() {
+    let (dir, _fake, repo) = setup();
+    let scripts = dir.path().join("scripts/mine");
+    fs::create_dir_all(&scripts).unwrap();
+    fs::write(scripts.join("CoreMine.ts"), "export const x = 1;\n").unwrap();
+    fs::write(scripts.join("Mine.ts"), FARM_MAIN).unwrap();
+    repo.rescan();
+    let library = |path: &str| {
+        repo.snapshot()
+            .entries
+            .iter()
+            .find(|e| e.info.path == path)
+            .map(|e| e.info.library)
+    };
+    assert_eq!(library("mine/CoreMine.ts"), Some(true));
+    assert_eq!(library("mine/Mine.ts"), Some(false));
 }
 
 #[test]

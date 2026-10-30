@@ -131,9 +131,9 @@ impl ScriptRepoWindow {
             }
         });
 
-        // Counts.
+        // Counts, without the libraries (the list leaves them out).
         let entries = &snapshot.entries;
-        let count = |f: fn(&Entry) -> bool| entries.iter().filter(|e| f(e)).count();
+        let count = |f: fn(&Entry) -> bool| entries.iter().filter(|e| !e.info.library && f(e)).count();
         ui.horizontal(|ui| {
             let text = format!(
                 "{} shown · {} in the repository · {} downloaded · {} to update · {} local · {} pinned",
@@ -150,7 +150,7 @@ impl ScriptRepoWindow {
         // The list, above the bottom bar.
         let list_height = (ui.available_height() - 44.0).max(80.0);
         ui.allocate_ui(vec2(ui.available_width(), list_height), |ui| {
-            if entries.is_empty() {
+            if entries.iter().all(|e| e.info.library) {
                 let (title, text) = if snapshot.busy.is_some() {
                     (
                         "Loading scripts...",
@@ -202,6 +202,7 @@ impl ScriptRepoWindow {
         let entries = &snapshot.entries;
         let mut folders: Vec<String> = entries
             .iter()
+            .filter(|e| !e.info.library)
             .filter_map(|e| e.info.category())
             .map(capitalize)
             .collect();
@@ -210,9 +211,11 @@ impl ScriptRepoWindow {
         self.categories = ["All", "Pinned", "Local"].map(String::from).into();
         self.categories.extend(folders);
 
+        // Libraries (CoreBots, ...) have nothing to run; they come with the scripts importing them.
         let mut rows: Vec<(usize, u8)> = entries
             .iter()
             .enumerate()
+            .filter(|(_, e)| !e.info.library)
             .filter(|(_, e)| match self.category.as_str() {
                 "All" => true,
                 "Pinned" => e.pinned,
@@ -709,6 +712,14 @@ mod tests {
                     true,
                 ),
                 entry("mine/Gold.ts", "My Gold", "", Status::Local, false),
+                Entry {
+                    info: ScriptInfo {
+                        library: true,
+                        ..entry("core/CoreBots.ts", "CoreBots", "", Status::UpToDate, true).info
+                    },
+                    status: Status::UpToDate,
+                    pinned: true,
+                },
             ]),
             generation: 1,
             commit: String::new(),

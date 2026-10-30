@@ -71,7 +71,8 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
 * **Search Scripts** (`script_repo.rs`, 969x500; VibeSkua's Script Repo; also Scripts > Search
   Scripts): search box ("Search scripts by name, path or tag") with a clear button, scope (All,
   Name, Tag, Description, File), category (All, Pinned, Local and the top folders), sort (Name or
-  Date added, up or down); a count line; the list, pinned first, then the sort, then the search
+  Date added, up or down); a count line; the list (without the libraries such as CoreBots: files
+  with no `export default`, which VibeSkua lists), pinned first, then the sort, then the search
   rank (VibeSkua's `SearchRank`). Each row: star when pinned, name, badges (Downloaded, Update,
   Modified, Local, Removed), path, description, tag chips, Start (primary), Load and a "…" menu
   with Pin/Unpin, Download / Update / "Replace with the repository's", Open in VS Code and Delete.

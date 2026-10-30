@@ -180,7 +180,8 @@ Turu's scripts live in their own repository, `muktiarafi/turu-scripts` (the `scr
 submodule here; `TURU_SCRIPTS_REPO=owner/name` points the client at another). Its CI type-checks
 the scripts and publishes `index.json` as the only file of its `index` branch: per script the
 path, the header block (name, description, tags), size, sha256, the dates it was added and
-changed (from `git log`) and `deps`, every file it imports. `bot/src/repo.rs` (`ScriptRepo`, one
+changed (from `git log`), `deps`, every file it imports, and `library`, set for a file with no
+`export default` (the `Core*` files: nothing to run). `bot/src/repo.rs` (`ScriptRepo`, one
 per app, `turu::script_repo()`) reads it, and the Search Scripts window shows its snapshot.
 
 Differences from VibeSkua's `scripts.json`, which its CI commits to the working branch on every
@@ -194,7 +195,9 @@ files up; neither counts against the API limit.
 The manifest (`scripts-manifest.json`) records what Turu wrote, which gives each script a status:
 missing, up to date, outdated (untouched since, the repository changed), modified (edited here:
 Update all and Download all keep it, VibeSkua overwrites it), local (your own) or removed (gone
-from the repository). Reset Scripts moves the downloaded files to `scripts-backup/<time>/` and
+from the repository). Libraries aren't listed (VibeSkua lists its Core files, as "null"-named rows whose Start fails);
+they are downloaded with the scripts that import them, and your own files are checked the same
+way (`repo::is_library`). Reset Scripts moves the downloaded files to `scripts-backup/<time>/` and
 downloads everything again, leaving your own scripts (VibeSkua deletes the whole folder). At
 launch, Check for Script Updates fetches the index and Auto Update Scripts downloads what's
 missing or outdated, as VibeSkua's Manager does; clients launched by Army > Accounts skip it.
