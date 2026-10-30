@@ -304,6 +304,43 @@ fn intentional_logout_doesnt_relogin() {
     assert!(bot.state.lock().intentional_logout);
 }
 
+/// Clicking Logout in the game: the click arrives while the world is still up, the connection
+/// closes a moment later.
+#[test]
+fn logout_clicked_in_game_isnt_relogged_by_the_watchdog() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        o.relogin_watchdog = true;
+    }
+    bot.on_flash_call("loaded", vec![]);
+    assert!(wait_until(Duration::from_secs(2), || bot
+        .state
+        .lock()
+        .in_game));
+
+    bot.on_flash_call("packet", vec![json!("%xt%zm%cmd%1%logout%")]);
+    bot.on_flash_call("userIntentionalAction", vec![json!("logout")]);
+    // The watchdog ticks while the world is still up.
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(bot.state.lock().intentional_logout);
+
+    game.leave_world();
+    bot.on_flash_call("connectionLost", vec![]);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!bot.servers.is_relogging());
+    assert!(!game.game_functions().contains(&"login".to_owned()));
+
+    // Logging in again re-arms it.
+    game.enter_world();
+    assert!(wait_until(Duration::from_secs(2), || !bot
+        .state
+        .lock()
+        .intentional_logout));
+}
+
 #[test]
 fn lost_connection_needs_the_watchdog() {
     let game = FakeGame::new();

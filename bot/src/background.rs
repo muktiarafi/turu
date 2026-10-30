@@ -149,9 +149,12 @@ fn timer(weak: Weak<Bot>) {
                 // The session ended: its drops are gone.
                 state.drops.clear();
             }
-            if in_game {
+            if in_game && !was {
+                // A new login re-arms auto-relogin. VibeSkua clears it on every tick in game,
+                // but the world stays up for a moment after you click Logout: the lost
+                // connection that follows would then relog you.
                 state.intentional_logout = false;
-            } else {
+            } else if !in_game {
                 state.catching_packets = false;
             }
             (was, state.catching_packets, state.intentional_logout)
