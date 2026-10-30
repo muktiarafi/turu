@@ -79,13 +79,14 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button). Edits are written to
   `bot.options` at once; footer Defaults / Reset (reload `options.json`) / Save. Differences from
   VibeSkua: no Optimize Players, Upgrade/Staff Name Colour (not in `BotOptions`); the server combo
-  uses VibeSkua's fallback list (plus the current value); Set FPS defaults to 24, the rate
-  AQW's `Game.swf` is made for (VibeSkua: 30, skua.swf's rate).
+  uses VibeSkua's fallback list (plus the current value); Set FPS defaults to 0, shown as
+  "Game's", which leaves the frame rate to the game's own FPS setting (VibeSkua: 30, forced at
+  every login), and Headless Mode restores the rate the game had before it turned on.
 * **Application Options** (`application_options.rs`, 580x650, VibeSkua `ApplicationOptionsView`):
   search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title
   (the window title gets " – <character>" while you play), Client Animation Frame-rate (the
-  `stage.frameRate` set when the client loads, default 24; Set FPS takes over in game; VibeSkua
+  `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
   stores it and never reads it), Relogin Try Delay and Relogin Watchdog (bot options: applied
   and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
   folder after a second click, then restart). Updates: the six switches are stored but greyed
@@ -94,7 +95,6 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   `bot/src/webhooks.rs` (VibeSkua `DiscordWebhookService`): one thread posting embeds, two a
   second, retrying on 429; the Nexus snapshot and health pings read the game on that thread. The
   drop alert has no screenshot (VibeSkua attaches one). Failures go to the Debug log.
-* **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread), the list (check box, a green dot
   while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /
@@ -105,6 +105,7 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
   Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,
   and each client's outcome under RESULTS.
+* **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
 * **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,

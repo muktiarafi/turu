@@ -82,7 +82,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
-  the title, the client's starting frame rate (24 by default, as is Set FPS: AQW's own rate),
+  the title, the client's starting frame rate (24 by default, AQW's own rate; Set FPS defaults to
+  0, leaving the game's own FPS setting alone),
   relogin delay and watchdog, Clear Flash Cache, and Discord / Skua Nexus webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook; the update switches are stored only.
@@ -94,7 +95,6 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 ## Known gaps
 
-- **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
 - **No account tabs yet:** launched accounts run in their own windows (or none). VibeSkua's
   tabbed host embeds each client's Win32 window, which macOS and Wayland don't allow; the plan
   is several players in one process, each on its own thread drawing off screen (the
@@ -102,6 +102,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   tab's bot. Army Control lacks VibeSkua's Start/Stop Auto-Attack for All, Army Scheduler,
   Grid View and per-squad Army Queue. Launching is unverified with real accounts.
 
+- **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
   farm without a window still need a run. The control API is the only way to steer it.

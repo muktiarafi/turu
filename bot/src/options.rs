@@ -20,6 +20,7 @@ pub struct BotOptions {
     pub disable_fx: bool,
     pub disable_collisions: bool,
     pub show_fps: bool,
+    /// Frame rate to force in game; 0 leaves the game's own setting alone.
     pub set_fps: i32,
     // Combat & Targeting
     pub aggro_monsters: bool,
@@ -75,8 +76,8 @@ impl Default for BotOptions {
             disable_fx: false,
             disable_collisions: false,
             show_fps: false,
-            // VibeSkua: 30 (skua.swf's rate); the game itself is made for 24.
-            set_fps: crate::settings::GAME_FRAME_RATE,
+            // VibeSkua: 30. Turu leaves the frame rate to the game's own FPS setting.
+            set_fps: 0,
             aggro_monsters: false,
             aggro_all_monsters: false,
             attack_without_target: false,

@@ -946,7 +946,7 @@ export class CoreBots {
         this.savedState(false);
 
         if (this.antiLag) {
-            bot.options.setFps = 30; // tato keep this fps 30 ples
+            // C# sets SetFPS = 30 here: dropped so the game's own frame rate setting stays as the player left it.
             if (bot.flash.get<boolean>("ui.monsterIcon.redX.visible") === true) bot.flash.callGameFunction("world.toggleMonsters");
         }
 

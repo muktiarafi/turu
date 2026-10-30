@@ -288,3 +288,38 @@ fn options_send_toggles_once_and_repeat_ticks() {
     );
     assert_eq!(game.calls_to("killLag").len(), 3);
 }
+
+fn frame_rates(game: &FakeGame) -> Vec<FlashArg> {
+    game.calls_to("setGameObject")
+        .into_iter()
+        .filter(|a| arg(a, 0) == "stage.frameRate")
+        .map(|a| a[1].clone())
+        .collect()
+}
+
+#[test]
+fn set_fps_zero_leaves_the_game_frame_rate_alone() {
+    let game = FakeGame::new();
+    game.set("stage.frameRate", "40");
+    let bot = new_bot(&game);
+    options::apply(&bot).unwrap();
+    assert!(frame_rates(&game).is_empty());
+
+    // Headless Mode drops to 2 and gives back the rate the game had.
+    bot.options.write().headless_mode = true;
+    options::apply(&bot).unwrap();
+    bot.options.write().headless_mode = false;
+    options::apply(&bot).unwrap();
+    options::apply(&bot).unwrap();
+    assert_eq!(
+        frame_rates(&game),
+        [FlashArg::Number(2.0), FlashArg::Number(40.0)]
+    );
+
+    // A Set FPS above 0 is forced once.
+    bot.options.write().set_fps = 30;
+    options::apply(&bot).unwrap();
+    options::apply(&bot).unwrap();
+    assert_eq!(frame_rates(&game).last(), Some(&FlashArg::Number(30.0)));
+    assert_eq!(frame_rates(&game).len(), 3);
+}

@@ -46,6 +46,9 @@ pub struct GameState {
     pub last_hunt_jump: Option<Instant>,
     /// What `options::apply` last pushed into the game.
     pub options_applied: crate::api::options::Applied,
+    /// The game's frame rate when Headless Mode turned on, restored when it turns off
+    /// (kept across relogins, unlike `options_applied`).
+    pub fps_before_headless: Option<i32>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

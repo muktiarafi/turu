@@ -89,7 +89,7 @@ fn entries() -> Vec<Entry> {
             ..entry!(
                 General,
                 "Client Animation Frame-rate",
-                "The frame rate the game client starts with; Set FPS (Game options) takes over in game. AQW is made for 24",
+                "The frame rate the game client starts with; the game's own FPS setting, or Set FPS (Game options), takes over in game. AQW is made for 24",
                 Field::Int(|s| &mut s.animation_frame_rate, "FPS", 1)
             )
         },

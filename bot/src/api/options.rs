@@ -104,20 +104,34 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
     }
     let headless_changed = changed(&mut a.headless, o.headless_mode);
     if headless_changed {
-        // VibeSkua `OnHeadlessModeChanged`.
+        // VibeSkua `OnHeadlessModeChanged`, except that turning it off restores the rate the
+        // game had (VibeSkua: Set FPS) unless Set FPS forces one.
         let (fps, quality, volume) = if o.headless_mode {
+            if bot.state.lock().fps_before_headless.is_none() {
+                let current = bot.flash.get::<f64>("stage.frameRate")?.round() as i32;
+                bot.state.lock().fps_before_headless = Some(current);
+            }
             (2, "LOW", 0)
         } else {
-            (o.set_fps, "HIGH", 1)
+            let before = bot.state.lock().fps_before_headless.take();
+            let fps = if o.set_fps > 0 {
+                o.set_fps
+            } else {
+                before.unwrap_or(crate::settings::GAME_FRAME_RATE)
+            };
+            (fps, "HIGH", 1)
         };
         bot.flash.set("stage.frameRate", fps)?;
         bot.flash.set("stage.quality", quality)?;
         bot.flash
             .set("world.rootClass.mixer.soundTransform.volume", volume)?;
-        a.set_fps = Some(fps);
+        a.set_fps = Some(o.set_fps);
     }
     if !o.headless_mode && a.set_fps != Some(o.set_fps) {
-        bot.flash.set("stage.frameRate", o.set_fps)?;
+        // Set FPS 0 leaves the frame rate to the game's own setting.
+        if o.set_fps > 0 {
+            bot.flash.set("stage.frameRate", o.set_fps)?;
+        }
         a.set_fps = Some(o.set_fps);
     }
     if a.custom_name.as_deref() != Some(o.custom_name.as_str()) {

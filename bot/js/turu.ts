@@ -949,6 +949,7 @@ export interface OptionValues {
     disableFx: boolean;
     disableCollisions: boolean;
     showFps: boolean;
+    /** Frame rate to force in game; 0 (the default) leaves the game's own FPS setting alone. */
     setFps: number;
     aggroMonsters: boolean;
     aggroAllMonsters: boolean;

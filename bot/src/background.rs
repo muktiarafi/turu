@@ -33,8 +33,8 @@ pub(crate) fn start(bot: &Arc<Bot>) {
 fn do_work(bot: &Arc<Bot>, work: Work) {
     let result = match &work {
         Work::LoadClient => {
-            // VibeSkua's "Client Animation Frame-rate": skua.swf runs at 30 until Set FPS
-            // applies in game.
+            // VibeSkua's "Client Animation Frame-rate": skua.swf runs at 30 until the game's
+            // own FPS setting (or Set FPS) applies in game.
             let fps = bot.settings.read().animation_frame_rate.max(1);
             if let Err(e) = bot.flash.set("stage.frameRate", fps) {
                 bot.logs

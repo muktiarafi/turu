@@ -43,6 +43,8 @@ impl Section {
 enum Field {
     Bool(fn(&mut BotOptions) -> &mut bool),
     Int(fn(&mut BotOptions) -> &mut i32, Option<&'static str>),
+    /// Set FPS: 0 leaves the frame rate to the game's own setting.
+    Fps,
     Text(fn(&mut BotOptions) -> &mut String),
     Server,
     Priority,
@@ -89,7 +91,11 @@ fn entries() -> Vec<Entry> {
         b!(Visuals, "Disable FX", disable_fx),
         b!(Visuals, "Disable Collisions", disable_collisions),
         b!(Visuals, "Show FPS", show_fps),
-        n!(Visuals, "Set FPS", set_fps, "FPS"),
+        Entry {
+            section: Section::Visuals,
+            label: "Set FPS",
+            field: Field::Fps,
+        },
         Entry {
             section: Section::Visuals,
             label: "Reload Map",
@@ -295,6 +301,19 @@ fn edit(ui: &mut Ui, field: &Field, snapshot: &mut BotOptions, bot: &std::sync::
             }
             if ui.add(drag).changed() {
                 *access(&mut bot.options.write()) = value;
+            }
+        }
+        Field::Fps => {
+            let mut value = snapshot.set_fps;
+            let drag = DragValue::new(&mut value)
+                .range(0..=i32::MAX)
+                .custom_formatter(|v, _| if v == 0.0 { "Game's".into() } else { format!("{v} FPS") })
+                .custom_parser(|s| s.trim().trim_end_matches("FPS").trim().parse().ok());
+            let response = ui
+                .add(drag)
+                .on_hover_text("0 (Game's) leaves the frame rate to the game's own FPS setting");
+            if response.changed() {
+                bot.options.write().set_fps = value;
             }
         }
         Field::Text(access) => {
