@@ -251,10 +251,13 @@ export class CoreAdvanced {
                 Farm.swordhavenREP(rank);
                 break;
             case "blacksmithing":
+                // C# means `(rank, true)` (its "blacksmith" case) but never matches "Blacksmithing",
+                // and the reflection call with only the rank throws and stops the bot. Turu: gold method.
+                Farm.blacksmithingREP(rank, true);
+                break;
             case "fishing":
-                // C# invokes these by reflection with only the rank; their extra parameters make
-                // that throw, so C# stops here (its "blacksmith" case never matches "Blacksmithing").
-                Core.logger(`Faction ${name} has invalid paramaters, please report`, "", { messageBox: true, stopBot: true });
+                // C#'s reflection call with only the rank throws (FishingREP has 4 parameters).
+                Farm.fishingREP(rank);
                 break;
             default:
                 Core.logger(`Failed to find ${name}REP in CoreFarms. It isn't ported to Turu yet.`);

@@ -3060,9 +3060,9 @@ export class CoreBots {
 
         if (!isTemp) this.addDrop(item!);
 
-        // Find target monster(s) alive. As in C#, this is a snapshot: it isn't refreshed below.
-        let targets = bot.monsters.mapMonsters.filter((m) => m && m.mapId === monsterMapId && alive(m));
-        if (targets.length === 0) return;
+        // Find target monster(s) alive
+        const living = () => bot.monsters.mapMonsters.filter((m) => m && m.mapId === monsterMapId && alive(m));
+        if (living().length === 0) return;
 
         const username = bot.player.username;
         if (bot.map.playerNames.some((x) => x !== username)) {
@@ -3070,7 +3070,9 @@ export class CoreBots {
             bot.options.hidePlayers = true;
         } else bot.options.aggroMonsters = false;
 
-        // Main attack loop
+        // Main attack loop. C# filters a list read once, so its monsters never die: without an item
+        // it never ends. Turu reads the map's monsters each pass and stops after one kill then.
+        let engaged = false;
         while (!bot.shouldExit && (item === null || !has(item))) {
             if (!bot.player.alive) bot.wait.forTrue(() => bot.player.alive, 20);
 
@@ -3080,8 +3082,13 @@ export class CoreBots {
             }
 
             // Refresh alive targets
-            targets = targets.filter((t) => alive(t));
-            if (targets.length === 0) break;
+            const targets = living();
+            if (targets.length === 0) {
+                // Killed it (no item wanted), else wait for the respawn.
+                if (item === null && engaged) break;
+                this.sleep(200);
+                continue;
+            }
 
             const target = targets[0];
 
@@ -3091,6 +3098,7 @@ export class CoreBots {
             }
 
             if (!bot.player.hasTarget || bot.player.target?.mapId !== monsterMapId) bot.combat.attack(target.mapId);
+            engaged = true;
 
             this.sleep(200);
 
