@@ -136,6 +136,22 @@ export interface Aura {
     icon: string;
 }
 
+/** Your character's computed stats (VibeSkua `PlayerStats`, `world.myAvatar.dataLeaf.sta`). */
+export interface PlayerStats {
+    haste: number;
+    strength: number;
+    wisdom: number;
+    dexterity: number;
+    endurance: number;
+    intellect: number;
+    luck: number;
+    attackPower: number;
+    spellPower: number;
+    criticalChance: number;
+    criticalMultiplier: number;
+    evasionChance: number;
+}
+
 /** An aura as the HUD shows it (VibeSkua `AuraSnapshot`). */
 export interface AuraSnapshot {
     name: string;
@@ -285,6 +301,26 @@ export class Player {
     get x(): number { return call("player.x"); }
     get y(): number { return call("player.y"); }
     get walkSpeed(): number { return call("player.walkSpeed"); }
+    /** Your computed stats (VibeSkua `Player.Stats`), or null before they're loaded. */
+    get stats(): PlayerStats | null {
+        const sta = call<Record<string, number> | null>("flash.get", "world.myAvatar.dataLeaf.sta");
+        if (sta == null || typeof sta !== "object") return null;
+        const n = (key: string): number => Number(sta[key] ?? 0);
+        return {
+            haste: n("$tha"),
+            strength: n("$STR"),
+            wisdom: n("$WIS"),
+            dexterity: n("$DEX"),
+            endurance: n("$END"),
+            intellect: n("$INT"),
+            luck: n("$LCK"),
+            attackPower: n("$ap"),
+            spellPower: n("$sp"),
+            criticalChance: n("$tcr"),
+            criticalMultiplier: n("$scm"),
+            evasionChance: n("$tdo"),
+        };
+    }
     set walkSpeed(value: number) { call("player.setWalkSpeed", value); }
 
     /** Rests; with `full`, waits until HP and MP are full. */
@@ -856,6 +892,8 @@ export class Lite {
     set(key: string, value: boolean | number | string): void { call("lite.set", key, value); }
     /** A `litePreference.data.dOptions` value, e.g. "disRed". */
     getOption(key: string): unknown { return call("lite.getOption", key); }
+    /** Hides the other players' avatars (VibeSkua `Lite.HidePlayers`). */
+    set hidePlayers(v: boolean) { this.set("bHidePlayers", v); }
     set untargetSelf(v: boolean) { this.set("bUntargetSelf", v); }
     set untargetDead(v: boolean) { this.set("bUntargetDead", v); }
     set customDropsUI(v: boolean) { this.set("bCustomDrops", v); }

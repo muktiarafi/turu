@@ -49,6 +49,23 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   Intervals are in milliseconds and run at 20 ms at the fastest. They run between your bot calls
   and during `bot.sleep`, never inside another handler, but not while a single long engine wait
   is blocking (such as `bot.wait.forMapLoad`); they run at the next call after it.
+- **Background tasks** (C#'s `Task.Run` and `new Thread`): `core/CoreTasks.ts` runs a generator
+  function beside the script, stepped like a handler. `yield 500` waits 500 ms, `yield until(() =>
+  cond, 10)` waits like `bot.wait.forTrue` and gives back whether `cond` came true:
+
+  ```ts
+  import { tasks, until } from "../core/CoreTasks";
+  tasks.start("walk", function* () {
+      bot.player.walkTo(x, y);
+      yield until(() => Math.abs(bot.player.x - x) < 40, 10);
+      yield 2000;
+  });
+  tasks.running("walk"); // still going?
+  tasks.cancel("walk");  // ends it, running its `finally` blocks
+  ```
+
+  Wait with `yield` inside a task: `bot.sleep` there blocks the whole script. `scripts/README.md`
+  ("Ultras") maps the C# forms.
 - **Stopping**: `bot.events.on("scriptStopping", (error) => ...)` runs once the script was
   stopped (Stop, `bot.stop()`) or failed (`error` is the message), but not when `main` returns,
   like VibeSkua's `ScriptStopping`. The handler can still use the bot; the Script Loader shows
