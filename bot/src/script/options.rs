@@ -107,7 +107,8 @@ impl Declaration {
         let plain_name = !storage.is_empty()
             && !storage.starts_with('.')
             && storage.chars().all(|c| {
-                c.is_alphanumeric() || matches!(c, '_' | '-' | ' ' | '.' | '(' | ')' | '[' | ']')
+                c.is_alphanumeric()
+                    || matches!(c, '_' | '-' | ' ' | '.' | '(' | ')' | '[' | ']' | '%')
             });
         if !plain_name {
             return Err(format!(
@@ -478,8 +479,10 @@ mod tests {
         assert!(decl.check().is_ok());
         decl.storage = "../escape".into();
         assert!(decl.check().is_err());
-        // VibeSkua's names keep their brackets (`HardCoreMetals[mem](Daily)`).
+        // VibeSkua's names keep their brackets and percent signs (`HardCoreMetals[mem](Daily)`, `1%Capes`).
         decl.storage = "HardCoreMetals[mem](Daily)".into();
+        assert!(decl.check().is_ok());
+        decl.storage = "1%Capes".into();
         assert!(decl.check().is_ok());
         decl.storage = "Sample".into();
         decl.options[1].default_value = json!("zero");
