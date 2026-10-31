@@ -50,6 +50,16 @@ impl QuestRunner {
         self.shared.registry.lock().quests.clone()
     }
 
+    /// `Registered` with VibeSkua `RegisteredRewards`: each quest and its reward (-1: none).
+    pub fn registered_rewards(&self) -> Vec<(i64, i64)> {
+        let registry = self.shared.registry.lock();
+        registry
+            .quests
+            .iter()
+            .map(|id| (*id, registry.rewards.get(id).copied().unwrap_or(-1)))
+            .collect()
+    }
+
     /// VibeSkua `RegisterQuests((questId, rewardId)...)`: registers the quests, adds the
     /// rewards (and, once loaded, the non-temporary requirements) to the drop list, starts
     /// the drop loop and the "Quest Thread", which every 2 s accepts the registered quests

@@ -274,6 +274,12 @@ fn drops_pickup_sends_get_drop() {
     assert_eq!(call(&bot, "drops.toPickupIds", json!([])), json!([5]));
     call(&bot, "drops.remove", json!([[5]]));
     assert_eq!(call(&bot, "drops.toPickupIds", json!([])), json!([]));
+
+    assert_eq!(call(&bot, "drops.interval", json!([])), json!(0));
+    call(&bot, "drops.setInterval", json!([250]));
+    assert_eq!(call(&bot, "drops.interval", json!([])), json!(250));
+    call(&bot, "drops.setInterval", json!([-5]));
+    assert_eq!(call(&bot, "drops.interval", json!([])), json!(0));
 }
 
 #[test]
@@ -297,6 +303,21 @@ fn quests_read_the_tree() {
         json!("Dragon Hunt")
     );
     assert_eq!(call(&bot, "quests.get", json!([9])), Value::Null);
+}
+
+#[test]
+fn registered_quests_keep_their_rewards() {
+    let (bot, _) = setup();
+    bot.quests.register(&bot, &[(1234, 99), (5, -1)]);
+    assert_eq!(bot.quests.registered_rewards(), vec![(1234, 99), (5, -1)]);
+    // The reward goes to the drop list, which starts the pickup loop.
+    assert!(bot.drops.to_pickup_ids().contains(&99));
+    assert!(bot.drops.running());
+    bot.quests.unregister(&[1234]);
+    assert_eq!(bot.quests.registered_rewards(), vec![(5, -1)]);
+    bot.quests.unregister_all();
+    bot.drops.stop();
+    assert!(bot.quests.registered_rewards().is_empty());
 }
 
 #[test]

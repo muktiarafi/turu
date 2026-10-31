@@ -46,7 +46,7 @@ panel colour with an accent line on top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Game, Application, CoreBots, Current Drops, Skills, Stats, Logs, Logger | implemented |
+| Script Loader, Game, Application, CoreBots, Current Drops, Skills, Stats, Runtime, Logs, Logger | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -164,6 +164,19 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
 * **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,
   DEATHS, PICKUPS, ACCEPTED, COMPLETED, RE-LOGINS, Reset. The STORAGE section is not built.
+* **Runtime** (`runtime.rs`, 955x596, VibeSkua `RuntimeHelpersView`): two columns. DROPS HELPER:
+  the pickup list (`bot.drops`: names, then IDs), multi-select with Remove Selected; "Drop Name
+  (e.g. Unidentified 13)" with Add Drop (`|`-separated, a number is an item ID; Enter adds too);
+  Interval (ms) (`drops.interval`, waited on top of the loop's 1 s tick), Reject Else, Accept AC
+  Drops (the game option); Pick Drops starts or stops the pickup loop (accent while it runs).
+  Notifications (VibeSkua's Notify Drop beeper) is greyed. QUESTS HELPER: the registered quests
+  ("1234 (Reward: 99)"), Remove Selected, "Quest ID" (several with `,` `|` or spaces) and "Reward
+  ID (opt)" with Add Quest (`bot.quests.register`, which also starts the pickup loop). BOOSTS
+  HELPER: Search Inventory / Search Bank (`boosts.setAllIds` through `spawn_action`), the four
+  boosts with their switch and "ID: n", Use Boosts starting or stopping the timer. The lists
+  and switches are the bot's own state, so a script's changes show at once; what you set here
+  lasts until the script ends (its end stops the loops, turns the boosts off and unregisters the
+  quests, as before).
 * **Skills** (`skills.rs`): "Saved Skills" tab: Load Classes, class and mode combos from
   `bot.paths.load_advanced_skills()`, the skill entries with their rules as text, Refresh.
   "Create / Edit Skill" is a "Coming soon" placeholder; Open, Edit Selected, Remove Selected and
@@ -187,8 +200,8 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
 Not built at all (greyed in the menus): Scheduler, Application Themes,
-HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Runtime, Console, Spammer,
-Interceptor, Plugins, Auto Hunt.
+HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Console, Spammer,
+Interceptor, Plugins, Auto Hunt, Notify Drop.
 
 ## Adding a window
 

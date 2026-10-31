@@ -90,3 +90,15 @@ fn the_timer_uses_a_wanted_boost_only_while_it_is_inactive() {
     bot.boosts.stop();
     assert_eq!(game.sent.lock().len(), 1);
 }
+
+#[test]
+fn set_all_ids_sets_each_boost_from_the_inventory() {
+    let game = Arc::new(FakeGame::default());
+    let bot = bot_with(&game);
+    bot.boosts.set_id(BoostType::Class, 77);
+    boosts::set_all_ids(&bot, false).unwrap();
+    assert_eq!(bot.boosts.id(BoostType::Gold), 5000);
+    // None in the inventory: the old ID is cleared, as VibeSkua sets it to 0.
+    assert_eq!(bot.boosts.id(BoostType::Class), 0);
+    assert_eq!(bot.boosts.id(BoostType::Experience), 0);
+}

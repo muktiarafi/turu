@@ -19,6 +19,7 @@ mod logs;
 mod message_box;
 mod nav_bar;
 mod packet_logger;
+mod runtime;
 mod script_loader;
 mod script_options;
 mod script_repo;
@@ -44,6 +45,7 @@ pub struct Windows {
     pub core_bots: bool,
     pub skills: bool,
     pub stats: bool,
+    pub runtime: bool,
     pub logs: bool,
     pub packet_logger: bool,
     pub current_drops: bool,
@@ -83,6 +85,7 @@ struct TabUi {
     core_bots: core_bots::CoreBotsWindow,
     skills: skills::SkillsWindow,
     stats: stats::StatsWindow,
+    runtime: runtime::RuntimeWindow,
     logs: logs::LogsWindow,
     packet_logger: packet_logger::PacketLogger,
     current_drops: current_drops::CurrentDrops,
@@ -163,6 +166,7 @@ impl TuruUi {
         tab.core_bots.show(ctx, &mut w.core_bots);
         tab.current_drops.show(ctx, &mut w.current_drops);
         tab.stats.show(ctx, &mut w.stats);
+        tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
         tab.logs.show(ctx, &picker, &mut w.logs);
         tab.packet_logger.show(ctx, &picker, &mut w.packet_logger);

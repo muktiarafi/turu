@@ -669,6 +669,8 @@ export class Boosts {
     getBoostId(type: BoostType, searchBank = true): number { return call("boosts.getBoostId", type, searchBank); }
     /** Finds the boost item of `type` (see {@link getBoostId}) and sets it as its ID. */
     setBoostIdFromInventory(type: BoostType, searchBank = true): void { this.setBoostId(type, this.getBoostId(type, searchBank)); }
+    /** Sets every boost's ID from the inventory (and, with `searchBank`, the bank) (VibeSkua `SetAllBoostsIDs`). */
+    setAllBoostIds(searchBank = true): void { call("boosts.setAllIds", searchBank); }
     /** True while a boost of `type` is active on your character. */
     isActive(type: BoostType): boolean { return call("boosts.isActive", type); }
     /** Uses the boost item `id` now. */
@@ -689,6 +691,9 @@ export class Drops {
     get rejectElse(): boolean { return call("drops.rejectElse"); }
     /** Reject every drop the pickup loop doesn't accept. */
     set rejectElse(value: boolean) { call("drops.setRejectElse", value); }
+    /** Milliseconds the pickup loop waits on top of its 1 s tick (VibeSkua `Interval`). */
+    get interval(): number { return call("drops.interval"); }
+    set interval(ms: number) { call("drops.setInterval", ms); }
 
     exists(item: string | number): boolean { return call("drops.exists", item); }
     /** Adds names or IDs to the pickup list (the loop picks them up). */

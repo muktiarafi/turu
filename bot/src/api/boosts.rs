@@ -190,6 +190,21 @@ pub fn get_boost_id(bot: &Bot, boost: BoostType, search_bank: bool) -> BotResult
     Ok(id)
 }
 
+/// VibeSkua `SetAllBoostsIDs(searchBank)`: sets each boost's ID to the item
+/// [`get_boost_id`] finds (0 when there is none), in C#'s order.
+pub fn set_all_ids(bot: &Bot, search_bank: bool) -> BotResult<()> {
+    for boost in [
+        BoostType::Class,
+        BoostType::Gold,
+        BoostType::Experience,
+        BoostType::Reputation,
+    ] {
+        let id = get_boost_id(bot, boost, search_bank)?;
+        bot.boosts.set_id(boost, id);
+    }
+    Ok(())
+}
+
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
     let boosts = &bot.boosts;
     match name {
@@ -222,6 +237,10 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             BoostType::parse(args.str(0)?)?,
             args.bool_or(1, true),
         )?),
+        "setAllIds" => {
+            set_all_ids(bot, args.bool_or(0, true))?;
+            ok(())
+        }
         _ => Err(BotError::UnknownMethod(format!("boosts.{name}"))),
     }
 }

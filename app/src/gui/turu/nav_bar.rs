@@ -187,7 +187,9 @@ impl NavBar {
             if item(ui, "Stats", true) {
                 windows.stats = true;
             }
-            item(ui, "Runtime", false);
+            if item(ui, "Runtime", true) {
+                windows.runtime = true;
+            }
         });
         if ui.add(Button::new("Bank")).clicked() {
             crate::turu::spawn_action("Bank", |bot| dispatch(bot, "bank.open", &[]).map(|_| ()));

@@ -197,7 +197,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   data; the Options window's Report section and QR code only built, not looked at. Not built:
   browser notifications.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
-  Options, Game, Application and CoreBots options, Skills, Stats, Logs, Logger, Current Drops, Auto, Jump).
+  Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Logger, Current Drops, Auto, Jump).
+  Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; its
+  Notifications button (Notify Drop) isn't built.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
@@ -298,7 +300,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
-  Loader, Grabber, Junk Items, Runtime, Console, Spammer, Interceptor, Plugins, the skills
+  Loader, Grabber, Junk Items, Notify Drop, Console, Spammer, Interceptor, Plugins, the skills
   editor, Auto Hunt (`docs/turu/UI.md` has the full list).
 - No release packaging yet: Mugetsu's `../mugetsu/source/build-*.sh` still need a Turu version.
 

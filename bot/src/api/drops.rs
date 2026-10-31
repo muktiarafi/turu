@@ -12,7 +12,7 @@ use crate::skills::{Worker, nap};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -25,6 +25,8 @@ pub struct DropRunner {
     to_pickup_ids: Mutex<Vec<i64>>,
     /// Reject everything the loop doesn't pick up (VibeSkua `RejectElse`).
     reject_else: AtomicBool,
+    /// Milliseconds the loop waits on top of its 1 s tick (VibeSkua `Interval`).
+    interval: AtomicU64,
     worker: Worker,
 }
 
@@ -55,6 +57,15 @@ impl DropRunner {
 
     pub fn set_reject_else(&self, value: bool) {
         self.reject_else.store(value, Ordering::Relaxed);
+    }
+
+    /// VibeSkua `Drops.Interval`: added to the loop's 1 s tick.
+    pub fn interval(&self) -> u64 {
+        self.interval.load(Ordering::Relaxed)
+    }
+
+    pub fn set_interval(&self, ms: u64) {
+        self.interval.store(ms, Ordering::Relaxed);
     }
 
     /// VibeSkua `Drops.Add(names|ids)`: adds what isn't in the list yet.
@@ -112,7 +123,7 @@ fn drop_loop(weak: &Weak<Bot>, cancel: &AtomicBool) {
             Ok(true) => {}
             _ => return,
         }
-        match drop_tick(&bot) {
+        match drop_tick(&bot, cancel) {
             Ok(()) => {}
             Err(BotError::Stopped) => return,
             Err(e) => tracing::debug!("Error in drop handler: {e}"),
@@ -121,8 +132,12 @@ fn drop_loop(weak: &Weak<Bot>, cancel: &AtomicBool) {
 }
 
 /// One pass of VibeSkua `HandleDrops`.
-fn drop_tick(bot: &Bot) -> BotResult<()> {
+fn drop_tick(bot: &Bot, cancel: &AtomicBool) -> BotResult<()> {
     if !player::playing(bot)? {
+        return Ok(());
+    }
+    let interval = bot.drops.interval();
+    if interval > 0 && !nap(bot, interval, cancel)? {
         return Ok(());
     }
     let (accept_all, accept_ac, reject_all) = {
@@ -278,6 +293,11 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "rejectElse" => ok(bot.drops.reject_else()),
         "setRejectElse" => {
             bot.drops.set_reject_else(args.bool_or(0, false));
+            ok(())
+        }
+        "interval" => ok(bot.drops.interval()),
+        "setInterval" => {
+            bot.drops.set_interval(args.i64_or(0, 0).max(0) as u64);
             ok(())
         }
         "exists" => ok(bot.state.lock().drop_exists(args.name_or_id(0)?)),
