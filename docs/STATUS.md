@@ -110,6 +110,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   CoreFarms' reputations, CoreNSOD and 11 CoreNation members (`scripts/README.md`, "Core content
   areas", lists them, the 23 hand-fixed files and 8 C# bugs fixed on purpose). All type-check and
   load; none has run in game.
+- **Seasonal scripts:** every script in the C# `Seasonal/` folder (the 235 left, drafted by
+  cs2ts) but `CheckForDonatedACs` (Army), with CoreBots' `playerAFK` (`scripts/README.md`,
+  "Seasonal", lists the 9 hand-fixed files and 4 C# bugs fixed on purpose). All type-check and
+  load; none has run in game.
 - **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
   progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
   UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
@@ -250,13 +254,13 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/README.md`): voucher
   turn-ins check the Gems not the Diamonds, the member voucher isn't sold before the quests that
   need it, the Dwobo shop map name, and smaller guard and loop fixes. Only type-checked.
-- **The converted scripts are unverified in game:** 1158 of the 1201 files cs2ts made (586 for
-  the merges, 282 for Story, 333 for the core content areas) are drafts (their first line says so)
+- **The converted scripts are unverified in game:** 1384 of the 1436 files cs2ts made (586 for
+  the merges, 282 for Story, 333 for the core content areas, 235 for Seasonal) are drafts (their first line says so)
   that type-check and load but weren't read through by hand; expect C#/TS differences the types
   don't show (integer division, culture-dependent formats, async C# rewritten as handlers).
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
-  packets). Left to port: 514 scripts outside the Ultras folders (`Seasonal` 236, `Other` 187,
-  `Tools` 37, `Army` 22, `Templates` 15, `Prototypes` 10, ...) with cs2ts the same way, and the
+  packets). Left to port: 279 scripts outside the Ultras folders (`Other` 187, `Tools` 37,
+  `Army` 22 and `Seasonal/Frostvale/CheckForDonatedACs`, `Templates` 15, `Prototypes` 10, ...) with cs2ts the same way, and the
   Ultras stay out.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
