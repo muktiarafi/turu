@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use turu_bot::cosmetics::avatar::{self, ColorChange};
-use turu_bot::cosmetics::{CosmeticItem, Library};
+use turu_bot::cosmetics::{CosmeticItem, Library, charpage};
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
 struct FakeGame {
@@ -267,4 +267,34 @@ fn copying_a_look_takes_gear_gender_and_colors_and_empties_the_rest() {
     assert_eq!(game.get("world.myAvatar.objData.intColorSkin"), json!(5));
     assert!(!bot.cosmetics.current().has_any_item());
     assert_eq!(avatar::room_player_names(&bot).unwrap(), ["ally"]);
+}
+
+#[test]
+fn a_character_page_look_is_applied_like_a_copied_one() {
+    let (bot, game, _library, _dir) = start();
+    let page = charpage::parse(
+        r#"<param name="FlashVars" value="&amp;strName=Lae&amp;strGender=F&amp;intColorBase=255&amp;strClassFile=Mage.swf&amp;strClassLink=Mage&amp;ArmorID=7&amp;CustHelmID=89450&amp;strCustHelmFile=items/helms/APIllusionSkinFace.swf&amp;strCustHelmLink=APIllusionSkinFace&amp;strCustHelmName=Unmasked&amp;strMiscFile=none" />"#,
+    )
+    .unwrap();
+    assert_eq!(
+        avatar::copy_char_page(&bot, &page).unwrap(),
+        "Copied look from Lae!"
+    );
+
+    assert_eq!(game.get("world.myAvatar.objData.strGender"), json!("F"));
+    assert_eq!(game.get("world.myAvatar.objData.intColorBase"), json!(255));
+    assert_eq!(game.get("world.myAvatar.objData.intColorTrim"), json!(2));
+    // The class shows in the armor slot; the helm from the Cust fields; the rest emptied.
+    assert_eq!(
+        game.get("world.myAvatar.objData.eqp.co.sFile"),
+        json!("Mage.swf")
+    );
+    assert_eq!(
+        game.get("world.myAvatar.objData.eqp.he.sFile"),
+        json!("items/helms/APIllusionSkinFace.swf")
+    );
+    assert_eq!(game.get("world.myAvatar.objData.eqp.Weapon"), Value::Null);
+    let current = bot.cosmetics.current();
+    assert_eq!(current.helm.map(|i| i.name), Some("Unmasked".to_owned()));
+    assert!(current.misc.is_none());
 }

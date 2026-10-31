@@ -7,6 +7,7 @@
 //! and gender. The avatar actions are in [`avatar`].
 
 pub mod avatar;
+pub mod charpage;
 
 use crate::models::{lenient_i64, lenient_string};
 use crate::paths::Paths;
@@ -590,6 +591,19 @@ pub fn group_digits(n: usize) -> String {
     out
 }
 
+/// .NET `Uri.EscapeDataString`: everything but `A-Z a-z 0-9 - _ . ~` as `%XX` (UTF-8).
+pub fn escape_data(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.~".contains(&byte) {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -632,6 +646,7 @@ mod tests {
         assert_eq!(Slot::from_group("ar"), Some(Slot::Armor));
         assert_eq!(group_digits(67334), "67,334");
         assert_eq!(group_digits(100), "100");
+        assert_eq!(escape_data("Horatio's Staff"), "Horatio%27s%20Staff");
     }
 
     #[test]

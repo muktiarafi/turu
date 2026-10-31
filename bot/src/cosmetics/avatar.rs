@@ -25,7 +25,8 @@ pub struct Colors {
 }
 
 impl Colors {
-    const FIELDS: [&'static str; 6] = [
+    /// The `objData` / `dataLeaf` fields, in order.
+    pub const FIELDS: [&'static str; 6] = [
         "intColorBase",
         "intColorTrim",
         "intColorAccessory",
@@ -602,17 +603,22 @@ fn copy_player_look(
     if gender.is_none() {
         gender = set.armor.as_ref().and_then(gender_of_armor);
     }
-    if let Some(gender) = gender {
-        set.gender = Some(gender);
+    set.gender = gender;
+    let colors = ColorChange(Colors::FIELDS.map(|field| json_int(avatar.get(field))));
+    apply_look(bot, &set, colors)?;
+    Ok(Ok(format!("Copied look from {name}!")))
+}
+
+/// Shows a copied look: its gender, its colors, then each slot's item, emptying the slots it
+/// has nothing in (the end of VibeSkua `CopyPlayerLookByEntIdAsync`).
+fn apply_look(bot: &Bot, set: &CosmeticSet, colors: ColorChange) -> BotResult<()> {
+    if let Some(gender) = set.gender {
         swap_gender(bot, Some(gender), false)?;
         bot.sleep(100)?;
     }
-
-    let colors = ColorChange(Colors::FIELDS.map(|field| json_int(avatar.get(field))));
     if !colors.is_empty() {
         set_colors(bot, colors, false)?;
     }
-
     for slot in Slot::ALL {
         match set.get(slot) {
             Some(item) => {
@@ -622,7 +628,21 @@ fn copy_player_look(
             None => unequip_slot(bot, slot.group())?,
         }
     }
-    Ok(Ok(format!("Copied look from {name}!")))
+    Ok(())
+}
+
+/// Turu: copies the look of any character from its account.aq.com character page (see
+/// [`super::charpage`]), even one that is offline or elsewhere.
+pub fn copy_char_page(bot: &Bot, page: &super::charpage::CharPage) -> Result<String, String> {
+    let result = (|| -> BotResult<Result<String, String>> {
+        if !logged_in(bot)? {
+            return Ok(Err("You are not logged in.".to_owned()));
+        }
+        capture_original_state(bot)?;
+        apply_look(bot, &page.set, page.colors)?;
+        Ok(Ok(format!("Copied look from {}!", page.name)))
+    })();
+    result.unwrap_or_else(|e| Err(format!("Failed to copy look: {e}")))
 }
 
 /// The other players in your room (VibeSkua `GetRoomPlayerNames`).

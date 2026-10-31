@@ -161,7 +161,8 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Attack.
 * **Cosmetics & Outfits** (`cosmetics.rs`, 900x620; VibeSkua's Cosmetics plugin, one per tab,
   the catalog shared): a quick bar (Copy Target Look, a room player list and Copy, Reset to Real
-  Gear, M / F / Swap gender, the last action's outcome) over four tabs. **Catalog**: search (an
+  Gear, M / F / Swap gender, a character name box with Copy from Character Page (Enter works
+  too), the last action's outcome) over four tabs. **Catalog**: search (an
   ID when it is a number, else the name), sort, Check Updates, the category chips (Weapon adds
   the weapon kind), a paged list (50 to 500 a page; double-click shows the item) and the
   selected item's card (Equip Look, favorite, Open on AQW Wiki). **Outfits & Inspector**: Save

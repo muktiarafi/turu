@@ -88,11 +88,16 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   any item on your avatar without owning it, client side only (`objData.eqp`, `loadMovieAtES`,
   the colors, a `genderSwap` packet to the client), from VibeSkua's 67,000-item community catalog
   (`cosmetics/catalog.json`, downloaded on first open); copies the targeted or a named room
-  player's gear, gender and colors, empties the slots they have nothing in, and Reset to Real
+  player's gear, gender and colors, empties the slots they have nothing in; Copy from Character
+  Page does the same for any character by name, offline or elsewhere, from the `FlashVars` of
+  its `account.aq.com/CharPage?id=<name>` page (`cosmetics/charpage.rs`; the page's hair isn't
+  applied). Reset to Real
   Gear puts the inventory's gear, gender and colors back. Favorites and saved outfits are shared
   by the tabs. Differences: the look's remembered colors and gender are forgotten at logout (a
   tab may log into another character); VibeSkua's `world.CHARS[id]` fallbacks are left out, as
-  its `getGameObject` can't read them. Tested against a fake game (`bot/tests/cosmetics.rs`);
+  its `getGameObject` can't read them. Tested against a fake game (`bot/tests/cosmetics.rs`)
+  and a saved page; an ignored test reads a real page
+  (`cargo test -p turu_bot charpage -- --ignored`);
   unverified in game and the window unverified on screen. Like VibeSkua, the look isn't put
   back after a map change or a respawn.
 - **Reputation and auras:** `bot.reputation` (VibeSkua `Bot.Reputation`: `factionList`, `getRank`,
@@ -341,6 +346,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   workspace). It reports two existing errors in `app/`: `redundant_clone` in `app/src/headless.rs`
   (`opt.player.parameters.clone()`) and `unused_async` in Ruffle's `app/src/gui/theme.rs`
   (`get_system_theme`).
+- **HTTPS in `turu_bot`:** the bot crate asks for reqwest's `native-tls` itself; without it a
+  `cargo test -p turu_bot` build could only fetch `http://` (the app got TLS from Ruffle's crates).
 - **Formatting:** the bot crate uses `cargo fmt`. The files in `app/src/gui/turu/` are
   formatted with `max_width = 120`, so format one file at a time
   (`rustfmt --edition 2024 --config max_width=120 <file>`). Running rustfmt on `mod.rs`

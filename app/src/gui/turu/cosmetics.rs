@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
 use turu_bot::cosmetics::avatar::{self, ColorChange, Colors};
-use turu_bot::cosmetics::{CosmeticItem, CosmeticSet, Library, Slot, WEAPON_KINDS, group_digits};
+use turu_bot::cosmetics::{CosmeticItem, CosmeticSet, Library, Slot, WEAPON_KINDS, charpage, group_digits};
 
 /// How often the room's players are read for the copy list.
 const PLAYERS_REFRESH: Duration = Duration::from_secs(3);
@@ -153,6 +153,8 @@ pub struct CosmeticsWindow {
     tab: Tab,
     players_read_at: Option<Instant>,
     room_player: String,
+    /// A character name for Copy from Character Page.
+    char_name: String,
     // Catalog.
     query: String,
     category: Category,
@@ -185,6 +187,7 @@ impl Default for CosmeticsWindow {
             tab: Tab::default(),
             players_read_at: None,
             room_player: String::new(),
+            char_name: String::new(),
             query: String::new(),
             category: Category::default(),
             weapon_kind: None,
@@ -429,6 +432,21 @@ impl CosmeticsWindow {
                     }
                 });
             });
+            // Turu: any character's look from its account.aq.com page.
+            ui.horizontal(|ui| {
+                let typed = widgets::text_box(ui, &mut self.char_name, "Character name", 180.0);
+                let entered = typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let clicked = widgets::button(ui, "Copy from Character Page", Kind::Normal, !busy, vec2(0.0, 26.0), "")
+                    .on_hover_text("Copy the gear, gender and colors shown on the character's account.aq.com page")
+                    .clicked();
+                if (clicked || entered) && !busy {
+                    let name = self.char_name.trim().to_owned();
+                    self.quick(&format!("Reading {name}'s character page..."), move |bot| {
+                        let page = charpage::fetch(&name)?;
+                        avatar::copy_char_page(bot, &page)
+                    });
+                }
+            });
             if !status.is_empty() {
                 ui.label(RichText::new(status).small().color(ACCENT));
             }
@@ -659,7 +677,10 @@ impl CosmeticsWindow {
                 library.toggle_favorite(&item);
             }
             if widgets::button(ui, "Open on AQW Wiki", Kind::Outline, true, vec2(width, 26.0), "").clicked() {
-                let url = format!("http://aqwwiki.wikidot.com/{}", escape_data(&item.name));
+                let url = format!(
+                    "http://aqwwiki.wikidot.com/{}",
+                    turu_bot::cosmetics::escape_data(&item.name)
+                );
                 if let Err(e) = webbrowser::open(&url) {
                     crate::turu::bot().log(format!("[Cosmetics] Failed to open browser: {e}"));
                 }
@@ -1085,19 +1106,6 @@ fn parse_hex(text: &str) -> Option<i64> {
     i64::from_str_radix(digits, 16).ok()
 }
 
-/// .NET `Uri.EscapeDataString`: everything but `A-Z a-z 0-9 - _ . ~` as `%XX` (UTF-8).
-fn escape_data(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-_.~".contains(&byte) {
-            out.push(byte as char);
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1108,6 +1116,5 @@ mod tests {
         assert_eq!(parse_hex(" ff "), Some(0xFF));
         assert_eq!(parse_hex("#"), None);
         assert_eq!(parse_hex("nope"), None);
-        assert_eq!(escape_data("Horatio's Staff"), "Horatio%27s%20Staff");
     }
 }
