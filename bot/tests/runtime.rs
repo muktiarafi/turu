@@ -479,7 +479,10 @@ fn repo_typescript_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         if path.is_dir() {
-            repo_typescript_files(&path, out);
+            // tools/cs2ts installs its npm packages there.
+            if path.file_name().is_some_and(|n| n != "node_modules") {
+                repo_typescript_files(&path, out);
+            }
         } else if path.extension().is_some_and(|e| e == "ts") {
             out.push(path);
         }

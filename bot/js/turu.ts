@@ -154,6 +154,10 @@ export interface QuestItem {
     name: string;
     quantity: number;
     temp: boolean;
+    /** The item's stack limit. */
+    maxStack: number;
+    /** A member-only item. */
+    upgrade: boolean;
 }
 
 export interface Quest {
@@ -337,6 +341,8 @@ export class GameMap {
     get cells(): string[] { return call("map.cells"); }
     get playerNames(): string[] { return call("map.playerNames"); }
     get playerCount(): number { return call("map.playerCount"); }
+    /** Names of the players in your cell, you included (VibeSkua `CellPlayers`). */
+    get cellPlayers(): string[] { return call("map.cellPlayers"); }
     get filePath(): string | null { return call("map.filePath"); }
     get lastMap(): string | null { return call("map.lastMap"); }
 

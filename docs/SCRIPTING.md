@@ -146,6 +146,11 @@ porting conventions (C# named flags become option objects, wait inside `Core.sle
 
 ## Porting a C# script
 
+`scripts/tools/cs2ts` does the first pass (`node tools/cs2ts/cs2ts.mjs <C# path>` in `scripts/`;
+`scripts/README.md`, "Converting with cs2ts"): it applies the steps below and marks what it can't
+convert. Then fix what `tsc` reports, read the draft against the C#, and remove its first-line
+marker. By hand:
+
 1. Mirror the path: `Nation/Materials/0MaxBags.cs` becomes `scripts/nation/materials/0MaxBags.ts`.
 2. Keep the header comment. `ScriptMain(IScriptInterface bot)` becomes
    `export default function main(): void`.

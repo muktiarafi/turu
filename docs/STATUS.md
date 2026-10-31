@@ -94,6 +94,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   medals), all of CoreStory (for the story scripts) and CoreDailies,
   `nation/materials/0MaxBags.ts`,
   `farm/GoldFarm.ts`, `farm/CombatTrophy.ts`, `other/various/Potions.ts` and `other/mergeshops/SynderesMerge.ts`.
+- **Merge scripts:** every merge outside the Ultras folders (436 more, 455 in all) and the 150
+  scripts they include, drafted by the converter `scripts/tools/cs2ts` (tree-sitter C# + the
+  TypeScript checker) and fixed by hand where it fell short; the Core members they reach were
+  added (`scripts/README.md`, "Merge scripts", lists them and 5 C# bugs fixed on purpose). All
+  type-check and load; none has run in game.
 - **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
   progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
   UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
@@ -234,6 +239,13 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/README.md`): voucher
   turn-ins check the Gems not the Diamonds, the member voucher isn't sold before the quests that
   need it, the Dwobo shop map name, and smaller guard and loop fixes. Only type-checked.
+- **The converted scripts are unverified in game:** 567 of the 586 files cs2ts made this round
+  are drafts (their first line says so) that type-check and load but weren't read through by
+  hand; expect C#/TS differences the types don't show (integer division, culture-dependent
+  formats, async C# rewritten as handlers). `bot.map.cellPlayers` reads each player's
+  `world.uoTree` cell (VibeSkua tracks them from packets). Left to port: the scripts that aren't
+  merges (`Story`, `Seasonal`, `Other`, `Nation`, ... about 1,100 files) with cs2ts the same way,
+  and the Ultras stay out.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

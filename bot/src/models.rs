@@ -305,6 +305,10 @@ pub struct QuestItem {
     pub name: String,
     pub quantity: i64,
     pub temp: bool,
+    /// The item's stack limit (`iStk`).
+    pub max_stack: i64,
+    /// A member-only item (`bUpg`).
+    pub upgrade: bool,
 }
 
 impl From<&ItemBase> for QuestItem {
@@ -314,6 +318,8 @@ impl From<&ItemBase> for QuestItem {
             name: item.name.trim().to_owned(),
             quantity: item.quantity,
             temp: item.temp,
+            max_stack: item.max_stack,
+            upgrade: item.upgrade,
         }
     }
 }

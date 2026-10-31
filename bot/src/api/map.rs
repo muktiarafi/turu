@@ -171,6 +171,28 @@ pub fn get_map_item(bot: &Bot, id: i64) -> BotResult<()> {
         .call_game_function("world.getMapItem", vec![id.into()])
 }
 
+/// The players in your cell, you included (VibeSkua `Map.CellPlayers`, by name): each of
+/// `world.areaUsers` whose `world.uoTree` entry is in your `strFrame`.
+pub fn cell_players(bot: &Bot) -> BotResult<Vec<String>> {
+    let f = &bot.flash;
+    let mine = player::cell(bot)?;
+    let names = f
+        .get_opt::<Vec<String>>("world.areaUsers")?
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for name in names {
+        let info: Option<Value> = f.get_key("world.uoTree", &name.to_lowercase())?;
+        let cell = info
+            .as_ref()
+            .and_then(|i| i.get("strFrame"))
+            .and_then(Value::as_str);
+        if cell.is_some_and(|c| c.eq_ignore_ascii_case(&mine)) {
+            out.push(name);
+        }
+    }
+    Ok(out)
+}
+
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
     let f = &bot.flash;
     match name {
@@ -184,6 +206,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             .get_opt::<Vec<String>>("world.areaUsers")?
             .unwrap_or_default()),
         "playerCount" => ok(f.get_or::<i64>("world.areaUsers.length", 0)?),
+        "cellPlayers" => ok(cell_players(bot)?),
         "filePath" => ok(bot.state.lock().map_file_path.clone()),
         "lastMap" => ok(bot.state.lock().last_map.clone()),
         "join" => ok(join(
