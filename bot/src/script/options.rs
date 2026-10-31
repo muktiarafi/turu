@@ -106,9 +106,9 @@ impl Declaration {
         let storage = self.storage.as_str();
         let plain_name = !storage.is_empty()
             && !storage.starts_with('.')
-            && storage
-                .chars()
-                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ' ' | '.' | '(' | ')'));
+            && storage.chars().all(|c| {
+                c.is_alphanumeric() || matches!(c, '_' | '-' | ' ' | '.' | '(' | ')' | '[' | ']')
+            });
         if !plain_name {
             return Err(format!(
                 "the storage \"{storage}\" must be a plain file name"
@@ -478,6 +478,9 @@ mod tests {
         assert!(decl.check().is_ok());
         decl.storage = "../escape".into();
         assert!(decl.check().is_err());
+        // VibeSkua's names keep their brackets (`HardCoreMetals[mem](Daily)`).
+        decl.storage = "HardCoreMetals[mem](Daily)".into();
+        assert!(decl.check().is_ok());
         decl.storage = "Sample".into();
         decl.options[1].default_value = json!("zero");
         assert!(decl.check().unwrap_err().contains("PotionQuant"));
