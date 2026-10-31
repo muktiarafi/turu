@@ -16,8 +16,9 @@ use crate::control::mark_script_thread;
 use crate::error::{BotError, BotResult};
 use crate::models::{Monster, Skill};
 use parking_lot::Mutex;
-use serde::Deserialize;
 use serde::de::{Deserializer, MapAccess, Visitor};
+use serde::ser::{SerializeMap, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 use std::marker::PhantomData;
@@ -256,28 +257,35 @@ pub fn parse_skills(text: &str) -> Vec<SkillCommand> {
         .collect()
 }
 
-struct Cursor {
-    c: Vec<char>,
-    pos: usize,
+pub(crate) struct Cursor {
+    pub(crate) c: Vec<char>,
+    pub(crate) pos: usize,
 }
 
 impl Cursor {
-    fn peek(&self) -> Option<char> {
+    pub(crate) fn new(text: &str) -> Self {
+        Self {
+            c: text.chars().collect(),
+            pos: 0,
+        }
+    }
+
+    pub(crate) fn peek(&self) -> Option<char> {
         self.c.get(self.pos).copied()
     }
 
-    fn at(&self, offset: usize) -> Option<char> {
+    pub(crate) fn at(&self, offset: usize) -> Option<char> {
         self.c.get(self.pos + offset).copied()
     }
 
-    fn skip_spaces(&mut self) {
+    pub(crate) fn skip_spaces(&mut self) {
         while self.peek() == Some(' ') {
             self.pos += 1;
         }
     }
 
     /// `>` is greater (consumed), `<` is consumed, anything else is "less".
-    fn comparison(&mut self) -> bool {
+    pub(crate) fn comparison(&mut self) -> bool {
         match self.peek() {
             Some('>') => {
                 self.pos += 1;
@@ -291,7 +299,7 @@ impl Cursor {
         }
     }
 
-    fn take_while(&mut self, f: impl Fn(char) -> bool) -> String {
+    pub(crate) fn take_while(&mut self, f: impl Fn(char) -> bool) -> String {
         let start = self.pos;
         while self.peek().is_some_and(&f) {
             self.pos += 1;
@@ -300,7 +308,7 @@ impl Cursor {
     }
 
     /// `"name"` with `\"` escapes, trimmed.
-    fn quoted(&mut self) -> String {
+    pub(crate) fn quoted(&mut self) -> String {
         self.pos += 1;
         let start = self.pos;
         while let Some(ch) = self.peek() {
@@ -321,13 +329,13 @@ impl Cursor {
     }
 
     /// Digits and dots as a float (0 when missing or malformed).
-    fn float(&mut self) -> f32 {
+    pub(crate) fn float(&mut self) -> f32 {
         let text = self.take_while(|ch| ch.is_ascii_digit() || ch == '.');
         text.parse().unwrap_or(0.0)
     }
 
     /// The aura target word: "target" if it contains it, else self.
-    fn target(&mut self) -> bool {
+    pub(crate) fn target(&mut self) -> bool {
         if self.peek().is_some_and(char::is_alphabetic) {
             let word = self.take_while(char::is_alphabetic);
             word.to_uppercase().contains("TARGET")
@@ -337,7 +345,7 @@ impl Cursor {
     }
 
     /// `<n>` then an optional `#` (flat) or `%`; `None` without digits.
-    fn amount(&mut self) -> Option<(i64, bool)> {
+    pub(crate) fn amount(&mut self) -> Option<(i64, bool)> {
         let digits = self.take_while(|ch| ch.is_ascii_digit());
         if digits.is_empty() {
             return None;
@@ -354,6 +362,39 @@ impl Cursor {
         }
         Some((value, percent))
     }
+
+    /// VibeSkua's unquoted aura (`A>Focus3`, `A>Focus 3`): the name up to the last run of
+    /// digits in the word, which is the stacks; else the name is the word and the stacks
+    /// follow it. `("", 0)` when neither has digits.
+    pub(crate) fn unquoted_aura(&mut self) -> (String, f32) {
+        let start = self.pos;
+        let (mut run_start, mut run_end) = (None, None);
+        while let Some(ch) = self.peek().filter(|&ch| ch != ' ') {
+            if ch.is_ascii_digit() {
+                run_start.get_or_insert(self.pos);
+                run_end = Some(self.pos + 1);
+            } else if run_start.is_some() && run_end == Some(self.pos) {
+                run_start = None;
+            }
+            self.pos += 1;
+        }
+        self.skip_spaces();
+        let value_start = self.pos;
+        let value = self.take_while(|ch| ch.is_ascii_digit() || ch == '.');
+        let text = |from: usize, to: usize| self.c[from..to].iter().collect::<String>();
+        if let (Some(from), Some(to)) = (run_start, run_end)
+            && to > from
+        {
+            (
+                text(start, from).trim().to_owned(),
+                text(from, to).parse().unwrap_or(0.0),
+            )
+        } else if let Ok(stacks) = value.parse() {
+            (text(start, value_start).trim().to_owned(), stacks)
+        } else {
+            (String::new(), 0.0)
+        }
+    }
 }
 
 /// VibeSkua `AdvancedSkillProvider.ParseUseRule`: the rules after the slot digit.
@@ -361,10 +402,7 @@ pub fn parse_use_rule(text: &str) -> Vec<UseRule> {
     if text.trim().is_empty() {
         return vec![UseRule::none()];
     }
-    let mut cur = Cursor {
-        c: text.chars().collect(),
-        pos: 0,
-    };
+    let mut cur = Cursor::new(text);
     let skip = cur.c.last() == Some(&'s');
     let mut rules = Vec::new();
     let mut multi = Vec::new();
@@ -536,17 +574,23 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Ordered<T> {
     }
 }
 
-#[derive(Deserialize)]
+// Written back as VibeSkua's `SaveToJson` does: nulls and false flags left out.
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SkillModeJson {
     #[serde(default = "default_use_mode")]
     skill_use_mode: String,
     #[serde(default = "default_timeout")]
     skill_timeout: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     reset_combo_on_target_change: bool,
     #[serde(default)]
     skills: Vec<SkillJson>,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 fn default_use_mode() -> String {
@@ -557,38 +601,52 @@ fn default_timeout() -> i64 {
     100
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct SkillJson {
     #[serde(default)]
     skill_id: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     rules: Option<Vec<RuleJson>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     skip_on_match: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     is_multi_aura: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     multi_aura_operator: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct RuleJson {
     #[serde(default, rename = "type")]
     kind: String,
-    #[serde(default)]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "whole_or_float"
+    )]
     value: Option<f32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     comparison: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     aura_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     aura_target: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     timeout: Option<i64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     is_percentage: Option<bool>,
+}
+
+/// `50` rather than `50.0`, as System.Text.Json writes a whole float.
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+fn whole_or_float<S: Serializer>(value: &Option<f32>, s: S) -> Result<S::Ok, S::Error> {
+    match value {
+        Some(v) if v.fract() == 0.0 && v.abs() < 1e15 => s.serialize_i64(*v as i64),
+        Some(v) => s.serialize_f32(*v),
+        None => s.serialize_none(),
+    }
 }
 
 /// `{value}` as C# prints a nullable float (nothing for null).
@@ -744,6 +802,237 @@ pub fn find_skill_set<'a>(
             .find(|s| s.mode.eq_ignore_ascii_case(mode.trim()))
             .unwrap_or(first),
     )
+}
+
+impl AdvancedSkill {
+    /// VibeSkua `AdvancedSkill.SaveString`, the Saved Skills list's line:
+    /// `Base = ArchMage = 1 | 2 | 3 | 4 = Use if Available` (the timeout when waiting).
+    pub fn save_string(&self) -> String {
+        let use_mode = match self.skill_use_mode {
+            SkillUseMode::UseIfAvailable => "Use if Available".to_owned(),
+            SkillUseMode::WaitForCooldown => self.skill_timeout.to_string(),
+        };
+        format!(
+            "{} = {} = {} = {use_mode}",
+            self.mode, self.class_name, self.skills
+        )
+    }
+
+    /// VibeSkua `AdvancedSkill.Equals`: the same class (exact name) in the same mode.
+    pub fn same_set(&self, other: &AdvancedSkill) -> bool {
+        self.class_name == other.class_name && self.mode.eq_ignore_ascii_case(&other.mode)
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Saving (AdvancedSkillContainer.TryOverride / Remove / SaveToJson, AdvancedSkillsParser)
+// ---------------------------------------------------------------------------------------
+
+/// VibeSkua `AdvancedSkillContainer.TryOverride`: replaces the set of the same class and
+/// mode, or adds it at the end.
+pub fn override_skill_set(sets: &mut Vec<AdvancedSkill>, set: AdvancedSkill) {
+    match sets.iter_mut().find(|s| s.same_set(&set)) {
+        Some(old) => *old = set,
+        None => sets.push(set),
+    }
+}
+
+/// A JSON object written in the order given.
+struct OrderedOut<'a, T>(&'a [(String, T)]);
+
+impl<T: Serialize> Serialize for OrderedOut<'_, T> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut map = s.serialize_map(Some(self.0.len()))?;
+        for (key, value) in self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+/// VibeSkua `SaveToJson`: the sets as `UserAdvancedSkills.json`, classes and modes in the
+/// order they come (a later set of the same class and mode wins).
+pub fn advanced_skills_json(sets: &[AdvancedSkill]) -> String {
+    let mut classes: Vec<(String, Vec<(String, SkillModeJson)>)> = Vec::new();
+    for set in sets {
+        let mode = SkillModeJson {
+            skill_use_mode: match set.skill_use_mode {
+                SkillUseMode::UseIfAvailable => "UseIfAvailable".into(),
+                SkillUseMode::WaitForCooldown => "WaitForCooldown".into(),
+            },
+            skill_timeout: set.skill_timeout,
+            reset_combo_on_target_change: set.reset_on_target,
+            skills: skill_string_to_json(&set.skills),
+        };
+        let index = match classes.iter().position(|(name, _)| *name == set.class_name) {
+            Some(i) => i,
+            None => {
+                classes.push((set.class_name.clone(), Vec::new()));
+                classes.len() - 1
+            }
+        };
+        let modes = &mut classes[index].1;
+        match modes.iter_mut().find(|(name, _)| *name == set.mode) {
+            Some((_, old)) => *old = mode,
+            None => modes.push((set.mode.clone(), mode)),
+        }
+    }
+    let classes: Vec<(String, OrderedOut<SkillModeJson>)> = classes
+        .iter()
+        .map(|(name, modes)| (name.clone(), OrderedOut(modes)))
+        .collect();
+    serde_json::to_string_pretty(&OrderedOut(&classes)).unwrap_or_default()
+}
+
+/// Writes the sets to the user's `UserAdvancedSkills.json` (what the bot and the Skills
+/// window read).
+pub fn save_advanced_skills(
+    paths: &crate::paths::Paths,
+    sets: &[AdvancedSkill],
+) -> std::io::Result<()> {
+    paths.ensure()?;
+    let file = paths.user_advanced_skills_file();
+    let temp = file.with_extension("json.tmp");
+    std::fs::write(&temp, advanced_skills_json(sets))?;
+    std::fs::rename(&temp, &file)
+}
+
+/// VibeSkua `AdvancedSkillsParser.ParseSkillString`: a skill string as the file's entries.
+fn skill_string_to_json(text: &str) -> Vec<SkillJson> {
+    text.split('|')
+        .filter_map(|entry| {
+            let trimmed = entry.trim();
+            let first = trimmed.chars().next()?;
+            let mut skill = SkillJson {
+                skill_id: first.to_digit(10)? as i64,
+                ..SkillJson::default()
+            };
+            let rest = trimmed[first.len_utf8()..].trim();
+            if trimmed.len() > first.len_utf8() {
+                let (rules, operator) = rules_to_json(rest);
+                skill.skip_on_match = rest.ends_with(['S', 's']);
+                skill.is_multi_aura = rules.iter().any(|r| r.kind == "MultiAura");
+                if skill.is_multi_aura {
+                    skill.multi_aura_operator = Some(operator.into());
+                }
+                skill.rules = Some(rules);
+            }
+            Some(skill)
+        })
+        .collect()
+}
+
+/// VibeSkua `AdvancedSkillsParser.ParseRules`: the rules (health, mana, party health and
+/// wait in their order, then the auras), `[None]` when there are none, and the multi-aura
+/// operator ("AND" or "OR").
+fn rules_to_json(text: &str) -> (Vec<RuleJson>, &'static str) {
+    let mut cur = Cursor::new(text);
+    let mut rules = Vec::new();
+    let mut single = Vec::new();
+    let mut multi = Vec::new();
+    let mut operator = "AND";
+    let upper = |ch: Option<char>| ch.map(|c| c.to_ascii_uppercase());
+    let comparison = |greater: bool| Some(if greater { "greater" } else { "less" }.to_owned());
+    let target = |target: bool| Some(if target { "target" } else { "self" }.to_owned());
+    while let Some(ch) = upper(cur.peek()) {
+        let next = upper(cur.at(1));
+        if ch == 'W' && next == Some('W') {
+            cur.pos += 2;
+            let digits = cur.take_while(|c| c.is_ascii_digit());
+            if !digits.is_empty() {
+                let timeout = digits.parse().unwrap_or(i64::MAX);
+                rules.push(RuleJson {
+                    kind: "Wait".into(),
+                    timeout: (timeout > 0).then_some(timeout),
+                    ..RuleJson::default()
+                });
+            }
+            cur.skip_spaces();
+        } else if (ch == 'P' && next == Some('H')) || ch == 'H' || (ch == 'M' && next != Some('A'))
+        {
+            let kind = match ch {
+                'P' => "PartyHealth",
+                'H' => "Health",
+                _ => "Mana",
+            };
+            cur.pos += if ch == 'P' { 2 } else { 1 };
+            let greater = cur.comparison();
+            if let Some((value, percent)) = cur.amount() {
+                rules.push(RuleJson {
+                    kind: kind.into(),
+                    value: Some(value as f32),
+                    comparison: comparison(greater),
+                    is_percentage: Some(percent),
+                    ..RuleJson::default()
+                });
+            }
+            cur.skip_spaces();
+        } else if ch == 'M' {
+            cur.pos += 2;
+            let greater = cur.comparison();
+            let name = if cur.peek() == Some('"') {
+                cur.quoted()
+            } else {
+                String::new()
+            };
+            cur.skip_spaces();
+            let stacks = cur.float();
+            cur.skip_spaces();
+            let on_target = cur.target();
+            if let Some(op @ ('&' | ':')) = cur.peek() {
+                operator = if op == ':' { "OR" } else { "AND" };
+                cur.pos += 1;
+            }
+            if !name.is_empty() {
+                multi.push(RuleJson {
+                    kind: "MultiAura".into(),
+                    aura_name: Some(name),
+                    aura_target: target(on_target),
+                    value: Some(stacks),
+                    comparison: comparison(greater),
+                    ..RuleJson::default()
+                });
+            }
+            cur.skip_spaces();
+        } else if ch == 'A' {
+            cur.pos += 1;
+            let greater = cur.comparison();
+            let (name, stacks) = if cur.peek() == Some('"') {
+                let name = cur.quoted();
+                cur.skip_spaces();
+                (name, cur.float())
+            } else {
+                cur.unquoted_aura()
+            };
+            cur.skip_spaces();
+            let on_target = cur.target();
+            if !name.is_empty() {
+                single.push(RuleJson {
+                    kind: "Aura".into(),
+                    value: Some(stacks),
+                    comparison: comparison(greater),
+                    aura_name: Some(name),
+                    aura_target: target(on_target),
+                    ..RuleJson::default()
+                });
+            }
+            cur.skip_spaces();
+        } else {
+            cur.pos += 1;
+            if ch == 'S' {
+                cur.skip_spaces();
+            }
+        }
+    }
+    rules.append(&mut single);
+    rules.append(&mut multi);
+    if rules.is_empty() {
+        rules.push(RuleJson {
+            kind: "None".into(),
+            ..RuleJson::default()
+        });
+    }
+    (rules, operator)
 }
 
 // ---------------------------------------------------------------------------------------

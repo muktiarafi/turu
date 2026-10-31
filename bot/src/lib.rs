@@ -23,6 +23,7 @@ pub mod paths;
 pub mod repo;
 pub mod script;
 pub mod settings;
+pub mod skill_editor;
 pub mod skills;
 pub mod startup;
 pub mod state;

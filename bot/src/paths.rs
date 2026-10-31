@@ -162,6 +162,14 @@ impl Paths {
         Ok(())
     }
 
+    /// VibeSkua `ResetSkillsSets`: replaces the user's sets with the shipped ones.
+    pub fn reset_advanced_skills(&self) -> io::Result<()> {
+        self.ensure()?;
+        let shipped = crate::DEFAULT_ADVANCED_SKILLS;
+        fs::write(self.default_advanced_skills_file(), shipped)?;
+        fs::write(self.user_advanced_skills_file(), shipped)
+    }
+
     /// The user's skill sets as JSON (synced with the shipped ones once per run).
     pub fn load_advanced_skills(&self) -> String {
         static SYNCED: Once = Once::new();

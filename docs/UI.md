@@ -177,10 +177,25 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   and switches are the bot's own state, so a script's changes show at once; what you set here
   lasts until the script ends (its end stops the loops, turns the boosts off and unregisters the
   quests, as before).
-* **Skills** (`skills.rs`): "Saved Skills" tab: Load Classes, class and mode combos from
-  `bot.paths.load_advanced_skills()`, the skill entries with their rules as text, Refresh.
-  "Create / Edit Skill" is a "Coming soon" placeholder; Open, Edit Selected, Remove Selected and
-  Reset Sets are disabled.
+* **Skills** (`skills.rs`, "Advanced Skills", 700x530, VibeSkua `AdvancedSkillsView`), two tabs.
+  Create / Edit Skill: SKILL TIMEOUT (0-5000 ms); SKILLS SEQUENCE, each skill as VibeSkua's line
+  ("4 - [Health > 50%] - [Skip if not available]"), with ↑ ↓, Edit (the Edit Rules modal:
+  the same rules, Confirm / Cancel; double-clicking a skill opens it too) and ✕; Class Name;
+  USE MODE (Wait for Cooldown / Use if available, Reset on Target Change); USE RULES (Enable
+  Rule, Multi Aura, Reset; Health, Mana and Party HP with ≥/≤ and %/#; one aura, or with Multi
+  Aura AND/OR, Add Aura and a row per aura; Skip if not available; Wait (ms)), then the 0-5
+  buttons, which add a skill with those rules; the mode drop-down (`CLASS_USE_MODES`) and Save
+  Skill, which replaces that class's set in that mode or adds it, and writes
+  `UserAdvancedSkills.json` (classes and modes kept in file order). Saved Skills: Load Classes,
+  the class and mode drop-downs, Open (that set into the editor); every set as VibeSkua's
+  `SaveString` ("Base = ArchMage = 1 | 2 | 3 | 4 = Use if Available"), double-click to edit;
+  Edit Selected, Remove Selected (saves at once), Refresh, Reset Sets (the shipped sets over
+  yours; Turu asks with a second click within 4 s, VibeSkua doesn't). The last save, removal or
+  reset shows below. The model and the file code are in the bot crate (`skill_editor.rs`,
+  `skills::advanced_skills_json`), tested in `bot/tests/skill_sets.rs`. Differences: Save
+  Skill needs a class name; a flat (#) value isn't capped at 100; a multi-aura `<` check after a
+  `>` one stays `<`, and a skip after `TARGET` survives a reload (VibeSkua loses both). A
+  running script keeps the set it loaded until it loads one again.
 * **CoreBots Options** (`core_bots.rs`, 800x608, VibeSkua `CoreBotsView`): profile (username or
   "Not logged in"), Load / Load character / Save, tabs Loadout / Options / Other. Loadout: Solo,
   Farm, Dodge and Boss cards (class from the enhanced classes you own plus `[Current]`, skill set
