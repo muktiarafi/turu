@@ -193,6 +193,45 @@ pub fn cell_players(bot: &Bot) -> BotResult<Vec<String>> {
     Ok(out)
 }
 
+/// Another player in your room (VibeSkua `Map.GetPlayer`): their `world.uoTree` entry, with
+/// VibeSkua `PlayerInfo`'s names; `None` when they aren't in the room. Tries three times, 50 ms
+/// apart, as VibeSkua does.
+pub fn get_player(bot: &Bot, username: &str) -> BotResult<Option<Value>> {
+    let key = username.to_lowercase();
+    for attempt in 0..3 {
+        let info: Option<Value> = bot.flash.get_key("world.uoTree", &key)?;
+        if let Some(info) = info.filter(Value::is_object) {
+            let text = |k: &str| info.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
+            let num = |k: &str| {
+                info.get(k)
+                    .and_then(|v| {
+                        v.as_f64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .unwrap_or(0.0)
+            };
+            return Ok(Some(serde_json::json!({
+                "name": text("uoName"),
+                "hp": num("intHP"),
+                "maxHp": num("intHPMax"),
+                "mp": num("intMP"),
+                "afk": info.get("afk").and_then(Value::as_bool).unwrap_or(false),
+                "entId": num("entID"),
+                "level": num("intLevel"),
+                "cell": text("strFrame"),
+                "pad": text("strPad"),
+                "x": num("tx"),
+                "y": num("ty"),
+                "state": num("intState"),
+            })));
+        }
+        if attempt < 2 {
+            bot.sleep(50)?;
+        }
+    }
+    Ok(None)
+}
+
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
     let f = &bot.flash;
     match name {
@@ -207,6 +246,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             .unwrap_or_default()),
         "playerCount" => ok(f.get_or::<i64>("world.areaUsers.length", 0)?),
         "cellPlayers" => ok(cell_players(bot)?),
+        "getPlayer" => ok(get_player(bot, args.str(0)?)?),
         "filePath" => ok(bot.state.lock().map_file_path.clone()),
         "lastMap" => ok(bot.state.lock().last_map.clone()),
         "join" => ok(join(

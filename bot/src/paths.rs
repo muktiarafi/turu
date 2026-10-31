@@ -182,6 +182,11 @@ impl Paths {
         self.root.join("butler")
     }
 
+    /// CoreArmyLite's sync logs (`bot.army.appendLog`), shared by every client.
+    pub fn army_dir(&self) -> PathBuf {
+        self.root.join("army")
+    }
+
     /// Butler's options (`butler::ButlerSettings`), shared by every client.
     pub fn butler_settings_file(&self) -> PathBuf {
         self.root.join("butler.json")

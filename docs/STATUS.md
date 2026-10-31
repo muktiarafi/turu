@@ -120,6 +120,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   the converter fixes; one of them, `Bot.Skills.StartAdvanced("1 | 4")` becoming a rotation
   instead of a class name, also fixed 7 earlier ports). All type-check and load; none has run in
   game.
+- **Army and Tools scripts:** `army/CoreArmyLite.ts` on Turu's several accounts, the Army
+  scripts (with the Ultras' army sync helpers in `army/CoreArmySync.ts`) and the in-game Tools.
+  New engine API `bot.army` (`bot/src/api/army.rs`): a sync log shared by every client of the
+  machine (C#'s Army log and sync files), the Army > Accounts usernames, logging in an account
+  with its keychain password (`doForAll`), and the army's private room numbers; and
+  `bot.map.getPlayer` / `playerExists` (VibeSkua `TryGetPlayer`). `scripts/README.md` ("Army",
+  "Tools") lists what differs from C#, the three Ultra-engine Army scripts that are logged skips,
+  the skipped tools and why, and 4 C# bugs fixed on purpose. All type-check and load; none has
+  run in game, and the shared log and keychain login are only unit-tested.
 - **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
   progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
   UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
@@ -260,14 +269,15 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/README.md`): voucher
   turn-ins check the Gems not the Diamonds, the member voucher isn't sold before the quests that
   need it, the Dwobo shop map name, and smaller guard and loop fixes. Only type-checked.
-- **The converted scripts are unverified in game:** 1554 of the 1624 files cs2ts made (586 for
-  the merges, 282 for Story, 333 for the core content areas, 235 for Seasonal, 188 for Other) are drafts (their first line says so)
+- **The converted scripts are unverified in game:** 1559 of the 1658 files cs2ts made (586 for
+  the merges, 282 for Story, 333 for the core content areas, 235 for Seasonal, 188 for Other, 34 for
+  Army and Tools) are drafts (their first line says so)
   that type-check and load but weren't read through by hand; expect C#/TS differences the types
   don't show (integer division, culture-dependent formats, async C# rewritten as handlers).
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
-  packets). Left to port: `Tools` (37) and `Army` (22) with
-  `Seasonal/Frostvale/CheckForDonatedACs`; `Templates`, the unused `Prototypes`, the generator and
-  the Ultras stay out.
+  packets). Nothing is left to port but what is
+  skipped on purpose: the Ultras, `Templates`, the unused `Prototypes`, the generator, and the
+  Tools listed in `scripts/README.md`.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

@@ -5,6 +5,7 @@
 //! functions the rest of the engine calls. Method names are camelCase, exactly as in
 //! `bot/js/turu.ts`; keep the two in sync.
 
+pub mod army;
 pub mod auras;
 pub mod boosts;
 pub mod combat;
@@ -64,6 +65,7 @@ pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value
         "reputation" => reputation::dispatch(bot, name, args),
         "self" => auras::dispatch(bot, auras::Subject::Self_, name, args),
         "target" => auras::dispatch(bot, auras::Subject::Target, name, args),
+        "army" => army::dispatch(bot, name, args),
         "flash" => flash_dispatch(bot, name, args),
         _ => Err(BotError::UnknownMethod(method.to_owned())),
     }

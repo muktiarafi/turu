@@ -149,6 +149,23 @@ export interface AuraSnapshot {
     description: string;
 }
 
+/** Another player in your room (VibeSkua `PlayerInfo`, `world.uoTree`). */
+export interface PlayerInfo {
+    name: string;
+    hp: number;
+    maxHp: number;
+    mp: number;
+    afk: boolean;
+    entId: number;
+    level: number;
+    cell: string;
+    pad: string;
+    x: number;
+    y: number;
+    /** 0 dead, 1 idle, 2 fighting. */
+    state: number;
+}
+
 export interface QuestItem {
     id: number;
     name: string;
@@ -341,6 +358,13 @@ export class GameMap {
     get cells(): string[] { return call("map.cells"); }
     get playerNames(): string[] { return call("map.playerNames"); }
     get playerCount(): number { return call("map.playerCount"); }
+    /**
+     * Another player in your room (VibeSkua `Map.GetPlayer` / `TryGetPlayer`), from
+     * `world.uoTree`; null when they aren't in it.
+     */
+    getPlayer(username: string): PlayerInfo | null { return call("map.getPlayer", username); }
+    /** Whether a player is in your room (VibeSkua `Map.PlayerExists`). */
+    playerExists(username: string): boolean { return this.getPlayer(username) !== null; }
     /** Names of the players in your cell, you included (VibeSkua `CellPlayers`). */
     get cellPlayers(): string[] { return call("map.cellPlayers"); }
     get filePath(): string | null { return call("map.filePath"); }
@@ -370,6 +394,42 @@ export class Reputation {
     getRank(faction: string | number): number { return call("reputation.getRank", faction); }
     /** Whether your rank in the faction is at least `rank`. */
     hasRank(faction: string | number, rank = 1): boolean { return call("reputation.hasRank", faction, rank); }
+}
+
+/**
+ * `bot.army`: what VibeSkua's CoreArmyLite reads outside the game, for scripts that run on
+ * several accounts at once (Army > Accounts) or log in each account in turn.
+ */
+export class Army {
+    /**
+     * The lines of a sync log every client of this machine shares (`army/<name>.log` in the
+     * data folder; C# `ArmyLogging`'s file in Skua's options folder). None before the first line.
+     */
+    readLog(name: string): string[] { return call("army.readLog", name); }
+    /** Appends a line to the shared log (C# `ArmyLogging.WriteLog`). */
+    appendLog(name: string, line: string): void { call("army.appendLog", name, line); }
+    /** Replaces the shared log's lines at once (C# CoreUltra rewriting its army sync file). */
+    writeLog(name: string, lines: string[]): void { call("army.writeLog", name, lines); }
+    /** Empties the shared log (C# `ArmyLogging.ClearLogFile`). */
+    clearLog(name: string): void { call("army.clearLog", name); }
+    /** The usernames in Army > Accounts, in list order (VibeSkua `Bot.Accounts.GetAllAccounts()`). */
+    accounts(): string[] { return call("army.accounts"); }
+    /**
+     * Logs in with an Army > Accounts account, the password read from the system keychain (the
+     * script never sees it); false when the account has no saved password. Like
+     * `bot.servers.login`, it stops at the server list.
+     */
+    login(username: string): boolean { return call("army.login", username); }
+    /**
+     * The private room number every client of this machine picks this hour (C# CoreArmyLite
+     * `getRoomNr`): 5 digits from a hash of the data folder, your user name and the hour.
+     */
+    roomNumber(): number { return call("army.roomNumber"); }
+    /**
+     * A private room number every client of this machine picks, always the same (the Ultras'
+     * CoreEngine `GenerateRoomID`, from 1000 to 99999): a hash of the data folder and user name.
+     */
+    machineRoomNumber(): number { return call("army.machineRoomNumber"); }
 }
 
 /** The aura members `bot.self` and `bot.target` share (VibeSkua `IScriptSelfAuras`/`IScriptTargetAuras`). */
@@ -1221,6 +1281,8 @@ export class Bot {
     readonly events = new Events();
     readonly handlers = new Handlers();
     readonly flash = new Flash();
+    /** Several accounts: CoreArmyLite's shared log, Army > Accounts, the army's room. */
+    readonly army = new Army();
 
     /** Writes a line to the script log. */
     log(message: unknown): void { call("log", typeof message === "string" ? message : JSON.stringify(message)); }
