@@ -293,16 +293,16 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
-- **Search Scripts is unverified against GitHub:** `muktiarafi/turu-scripts` isn't published
-  yet, so the tests run it against a fake repository (statuses, deps, the zip, reset, bad paths
-  and hashes). Until it is, the launch-time update logs a failed fetch. Check the raw and
-  codeload URLs, the ETag 304 and the CI's `index` branch once it's pushed. Scripts made for a
+- **Search Scripts' tests use a fake repository** (statuses, deps, the zip, reset, bad paths
+  and hashes). `muktiarafi/turu-scripts` is public now, with its `index` branch; the raw and
+  codeload downloads and the ETag 304 against it aren't covered by a test. Scripts made for a
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
   Loader, Grabber, Junk Items, Notify Drop, Console, Spammer, Interceptor, Plugins, the skills
   editor, Auto Hunt (`docs/UI.md` has the full list).
-- No release packaging yet: Mugetsu's `../mugetsu/source/build-*.sh` still need a Turu version.
+- **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
+  speed profile (PGO), and the macOS app is signed ad hoc, not notarized.
 
 ## Things to know
 

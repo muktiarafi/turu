@@ -11,11 +11,12 @@
 
 A cross-platform (macOS, Windows, Linux) bot client for AdventureQuest Worlds.
 
-Turu works like [VibeSkua](../VibeSkua) (same windows, same flow, same game-side `skua.swf`),
-but runs anywhere:
+Turu works like [VibeSkua](https://github.com/NinjaXz/VibeSkua) (same windows, same flow, same
+game-side `skua.swf`), but runs anywhere:
 
-- **Flash player:** [Ruffle](https://ruffle.rs) with [Mugetsu](../mugetsu)'s AQW patches,
-  drawing with Metal, Vulkan or DirectX 12.
+- **Flash player:** [Ruffle](https://ruffle.rs) with
+  [Mugetsu](https://github.com/mugetsu-aqw/mugetsu)'s AQW patches, drawing with Metal, Vulkan or
+  DirectX 12.
 - **Bot engine:** Rust (`bot/`).
 - **Scripts:** TypeScript with full type information. No compiling step: the app loads
   `.ts` files directly.
@@ -23,6 +24,26 @@ but runs anywhere:
 The Flash player comes from [ruffle-aqw](https://github.com/muktiarafi/ruffle-aqw) (Ruffle with
 Mugetsu's patches), the `ruffle/` submodule. Turu builds on its crates and keeps its own app
 (`app/`) and engine (`bot/`).
+
+## Download
+
+[Releases](https://github.com/muktiarafi/turu/releases) has packages for Windows (x86-64),
+macOS (one app for Apple silicon and Intel) and Linux (x86-64). They're alpha builds. macOS
+doesn't know the app (it isn't notarized): if it won't open the first time, allow it in
+System Settings > Privacy & Security, or run `xattr -dr com.apple.quarantine Turu.app`.
+
+To build it yourself, read on.
+
+## Get the code
+
+```bash
+git clone --recursive https://github.com/muktiarafi/turu.git
+```
+
+Both submodules are needed: `ruffle/` ([ruffle-aqw](https://github.com/muktiarafi/ruffle-aqw),
+the Flash player's crates) for every build, `scripts/`
+([turu-scripts](https://github.com/muktiarafi/turu-scripts)) for the tests and the type-check.
+In a clone made without `--recursive`, run `git submodule update --init`.
 
 ## Requirements
 
@@ -81,15 +102,12 @@ cargo build -p turu --profile dist --no-default-features --features software_vid
 
 Binaries land in `target/debug/turu` and `target/dist/turu` (`.exe` on Windows).
 
-Packaging, including the macOS `.app`, the speed profile (PGO) and the Windows resources,
-follows Mugetsu's scripts in `../mugetsu/source/build-*.sh` / `build-windows.ps1`. A Turu
-version of those scripts isn't written yet.
+Releases are built by `.github/workflows/release.yml`: pushing a tag such as `v0.1.0-alpha.2`
+tests the engine and scripts, builds the `dist` profile for each platform, makes the macOS
+`.app` and publishes a GitHub release (a tag with a `-` makes a pre-release). Mugetsu's speed
+profile (PGO) isn't used yet.
 
 ## Test
-
-`scripts/` is a submodule ([turu-scripts](https://github.com/muktiarafi/turu-scripts)); the tests
-and the type-check need it: clone with `--recursive`, or run `git submodule update --init`. `ruffle/` is one too, and every build
-needs it.
 
 ```bash
 cargo test -p turu_bot                                   # engine + script runtime (fake game, no login needed)
@@ -149,14 +167,15 @@ the `skua.swf` copy live in:
 | Windows | `%APPDATA%\Turu` |
 | Linux | `~/.local/share/Turu` |
 
-Ruffle's own log is in its cache folder (`~/Library/Caches/ruffle/log` on macOS,
+The player's log is in Ruffle's cache folder (`~/Library/Caches/ruffle/log` on macOS,
 `%LOCALAPPDATA%\ruffle\log` on Windows, `~/.cache/ruffle/log` on Linux).
 
 ## Status
 
-The engine, the main windows, CoreBots Options and the 0MaxBags and GoldFarm ports work, and
-are being tested in game. Auto-relogin, the script browser and the skills editor aren't built
-yet. [docs/STATUS.md](docs/STATUS.md) lists what works and what's missing.
+Alpha. The engine, auto-relogin, the main windows, Search Scripts, Army and the web monitor
+work, and the ported scripts are being tested in game. Several of VibeSkua's tools (the skills
+editor, Scheduler, Loadouts, ...) aren't built yet. [docs/STATUS.md](docs/STATUS.md) lists what
+works and what's missing.
 
 ## License
 
