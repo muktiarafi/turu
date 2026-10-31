@@ -84,6 +84,17 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   AntiLag while following, the quest bypass table, quest cloning, the level fake, V5's debug
   log viewer (Butler logs to the script and debug logs), the suspend message box, and an offline write when the window
   closes (the heartbeat ages out instead). Unverified in game.
+- **Cosmetics** (Plugins > Cosmetics, `bot/src/cosmetics/`, VibeSkua's Cosmetics plugin): shows
+  any item on your avatar without owning it, client side only (`objData.eqp`, `loadMovieAtES`,
+  the colors, a `genderSwap` packet to the client), from VibeSkua's 67,000-item community catalog
+  (`cosmetics/catalog.json`, downloaded on first open); copies the targeted or a named room
+  player's gear, gender and colors, empties the slots they have nothing in, and Reset to Real
+  Gear puts the inventory's gear, gender and colors back. Favorites and saved outfits are shared
+  by the tabs. Differences: the look's remembered colors and gender are forgotten at logout (a
+  tab may log into another character); VibeSkua's `world.CHARS[id]` fallbacks are left out, as
+  its `getGameObject` can't read them. Tested against a fake game (`bot/tests/cosmetics.rs`);
+  unverified in game and the window unverified on screen. Like VibeSkua, the look isn't put
+  back after a map change or a respawn.
 - **Reputation and auras:** `bot.reputation` (VibeSkua `Bot.Reputation`: `factionList`, `getRank`,
   `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
   `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in

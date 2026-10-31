@@ -36,7 +36,7 @@ The windows are not scaled with the window height (Mugetsu's `z`): they keep Vib
 (Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
 Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
 Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
-Interceptor), **Plugins** (View Plugins, Butler), **Army** (Accounts, Army Control, New Tab; Turu's:
+Interceptor), **Plugins** (View Plugins, Butler, Cosmetics), **Army** (Accounts, Army Control, New Tab; Turu's:
 VibeSkua has them in its Manager app and its tabbed host). Right side: **Auto**, **Jump**, a
 divider, **+**.
 
@@ -159,6 +159,16 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   passive attack, leech mode, always goto, goto delay, rescue threshold, park location) and
   for this account (class type, obey summons), saved on change. Following stops the tab's Auto
   Attack.
+* **Cosmetics & Outfits** (`cosmetics.rs`, 900x620; VibeSkua's Cosmetics plugin, one per tab,
+  the catalog shared): a quick bar (Copy Target Look, a room player list and Copy, Reset to Real
+  Gear, M / F / Swap gender, the last action's outcome) over four tabs. **Catalog**: search (an
+  ID when it is a number, else the name), sort, Check Updates, the category chips (Weapon adds
+  the weapon kind), a paged list (50 to 500 a page; double-click shows the item) and the
+  selected item's card (Equip Look, favorite, Open on AQW Wiki). **Outfits & Inspector**: Save
+  Current Look, the saved outfits (Equip, double-click), the inspector (a slot's Equip, Equip
+  Full Set, Delete Set). **Color Custom (CC)**: six hex boxes with a color picker each, Apply
+  Palette, Read Avatar Colors, VibeSkua's eight presets. **Manual SWF**: file, link, slot and
+  meta, Inject.
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.

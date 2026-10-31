@@ -10,6 +10,7 @@ pub mod butler;
 pub mod cbo;
 pub mod control;
 pub mod control_api;
+pub mod cosmetics;
 pub mod error;
 pub mod events;
 pub mod flash;
@@ -79,6 +80,8 @@ pub struct Bot {
     pub butler: butler::Butler,
     /// Keeps `gear/<username>.json` current (the launcher's view of this account's gear).
     pub gear: gear::GearCache,
+    /// What Cosmetics shows over the real gear (VibeSkua's Cosmetics plugin).
+    pub cosmetics: cosmetics::Look,
     pub paths: paths::Paths,
 }
 
@@ -109,6 +112,7 @@ impl Bot {
             monitor: monitor::Sampler::default(),
             butler: butler::Butler::new(&paths),
             gear: gear::GearCache::default(),
+            cosmetics: cosmetics::Look::default(),
             paths,
         });
         background::start(&bot);
@@ -116,6 +120,7 @@ impl Bot {
         monitor::start(&bot);
         butler::start(&bot);
         gear::start(&bot);
+        cosmetics::avatar::start(&bot);
         bot
     }
 

@@ -200,6 +200,11 @@ impl Paths {
         self.root.join("army")
     }
 
+    /// Cosmetics' catalog, favorites and outfits (`cosmetics::Library`), shared by every client.
+    pub fn cosmetics_dir(&self) -> PathBuf {
+        self.root.join("cosmetics")
+    }
+
     /// Butler's options (`butler::ButlerSettings`), shared by every client.
     pub fn butler_settings_file(&self) -> PathBuf {
         self.root.join("butler.json")

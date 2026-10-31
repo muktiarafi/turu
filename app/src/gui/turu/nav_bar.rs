@@ -211,6 +211,10 @@ impl NavBar {
             if item(ui, "Butler", true) {
                 windows.butler = true;
             }
+            // Turu: VibeSkua's Cosmetics plugin, built in.
+            if item(ui, "Cosmetics", true) {
+                windows.cosmetics = true;
+            }
         });
         // Turu: VibeSkua has these in its Manager app and its tabbed host's "Army Control" menu.
         ui.menu_button("Army", |ui| {

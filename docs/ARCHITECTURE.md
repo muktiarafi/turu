@@ -35,6 +35,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     accounts.rs          the account list (`accounts.json`); passwords in the system keychain
     army.rs              launching one `turu` process per account and steering them via their API
     butler/              Butler (VibeSkua's ButlerV5 plugin): sync files, summons, the follower
+    cosmetics/           Cosmetics (VibeSkua's Cosmetics plugin): the item catalog, favorites and
+                         outfits (`Library`, shared by the tabs), and the client-side avatar changes
     gear.rs              each account's gear file, equipping and loading the bank from outside a
                          script (`/equip`, `/bank/load`), refused while a script runs
     events.rs            inbound Flash calls (`pext`, `packet`, `loaded`, ...) -> state + event bus
@@ -175,6 +177,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `accounts.json` | Army > Accounts: accounts, groups, the launch setup (no passwords: those are in the system keychain, service "Turu") |
 | `settings.json` | application settings (Options > Application, `bot/src/settings.rs`), saved on every change |
 | `butler.json` | Butler's options, shared by every client (re-read when another client changes it) |
+| `cosmetics/` | Cosmetics' `catalog.json` (VibeSkua's community item sheet, downloaded on first open and by Check Updates), `favorites.json` and `outfits.json`, shared by every client |
 | `gear/<username>.json` | each account's wearable items (inventory, and the bank as last loaded, dated `bankAsOf`), written by its client within 5 s of a change (`bot/src/gear.rs`); the Army Control Gear window reads it |
 | `butler/<username>.state` | each logged-in account's Butler state (`key=value` lines, `bot/src/butler/sync.rs`): where it is, whom it summons and follows, a `beat` every 5 s; older than 15 s counts as offline |
 | `scripts/` | the scripts folder: Search Scripts downloads here (the repo's `scripts/` can be used directly) |

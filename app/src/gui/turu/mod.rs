@@ -11,6 +11,7 @@ mod auto;
 mod butler;
 mod client_logs;
 mod core_bots;
+mod cosmetics;
 mod current_drops;
 mod files;
 mod game_options;
@@ -52,6 +53,7 @@ pub struct Windows {
     pub accounts: bool,
     pub army: bool,
     pub butler: bool,
+    pub cosmetics: bool,
 }
 
 /// A tool window below the nav bar; `slot` staggers the default positions.
@@ -90,6 +92,7 @@ struct TabUi {
     packet_logger: packet_logger::PacketLogger,
     current_drops: current_drops::CurrentDrops,
     butler: butler::ButlerWindow,
+    cosmetics: cosmetics::CosmeticsWindow,
 }
 
 pub struct TuruUi {
@@ -171,6 +174,7 @@ impl TuruUi {
         tab.logs.show(ctx, &picker, &mut w.logs);
         tab.packet_logger.show(ctx, &picker, &mut w.packet_logger);
         tab.butler.show(ctx, &mut w.butler);
+        tab.cosmetics.show(ctx, &mut w.cosmetics);
         stop_auto_while_following();
         let (accounts, army) = (std::mem::take(&mut w.accounts), std::mem::take(&mut w.army));
         self.accounts_open |= accounts;
