@@ -62,13 +62,18 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
   the players run on the event loop thread and are ticked every loop; only the active one is
-  drawn and heard (the others are muted). Flash calls name their tab, and `turu::bot()` is the
+  drawn and heard (the others are muted). Hidden tabs that are in game run at 2 FPS in LOW
+  quality, as VibeSkua's tabbed host throttles them (`WM_SKUA_THROTTLE`), and get their rate
+  and quality back when shown (`state.hidden_tab`, applied with Headless Mode in
+  `api/options.rs`; tabs at the login screen keep full speed, so logins aren't slowed). Flash calls name their tab, and `turu::bot()` is the
   active tab's bot, so the UI and `spawn_action` act on the tab you look at; each tab keeps its
   own tool windows, Auto Attack and nav bar state (Accounts and Army Control are shared). The
   tab strip shows above the nav bar once there are two tabs: the name (character, else login),
-  a dot while its script or Auto Attack runs, × to close (stops its script), + for a new tab at
-  the login screen (also Army > New Tab). Checked by hand: opening, switching and closing a
-  second tab at the login screen.
+  a dot while its script or Auto Attack runs (a yellow "!" while its script waits for its
+  Script Options window or a message box, which show when you open that tab; Army Control
+  says so too), × to close (stops its script), + for a new tab at the login screen (also
+  Army > New Tab). Checked by hand: opening, switching and closing a second tab at the login
+  screen, and the "!" for a message box in a hidden tab; the throttling only in tests.
 - **Butler** (Plugins > Butler, `bot/src/butler/`, VibeSkua's ButlerV5 plugin): each client writes
   its account's state to `butler/<username>.state` every 500 ms (when it changed, else every
   5 s as a heartbeat; 15 s old is offline, as tabs share a PID). A master summons accounts by
@@ -231,10 +236,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 ## Known gaps
 
 - **Tabs share one thread and one process:** every tab's game runs on the event loop thread, so
-  many busy tabs slow each other down (VibeSkua's processes use several cores), and a crash in
-  one (release builds abort on panic) closes them all; "In its own window" keeps an account
-  apart. A script's Script Options window or message box in a background tab waits until you
-  open that tab. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
+  busy tabs slow each other down (VibeSkua's processes use several cores; hidden tabs in game
+  run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
+  all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
   login), as VibeSkua's processes do. `--api` steers the first tab only. Not built: VibeSkua's
   Grid View, Start/Stop Auto-Attack for All, Army Scheduler and per-squad Army Queue. Logging
   in and farming in several tabs is unverified with real accounts.

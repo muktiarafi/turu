@@ -46,9 +46,13 @@ pub struct GameState {
     pub last_hunt_jump: Option<Instant>,
     /// What `options::apply` last pushed into the game.
     pub options_applied: crate::api::options::Applied,
-    /// The game's frame rate when Headless Mode turned on, restored when it turns off
-    /// (kept across relogins, unlike `options_applied`).
-    pub fps_before_headless: Option<i32>,
+    /// The game's frame rate and quality when it was slowed down (Headless Mode, or a hidden
+    /// tab), restored when neither applies any more (kept across relogins, unlike
+    /// `options_applied`).
+    pub before_slowed: Option<(i32, String)>,
+    /// This client is a tab the window doesn't show: [`crate::api::options::apply`] slows its
+    /// game down (VibeSkua's tabbed host `WM_SKUA_THROTTLE`).
+    pub hidden_tab: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

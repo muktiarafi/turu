@@ -323,3 +323,43 @@ fn set_fps_zero_leaves_the_game_frame_rate_alone() {
     assert_eq!(frame_rates(&game).last(), Some(&FlashArg::Number(30.0)));
     assert_eq!(frame_rates(&game).len(), 3);
 }
+
+#[test]
+fn hidden_tabs_slow_down_and_come_back() {
+    let game = FakeGame::new();
+    game.set("stage.frameRate", "24");
+    game.set("stage.quality", "\"MEDIUM\"");
+    let bot = new_bot(&game);
+    options::apply(&bot).unwrap();
+
+    // VibeSkua's tabbed host: a hidden tab runs at 2 FPS in LOW quality.
+    bot.state.lock().hidden_tab = true;
+    options::apply(&bot).unwrap();
+    options::apply(&bot).unwrap();
+    assert_eq!(frame_rates(&game), [FlashArg::Number(2.0)]);
+    assert_eq!(qualities(&game), ["LOW"]);
+
+    // Headless Mode while hidden changes nothing; shown again, the tab stays slowed by it.
+    bot.options.write().headless_mode = true;
+    options::apply(&bot).unwrap();
+    bot.state.lock().hidden_tab = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(frame_rates(&game), [FlashArg::Number(2.0)]);
+
+    // Neither: the rate and quality from before.
+    bot.options.write().headless_mode = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(
+        frame_rates(&game),
+        [FlashArg::Number(2.0), FlashArg::Number(24.0)]
+    );
+    assert_eq!(qualities(&game), ["LOW", "MEDIUM"]);
+}
+
+fn qualities(game: &FakeGame) -> Vec<String> {
+    game.calls_to("setGameObject")
+        .into_iter()
+        .filter(|a| arg(a, 0) == "stage.quality")
+        .map(|a| arg(&a, 1))
+        .collect()
+}

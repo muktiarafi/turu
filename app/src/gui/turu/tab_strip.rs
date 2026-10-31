@@ -1,8 +1,9 @@
 //! The tab strip above the nav bar (VibeSkua's `TabbedHostWindow`), once there are two tabs:
 //! one tab per game client, named after its character, with a dot while its script or Auto
-//! Attack runs, "×" to close it, and "+" for a new one at the login screen.
+//! Attack runs ("!" when its script waits for you), "×" to close it, and "+" for a new one at
+//! the login screen.
 
-use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK};
+use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
 use crate::gui::TAB_STRIP_HEIGHT;
 use crate::turu::{self, TabRequest};
 use egui::{Align2, Color32, CornerRadius, FontId, Frame, Margin, Panel, RichText, ScrollArea, Sense, Ui, pos2, vec2};
@@ -34,7 +35,8 @@ impl TabStrip {
                             let active = turu::active_tab();
                             for (tab, bot) in turu::tabs() {
                                 let busy = bot.scripts.status().is_active() || super::auto::running(&bot);
-                                tab_button(ui, tab, &turu::tab_label(&bot), tab == active, busy);
+                                let waits = bot.scripts.waits_for();
+                                tab_button(ui, tab, &turu::tab_label(&bot), tab == active, busy, waits);
                             }
                             let plus = ui
                                 .add(egui::Button::new(RichText::new("+").size(16.0)).frame(false))
@@ -50,7 +52,7 @@ impl TabStrip {
     }
 }
 
-fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bool) {
+fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bool, waits: Option<&str>) {
     let height = TAB_STRIP_HEIGHT as f32 - 3.0;
     let galley = ui
         .painter()
@@ -82,7 +84,22 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
         ui.painter().rect_filled(edge, 0.0, EDGE);
     }
     let dot = pos2(rect.left() + 12.0, rect.center().y);
-    ui.painter().circle_filled(dot, 3.5, if busy { SUCCESS } else { MUTED });
+    match waits {
+        // The script waits for an answer only this tab can give: a warning badge.
+        Some(_) => {
+            ui.painter().circle_filled(dot, 6.0, WARNING);
+            ui.painter().text(
+                dot,
+                Align2::CENTER_CENTER,
+                "!",
+                FontId::proportional(10.0),
+                Color32::BLACK,
+            );
+        }
+        None => {
+            ui.painter().circle_filled(dot, 3.5, if busy { SUCCESS } else { MUTED });
+        }
+    }
     let text_rect = egui::Rect::from_min_max(
         pos2(rect.left() + 22.0, rect.top()),
         pos2(close_rect.left() - 4.0, rect.bottom()),
@@ -110,7 +127,14 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
     }
     if close.on_hover_text("Close this tab (stops its script)").clicked() {
         turu::request_tab(TabRequest::Close(tab));
-    } else if response.on_hover_text(label).clicked() && !active {
+    } else if response
+        .on_hover_text(match waits {
+            Some(what) => format!("{label}: its script waits for you ({what})"),
+            None => label.to_owned(),
+        })
+        .clicked()
+        && !active
+    {
         turu::request_tab(TabRequest::Select(tab));
     }
 }

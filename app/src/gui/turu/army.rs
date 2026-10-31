@@ -168,10 +168,12 @@ impl Row {
     fn of_tab(tab: TabId, bot: &Arc<Bot>) -> Self {
         let status = bot.scripts.status();
         let logged_in = bot.gear.logged_in();
-        let summary = match bot.state.lock().last_map.clone() {
-            Some(map) if logged_in => map,
-            _ if logged_in => "logged in".into(),
-            _ => "login screen".into(),
+        let waits = bot.scripts.waits_for();
+        let summary = match (waits, bot.state.lock().last_map.clone()) {
+            (Some(what), _) => format!("waits for you: {what} (Show)"),
+            (None, Some(map)) if logged_in => map,
+            (None, _) if logged_in => "logged in".into(),
+            (None, _) => "login screen".into(),
         };
         Self {
             key: format!("tab:{tab:?}"),
@@ -179,7 +181,11 @@ impl Row {
             tab: Some(tab),
             username: bot.butler.username(),
             headless: false,
-            color: if status.is_active() { SUCCESS } else { MUTED },
+            color: match () {
+                _ if waits.is_some() => WARNING,
+                _ if status.is_active() => SUCCESS,
+                _ => MUTED,
+            },
             summary,
             error: None,
             script: bot.scripts.loaded().map(|p| (file_name(Some(&p)), status.is_active())),

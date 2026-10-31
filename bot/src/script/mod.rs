@@ -271,6 +271,18 @@ impl ScriptManager {
         *self.configure.lock()
     }
 
+    /// What the script waits for the user to answer, if anything: its Script Options window
+    /// or a message box. In a tab the window doesn't show, it waits until that tab is shown.
+    pub fn waits_for(&self) -> Option<&'static str> {
+        if self.configure_request().is_some() {
+            Some("Script Options")
+        } else if self.message_box.lock().open.is_some() {
+            Some("a message box")
+        } else {
+            None
+        }
+    }
+
     /// The UI closed the Script Options window it opened for `request` (Save or Cancel).
     pub fn finish_configure(&self, request: u64) {
         let mut pending = self.configure.lock();

@@ -909,6 +909,7 @@ impl MainWindow {
                 self.player.remove_tab(tab);
                 turu::remove_tab(tab);
                 let active = turu::active_tab();
+                turu::set_active_tab(active);
                 self.player.select_tab(active);
                 self.gui.set_tab_volumes(&self.player);
             }

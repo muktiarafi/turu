@@ -151,7 +151,8 @@ pub(crate) fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
     Some(removed)
 }
 
-/// Makes the tab the active one; false when there's no such tab.
+/// Makes the tab the active one; false when there's no such tab. The others' games slow down
+/// once in game (VibeSkua's tabbed host throttles hidden tabs: `options::apply`).
 pub(crate) fn set_active_tab(tab: TabId) -> bool {
     let mut tabs = tabs_lock();
     let tabs = tabs.as_mut().expect("made by tabs_lock");
@@ -159,6 +160,9 @@ pub(crate) fn set_active_tab(tab: TabId) -> bool {
         return false;
     }
     tabs.active = tab;
+    for (id, bot) in &tabs.list {
+        bot.state.lock().hidden_tab = *id != tab;
+    }
     true
 }
 

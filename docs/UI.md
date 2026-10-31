@@ -41,8 +41,9 @@ VibeSkua has them in its Manager app and its tabbed host). Right side: **Auto**,
 divider, **+**.
 
 With two tabs or more, a 30 px tab strip (`tab_strip.rs`) sits above the nav bar
-(`gui::top_height`): rounded tabs with a status dot, the name and ×, the active one in the
-panel colour with an accent line on top, and + at the end.
+(`gui::top_height`): rounded tabs with a status dot (a yellow "!" badge while the tab's script
+waits for you), the name and ×, the active one in the panel colour with an accent line on
+top, and + at the end.
 
 | Item | State |
 |---|---|

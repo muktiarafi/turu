@@ -22,6 +22,8 @@ pub struct Applied {
     show_fps: Option<bool>,
     set_fps: Option<i32>,
     headless: Option<bool>,
+    /// 2 FPS and LOW quality: Headless Mode, or a hidden tab.
+    slowed: Option<bool>,
     walk_speed: Option<i32>,
     custom_name: Option<String>,
     custom_guild: Option<String>,
@@ -102,32 +104,43 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
     if changed(&mut a.show_fps, o.show_fps) {
         bot.flash.set("ui.mcFPS.visible", o.show_fps)?;
     }
+    // VibeSkua `OnHeadlessModeChanged` and the tabbed host's `WM_SKUA_THROTTLE` (a hidden tab,
+    // unless Headless Mode already slows it): 2 FPS and LOW quality. Leaving both restores the
+    // rate and quality the game had (VibeSkua's Headless Mode: Set FPS), unless Set FPS forces
+    // a rate.
     let headless_changed = changed(&mut a.headless, o.headless_mode);
-    if headless_changed {
-        // VibeSkua `OnHeadlessModeChanged`, except that turning it off restores the rate the
-        // game had (VibeSkua: Set FPS) unless Set FPS forces one.
-        let (fps, quality, volume) = if o.headless_mode {
-            if bot.state.lock().fps_before_headless.is_none() {
-                let current = bot.flash.get::<f64>("stage.frameRate")?.round() as i32;
-                bot.state.lock().fps_before_headless = Some(current);
+    let slowed = o.headless_mode || bot.state.lock().hidden_tab;
+    if changed(&mut a.slowed, slowed) {
+        if slowed {
+            if bot.state.lock().before_slowed.is_none() {
+                let fps = bot.flash.get::<f64>("stage.frameRate")?.round() as i32;
+                let quality = bot.flash.get_or::<String>("stage.quality", "HIGH".into())?;
+                bot.state.lock().before_slowed = Some((fps, quality));
             }
-            (2, "LOW", 0)
+            bot.flash.set("stage.frameRate", 2)?;
+            bot.flash.set("stage.quality", "LOW")?;
         } else {
-            let before = bot.state.lock().fps_before_headless.take();
-            let fps = if o.set_fps > 0 {
-                o.set_fps
-            } else {
-                before.unwrap_or(crate::settings::GAME_FRAME_RATE)
+            let before = bot.state.lock().before_slowed.take();
+            let fps = match &before {
+                _ if o.set_fps > 0 => o.set_fps,
+                Some((fps, _)) if *fps > 2 => *fps,
+                _ => crate::settings::GAME_FRAME_RATE,
             };
-            (fps, "HIGH", 1)
-        };
-        bot.flash.set("stage.frameRate", fps)?;
-        bot.flash.set("stage.quality", quality)?;
-        bot.flash
-            .set("world.rootClass.mixer.soundTransform.volume", volume)?;
+            let quality = before
+                .map(|(_, q)| q)
+                .filter(|q| !q.is_empty() && !q.eq_ignore_ascii_case("low"))
+                .unwrap_or_else(|| "HIGH".into());
+            bot.flash.set("stage.frameRate", fps)?;
+            bot.flash.set("stage.quality", quality.as_str())?;
+        }
         a.set_fps = Some(o.set_fps);
     }
-    if !o.headless_mode && a.set_fps != Some(o.set_fps) {
+    if headless_changed {
+        let volume = if o.headless_mode { 0 } else { 1 };
+        bot.flash
+            .set("world.rootClass.mixer.soundTransform.volume", volume)?;
+    }
+    if !slowed && a.set_fps != Some(o.set_fps) {
         // Set FPS 0 leaves the frame rate to the game's own setting.
         if o.set_fps > 0 {
             bot.flash.set("stage.frameRate", o.set_fps)?;
