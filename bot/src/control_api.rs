@@ -19,13 +19,19 @@
 //! | `POST /player/goto?name=` | Go to a player (`/goto`). |
 //! | `POST /house` | Go to your house. |
 //! | `POST /quests/register?id=[&reward=]` | Accept and turn in a quest in the background (`bot.quests.registerQuests`). |
+//! | `GET /gear` | The account's gear file (`crate::gear`), read from the game now. |
+//! | `POST /equip?item=[&stop=1]` | Put an item on (name or ID), from the bank if needed: the `EquipReport`. |
+//! | `POST /bank/load[?stop=1]` | Load the bank into the gear file. |
+//!
+//! `/equip` and `/bank/load` answer 409 while a script runs, unless `stop=1`: then the script
+//! is stopped first and stays stopped.
 //!
 //! The Army window sends these to the clients it launched (`crate::army`), and to its own
 //! client through [`local`].
 
-use crate::Bot;
 use crate::api::{map, player, send, servers};
 use crate::log::LogKind;
+use crate::{Bot, gear};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
@@ -294,10 +300,30 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             bot.quests.register(bot, &[(id, reward)]);
             ok(json!({ "registered": bot.quests.registered() }))
         }
+        ("/gear", false) => match gear::refresh(bot) {
+            Ok(Some(file)) => ok(serde_json::to_value(file).unwrap_or(Value::Null)),
+            Ok(None) => error(409, "not logged in"),
+            Err(e) => error(500, e.to_string()),
+        },
+        ("/equip", true) => {
+            let Some(item) = query("item") else {
+                return error(400, "item is missing");
+            };
+            let stop = query("stop").as_deref() == Some("1");
+            match gear::equip(bot, &[gear::name_or_id(&item)], stop) {
+                Ok(report) => ok(serde_json::to_value(report).unwrap_or(Value::Null)),
+                Err(e) => error(e.status(), e.to_string()),
+            }
+        }
+        ("/bank/load", true) => match gear::load_bank(bot, query("stop").as_deref() == Some("1")) {
+            Ok((file, stopped)) => ok(json!({ "gear": file, "stoppedScript": stopped })),
+            Err(e) => error(e.status(), e.to_string()),
+        },
         (
             "/status" | "/snapshot" | "/script/load" | "/script/start" | "/script/stop"
             | "/script/pause" | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout"
-            | "/map/join" | "/player/goto" | "/house" | "/quests/register",
+            | "/map/join" | "/player/goto" | "/house" | "/quests/register" | "/gear" | "/equip"
+            | "/bank/load",
             _,
         ) => error(405, "wrong method"),
         _ => error(404, "no such route"),

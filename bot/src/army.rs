@@ -64,6 +64,8 @@ pub struct Client {
     pub label: String,
     pub headless: bool,
     pub started: Instant,
+    /// What it was launched with, without the password (Restart reads it again).
+    launch: Launch,
     api: SocketAddr,
     token: String,
     child: Mutex<Child>,
@@ -140,6 +142,18 @@ pub enum Command {
     },
     /// Set bot options (Options > Game names, camelCase).
     SetOptions(Value),
+    Relogin,
+    /// Put an item on (name or ID); with `stop`, stop the running script first.
+    Equip {
+        item: String,
+        stop: bool,
+    },
+    /// Load the bank into the gear file; with `stop`, stop the running script first.
+    LoadBank {
+        stop: bool,
+    },
+    /// Write the gear file from the game now.
+    RefreshGear,
 }
 
 impl Command {
@@ -157,6 +171,10 @@ impl Command {
             Self::JumpHouse => "Go to house".into(),
             Self::AcceptQuest { id, .. } => format!("Register quest {id}"),
             Self::SetOptions(values) => format!("Set {values}"),
+            Self::Relogin => "Relog".into(),
+            Self::Equip { item, .. } => format!("Equip {item}"),
+            Self::LoadBank { .. } => "Load bank".into(),
+            Self::RefreshGear => "Read gear".into(),
         }
     }
 
@@ -200,6 +218,19 @@ impl Command {
                 )
             }
             Self::SetOptions(values) => (with("/options", &[]), values.to_string().into_bytes()),
+            Self::Relogin => (with("/relogin", &[]), Vec::new()),
+            Self::Equip { item, stop } => {
+                let mut pairs = vec![("item", item.as_str())];
+                if *stop {
+                    pairs.push(("stop", "1"));
+                }
+                (with("/equip", &pairs), Vec::new())
+            }
+            Self::LoadBank { stop } => {
+                let pairs: &[(&str, &str)] = if *stop { &[("stop", "1")] } else { &[] };
+                (with("/bank/load", pairs), Vec::new())
+            }
+            Self::RefreshGear => return (false, with("/gear", &[]), Vec::new()),
         };
         (true, path, body)
     }
@@ -298,6 +329,10 @@ impl Army {
             .spawn()
             .map_err(|e| format!("couldn't start {}: {e}", self.exe.display()))?;
         let stdin = child.stdin.take();
+        let kept = Launch {
+            password: launch.password.as_ref().map(|_| String::new()),
+            ..launch.clone()
+        };
         let client = Arc::new(Client {
             label: if launch.label.trim().is_empty() {
                 launch.username.clone()
@@ -307,6 +342,7 @@ impl Army {
             username: launch.username,
             headless: launch.headless,
             started: Instant::now(),
+            launch: kept,
             api: SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
             token,
             child: Mutex::new(child),
@@ -377,6 +413,24 @@ impl Army {
         self.forget_in_hub(username);
     }
 
+    /// Ends the client and launches it again as it was, with its password from the keychain
+    /// when it was launched with one. Blocks on the keychain: not on the UI thread.
+    pub fn restart(self: &Arc<Self>, username: &str) -> Result<Arc<Client>, String> {
+        let Some(old) = self
+            .clients()
+            .into_iter()
+            .find(|c| c.username.eq_ignore_ascii_case(username))
+        else {
+            return Err(format!("{username} isn't one of the launched clients"));
+        };
+        let mut launch = old.launch.clone();
+        if launch.password.is_some() {
+            launch.password = crate::accounts::password(&launch.username)?;
+        }
+        self.close(username);
+        self.launch(launch)
+    }
+
     /// Forgets the clients that have ended.
     pub fn clear_exited(&self) {
         let ended: Vec<String> = {
@@ -407,12 +461,14 @@ impl Army {
         self.request(client, post, &path, body, COMMAND_TIMEOUT)
     }
 
-    /// Sends the command to every running client, and to `local` (this process's own clients,
-    /// named), all at once; `done` gets each one's outcome, labelled, as it comes.
+    /// Sends the command to the running clients (those `only` names, by username, or all),
+    /// and to `local` (this process's own clients, named), all at once; `done` gets each
+    /// one's outcome, labelled, as it comes.
     pub fn broadcast(
         self: &Arc<Self>,
         command: Command,
         local: Vec<(String, Arc<Bot>)>,
+        only: Option<&[String]>,
         done: impl Fn(&str, Result<Value, String>) + Send + Sync + 'static,
     ) {
         let done = Arc::new(done);
@@ -430,16 +486,16 @@ impl Army {
         };
         for (name, bot) in local {
             let command = command.clone();
-            spawn(
-                name,
-                Box::new(move || {
-                    let (post, path, body) = command.request();
-                    let (status, reply) = crate::control_api::local(&bot, post, &path, &body);
-                    reply_result(status, reply)
-                }),
-            );
+            spawn(name, Box::new(move || send_local(&bot, &command)));
         }
-        for client in self.clients().into_iter().filter(|c| c.is_running()) {
+        let targeted = |c: &Client| {
+            only.is_none_or(|names| names.iter().any(|n| n.eq_ignore_ascii_case(&c.username)))
+        };
+        for client in self
+            .clients()
+            .into_iter()
+            .filter(|c| c.is_running() && targeted(c))
+        {
             let (army, command) = (self.clone(), command.clone());
             spawn(
                 client.label.clone(),
@@ -551,7 +607,16 @@ impl Drop for Army {
     }
 }
 
-fn reply_result(status: u16, reply: Value) -> Result<Value, String> {
+/// Sends a command to one of this process's own clients (a tab), as [`Army::send`] does to
+/// a launched one. Blocks as long as the route does.
+pub fn send_local(bot: &Arc<Bot>, command: &Command) -> Result<Value, String> {
+    let (post, path, body) = command.request();
+    let (status, reply) = crate::control_api::local(bot, post, &path, &body);
+    reply_result(status, reply)
+}
+
+/// A control API answer: the body when it succeeded, else its `error`.
+pub fn reply_result(status: u16, reply: Value) -> Result<Value, String> {
     if (200..300).contains(&status) {
         Ok(reply)
     } else {
@@ -627,6 +692,25 @@ mod tests {
             }),
             "/quests/register?id=2566&reward=-1"
         );
+        assert_eq!(
+            path(Command::Equip {
+                item: "Legion Revenant".into(),
+                stop: false,
+            }),
+            "/equip?item=Legion+Revenant"
+        );
+        assert_eq!(
+            path(Command::Equip {
+                item: "Necrotic Sword of Doom".into(),
+                stop: true,
+            }),
+            "/equip?item=Necrotic+Sword+of+Doom&stop=1"
+        );
+        assert_eq!(path(Command::LoadBank { stop: false }), "/bank/load");
+        assert_eq!(path(Command::LoadBank { stop: true }), "/bank/load?stop=1");
+        assert_eq!(path(Command::Relogin), "/relogin");
+        assert!(!Command::RefreshGear.request().0);
+        assert_eq!(path(Command::RefreshGear), "/gear");
         let (post, path, body) = Command::SetOptions(json!({ "lagKiller": true })).request();
         assert!(post);
         assert_eq!(path, "/options");

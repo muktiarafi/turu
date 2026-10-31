@@ -36,7 +36,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   else the data folder's `api-token`, made on first use and readable by you only. Works with
   or without the window. Example:
   `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8791/status`.
-  Army Control also uses `/map/join`, `/player/goto`, `/house` and `/quests/register`.
+  Army Control also uses `/map/join`, `/player/goto`, `/house`, `/quests/register`, and the
+  gear routes `/gear`, `/equip` and `/bank/load` (below).
 - **Several accounts** (Army > Accounts and Army > Army Control; `bot/src/accounts.rs`,
   `bot/src/army.rs`): the account list and groups (VibeSkua Manager's Accounts tab) in
   `accounts.json`, with the passwords in the system keychain (`keyring`: Keychain, Credential
@@ -47,7 +48,16 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   free local port with its own token, and `--exit-with-parent` (the client quits when the
   launcher's stdin pipe closes, even if the launcher crashed). Army Control polls each process's
   `/status` every 2 s and sends VibeSkua's Army Control commands to all of them, and to every
-  tab unless "Include this window's tabs" is off.
+  tab unless "Include this window's tabs" is off, or only to a group or the checked rows; a
+  row's ⋯ menu acts on one client (Start, Stop, Relog, Gear, Logs, Restart).
+- **Gear from the launcher** (`bot/src/gear.rs`, `docs/turu/ARMY_EQUIPMENT_PROPOSAL.md` phase
+  1): every client keeps `gear/<username>.json` (its wearable items, the bank as last loaded
+  with its date; the bank is never loaded just for it), and the control API's `/equip` puts an
+  item on, out of the bank if needed (loading it when it wasn't this login), with an
+  `EquipReport`. `/equip` and `/bank/load` refuse while a script runs unless `stop=1`, which
+  stops it and leaves it stopped. Army Control's Gear window uses them, for a client without a
+  window too. Tested against a fake game (`bot/tests/gear.rs`); unverified in game: the `sES`
+  slot codes, the bank opening in a client without a window, and the equip timings.
 - **Tabs** (`desktop/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
   client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All

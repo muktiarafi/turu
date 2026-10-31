@@ -179,3 +179,31 @@ fn keeps_the_token_in_a_private_file() {
         assert_eq!(mode & 0o777, 0o600);
     }
 }
+
+#[test]
+fn gear_routes_need_a_login() {
+    let (_bot, base) = start();
+    let (status, body) = call("GET", &format!("{base}/gear"), Some(TOKEN), None);
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (409, Some("not logged in"))
+    );
+    let (status, _) = call("POST", &format!("{base}/equip"), Some(TOKEN), None);
+    assert_eq!(status, 400);
+    let (status, body) = call(
+        "POST",
+        &format!("{base}/equip?item=Legion+Revenant&stop=1"),
+        Some(TOKEN),
+        None,
+    );
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (409, Some("not logged in"))
+    );
+    let (status, _) = call("POST", &format!("{base}/bank/load"), Some(TOKEN), None);
+    assert_eq!(status, 409);
+    assert_eq!(
+        call("GET", &format!("{base}/equip"), Some(TOKEN), None).0,
+        405
+    );
+}

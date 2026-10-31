@@ -60,6 +60,11 @@ impl Paths {
         self.root.join("accounts.json")
     }
 
+    /// Every account's gear (`gear::GearFile`), written by its client.
+    pub fn gear_dir(&self) -> PathBuf {
+        self.root.join("gear")
+    }
+
     pub fn skua_swf(&self) -> PathBuf {
         self.root.join("skua.swf")
     }

@@ -133,7 +133,21 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   this window's tabs", Start / Stop All Scripts, Load Script
   to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
   Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,
-  and each client's outcome under RESULTS.
+  and each client's outcome under RESULTS. "Send to" picks who the commands go to: all clients,
+  an Army > Accounts group (its launched clients, and the tabs logged in as its accounts while
+  "Include this window's tabs" is on), or the checked rows (a check box per row then). Each
+  row's ⋯ menu: Start script, Stop script, Relog, Gear…, and for launched clients Logs… and
+  Restart (ends the process and launches it again as it was, the password read from the
+  keychain again).
+* **Gear** (`gear.rs`, 460x440, one per client, from a row's ⋯ menu): online or offline, the
+  running script, "Bank as of …" (or "Bank not read yet") with Load bank and Refresh; per
+  slot (class, weapon, armor, helm, cape, pet, necklace, ground) what's worn and a drop-down of
+  what could be (inventory first, then bank items, marked) with Equip; the last outcome
+  (`EquipReport::summary`). It reads the account's `gear/<username>.json`, so it shows an
+  offline account's last gear. While a script runs, Equip and Load bank are disabled until
+  "Stop the script first" is on (off each time the window opens); the script then stays stopped.
+* **Logs** (`client_logs.rs`, one per launched client): its script and debug logs, read from
+  its control API every 2 s while open, with Copy / Save / Clear.
 * **Butler** (`butler.rs`, 520x560; VibeSkua ButlerV5's roster and settings windows, one per
   tab): this account and whom it follows or summons (Stop following, Release all, the last
   action's outcome); ACCOUNTS, the other online accounts read from the sync files every second,

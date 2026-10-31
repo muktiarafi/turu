@@ -13,6 +13,7 @@ pub mod control_api;
 pub mod error;
 pub mod events;
 pub mod flash;
+pub mod gear;
 pub mod host;
 pub mod log;
 pub mod models;
@@ -75,6 +76,8 @@ pub struct Bot {
     pub monitor: monitor::Sampler,
     /// Following other accounts and summoning them (VibeSkua's ButlerV5 plugin).
     pub butler: butler::Butler,
+    /// Keeps `gear/<username>.json` current (the launcher's view of this account's gear).
+    pub gear: gear::GearCache,
     pub paths: paths::Paths,
 }
 
@@ -104,12 +107,14 @@ impl Bot {
             webhooks: webhooks::Webhooks::default(),
             monitor: monitor::Sampler::default(),
             butler: butler::Butler::new(&paths),
+            gear: gear::GearCache::default(),
             paths,
         });
         background::start(&bot);
         webhooks::start(&bot);
         monitor::start(&bot);
         butler::start(&bot);
+        gear::start(&bot);
         bot
     }
 
