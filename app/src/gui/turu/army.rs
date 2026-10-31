@@ -1,29 +1,31 @@
-//! Army > Army Control (VibeSkua's tabbed host "Army Control" menu): the clients Accounts
-//! launched, and commands sent to them (and to this window's tabs) through their control API:
-//! to all, to a group of Army > Accounts, or to the checked rows. Each row's ⋯ menu acts on that
-//! client alone, and opens its Gear and Logs windows.
+//! Army > Army Control (VibeSkua's tabbed host "Army Control" menu): one list of this window's
+//! tabs and the clients Accounts launched, each with buttons of its own (script, log in/out,
+//! Gear, and a ⋯ menu), and ACTIONS that go to the checked rows, or to every row when none is
+//! checked, through their control API.
 
 use super::client_logs::ClientLogs;
 use super::files::{self, Pending};
 use super::gear::GearWindow;
-use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
+use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::gui::FilePicker;
 use crate::turu::TabId;
-use egui::{Align, Context, Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{Align, CollapsingHeader, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use rfd::AsyncFileDialog;
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
-use turu_bot::accounts::{Accounts, Group};
+use turu_bot::accounts::Accounts;
 use turu_bot::army::{Client, Command};
 use turu_bot::monitor::Snapshot;
 use turu_bot::monitor::snapshot::BotState;
 
 /// How many command outcomes the window keeps.
 const RESULTS: usize = 40;
+/// How long a "click again to confirm" stays armed.
+const CONFIRM_FOR: Duration = Duration::from_secs(4);
 
 /// VibeSkua's "Misc Options" (`WM_SKUA_SET_OPTION`): label and option name.
 const MISC_OPTIONS: [(&str, &str); 7] = [
@@ -128,44 +130,110 @@ impl Peer {
     }
 }
 
-/// Who the commands go to.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-enum Target {
-    #[default]
-    All,
-    /// The accounts of an Army > Accounts group.
-    Group(String),
-    /// The rows checked in the list.
-    Checked,
-}
-
-/// What a row's ⋯ menu asked for.
+/// What a row's buttons asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RowAction {
     Start,
     Stop,
+    Login,
+    Logout,
     Relog,
     Gear,
     Logs,
     Restart,
+    Close,
 }
 
-/// A row's key in the checked set.
-fn client_key(username: &str) -> String {
-    username.to_lowercase()
+/// One line of the list: a tab or a launched client, as the UI shows it.
+#[derive(Clone)]
+struct Row {
+    /// Its key in the checked set.
+    key: String,
+    peer: Peer,
+    tab: Option<TabId>,
+    /// The login, for group selection ("" before a tab's first login).
+    username: String,
+    headless: bool,
+    color: egui::Color32,
+    summary: String,
+    error: Option<String>,
+    /// The loaded script's file name, and whether it runs.
+    script: Option<(String, bool)>,
+    logged_in: bool,
+    /// The process ended.
+    ended: bool,
 }
 
-fn tab_key(tab: TabId) -> String {
-    format!("tab:{tab:?}")
+impl Row {
+    fn of_tab(tab: TabId, bot: &Arc<Bot>) -> Self {
+        let status = bot.scripts.status();
+        let logged_in = bot.gear.logged_in();
+        let summary = match bot.state.lock().last_map.clone() {
+            Some(map) if logged_in => map,
+            _ if logged_in => "logged in".into(),
+            _ => "login screen".into(),
+        };
+        Self {
+            key: format!("tab:{tab:?}"),
+            peer: Peer::Tab(bot.clone()),
+            tab: Some(tab),
+            username: bot.butler.username(),
+            headless: false,
+            color: if status.is_active() { SUCCESS } else { MUTED },
+            summary,
+            error: None,
+            script: bot.scripts.loaded().map(|p| (file_name(Some(&p)), status.is_active())),
+            logged_in,
+            ended: false,
+        }
+    }
+
+    /// Its game comes from the monitor's hub, which the Army poll feeds.
+    fn of_client(client: &Arc<Client>) -> Self {
+        let state = client.state();
+        let snapshot = crate::turu::monitor_hub().army_snapshot(&client.username);
+        let (color, summary) = match (&state.exited, state.answered, &snapshot) {
+            (Some(exit), _, _) => (DANGER, format!("ended ({exit})")),
+            (None, true, Some(snapshot)) => (SUCCESS, summarize(snapshot)),
+            (None, _, _) => (MUTED, "starting…".to_owned()),
+        };
+        let live = snapshot.filter(|_| state.exited.is_none());
+        Self {
+            key: client.username.to_lowercase(),
+            peer: Peer::Client {
+                username: client.username.clone(),
+                label: client.label.clone(),
+            },
+            tab: None,
+            username: client.username.clone(),
+            headless: client.headless,
+            color,
+            summary,
+            error: state.error,
+            script: live.as_ref().and_then(|s| {
+                let path = s.script.path.as_deref()?;
+                Some((file_name(Some(std::path::Path::new(path))), s.script.running))
+            }),
+            logged_in: live
+                .as_ref()
+                .is_some_and(|s| !matches!(s.state, BotState::NotLoaded | BotState::LoggedOut)),
+            ended: state.exited.is_some(),
+        }
+    }
+
+    fn label(&self) -> String {
+        match &self.peer {
+            Peer::Client { label, .. } => label.clone(),
+            Peer::Tab(bot) => crate::turu::tab_label(bot),
+        }
+    }
 }
 
 pub struct ArmyWindow {
-    /// Commands also go to this window's tabs.
-    include_tabs: bool,
-    target: Target,
+    /// The checked rows' keys; none checked means every row.
     checked: HashSet<String>,
     /// Army > Accounts' groups, read again every few seconds.
-    groups: Vec<Group>,
+    groups: Vec<turu_bot::accounts::Group>,
     groups_read: Option<Instant>,
     gear: Vec<GearWindow>,
     logs: Vec<ClientLogs>,
@@ -176,14 +244,16 @@ pub struct ArmyWindow {
     reward: String,
     misc: [bool; MISC_OPTIONS.len()],
     pending_script: Pending,
+    /// The rows the script being picked goes to.
+    pending_targets: Option<Vec<Row>>,
+    /// An action on every row waiting for its second click, and since when.
+    confirm: Option<(&'static str, Instant)>,
     results: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl Default for ArmyWindow {
     fn default() -> Self {
         Self {
-            include_tabs: true,
-            target: Target::All,
             checked: HashSet::new(),
             groups: Vec::new(),
             groups_read: None,
@@ -196,6 +266,8 @@ impl Default for ArmyWindow {
             reward: String::new(),
             misc: [false; MISC_OPTIONS.len()],
             pending_script: Pending::default(),
+            pending_targets: None,
+            confirm: None,
             results: Arc::default(),
         }
     }
@@ -203,8 +275,10 @@ impl Default for ArmyWindow {
 
 impl ArmyWindow {
     pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool) {
-        if let Some(path) = self.pending_script.poll() {
-            self.send(Command::LoadScript(path.display().to_string()));
+        if let Some(path) = self.pending_script.poll()
+            && let Some(targets) = self.pending_targets.take()
+        {
+            self.send_to(&targets, Command::LoadScript(path.display().to_string()));
         }
         self.gear.retain(|w| w.open);
         for window in &mut self.gear {
@@ -217,66 +291,53 @@ impl ArmyWindow {
         if !*open {
             return;
         }
-        if self.groups_read.is_none_or(|t| t.elapsed() >= Duration::from_secs(3)) {
-            self.groups_read = Some(Instant::now());
-            self.groups = Accounts::load(&crate::turu::bot().paths.accounts_file()).groups;
-            if let Target::Group(name) = &self.target
-                && !self.groups.iter().any(|g| &g.name == name)
-            {
-                self.target = Target::All;
-            }
-        }
-        super::window(ctx, "Army Control", [560.0, 600.0], 5)
+        super::window(ctx, "Army Control", [560.0, 620.0], 5)
             .open(open)
             .show(ctx, |ui| self.ui(ui, picker));
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 
-    /// Sends the command to the target's clients (and tabs, when included); outcomes are
-    /// listed.
-    fn send(&self, command: Command) {
+    /// Every tab, then every launched client.
+    fn rows() -> Vec<Row> {
+        let tabs = crate::turu::tabs().into_iter().map(|(tab, bot)| Row::of_tab(tab, &bot));
+        tabs.chain(crate::turu::army().clients().iter().map(Row::of_client))
+            .collect()
+    }
+
+    /// The rows ACTIONS go to: the checked ones, else all that run.
+    fn targets(&self, rows: &[Row]) -> Vec<usize> {
+        let everyone = self.checked.is_empty();
+        (0..rows.len())
+            .filter(|&i| !rows[i].ended && (everyone || self.checked.contains(&rows[i].key)))
+            .collect()
+    }
+
+    /// Sends the command to these rows at once; outcomes are listed.
+    fn send_to(&self, rows: &[Row], command: Command) {
         let label = command.label();
         let results = self.results.clone();
-        let tabs = crate::turu::tabs().into_iter().filter(|(tab, bot)| match &self.target {
-            Target::All => self.include_tabs,
-            Target::Group(name) => {
-                self.include_tabs
-                    && self
-                        .group_members(name)
-                        .iter()
-                        .any(|u| u.eq_ignore_ascii_case(&bot.butler.username()))
+        let mut local = Vec::new();
+        let mut only = Vec::new();
+        for row in rows {
+            match &row.peer {
+                Peer::Tab(bot) => local.push((format!("{} (tab)", crate::turu::tab_label(bot)), bot.clone())),
+                Peer::Client { username, .. } => only.push(username.clone()),
             }
-            Target::Checked => self.checked.contains(&tab_key(*tab)),
-        });
-        let local = tabs
-            .map(|(_, bot)| (format!("{} (tab)", crate::turu::tab_label(&bot)), bot))
-            .collect();
-        let only = match &self.target {
-            Target::All => None,
-            Target::Group(name) => Some(self.group_members(name)),
-            Target::Checked => Some(
-                self.checked
-                    .iter()
-                    .filter(|k| !k.starts_with("tab:"))
-                    .cloned()
-                    .collect(),
-            ),
-        };
-        crate::turu::army().broadcast(command, local, only.as_deref(), move |name, result| {
+        }
+        crate::turu::army().broadcast(command, local, Some(&only), move |name, result| {
             push_result(&results, outcome_line(name, &label, result));
         });
     }
 
-    fn group_members(&self, name: &str) -> Vec<String> {
-        self.groups
-            .iter()
-            .find(|g| g.name == name)
-            .map(|g| g.accounts.clone())
-            .unwrap_or_default()
+    /// Sends the command to the rows ACTIONS go to.
+    fn send(&self, rows: &[Row], command: Command) {
+        let targets: Vec<Row> = self.targets(rows).into_iter().map(|i| rows[i].clone()).collect();
+        self.send_to(&targets, command);
     }
 
-    /// A row's ⋯ choice for one client or tab.
-    fn act(&mut self, peer: Peer, action: RowAction) {
+    /// A row's own button.
+    fn act(&mut self, row: &Row, action: RowAction) {
+        let peer = row.peer.clone();
         let command = match action {
             RowAction::Gear => {
                 match self.gear.iter_mut().find(|w| w.peer.same(&peer)) {
@@ -293,8 +354,17 @@ impl ArmyWindow {
                 }
                 return;
             }
+            RowAction::Close => {
+                if let Peer::Client { username, .. } = &peer {
+                    crate::turu::army().close(username);
+                    self.checked.remove(&row.key);
+                }
+                return;
+            }
             RowAction::Start => Some(Command::StartScript(None)),
             RowAction::Stop => Some(Command::StopScript),
+            RowAction::Login => Some(Command::Login),
+            RowAction::Logout => Some(Command::Logout),
             RowAction::Relog => Some(Command::Relogin),
             RowAction::Restart => None,
         };
@@ -321,212 +391,296 @@ impl ArmyWindow {
 
     fn ui(&mut self, ui: &mut Ui, picker: &FilePicker) {
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
-        self.clients_card(ui);
-        self.commands_card(ui, picker);
+        let rows = Self::rows();
+        self.checked
+            .retain(|key| rows.iter().any(|r| &r.key == key && !r.ended));
+        self.clients_card(ui, &rows);
+        self.actions_card(ui, picker, &rows);
         self.results_card(ui);
     }
 
-    fn clients_card(&mut self, ui: &mut Ui) {
+    fn clients_card(&mut self, ui: &mut Ui, rows: &[Row]) {
         let army = crate::turu::army();
-        let clients = army.clients();
         let queued = army.queued();
         let mut actions = Vec::new();
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 widgets::section_label(ui, "CLIENTS");
-                widgets::count_badge(ui, clients.iter().filter(|c| c.is_running()).count());
+                widgets::count_badge(ui, rows.iter().filter(|r| !r.ended).count());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::small_button(ui, "Close All", !clients.is_empty()).clicked() {
-                        army.close_all();
-                    }
-                    if clients.iter().any(|c| !c.is_running())
-                        && widgets::small_button(ui, "Clear Ended", true).clicked()
-                    {
-                        army.clear_exited();
-                    }
+                    let launched = rows.iter().any(|r| r.tab.is_none());
+                    ui.add_enabled_ui(launched, |ui| {
+                        ui.menu_button("⋯", |ui| {
+                            if ui.button("Clear ended").clicked() {
+                                army.clear_exited();
+                                ui.close();
+                            }
+                            if ui
+                                .button(RichText::new("Close all launched clients").color(DANGER))
+                                .clicked()
+                            {
+                                army.close_all();
+                                self.checked.retain(|k| k.starts_with("tab:"));
+                                ui.close();
+                            }
+                        });
+                    });
+                    self.selection_buttons(ui, rows);
                 });
             });
             ScrollArea::vertical()
                 .id_salt("turu_army_clients")
-                .max_height(180.0)
+                .max_height(260.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    let checking = self.target == Target::Checked;
-                    for (tab, bot) in crate::turu::tabs() {
-                        let mut checked = self.checked.contains(&tab_key(tab));
-                        if let Some(action) = tab_row(ui, tab, &bot, checking.then_some(&mut checked)) {
-                            actions.push((Peer::Tab(bot.clone()), action));
+                    for row in rows {
+                        let mut checked = self.checked.contains(&row.key);
+                        if let Some(action) = row_ui(ui, row, &mut checked) {
+                            actions.push((row, action));
                         }
-                        set_checked(&mut self.checked, tab_key(tab), checked);
-                    }
-                    if clients.is_empty() && queued.is_empty() {
-                        ui.label(RichText::new("No other clients: start accounts from Army > Accounts.").color(MUTED));
-                    }
-                    for client in &clients {
-                        let key = client_key(&client.username);
-                        let mut checked = self.checked.contains(&key);
-                        if let Some(action) = client_row(ui, client, checking.then_some(&mut checked)) {
-                            let peer = Peer::Client {
-                                username: client.username.clone(),
-                                label: client.label.clone(),
-                            };
-                            actions.push((peer, action));
+                        if checked && !row.ended {
+                            self.checked.insert(row.key.clone());
+                        } else {
+                            self.checked.remove(&row.key);
                         }
-                        set_checked(&mut self.checked, key, checked);
+                    }
+                    if rows.iter().all(|r| r.tab.is_some()) && queued.is_empty() {
+                        ui.label(
+                            RichText::new("Start more accounts from Army > Accounts.")
+                                .small()
+                                .color(MUTED),
+                        );
                     }
                     for username in &queued {
                         ui.label(RichText::new(format!("{username}: waiting to start")).color(MUTED));
                     }
                 });
         });
-        for (peer, action) in actions {
-            self.act(peer, action);
+        for (row, action) in actions {
+            self.act(row, action);
         }
     }
 
-    fn commands_card(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    /// All, None, and Group ▾ (an Army > Accounts group's rows).
+    fn selection_buttons(&mut self, ui: &mut Ui, rows: &[Row]) {
+        if self.groups_read.is_none_or(|t| t.elapsed() >= Duration::from_secs(3)) {
+            self.groups_read = Some(Instant::now());
+            self.groups = Accounts::load(&crate::turu::bot().paths.accounts_file()).groups;
+        }
+        let groups = self.groups.clone();
+        ui.add_enabled_ui(!groups.is_empty(), |ui| {
+            ui.menu_button("Group ▾", |ui| {
+                for group in &groups {
+                    if ui
+                        .button(format!("{} ({})", group.name, group.accounts.len()))
+                        .clicked()
+                    {
+                        self.checked = rows
+                            .iter()
+                            .filter(|r| !r.ended && group.accounts.iter().any(|a| a.eq_ignore_ascii_case(&r.username)))
+                            .map(|r| r.key.clone())
+                            .collect();
+                        ui.close();
+                    }
+                }
+            })
+            .response
+            .on_disabled_hover_text("No groups yet: make them in Army > Accounts");
+        });
+        if widgets::small_button(ui, "None", !self.checked.is_empty()).clicked() {
+            self.checked.clear();
+        }
+        if widgets::small_button(ui, "All", true).clicked() {
+            self.checked = rows.iter().filter(|r| !r.ended).map(|r| r.key.clone()).collect();
+        }
+    }
+
+    fn actions_card(&mut self, ui: &mut Ui, picker: &FilePicker, rows: &[Row]) {
+        let targets = self.targets(rows);
+        let names: Vec<String> = targets.iter().map(|&i| rows[i].label()).collect();
+        let everyone = self.checked.is_empty();
+        if self.confirm.is_some_and(|(_, at)| at.elapsed() >= CONFIRM_FOR) {
+            self.confirm = None;
+        }
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                widgets::section_label(ui, "ARMY CONTROL");
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if self.target != Target::Checked {
-                        ui.label("Include this window's tabs");
-                        widgets::switch(ui, &mut self.include_tabs);
-                    }
-                });
-            });
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Send to").color(MUTED));
-                let shown = match &self.target {
-                    Target::All => "All clients".to_owned(),
-                    Target::Group(name) => format!("Group: {name}"),
-                    Target::Checked => format!("Checked rows ({})", self.checked.len()),
+                widgets::section_label(ui, "ACTIONS");
+                let who = match (everyone, names.len()) {
+                    (_, 0) => "no clients".to_owned(),
+                    (true, 1) => "the only client".to_owned(),
+                    (true, n) => format!("all {n} clients (check rows to pick)"),
+                    (false, _) if names.len() <= 3 => names.join(", "),
+                    (false, n) => format!("{n} selected"),
                 };
-                egui::ComboBox::from_id_salt("turu_army_target")
-                    .selected_text(shown)
-                    .width(200.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.target, Target::All, "All clients");
-                        for group in &self.groups {
-                            let target = Target::Group(group.name.clone());
-                            let label = format!("Group: {} ({})", group.name, group.accounts.len());
-                            ui.selectable_value(&mut self.target, target, label);
-                        }
-                        ui.selectable_value(&mut self.target, Target::Checked, "Checked rows");
-                    });
-                if self.target == Target::Checked {
-                    ui.label(RichText::new("Check rows in CLIENTS").small().color(MUTED));
-                }
+                let color = if everyone && names.len() > 1 { WARNING } else { TEXT };
+                ui.label(RichText::new(format!("→ {who}")).small().color(color));
             });
+            let any = !targets.is_empty();
             let width = (ui.available_width() - 12.0) / 3.0;
             let size = vec2(width, 28.0);
             ui.horizontal(|ui| {
-                if widgets::button(ui, "Start All Scripts", Kind::Primary, true, size, "").clicked() {
-                    self.send(Command::StartScript(None));
+                if widgets::button(ui, "Start script", Kind::Primary, any, size, "").clicked() {
+                    self.send(rows, Command::StartScript(None));
                 }
-                if widgets::button(ui, "Stop All Scripts", Kind::Danger, true, size, "").clicked() {
-                    self.send(Command::StopScript);
+                if self.guarded(
+                    ui,
+                    "Stop script",
+                    Kind::Danger,
+                    any,
+                    size,
+                    everyone && targets.len() > 1,
+                ) {
+                    self.send(rows, Command::StopScript);
                 }
                 let load = widgets::button(
                     ui,
-                    "Load Script to All",
+                    "Load script…",
                     Kind::Normal,
-                    !self.pending_script.is_open(),
+                    any && !self.pending_script.is_open(),
                     size,
                     "",
                 );
                 if load.clicked() {
+                    self.pending_targets = Some(targets.iter().map(|&i| rows[i].clone()).collect());
                     let start = files::scripts_start_dir(crate::turu::bot().paths.scripts_dir());
                     let dialog = AsyncFileDialog::new()
-                        .set_title("Load Script to All")
+                        .set_title("Load Script")
                         .add_filter("Scripts", &["ts", "js"])
                         .set_directory(start);
                     self.pending_script.pick_file(picker, ui.ctx(), dialog);
                 }
             });
+            let width = (ui.available_width() - 18.0) / 4.0;
+            let size = vec2(width, 28.0);
             ui.horizontal(|ui| {
-                if widgets::button(ui, "Login All Clients", Kind::Normal, true, size, "").clicked() {
-                    self.send(Command::Login);
+                if widgets::button(ui, "Log in", Kind::Normal, any, size, "").clicked() {
+                    self.send(rows, Command::Login);
                 }
-                if widgets::button(ui, "Logout All Clients", Kind::Normal, true, size, "").clicked() {
-                    self.send(Command::Logout);
+                if self.guarded(ui, "Log out", Kind::Normal, any, size, everyone && targets.len() > 1) {
+                    self.send(rows, Command::Logout);
                 }
-                if widgets::button(ui, "Jump All to House", Kind::Normal, true, size, "").clicked() {
-                    self.send(Command::JumpHouse);
+                if widgets::button(ui, "Relog", Kind::Normal, any, size, "").clicked() {
+                    self.send(rows, Command::Relogin);
+                }
+                if widgets::button(ui, "Go to house", Kind::Normal, any, size, "").clicked() {
+                    self.send(rows, Command::JumpHouse);
                 }
             });
-            ui.horizontal(|ui| {
-                widgets::text_box(ui, &mut self.map, "Map, e.g. battleon-1e9", 170.0);
-                widgets::text_box(ui, &mut self.cell, "Cell[, pad]", 110.0);
-                let map = self.map.trim().to_owned();
-                if widgets::button(
-                    ui,
-                    "Jump All to Map",
-                    Kind::Normal,
-                    !map.is_empty(),
-                    vec2(0.0, 26.0),
-                    "Enter a map",
-                )
-                .clicked()
-                {
-                    let (cell, pad) = match self.cell.split_once(',') {
-                        Some((cell, pad)) => (cell.trim().to_owned(), pad.trim().to_owned()),
-                        None => (self.cell.trim().to_owned(), String::new()),
-                    };
-                    self.send(Command::JumpMap { map, cell, pad });
-                }
-            });
-            ui.horizontal(|ui| {
-                widgets::text_box(ui, &mut self.player, "Player name", 170.0);
-                let name = self.player.trim().to_owned();
-                let goto = widgets::button(
-                    ui,
-                    "Jump All to Player",
-                    Kind::Normal,
-                    !name.is_empty(),
-                    vec2(0.0, 26.0),
-                    "Enter a name",
-                );
-                if goto.clicked() {
-                    self.send(Command::JumpPlayer(name));
-                }
-            });
-            ui.horizontal(|ui| {
-                widgets::text_box(ui, &mut self.quest, "Quest ID", 80.0);
-                widgets::text_box(ui, &mut self.reward, "Reward ID (optional)", 140.0);
-                let id = self.quest.trim().parse::<i64>().ok().filter(|id| *id > 0);
-                let accept = widgets::button(
-                    ui,
-                    "Accept Quest to All",
-                    Kind::Normal,
-                    id.is_some(),
-                    vec2(0.0, 26.0),
-                    "Enter a quest ID",
-                );
-                if accept.clicked()
-                    && let Some(id) = id
-                {
-                    let reward = self.reward.trim().parse().unwrap_or(-1);
-                    self.send(Command::AcceptQuest { id, reward });
-                }
-            });
-            widgets::section_label(ui, "MISC OPTIONS");
-            let mut changed = None;
-            ui.horizontal_wrapped(|ui| {
-                for (i, (label, name)) in MISC_OPTIONS.iter().enumerate() {
-                    if ui.checkbox(&mut self.misc[i], *label).changed() {
-                        changed = Some((*name, self.misc[i]));
+            CollapsingHeader::new("Travel")
+                .id_salt("turu_army_travel")
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        widgets::text_box(ui, &mut self.map, "Map, e.g. battleon-1e9", 170.0);
+                        widgets::text_box(ui, &mut self.cell, "Cell[, pad]", 110.0);
+                        let map = self.map.trim().to_owned();
+                        if widgets::button(
+                            ui,
+                            "Join",
+                            Kind::Normal,
+                            any && !map.is_empty(),
+                            vec2(0.0, 26.0),
+                            "Enter a map",
+                        )
+                        .clicked()
+                        {
+                            let (cell, pad) = match self.cell.split_once(',') {
+                                Some((cell, pad)) => (cell.trim().to_owned(), pad.trim().to_owned()),
+                                None => (self.cell.trim().to_owned(), String::new()),
+                            };
+                            self.send(rows, Command::JumpMap { map, cell, pad });
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        widgets::text_box(ui, &mut self.player, "Player name", 170.0);
+                        let name = self.player.trim().to_owned();
+                        if widgets::button(
+                            ui,
+                            "Go to player",
+                            Kind::Normal,
+                            any && !name.is_empty(),
+                            vec2(0.0, 26.0),
+                            "Enter a name",
+                        )
+                        .clicked()
+                        {
+                            self.send(rows, Command::JumpPlayer(name));
+                        }
+                    });
+                });
+            CollapsingHeader::new("Quest")
+                .id_salt("turu_army_quest")
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        widgets::text_box(ui, &mut self.quest, "Quest ID", 80.0);
+                        widgets::text_box(ui, &mut self.reward, "Reward ID (optional)", 140.0);
+                        let id = self.quest.trim().parse::<i64>().ok().filter(|id| *id > 0);
+                        if widgets::button(
+                            ui,
+                            "Accept quest",
+                            Kind::Normal,
+                            any && id.is_some(),
+                            vec2(0.0, 26.0),
+                            "Enter a quest ID",
+                        )
+                        .clicked()
+                            && let Some(id) = id
+                        {
+                            let reward = self.reward.trim().parse().unwrap_or(-1);
+                            self.send(rows, Command::AcceptQuest { id, reward });
+                        }
+                    });
+                });
+            CollapsingHeader::new("Misc options")
+                .id_salt("turu_army_misc")
+                .show(ui, |ui| {
+                    let mut changed = None;
+                    ui.horizontal_wrapped(|ui| {
+                        for (i, (label, name)) in MISC_OPTIONS.iter().enumerate() {
+                            if ui.checkbox(&mut self.misc[i], *label).changed() {
+                                changed = Some((*name, self.misc[i]));
+                            }
+                        }
+                    });
+                    if let Some((name, on)) = changed {
+                        self.send(rows, Command::SetOptions(json!({ name: on })));
                     }
-                }
-            });
-            if let Some((name, on)) = changed {
-                self.send(Command::SetOptions(json!({ name: on })));
-            }
+                });
         });
     }
 
+    /// A button that, when `ask`, needs a second click within a few seconds ("… all? click
+    /// again"). True when the action should run.
+    fn guarded(
+        &mut self,
+        ui: &mut Ui,
+        label: &'static str,
+        kind: Kind,
+        enabled: bool,
+        size: egui::Vec2,
+        ask: bool,
+    ) -> bool {
+        let armed = self.confirm.is_some_and(|(l, _)| l == label);
+        let text = if armed {
+            format!("{label} all?")
+        } else {
+            label.to_owned()
+        };
+        let tooltip = if ask { "Goes to every client: click twice" } else { "" };
+        let kind = if armed { Kind::Danger } else { kind };
+        if !widgets::button(ui, &text, kind, enabled, size, tooltip).clicked() {
+            return false;
+        }
+        if !ask || armed {
+            self.confirm = None;
+            return true;
+        }
+        self.confirm = Some((label, Instant::now()));
+        false
+    }
+
+    /// The last outcome, and the earlier ones folded away.
     fn results_card(&self, ui: &mut Ui) {
         let results: Vec<String> = self
             .results
@@ -535,144 +689,118 @@ impl ArmyWindow {
             .iter()
             .cloned()
             .collect();
+        let Some(last) = results.last() else { return };
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                widgets::section_label(ui, "RESULTS");
+                ui.label(RichText::new(last).monospace().size(11.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::small_button(ui, "Clear", !results.is_empty()).clicked() {
+                    if widgets::small_button(ui, "Clear", true).clicked() {
                         self.results.lock().unwrap_or_else(|e| e.into_inner()).clear();
                     }
                 });
             });
-            ScrollArea::vertical()
-                .id_salt("turu_army_results")
-                .max_height(120.0)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    for line in &results {
-                        ui.label(RichText::new(line).monospace().size(11.0));
-                    }
-                });
+            if results.len() > 1 {
+                CollapsingHeader::new(format!("History ({})", results.len()))
+                    .id_salt("turu_army_history")
+                    .show(ui, |ui| {
+                        ScrollArea::vertical()
+                            .id_salt("turu_army_results")
+                            .max_height(140.0)
+                            .stick_to_bottom(true)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                for line in &results {
+                                    ui.label(RichText::new(line).monospace().size(11.0));
+                                }
+                            });
+                    });
+            }
         });
     }
 }
 
-/// One of this window's tabs: a dot while its script runs, its name, its script, Show and ⋯.
-/// (Only what the bot keeps: asking its game would mean a Flash call from the UI thread.)
-fn tab_row(ui: &mut Ui, tab: TabId, bot: &turu_bot::Bot, checked: Option<&mut bool>) -> Option<RowAction> {
-    let status = bot.scripts.status();
-    let active = tab == crate::turu::active_tab();
+/// One row: check box, dot, name, where it is, its script; below, its own buttons.
+fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
     let mut action = None;
     ui.horizontal(|ui| {
-        if let Some(checked) = checked {
-            ui.checkbox(checked, "");
-        }
-        widgets::dot(ui, if status.is_active() { SUCCESS } else { MUTED }, 4.0);
-        ui.label(RichText::new(crate::turu::tab_label(bot)).strong().color(TEXT));
-        widgets::pill(ui, |ui| ui.label(RichText::new("tab").size(10.0).color(MUTED)));
-        let map = bot.state.lock().last_map.clone();
-        if let Some(map) = map {
-            ui.label(RichText::new(map).small().color(MUTED));
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            action = row_menu(ui, false, status.is_active());
-            if widgets::small_button(ui, "Show", !active).clicked() {
-                crate::turu::request_tab(crate::turu::TabRequest::Select(tab));
-            }
-            if let Some(path) = bot.scripts.loaded() {
-                let name = path
-                    .file_name()
-                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                let color = if status.is_active() { SUCCESS } else { MUTED };
-                ui.label(RichText::new(name).monospace().size(11.0).color(color))
-                    .on_hover_text(status.label());
-            }
+        ui.add_enabled(!row.ended, egui::Checkbox::without_text(checked));
+        widgets::dot(ui, row.color, 4.0);
+        // Long names and places are cut to the window's width (hover shows them whole).
+        let name = row.label();
+        let width = (ui.available_width() * 0.45).max(60.0);
+        ui.scope(|ui| {
+            ui.set_max_width(width);
+            ui.add(egui::Label::new(RichText::new(&name).strong().color(TEXT)).truncate())
+                .on_hover_text(&name);
         });
-    });
-    action
-}
-
-/// One client: a dot, its name, where it is, its script, Close and ⋯. Its game comes from the
-/// monitor's hub, which the Army poll feeds.
-fn client_row(ui: &mut Ui, client: &Arc<Client>, checked: Option<&mut bool>) -> Option<RowAction> {
-    let state = client.state();
-    let snapshot = crate::turu::monitor_hub().army_snapshot(&client.username);
-    let (color, summary) = match (&state.exited, state.answered, &snapshot) {
-        (Some(exit), _, _) => (DANGER, format!("ended ({exit})")),
-        (None, true, Some(snapshot)) => (SUCCESS, summarize(snapshot)),
-        (None, _, _) => (MUTED, "starting…".to_owned()),
-    };
-    let mut action = None;
-    ui.horizontal(|ui| {
-        if let Some(checked) = checked {
-            ui.checkbox(checked, "");
+        if row.tab.is_some() {
+            widgets::pill(ui, |ui| ui.label(RichText::new("tab").size(10.0).color(MUTED)));
+        } else if row.headless {
+            widgets::pill(ui, |ui| ui.label(RichText::new("no window").size(10.0).color(MUTED)));
         }
-        widgets::dot(ui, color, 4.0);
-        ui.label(RichText::new(&client.label).strong().color(TEXT));
-        if client.headless {
-            widgets::pill(ui, |ui| ui.label(RichText::new("headless").size(10.0).color(MUTED)));
-        }
-        let summary = ui.label(RichText::new(summary).small().color(MUTED));
-        if let Some(error) = &state.error {
+        let summary = ui.add(egui::Label::new(RichText::new(&row.summary).small().color(MUTED)).truncate());
+        let summary = summary.on_hover_text(&row.summary);
+        if let Some(error) = &row.error {
             summary.on_hover_text(error);
         }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let running = snapshot.as_ref().is_some_and(|s| s.script.running);
-            action = row_menu(ui, true, running);
-            if widgets::small_button(ui, "Close", true)
-                .on_hover_text("End this client's process")
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(26.0);
+        let mut button = |ui: &mut Ui, label: &str, enabled: bool, tooltip: &str, choice: RowAction| {
+            if widgets::small_button(ui, label, enabled)
+                .on_hover_text(tooltip)
                 .clicked()
             {
-                crate::turu::army().close(&client.username);
-            }
-            if state.exited.is_none()
-                && let Some(snapshot) = &snapshot
-                && let Some(path) = &snapshot.script.path
-            {
-                let name = std::path::Path::new(path)
-                    .file_name()
-                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                let color = if snapshot.script.running { SUCCESS } else { MUTED };
-                ui.label(RichText::new(name).monospace().size(11.0).color(color))
-                    .on_hover_text(&snapshot.script.status);
-            }
-        });
-    });
-    action
-}
-
-/// A row's ⋯ menu. Launched clients also get Logs (a tab has its own) and Restart.
-fn row_menu(ui: &mut Ui, launched: bool, script_running: bool) -> Option<RowAction> {
-    let mut action = None;
-    ui.menu_button("⋯", |ui| {
-        let mut item = |ui: &mut Ui, label: &str, enabled: bool, choice: RowAction| {
-            if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                 action = Some(choice);
-                ui.close();
             }
         };
-        item(ui, "Start script", !script_running, RowAction::Start);
-        item(ui, "Stop script", script_running, RowAction::Stop);
-        item(ui, "Relog", true, RowAction::Relog);
-        ui.separator();
-        item(ui, "Gear…", true, RowAction::Gear);
-        if launched {
-            item(ui, "Logs…", true, RowAction::Logs);
-            ui.separator();
-            item(ui, "Restart", true, RowAction::Restart);
+        if row.ended {
+            button(ui, "Restart", true, "Launch it again as it was", RowAction::Restart);
+            button(ui, "Remove", true, "Take it off the list", RowAction::Close);
+            return;
+        }
+        match &row.script {
+            Some((_, true)) => button(ui, "■ Stop", true, "Stop its script", RowAction::Stop),
+            Some((name, false)) => button(ui, "▶ Start", row.logged_in, &format!("Start {name}"), RowAction::Start),
+            None => button(ui, "▶ Start", false, "No script loaded", RowAction::Start),
+        }
+        if row.logged_in {
+            button(ui, "Log out", true, "Log this account out", RowAction::Logout);
+        } else {
+            button(ui, "Log in", true, "Log in with the remembered login", RowAction::Login);
+        }
+        button(ui, "Gear", true, "Its gear: what's worn, equip, bank", RowAction::Gear);
+        if let Some(tab) = row.tab
+            && widgets::small_button(ui, "Show", tab != crate::turu::active_tab()).clicked()
+        {
+            crate::turu::request_tab(crate::turu::TabRequest::Select(tab));
+        }
+        ui.menu_button("⋯", |ui| {
+            let mut item = |ui: &mut Ui, label: RichText, choice: RowAction| {
+                if ui.button(label).clicked() {
+                    action = Some(choice);
+                    ui.close();
+                }
+            };
+            item(ui, RichText::new("Relog"), RowAction::Relog);
+            if row.tab.is_none() {
+                item(ui, RichText::new("Logs…"), RowAction::Logs);
+                ui.separator();
+                item(ui, RichText::new("Restart"), RowAction::Restart);
+                item(ui, RichText::new("Close").color(DANGER), RowAction::Close);
+            }
+        });
+        if let Some((name, running)) = &row.script {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let color = if *running { SUCCESS } else { MUTED };
+                let state = if *running { "running" } else { "loaded" };
+                ui.add(egui::Label::new(RichText::new(name).monospace().size(11.0).color(color)).truncate())
+                    .on_hover_text(format!("{name}: {state}"));
+            });
         }
     });
     action
-}
-
-fn set_checked(checked: &mut HashSet<String>, key: String, on: bool) {
-    if on {
-        checked.insert(key);
-    } else {
-        checked.remove(&key);
-    }
 }
 
 /// "Alt1: Equip Legion Revenant: done".
@@ -716,4 +844,81 @@ fn summarize(snapshot: &Snapshot) -> String {
         text = format!("{} · {text}", snapshot.server);
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(name: &str, ended: bool, script: Option<(&str, bool)>) -> Row {
+        Row {
+            key: name.to_lowercase(),
+            peer: Peer::Client {
+                username: name.into(),
+                label: name.into(),
+            },
+            tab: None,
+            username: name.into(),
+            headless: true,
+            color: SUCCESS,
+            summary: "Artix · ultradage-123456, r6, Left · 120000/120000 HP".into(),
+            error: None,
+            script: script.map(|(n, running)| (n.into(), running)),
+            logged_in: !ended,
+            ended,
+        }
+    }
+
+    /// ACTIONS go to the checked rows, or to every row still running when none is checked.
+    #[test]
+    fn actions_go_to_the_checked_rows_or_everyone() {
+        let rows = [
+            row("Alt1", false, None),
+            row("Alt2", false, None),
+            row("Gone", true, None),
+        ];
+        let mut window = ArmyWindow::default();
+        assert_eq!(window.targets(&rows), [0, 1]);
+        window.checked.insert("alt2".into());
+        assert_eq!(window.targets(&rows), [1]);
+        // A checked row that ended isn't sent to.
+        window.checked = ["gone".to_owned()].into();
+        assert!(window.targets(&rows).is_empty());
+    }
+
+    /// Long names, a long place and both button rows keep the window at its width.
+    #[test]
+    fn rows_fit_the_window() {
+        let ctx = egui::Context::default();
+        let long = "Legendary Elemental Warrior of the Very Long Name";
+        let rows = [
+            row(long, false, Some(("VeryLongScriptNameForTheFarm.ts", true))),
+            row("Alt2", false, Some(("GoldFarm.ts", false))),
+            row("Gone", true, None),
+        ];
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 1000.0))),
+            ..Default::default()
+        };
+        let mut widths = Vec::new();
+        for _ in 0..8 {
+            let mut output = ctx.run_ui(input(), |ui| {
+                let ctx = ui.ctx().clone();
+                let shown = egui::Window::new("Army Control")
+                    .default_size(vec2(560.0, 620.0))
+                    .resizable(true)
+                    .show(&ctx, |ui| {
+                        for row in &rows {
+                            let mut checked = false;
+                            assert_eq!(row_ui(ui, row, &mut checked), None);
+                        }
+                    });
+                widths.push(shown.expect("the window is open").response.rect.width());
+            });
+            output.textures_delta.clear();
+        }
+        let first = widths[0];
+        assert!(widths.iter().all(|w| *w <= first + 1.0), "the window grew: {widths:?}");
+        assert!(first < 600.0, "the window is wider than its default: {first}");
+    }
 }

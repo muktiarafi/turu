@@ -128,17 +128,19 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   Unselect All, Add Selected to Group and Select group, and Launch: Server (the same drop-down
   as Relogin Server, `widgets::server_combo`), where (In a tab, In its own window, Without a
   window), the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
-* **Army Control** (`army.rs`): the launched clients (state, server, map, cell, HP, script, from
-  the web monitor's hub, which the Army poll feeds; Close, Clear Ended, Close All) after this window's tabs (script, last map; Show), "Include
-  this window's tabs", Start / Stop All Scripts, Load Script
-  to All, Login / Logout All Clients, Jump All to House, Jump All to Map (map, "cell[, pad]"),
-  Jump All to Player, Accept Quest to All (quest, optional reward), Misc Options check boxes,
-  and each client's outcome under RESULTS. "Send to" picks who the commands go to: all clients,
-  an Army > Accounts group (its launched clients, and the tabs logged in as its accounts while
-  "Include this window's tabs" is on), or the checked rows (a check box per row then). Each
-  row's ⋯ menu: Start script, Stop script, Relog, Gear…, and for launched clients Logs… and
-  Restart (ends the process and launches it again as it was, the password read from the
-  keychain again).
+* **Army Control** (`army.rs`, 560x620): one list, CLIENTS, of this window's tabs and the
+  clients Accounts launched (from the web monitor's hub, which the Army poll feeds). Each row: a
+  check box, a dot, the name ("tab" or "no window" pill), where it is (long text cut off, whole
+  on hover), and below it its own buttons: ▶ Start / ■ Stop (its loaded script, shown on the
+  right), Log in / Log out, Gear, Show (tabs), and ⋯ (Relog; launched clients also Logs…,
+  Restart and Close). An ended client shows Restart and Remove. The header selects All, None or
+  an Army > Accounts group's rows (Group ▾), and its ⋯ has Clear ended and Close all launched
+  clients. ACTIONS go to the checked rows, or to every row when none is checked (it says which,
+  in yellow for everyone): Start script, Stop script, Load script…, Log in, Log out, Relog, Go
+  to house; Travel (join a map at "cell[, pad]", go to a player), Quest (accept with an optional
+  reward) and Misc options fold away, closed at first. Stop script and Log out sent to
+  everyone need a second click ("Log out all?") within 4 s. The last outcome shows below, with
+  the earlier ones under History. VibeSkua's "Include this window's tabs" is gone: tabs are rows.
 * **Gear** (`gear.rs`, 460x440, one per client, from a row's ⋯ menu): online or offline, the
   running script, "Bank as of …" (or "Bank not read yet") with Load bank and Refresh; per
   slot (class, weapon, armor, helm, cape, pet, necklace, ground) what's worn and a drop-down of

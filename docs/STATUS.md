@@ -48,8 +48,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   free local port with its own token, and `--exit-with-parent` (the client quits when the
   launcher's stdin pipe closes, even if the launcher crashed). Army Control polls each process's
   `/status` every 2 s and sends VibeSkua's Army Control commands to all of them, and to every
-  tab unless "Include this window's tabs" is off, or only to a group or the checked rows; a
-  row's ⋯ menu acts on one client (Start, Stop, Relog, Gear, Logs, Restart).
+  tab, or only to the checked rows (a group's with Group ▾); each row has its own Start/Stop,
+  Log in/out, Gear and a ⋯ menu (Relog, Logs, Restart, Close). `docs/turu/UI.md` has the layout.
 - **Gear from the launcher** (`bot/src/gear.rs`, `docs/turu/ARMY_EQUIPMENT_PROPOSAL.md` phase
   1): every client keeps `gear/<username>.json` (its wearable items, the bank as last loaded
   with its date; the bank is never loaded just for it), and the control API's `/equip` puts an

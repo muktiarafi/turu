@@ -204,7 +204,8 @@ the client stops the script, equips, and answers with the report and `"stoppedSc
 * Control API: `GET /gear`, `POST /equip?item=&stop=1`, `POST /bank/load?stop=1`; Army
   `Command::{Equip, LoadBank, RefreshGear, Relogin}`, `Army::restart`, `broadcast` to a list of
   usernames, `army::send_local` for tabs.
-* Army Control: "Send to" (all, a group, checked rows), the row ⋯ menu, the Gear window
+* Army Control: actions to the checked rows or everyone (Group ▾ checks a group), per-row
+  buttons and ⋯ menu (redone after phase 1 as a selection list, `docs/turu/UI.md`), the Gear window
   (`gui/turu/gear.rs`) and a launched client's Logs window (`gui/turu/client_logs.rs`).
 * Differences from the design above: Restart reads the password from the keychain again
   rather than keeping it; the Gear window's Equip sends the item's ID, so two items of the same
