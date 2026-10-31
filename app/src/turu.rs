@@ -8,7 +8,7 @@
 //!   the event loop as [`RuffleEvent::TuruFlashCall`] (without a window, to the `headless`
 //!   loop), names its tab, and is answered by [`answer_flash_call`] with that tab's player.
 //!
-//! See docs/turu/ARCHITECTURE.md.
+//! See docs/ARCHITECTURE.md.
 
 use crate::custom_event::RuffleEvent;
 use ruffle_core::Player;
@@ -27,7 +27,7 @@ use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 use winit::event_loop::EventLoopProxy;
 
 pub const APP_NAME: &str = "Turu";
-/// The release workflow sets `TURU_VERSION` from the git tag; local builds show Ruffle's version.
+/// The release workflow sets `TURU_VERSION` from the git tag; local builds show the crate version.
 pub const VERSION: &str = match option_env!("TURU_VERSION") {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),

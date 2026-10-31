@@ -1,4 +1,4 @@
-//! Army Control > ⋯ > Gear (docs/turu/ARMY_EQUIPMENT_PROPOSAL.md, phase 1): one account's worn
+//! Army Control > ⋯ > Gear (docs/ARMY_EQUIPMENT_PROPOSAL.md, phase 1): one account's worn
 //! slots and what it could wear instead, from its gear file (`gear/<username>.json`, which its
 //! client keeps current), so it works for a client without a window and shows an offline
 //! account's last gear. Equip and Load bank go to the client through its control API.

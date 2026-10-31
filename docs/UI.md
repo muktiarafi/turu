@@ -2,7 +2,7 @@
 
 Turu uses **VibeSkua's layout and flow** (see `VIBESKUA_SPEC.md`, section 5) in **Mugetsu's
 look** (its right-click panel: dark panel, purple accent, corner radius 12, soft shadow).
-Code: `desktop/src/gui/turu/`. Integration points: `desktop/src/gui.rs` (`RuffleGui::update`
+Code: `app/src/gui/turu/`. Integration points: `app/src/gui.rs` (`RuffleGui::update`
 draws the Turu nav bar instead of Ruffle's menu bar and then the tool windows when
 `mugetsu::plays_aqw()`), `gui::MENU_HEIGHT` (34), `mugetsu::window_title()` ("Turu <version>").
 

@@ -2,3 +2,7 @@
 	path = scripts
 	url = https://github.com/muktiarafi/turu-scripts.git
 	branch = main
+[submodule "ruffle"]
+	path = ruffle
+	url = https://github.com/muktiarafi/ruffle-aqw.git
+	branch = aqw

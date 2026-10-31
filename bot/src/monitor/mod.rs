@@ -1,4 +1,4 @@
-//! The web monitor (docs/turu/WEB_MONITOR_PROPOSAL.md): a dashboard of every bot in a browser,
+//! The web monitor (docs/WEB_MONITOR_PROPOSAL.md): a dashboard of every bot in a browser,
 //! in place of VibeSkua's Skua Nexus webhook.
 //!
 //! * Every bot has a [`Sampler`]: a thread that reads a [`Snapshot`] every

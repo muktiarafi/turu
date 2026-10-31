@@ -16,7 +16,7 @@ Colours: violet `#7C6CF0` (the UI accent), white eyes, wordmark `#11131A` on lig
 `#E8EAF2` on dark. The wordmark is drawn from strokes, not a font.
 
 `python3 make_logo.py` regenerates the SVGs. The app's raster copies are made from them:
-`desktop/assets/turu-icon-64.rgba` (window icon, from `turu-symbol.svg`),
-`desktop/assets/favicon.ico` (Windows; small cut up to 32 px),
-`desktop/assets/Assets.xcassets/RuffleMacIcon.iconset` (macOS) and
-`desktop/assets/about_logo.png` (About dialog, from `turu-logo-dark.svg`).
+`app/assets/turu-icon-64.rgba` (window icon, from `turu-symbol.svg`),
+`app/assets/favicon.ico` (Windows; small cut up to 32 px),
+`app/assets/Assets.xcassets/RuffleMacIcon.iconset` (macOS) and
+`app/assets/about_logo.png` (About dialog, from `turu-logo-dark.svg`).

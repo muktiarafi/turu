@@ -1,5 +1,5 @@
 //! The hub: every bot the monitor shows, one entry each, and the one place their game state
-//! is kept (decision 4 of docs/turu/WEB_MONITOR_PROPOSAL.md).
+//! is kept (decision 4 of docs/WEB_MONITOR_PROPOSAL.md).
 //!
 //! * **Tabs:** the "Turu Monitor Hub" thread copies each tab's latest snapshot and new events
 //!   from its [`Sampler`](super::Sampler) every second. A closed tab's entry goes.

@@ -1,5 +1,5 @@
 //! Turu's egui UI: VibeSkua's layout (a 34 px top nav bar, tool windows over the game) in
-//! Mugetsu's colours. See docs/turu/UI.md.
+//! Mugetsu's colours. See docs/UI.md.
 //!
 //! Everything here runs on the UI thread and only reads the bot's cached state (locks held
 //! briefly). Anything that touches the game goes through `crate::turu::spawn_action`.

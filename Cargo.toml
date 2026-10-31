@@ -1,0 +1,110 @@
+[workspace]
+members = ["app", "bot"]
+default-members = ["app"]
+# `ruffle/` is the ruffle-aqw submodule (Ruffle with Mugetsu's AQW patches), a workspace of its
+# own; `app` uses its crates by path. `scripts/` is the turu-scripts submodule.
+exclude = ["ruffle", "scripts"]
+resolver = "2"
+
+[workspace.package]
+authors = ["muktiarafi <muktiarafi@gmail.com>"]
+edition = "2024"
+homepage = "https://github.com/muktiarafi/turu"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/muktiarafi/turu"
+version = "0.1.0"
+
+# The versions ruffle-aqw's workspace uses (ruffle/Cargo.toml): keep them equal, so the app and
+# the Ruffle crates build against the same egui, wgpu, tokio, ...
+[workspace.dependencies]
+anyhow = "1.0"
+async-channel = "2.5.0"
+bytemuck = "1.25.0"
+chrono = { version = "0.4.44", default-features = false }
+clap = { version = "4.6.1", features = ["derive"] }
+clap_complete = "4.6"
+cpal = "0.16.0"
+egui = "0.36.1"
+egui-wgpu = "0.36.1"
+egui-winit = "0.36.1"
+egui_extras = { version = "0.36.1", default-features = false }
+fluent-templates = "0.13.3"
+futures = "0.3.32"
+image = { version = "0.25.10", default-features = false }
+memmap2 = "0.9.10"
+rand = { version = "0.10.1", default-features = false }
+reqwest = { version = "0.13.5", default-features = false }
+rfd = { version = "0.17.2", default-features = false, features = ["wayland", "xdg-portal"] }
+serde = "1.0.228"
+serde_json = "1.0.150"
+sha2 = "0.10.9"
+tempfile = "3.27.0"
+thiserror = "2.0.18"
+tokio = "1.52.3"
+toml_edit = "0.25.4"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+url = "2.5.8"
+walkdir = "2.5.0"
+wgpu = "30.0.1"
+zip = { version = "8.6.0", default-features = false }
+
+[workspace.lints.rust]
+renamed_and_removed_lints = "allow"
+unknown_lints = "allow"
+
+# Ruffle's lints (ruffle/Cargo.toml), which the app's Ruffle-derived code is written against.
+[workspace.lints.clippy]
+trivially_copy_pass_by_ref = "deny"
+redundant_clone = "deny"
+unused_async = "deny"
+used_underscore_items = "deny"
+dbg_macro = "warn"
+enum_glob_use = "deny"
+branches_sharing_code = "warn"
+needless_pass_by_ref_mut = "warn"
+manual_map = "allow"
+manual_range_contains = "allow"
+assigning_clones = "allow"
+byte_char_slices = "allow"
+
+# Cargo only reads patches and profiles from the root workspace, so ruffle-aqw's are repeated here.
+
+# Mugetsu's patched crates (see ruffle/patches/ and docs/mugetsu-patch.md).
+[patch.crates-io]
+wgpu-core = { path = "ruffle/patches/wgpu-core" }
+wgpu-hal = { path = "ruffle/patches/wgpu-hal" }
+gc-arena = { path = "ruffle/patches/gc-arena" }
+lyon_path = { path = "ruffle/patches/lyon_path" }
+lyon_algorithms = { path = "ruffle/patches/lyon_algorithms" }
+
+# Don't optimize build scripts and macros.
+[profile.release.build-override]
+opt-level = 0
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "abort"
+
+# Release packages (`--profile dist`), as Mugetsu builds them.
+[profile.dist]
+inherits = "release"
+lto = true
+codegen-units = 1
+
+[profile.dev.package.h263-rs]
+opt-level = 3
+
+[profile.dev.package.h263-rs-yuv]
+opt-level = 3
+
+[profile.dev.package.nihav_core]
+opt-level = 3
+
+[profile.dev.package.nihav_codec_support]
+opt-level = 3
+
+[profile.dev.package.nihav_duck]
+opt-level = 3

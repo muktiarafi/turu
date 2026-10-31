@@ -1,11 +1,11 @@
 # Turu status
 
 What works, what is missing, and the things that trip up work on Turu. Keep it current when
-something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md` first.
+something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` first.
 
 ## What works
 
-- **App:** the Ruffle fork (branch `turu`, Ruffle `fda41800` + Mugetsu 1.6.0's patches) starts
+- **App:** `app/` on ruffle-aqw (`ruffle/`: Ruffle `fda41800` + Mugetsu 1.6.0's patches) starts
   VibeSkua's `skua.swf`, which loads AQW. You log in with the game's own screen.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
   background loops for drops, registered quests, skills and boosts; Stop and Pause.
@@ -21,8 +21,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   logs in once the game has loaded and then starts the script. `TURU_PASSWORD` can replace
   `--password` (a command line is visible to other users). `--load-script` only loads,
   `--exit-on-script-stop` logs out and quits when the script stops (not for auto-relogin).
-  `bot/src/startup.rs`, flags in `desktop/src/turu.rs`.
-- **Windowless mode** (`--headless`, `desktop/src/headless.rs`): no window, GPU or sound; the
+  `bot/src/startup.rs`, flags in `app/src/turu.rs`.
+- **Windowless mode** (`--headless`, `app/src/headless.rs`): no window, GPU or sound; the
   player draws nothing (Ruffle's null renderer) and a loop on the main thread runs it, its
   network tasks and the bot's calls. With the login flags and `--run-script` it farms on its
   own, logging to the terminal; it needs no display (a Linux server). At the login screen
@@ -49,8 +49,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   launcher's stdin pipe closes, even if the launcher crashed). Army Control polls each process's
   `/status` every 2 s and sends VibeSkua's Army Control commands to all of them, and to every
   tab, or only to the checked rows (a group's with Group ▾); each row has its own Start/Stop,
-  Log in/out, Gear and a ⋯ menu (Relog, Logs, Restart, Close). `docs/turu/UI.md` has the layout.
-- **Gear from the launcher** (`bot/src/gear.rs`, `docs/turu/ARMY_EQUIPMENT_PROPOSAL.md` phase
+  Log in/out, Gear and a ⋯ menu (Relog, Logs, Restart, Close). `docs/UI.md` has the layout.
+- **Gear from the launcher** (`bot/src/gear.rs`, `docs/ARMY_EQUIPMENT_PROPOSAL.md` phase
   1): every client keeps `gear/<username>.json` (its wearable items, the bank as last loaded
   with its date; the bank is never loaded just for it), and the control API's `/equip` puts an
   item on, out of the bank if needed (loading it when it wasn't this login), with an
@@ -58,7 +58,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   stops it and leaves it stopped. Army Control's Gear window uses them, for a client without a
   window too. Tested against a fake game (`bot/tests/gear.rs`); unverified in game: the `sES`
   slot codes, the bank opening in a client without a window, and the equip timings.
-- **Tabs** (`desktop/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
+- **Tabs** (`app/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
   client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
   the players run on the event loop thread and are ticked every loop; only the active one is
@@ -79,7 +79,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   the packet warnings (locked zone, room full, ignoring goto), the CoreBots class type,
   Infinite Range and Skip Cutscenes while following, relogin re-arm, suspending while a script
   runs, and parking (house, whitemap, stay). Its test runs a master and a butler against two
-  fake games. The window (`docs/turu/UI.md`) lists the other online accounts with
+  fake games. The window (`docs/UI.md`) lists the other online accounts with
   Follow and Summon, and edits the options; following stops the tab's Auto Attack. Not built:
   AntiLag while following, the quest bypass table, quest cloning, the level fake, V5's debug
   log viewer (Butler logs to the script and debug logs), the suspend message box, and an offline write when the window
@@ -149,22 +149,22 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   when the script is stopped, and uses boosts from the CBO Boosters switches.
 - **Script options:** a script exports `scriptOptions` (`defineScriptOptions`); Scripts > Edit
   Script Options edits them, saved in `options/<Storage>.cfg` like VibeSkua, and `bot.config.get`
-  reads them (`docs/turu/SCRIPTING.md`, "Options"). Start opens the window and waits for it
+  reads them (`docs/SCRIPTING.md`, "Options"). Start opens the window and waits for it
   unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
-- **Search Scripts** (`bot/src/repo.rs`, `desktop/src/gui/turu/script_repo.rs`): VibeSkua's
+- **Search Scripts** (`bot/src/repo.rs`, `app/src/gui/turu/script_repo.rs`): VibeSkua's
   Script Repo for the scripts in `muktiarafi/turu-scripts` (the `scripts/` submodule): search,
   categories, pins, Start/Load (downloading the script and what it imports), Update all,
   Download all and Reset Scripts, and the launch-time check and auto update (Options >
   Application). Edited scripts are kept by updates and backed up by a reset.
-  `docs/turu/ARCHITECTURE.md` ("Script repository") has the design.
+  `docs/ARCHITECTURE.md` ("Script repository") has the design.
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
   the title, the client's starting frame rate (24 by default, AQW's own rate; Set FPS defaults to
   0, leaving the game's own FPS setting alone),
   relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook; the skill-set and junk-item update switches are stored only.
-- **Web monitor** (`docs/turu/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
+- **Web monitor** (`docs/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
   Nexus webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`)
   on `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
   and the clients Army > Accounts launched, live: Skua Nexus's cards (state, map, level and class,
@@ -196,7 +196,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/turu/ARCHITECTURE.md
   command (about 0.1 s) and its log. The in-game cards, commands and history only with sample
   data; the Options window's Report section and QR code only built, not looked at. Not built:
   browser notifications.
-- **UI:** VibeSkua's nav bar and the windows listed in `docs/turu/UI.md` (Script Loader, Script
+- **UI:** VibeSkua's nav bar and the windows listed in `docs/UI.md` (Script Loader, Script
   Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Logger, Current Drops, Auto, Jump).
   Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; its
   Notifications button (Notify Drop) isn't built.
@@ -301,7 +301,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
   Loader, Grabber, Junk Items, Notify Drop, Console, Spammer, Interceptor, Plugins, the skills
-  editor, Auto Hunt (`docs/turu/UI.md` has the full list).
+  editor, Auto Hunt (`docs/UI.md` has the full list).
 - No release packaging yet: Mugetsu's `../mugetsu/source/build-*.sh` still need a Turu version.
 
 ## Things to know
@@ -318,13 +318,13 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   tests for it). Read the game first, then lock.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
-- **Clippy on the desktop crate** stops at an existing error in Ruffle's
-  `render/wgpu/src/surface/commands.rs` (`redundant_clone`). Lint Turu's code past it with
-  `cargo clippy -p turu <features> -- -A clippy::redundant_clone`; the findings left are in
-  Ruffle and Mugetsu files.
-- **Formatting:** the bot crate uses `cargo fmt`. The files in `desktop/src/gui/turu/` are
+- **Clippy** lints only `bot/` and `app/` (the `ruffle/` crates are path dependencies outside the
+  workspace). It reports two existing errors in `app/`: `redundant_clone` in `app/src/headless.rs`
+  (`opt.player.parameters.clone()`) and `unused_async` in Ruffle's `app/src/gui/theme.rs`
+  (`get_system_theme`).
+- **Formatting:** the bot crate uses `cargo fmt`. The files in `app/src/gui/turu/` are
   formatted with `max_width = 120`, so format one file at a time
   (`rustfmt --edition 2024 --config max_width=120 <file>`). Running rustfmt on `mod.rs`
   reformats every window.
-- `docs/turu/mugetsu-patch.md` describes what Mugetsu's patch changes, including the egui
+- `docs/mugetsu-patch.md` describes what Mugetsu's patch changes, including the egui
   palette.

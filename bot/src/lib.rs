@@ -1,6 +1,6 @@
 //! Turu's bot engine: VibeSkua's script API in Rust, driven by TypeScript scripts.
 //!
-//! Start at [`Bot`]. Architecture: docs/turu/ARCHITECTURE.md.
+//! Start at [`Bot`]. Architecture: docs/ARCHITECTURE.md.
 
 pub mod accounts;
 pub mod api;

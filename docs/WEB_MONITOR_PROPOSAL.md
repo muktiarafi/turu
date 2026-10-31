@@ -242,9 +242,9 @@ Differences from the plan above:
 | Phase | Delivers | Main files |
 |---|---|---|
 | 1 | `Snapshot` refactor (webhooks unchanged, tests compare the embeds), hub with tab samplers, server with `/`, `/api/bots`, `/api/events`, the cards and tables, view key, Options > Monitor. Nexus parity for one process. | `bot/src/monitor/{mod,snapshot,server}.rs`, `bot/src/http.rs`, `bot/assets/monitor/index.html`, `webhooks.rs`, `settings.rs`, `application_options.rs` |
-| 2 | Army children (`/snapshot` on the control API, the Army poll feeds the hub), the Army windows reading the hub (decision 4), events and history, `/api/usage`, persistence, logs in the detail view. | `control_api.rs`, `army.rs`, `desktop/src/gui/turu/{army,accounts}.rs` |
+| 2 | Army children (`/snapshot` on the control API, the Army poll feeds the hub), the Army windows reading the hub (decision 4), events and history, `/api/usage`, persistence, logs in the detail view. | `control_api.rs`, `army.rs`, `app/src/gui/turu/{army,accounts}.rs` |
 | 3 | Control key and routes, bot detail controls, bulk actions, browser notifications. | `monitor/server.rs`, page |
-| 4 | Remote: `Report To` pushes snapshots and events to another hub's `/ingest` every 5 s (blocking reqwest on the sampler thread, as webhooks post); `--monitor` for headless. QR pairing. | `monitor/push.rs`, `desktop/src/turu.rs` |
+| 4 | Remote: `Report To` pushes snapshots and events to another hub's `/ingest` every 5 s (blocking reqwest on the sampler thread, as webhooks post); `--monitor` for headless. QR pairing. | `monitor/push.rs`, `app/src/turu.rs` |
 
 Each phase is usable on its own; phase 1 is about the size of the webhook module plus the page.
 

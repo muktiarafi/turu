@@ -46,7 +46,7 @@ jobs:
     steps:
       # scripts/ is the turu-scripts submodule: the engine tests load its scripts, and they are
       # type-checked against this commit's bot/js/turu.ts. The packages don't ship it (Search
-      # Scripts downloads the scripts), so the build jobs check out without it.
+      # Scripts downloads the scripts), so the build jobs check out only ruffle/.
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -94,6 +94,9 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+
+      # ruffle/ (ruffle-aqw) holds the Flash player's crates; scripts/ isn't needed to build.
+      - run: git submodule update --init --depth 1 ruffle
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -183,7 +186,7 @@ jobs:
           chmod +x "$app/Contents/MacOS/turu"
 
           # iconutil wants a folder named *.iconset.
-          cp -R desktop/assets/Assets.xcassets/RuffleMacIcon.iconset Turu.iconset
+          cp -R app/assets/Assets.xcassets/RuffleMacIcon.iconset Turu.iconset
           iconutil -c icns -o "$app/Contents/Resources/Turu.icns" Turu.iconset
 
           cat > "$app/Contents/Info.plist" <<PLIST

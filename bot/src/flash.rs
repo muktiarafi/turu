@@ -1,7 +1,7 @@
 //! Typed access to `skua.swf`'s ExternalInterface callbacks (VibeSkua: `IFlashUtil`).
 //!
 //! Paths are dotted and rooted at the game (`world.myAvatar.objData.intGold`); `get_static`
-//! roots them at the game's class (`loginInfo.strUsername`). See docs/turu/VIBESKUA_SPEC.md, section 2.
+//! roots them at the game's class (`loginInfo.strUsername`). See docs/VIBESKUA_SPEC.md, section 2.
 
 use crate::control::ScriptControl;
 use crate::error::{BotError, BotResult};

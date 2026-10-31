@@ -6,7 +6,7 @@
 #
 # The scripts aren't shipped: Scripts > Search Scripts downloads them from turu-scripts into the
 # data folder and keeps them updated (bot/src/repo.rs). A copy here would go stale, and Load
-# Script would open it first (desktop/src/gui/turu/files.rs looks above the executable).
+# Script would open it first (app/src/gui/turu/files.rs looks above the executable).
 set -Eeuo pipefail
 
 out="$1"
@@ -14,7 +14,8 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
 mkdir -p "$out"
 cp "$root/README.md" "$out/README.md"
-cp "$root/LICENSE.md" "$out/LICENSE.md"
+cp "$root/LICENSE" "$out/LICENSE.txt"
+cp "$root/LICENSE-RUFFLE.md" "$out/LICENSE-RUFFLE.md"
 
 cat > "$out/README.txt" <<'TXT'
 Turu - an AdventureQuest Worlds bot client (Ruffle + Mugetsu's AQW patches).

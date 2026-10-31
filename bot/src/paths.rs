@@ -1,4 +1,4 @@
-//! Where Turu keeps its files (see docs/turu/ARCHITECTURE.md, "Data directory").
+//! Where Turu keeps its files (see docs/ARCHITECTURE.md, "Data directory").
 
 use crate::options::BotOptions;
 use crate::settings::AppSettings;

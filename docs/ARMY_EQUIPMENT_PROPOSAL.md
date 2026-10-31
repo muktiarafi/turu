@@ -137,7 +137,7 @@ the client stops the script, equips, and answers with the report and `"stoppedSc
 * **Row actions.** Each client row gets a "⋯" menu: Start / Stop script, Load script, Relog,
   Logs (a window that pages `/log?since=` as the monitor does), Gear, and Restart (kill and
   relaunch with the same `Launch`).
-* **Gear window** (`desktop/src/gui/turu/gear.rs`, one per account): the worn slots, a slot's
+* **Gear window** (`app/src/gui/turu/gear.rs`, one per account): the worn slots, a slot's
   drop-down from the cache (inventory first, then bank, marked, with "bank as of <time>" or
   "bank not read yet" and a Load bank button while the account plays), Equip; the loadouts with a
   source chip (Account, Army, Overrides army, CoreBots) and Equip / Save current / Save to
@@ -205,7 +205,7 @@ the client stops the script, equips, and answers with the report and `"stoppedSc
   `Command::{Equip, LoadBank, RefreshGear, Relogin}`, `Army::restart`, `broadcast` to a list of
   usernames, `army::send_local` for tabs.
 * Army Control: actions to the checked rows or everyone (Group ▾ checks a group), per-row
-  buttons and ⋯ menu (redone after phase 1 as a selection list, `docs/turu/UI.md`), the Gear window
+  buttons and ⋯ menu (redone after phase 1 as a selection list, `docs/UI.md`), the Gear window
   (`gui/turu/gear.rs`) and a launched client's Logs window (`gui/turu/client_logs.rs`).
 * Differences from the design above: Restart reads the password from the keychain again
   rather than keeping it; the Gear window's Equip sends the item's ID, so two items of the same

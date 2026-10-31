@@ -14,11 +14,13 @@ and keeps the same UI/UX, but:
 
 ## Repository layout
 
-This repository is a Ruffle fork. Upstream Ruffle code stays where it is; Turu adds:
+Turu is its own workspace on top of **ruffle-aqw** (Ruffle with Mugetsu's patches):
 
 ```
-patches/                 Mugetsu's patched crates (wgpu-core, wgpu-hal, gc-arena, lyon_*); [patch.crates-io]
-bot/                     crate `turu_bot`: the bot engine (no dependency on desktop or ruffle_core)
+ruffle/                  submodule: muktiarafi/ruffle-aqw (branch `aqw`), Ruffle `fda41800` + Mugetsu
+                         1.6.0. The app uses its crates by path; its patched crates (ruffle/patches/:
+                         wgpu-core, wgpu-hal, gc-arena, lyon_*) are wired up in the root Cargo.toml
+bot/                     crate `turu_bot`: the bot engine (no dependency on the app or ruffle_core)
   assets/skua.swf        VibeSkua's AS3 host SWF (Skua.AS3/skua/bin/skua.swf), embedded with include_bytes!
   js/                    TypeScript runtime that ships inside the binary (module "turu")
   src/
@@ -51,17 +53,19 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on desk
                          login tracking, rest packets, option enforcement, the relogin watchdog
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
-desktop/src/turu.rs      desktop integration: FlashHost impl, ExternalInterface provider, spawn_action
-desktop/src/gui/turu/    egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
+app/                     crate `turu`, the app: started from ruffle-aqw's desktop frontend (Ruffle's,
+                         with Mugetsu's changes marked `AQW build:`), plus Turu's tabs and UI
+  src/turu.rs            Flash integration: FlashHost impl, ExternalInterface provider, spawn_action
+  src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 scripts/                 submodule: muktiarafi/turu-scripts, the TypeScript scripts (Core libraries,
                          ported farms) and their index generator
-docs/turu/               these docs
+docs/                    these docs
 ```
 
 ## Process and threads
 
 One window can hold several tabs, each a game client of its own: a `Player` and its `Bot`
-(`desktop/src/turu.rs`). Every tab's player lives on the event loop thread below; Flash calls
+(`app/src/turu.rs`). Every tab's player lives on the event loop thread below; Flash calls
 carry their tab, and the window draws the active tab's player.
 
 ```
@@ -77,7 +81,7 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
                             never locks Player)       and block on a reply channel
 ```
 
-* **Without a window** (`--headless`, `desktop/src/headless.rs`) there is no winit event loop:
+* **Without a window** (`--headless`, `app/src/headless.rs`) there is no winit event loop:
   the main thread builds the player with the null renderer and UI and runs its own loop, and
   `Flash::call` sends to that loop's channel instead of the `EventLoopProxy`.
 * **Ruffle's `Player` is `!Send` in practice** (its futures are `spawn_local` on the event
@@ -96,7 +100,7 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
 
 ## The Flash bridge
 
-`skua.swf` registers ~70 callbacks (full list: `docs/turu/VIBESKUA_SPEC.md`, section 2). The calling
+`skua.swf` registers ~70 callbacks (full list: `docs/VIBESKUA_SPEC.md`, section 2). The calling
 convention matches VibeSkua's `FlashUtil.Call`:
 
 * Arguments are strings, numbers, booleans, null, arrays or objects (`FlashArg`; the last two become
@@ -145,7 +149,7 @@ Startup sequence (same as VibeSkua):
 * Script header block comment (`/* name: ... description: ... tags: ... */`) is kept from
   the C# scripts for the repo browser.
 
-See `docs/turu/SCRIPTING.md` for the script author guide.
+See `docs/SCRIPTING.md` for the script author guide.
 
 ## UI
 
@@ -153,7 +157,7 @@ The window keeps VibeSkua's layout: a 34 px top nav bar (Scripts, Options, Tools
 Combat, Bank, Diagnostics, Plugins; Auto / Jump / + on the right) above the game, and tool
 windows (Script Loader, Game Options, Skills, Logs, Packet Logger, ...) as egui windows over
 the game. Colours, corner radii and fonts come from Mugetsu's menu style
-(`desktop/src/gui/turu/theme.rs`). Details: `docs/turu/UI.md`.
+(`app/src/gui/turu/theme.rs`). Details: `docs/UI.md`.
 
 ## Data directory
 

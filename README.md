@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/turu/logo/turu-logo-dark.svg">
-    <img src="docs/turu/logo/turu-logo-light.svg" alt="Turu" width="320">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/turu-logo-dark.svg">
+    <img src="docs/logo/turu-logo-light.svg" alt="Turu" width="320">
   </picture>
 </p>
 
@@ -20,8 +20,9 @@ but runs anywhere:
 - **Scripts:** TypeScript with full type information. No compiling step: the app loads
   `.ts` files directly.
 
-This repository is a Ruffle fork (branch `turu`). Ruffle's own readme is
-[README.ruffle.md](README.ruffle.md).
+The Flash player comes from [ruffle-aqw](https://github.com/muktiarafi/ruffle-aqw) (Ruffle with
+Mugetsu's patches), the `ruffle/` submodule. Turu builds on its crates and keeps its own app
+(`app/`) and engine (`bot/`).
 
 ## Requirements
 
@@ -87,7 +88,8 @@ version of those scripts isn't written yet.
 ## Test
 
 `scripts/` is a submodule ([turu-scripts](https://github.com/muktiarafi/turu-scripts)); the tests
-and the type-check need it: clone with `--recursive`, or run `git submodule update --init`.
+and the type-check need it: clone with `--recursive`, or run `git submodule update --init`. `ruffle/` is one too, and every build
+needs it.
 
 ```bash
 cargo test -p turu_bot                                   # engine + script runtime (fake game, no login needed)
@@ -118,7 +120,7 @@ export default function main(): void {
 
 Calls are synchronous, so there's no `await`. The API with its docs is in
 [bot/js/turu.ts](bot/js/turu.ts). The guide is
-[docs/turu/SCRIPTING.md](docs/turu/SCRIPTING.md). CoreBots helpers are in
+[docs/SCRIPTING.md](docs/SCRIPTING.md). CoreBots helpers are in
 [scripts/core/CoreBots.ts](scripts/core/CoreBots.ts).
 
 ## Where things are
@@ -128,11 +130,12 @@ Calls are synchronous, so there's no `await`. The API with its docs is in
 | `bot/` | Bot engine (`turu_bot`): Flash bridge, script API, runners, TypeScript runtime |
 | `bot/js/turu.ts` | The script API (types + runtime) |
 | `bot/assets/skua.swf` | VibeSkua's game-side SWF, embedded in the app |
-| `desktop/src/turu.rs` | Connects the bot to the Flash player |
-| `desktop/src/gui/turu/` | The UI (top bar, Script Loader, options, logs, ...) |
+| `app/src/turu.rs` | Connects the bot to the Flash player |
+| `app/src/gui/turu/` | The UI (top bar, Script Loader, options, logs, ...) |
+| `app/` | The app (`turu`): window, player tabs, UI; started from Ruffle's desktop frontend |
 | `scripts/` | TypeScript scripts (`core/`, `nation/`, ...) |
-| `patches/` | Mugetsu's patched crates |
-| `docs/turu/` | [Architecture](docs/turu/ARCHITECTURE.md), [UI](docs/turu/UI.md), [scripting](docs/turu/SCRIPTING.md), [VibeSkua reference](docs/turu/VIBESKUA_SPEC.md), [status](docs/turu/STATUS.md) |
+| `ruffle/` | [ruffle-aqw](https://github.com/muktiarafi/ruffle-aqw): Ruffle with Mugetsu's patches |
+| `docs/` | [Architecture](docs/ARCHITECTURE.md), [UI](docs/UI.md), [scripting](docs/SCRIPTING.md), [VibeSkua reference](docs/VIBESKUA_SPEC.md), [status](docs/STATUS.md) |
 
 ## Data folder
 
@@ -153,9 +156,10 @@ Ruffle's own log is in its cache folder (`~/Library/Caches/ruffle/log` on macOS,
 
 The engine, the main windows, CoreBots Options and the 0MaxBags and GoldFarm ports work, and
 are being tested in game. Auto-relogin, the script browser and the skills editor aren't built
-yet. [docs/turu/STATUS.md](docs/turu/STATUS.md) lists what works and what's missing.
+yet. [docs/STATUS.md](docs/STATUS.md) lists what works and what's missing.
 
 ## License
 
-Ruffle is MIT / Apache-2.0. Mugetsu's changes are GPL-3.0, so builds of Turu are GPL-3.0.
+Turu is GPL-3.0-or-later ([LICENSE](LICENSE)). It builds on Ruffle, MIT / Apache-2.0
+([LICENSE-RUFFLE.md](LICENSE-RUFFLE.md)), and Mugetsu's changes, GPL-3.0.
 Turu isn't affiliated with or endorsed by Artix Entertainment, the Ruffle project or Mugetsu.

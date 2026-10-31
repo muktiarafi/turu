@@ -1,4 +1,4 @@
-//! Gear from outside a script (docs/turu/ARMY_EQUIPMENT_PROPOSAL.md, phase 1):
+//! Gear from outside a script (docs/ARMY_EQUIPMENT_PROPOSAL.md, phase 1):
 //!
 //! * Every client keeps `gear/<username>.json` up to date: its inventory, and its bank as last
 //!   loaded (dated by `bankAsOf`). The launcher reads it to show and pick gear for an account
