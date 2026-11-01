@@ -416,11 +416,12 @@ fn main() -> Result<(), Error> {
         }
     });
 
-    // Turu: the startup flags (downloading the scripts they name), the control API (`--api`) and
-    // the web monitor, now that their messages can be logged.
+    // Turu: the startup flags (downloading the scripts they name), the control API (`--api`), the
+    // web monitor and `TURU_PERF_LOG`, now that their messages can be logged.
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
+    turu::start_perf_log();
 
     // Turu: `--headless` runs the game without a window.
     if turu::headless() {

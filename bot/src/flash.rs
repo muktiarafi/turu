@@ -6,13 +6,16 @@
 use crate::control::ScriptControl;
 use crate::error::{BotError, BotResult};
 use crate::host::{FlashArg, FlashHost};
+use crate::perf::PerfStats;
 use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct Flash {
     host: RwLock<Option<Arc<dyn FlashHost>>>,
     control: Arc<ScriptControl>,
+    perf: Arc<PerfStats>,
 }
 
 impl Flash {
@@ -20,7 +23,13 @@ impl Flash {
         Self {
             host: RwLock::new(None),
             control,
+            perf: Arc::default(),
         }
+    }
+
+    /// The calls made and the player's ticks (see [`crate::perf`]).
+    pub fn perf(&self) -> &Arc<PerfStats> {
+        &self.perf
     }
 
     pub fn set_host(&self, host: Option<Arc<dyn FlashHost>>) {
@@ -46,7 +55,19 @@ impl Flash {
         let Some(host) = host else {
             return Err(BotError::Host("the game isn't running".into()));
         };
-        let result = host.call(name, args).map_err(BotError::from);
+        let path = match args.first() {
+            Some(FlashArg::String(path)) if crate::perf::takes_path(name) => Some(path.clone()),
+            _ => None,
+        };
+        let asked = Instant::now();
+        let result = host.call_timed(name, args);
+        let (run, reply) = match &result {
+            Ok((reply, run)) => (*run, Some(reply.len())),
+            Err(_) => (None, None),
+        };
+        self.perf
+            .record_call(name, path.as_deref(), asked.elapsed(), run, reply);
+        let result = result.map(|(reply, _)| reply).map_err(BotError::from);
         if let Err(e) = &result {
             tracing::debug!("Flash call {name} failed: {e}");
         }

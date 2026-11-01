@@ -98,12 +98,14 @@ fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<
 
 /// Ticks the player when a frame is due and handles events in between.
 fn run_loop(player: &Arc<Mutex<Player>>, events: &Receiver<HeadlessEvent>) {
+    let perf = turu::bot().flash.perf().clone();
     let mut time = Instant::now();
     loop {
         let next_frame = {
             let mut player = player.lock().expect("the player isn't poisoned");
             let now = Instant::now();
             player.tick(FloatDuration::from_std(now.duration_since(time)));
+            perf.record_tick(now.elapsed());
             time = now;
             now + player.time_til_next_frame()
         };

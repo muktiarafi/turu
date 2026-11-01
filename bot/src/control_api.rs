@@ -34,6 +34,7 @@
 //! | `POST /butler/summon?user=`, `/butler/release?user=` | Summon or release one account (`user` must be online with Butler to summon). |
 //! | `POST /butler/summon-all`, `/butler/release-all` | Summon every available account; release them all. |
 //! | `POST /butler/follow?master=`, `/butler/stop` | Follow an account from this client; stop following (declining a summon). |
+//! | `GET /debug/perf` | The Flash calls this client made and its player's ticks, since it started (`crate::perf::PerfSnapshot`). |
 //!
 //! `/equip` and `/bank/load` answer 409 while a script runs, unless `stop=1`: then the script
 //! is stopped first and stays stopped. `/auto/attack/start` answers 409 while a script, a
@@ -236,6 +237,9 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             let snapshot = crate::monitor::sample(bot, query("slow").as_deref() == Some("1"));
             let (events, next) = bot.monitor.events_since(since);
             ok(json!({ "snapshot": snapshot, "events": events, "next": next }))
+        }
+        ("/debug/perf", false) => {
+            ok(serde_json::to_value(bot.flash.perf().snapshot()).unwrap_or(Value::Null))
         }
         ("/script/load", true) => match query("path") {
             Some(path) => load(bot, &path).map_or_else(|e| e, |path| ok(json!({ "loaded": path }))),

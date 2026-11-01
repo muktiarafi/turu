@@ -14,13 +14,14 @@ use crate::custom_event::RuffleEvent;
 use ruffle_core::Player;
 use ruffle_core::context::UpdateContext;
 use ruffle_core::external::{ExternalInterfaceProvider, Value as ExternalValue};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::ThreadId;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use turu_bot::events::BotEvent;
 use turu_bot::startup::Startup;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
@@ -457,6 +458,45 @@ pub fn start_api() {
     }
 }
 
+/// With `TURU_PERF_LOG=<seconds>`, logs each tab's Flash calls and player ticks over the last
+/// `seconds` (`turu_bot::perf`), and with several tabs the player thread's time for all of them.
+pub fn start_perf_log() {
+    let Some(every) = std::env::var("TURU_PERF_LOG").ok().and_then(|s| s.trim().parse::<f64>().ok()) else {
+        return;
+    };
+    let every = Duration::from_secs_f64(every.max(1.0));
+    tracing::info!("Logging Flash calls and ticks every {} s (TURU_PERF_LOG)", every.as_secs_f64());
+    let spawned = std::thread::Builder::new().name("Turu Perf Log".into()).spawn(move || {
+        let mut last: HashMap<TabId, turu_bot::perf::PerfSnapshot> = HashMap::new();
+        loop {
+            std::thread::sleep(every);
+            let tabs = tabs();
+            last.retain(|tab, _| tabs.iter().any(|(t, _)| t == tab));
+            let mut busy = 0.0;
+            let mut seconds: f64 = 0.0;
+            for (tab, bot) in &tabs {
+                let now = bot.flash.perf().snapshot();
+                let window = last.get(tab).map_or_else(|| now.clone(), |before| now.since(before));
+                busy += window.busy_ms();
+                seconds = seconds.max(window.seconds);
+                tracing::info!(target: "turu_perf", "{}", window.report(&format!("tab {}", tab_label(bot)), 12));
+                last.insert(*tab, now);
+            }
+            if tabs.len() > 1 {
+                tracing::info!(
+                    target: "turu_perf",
+                    "all {} tabs: player thread {:.0} ms/s",
+                    tabs.len(),
+                    busy / seconds.max(0.001)
+                );
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        tracing::error!("Couldn't start the perf log: {e}");
+    }
+}
+
 struct Monitor {
     server: Option<turu_bot::monitor::server::Server>,
     /// What `server` was started with: allow other devices, port.
@@ -865,7 +905,8 @@ enum Request {
     Call {
         name: String,
         args: Vec<ExternalValue>,
-        reply: SyncSender<Option<ExternalValue>>,
+        /// The answer and how long the player took to run it.
+        reply: SyncSender<(Option<ExternalValue>, Duration)>,
     },
     /// A loaded movie whose URL path ends in `path` ([`FlashHost::loaded_swf`]).
     LoadedMovie {
@@ -885,8 +926,9 @@ impl TuruFlashCall {
 pub fn answer_flash_call(call: TuruFlashCall, player: Option<&mut Player>) {
     match call.request {
         Request::Call { name, args, reply } => {
+            let started = Instant::now();
             let result = player.map(|player| player.call_internal_interface(&name, args));
-            let _ = reply.send(result);
+            let _ = reply.send((result, started.elapsed()));
         }
         Request::LoadedMovie { path, reply } => {
             let suffix = format!("/{}", path.trim_start_matches('/'));
@@ -928,6 +970,10 @@ impl DesktopFlashHost {
 
 impl FlashHost for DesktopFlashHost {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
+        self.call_timed(name, args).map(|(reply, _)| reply)
+    }
+
+    fn call_timed(&self, name: &str, args: Vec<FlashArg>) -> Result<(String, Option<Duration>), HostError> {
         if MAIN_THREAD.get() == Some(&std::thread::current().id()) {
             tracing::error!("Flash call {name} from the UI thread; use turu::spawn_action");
             return Err(HostError::Closed);
@@ -942,8 +988,8 @@ impl FlashHost for DesktopFlashHost {
             return Err(HostError::Closed);
         }
         match answer.recv_timeout(CALL_TIMEOUT) {
-            Ok(Some(value)) => Ok(from_external(value)),
-            Ok(None) => Err(HostError::NoPlayer),
+            Ok((Some(value), run)) => Ok((from_external(value), Some(run))),
+            Ok((None, _)) => Err(HostError::NoPlayer),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(HostError::Timeout),
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(HostError::Closed),
         }

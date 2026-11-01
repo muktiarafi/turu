@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::time::Duration;
 
 /// An argument passed to one of `skua.swf`'s ExternalInterface callbacks.
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +100,16 @@ impl fmt::Display for HostError {
 /// strings are converted: booleans to `"true"`/`"false"`, null/undefined to `"null"`).
 pub trait FlashHost: Send + Sync {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError>;
+
+    /// [`FlashHost::call`], with how long the player took to run it (the rest of the wait was
+    /// the trip to its thread and the wait there); `None` when the host can't tell.
+    fn call_timed(
+        &self,
+        name: &str,
+        args: Vec<FlashArg>,
+    ) -> Result<(String, Option<Duration>), HostError> {
+        self.call(name, args).map(|reply| (reply, None))
+    }
 
     /// A SWF the game has loaded from a URL whose path ends in `path` (a map file such as
     /// `ChiralValley/town-Mobius-21Feb14.swf`), as an uncompressed SWF file; `None` when

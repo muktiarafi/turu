@@ -120,6 +120,8 @@ struct ActivePlayer {
     /// Turu: while it's a hidden tab's player, when it was last ticked and when it's due again
     /// (`PlayerController::tick_hidden`).
     hidden_tick: Cell<Option<(Instant, Instant)>>,
+    /// Turu: the tab's bot's stats, which count this player's ticks.
+    perf: Option<Arc<turu_bot::perf::PerfStats>>,
 
     #[cfg(target_os = "linux")]
     _gamemode_session: crate::dbus::GameModeSession,
@@ -449,6 +451,7 @@ impl ActivePlayer {
             player,
             thread_state: RefCell::default(),
             hidden_tick: Cell::new(None),
+            perf: bot.as_ref().map(|bot| bot.flash.perf().clone()),
             #[cfg(target_os = "linux")]
             _gamemode_session: crate::dbus::GameModeSession::new(gamemode_enable),
         }
@@ -651,7 +654,11 @@ impl PlayerController {
             let next = match slot.hidden_tick.get() {
                 Some((last, due)) if now >= due => {
                     let mut player = slot.lock(false);
+                    let started = Instant::now();
                     player.tick(FloatDuration::from_std(now - last));
+                    if let Some(perf) = &slot.perf {
+                        perf.record_tick(started.elapsed());
+                    }
                     now + player.time_til_next_frame().min(HIDDEN_TICK_MAX)
                 }
                 Some((_, due)) => {
@@ -718,6 +725,13 @@ impl PlayerController {
             player.detach_bot();
         }
         self.active = 0;
+    }
+
+    /// Turu: the active tab's player ticked for `took` (counted in its bot's stats).
+    pub fn record_tick(&self, took: Duration) {
+        if let Some(perf) = self.players.get(self.active).and_then(|p| p.perf.as_ref()) {
+            perf.record_tick(took);
+        }
     }
 
     pub fn get(&self) -> Option<MutexGuard<'_, Player>> {

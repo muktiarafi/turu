@@ -315,6 +315,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; its
   Notifications button (Notify Drop) isn't built. Combat > Skills' editor is unverified on
   screen: its model and file writing are tested, the window only built.
+- **Perf counters** (`bot/src/perf.rs`): every Flash call is counted by the thread that made it
+  and its callback (and path, for `getGameObject` and its kin), with how long the caller waited
+  and how long the player ran it (timed in `answer_flash_call`); each tab's player ticks too.
+  Read with `GET /debug/perf`, or logged per tab with `TURU_PERF_LOG=<seconds>`
+  (`docs/HEADLESS.md`). The wait includes the queue on the player's thread, so a wait far above
+  the run time means that thread is busy with ticks or other tabs' calls.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.

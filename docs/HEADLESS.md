@@ -184,6 +184,13 @@ curl -H "$T" -X POST "localhost:8791/butler/summon?user=MyAlt"   # also release,
 A refused command answers 409 with the reason (a playlist that runs can't be edited, Butler
 won't summon a busy account, ...).
 
+**What keeps the game thread busy:** `GET /debug/perf` lists the Flash calls the client made
+since it started (by thread and callback, with the path for `getGameObject` and its kin: how
+many, how long they waited, how long the player took to run them, reply bytes) and its player's
+ticks. `TURU_PERF_LOG=<seconds>` logs the same for each tab every `seconds`, over that window
+(`turu_perf` lines: the player thread's milliseconds per second, then the busiest calls). With a
+window it covers every tab, plus a total line.
+
 ## Reference
 
 | Flag | What |
@@ -205,6 +212,7 @@ won't summon a busy account, ...).
 | `TURU_API_TOKEN` | The control API token (16+ characters); else the data folder's `api-token`. |
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |
 | `TURU_SCRIPTS_REPO` | Another scripts repository (`owner/name`). |
+| `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks. |
 | `RUST_LOG` | What the log shows. |
 
 ## Troubleshooting

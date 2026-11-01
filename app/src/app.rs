@@ -974,10 +974,13 @@ impl MainWindow {
                 let frame_cost_ms = &mut self.frame_cost_ms;
                 // Turu: the other tabs' players run too (not drawn, muted), when due.
                 let background_next = self.player.tick_hidden(new_time);
+                let mut tick_took = None; // Turu: counted in the tab's bot's stats.
                 self.next_frame_time = self.player.get().map(|mut player| {
                     let frames_before = player.frames_run();
                     let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
+                    let tick_started = Instant::now();
                     player.tick(dt);
+                    tick_took = Some(tick_started.elapsed());
                     if player.frames_run() != frames_before {
                         *frame_since_render = true;
                         let frame_ms = new_time.elapsed().as_secs_f64() * 1000.0;
@@ -1010,6 +1013,9 @@ impl MainWindow {
                     }
                     new_time + player.time_til_next_frame()
                 });
+                if let Some(took) = tick_took {
+                    self.player.record_tick(took);
+                }
                 if let Some(next) = background_next {
                     self.next_frame_time = Some(self.next_frame_time.map_or(next, |t| t.min(next)));
                 }

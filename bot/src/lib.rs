@@ -26,6 +26,7 @@ pub mod models;
 pub mod monitor;
 pub mod options;
 pub mod paths;
+pub mod perf;
 pub mod quest_cache;
 pub mod repo;
 pub mod scheduler;
