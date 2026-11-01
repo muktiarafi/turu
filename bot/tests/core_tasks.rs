@@ -258,3 +258,97 @@ export default function main(): void {
         "{log}"
     );
 }
+
+#[test]
+fn every_ultrasv3_script_loads() {
+    // Each script's module tree (the bosses, the dailies, the queues, ...) evaluates without the
+    // game, and the scripts with options declare them.
+    let scripts = [
+        "DoUltrasDoDailiesDoChallengeBosses",
+        "DoAllUltrasStorys",
+        "armydependencies/ArmyGeneral",
+        "challengebosses/AstralEmpyreanv3",
+        "challengebosses/Azalithv3",
+        "challengebosses/BataraKalav3",
+        "challengebosses/Flibbitiestgibbetv3",
+        "challengebosses/Kasukov3",
+        "challengebosses/Kathoolv3",
+        "challengebosses/KolrSoloLich",
+        "challengebosses/KolrSoloLichFarm",
+        "challengebosses/Kolrv3",
+        "challengebosses/NightBanev3",
+        "challengebosses/QueenIonav3",
+        "challengebosses/developertools/0ChallengeBossTemplateNoTauntv3DevTools",
+        "challengebosses/developertools/AstralEmpyreanv3ArmyDeathv3DevTools",
+        "challengebosses/developertools/AstralEmpyreanv3OneDeathv3DevTools",
+        "dependenciesultras/UltraCounterAttack",
+        "dependenciesultras/UltraDeath",
+        "farmgold/ArmyPrismatasv3",
+        "testultrasorbossesscripts/Masakadov3",
+        "weapons/EmpoweredNationItem",
+        "entwined eclipse/0GreatbladeOfTheEntwinedEclipse",
+        "entwined eclipse/AscensionoftheEclipse",
+        "entwined eclipse/Masakado",
+        "entwined eclipse/MidnightSun",
+        "entwined eclipse/SolsticeMoon",
+        "entwined eclipse/VictorMatsuriStory",
+        "dependenciesmerge/QueenIona",
+        "../army/ArmyFarmVoidAuras",
+        "../army/dailies/TheEncroachingShadows",
+        "../army/dailies/WrongTurnatVoidbuquerque",
+        "../other/mergeshops/LothianTreasuryMerge",
+    ];
+    let imports: String = scripts
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("import * as m{i} from \"CORE/../ultrasv3/{s}\";\n"))
+        .collect();
+    let modules: Vec<String> = (0..scripts.len()).map(|i| format!("m{i}")).collect();
+    let source = format!(
+        r#"import {{ bot }} from "turu";
+{imports}export default function main(): void {{
+    const modules: Record<string, unknown>[] = [{}];
+    bot.log(`loaded ${{modules.length}} ${{modules.filter((m) => "scriptOptions" in m).length}}`);
+}}
+"#,
+        modules.join(", ")
+    );
+    let bot = run("ultrasv3", &source);
+
+    let log = bot.logs.script.text();
+    assert_eq!(
+        logged(&log, "loaded"),
+        format!("{} 25", scripts.len()),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_cancellation_token_ends_a_task_that_sets_an_event() {
+    // C#'s CancellationTokenSource and ManualResetEvent, as the Ultras' wipe monitor uses them.
+    let bot = run(
+        "token",
+        r#"import { bot } from "turu";
+import { CancellationTokenSource, ManualResetEvent, tasks } from "CORE/CoreTasks";
+export default function main(): void {
+    const cts = new CancellationTokenSource();
+    const done = new ManualResetEvent(false);
+    let steps = 0;
+    tasks.start("watch", function* () {
+        while (!cts.token.isCancellationRequested) {
+            steps++;
+            yield 50;
+        }
+        done.set();
+    });
+    bot.log(`early ${done.waitOne(200)}`);
+    cts.cancel();
+    bot.log(`set ${done.waitOne(2000)} ${steps > 1} ${tasks.running("watch")}`);
+}
+"#,
+    );
+
+    let log = bot.logs.script.text();
+    assert_eq!(logged(&log, "early"), "false", "{log}");
+    assert_eq!(logged(&log, "set"), "true true false", "{log}");
+}

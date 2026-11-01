@@ -185,13 +185,19 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   "Tools") lists what differs from C#, the three Ultra-engine Army scripts that are logged skips,
   the skipped tools and why, and 4 C# bugs fixed on purpose. All type-check and load; none has
   run in game, and the shared log and keychain login are only unit-tested.
-- **Ultras (started):** `ultrasv3/challengebosses/NightmareCarnaxv3.ts` on the parts of
-  `Ultrasv3/DependenciesUltras` it reaches (CoreEnginev3's skill engine and every class rotation,
-  CoreUltrav3's class sync and house join, UltraGeneral, UltraPotions, UltraEnhancements,
-  GetPotions). C#'s `Task.Run`/`Thread` work runs as generator tasks (`scripts/core/CoreTasks.ts`,
-  stepped like `bot.handlers`); new API `bot.player.stats` and `bot.lite.hidePlayers`.
-  `scripts/README.md` ("Ultras") has the C# mapping and what differs. The tasks are tested
-  against a fake game (`bot/tests/core_tasks.rs`); none of the Ultra code has run in game.
+- **Ultras:** everything in `Ultrasv3` but `TestZone` (it runs on the old `Ultras/` engine): the
+  whole `DependenciesUltras` engine (CoreEnginev3's skill engine and every region, CoreUltrav3's
+  sync, taunts, scrolls, alchemy and house joins, the class syncs, wait-for-army, wipe and death
+  sync, taunt pulses, prerequisites), the 11 individual Ultras, the challenge bosses, the dailies,
+  the DoAll queues, ArmyPrismatas and EmpoweredNationItem, and Entwined Eclipse on its own older
+  CoreEngine/CoreUltra (with `DependenciesMerge/QueenIona`, which `LothianTreasuryMerge` now
+  fights, and the Army scripts `ArmyFarmVoidAuras`, `TheEncroachingShadows` and
+  `WrongTurnatVoidbuquerque`). C#'s threads and
+  `async` work run as generator tasks (`scripts/core/CoreTasks.ts`, with C#'s
+  `CancellationTokenSource` and `ManualResetEvent`). The boss scripts are cs2ts drafts fixed until
+  they type-check; `scripts/README.md` ("Ultras") has the C# mapping and what differs. Tested:
+  the tasks against a fake game and that every Ultrasv3 script loads (`bot/tests/core_tasks.rs`);
+  none of it has run in game.
 - **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
   progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
   UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
@@ -362,7 +368,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   don't show (integer division, culture-dependent formats, async C# rewritten as handlers).
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
   packets). Nothing is left to port but what is
-  skipped on purpose: the Ultras (but NightmareCarnaxv3, above), `Templates`, the unused `Prototypes`, the generator, and the
+  skipped on purpose: the Ultras' `TestZone`, `Templates`, the unused `Prototypes`, the generator, and the
   Tools listed in `scripts/README.md`.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
