@@ -82,9 +82,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   undrawn tab gains nothing from LOW, and going back to HIGH re-tessellated every shape on each
   switch (only Headless Mode sets LOW). Each player keeps its own copy of Ruffle's thread-local
   state (`ruffle_core::PlayerThreadState`: pending shape tessellations, replay's change count,
-  frame interpolation's frame), swapped in by `PlayerController` while a hidden tab's code runs
-  (ticks, Flash calls, futures), so hidden tabs neither spoil the shown tab's replays and
-  interpolation nor leave tessellations only their renderer can finish. Hidden tabs' players
+  frame interpolation's frame) and its renderer's command segments not submitted yet
+  (`ruffle_render_wgpu::segments`), swapped in by `PlayerController` while a hidden tab's code
+  runs (ticks, Flash calls, futures), so hidden tabs neither spoil the shown tab's replays and
+  interpolation nor leave tessellations only their renderer can finish, and no tab submits
+  another's segments (which crashed with seven tabs: "StagingBelt staging buffer is still
+  mapped"). A tab keeps how far it got since its last cut, not the pass count at that cut
+  (counted for every tab), and at most 128 segments wait: a hidden tab otherwise cut between
+  nearly every pass and, submitting only every 100 offscreen draws, the tabs reached Metal's
+  4096 outstanding command buffers (a lost device: "the graphics driver stopped working"). Hidden tabs' players
   are ticked only when a frame or timer is due, or every 50 ms for their sockets
   (`PlayerController::tick_hidden`), not on every pass of the event loop, and only the active
   tab has the mouse (`give_mouse`, on every tab change): Ruffle hit-tests the whole stage on

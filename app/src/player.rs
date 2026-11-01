@@ -115,8 +115,8 @@ struct ActivePlayer {
     tab: Option<crate::turu::TabId>,
     player: Arc<Mutex<Player>>,
     /// Turu: this player's thread-local state while another player is the active one (see
-    /// `PlayerThreadState`); the active player's is the thread's, and this is left default.
-    thread_state: RefCell<PlayerThreadState>,
+    /// `ThreadState`); the active player's is the thread's, and this is left default.
+    thread_state: RefCell<ThreadState>,
     /// Turu: while it's a hidden tab's player, when it was last ticked and when it's due again
     /// (`PlayerController::tick_hidden`).
     hidden_tick: Cell<Option<(Instant, Instant)>>,
@@ -462,11 +462,28 @@ impl ActivePlayer {
 /// packets) and timers are serviced at least this often.
 const HIDDEN_TICK_MAX: Duration = Duration::from_millis(50);
 
+/// Turu: what one player keeps in the thread: the core's (`PlayerThreadState`) and its
+/// renderer's command segments not submitted yet (`ruffle_render_wgpu::segments`), which
+/// another player's submit must not take.
+#[derive(Default)]
+struct ThreadState {
+    core: PlayerThreadState,
+    segments: ruffle_render_wgpu::segments::ThreadState,
+}
+
+impl ThreadState {
+    /// Swaps this state with the thread's.
+    fn swap(&mut self) {
+        self.core.swap();
+        ruffle_render_wgpu::segments::swap(&mut self.segments);
+    }
+}
+
 /// Turu: while alive, a player that isn't the active one has its own thread-local state.
-struct SwappedIn<'a>(&'a RefCell<PlayerThreadState>);
+struct SwappedIn<'a>(&'a RefCell<ThreadState>);
 
 impl<'a> SwappedIn<'a> {
-    fn new(state: &'a RefCell<PlayerThreadState>) -> Self {
+    fn new(state: &'a RefCell<ThreadState>) -> Self {
         state.borrow_mut().swap();
         Self(state)
     }
