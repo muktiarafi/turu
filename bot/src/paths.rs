@@ -225,6 +225,11 @@ impl Paths {
         self.root.join("butler_logs")
     }
 
+    /// Where the Scheduler's Save and Load dialogs open (its playlists, VibeSkua's JSON).
+    pub fn playlists_dir(&self) -> PathBuf {
+        self.root.join("playlists")
+    }
+
     /// CoreArmyLite's sync logs (`bot.army.appendLog`), shared by every client.
     pub fn army_dir(&self) -> PathBuf {
         self.root.join("army")

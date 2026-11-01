@@ -14,6 +14,7 @@ use crate::monitor::snapshot::bot_name;
 use crate::settings::AppSettings;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -26,14 +27,26 @@ const GOLD: u32 = 0xFFD700;
 /// Something to report.
 #[derive(Debug)]
 pub enum Notice {
+    /// `quiet`: the Scheduler runs it and sends its own embed (set by [`Webhooks::send`]).
     ScriptStarted {
         script: String,
+        quiet: bool,
     },
     /// `error` is the message when the script failed (VibeSkua sends `ScriptErrorMessage`,
     /// then `ScriptStoppedMessage`).
     ScriptStopped {
         script: String,
         error: Option<String>,
+        quiet: bool,
+    },
+    /// The Scheduler's own embeds (VibeSkua `SendEmbedAsync`), sent whatever the notify
+    /// switches say. `{bot}` in the text becomes the bot's name; fields are (name, value,
+    /// inline).
+    Embed {
+        title: String,
+        text: String,
+        color: u32,
+        fields: Vec<(String, String, bool)>,
     },
     Relogin {
         kicked: bool,
@@ -49,19 +62,36 @@ pub enum Notice {
 pub struct Webhooks {
     tx: Sender<Notice>,
     rx: Receiver<Notice>,
+    /// The Scheduler runs (VibeSkua `SuppressDefaultNotifications`): no Script Started or
+    /// Farming Session Concluded embed of the scripts it runs.
+    quiet: AtomicBool,
 }
 
 impl Default for Webhooks {
     fn default() -> Self {
         let (tx, rx) = unbounded();
-        Self { tx, rx }
+        Self {
+            tx,
+            rx,
+            quiet: AtomicBool::new(false),
+        }
     }
 }
 
 impl Webhooks {
     /// Queues a notice; never blocks.
-    pub fn send(&self, notice: Notice) {
+    pub fn send(&self, mut notice: Notice) {
+        if let Notice::ScriptStarted { quiet, .. } | Notice::ScriptStopped { quiet, .. } =
+            &mut notice
+        {
+            *quiet = self.quiet.load(Ordering::Acquire);
+        }
         let _ = self.tx.send(notice);
+    }
+
+    /// VibeSkua `SuppressDefaultNotifications`.
+    pub fn set_quiet(&self, quiet: bool) {
+        self.quiet.store(quiet, Ordering::Release);
     }
 }
 
@@ -162,14 +192,14 @@ fn handle(
         return;
     }
     match notice {
-        Notice::ScriptStarted { script } => {
+        Notice::ScriptStarted { script, quiet } => {
             let playing = player::playing(out.bot).unwrap_or(false);
             *session = Some(Session {
                 started: Instant::now(),
                 gold: if playing { gold(out.bot) } else { 0 },
                 xp: if playing { xp(out.bot) } else { 0 },
             });
-            if settings.webhook_notify_started {
+            if settings.webhook_notify_started && !quiet {
                 let text = format!("**{}** has begun execution of **{script}**.", out.name());
                 out.post(discord, embed("Script Started", &text, GREEN, None));
             }
@@ -182,7 +212,11 @@ fn handle(
             }
             *next_ping = ping_interval(settings).map(|every| Instant::now() + every);
         }
-        Notice::ScriptStopped { script, error } => {
+        Notice::ScriptStopped {
+            script,
+            error,
+            quiet,
+        } => {
             let started = session.take();
             *next_ping = None;
             if let Some(error) = error
@@ -193,6 +227,7 @@ fn handle(
                 out.post(discord, embed("Script Error", &text, RED, Some(fields)));
             }
             if settings.webhook_notify_stopped
+                && !quiet
                 && let Some(started) = started
                 && player::playing(out.bot).unwrap_or(false)
             {
@@ -247,6 +282,20 @@ fn handle(
                 );
                 out.post(discord, json!({ "description": text, "color": GOLD }));
             }
+        }
+        Notice::Embed {
+            title,
+            text,
+            color,
+            fields,
+        } => {
+            let text = text.replace("{bot}", &out.name());
+            let fields: Vec<Value> = fields
+                .iter()
+                .map(|(name, value, inline)| field(name, value, *inline))
+                .collect();
+            let fields = (!fields.is_empty()).then_some(fields);
+            out.post(discord, embed(&title, &text, color, fields));
         }
         Notice::Test => {
             let title = "Discord Webhook Test Successful!";

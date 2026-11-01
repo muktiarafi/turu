@@ -1,5 +1,5 @@
 //! Search Scripts (VibeSkua's 969x500 Script Repo, `ScriptRepoControl`): the repository's
-//! scripts and your own, searchable, with Start, Load, Pin, Download/Update and Delete, and
+//! scripts and your own, searchable, with Start, Load, Queue, Pin, Download/Update and Delete, and
 //! Update all / Download all / Reset Scripts. The work runs in `turu_bot::repo` on a thread of
 //! its own; this window shows its snapshot.
 
@@ -249,7 +249,7 @@ impl ScriptRepoWindow {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(4.0, ROW_MARGIN))));
         let ui = &mut child;
         ui.horizontal(|ui| {
-            let buttons = 64.0 + 56.0 + 30.0 + 18.0;
+            let buttons = 64.0 + 56.0 + 64.0 + 30.0 + 24.0;
             ui.allocate_ui(
                 vec2((ui.available_width() - buttons).max(0.0), height - 2.0 * ROW_MARGIN),
                 |ui| {
@@ -266,6 +266,25 @@ impl ScriptRepoWindow {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 self.row_menu(ui, entry, busy);
                 let bot = crate::turu::bot();
+                let queue_running = bot.scheduler.is_running();
+                let queue_tip = if busy {
+                    "Wait for the current task"
+                } else {
+                    "Cannot add scripts while the playlist is running"
+                };
+                if widgets::button(
+                    ui,
+                    "Queue",
+                    Kind::Normal,
+                    !busy && !queue_running,
+                    vec2(64.0, 28.0),
+                    queue_tip,
+                )
+                .on_hover_text("Add to the Scheduler queue")
+                .clicked()
+                {
+                    queue(&info.path);
+                }
                 let active = bot.scripts.status().is_active();
                 let auto = super::auto::running(&bot);
                 let snippet = bot.scripts.is_snippet_running();
@@ -487,6 +506,18 @@ fn load(path: &str, start: bool) {
             return Ok(format!("Started {path}."));
         }
         Ok(format!("Loaded {path}."))
+    });
+}
+
+/// Scheduler's Queue (VibeSkua `QueueScript`): downloads the script (and what it imports) if
+/// needed, then adds it to the active tab's playlist.
+fn queue(path: &str) {
+    let bot = crate::turu::bot();
+    let path = path.to_owned();
+    crate::turu::script_repo().spawn("Queue", move |repo| {
+        let local = repo.ensure(&path)?;
+        bot.scheduler.add(&local)?;
+        Ok(format!("Queued {path}."))
     });
 }
 

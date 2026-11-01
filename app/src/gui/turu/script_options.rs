@@ -19,15 +19,29 @@ pub struct ScriptOptionsWindow {
     error: Option<String>,
     /// The script's request (`bot.config.configure`, or before a run) the window is open for.
     request: Option<u64>,
+    /// The draft is a Scheduler entry's options (VibeSkua `EditScriptConfig`): Save writes its
+    /// own file and leaves the loaded script alone.
+    queued: bool,
 }
 
 impl ScriptOptionsWindow {
+    /// Edits a Scheduler entry's options, read from its `Queue_<name>_<id>` file.
+    pub fn edit_queued(&mut self, options: ScriptOptions) {
+        self.draft = Some(options);
+        self.queued = true;
+        self.error = None;
+    }
+
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         let scripts = &crate::turu::bot().scripts;
         let pending = scripts.configure_request();
         if pending.is_some() && pending != self.request {
             // The script waits for the window (VibeSkua's options dialog on Start).
             self.request = pending;
+            if self.queued {
+                self.queued = false;
+                self.draft = None;
+            }
             *open = true;
         } else if self.request.is_some() && pending != self.request {
             // The script was stopped while it waited.
@@ -40,6 +54,7 @@ impl ScriptOptionsWindow {
             }
             self.draft = None;
             self.error = None;
+            self.queued = false;
             return;
         }
         if self.draft.is_none()
@@ -143,7 +158,14 @@ impl ScriptOptionsWindow {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if widgets::button(ui, "Save", ButtonKind::Primary, true, vec2(80.0, 28.0), "").clicked() {
-                    match bot.scripts.save_options(draft.clone()) {
+                    let saved = if self.queued {
+                        draft
+                            .save()
+                            .map_err(|e| format!("couldn't save {}: {e}", draft.path().display()))
+                    } else {
+                        bot.scripts.save_options(draft.clone())
+                    };
+                    match saved {
                         Ok(()) => *done = true,
                         Err(e) => self.error = Some(e),
                     }
