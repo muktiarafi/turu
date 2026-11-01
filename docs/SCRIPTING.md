@@ -3,7 +3,7 @@
 Turu scripts are TypeScript. The API is `bot/js/turu.ts`: every member has a doc comment, and
 your editor shows them once `scripts/tsconfig.json` is in use (`"turu"` maps to that file).
 For downloaded scripts, open the data folder's `scripts/` in your editor: Turu writes the API
-there as `types/turu.ts`, with a `tsconfig.json` that points `"turu"` at it.
+there as `types/turu.ts`, and downloads the repository's `tsconfig.json` with the scripts.
 
 ## The smallest script
 

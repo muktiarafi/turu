@@ -189,7 +189,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `gear/<username>.json` | each account's wearable items (inventory, and the bank as last loaded, dated `bankAsOf`), written by its client within 5 s of a change (`bot/src/gear.rs`); the Army Control Gear window reads it |
 | `butler/<username>.state` | each logged-in account's Butler state (`key=value` lines, `bot/src/butler/sync.rs`): where it is, whom it summons and follows, a `beat` every 5 s; older than 15 s counts as offline |
 | `scripts/` | the scripts folder: Search Scripts downloads here (the repo's `scripts/` can be used directly) |
-| `scripts/types/turu.ts`, `scripts/tsconfig.json` | for code editors (`Paths::write_script_types`, when Search Scripts starts): the script API this app runs, rewritten when it differs, and a `tsconfig.json` mapping `"turu"` to it, written only when missing |
+| `scripts/types/turu.ts`, `scripts/tsconfig.json` | for code editors: the script API this app runs (`Paths::write_script_types`, when Search Scripts starts; rewritten when it differs), and the scripts repository's `tsconfig.json`, downloaded with the scripts once per commit (its `"turu"` falls back to `./types/turu.ts`); a `tsconfig.json` you wrote or changed stays (`scripts-manifest.json` keeps the sha256 of the one Turu wrote) |
 | `scripts-index.json` | the last script list (`index.json` of the scripts repository) and its ETag |
 | `scripts-manifest.json` | the sha256 of every script as Search Scripts wrote it: tells an outdated script from one you edited |
 | `pinned-scripts.json` | the scripts pinned in Search Scripts |

@@ -41,6 +41,9 @@ const PARALLEL_DOWNLOADS: usize = 8;
 /// From this many files, one zip of the repository is fetched instead of each file.
 const ARCHIVE_THRESHOLD: usize = 25;
 
+/// The repository's TypeScript settings, downloaded next to the scripts for code editors.
+const TSCONFIG: &str = "tsconfig.json";
+
 /// The repository's `index.json`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -430,6 +433,10 @@ struct Manifest {
     commit: String,
     /// Path -> sha256 of the file as Turu wrote it.
     files: BTreeMap<String, String>,
+    /// The commit of the `tsconfig.json` Turu last wrote, and its sha256 (a different file is
+    /// yours and stays).
+    tsconfig_commit: String,
+    tsconfig: String,
 }
 
 #[derive(Default)]
@@ -662,6 +669,10 @@ impl ScriptRepo {
     /// Fetches `wanted` at `commit`, checks and writes them, and records them in the manifest.
     fn fetch(&self, commit: &str, wanted: &[&ScriptInfo]) -> Result<usize, String> {
         if wanted.is_empty() {
+            // Scripts downloaded before Turu fetched tsconfig.json still get it.
+            if self.update_tsconfig(commit, None) {
+                self.save_manifest(|_| ())?;
+            }
             return Ok(0);
         }
         let total = wanted.len();
@@ -678,10 +689,14 @@ impl ScriptRepo {
                 total,
             );
         };
+        let mut tsconfig = None;
         if total >= ARCHIVE_THRESHOLD {
             self.progress(format!("Downloading {total} scripts..."), 0, total);
             let archive = self.remote.archive(commit)?;
-            let mut files = unzip(&archive, wanted)?;
+            let mut paths: HashSet<&str> = wanted.iter().map(|s| s.path.as_str()).collect();
+            paths.insert(TSCONFIG);
+            let mut files = unzip(&archive, &paths)?;
+            tsconfig = files.remove(TSCONFIG);
             for info in wanted {
                 if self.cancelled() {
                     break;
@@ -719,15 +734,8 @@ impl ScriptRepo {
                 }
             });
         }
-        {
-            let mut data = self.data.lock();
-            data.manifest.commit = commit.to_owned();
-            write_json(
-                &self.paths.root.join("scripts-manifest.json"),
-                &data.manifest,
-            )
-            .map_err(|e| format!("couldn't save scripts-manifest.json: {e}"))?;
-        }
+        self.update_tsconfig(commit, tsconfig);
+        self.save_manifest(|manifest| manifest.commit = commit.to_owned())?;
         self.rescan();
         if self.cancelled() {
             return Err(format!("cancelled after {written} of {total} files"));
@@ -770,6 +778,55 @@ impl ScriptRepo {
             .files
             .insert(info.path.clone(), hash);
         Ok(())
+    }
+
+    /// Changes the manifest with `change` and saves it.
+    fn save_manifest(&self, change: impl FnOnce(&mut Manifest)) -> Result<(), String> {
+        let mut data = self.data.lock();
+        change(&mut data.manifest);
+        write_json(
+            &self.paths.root.join("scripts-manifest.json"),
+            &data.manifest,
+        )
+        .map_err(|e| format!("couldn't save scripts-manifest.json: {e}"))
+    }
+
+    /// Writes the repository's `tsconfig.json` at `commit` (`bytes` when the zip had it), so
+    /// editors check the scripts as the repository does; `"turu"` falls back to the
+    /// `types/turu.ts` [`Paths::write_script_types`] writes. Once per commit, and never over a
+    /// `tsconfig.json` you wrote or changed. A failure only logs: the scripts still run. True
+    /// when the manifest changed.
+    fn update_tsconfig(&self, commit: &str, bytes: Option<Vec<u8>>) -> bool {
+        let path = self.paths.scripts_dir().join(TSCONFIG);
+        let written = {
+            let data = self.data.lock();
+            if data.manifest.tsconfig_commit == commit {
+                return false;
+            }
+            data.manifest.tsconfig.clone()
+        };
+        if let Ok(local) = fs::read(&path)
+            && !sha256(&local).eq_ignore_ascii_case(&written)
+        {
+            return false;
+        }
+        let bytes = match bytes.map_or_else(|| self.remote.file(commit, TSCONFIG), Ok) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::warn!("Script download: couldn't fetch {TSCONFIG}: {e}");
+                return false;
+            }
+        };
+        let temp = path.with_extension("turu-download");
+        if let Err(e) = fs::write(&temp, &bytes).and_then(|()| fs::rename(&temp, &path)) {
+            let _ = fs::remove_file(&temp);
+            tracing::warn!("Script download: couldn't write {TSCONFIG}: {e}");
+            return false;
+        }
+        let mut data = self.data.lock();
+        data.manifest.tsconfig_commit = commit.to_owned();
+        data.manifest.tsconfig = sha256(&bytes);
+        true
     }
 
     /// VibeSkua's "Update all": the outdated scripts, and what the downloaded ones now import
@@ -1097,8 +1154,7 @@ pub fn sha256(bytes: &[u8]) -> String {
 }
 
 /// The `wanted` files of a GitHub zipball (paths below its top folder).
-fn unzip(archive: &[u8], wanted: &[&ScriptInfo]) -> Result<HashMap<String, Vec<u8>>, String> {
-    let wanted: HashSet<&str> = wanted.iter().map(|s| s.path.as_str()).collect();
+fn unzip(archive: &[u8], wanted: &HashSet<&str>) -> Result<HashMap<String, Vec<u8>>, String> {
     let mut zip =
         zip::ZipArchive::new(io::Cursor::new(archive)).map_err(|e| format!("bad zip: {e}"))?;
     let mut files = HashMap::new();

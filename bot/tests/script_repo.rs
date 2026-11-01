@@ -45,8 +45,14 @@ impl Fake {
             });
             stored.insert((*path).into(), source.as_bytes().to_vec());
         }
+        // Not a script: not in the index, downloaded for editors.
+        stored.insert("tsconfig.json".into(), tsconfig(commit).into_bytes());
         *self.index.lock() = index;
     }
+}
+
+fn tsconfig(commit: &str) -> String {
+    format!("{{ \"commit\": \"{commit}\" }}\n")
 }
 
 /// The repo's handle on the fake (the test keeps another).
@@ -195,7 +201,8 @@ fn download_brings_the_imports_and_update_keeps_edits() {
     let path = repo.ensure("farm/GoldFarm.ts").unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), FARM);
     assert_eq!(status(&repo, "core/CoreBots.ts"), Some(Status::UpToDate));
-    assert_eq!(fake.file_calls.load(Ordering::Relaxed), 2);
+    // The two scripts and tsconfig.json.
+    assert_eq!(fake.file_calls.load(Ordering::Relaxed), 3);
 
     // A new commit changes both; CoreBots was edited here.
     let core = dir.path().join("scripts/core/CoreBots.ts");
@@ -327,18 +334,15 @@ fn scripts_repo_types_match_the_api() {
 }
 
 #[test]
-fn scripts_folder_gets_editor_types_but_keeps_its_tsconfig() {
-    let (dir, _fake, repo) = setup();
+fn scripts_folder_gets_editor_types_and_the_repos_tsconfig() {
+    let (dir, fake, repo) = setup();
     let scripts = dir.path().join("scripts");
+    let tsconfig_file = scripts.join("tsconfig.json");
     assert_eq!(
         fs::read_to_string(scripts.join("types/turu.ts")).unwrap(),
         turu_bot::TURU_TS
     );
-    assert!(
-        fs::read_to_string(scripts.join("tsconfig.json"))
-            .unwrap()
-            .contains(r#""turu": ["./types/turu.ts"]"#)
-    );
+    assert!(!tsconfig_file.exists());
     assert!(
         repo.snapshot()
             .entries
@@ -346,17 +350,44 @@ fn scripts_folder_gets_editor_types_but_keeps_its_tsconfig() {
             .all(|e| !e.info.path.starts_with("types/"))
     );
 
-    fs::write(scripts.join("tsconfig.json"), "{}").unwrap();
+    // Downloads bring the repository's tsconfig.json, once per commit.
+    repo.refresh().unwrap();
+    repo.ensure("farm/GoldFarm.ts").unwrap();
+    assert_eq!(fs::read_to_string(&tsconfig_file).unwrap(), tsconfig("c1"));
+    let calls = fake.file_calls.load(Ordering::Relaxed);
+    repo.ensure("farm/GoldFarm.ts").unwrap();
+    assert_eq!(fake.file_calls.load(Ordering::Relaxed), calls);
+    // Up-to-date scripts still bring it when it's missing at a new commit.
+    fs::remove_file(&tsconfig_file).unwrap();
+    fake.publish(
+        "c1b",
+        &[
+            ("core/CoreBots.ts", CORE, &[]),
+            ("farm/GoldFarm.ts", FARM, &["core/CoreBots.ts"]),
+        ],
+    );
+    repo.refresh().unwrap();
+    repo.ensure("farm/GoldFarm.ts").unwrap();
+    assert_eq!(fs::read_to_string(&tsconfig_file).unwrap(), tsconfig("c1b"));
+    fake.publish("c2", &[("core/CoreBots.ts", "// v2\n", &[])]);
+    repo.refresh().unwrap();
+    repo.download(&["core/CoreBots.ts".into()], false).unwrap();
+    assert_eq!(fs::read_to_string(&tsconfig_file).unwrap(), tsconfig("c2"));
+
+    // Yours stays.
+    fs::write(&tsconfig_file, "{}").unwrap();
+    fake.publish("c3", &[("core/CoreBots.ts", "// v3\n", &[])]);
+    repo.refresh().unwrap();
+    repo.download(&["core/CoreBots.ts".into()], false).unwrap();
+    assert_eq!(fs::read_to_string(&tsconfig_file).unwrap(), "{}");
+
+    // An outdated types/turu.ts is rewritten.
     fs::write(scripts.join("types/turu.ts"), "old").unwrap();
     Paths {
         root: dir.path().to_path_buf(),
     }
     .write_script_types()
     .unwrap();
-    assert_eq!(
-        fs::read_to_string(scripts.join("tsconfig.json")).unwrap(),
-        "{}"
-    );
     assert_eq!(
         fs::read_to_string(scripts.join("types/turu.ts")).unwrap(),
         turu_bot::TURU_TS

@@ -8,31 +8,6 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Once;
 
-/// The scripts folder's `tsconfig.json`: the scripts repository's, with `"turu"` mapped to
-/// `types/turu.ts` only.
-const SCRIPTS_TSCONFIG: &str = r#"{
-  "compilerOptions": {
-    "strict": true,
-    "noEmit": true,
-    "target": "ES2022",
-    "lib": ["ES2022"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": true,
-    "isolatedModules": true,
-    "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true,
-    "types": [],
-    "paths": {
-      "turu": ["./types/turu.ts"]
-    }
-  },
-  "include": ["**/*.ts"]
-}
-"#;
-
 #[derive(Debug, Clone)]
 pub struct Paths {
     pub root: PathBuf,
@@ -108,19 +83,16 @@ impl Paths {
         self.root.join("scripts")
     }
 
-    /// Sets the scripts folder up for code editors: `types/turu.ts` (the script API this app
-    /// runs, rewritten whenever it differs) and, when there is none, a `tsconfig.json` that maps
-    /// `"turu"` to it. Without them editors report "Cannot find module 'turu'".
+    /// Writes `types/turu.ts` into the scripts folder for code editors: the script API this app
+    /// runs, rewritten whenever it differs. The repository's `tsconfig.json`, downloaded with
+    /// the scripts (`repo::ScriptRepo`), maps `"turu"` to it; without both, editors report
+    /// "Cannot find module 'turu'".
     pub fn write_script_types(&self) -> io::Result<()> {
         let dir = self.scripts_dir();
         fs::create_dir_all(dir.join("types"))?;
         let types = dir.join("types").join("turu.ts");
         if fs::read_to_string(&types).ok().as_deref() != Some(crate::TURU_TS) {
             fs::write(&types, crate::TURU_TS)?;
-        }
-        let tsconfig = dir.join("tsconfig.json");
-        if !tsconfig.exists() {
-            fs::write(&tsconfig, SCRIPTS_TSCONFIG)?;
         }
         Ok(())
     }
