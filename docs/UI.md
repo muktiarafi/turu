@@ -392,6 +392,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 Not built at all (greyed in the menus): Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Plugins, Auto Hunt, Notify Drop.
 
+Hotkeys (`hotkeys` in `mod.rs`): only VibeSkua's default F6, which toggles the active tab's Lag
+Killer (and logs it). It can't be rebound: the HotKeys window isn't built.
+
 ## Adding a window
 
 Add `foo.rs` with a struct and `show(&mut self, ctx, &mut bool)`, build the window with

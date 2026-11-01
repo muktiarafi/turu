@@ -429,7 +429,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   codeload downloads and the ETag 304 against it aren't covered by a test. Scripts made for a
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
-- Not built in the UI: Themes, HotKeys, Loadouts, Fast Travel,
+- Not built in the UI: Themes, HotKeys (only F6 for Lag Killer, fixed), Loadouts, Fast Travel,
   Notify Drop, Plugins
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's

@@ -211,6 +211,7 @@ impl TuruUi {
     /// The tool windows that are open.
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
+        hotkeys(ctx);
         let picker = self.picker.clone();
         let tab = self.active();
         let w = &mut tab.windows;
@@ -265,6 +266,21 @@ impl TuruUi {
     /// Attack).
     pub fn is_busy(&self) -> bool {
         crate::turu::tabs().iter().any(|(_, bot)| busy(bot))
+    }
+}
+
+/// VibeSkua's default hotkeys that Turu has, fixed for now (VibeSkua lets you rebind them): F6
+/// toggles the active tab's Lag Killer (`ToggleLagKiller`). The game gets the key too, as it
+/// does Ruffle's own shortcuts.
+fn hotkeys(ctx: &Context) {
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F6)) {
+        let bot = crate::turu::bot();
+        let on = {
+            let mut o = bot.options.write();
+            o.lag_killer = !o.lag_killer;
+            o.lag_killer
+        };
+        bot.log(format!("Lag Killer {}", if on { "on" } else { "off" }));
     }
 }
 
