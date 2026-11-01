@@ -35,9 +35,17 @@ struct FakeGame {
     nothing_found: AtomicBool,
     loads: Mutex<Vec<String>>,
     client_packets: Mutex<Vec<String>>,
+    /// A SWF the game has loaded: its URL path and data.
+    loaded_swf: Mutex<Option<(String, Vec<u8>)>>,
 }
 
 impl FlashHost for FakeGame {
+    fn loaded_swf(&self, path: &str) -> Option<Vec<u8>> {
+        let loaded = self.loaded_swf.lock();
+        let (url, data) = loaded.as_ref()?;
+        url.ends_with(path).then(|| data.clone())
+    }
+
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
         let arg = |i: usize| match args.get(i) {
             Some(FlashArg::String(s)) => s.clone(),
@@ -101,6 +109,7 @@ fn setup(dir: &str) -> (Arc<Bot>, Arc<FakeGame>) {
         nothing_found: AtomicBool::new(false),
         loads: Mutex::new(Vec::new()),
         client_packets: Mutex::new(Vec::new()),
+        loaded_swf: Mutex::new(None),
     });
     bot.set_host(Some(game.clone()));
     // Each test gets its own cache file.
@@ -817,7 +826,7 @@ fn serve_bytes(
 
 #[test]
 fn finds_map_items_in_the_downloaded_map_and_keeps_them() {
-    let (bot, _) = setup("map-items");
+    let (bot, game) = setup("map-items");
     let _ = std::fs::remove_file(bot.paths.map_items_file());
     let scan = |swf: &[u8]| -> Result<Vec<(i64, i64)>, String> {
         assert_eq!(swf, b"FWS map");
@@ -849,6 +858,13 @@ fn finds_map_items_in_the_downloaded_map_and_keeps_them() {
         items[0].map_file_path,
         "ChiralValley/town-Mobius-21Feb14.swf"
     );
+    // While the game has the map loaded, a refresh reads its copy (nothing listens at port 9).
+    *game.loaded_swf.lock() = Some((
+        "https://game.aq.com/game/gamefiles/maps/ChiralValley/town-Mobius-21Feb14.swf".into(),
+        b"FWS map".to_vec(),
+    ));
+    let refreshed = turu_bot::map_items::find_at(&bot, "http://127.0.0.1:9/", &scan, true).unwrap();
+    assert_eq!(refreshed, items);
 
     // The rows, and Open / Accept use the items' quests (none for an item without one).
     let rows: Vec<Grabbed> = items.into_iter().map(Grabbed::MapItem).collect();

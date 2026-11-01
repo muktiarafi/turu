@@ -31,7 +31,7 @@ struct JumpState {
     pad: String,
     /// The current map's pads by cell, read from its SWF (`map_pads`): the map file, and the
     /// cells with their pads (empty while it downloads or when it can't be read).
-    pads: Option<(String, Vec<(String, Vec<String>)>)>,
+    pads: Option<(String, crate::map_pads::CellPads)>,
     /// The last jump's outcome, shown under the buttons.
     status: Option<String>,
 }
@@ -580,7 +580,7 @@ impl NavBar {
                 state.pads = Some((file, Vec::new()));
             }
             let Some(file) = file else { return Ok(()) };
-            let pads = turu_bot::map_items::download_map(&file)
+            let pads = turu_bot::map_items::map_swf(bot, &file)
                 .and_then(|swf| crate::map_pads::scan(&swf).map_err(turu_bot::BotError::Other));
             let mut state = lock(&state);
             if let (Ok(pads), Some((known, slot))) = (&pads, state.pads.as_mut())

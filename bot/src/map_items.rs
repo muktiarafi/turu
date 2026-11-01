@@ -1,5 +1,5 @@
-//! Grabber > GetMap Item IDs (VibeSkua `Map.FindMapItems`): the current map's SWF, downloaded
-//! from the game, scanned for map items by a [`Scanner`], with the results kept per map file.
+//! Grabber > GetMap Item IDs (VibeSkua `Map.FindMapItems`): the current map's SWF, as the game
+//! loaded it or downloaded, scanned for map items by a [`Scanner`], with the results kept per map file.
 //!
 //! VibeSkua decompiles the SWF with FFDec and searches the ActionScript text. Turu reads the
 //! AS3 bytecode instead; that reader is in the app (`app/src/map_items.rs`), because this crate
@@ -60,7 +60,7 @@ fn download(url: &str) -> Result<Vec<u8>, String> {
 }
 
 /// The current map's items (VibeSkua `FindMapItems`): the saved result for its file, unless
-/// `refresh`; otherwise its SWF downloaded from [`MAPS_URL`] and scanned. A result with items is
+/// `refresh`; otherwise its SWF ([`map_swf`]) scanned. A result with items is
 /// saved (map files are versioned by name, so it stays right).
 pub fn find(bot: &Bot, scan: &Scanner, refresh: bool) -> BotResult<Vec<MapItem>> {
     find_at(bot, MAPS_URL, scan, refresh)
@@ -76,9 +76,18 @@ pub fn current_file(bot: &Bot) -> BotResult<String> {
         .ok_or_else(|| BotError::Other("Join a map first: its file isn't known yet.".into()))
 }
 
-/// Downloads a map file (a [`current_file`] path) from [`MAPS_URL`].
-pub fn download_map(file: &str) -> BotResult<Vec<u8>> {
-    download_at(MAPS_URL, file)
+/// A map file's SWF (a [`current_file`] path): the copy the game loaded when it's still
+/// loaded ([`FlashHost::loaded_swf`](crate::FlashHost::loaded_swf)), else downloaded from
+/// [`MAPS_URL`].
+pub fn map_swf(bot: &Bot, file: &str) -> BotResult<Vec<u8>> {
+    map_swf_at(bot, MAPS_URL, file)
+}
+
+fn map_swf_at(bot: &Bot, base_url: &str, file: &str) -> BotResult<Vec<u8>> {
+    match bot.flash.loaded_swf(file) {
+        Some(swf) => Ok(swf),
+        None => download_at(base_url, file),
+    }
 }
 
 fn download_at(base_url: &str, file: &str) -> BotResult<Vec<u8>> {
@@ -104,7 +113,7 @@ pub fn find_at(
     if !refresh && let Some(items) = saved.get(&file) {
         return Ok(items.clone());
     }
-    let swf = download_at(base_url, &file)?;
+    let swf = map_swf_at(bot, base_url, &file)?;
     let found = scan(&swf).map_err(|e| BotError::Other(format!("Couldn't read {file}: {e}")))?;
     let mut items: Vec<MapItem> = found
         .into_iter()

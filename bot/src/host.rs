@@ -99,6 +99,13 @@ impl fmt::Display for HostError {
 /// strings are converted: booleans to `"true"`/`"false"`, null/undefined to `"null"`).
 pub trait FlashHost: Send + Sync {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError>;
+
+    /// A SWF the game has loaded from a URL whose path ends in `path` (a map file such as
+    /// `ChiralValley/town-Mobius-21Feb14.swf`), as an uncompressed SWF file; `None` when
+    /// none is loaded or the host can't tell.
+    fn loaded_swf(&self, _path: &str) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 #[cfg(test)]

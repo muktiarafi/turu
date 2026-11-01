@@ -27,6 +27,12 @@ impl Flash {
         *self.host.write() = host;
     }
 
+    /// [`FlashHost::loaded_swf`]; `None` without a host.
+    pub fn loaded_swf(&self, path: &str) -> Option<Vec<u8>> {
+        let host = self.host.read().clone();
+        host?.loaded_swf(path)
+    }
+
     pub fn has_host(&self) -> bool {
         self.host.read().is_some()
     }

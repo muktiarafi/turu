@@ -8,8 +8,11 @@
 
 use std::collections::HashMap;
 
-/// Each cell (frame label) of the map and its pads, in timeline order.
-pub fn scan(swf_data: &[u8]) -> Result<Vec<(String, Vec<String>)>, String> {
+/// Each cell (frame label) of a map and its pads, in timeline order.
+pub type CellPads = Vec<(String, Vec<String>)>;
+
+/// The map's [`CellPads`].
+pub fn scan(swf_data: &[u8]) -> Result<CellPads, String> {
     let buf = swf::decompress_swf(swf_data).map_err(|e| format!("not a SWF: {e}"))?;
     let parsed = swf::parse_swf(&buf).map_err(|e| format!("not a SWF: {e}"))?;
     let mut pad_symbols = Vec::new();
@@ -25,7 +28,7 @@ pub fn scan(swf_data: &[u8]) -> Result<Vec<(String, Vec<String>)>, String> {
     }
     // Depth -> (symbol, instance name) on the root timeline.
     let mut display: HashMap<u16, (u16, Option<String>)> = HashMap::new();
-    let mut cells: Vec<(String, Vec<String>)> = Vec::new();
+    let mut cells: CellPads = Vec::new();
     for tag in &parsed.tags {
         match tag {
             swf::Tag::FrameLabel(label) => {
@@ -68,6 +71,18 @@ pub fn scan(swf_data: &[u8]) -> Result<Vec<(String, Vec<String>)>, String> {
         }
     }
     Ok(cells)
+}
+
+/// An uncompressed SWF file of a movie Ruffle loaded (its header and decompressed tags), for
+/// the scanners, which read SWF files.
+pub fn swf_file(header: &swf::HeaderExt, tags: &[u8]) -> Option<Vec<u8>> {
+    let header = swf::Header {
+        compression: swf::Compression::None,
+        ..header.swf_header().clone()
+    };
+    let mut swf = Vec::with_capacity(tags.len() + 32);
+    swf::write::write_swf_raw_tags(&header, tags, &mut swf).ok()?;
+    Some(swf)
 }
 
 /// The pad to jump to in a cell with `pads`: "Spawn" for "Enter", else `wanted` when the cell has
@@ -166,8 +181,17 @@ mod tests {
                 },
             ]),
         ];
-        let mut swf = Vec::new();
-        swf::write_swf(&swf::Header::default_with_swf_version(10), &tags, &mut swf).unwrap();
+        let mut compressed = Vec::new();
+        let header = swf::Header {
+            compression: swf::Compression::Zlib,
+            ..swf::Header::default_with_swf_version(10)
+        };
+        swf::write_swf(&header, &tags, &mut compressed).unwrap();
+        // As the game loaded it: Ruffle's decompressed tags, written back out.
+        let loaded = swf::decompress_swf(&compressed[..]).unwrap();
+        let swf = swf_file(&loaded.header, &loaded.data).unwrap();
+        assert_eq!(&swf[..3], b"FWS");
+        assert_eq!(scan(&swf).unwrap(), scan(&compressed).unwrap());
         let strings = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(
             scan(&swf).unwrap(),
@@ -196,6 +220,8 @@ mod tests {
         };
         let data = std::fs::read(path).unwrap();
         let cells = scan(&data).unwrap();
+        let loaded = swf::decompress_swf(&data[..]).unwrap();
+        assert_eq!(scan(&swf_file(&loaded.header, &loaded.data).unwrap()).unwrap(), cells);
         for (cell, pads) in &cells {
             println!("{cell}: {pads:?}");
         }
