@@ -353,3 +353,114 @@ fn parses_map_ids() {
     assert_eq!(auto::parse_map_ids("1, 2 3;x;4"), [1, 2, 3, 4]);
     assert!(auto::parse_map_ids("").is_empty());
 }
+
+const TOKEN: &str = "0123456789abcdef0123456789abcdef";
+
+fn post(url: &str, token: Option<&str>) -> (u16, serde_json::Value) {
+    let mut request = reqwest::blocking::Client::new().post(url);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().unwrap();
+    let status = response.status().as_u16();
+    (
+        status,
+        serde_json::from_str(&response.text().unwrap()).unwrap(),
+    )
+}
+
+/// Army's Start/Stop Auto-Attack for All: the control API routes, as a launched client gets
+/// them, and through `send_local`, as a tab does.
+#[test]
+fn control_api_starts_and_stops_auto_attack() {
+    let game = FakeGame::new(vec![
+        mon(5, 1, "Frogzard", "Enter"),
+        mon(6, 2, "Slime", "Enter"),
+    ]);
+    let bot = new_bot(&game);
+    let addr =
+        turu_bot::control_api::start(&bot, "127.0.0.1:0".parse().unwrap(), TOKEN.into()).unwrap();
+    let base = format!("http://{addr}");
+
+    assert_eq!(post(&format!("{base}/auto/attack/start"), None).0, 401);
+    assert_eq!(post(&format!("{base}/auto/stop"), None).0, 401);
+    assert!(!bot.auto.is_running());
+
+    let (status, body) = post(&format!("{base}/auto/attack/start?mapIds=2"), Some(TOKEN));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(bot.auto.mode(), Some(AutoMode::Attack));
+    wait_for("Slime dead", || !game.alive(2));
+    let (status, body) = post(&format!("{base}/auto/attack/start"), Some(TOKEN));
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (409, Some("Auto Attack is running already"))
+    );
+    let (_, status_body) = turu_bot::control_api::local(&bot, false, "/status", &[]);
+    assert_eq!(status_body["auto"], "Auto Attack");
+    assert_eq!(
+        turu_bot::monitor::sample(&bot, false).auto.as_deref(),
+        Some("Auto Attack")
+    );
+
+    let (status, body) = post(&format!("{base}/auto/stop"), Some(TOKEN));
+    assert_eq!(
+        (status, &body["stopping"]),
+        (200, &serde_json::json!("Auto Attack"))
+    );
+    wait_for("stopped", || !bot.auto.is_running());
+    assert!(game.alive(1), "only the manual map ID was fought");
+    let (_, status_body) = turu_bot::control_api::local(&bot, false, "/status", &[]);
+    assert_eq!(status_body["auto"], serde_json::Value::Null);
+    let wrong = reqwest::blocking::Client::new()
+        .get(format!("{base}/auto/stop"))
+        .bearer_auth(TOKEN)
+        .send()
+        .unwrap();
+    assert_eq!(wrong.status().as_u16(), 405);
+
+    // A tab: the same routes without HTTP.
+    use turu_bot::army::{Command, send_local};
+    send_local(&bot, &Command::StartAutoAttack).unwrap();
+    assert_eq!(bot.auto.mode(), Some(AutoMode::Attack));
+    wait_for("Frogzard dead", || !game.alive(1));
+    send_local(&bot, &Command::StopAuto).unwrap();
+    wait_for("stopped", || !bot.auto.is_running());
+    // Stopping when nothing runs is fine.
+    send_local(&bot, &Command::StopAuto).unwrap();
+}
+
+/// No Auto Attack while a script runs (the Auto popup greys it out): 409, and nothing starts.
+#[test]
+fn control_api_refuses_auto_attack_while_a_script_runs() {
+    let game = FakeGame::new(vec![mon(5, 1, "Frogzard", "Enter")]);
+    let bot = new_bot(&game);
+    let dir = std::env::temp_dir().join(format!("turu-test-auto-api-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("forever.ts");
+    std::fs::write(
+        &script,
+        "import { bot } from \"turu\";\nexport default function main(): void { for (;;) bot.sleep(20); }\n",
+    )
+    .unwrap();
+    bot.scripts.load(&script);
+    turu_bot::script::start_silent(&bot).unwrap();
+    wait_for("the script runs", || bot.scripts.is_running());
+
+    let (status, body) = turu_bot::control_api::local(&bot, true, "/auto/attack/start", &[]);
+    assert_eq!(
+        (status, body["error"].as_str()),
+        (409, Some("a script is running"))
+    );
+    let refused = turu_bot::army::send_local(&bot, &turu_bot::army::Command::StartAutoAttack);
+    assert_eq!(refused, Err("a script is running".into()));
+    assert!(!bot.auto.is_running());
+    // Stop Auto-Attack leaves the script alone.
+    turu_bot::control_api::local(&bot, true, "/auto/stop", &[]);
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(bot.scripts.is_running());
+
+    turu_bot::script::stop(&bot);
+    wait_for("the script stopped", || !bot.scripts.is_running());
+    assert!(game.alive(1));
+    let _ = std::fs::remove_dir_all(&dir);
+}

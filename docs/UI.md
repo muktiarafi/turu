@@ -140,15 +140,25 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   clients Accounts launched (from the web monitor's hub, which the Army poll feeds). Each row: a
   check box, a dot, the name ("tab" or "no window" pill), where it is (long text cut off, whole
   on hover), and below it its own buttons: ▶ Start / ■ Stop (its loaded script, shown on the
-  right), Log in / Log out, Gear, Show (tabs), and ⋯ (Relog; launched clients also Logs…,
-  Restart and Close). An ended client shows Restart and Remove. The header selects All, None or
+  right, or "Auto Attack"/"Auto Hunt" in green while one runs), Log in / Log out, Gear, Show
+  (tabs), and ⋯ (Relog; Start Auto-Attack when logged in and no script runs, Stop Auto
+  Attack/Hunt while one runs; launched clients also Logs…, Restart and Close). An ended client shows Restart and Remove. The header selects All, None or
   an Army > Accounts group's rows (Group ▾), and its ⋯ has Clear ended and Close all launched
   clients. ACTIONS go to the checked rows, or to every row when none is checked (it says which,
   in yellow for everyone): Start script, Stop script, Load script…, Log in, Log out, Relog, Go
-  to house; Travel (join a map at "cell[, pad]", go to a player), Quest (accept with an optional
+  to house, Start Auto-Attack, Stop Auto-Attack; Travel (join a map at "cell[, pad]", go to a player), Quest (accept with an optional
   reward) and Misc options fold away, closed at first. Stop script and Log out sent to
   everyone need a second click ("Log out all?") within 4 s. The last outcome shows below, with
   the earlier ones under History. VibeSkua's "Include this window's tabs" is gone: tabs are rows.
+  Start/Stop Auto-Attack are VibeSkua's tabbed host's "Start/Stop Auto-Attack for All"
+  (`WM_SKUA_AUTO_ATTACK`), sent through the control API (`/auto/attack/start`, `/auto/stop`),
+  with no second click (VibeSkua asks none; stopping loses nothing). A client starts Auto Attack
+  as its Auto popup would, but with its equipped class in Base and no Manual MapIDs (VibeSkua's
+  clients used their own popup's picks; Turu's popup belongs to the window, not to a tab).
+  Rows running a script or a Console snippet, already in Auto Attack/Hunt or not logged in are
+  skipped ("Alt1: Start Auto-Attack: skipped (a script is running)"). Stop Auto-Attack stops
+  Auto Hunt too, and leaves scripts alone. The web monitor has them too (the bulk bar and a
+  bot's detail view; Stop also on its card).
 * **Gear** (`gear.rs`, 460x440, one per client, from a row's ⋯ menu): online or offline, the
   running script, "Bank as of …" (or "Bank not read yet") with Refresh; per
   slot (class, weapon, armor, helm, cape, pet, necklace, ground) what's worn and a drop-down of

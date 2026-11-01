@@ -38,7 +38,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   or without the window. Example:
   `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8791/status`.
   Army Control also uses `/map/join`, `/player/goto`, `/house`, `/quests/register`, and the
-  gear routes `/gear`, `/equip` and `/bank/load` (below).
+  gear routes `/gear`, `/equip` and `/bank/load` (below), and `/auto/attack/start` and
+  `/auto/stop` (Start/Stop Auto-Attack; `/status` and the snapshot carry `auto`).
 - **Several accounts** (Army > Accounts and Army > Army Control; `bot/src/accounts.rs`,
   `bot/src/army.rs`): the account list and groups (VibeSkua Manager's Accounts tab) in
   `accounts.json`, with the passwords in the system keychain (`keyring`: Keychain, Credential
@@ -50,7 +51,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   launcher's stdin pipe closes, even if the launcher crashed). Army Control polls each process's
   `/status` every 2 s and sends VibeSkua's Army Control commands to all of them, and to every
   tab, or only to the checked rows (a group's with Group ▾); each row has its own Start/Stop,
-  Log in/out, Gear and a ⋯ menu (Relog, Logs, Restart, Close). `docs/UI.md` has the layout.
+  Log in/out, Gear and a ⋯ menu (Relog, Start/Stop Auto-Attack, Logs, Restart, Close).
+  `docs/UI.md` has the layout.
 - **Gear from the launcher** (`bot/src/gear.rs`, `docs/ARMY_EQUIPMENT_PROPOSAL.md` phase
   1): every client keeps `gear/<username>.json` (its wearable items, the bank as last loaded
   with its date; the bank is never loaded just for it), and the control API's `/equip` puts an
@@ -284,7 +286,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
   all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
   login), as VibeSkua's processes do. `--api` steers the first tab only. Not built: VibeSkua's
-  Grid View, Start/Stop Auto-Attack for All, Army Scheduler and per-squad Army Queue. Logging
+  Grid View, Army Scheduler and per-squad Army Queue. Logging
   in and farming in several tabs is unverified with real accounts.
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes

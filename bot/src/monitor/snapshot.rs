@@ -32,6 +32,8 @@ pub struct Snapshot {
     pub state: BotState,
     pub relogging: bool,
     pub script: ScriptInfo,
+    /// "Auto Attack" or "Auto Hunt" while one runs (`crate::auto`).
+    pub auto: Option<String>,
     pub server: String,
     /// `map-room`, as VibeSkua shows it.
     pub map: String,
@@ -144,6 +146,7 @@ impl Snapshot {
                 status: bot.scripts.status().label().into(),
                 running: bot.scripts.is_running(),
             },
+            auto: bot.auto.mode().map(|m| m.label().to_owned()),
             stats,
             sampled_at: now_ms(),
             ..Self::default()

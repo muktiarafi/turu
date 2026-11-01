@@ -150,6 +150,10 @@ pub enum Command {
     },
     /// Write the gear file from the game now.
     RefreshGear,
+    /// VibeSkua's "Start Auto-Attack for All": the equipped class, in Base.
+    StartAutoAttack,
+    /// VibeSkua's "Stop Auto-Attack for All": stops Auto Attack or Auto Hunt.
+    StopAuto,
 }
 
 impl Command {
@@ -170,6 +174,8 @@ impl Command {
             Self::Relogin => "Relog".into(),
             Self::Equip { item, .. } => format!("Equip {item}"),
             Self::RefreshGear => "Read gear".into(),
+            Self::StartAutoAttack => "Start Auto-Attack".into(),
+            Self::StopAuto => "Stop Auto-Attack".into(),
         }
     }
 
@@ -222,6 +228,8 @@ impl Command {
                 (with("/equip", &pairs), Vec::new())
             }
             Self::RefreshGear => return (false, with("/gear", &[]), Vec::new()),
+            Self::StartAutoAttack => (with("/auto/attack/start", &[]), Vec::new()),
+            Self::StopAuto => (with("/auto/stop", &[]), Vec::new()),
         };
         (true, path, body)
     }

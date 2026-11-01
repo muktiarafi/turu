@@ -255,6 +255,7 @@ function status(b) {
   if (s.relogging) return ["Relogging", "warn"];
   if (s.script.status === "[Error]") return ["Script error", "bad"];
   const [label, kind] = STATES[s.state] || [s.state, "off"];
+  if (s.state === "playing" && s.auto && !s.script.running) return [s.auto, kind];
   return [s.state === "playing" && s.script.running ? (s.script.status === "[Paused]" ? "Paused" : "Running") : label, kind];
 }
 // Cards sit under their machine's heading; tables and the detail view name it.
@@ -281,9 +282,11 @@ function actionsFor(b, full) {
   if (s?.script.running) {
     list.push(s.script.status === "[Paused]" ? ["Resume", "/script/resume", null, ""] : ["Pause", "/script/pause", null, ""]);
     list.push(["Stop", "/script/stop", `Stop ${s.script.name ?? "the script"} on ${s.name}?`, "danger"]);
-  } else if (s?.script.name) {
+  } else if (s?.script.name && !s.auto) {
     list.push([`Start ${s.script.name}`, "/script/start", null, "primary"]);
   }
+  if (s?.auto) list.push([`Stop ${s.auto}`, "/auto/stop", null, "danger"]);
+  else if (full && s?.state === "playing" && !s.script.running) list.push(["Auto Attack", "/auto/attack/start", null, ""]);
   if (full) {
     if (s && s.state !== "loggedOut" && s.state !== "notLoaded") {
       list.push(["Relogin", "/relogin", `Log ${s.name} out and back in?`, ""]);
@@ -381,6 +384,8 @@ const BULK = [
   ["Start", "/script/start", b => b.online && !b.snapshot?.script.running && b.snapshot?.script.name, "primary"],
   ["Stop", "/script/stop", b => b.online && b.snapshot?.script.running, "danger"],
   ["Relogin", "/relogin", b => b.online && ["playing", "dead", "loading"].includes(b.snapshot?.state), ""],
+  ["Auto Attack", "/auto/attack/start", b => b.online && b.snapshot?.state === "playing" && !b.snapshot.script.running && !b.snapshot.auto, ""],
+  ["Stop Auto", "/auto/stop", b => b.online && b.snapshot?.auto, "danger"],
   ["Forget", "/forget", b => !b.online && b.kind !== "tab", "danger"],
 ];
 function renderBulk() {

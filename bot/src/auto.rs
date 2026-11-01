@@ -107,6 +107,20 @@ pub fn start(
     true
 }
 
+/// Why Auto Attack/Hunt can't start now, as the Auto popup greys its buttons out: it runs
+/// already, or a script or a Console snippet does.
+pub fn blocked(bot: &Bot) -> Option<String> {
+    if let Some(mode) = bot.auto.mode() {
+        Some(format!("{} is running already", mode.label()))
+    } else if bot.scripts.status().is_active() {
+        Some("a script is running".into())
+    } else if bot.scripts.is_snippet_running() {
+        Some("a Console snippet is running".into())
+    } else {
+        None
+    }
+}
+
 /// Stops Auto Attack/Hunt (no-op when it isn't running).
 pub fn stop(bot: &Bot) {
     if bot.auto.is_running() {

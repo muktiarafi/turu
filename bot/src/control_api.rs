@@ -22,14 +22,18 @@
 //! | `GET /gear` | The account's gear file (`crate::gear`), read from the game now. |
 //! | `POST /equip?item=[&stop=1]` | Put an item on (name or ID), from the bank if needed: the `EquipReport`. |
 //! | `POST /bank/load[?stop=1]` | Load the bank into the gear file. |
+//! | `POST /auto/attack/start[?class=][&mode=][&mapIds=]` | Start Auto Attack (`crate::auto`): `class`'s skills in `mode` (Base), else the equipped class; `mapIds` "1,2" in priority order. |
+//! | `POST /auto/stop` | Stop Auto Attack or Auto Hunt. |
 //!
 //! `/equip` and `/bank/load` answer 409 while a script runs, unless `stop=1`: then the script
-//! is stopped first and stays stopped.
+//! is stopped first and stays stopped. `/auto/attack/start` answers 409 while a script, a
+//! Console snippet or Auto Attack/Hunt runs, or when not logged in.
 //!
 //! The Army window sends these to the clients it launched (`crate::army`), and to its own
 //! client through [`local`].
 
 use crate::api::{map, player, send, servers};
+use crate::auto::{self, AutoMode};
 use crate::log::LogKind;
 use crate::{Bot, gear};
 use http_body_util::{BodyExt, Full, Limited};
@@ -319,15 +323,48 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             Ok((file, stopped)) => ok(json!({ "gear": file, "stoppedScript": stopped })),
             Err(e) => error(e.status(), e.to_string()),
         },
+        ("/auto/attack/start", true) => {
+            let map_ids = query("mapIds").map_or_else(Vec::new, |ids| auto::parse_map_ids(&ids));
+            start_auto_attack(bot, query("class"), query("mode"), map_ids)
+        }
+        ("/auto/stop", true) => {
+            let stopping = bot.auto.mode().map(AutoMode::label);
+            auto::stop(bot);
+            ok(json!({ "stopping": stopping }))
+        }
         (
             "/status" | "/snapshot" | "/script/load" | "/script/start" | "/script/stop"
             | "/script/pause" | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout"
             | "/map/join" | "/player/goto" | "/house" | "/quests/register" | "/gear" | "/equip"
-            | "/bank/load",
+            | "/bank/load" | "/auto/attack/start" | "/auto/stop",
             _,
         ) => error(405, "wrong method"),
         _ => error(404, "no such route"),
     }
+}
+
+/// VibeSkua's "Start Auto-Attack for All" (`WM_SKUA_AUTO_ATTACK`): what the client's Auto
+/// popup's Auto Attack button does, refused where that button is greyed out.
+fn start_auto_attack(
+    bot: &Arc<Bot>,
+    class: Option<String>,
+    mode: Option<String>,
+    map_ids: Vec<i64>,
+) -> Reply {
+    if let Some(why) = auto::blocked(bot) {
+        return error(409, why);
+    }
+    if !player::logged_in(bot).unwrap_or(false) {
+        return error(409, "not logged in");
+    }
+    let mode = mode.unwrap_or_else(|| "Base".into());
+    if !auto::start(bot, AutoMode::Attack, class, mode, map_ids) {
+        return error(
+            409,
+            auto::blocked(bot).unwrap_or_else(|| "couldn't start".into()),
+        );
+    }
+    ok(json!({ "auto": AutoMode::Attack.label() }))
 }
 
 fn game_action(result: crate::BotResult<()>) -> Reply {
@@ -378,6 +415,7 @@ fn status(bot: &Bot) -> Value {
         "gameLoaded": loaded,
         "relogging": bot.servers.is_relogging(),
         "script": script,
+        "auto": bot.auto.mode().map(AutoMode::label),
         "stats": stats,
     });
     if !(connected && loaded) {

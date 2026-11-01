@@ -142,6 +142,8 @@ enum RowAction {
     Logs,
     Restart,
     Close,
+    AutoAttack,
+    StopAuto,
 }
 
 /// One line of the list: a tab or a launched client, as the UI shows it.
@@ -159,6 +161,8 @@ struct Row {
     error: Option<String>,
     /// The loaded script's file name, and whether it runs.
     script: Option<(String, bool)>,
+    /// "Auto Attack" or "Auto Hunt" while one runs.
+    auto: Option<String>,
     logged_in: bool,
     /// The process ended.
     ended: bool,
@@ -167,6 +171,7 @@ struct Row {
 impl Row {
     fn of_tab(tab: TabId, bot: &Arc<Bot>) -> Self {
         let status = bot.scripts.status();
+        let auto = bot.auto.mode().map(|m| m.label().to_owned());
         let logged_in = bot.gear.logged_in();
         let waits = bot.scripts.waits_for();
         let summary = match (waits, bot.state.lock().last_map.clone()) {
@@ -183,12 +188,13 @@ impl Row {
             headless: false,
             color: match () {
                 _ if waits.is_some() => WARNING,
-                _ if status.is_active() => SUCCESS,
+                _ if status.is_active() || auto.is_some() => SUCCESS,
                 _ => MUTED,
             },
             summary,
             error: None,
             script: bot.scripts.loaded().map(|p| (file_name(Some(&p)), status.is_active())),
+            auto,
             logged_in,
             ended: false,
         }
@@ -220,6 +226,7 @@ impl Row {
                 let path = s.script.path.as_deref()?;
                 Some((file_name(Some(std::path::Path::new(path))), s.script.running))
             }),
+            auto: live.as_ref().and_then(|s| s.auto.clone()),
             logged_in: live
                 .as_ref()
                 .is_some_and(|s| !matches!(s.state, BotState::NotLoaded | BotState::LoggedOut)),
@@ -372,6 +379,8 @@ impl ArmyWindow {
             RowAction::Login => Some(Command::Login),
             RowAction::Logout => Some(Command::Logout),
             RowAction::Relog => Some(Command::Relogin),
+            RowAction::AutoAttack => Some(Command::StartAutoAttack),
+            RowAction::StopAuto => Some(Command::StopAuto),
             RowAction::Restart => None,
         };
         let results = self.results.clone();
@@ -572,6 +581,25 @@ impl ArmyWindow {
                 }
                 if widgets::button(ui, "Go to house", Kind::Normal, any, size, "").clicked() {
                     self.send(rows, Command::JumpHouse);
+                }
+            });
+            // VibeSkua's "Start/Stop Auto-Attack for All": no confirmation there, and stopping
+            // loses nothing.
+            let width = (ui.available_width() - 6.0) / 2.0;
+            let size = vec2(width, 28.0);
+            ui.horizontal(|ui| {
+                let tip = "Each client's Auto Attack with its equipped class (rows running a script are skipped)";
+                if widgets::button(ui, "Start Auto-Attack", Kind::Normal, any, size, "")
+                    .on_hover_text(tip)
+                    .clicked()
+                {
+                    self.send(rows, Command::StartAutoAttack);
+                }
+                if widgets::button(ui, "Stop Auto-Attack", Kind::Danger, any, size, "")
+                    .on_hover_text("Stops Auto Attack or Auto Hunt; scripts keep running")
+                    .clicked()
+                {
+                    self.send(rows, Command::StopAuto);
                 }
             });
             CollapsingHeader::new("Travel")
@@ -790,6 +818,11 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
                 }
             };
             item(ui, RichText::new("Relog"), RowAction::Relog);
+            if let Some(auto) = &row.auto {
+                item(ui, RichText::new(format!("Stop {auto}")), RowAction::StopAuto);
+            } else if row.logged_in && !row.script.as_ref().is_some_and(|(_, running)| *running) {
+                item(ui, RichText::new("Start Auto-Attack"), RowAction::AutoAttack);
+            }
             if row.tab.is_none() {
                 item(ui, RichText::new("Logs…"), RowAction::Logs);
                 ui.separator();
@@ -797,7 +830,11 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
                 item(ui, RichText::new("Close").color(DANGER), RowAction::Close);
             }
         });
-        if let Some((name, running)) = &row.script {
+        if let Some(auto) = &row.auto {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(RichText::new(auto).size(11.0).color(SUCCESS));
+            });
+        } else if let Some((name, running)) = &row.script {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let color = if *running { SUCCESS } else { MUTED };
                 let state = if *running { "running" } else { "loaded" };
@@ -816,6 +853,8 @@ fn outcome_line(name: &str, label: &str, result: Result<Value, String>) -> Strin
             Ok(report) if label.starts_with("Equip ") => format!("{name}: {label}: {}", report.summary()),
             _ => format!("{name}: {label}: done"),
         },
+        // The client said no (a script runs, not logged in, ...): nothing started there.
+        Err(e) if label == Command::StartAutoAttack.label() => format!("{name}: {label}: skipped ({e})"),
         Err(e) => format!("{name}: {label}: {e}"),
     }
 }
@@ -870,6 +909,7 @@ mod tests {
             summary: "Artix · ultradage-123456, r6, Left · 120000/120000 HP".into(),
             error: None,
             script: script.map(|(n, running)| (n.into(), running)),
+            auto: None,
             logged_in: !ended,
             ended,
         }

@@ -37,7 +37,7 @@ const SAVE_EVERY: Duration = Duration::from_secs(60);
 /// Events a card shows.
 const RECENT: usize = 3;
 /// The control API routes a command may name: the page's buttons, and the log.
-pub const COMMANDS: [&str; 9] = [
+pub const COMMANDS: [&str; 11] = [
     "/script/start",
     "/script/stop",
     "/script/pause",
@@ -47,6 +47,8 @@ pub const COMMANDS: [&str; 9] = [
     "/relogin",
     "/map/join",
     "/house",
+    "/auto/attack/start",
+    "/auto/stop",
 ];
 
 /// A command or log request the monitor may pass on: a listed POST, or `GET /log`.
