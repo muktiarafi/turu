@@ -7,7 +7,8 @@ bot engine in **Rust** and scripts in **TypeScript**. Same UI/UX and flow as Vib
 Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
 tooling quirks). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
 behaviour, Flash bridge, API and UI, surveyed from its source), `docs/SCRIPTING.md`
-(writing scripts), `docs/UI.md`.
+(writing scripts), `docs/UI.md`, `docs/HEADLESS.md` (running without a window: flags,
+service, monitoring; keep it in step with the startup flags and the control API).
 
 ## Layout
 

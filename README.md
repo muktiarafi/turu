@@ -80,6 +80,10 @@ The window opens with VibeSkua's top bar and loads AQW. Then:
 
 **Stop Script** stops it; **Pause Script** pauses it.
 
+To run it on a server without a window (`--headless`), log in and start a script or a playlist
+from the command line, and watch it from a browser, read
+[docs/HEADLESS.md](docs/HEADLESS.md).
+
 Useful environment variables:
 
 | Variable | Effect |
@@ -153,7 +157,7 @@ Calls are synchronous, so there's no `await`. The API with its docs is in
 | `app/` | The app (`turu`): window, player tabs, UI; started from Ruffle's desktop frontend |
 | `scripts/` | TypeScript scripts (`core/`, `nation/`, ...) |
 | `ruffle/` | [ruffle-aqw](https://github.com/muktiarafi/ruffle-aqw): Ruffle with Mugetsu's patches |
-| `docs/` | [Architecture](docs/ARCHITECTURE.md), [UI](docs/UI.md), [scripting](docs/SCRIPTING.md), [VibeSkua reference](docs/VIBESKUA_SPEC.md), [status](docs/STATUS.md) |
+| `docs/` | [Architecture](docs/ARCHITECTURE.md), [UI](docs/UI.md), [scripting](docs/SCRIPTING.md), [without a window](docs/HEADLESS.md), [VibeSkua reference](docs/VIBESKUA_SPEC.md), [status](docs/STATUS.md) |
 
 ## Data folder
 
