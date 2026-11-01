@@ -31,6 +31,13 @@ pub struct Applied {
     custom_guild: Option<String>,
 }
 
+impl Applied {
+    /// Headless Mode is on in game: the window shows a placeholder instead of the game.
+    pub fn headless(&self) -> bool {
+        self.headless == Some(true)
+    }
+}
+
 /// True when a toggle must be sent: it changed, and "off" isn't sent before anything was
 /// turned on (the game starts with everything off).
 fn changed(applied: &mut Option<bool>, value: bool) -> bool {

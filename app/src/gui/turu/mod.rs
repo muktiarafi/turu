@@ -243,6 +243,48 @@ impl TuruUi {
     }
 }
 
+/// VibeSkua's headless overlay (`HeadlessOverlay`), shown in Headless Mode over the game area
+/// (below the bar, `top` points down): a dark page, a "monitor off" icon and two lines of text.
+/// It takes the game's clicks, as VibeSkua's hidden host gets none; the tool windows stay over it.
+pub fn show_headless_screen(ctx: &Context, top: f32) {
+    let screen = ctx.content_rect();
+    let rect = Rect::from_min_max(pos2(screen.left(), screen.top() + top), screen.max);
+    egui::Area::new(egui::Id::new("turu_headless_screen"))
+        .order(egui::Order::Background)
+        .fixed_pos(rect.min)
+        .interactable(true)
+        .show(ctx, |ui| {
+            ui.allocate_rect(rect, egui::Sense::click_and_drag());
+            let painter = ui.painter();
+            painter.rect_filled(rect, 0.0, theme::INSET);
+
+            // A monitor (36 px, as VibeSkua's icon) with a slash through it.
+            let c = rect.center() - vec2(0.0, 24.0);
+            let stroke = egui::Stroke::new(2.0, theme::MUTED);
+            let screen = Rect::from_center_size(c - vec2(0.0, 3.0), vec2(30.0, 20.0));
+            painter.rect_stroke(screen, 3.0, stroke, egui::StrokeKind::Middle);
+            let foot = screen.bottom() + 5.0;
+            painter.line_segment([pos2(c.x, screen.bottom()), pos2(c.x, foot)], stroke);
+            painter.line_segment([pos2(c.x - 7.0, foot), pos2(c.x + 7.0, foot)], stroke);
+            painter.line_segment([c - vec2(17.0, 15.0), c + vec2(17.0, 15.0)], stroke);
+
+            painter.text(
+                rect.center() + vec2(0.0, 10.0),
+                egui::Align2::CENTER_CENTER,
+                "Headless Mode Active",
+                egui::FontId::proportional(18.0),
+                theme::TEXT,
+            );
+            painter.text(
+                rect.center() + vec2(0.0, 34.0),
+                egui::Align2::CENTER_CENTER,
+                "Viewport suspended to minimize CPU and GPU usage",
+                egui::FontId::proportional(12.0),
+                theme::MUTED,
+            );
+        });
+}
+
 /// Whether the bot runs a script, a Console snippet or Auto Attack.
 fn busy(bot: &turu_bot::Bot) -> bool {
     bot.scripts.status().is_active() || bot.scripts.is_snippet_running() || auto::running(bot)

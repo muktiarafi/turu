@@ -638,6 +638,12 @@ pub fn headless() -> bool {
     HEADLESS.load(Ordering::Relaxed)
 }
 
+/// The active tab's game is in Headless Mode (the option, not `--headless`): the window covers
+/// it with VibeSkua's headless overlay and doesn't draw it.
+pub fn headless_mode() -> bool {
+    bot().state.lock().options_applied.headless()
+}
+
 /// Turu's flags.
 #[derive(Default)]
 struct Flags {

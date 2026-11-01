@@ -28,7 +28,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   own, logging to the terminal; it needs no display (a Linux server). At the login screen
   (debug build, macOS): ~6% CPU and ~96 MB against ~21% and ~420 MB with the window. Device
   fonts aren't loaded, so text in them isn't laid out (reading a text field still works).
-  The Headless Mode option is separate: it lowers the game's frame rate in either mode.
+  The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
+  with a window it covers the game with VibeSkua's overlay and stops drawing it.
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
   VibeSkua-Docker's for status, loading/starting/stopping/pausing scripts, logs (`since`
   paging), the bot options, login, relogin and logout (`bot/src/control_api.rs` lists them).

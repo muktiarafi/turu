@@ -120,6 +120,11 @@ impl RuffleGui {
             }
         }
         if crate::mugetsu::plays_aqw() {
+            // Turu: Headless Mode covers the game, as VibeSkua's does.
+            if crate::turu::headless_mode() {
+                let top = menu_height_offset / egui_ctx.pixels_per_point() as f64;
+                turu::show_headless_screen(egui_ctx, top as f32);
+            }
             self.turu.show_windows(egui_ctx);
             if self.turu.is_busy() {
                 // Logs and counters change on bot threads.

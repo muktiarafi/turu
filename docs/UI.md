@@ -106,6 +106,9 @@ runs.
   uses VibeSkua's fallback list (plus the current value); Set FPS defaults to 0, shown as
   "Game's", which leaves the frame rate to the game's own FPS setting (VibeSkua: 30, forced at
   every login), and Headless Mode restores the rate the game had before it turned on.
+  While Headless Mode is on in game, the game area shows VibeSkua's headless overlay ("Headless
+  Mode Active", `show_headless_screen` in `mod.rs`) instead of the 2 FPS game: the movie isn't
+  drawn and the overlay takes the game's clicks; the bar and tool windows work as usual.
 * **Application Options** (`application_options.rs`, 580x650, VibeSkua `ApplicationOptionsView`):
   search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title

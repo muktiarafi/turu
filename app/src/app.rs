@@ -461,7 +461,10 @@ impl MainWindow {
                     } else {
                         self.frame_since_render
                     };
-                    if new_picture_due || !player.is_playing() || extra_renders_enabled() {
+                    // Turu: Headless Mode's overlay hides the movie, so it isn't drawn.
+                    let hidden = crate::mugetsu::plays_aqw() && crate::turu::headless_mode();
+                    if !hidden && (new_picture_due || !player.is_playing() || extra_renders_enabled())
+                    {
                         player.render();
                         rendered_movie = true;
                     }
