@@ -71,7 +71,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   state (`ruffle_core::PlayerThreadState`: pending shape tessellations, replay's change count,
   frame interpolation's frame), swapped in by `PlayerController` while a hidden tab's code runs
   (ticks, Flash calls, futures), so hidden tabs neither spoil the shown tab's replays and
-  interpolation nor leave tessellations only their renderer can finish. Flash calls name their tab, and `turu::bot()` is the
+  interpolation nor leave tessellations only their renderer can finish. Hidden tabs' players
+  are ticked only when a frame or timer is due, or every 50 ms for their sockets
+  (`PlayerController::tick_hidden`), not on every pass of the event loop, and only the active
+  tab has the mouse (`give_mouse`, on every tab change): Ruffle hit-tests the whole stage on
+  every tick of a player that thinks the mouse is over it, which was 22% of the main thread with
+  seven tabs, and a tab shown again after the cursor left the window ignored clicks. Flash calls name their tab, and `turu::bot()` is the
   active tab's bot, so the UI and `spawn_action` act on the tab you look at; each tab keeps its
   own tool windows, Auto Attack and nav bar state (Accounts and Army Control are shared). The
   tab strip shows above the nav bar once there are two tabs: the name (character, else login),

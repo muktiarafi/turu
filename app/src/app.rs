@@ -32,6 +32,9 @@ struct MainWindow {
     /// (and on X11 only without a compositor). Always false elsewhere.
     occluded: bool,
     mouse_pos: PhysicalPosition<f64>,
+    /// Turu: whether the cursor is in the window (`CursorEntered`/`CursorLeft`), for the tab
+    /// that becomes the active one (`PlayerController::give_mouse`).
+    cursor_in_window: bool,
     /// Whether the cursor moved since the last hit-test. `CursorMoved` arrives at the
     /// mouse polling rate (1000+ Hz on gaming mice) and each `MouseMove` hit-tests the
     /// whole display list, which stalls crowded scenes. Moves are coalesced and applied
@@ -639,6 +642,7 @@ impl MainWindow {
                 self.check_redraw();
             }
             WindowEvent::CursorEntered { .. } => {
+                self.cursor_in_window = true;
                 if let Some(mut player) = self.player.get() {
                     player.set_mouse_in_stage(true);
                     if player.needs_render() {
@@ -647,6 +651,7 @@ impl MainWindow {
                 }
             }
             WindowEvent::CursorLeft { .. } => {
+                self.cursor_in_window = false;
                 self.mouse_move_pending = false;
                 if let Some(mut player) = self.player.get() {
                     player.set_mouse_in_stage(false);
@@ -914,6 +919,10 @@ impl MainWindow {
                 self.gui.set_tab_volumes(&self.player);
             }
         }
+        // Only the active tab has the mouse: the others' stale "mouse in stage" kept hit-testing
+        // it on every tick, and a tab shown again ignored clicks if the cursor had left the
+        // window while it was in front.
+        self.player.give_mouse(self.cursor_in_window);
         if crate::gui::top_height() != shown_before {
             // The tab strip came or went: the movie moves up or down.
             self.gui.reconfigure_surface();
@@ -960,16 +969,8 @@ impl MainWindow {
                 let perf = &mut self.perf;
                 let frame_since_render = &mut self.frame_since_render;
                 let frame_cost_ms = &mut self.frame_cost_ms;
-                // Turu: the other tabs' players run too (not drawn, muted).
-                let mut background_next: Option<Instant> = None;
-                for (active, mut player) in self.player.all() {
-                    if active {
-                        continue;
-                    }
-                    player.tick(dt);
-                    let next = new_time + player.time_til_next_frame();
-                    background_next = Some(background_next.map_or(next, |t| t.min(next)));
-                }
+                // Turu: the other tabs' players run too (not drawn, muted), when due.
+                let background_next = self.player.tick_hidden(new_time);
                 self.next_frame_time = self.player.get().map(|mut player| {
                     let frames_before = player.frames_run();
                     let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
@@ -1317,6 +1318,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                 minimized: false,
                 occluded: false,
                 mouse_pos: PhysicalPosition::new(0.0, 0.0),
+                cursor_in_window: true,
                 mouse_move_pending: false,
                 fps_frames: 0,
                 fps_since: Instant::now(),

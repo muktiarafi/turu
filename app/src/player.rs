@@ -13,7 +13,7 @@ use ruffle_core::backend::navigator::{OwnedFuture, SocketMode};
 use ruffle_core::config::Letterbox;
 use ruffle_core::events::{GamepadButton, KeyCode};
 use ruffle_core::font::DefaultFont;
-use ruffle_core::{LoadBehavior, Player, PlayerBuilder, PlayerEvent, PlayerThreadState};
+use ruffle_core::{FloatDuration, LoadBehavior, Player, PlayerBuilder, PlayerEvent, PlayerThreadState};
 use ruffle_frontend_utils::backends::audio::CpalAudioBackend;
 use ruffle_frontend_utils::backends::navigator::{ExternalNavigatorBackend, FutureSpawner};
 use ruffle_frontend_utils::bundle::source::BundleSourceError;
@@ -27,14 +27,14 @@ use ruffle_render_wgpu::backend::WgpuRenderBackend;
 use ruffle_render_wgpu::clap::PowerPreference;
 use ruffle_render_wgpu::descriptors::Descriptors;
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
@@ -117,6 +117,9 @@ struct ActivePlayer {
     /// Turu: this player's thread-local state while another player is the active one (see
     /// `PlayerThreadState`); the active player's is the thread's, and this is left default.
     thread_state: RefCell<PlayerThreadState>,
+    /// Turu: while it's a hidden tab's player, when it was last ticked and when it's due again
+    /// (`PlayerController::tick_hidden`).
+    hidden_tick: Cell<Option<(Instant, Instant)>>,
 
     #[cfg(target_os = "linux")]
     _gamemode_session: crate::dbus::GameModeSession,
@@ -440,11 +443,16 @@ impl ActivePlayer {
             tab,
             player,
             thread_state: RefCell::default(),
+            hidden_tick: Cell::new(None),
             #[cfg(target_os = "linux")]
             _gamemode_session: crate::dbus::GameModeSession::new(gamemode_enable),
         }
     }
 }
+
+/// Turu: the longest a hidden tab's player goes without a tick, so its sockets (the game's
+/// packets) and timers are serviced at least this often.
+const HIDDEN_TICK_MAX: Duration = Duration::from_millis(50);
 
 /// Turu: while alive, a player that isn't the active one has its own thread-local state.
 struct SwappedIn<'a>(&'a RefCell<PlayerThreadState>);
@@ -585,6 +593,8 @@ impl PlayerController {
             // The old active player's state goes into its slot, the new one's into the thread.
             if let Some(old) = self.players.get(self.active) {
                 old.thread_state.borrow_mut().swap();
+                // Hidden from now on: `tick_hidden` starts timing it afresh.
+                old.hidden_tick.set(None);
             }
             self.players[i].thread_state.borrow_mut().swap();
             self.active = i;
@@ -622,6 +632,48 @@ impl PlayerController {
         let active = self.active;
         let order = std::iter::once(active).chain((0..self.players.len()).filter(move |i| *i != active));
         order.filter_map(move |i| Some((i == active, self.players.get(i)?.lock(i == active))))
+    }
+
+    /// Turu: ticks the hidden tabs' players whose next frame or timer is due, or that waited
+    /// [`HIDDEN_TICK_MAX`], rather than all of them on every pass of the event loop (thousands
+    /// a second while the mouse moves); returns when the next one is due.
+    pub fn tick_hidden(&self, now: Instant) -> Option<Instant> {
+        let mut soonest: Option<Instant> = None;
+        for (i, slot) in self.players.iter().enumerate() {
+            if i == self.active {
+                continue;
+            }
+            let next = match slot.hidden_tick.get() {
+                Some((last, due)) if now >= due => {
+                    let mut player = slot.lock(false);
+                    player.tick(FloatDuration::from_std(now - last));
+                    now + player.time_til_next_frame().min(HIDDEN_TICK_MAX)
+                }
+                Some((_, due)) => {
+                    soonest = Some(soonest.map_or(due, |t| t.min(due)));
+                    continue;
+                }
+                // Just hidden: the active tab's loop ticked it until now.
+                None => now + HIDDEN_TICK_MAX,
+            };
+            slot.hidden_tick.set(Some((now, next)));
+            soonest = Some(soonest.map_or(next, |t| t.min(next)));
+        }
+        soonest
+    }
+
+    /// Turu: gives the mouse to the active tab's player (when the cursor is in the window) and
+    /// takes it from the others, which then stop hit-testing it and drop what they hovered.
+    pub fn give_mouse(&self, in_window: bool) {
+        for (active, mut player) in self.all() {
+            let in_stage = active && in_window;
+            if player.mouse_in_stage() != in_stage {
+                player.set_mouse_in_stage(in_stage);
+                if !in_stage {
+                    player.handle_event(PlayerEvent::MouseLeave);
+                }
+            }
+        }
     }
 
     /// Turu: the tab's player.
