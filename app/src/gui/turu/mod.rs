@@ -32,7 +32,7 @@ mod widgets;
 
 use crate::gui::{FilePicker, top_height};
 use crate::turu::TabId;
-use egui::{Context, Window, pos2, vec2};
+use egui::{Context, Rect, Vec2, Window, pos2, vec2};
 use std::collections::HashMap;
 
 /// Which tool windows are open.
@@ -56,21 +56,59 @@ pub struct Windows {
     pub cosmetics: bool,
 }
 
+/// Where tool windows live: the app window below the nav bar (and the tab strip).
+fn window_area(ctx: &Context) -> Rect {
+    let screen = ctx.content_rect();
+    let top = (screen.top() + top_height() as f32).min(screen.bottom());
+    Rect::from_min_max(pos2(screen.left(), top), screen.max)
+}
+
 /// A tool window below the nav bar; `slot` staggers the default positions.
-fn window<'a>(ctx: &Context, title: &'a str, size: [f32; 2], slot: u32) -> Window<'a> {
+///
+/// It stays inside [`window_area`] and never gets taller than it, also when the app window
+/// shrinks after it opened: content taller than the window scrolls (egui would otherwise grow
+/// the window past the screen's bottom and its buttons with it).
+fn window<'a>(ctx: &Context, title: &'a str, size: [f32; 2], slot: u32) -> ToolWindow<'a> {
     let offset = 18.0 * slot as f32;
-    let screen = ctx.content_rect().size();
-    let max = vec2(
-        (screen.x - 24.0).max(260.0),
-        (screen.y - top_height() as f32 - 24.0).max(200.0),
-    );
-    Window::new(title)
-        .id(egui::Id::new(("turu_window", title)))
-        .default_pos(pos2(16.0 + offset, top_height() as f32 + 12.0 + offset))
-        .default_size(vec2(size[0], size[1]).min(max))
-        .min_size(vec2(260.0, 160.0))
-        .collapsible(false)
-        .resizable(true)
+    let area = window_area(ctx);
+    let room = (area.size() - vec2(24.0, 24.0)).max(Vec2::ZERO);
+    let min = vec2(260.0, 160.0).min(area.size());
+    ToolWindow(
+        Window::new(title)
+            .id(egui::Id::new(("turu_window", title)))
+            .default_pos(pos2(16.0 + offset, area.top() + 12.0 + offset))
+            .default_size(vec2(size[0], size[1]).min(room).max(min))
+            .min_size(min)
+            .max_size(area.size())
+            .constrain_to(area)
+            .vscroll(true)
+            .collapsible(false)
+            .resizable(true),
+    )
+}
+
+/// An egui [`Window`] made by [`window`].
+#[must_use = "call `show`"]
+struct ToolWindow<'a>(Window<'a>);
+
+impl<'a> ToolWindow<'a> {
+    fn open(self, open: &'a mut bool) -> Self {
+        Self(self.0.open(open))
+    }
+
+    fn resizable(self, resizable: bool) -> Self {
+        Self(self.0.resizable(resizable))
+    }
+
+    fn show<R>(self, ctx: &Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
+        let response = self.0.show(ctx, |ui| {
+            let inner = add_contents(ui);
+            #[cfg(test)]
+            tests::record(ui);
+            inner
+        })?;
+        response.inner
+    }
 }
 
 /// One tab's windows: each tab is a client of its own, with its own windows and nav bar state
@@ -202,5 +240,119 @@ fn stop_auto_while_following() {
             bot.log("[Butler] Stopped Auto Attack: it conflicts with following.");
             bot.control.request_stop();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    thread_local! {
+        /// How much taller than its window each shown tool window's content is (it scrolls).
+        static OVERFLOW: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(super) fn record(ui: &egui::Ui) {
+        let room = ui.clip_rect().height() - ui.spacing().window_margin.sum().y;
+        OVERFLOW.with(|o| o.borrow_mut().push(ui.min_rect().height() - room));
+    }
+
+    type Show = Box<dyn FnMut(&Context, &mut bool)>;
+
+    /// The windows that need no file picker (which needs a winit event loop).
+    fn windows() -> Vec<(&'static str, Show)> {
+        fn boxed<W: 'static>(mut w: W, show: fn(&mut W, &Context, &mut bool)) -> Show {
+            Box::new(move |ctx, open| show(&mut w, ctx, open))
+        }
+        vec![
+            (
+                "Script Options",
+                boxed(script_options::ScriptOptionsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Search Scripts",
+                boxed(script_repo::ScriptRepoWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Game Options",
+                boxed(game_options::GameOptionsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Application Options",
+                boxed(application_options::ApplicationOptionsWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
+            ),
+            (
+                "CoreBots Options",
+                boxed(core_bots::CoreBotsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Current Drops",
+                boxed(current_drops::CurrentDrops::default(), |w, c, o| w.show(c, o)),
+            ),
+            ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                "Runtime",
+                boxed(runtime::RuntimeWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Advanced Skills",
+                boxed(skills::SkillsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            ("Butler", boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                "Cosmetics & Outfits",
+                boxed(cosmetics::CosmeticsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+        ]
+    }
+
+    /// Shows one window for a few frames on a `screen`-sized app window; returns its rect, the
+    /// area it must stay in and how much its content overflows it.
+    fn run(screen: Vec2, title: &str, show: &mut Show) -> (Rect, Rect, f32) {
+        let ctx = Context::default();
+        theme::install(&ctx);
+        let mut area = Rect::NOTHING;
+        for _ in 0..6 {
+            OVERFLOW.with(|o| o.borrow_mut().clear());
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, screen)),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                let ctx = ui.ctx().clone();
+                let ctx = &ctx;
+                area = window_area(ctx);
+                show(ctx, &mut true);
+            });
+            output.textures_delta.clear();
+        }
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new(("turu_window", title))))
+            .expect("shown");
+        let overflow = OVERFLOW.with(|o| *o.borrow().last().expect("recorded"));
+        (rect, area, overflow)
+    }
+
+    /// Every window stays below the nav bar and on screen, however small the app window is
+    /// (what doesn't fit scrolls), and needs no scrolling at its default size.
+    #[test]
+    fn windows_fit_small_screens() {
+        let mut failures = Vec::new();
+        for screen in [vec2(1400.0, 1000.0), vec2(900.0, 600.0), vec2(640.0, 420.0)] {
+            for (title, mut show) in windows() {
+                let (rect, area, overflow) = run(screen, title, &mut show);
+                println!("{screen:?} {title}: {rect:?} overflows by {overflow:.0}");
+                if !area.expand(1.0).contains_rect(rect) {
+                    failures.push(format!("{screen:?} {title}: {rect:?} outside {area:?}"));
+                }
+                if screen.y >= 1000.0 && overflow > 0.5 {
+                    failures.push(format!("{title} scrolls at its default size: {overflow} too tall"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 }

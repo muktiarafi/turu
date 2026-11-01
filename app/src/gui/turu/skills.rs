@@ -489,8 +489,8 @@ impl SkillsWindow {
                 ScrollArea::vertical()
                     .id_salt("skills_saved")
                     .auto_shrink([false, false])
-                    .min_scrolled_height(260.0)
-                    .max_height((ui.available_height() - 60.0).max(260.0))
+                    .min_scrolled_height(120.0)
+                    .max_height((ui.available_height() - 60.0).max(120.0))
                     .show(ui, |ui| {
                         if self.sets.is_empty() {
                             ui.label(RichText::new("No saved skill sets found.").color(MUTED));

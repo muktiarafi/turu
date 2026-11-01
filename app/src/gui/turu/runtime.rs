@@ -11,6 +11,9 @@ use std::time::Duration;
 use turu_bot::api::NameOrId;
 use turu_bot::api::boosts::{self, BoostType};
 
+/// Below this width the two columns stack.
+const STACK_BELOW: f32 = 680.0;
+
 #[derive(Default)]
 pub struct RuntimeWindow {
     drop_input: String,
@@ -31,12 +34,23 @@ impl RuntimeWindow {
         super::window(ctx, "Runtime", [955.0, 596.0], 4)
             .open(open)
             .show(ctx, |ui| {
-                ui.columns(2, |cols| {
-                    self.drops_card(&mut cols[0]);
-                    self.quests_card(&mut cols[1]);
-                    cols[1].add_space(4.0);
-                    self.boosts_card(&mut cols[1]);
-                });
+                if ui.available_width() >= STACK_BELOW {
+                    ui.columns(2, |cols| {
+                        self.drops_card(&mut cols[0]);
+                        self.quests_card(&mut cols[1]);
+                        cols[1].add_space(4.0);
+                        self.boosts_card(&mut cols[1]);
+                    });
+                } else {
+                    // Too narrow for two columns: one under the other (the window scrolls),
+                    // each list a few rows high.
+                    let width = ui.available_width();
+                    ui.allocate_ui(vec2(width, 300.0), |ui| self.drops_card(ui));
+                    ui.add_space(4.0);
+                    ui.allocate_ui(vec2(width, 420.0), |ui| self.quests_card(ui));
+                    ui.add_space(4.0);
+                    self.boosts_card(ui);
+                }
             });
         ctx.request_repaint_after(Duration::from_millis(250));
     }
@@ -57,7 +71,7 @@ impl RuntimeWindow {
                 let selected: Vec<String> = self.selected_drops.drain().collect();
                 bot.drops.remove(&names_or_ids(&selected));
             });
-            let height = (ui.available_height() - 110.0).max(160.0);
+            let height = (ui.available_height() - 110.0).max(80.0);
             list(
                 ui,
                 "runtime_drops",
@@ -153,7 +167,7 @@ impl RuntimeWindow {
                 let selected: Vec<i64> = self.selected_quests.drain().collect();
                 bot.quests.unregister(&selected);
             });
-            let height = (ui.available_height() - 290.0).max(140.0);
+            let height = (ui.available_height() - 290.0).max(60.0);
             list(
                 ui,
                 "runtime_quests",

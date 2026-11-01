@@ -135,7 +135,7 @@ impl ButlerWindow {
             });
             ScrollArea::vertical()
                 .id_salt("turu_butler_roster")
-                .max_height((ui.available_height() - 60.0).max(120.0))
+                .max_height((ui.available_height() - 60.0).max(60.0))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     if self.roster.is_empty() {

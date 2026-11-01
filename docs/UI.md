@@ -28,7 +28,10 @@ existing `FilePicker` (rfd, async) and never block the UI.
 windows (and Ruffle's own dialogs) are dark Turu-styled whatever the OS theme is. Mugetsu's
 right-click menu is untouched. Body text is 13 px, buttons have radius 8, windows radius 12.
 The windows are not scaled with the window height (Mugetsu's `z`): they keep VibeSkua's sizes
-(370x500, 612x720, ...) and are clamped to the window.
+(370x500, 612x720, ...) and are clamped to the window. They stay below the nav bar and shrink
+with the app window, also after they opened; what no longer fits scrolls, so the footer buttons
+stay reachable (`super::window`; `windows_fit_small_screens` checks the windows at 1400x1000,
+900x600 and 640x420). Runtime stacks its two columns when the window is narrower than 680 px.
 
 ## Nav bar (`nav_bar.rs`)
 
@@ -239,5 +242,7 @@ Interceptor, Plugins, Auto Hunt, Notify Drop.
 ## Adding a window
 
 Add `foo.rs` with a struct and `show(&mut self, ctx, &mut bool)`, build the window with
-`super::window(ctx, "Title", [w, h], slot)`, add a flag to `Windows`, a field and a call in
+`super::window(ctx, "Title", [w, h], slot)` (lists that fill the window take
+`ui.available_height()` minus the footer, with a small floor), add it to the
+`windows_fit_small_screens` test in `mod.rs` when it needs no file picker, add a flag to `Windows`, a field and a call in
 `TuruUi::show_windows`, and enable the entry in `nav_bar.rs`.
