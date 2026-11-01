@@ -50,7 +50,7 @@ top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Logger, Interceptor | implemented |
+| Script Loader, Scheduler, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Logger, Interceptor | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -79,14 +79,43 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Date added, up or down); a count line; the list (without the libraries such as CoreBots: files
   with no `export default`, which VibeSkua lists), pinned first, then the sort, then the search
   rank (VibeSkua's `SearchRank`). Each row: star when pinned, name, badges (Downloaded, Update,
-  Modified, Local, Removed), path, description, tag chips, Start (primary), Load and a "…" menu
-  with Pin/Unpin, Download / Update / "Replace with the repository's", Open in VS Code and Delete.
-  Start and Load download the script and what it imports first, then load it in the active tab.
+  Modified, Local, Removed), path, description, tag chips, Start (primary), Load, Queue and a "…"
+  menu with Pin/Unpin, Download / Update / "Replace with the repository's", Open in VS Code and
+  Delete. Start and Load download the script and what it imports first, then load it in the
+  active tab; Queue downloads it the same way and adds it to the active tab's Scheduler playlist
+  (disabled while the playlist runs).
   Empty states "Loading scripts..." and "No scripts found" (with Clear search). Bottom bar: Update
   all, Download all, refresh, a "…" menu (Reset Scripts..., which asks first; Open the scripts
   folder; the same in VS Code), and on the right the running task with its progress bar and
   Cancel, or the last result with the index's commit and when it was checked. Not built:
-  Queue (no Scheduler), "Update dates from Git" (the index has the dates), custom script folders.
+  "Update dates from Git" (the index has the dates), custom script folders.
+* **Scheduler** (`scheduler.rs`, 640x460, VibeSkua `ScriptSchedulerView`, one per tab: the
+  playlist is the tab's `bot.scheduler`): Start queue / Stop queue (primary / danger), the summary
+  ("3 scripts", or "Started at 22:10:05 · running 2 of 3"), Load and Save (VibeSkua's playlist
+  JSON, `[{"Path", "Id", "Name"}]`; the dialogs open in the data folder's `playlists/`) and
+  + Add scripts (opens Search Scripts, whose Queue adds them). The table: #, SCRIPT (double-click
+  to rename: Enter or leaving the box ends it, Escape undoes it), STATUS (Queued, Running green,
+  Completed dimmed, Stopped amber, Failed / File Not Found / Disconnected red), TIME (the last
+  run's, "00:00" until it ends) and ⋮ (also on right-click): Move up, Move down, Script options,
+  Remove. Adding, moving, removing and loading are refused while the playlist runs (a line under
+  the buttons says so, where VibeSkua shows a message box). Script options (refused while a script
+  runs) opens the Script Options window on the entry's own options, `options/Queue_<file
+  stem>_<id>.cfg` (VibeSkua `OverrideStorage`); Save writes that file and leaves the loaded
+  script alone. The engine is `turu_bot::scheduler`, on a thread of its own: it loads each entry
+  with its own options and starts it without the Script Options window (`start_silent`, VibeSkua
+  `SilentConfig`); when the script ends in any way (it finished, threw, or Stop Script) the entry
+  is Completed and the next starts 2 s later; one that fails before reaching `main` (VibeSkua: a
+  compile error in `StartScript`) is Failed and the next starts 3 s later; a missing file is File
+  Not Found. Only Stop queue stops the playlist (the current entry Stopped, its script stopped).
+  A script that ends while logged out (auto-relogin stops it) is Disconnected and not skipped:
+  the playlist waits for the login (1.5 s checks, then 3 s) and takes over the script auto-relogin
+  restarted, or starts it again. A script that isn't the playlist's is stopped first. While it
+  runs, the default Script Started / Farming Session Concluded webhooks are off and the playlist
+  sends VibeSkua's own embeds (Script Started [i/n], Farming Session Concluded [i/n] with the
+  duration, Script Error, Script Resumed, Scheduler Paused / Finished / Stopped). Closing the tab
+  stops its playlist. Unlike VibeSkua, the playlist's own stop of a lingering script doesn't
+  complete the first entry, and a relogin restart keeps the entry's options (VibeSkua clears
+  `OverrideStorage` on every stop). Not built: the Army Scheduler (VibeSkua's tabbed host).
 * **Script Options** (`script_options.rs`, 560x460; VibeSkua's "Script Options" dialog): the loaded
   script's options in one list, each with its name, description and editor (switch, number box,
   text box or a drop-down for a choice, its names with `_` as spaces; the default shows on hover).
@@ -350,7 +379,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
-Not built at all (greyed in the menus): Scheduler, Application Themes,
+Not built at all (greyed in the menus): Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Junk Items, Plugins, Auto Hunt, Notify Drop.
 
 ## Adding a window

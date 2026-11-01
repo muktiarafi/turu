@@ -398,6 +398,11 @@ fn status(bot: &Bot) -> Value {
         "path": bot.scripts.loaded(),
         "status": bot.scripts.status().label(),
         "running": bot.scripts.is_running(),
+        // Scripts > Scheduler: a stop here moves its playlist on to the next script.
+        "scheduler": {
+            "running": bot.scheduler.is_running(),
+            "summary": bot.scheduler.summary(),
+        },
     });
     let (stats, loaded, connected) = {
         let state = bot.state.lock();

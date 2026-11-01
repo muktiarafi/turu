@@ -25,6 +25,7 @@ mod message_box;
 mod nav_bar;
 mod packet_logger;
 mod runtime;
+mod scheduler;
 mod script_loader;
 mod script_options;
 mod script_repo;
@@ -46,6 +47,7 @@ pub struct Windows {
     pub script_loader: bool,
     pub script_options: bool,
     pub script_repo: bool,
+    pub scheduler: bool,
     pub game_options: bool,
     pub application_options: bool,
     pub core_bots: bool,
@@ -130,6 +132,7 @@ struct TabUi {
     script_loader: script_loader::ScriptLoader,
     script_options: script_options::ScriptOptionsWindow,
     script_repo: script_repo::ScriptRepoWindow,
+    scheduler: scheduler::SchedulerWindow,
     game_options: game_options::GameOptionsWindow,
     application_options: application_options::ApplicationOptionsWindow,
     core_bots: core_bots::CoreBotsWindow,
@@ -215,6 +218,13 @@ impl TuruUi {
             &mut w.script_options,
             &mut w.script_repo,
         );
+        tab.scheduler.show(ctx, &mut w.scheduler);
+        tab.scheduler.files(&picker, ctx);
+        w.script_repo |= std::mem::take(&mut tab.scheduler.open_repo);
+        if let Some(options) = tab.scheduler.edit_options.take() {
+            tab.script_options.edit_queued(options);
+            w.script_options = true;
+        }
         tab.script_options.show(ctx, &mut w.script_options);
         tab.script_repo.show(ctx, &mut w.script_repo);
         tab.game_options.show(ctx, &mut w.game_options);
@@ -328,7 +338,7 @@ mod tests {
         OVERFLOW.with(|o| o.borrow_mut().push(ui.min_rect().height() - room));
     }
 
-    type Show = Box<dyn FnMut(&Context, &mut bool)>;
+    pub(super) type Show = Box<dyn FnMut(&Context, &mut bool)>;
 
     /// The windows that need no file picker (which needs a winit event loop).
     fn windows() -> Vec<(&'static str, Show)> {
@@ -343,6 +353,10 @@ mod tests {
             (
                 "Search Scripts",
                 boxed(script_repo::ScriptRepoWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Scheduler",
+                boxed(scheduler::SchedulerWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Game Options",
@@ -395,7 +409,7 @@ mod tests {
 
     /// Shows one window for a few frames on a `screen`-sized app window; returns its rect, the
     /// area it must stay in and how much its content overflows it.
-    fn run(screen: Vec2, title: &str, show: &mut Show) -> (Rect, Rect, f32) {
+    pub(super) fn run(screen: Vec2, title: &str, show: &mut Show) -> (Rect, Rect, f32) {
         let ctx = Context::default();
         theme::install(&ctx);
         let mut area = Rect::NOTHING;
