@@ -4,10 +4,11 @@
 //! file; closing it saves.
 
 use super::skills::SkillSets;
-use super::theme::{EDGE, INSET, MUTED, TEXT};
+use super::theme::{ACCENT, CARD, EDGE, HOVER, INSET, MUTED, TEXT};
 use super::widgets::{self, Kind};
 use egui::{
-    Align, Color32, ComboBox, CornerRadius, Frame, Layout, Margin, Modal, RichText, ScrollArea, Stroke, Ui, vec2,
+    Align, Color32, ComboBox, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
+    StrokeKind, Ui, UiBuilder, vec2,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -833,7 +834,7 @@ impl CoreBotsWindow {
         });
     }
 
-    /// Two columns of options: switches, then numbers, then text, each by label.
+    /// Two columns of option tiles: the switches, then the numbers and text, each by label.
     fn options_tab(&mut self, ui: &mut Ui) {
         let needle = self.search.trim().to_lowercase();
         let mut shown: Vec<&mut Opt> = self
@@ -851,25 +852,30 @@ impl CoreBotsWindow {
             Value::Text(_) => 2,
         };
         shown.sort_by_key(|o| (rank(o), o.label.to_lowercase()));
+        let (switches, values): (Vec<_>, Vec<_>) = shown.into_iter().partition(|o| matches!(o.value, Value::Bool(_)));
         list_frame(ui, |ui| {
             ScrollArea::vertical()
                 .id_salt("cbo_options")
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    let column = (ui.available_width() - 8.0) / 2.0;
-                    for pair in shown.chunks_mut(2) {
-                        ui.horizontal(|ui| {
-                            for opt in pair {
-                                ui.allocate_ui_with_layout(
-                                    vec2(column, 30.0),
-                                    Layout::left_to_right(Align::Center),
-                                    |ui| {
-                                        ui.set_width(column);
-                                        option_row(ui, opt);
-                                    },
-                                );
-                            }
-                        });
+                    if switches.is_empty() && values.is_empty() {
+                        caption(ui, "No options match the search.");
+                    }
+                    for (title, mut group) in [("SWITCHES", switches), ("VALUES", values)] {
+                        if group.is_empty() {
+                            continue;
+                        }
+                        widgets::section_label(ui, title);
+                        let column = (ui.available_width() - TILE_GAP) / 2.0;
+                        for pair in group.chunks_mut(2) {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = TILE_GAP;
+                                for opt in pair {
+                                    option_tile(ui, opt, column);
+                                }
+                            });
+                        }
+                        ui.add_space(6.0);
                     }
                 });
         });
@@ -884,12 +890,10 @@ impl CoreBotsWindow {
                     for (category, opts) in &mut self.other {
                         widgets::section_label(ui, &category.to_uppercase());
                         for opt in opts {
-                            ui.horizontal(|ui| {
-                                ui.set_min_height(30.0);
-                                option_row(ui, opt);
-                            });
+                            let width = ui.available_width();
+                            option_tile(ui, opt, width);
                         }
-                        ui.add_space(4.0);
+                        ui.add_space(6.0);
                     }
                 });
         });
@@ -1007,14 +1011,42 @@ fn list_frame(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
         .show(ui, add_contents);
 }
 
-/// One option: its label (with the description as a tooltip) and its control on the right.
-fn option_row(ui: &mut Ui, opt: &mut Opt) {
-    let label = ui.label(RichText::new(opt.label).color(TEXT));
-    if !opt.description.is_empty() {
-        label.on_hover_text(opt.description);
+/// The space between two option tiles side by side.
+const TILE_GAP: f32 = 10.0;
+
+/// One option as a tile `width` wide: its label (and description) on the left, its control on
+/// the right. The tile lights up under the pointer, and a click anywhere on a switch's tile
+/// flips it, so each control plainly belongs to the label in its own tile.
+fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
+    let height = if opt.description.is_empty() { 34.0 } else { 46.0 };
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let is_switch = matches!(opt.value, Value::Bool(_));
+    let tile = ui.interact(
+        rect,
+        ui.make_persistent_id(("cbo_tile", opt.tag)),
+        if is_switch { Sense::click() } else { Sense::hover() },
+    );
+    let hot = ui.rect_contains_pointer(rect);
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(super::theme::SMALL_RADIUS),
+        if hot { HOVER } else { CARD },
+        Stroke::new(1.0, if hot { ACCENT.gamma_multiply(0.6) } else { EDGE }),
+        StrokeKind::Inside,
+    );
+    if is_switch && tile.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| match &mut opt.value {
+    let inner = UiBuilder::new()
+        .id_salt(opt.tag)
+        .max_rect(rect.shrink2(vec2(12.0, 0.0)))
+        .layout(Layout::right_to_left(Align::Center));
+    let ui = &mut ui.new_child(inner);
+    match &mut opt.value {
         Value::Bool(on) => {
+            if tile.clicked() {
+                *on = !*on;
+            }
             widgets::switch(ui, on);
         }
         Value::Int(n) => {
@@ -1026,6 +1058,25 @@ fn option_row(ui: &mut Ui, opt: &mut Opt) {
                 egui::TextEdit::singleline(text)
                     .desired_width(140.0)
                     .margin(Margin::symmetric(8, 4)),
+            );
+        }
+    }
+    ui.add_space(10.0);
+    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        // Centre the text block vertically (top-down layouts start at the top).
+        let lines = if opt.description.is_empty() { 1.0 } else { 2.0 };
+        ui.add_space(((ui.available_height() - lines * 16.0) / 2.0).max(0.0));
+        ui.add(
+            Label::new(RichText::new(opt.label).color(TEXT))
+                .truncate()
+                .selectable(false),
+        );
+        if !opt.description.is_empty() {
+            ui.add(
+                Label::new(RichText::new(opt.description).size(10.0).color(MUTED))
+                    .truncate()
+                    .selectable(false),
             );
         }
     });

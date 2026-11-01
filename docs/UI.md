@@ -240,9 +240,11 @@ runs.
   mode, "Use Dedicated Equipment Loadout") and a collapsible "Detailed Equipment Slots" with six
   gear drop-downs per role (with a "(none)" entry to clear a slot, which VibeSkua lacks); the
   cards split the window width in two, so long names are cut off rather than widening it.
-  Options: the 17 CoreBots settings in two columns (switches, numbers, text), searchable. Other:
-  Boosters (read by CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot
-  Creators switches. Opening the window
+  Options: the 17 CoreBots settings, searchable, as tiles in two columns under SWITCHES and
+  VALUES (numbers, text). Each tile holds one label and its control, lights up under the pointer,
+  and a click anywhere on a switch's tile flips it. Other: Boosters (read by
+  CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot Creators switches, as
+  full-width tiles with their descriptions shown under the label. Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
   before saving public rooms (a save without the answer keeps private rooms). Game reads
   (username, equipped class, inventory) run through `spawn_action`; VibeSkua's message boxes are
