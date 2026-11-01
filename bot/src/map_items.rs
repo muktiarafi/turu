@@ -66,6 +66,26 @@ pub fn find(bot: &Bot, scan: &Scanner, refresh: bool) -> BotResult<Vec<MapItem>>
     find_at(bot, MAPS_URL, scan, refresh)
 }
 
+/// The current map's file path (`moveToArea`'s `strMapFileName`).
+pub fn current_file(bot: &Bot) -> BotResult<String> {
+    bot.state
+        .lock()
+        .map_file_path
+        .clone()
+        .filter(|f| !f.trim().is_empty())
+        .ok_or_else(|| BotError::Other("Join a map first: its file isn't known yet.".into()))
+}
+
+/// Downloads a map file (a [`current_file`] path) from [`MAPS_URL`].
+pub fn download_map(file: &str) -> BotResult<Vec<u8>> {
+    download_at(MAPS_URL, file)
+}
+
+fn download_at(base_url: &str, file: &str) -> BotResult<Vec<u8>> {
+    let url = format!("{}{}", base_url, file.trim_start_matches('/'));
+    download(&url).map_err(BotError::Other)
+}
+
 /// [`find`] with the map files at `base_url` (tests use a local server).
 pub fn find_at(
     bot: &Bot,
@@ -73,23 +93,18 @@ pub fn find_at(
     scan: &Scanner,
     refresh: bool,
 ) -> BotResult<Vec<MapItem>> {
-    let (file, name) = {
+    let file = current_file(bot)?;
+    let name = {
         let state = bot.state.lock();
         let name = state.map_name.clone().or_else(|| state.last_map.clone());
-        (state.map_file_path.clone(), name.unwrap_or_default())
-    };
-    let Some(file) = file.filter(|f| !f.trim().is_empty()) else {
-        return Err(BotError::Other(
-            "Join a map first: its file isn't known yet.".into(),
-        ));
+        name.unwrap_or_default()
     };
     let saved_path = bot.paths.map_items_file();
     let mut saved = read_saved(&saved_path);
     if !refresh && let Some(items) = saved.get(&file) {
         return Ok(items.clone());
     }
-    let url = format!("{}{}", base_url, file.trim_start_matches('/'));
-    let swf = download(&url).map_err(BotError::Other)?;
+    let swf = download_at(base_url, &file)?;
     let found = scan(&swf).map_err(|e| BotError::Other(format!("Couldn't read {file}: {e}")))?;
     let mut items: Vec<MapItem> = found
         .into_iter()

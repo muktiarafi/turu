@@ -258,6 +258,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (`app/src/map_items.rs`) is tested on built SWFs and was checked on Mobius
   (`TURU_MAP_SWF=<file> cargo test -p turu ... real_map -- --nocapture`), where it agrees with the
   story scripts' map items and quests; other maps may need more patterns.
+  The Jump popup reads each cell's pads from the map SWF too (`app/src/map_pads.rs`: frame labels
+  and the named `Pad_<n>` instances on the root timeline, downloaded once per map file): picking a
+  cell jumps to a pad it has (Spawn for Enter, else the chosen pad, else Left, else its first,
+  as VibeSkua's `jumpCorrectRoom` corrects after the fact) and the pad drop-down lists that cell's
+  pads. Checked on Mobius' SWF; not yet in game. Without the SWF it falls back to VibeSkua's choice.
   Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; its
   Notifications button (Notify Drop) isn't built. Combat > Skills' editor is unverified on
   screen: its model and file writing are tested, the window only built.

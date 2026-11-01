@@ -29,6 +29,9 @@ struct JumpState {
     cells: Vec<String>,
     cell: Option<String>,
     pad: String,
+    /// The current map's pads by cell, read from its SWF (`map_pads`): the map file, and the
+    /// cells with their pads (empty while it downloads or when it can't be read).
+    pads: Option<(String, Vec<(String, Vec<String>)>)>,
     /// The last jump's outcome, shown under the buttons.
     status: Option<String>,
 }
@@ -63,6 +66,7 @@ impl Default for NavBar {
                 cells: Vec::new(),
                 cell: None,
                 pad: String::new(),
+                pads: None,
                 status: None,
             })),
             jump_open: false,
@@ -475,19 +479,28 @@ impl NavBar {
                 });
             cells_open = combo.inner.is_some();
             let current = state.pad.clone();
+            let pads = state
+                .cell
+                .as_deref()
+                .and_then(|cell| state.cell_pads(cell))
+                .unwrap_or_else(|| PADS.map(str::to_owned).to_vec());
             ComboBox::from_id_salt("jump_pad")
                 .selected_text(if current.is_empty() { "Select Pad..." } else { &current })
                 .width(half - 18.0)
                 .show_ui(ui, |ui| {
-                    for pad in PADS {
-                        if ui.selectable_label(current == pad, pad).clicked() {
-                            state.pad = pad.to_owned();
+                    for pad in pads {
+                        if ui.selectable_label(current == pad, &pad).clicked() {
+                            state.pad = pad;
                         }
                     }
                 });
         });
         if let Some(cell) = picked {
-            if cell == "Enter" {
+            // Turu: the map SWF says which pads the cell has, so the jump lands on one of them
+            // (VibeSkua corrects the pad after jumping, in `jumpCorrectRoom`).
+            if let Some(pads) = state.cell_pads(&cell) {
+                state.pad = crate::map_pads::pick(&pads, &cell, &state.pad);
+            } else if cell == "Enter" {
                 state.pad = "Spawn".into();
             } else if state.pad.is_empty() {
                 state.pad = "Left".into();
@@ -546,16 +559,37 @@ impl NavBar {
         }
     }
 
-    /// Reads the current map's cells (`map.cells`) into the drop-down.
+    /// Reads the current map's cells (`map.cells`) into the drop-down, and, once per map file,
+    /// each cell's pads from the map's SWF.
     fn refresh_cells(&self) {
         let state = self.jump.clone();
         crate::turu::spawn_action("Fast Map Jump cells", move |bot| {
             let cells: Vec<String> = serde_json::from_value(dispatch(bot, "map.cells", &[])?).unwrap_or_default();
-            let mut state = lock(&state);
-            if state.cells != cells {
-                state.cells = cells;
+            let file = turu_bot::map_items::current_file(bot).ok();
+            {
+                let mut state = lock(&state);
+                if state.cells != cells {
+                    state.cells = cells;
+                }
+                let Some(file) = file
+                    .clone()
+                    .filter(|f| state.pads.as_ref().is_none_or(|(known, _)| known != f))
+                else {
+                    return Ok(());
+                };
+                state.pads = Some((file, Vec::new()));
             }
-            Ok(())
+            let Some(file) = file else { return Ok(()) };
+            let pads = turu_bot::map_items::download_map(&file)
+                .and_then(|swf| crate::map_pads::scan(&swf).map_err(turu_bot::BotError::Other));
+            let mut state = lock(&state);
+            if let (Ok(pads), Some((known, slot))) = (&pads, state.pads.as_mut())
+                && *known == file
+            {
+                *slot = pads.clone();
+            }
+            pads.map(|_| ())
+                .map_err(|e| turu_bot::BotError::Other(format!("pads of {file}: {e}")))
         });
     }
 
@@ -575,6 +609,18 @@ impl NavBar {
             lock(&state).status = Some(status);
             Ok(())
         });
+    }
+}
+
+impl JumpState {
+    /// The pads the map SWF shows in `cell`, when it was read and has some there.
+    fn cell_pads(&self, cell: &str) -> Option<Vec<String>> {
+        let (_, cells) = self.pads.as_ref()?;
+        cells
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(cell))
+            .map(|(_, pads)| pads.clone())
+            .filter(|pads| !pads.is_empty())
     }
 }
 
