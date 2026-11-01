@@ -59,7 +59,7 @@ fn scan_abc(file: &AbcFile, found: &mut Vec<(i64, i64)>) {
 }
 
 /// The function's instructions, up to the first one that doesn't decode.
-fn decode(code: &[u8]) -> Vec<Op> {
+pub(crate) fn decode(code: &[u8]) -> Vec<Op> {
     let mut reader = Reader::new(code);
     let mut ops = Vec::new();
     while !reader.as_slice().is_empty() {
@@ -72,7 +72,7 @@ fn decode(code: &[u8]) -> Vec<Op> {
 }
 
 /// A multiname's local name, in lower case ("" for runtime names).
-fn name(pool: &ConstantPool, index: u32) -> String {
+pub(crate) fn name(pool: &ConstantPool, index: u32) -> String {
     let string = match pool.multinames.get((index as usize).wrapping_sub(1)) {
         Some(
             Multiname::QName { name, .. }

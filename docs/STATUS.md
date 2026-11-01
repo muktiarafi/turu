@@ -298,7 +298,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   and the named `Pad_<n>` instances on the root timeline, once per map file): picking a
   cell jumps to a pad it has (Spawn for Enter, else the chosen pad, else Left, else its first,
   as VibeSkua's `jumpCorrectRoom` corrects after the fact) and the pad drop-down lists that cell's
-  pads. Checked on Mobius' SWF; not yet in game. Without the SWF it falls back to VibeSkua's choice.
+  pads. It reads the doors too (the exit components' `tCell`/`tPad`/`altCell`/`altPad`, set in
+  Flash's generated `__setProp_...` functions, and the cell each door instance is shown in), so a
+  picked cell lands on the pad the walk from the player's cell arrives on (the last door of the
+  shortest walk), before the rules above. Checked on Mobius' SWF; not yet in game. Without the
+  SWF it falls back to VibeSkua's choice.
   Both readers take the map SWF the game already loaded from Ruffle's library
   (`FlashHost::loaded_swf`, ruffle-aqw's `Player::loaded_movie`) and download it only when it
   isn't loaded.

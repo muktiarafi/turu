@@ -6,6 +6,7 @@ use super::skills::SkillSets;
 use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
 use super::{Windows, auto};
+use crate::map_pads::MapCells;
 use egui::containers::menu::{MenuBar, MenuConfig};
 use egui::{
     Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Layout, Margin, Panel, Popup,
@@ -29,9 +30,9 @@ struct JumpState {
     cells: Vec<String>,
     cell: Option<String>,
     pad: String,
-    /// The current map's pads by cell, read from its SWF (`map_pads`): the map file, and the
-    /// cells with their pads (empty while it downloads or when it can't be read).
-    pads: Option<(String, crate::map_pads::CellPads)>,
+    /// The current map's cells, pads and doors, read from its SWF (`map_pads`): the map file,
+    /// and what it says (empty while it's read or when it can't be).
+    map: Option<(String, MapCells)>,
     /// The last jump's outcome, shown under the buttons.
     status: Option<String>,
 }
@@ -66,7 +67,7 @@ impl Default for NavBar {
                 cells: Vec::new(),
                 cell: None,
                 pad: String::new(),
-                pads: None,
+                map: None,
                 status: None,
             })),
             jump_open: false,
@@ -502,7 +503,8 @@ impl NavBar {
             let pads = state
                 .cell
                 .as_deref()
-                .and_then(|cell| state.cell_pads(cell))
+                .and_then(|cell| state.map()?.pads(cell))
+                .map(<[String]>::to_vec)
                 .unwrap_or_else(|| PADS.map(str::to_owned).to_vec());
             ComboBox::from_id_salt("jump_pad")
                 .selected_text(if current.is_empty() { "Select Pad..." } else { &current })
@@ -517,9 +519,11 @@ impl NavBar {
         });
         if let Some(cell) = picked {
             // Turu: the map SWF says which pads the cell has, so the jump lands on one of them
-            // (VibeSkua corrects the pad after jumping, in `jumpCorrectRoom`).
-            if let Some(pads) = state.cell_pads(&cell) {
-                state.pad = crate::map_pads::pick(&pads, &cell, &state.pad);
+            // (VibeSkua corrects the pad after jumping, in `jumpCorrectRoom`); the jump itself
+            // picks the pad the walk from the player's cell arrives on (`jump_to`).
+            let auto = state.map().and_then(|map| map.jump_pad(&cell, None, &state.pad));
+            if let Some(pad) = auto {
+                state.pad = pad;
             } else if cell == "Enter" {
                 state.pad = "Spawn".into();
             } else if state.pad.is_empty() {
@@ -528,7 +532,7 @@ impl NavBar {
             state.cell = Some(cell.clone());
             let pad = state.pad.clone();
             drop(state);
-            self.jump_to(cell, pad);
+            self.jump_to(cell, pad, true);
             state = lock(&self.jump);
         }
         let target = state
@@ -571,7 +575,7 @@ impl NavBar {
             if jump.clicked()
                 && let Some((cell, pad)) = target
             {
-                self.jump_to(cell, pad);
+                self.jump_to(cell, pad, false);
             }
         });
         if let Some(status) = status {
@@ -593,34 +597,47 @@ impl NavBar {
                 }
                 let Some(file) = file
                     .clone()
-                    .filter(|f| state.pads.as_ref().is_none_or(|(known, _)| known != f))
+                    .filter(|f| state.map.as_ref().is_none_or(|(known, _)| known != f))
                 else {
                     return Ok(());
                 };
-                state.pads = Some((file, Vec::new()));
+                state.map = Some((file, MapCells::default()));
             }
             let Some(file) = file else { return Ok(()) };
-            let pads = turu_bot::map_items::map_swf(bot, &file)
-                .and_then(|swf| crate::map_pads::scan(&swf).map_err(turu_bot::BotError::Other));
+            let map = turu_bot::map_items::map_swf(bot, &file)
+                .and_then(|swf| crate::map_pads::scan(&swf).map_err(turu_bot::BotError::Other))
+                .map_err(|e| turu_bot::BotError::Other(format!("cells of {file}: {e}")))?;
             let mut state = lock(&state);
-            if let (Ok(pads), Some((known, slot))) = (&pads, state.pads.as_mut())
+            if let Some((known, slot)) = state.map.as_mut()
                 && *known == file
             {
-                *slot = pads.clone();
+                *slot = map;
             }
-            pads.map(|_| ())
-                .map_err(|e| turu_bot::BotError::Other(format!("pads of {file}: {e}")))
+            Ok(())
         });
     }
 
-    /// VibeSkua `MapService.Jump`: only when logged in, without auto-correcting the pad.
-    fn jump_to(&self, cell: String, pad: String) {
+    /// VibeSkua `MapService.Jump`: only when logged in, without auto-correcting the pad. With
+    /// `auto` (a cell picked, not a pad), the pad is where the walk from the player's cell
+    /// through the map's doors arrives, when the map SWF says.
+    fn jump_to(&self, cell: String, pad: String, auto: bool) {
         let state = self.jump.clone();
         lock(&state).status = Some(format!("Jumping to {cell} ({pad})..."));
         crate::turu::spawn_action("Fast Map Jump", move |bot| {
             let status = if dispatch(bot, "player.loggedIn", &[])?.as_bool() != Some(true) {
                 "Not logged in".to_owned()
             } else {
+                let mut pad = pad;
+                if auto {
+                    let from = dispatch(bot, "player.cell", &[])?;
+                    let mut state = lock(&state);
+                    let walked = state.map().and_then(|map| map.jump_pad(&cell, from.as_str(), &pad));
+                    if let Some(walked) = walked.filter(|walked| *walked != pad) {
+                        state.pad.clone_from(&walked);
+                        state.status = Some(format!("Jumping to {cell} ({walked})..."));
+                        pad = walked;
+                    }
+                }
                 match dispatch(bot, "map.jump", &[json!(cell), json!(pad), json!(false)]) {
                     Ok(_) => format!("Jumped to {cell} ({pad})"),
                     Err(e) => format!("Jump failed: {e}"),
@@ -633,14 +650,9 @@ impl NavBar {
 }
 
 impl JumpState {
-    /// The pads the map SWF shows in `cell`, when it was read and has some there.
-    fn cell_pads(&self, cell: &str) -> Option<Vec<String>> {
-        let (_, cells) = self.pads.as_ref()?;
-        cells
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(cell))
-            .map(|(_, pads)| pads.clone())
-            .filter(|pads| !pads.is_empty())
+    /// What the current map's SWF says, once read.
+    fn map(&self) -> Option<&MapCells> {
+        self.map.as_ref().map(|(_, map)| map)
     }
 }
 
