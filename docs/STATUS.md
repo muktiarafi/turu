@@ -104,8 +104,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   any item on your avatar without owning it, client side only (`objData.eqp`, `loadMovieAtES`,
   the colors, a `genderSwap` packet to the client), from VibeSkua's 67,000-item community catalog
   (`cosmetics/catalog.json`, downloaded on first open); copies the targeted or a named room
-  player's gear, gender and colors, empties the slots they have nothing in; Copy from Character
-  Page does the same for any character by name, offline or elsewhere, from the `FlashVars` of
+  player's gear, gender and colors, empties the slots they have nothing in; Copy Page (under
+  the character name box) does the same for any character by name, offline or elsewhere, from the `FlashVars` of
   its `account.aq.com/CharPage?id=<name>` page (`cosmetics/charpage.rs`; the page's hair isn't
   applied). Reset to Real
   Gear puts the inventory's gear, gender and colors back. Favorites and saved outfits are shared

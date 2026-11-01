@@ -5,9 +5,12 @@
 //! The catalog, favorites and outfits are `turu_bot::cosmetics::Library`, shared by the tabs;
 //! the game calls run off the UI thread and report back through `Shared`.
 
-use super::theme::{ACCENT, DANGER, HOVER, INSET, MUTED, SUCCESS, TEXT, TRACK};
+use super::theme::{ACCENT, ACCENT_HOVER, DANGER, EDGE, HOVER, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, TRACK};
 use super::widgets::{self, Kind};
-use egui::{Align, Color32, ComboBox, Context, CornerRadius, Layout, RichText, ScrollArea, Sense, Shape, Ui, vec2};
+use egui::{
+    Align, Color32, ComboBox, Context, CornerRadius, Frame, Label, Layout, Margin, Rect, RichText, ScrollArea, Sense,
+    Stroke, Ui, UiBuilder, pos2, vec2,
+};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
@@ -16,8 +19,16 @@ use turu_bot::cosmetics::{CosmeticItem, CosmeticSet, Library, Slot, WEAPON_KINDS
 
 /// How often the room's players are read for the copy list.
 const PLAYERS_REFRESH: Duration = Duration::from_secs(3);
-const ROW_HEIGHT: f32 = 40.0;
-const DETAIL_WIDTH: f32 = 250.0;
+const ROW_HEIGHT: f32 = 42.0;
+/// The height of every button, drop-down and text box.
+const CONTROL_HEIGHT: f32 = 28.0;
+/// The right-hand column of the Catalog, Outfits and CC tabs.
+const SIDE_WIDTH: f32 = 270.0;
+/// The quick bar's player list and character name box, and the Copy buttons after them.
+const INPUT_WIDTH: f32 = 200.0;
+const COPY_WIDTH: f32 = 100.0;
+const SORT_WIDTH: f32 = 170.0;
+const MANUAL_WIDTH: f32 = 640.0;
 const PAGE_SIZES: [usize; 4] = [50, 100, 250, 500];
 
 /// The color rows of the CC tab, in `Colors`' order: label and what it colors.
@@ -333,8 +344,11 @@ impl CosmeticsWindow {
     }
 
     fn ui(&mut self, ui: &mut Ui, library: &Arc<Library>) {
-        ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
+        // One height for every button, drop-down and text box, so the rows line up.
+        ui.spacing_mut().interact_size.y = CONTROL_HEIGHT;
+        ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
         self.quick_bar(ui, library);
+        let catalog_status = lock(&self.shared).catalog_status.clone();
         ui.horizontal(|ui| {
             for (tab, label) in [
                 (Tab::Catalog, "Catalog"),
@@ -346,7 +360,11 @@ impl CosmeticsWindow {
                     self.tab = tab;
                 }
             }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add(Label::new(RichText::new(catalog_status).small().color(MUTED)).truncate());
+            });
         });
+        ui.separator();
         match self.tab {
             Tab::Catalog => self.catalog_tab(ui, library),
             Tab::Outfits => self.outfits_tab(ui, library),
@@ -355,16 +373,50 @@ impl CosmeticsWindow {
         }
     }
 
-    /// Copy Target Look, a room player to copy, Reset to Real Gear, and the gender buttons.
+    /// Copy a room player's look, a character page's look or the target's; Reset to Real Gear;
+    /// the gender buttons; the last action's outcome. Two rows whose columns line up.
     fn quick_bar(&mut self, ui: &mut Ui, library: &Arc<Library>) {
         let (players, status, busy) = {
             let shared = lock(&self.shared);
             (shared.room_players.clone(), shared.status.clone(), shared.busy)
         };
+        if !self.room_player.is_empty() && !players.contains(&self.room_player) {
+            self.room_player.clear();
+        }
+        if self.room_player.is_empty()
+            && let Some(first) = players.first()
+        {
+            self.room_player = first.clone();
+        }
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                if widgets::button(ui, "Copy Target Look", Kind::Primary, !busy, vec2(0.0, 26.0), "")
+                ui.add_enabled_ui(!players.is_empty(), |ui| {
+                    let shown = if self.room_player.is_empty() {
+                        "No players in the room"
+                    } else {
+                        &self.room_player
+                    };
+                    ComboBox::from_id_salt("turu_cosmetics_players")
+                        .selected_text(shown)
+                        .width(INPUT_WIDTH)
+                        .show_ui(ui, |ui| {
+                            for name in &players {
+                                ui.selectable_value(&mut self.room_player, name.clone(), name);
+                            }
+                        });
+                });
+                let can_copy = !busy && !self.room_player.is_empty();
+                if widgets::button(ui, "Copy Player", Kind::Normal, can_copy, vec2(COPY_WIDTH, 0.0), "")
+                    .on_hover_text("Copy the look of the selected room player")
+                    .clicked()
+                {
+                    let (library, name) = (library.clone(), self.room_player.clone());
+                    self.quick(&format!("Copying look from {name}..."), move |bot| {
+                        avatar::copy_player_look_by_name(bot, &library, &name)
+                    });
+                }
+                if widgets::button(ui, "Copy Target Look", Kind::Primary, !busy, vec2(0.0, 0.0), "")
                     .on_hover_text("Copy the equipment and colors of the player you target")
                     .clicked()
                 {
@@ -373,83 +425,63 @@ impl CosmeticsWindow {
                         avatar::copy_target_look(bot, &library)
                     });
                 }
-                if !self.room_player.is_empty() && !players.contains(&self.room_player) {
-                    self.room_player.clear();
-                }
-                if self.room_player.is_empty()
-                    && let Some(first) = players.first()
-                {
-                    self.room_player = first.clone();
-                }
-                let shown = if self.room_player.is_empty() {
-                    "Room players..."
-                } else {
-                    &self.room_player
-                };
-                ComboBox::from_id_salt("turu_cosmetics_players")
-                    .selected_text(shown)
-                    .width(140.0)
-                    .show_ui(ui, |ui| {
-                        for name in &players {
-                            ui.selectable_value(&mut self.room_player, name.clone(), name);
-                        }
-                    });
-                if widgets::button(ui, "Copy", Kind::Normal, !busy, vec2(0.0, 26.0), "")
-                    .on_hover_text("Copy the look of the selected room player")
-                    .clicked()
-                {
-                    if self.room_player.is_empty() {
-                        lock(&self.shared).status = "Please select a room player first.".into();
-                    } else {
-                        let (library, name) = (library.clone(), self.room_player.clone());
-                        self.quick(&format!("Copying look from {name}..."), move |bot| {
-                            avatar::copy_player_look_by_name(bot, &library, &name)
-                        });
-                    }
-                }
-                if widgets::button(ui, "Reset to Real Gear", Kind::Outline, !busy, vec2(0.0, 26.0), "")
-                    .on_hover_text("Put back your equipped inventory items, colors and gender")
-                    .clicked()
-                {
-                    self.quick("Reverting to real inventory gear & colors...", |bot| {
-                        avatar::revert_to_real_gear(bot)
-                            .map(|()| "Reverted to actual equipped gear & colors!".to_owned())
-                            .map_err(|e| format!("Reset to real gear error: {e}"))
-                    });
-                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     for (label, tip, gender) in [
                         ("Swap", "Swap Gender", None),
                         ("F", "Morph Female", Some('F')),
                         ("M", "Morph Male", Some('M')),
                     ] {
-                        if widgets::button(ui, label, Kind::Normal, true, vec2(26.0, 26.0), "")
+                        if widgets::button(ui, label, Kind::Normal, true, vec2(CONTROL_HEIGHT, 0.0), "")
                             .on_hover_text(tip)
                             .clicked()
                         {
                             act("Gender swap", move |bot| avatar::swap_gender(bot, gender, false));
                         }
                     }
+                    ui.label(RichText::new("Gender").small().color(MUTED));
                 });
             });
             // Turu: any character's look from its account.aq.com page.
             ui.horizontal(|ui| {
-                let typed = widgets::text_box(ui, &mut self.char_name, "Character name", 180.0);
+                let typed = input(ui, &mut self.char_name, "Character name", INPUT_WIDTH);
                 let entered = typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let clicked = widgets::button(ui, "Copy from Character Page", Kind::Normal, !busy, vec2(0.0, 26.0), "")
+                let can_copy = !busy && !self.char_name.trim().is_empty();
+                let clicked = widgets::button(ui, "Copy Page", Kind::Normal, can_copy, vec2(COPY_WIDTH, 0.0), "")
                     .on_hover_text("Copy the gear, gender and colors shown on the character's account.aq.com page")
                     .clicked();
-                if (clicked || entered) && !busy {
+                if (clicked || entered) && can_copy {
                     let name = self.char_name.trim().to_owned();
                     self.quick(&format!("Reading {name}'s character page..."), move |bot| {
                         let page = charpage::fetch(&name)?;
                         avatar::copy_char_page(bot, &page)
                     });
                 }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if widgets::button(ui, "Reset to Real Gear", Kind::Outline, !busy, vec2(0.0, 0.0), "")
+                        .on_hover_text("Put back your equipped inventory items, colors and gender")
+                        .clicked()
+                    {
+                        self.quick("Reverting to real inventory gear & colors...", |bot| {
+                            avatar::revert_to_real_gear(bot)
+                                .map(|()| "Reverted to actual equipped gear & colors!".to_owned())
+                                .map_err(|e| format!("Reset to real gear error: {e}"))
+                        });
+                    }
+                    // The outcome fills the gap between the copy buttons and Reset.
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        if busy {
+                            ui.spinner();
+                        }
+                        let text = if status.is_empty() {
+                            RichText::new("Everything here changes your look on this client only.").color(MUTED)
+                        } else {
+                            RichText::new(status).color(ACCENT)
+                        };
+                        ui.add(Label::new(text.small()).truncate());
+                    });
+                });
             });
-            if !status.is_empty() {
-                ui.label(RichText::new(status).small().color(ACCENT));
-            }
         });
     }
 
@@ -457,33 +489,38 @@ impl CosmeticsWindow {
     // Catalog
 
     fn catalog_tab(&mut self, ui: &mut Ui, library: &Arc<Library>) {
-        let (catalog_status, catalog_busy) = {
-            let shared = lock(&self.shared);
-            (shared.catalog_status.clone(), shared.catalog_busy)
-        };
+        let catalog_busy = lock(&self.shared).catalog_busy;
         ui.horizontal(|ui| {
-            let width = (ui.available_width() - 360.0).max(160.0);
-            widgets::text_box(ui, &mut self.query, "Search cosmetics by name or ID...", width);
-            if widgets::small_button(ui, "×", !self.query.is_empty()).clicked() {
-                self.query.clear();
+            let right = SORT_WIDTH + 120.0 + 2.0 * ui.spacing().item_spacing.x;
+            let width = (ui.available_width() - right).max(160.0);
+            let search = input(ui, &mut self.query, "Search cosmetics by name or ID...", width);
+            if !self.query.is_empty() {
+                // A clear button inside the box's right end.
+                let rect = Rect::from_center_size(search.rect.right_center() - vec2(14.0, 0.0), vec2(20.0, 20.0));
+                if ui
+                    .put(rect, egui::Button::new(RichText::new("×").color(MUTED)).frame(false))
+                    .clicked()
+                {
+                    self.query.clear();
+                }
             }
             ComboBox::from_id_salt("turu_cosmetics_sort")
                 .selected_text(self.sort.label())
-                .width(150.0)
+                .width(SORT_WIDTH)
                 .show_ui(ui, |ui| {
                     for sort in [Sort::Newest, Sort::Oldest, Sort::NameAsc, Sort::NameDesc] {
                         ui.selectable_value(&mut self.sort, sort, sort.label());
                     }
                 });
-            if widgets::button(ui, "Check Updates", Kind::Normal, !catalog_busy, vec2(0.0, 24.0), "")
+            if widgets::button(ui, "Check Updates", Kind::Normal, !catalog_busy, vec2(120.0, 0.0), "")
                 .on_hover_text("Download the catalog again and keep it if it has new items")
                 .clicked()
             {
                 self.check_updates(library);
             }
         });
-        ui.label(RichText::new(catalog_status).small().color(MUTED));
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
             let chips = [
                 (Category::All, "All"),
                 (Category::Slot(Slot::Armor), "Armor"),
@@ -500,29 +537,33 @@ impl CosmeticsWindow {
                 }
             }
             if self.category == Category::Slot(Slot::Weapon) {
-                ComboBox::from_id_salt("turu_cosmetics_weapon")
-                    .selected_text(self.weapon_kind.unwrap_or("All Weapons"))
-                    .width(110.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.weapon_kind, None, "All Weapons");
-                        for &kind in WEAPON_KINDS {
-                            ui.selectable_value(&mut self.weapon_kind, Some(kind), kind);
-                        }
-                    });
+                ui.scope(|ui| {
+                    ui.spacing_mut().interact_size.y = 24.0;
+                    ComboBox::from_id_salt("turu_cosmetics_weapon")
+                        .selected_text(self.weapon_kind.unwrap_or("All Weapons"))
+                        .width(120.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.weapon_kind, None, "All Weapons");
+                            for &kind in WEAPON_KINDS {
+                                ui.selectable_value(&mut self.weapon_kind, Some(kind), kind);
+                            }
+                        });
+                });
             }
         });
         self.filter(library);
 
-        let height = (ui.available_height() - 36.0).max(160.0);
-        ui.horizontal_top(|ui| {
-            let list_width = (ui.available_width() - DETAIL_WIDTH - 8.0).max(240.0);
-            ui.allocate_ui(vec2(list_width, height), |ui| {
-                ui.set_min_size(vec2(list_width, height));
-                self.item_list(ui, library);
-            });
-            ui.allocate_ui(vec2(DETAIL_WIDTH, height), |ui| self.detail_card(ui, library));
-        });
-        self.pagination(ui);
+        let [mut left, mut right] = split(ui, SIDE_WIDTH);
+        {
+            let ui = &mut left;
+            let list_height = (ui.available_height() - CONTROL_HEIGHT - ui.spacing().item_spacing.y).max(80.0);
+            inset(ui, list_height, |ui| self.item_list(ui, library));
+            self.pagination(ui);
+        }
+        {
+            let ui = &mut right;
+            self.detail_card(ui, library);
+        }
     }
 
     fn check_updates(&self, library: &Arc<Library>) {
@@ -615,7 +656,12 @@ impl CosmeticsWindow {
         let start = self.page * self.page_size;
         let rows: Vec<u32> = self.filtered.iter().skip(start).take(self.page_size).copied().collect();
         if rows.is_empty() {
-            ui.label(RichText::new("No items.").color(MUTED));
+            let text = if library.is_loaded() {
+                "No items match."
+            } else {
+                "Loading the catalog..."
+            };
+            empty_state(ui, text, "");
             return;
         }
         let source = self.source.clone();
@@ -627,6 +673,7 @@ impl CosmeticsWindow {
             ))
             .auto_shrink([false, false])
             .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
+                ui.spacing_mut().item_spacing.y = 2.0;
                 for &index in &rows[range] {
                     let item = &source[index as usize];
                     let selected = self.selected.as_ref().is_some_and(|s| s.key() == item.key());
@@ -643,81 +690,102 @@ impl CosmeticsWindow {
     }
 
     fn detail_card(&self, ui: &mut Ui, library: &Library) {
-        widgets::card(ui, |ui| {
-            ui.set_width(ui.available_width());
+        full_card(ui, |ui| {
             widgets::section_label(ui, "SELECTED COSMETIC");
             let Some(item) = self.selected.clone() else {
-                ui.label(RichText::new("No Item Selected").size(15.0).strong().color(TEXT));
+                empty_state(
+                    ui,
+                    "No item selected",
+                    "Click an item to see it here; double-click equips it.",
+                );
                 return;
             };
-            ui.label(RichText::new(&item.name).size(15.0).strong().color(TEXT));
-            widgets::pill(ui, |ui| {
-                ui.label(RichText::new(item.display_category()).size(11.0).color(ACCENT));
-            });
-            for line in [
-                format!("ID: {}", item.id),
-                format!("File: {}", item.path),
-                format!("Link: {}", item.link),
-            ] {
-                ui.label(RichText::new(line).size(11.0).color(MUTED));
-            }
-            ui.add_space(4.0);
-            let width = ui.available_width();
-            if widgets::button(ui, "Equip Look", Kind::Primary, true, vec2(width, 30.0), "").clicked() {
-                let item = item.clone();
-                act("Equip", move |bot| avatar::equip(bot, &item));
-            }
-            let favorite = library.is_favorite(&item);
-            let label = if favorite {
-                "♥ Remove Favorite"
-            } else {
-                "♡ Add to Favorites"
-            };
-            if widgets::button(ui, label, Kind::Normal, true, vec2(width, 26.0), "").clicked() {
-                library.toggle_favorite(&item);
-            }
-            if widgets::button(ui, "Open on AQW Wiki", Kind::Outline, true, vec2(width, 26.0), "").clicked() {
-                let url = format!(
-                    "http://aqwwiki.wikidot.com/{}",
-                    turu_bot::cosmetics::escape_data(&item.name)
-                );
-                if let Err(e) = webbrowser::open(&url) {
-                    crate::turu::bot().log(format!("[Cosmetics] Failed to open browser: {e}"));
+            // The details scroll when the window is short; the actions stay at the bottom.
+            let footer = 32.0 + 2.0 * CONTROL_HEIGHT + 3.0 * 6.0 + 8.0;
+            ScrollArea::vertical()
+                .id_salt("turu_cosmetics_detail")
+                .max_height((ui.available_height() - footer).max(40.0))
+                .show(ui, |ui| {
+                    ui.add(Label::new(RichText::new(&item.name).size(15.0).strong().color(TEXT)).wrap());
+                    tag(ui, &item.display_category());
+                    ui.add_space(2.0);
+                    for (key, value) in [
+                        ("ID", item.id.to_string()),
+                        ("FILE", item.path.clone()),
+                        ("LINK", item.link.clone()),
+                    ] {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        widgets::section_label(ui, key);
+                        ui.add(Label::new(RichText::new(value).monospace().size(11.0).color(TEXT)).wrap());
+                        ui.add_space(4.0);
+                    }
+                });
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                let width = ui.available_width();
+                if widgets::button(ui, "Open on AQW Wiki", Kind::Outline, true, vec2(width, 0.0), "").clicked() {
+                    let url = format!(
+                        "http://aqwwiki.wikidot.com/{}",
+                        turu_bot::cosmetics::escape_data(&item.name)
+                    );
+                    if let Err(e) = webbrowser::open(&url) {
+                        crate::turu::bot().log(format!("[Cosmetics] Failed to open browser: {e}"));
+                    }
                 }
-            }
+                let label = if library.is_favorite(&item) {
+                    "♥ Remove Favorite"
+                } else {
+                    "♡ Add to Favorites"
+                };
+                if widgets::button(ui, label, Kind::Normal, true, vec2(width, 0.0), "").clicked() {
+                    library.toggle_favorite(&item);
+                }
+                if widgets::button(ui, "Equip Look", Kind::Primary, true, vec2(width, 32.0), "").clicked() {
+                    let item = item.clone();
+                    act("Equip", move |bot| avatar::equip(bot, &item));
+                }
+            });
         });
     }
 
     fn pagination(&mut self, ui: &mut Ui) {
         let pages = self.pages();
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
             let (first, last) = (self.page == 0, self.page + 1 >= pages);
-            if widgets::small_button(ui, "«", !first).clicked() {
+            let size = vec2(CONTROL_HEIGHT, 0.0);
+            if widgets::button(ui, "«", Kind::Normal, !first, size, "").clicked() {
                 self.page = 0;
             }
-            if widgets::small_button(ui, "‹", !first).clicked() {
+            if widgets::button(ui, "‹", Kind::Normal, !first, size, "").clicked() {
                 self.page -= 1;
             }
-            ui.label(
-                RichText::new(format!(
-                    "Page {} of {pages} ({} items)",
-                    self.page + 1,
-                    group_digits(self.filtered.len())
-                ))
-                .small()
-                .color(TEXT),
-            );
-            if widgets::small_button(ui, "›", !last).clicked() {
+            ui.label(RichText::new(format!("Page {} of {pages}", self.page + 1)).color(TEXT));
+            if widgets::button(ui, "›", Kind::Normal, !last, size, "").clicked() {
                 self.page += 1;
             }
-            if widgets::small_button(ui, "»", !last).clicked() {
+            if widgets::button(ui, "»", Kind::Normal, !last, size, "").clicked() {
                 self.page = pages - 1;
             }
+            ui.add_space(6.0);
+            let total = self.filtered.len();
+            let shown = if total == 0 {
+                "0 items".to_owned()
+            } else {
+                let start = self.page * self.page_size;
+                format!(
+                    "{}–{} of {} items",
+                    group_digits(start + 1),
+                    group_digits((start + self.page_size).min(total)),
+                    group_digits(total)
+                )
+            };
+            ui.label(RichText::new(shown).small().color(MUTED));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let before = self.page_size;
                 ComboBox::from_id_salt("turu_cosmetics_page_size")
                     .selected_text(self.page_size.to_string())
-                    .width(60.0)
+                    .width(64.0)
                     .show_ui(ui, |ui| {
                         for size in PAGE_SIZES {
                             ui.selectable_value(&mut self.page_size, size, size.to_string());
@@ -726,7 +794,7 @@ impl CosmeticsWindow {
                 if self.page_size != before {
                     self.page = 0;
                 }
-                ui.label(RichText::new("Per Page:").small().color(MUTED));
+                ui.label(RichText::new("Per page").small().color(MUTED));
             });
         });
     }
@@ -739,30 +807,40 @@ impl CosmeticsWindow {
         if self.selected_set.is_some_and(|i| i >= sets.len()) {
             self.selected_set = None;
         }
-        let height = ui.available_height().max(200.0);
-        ui.horizontal_top(|ui| {
-            let list_width = (ui.available_width() - DETAIL_WIDTH - 8.0).max(240.0);
-            ui.allocate_ui(vec2(list_width, height), |ui| {
-                ui.set_min_size(vec2(list_width, height));
-                ui.horizontal(|ui| {
-                    if widgets::button(ui, "Save Current Look", Kind::Primary, true, vec2(0.0, 28.0), "").clicked() {
-                        let library = library.clone();
-                        let name = format!("Outfit #{}", sets.len() + 1);
-                        act("Capture look", move |bot| {
-                            library.add_set(avatar::capture_current_look(bot, &library, &name)?);
-                            Ok(())
-                        });
-                    }
+        let [mut left, mut right] = split(ui, SIDE_WIDTH);
+        {
+            let ui = &mut left;
+            ui.horizontal(|ui| {
+                if widgets::button(ui, "Save Current Look", Kind::Primary, true, vec2(0.0, 0.0), "")
+                    .on_hover_text("Save what your avatar wears now as a new outfit")
+                    .clicked()
+                {
+                    let library = library.clone();
+                    let name = format!("Outfit #{}", sets.len() + 1);
+                    act("Capture look", move |bot| {
+                        library.add_set(avatar::capture_current_look(bot, &library, &name)?);
+                        Ok(())
+                    });
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let noun = if sets.len() == 1 { "outfit" } else { "outfits" };
                     ui.label(
-                        RichText::new(format!("{} Outfits Saved", sets.len()))
+                        RichText::new(format!("{} {noun} saved", sets.len()))
                             .small()
                             .color(MUTED),
                     );
                 });
+            });
+            inset(ui, ui.available_height(), |ui| {
+                if sets.is_empty() {
+                    empty_state(ui, "No outfits yet", "Save Current Look keeps what you wear now.");
+                    return;
+                }
                 ScrollArea::vertical()
                     .id_salt("turu_cosmetics_sets")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
                         for (i, set) in sets.iter().enumerate() {
                             let response = set_row(ui, set, self.selected_set == Some(i));
                             if response.clicked() {
@@ -774,62 +852,65 @@ impl CosmeticsWindow {
                         }
                     });
             });
-            ui.allocate_ui(vec2(DETAIL_WIDTH, height), |ui| {
-                let set = self.selected_set.and_then(|i| sets.get(i));
-                self.inspector(ui, library, set);
-            });
-        });
+        }
+        {
+            let ui = &mut right;
+            let set = self.selected_set.and_then(|i| sets.get(i));
+            self.inspector(ui, library, set);
+        }
     }
 
     fn inspector(&mut self, ui: &mut Ui, library: &Library, set: Option<&CosmeticSet>) {
-        widgets::card(ui, |ui| {
-            ui.set_width(ui.available_width());
+        full_card(ui, |ui| {
             widgets::section_label(ui, "OUTFIT INSPECTOR");
+            let Some(set) = set else {
+                empty_state(ui, "No outfit selected", "Click an outfit to see its items.");
+                return;
+            };
+            ui.add(Label::new(RichText::new(&set.name).size(15.0).strong().color(TEXT)).truncate());
             ui.label(
-                RichText::new(set.map_or("Select an Outfit", |s| &s.name))
-                    .size(15.0)
-                    .strong()
-                    .color(TEXT),
+                RichText::new(format!("Saved {}", set.created_label()))
+                    .small()
+                    .color(MUTED),
             );
-            let date = set.map_or("-".into(), |s| format!("Saved: {}", s.created_label()));
-            ui.label(RichText::new(date).small().color(MUTED));
+            ui.add_space(2.0);
+            ui.spacing_mut().item_spacing.y = 2.0;
             for slot in Slot::ALL {
-                let item = set.and_then(|s| s.get(slot));
+                let item = set.get(slot);
+                ui.allocate_ui_with_layout(
+                    vec2(ui.available_width(), CONTROL_HEIGHT + 2.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        fixed_label(ui, 54.0, RichText::new(slot.label()).size(10.0).strong().color(MUTED));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if widgets::button(ui, "Equip", Kind::Normal, item.is_some(), vec2(56.0, 24.0), "")
+                                .clicked()
+                                && let Some(item) = item.cloned()
+                            {
+                                act("Equip", move |bot| avatar::equip(bot, &item));
+                            }
+                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                let (name, color) = item.map_or(("None", MUTED), |i| (i.name.as_str(), TEXT));
+                                ui.add(Label::new(RichText::new(name).size(12.0).color(color)).truncate())
+                                    .on_hover_text(name);
+                            });
+                        });
+                    },
+                );
+            }
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        // Never negative: egui panics on it, as in a narrow window.
-                        ui.set_width((ui.available_width() - 60.0).max(0.0));
-                        ui.label(RichText::new(slot.label()).size(10.0).strong().color(MUTED));
-                        let name = item.map_or("None", |i| i.name.as_str());
-                        ui.add(egui::Label::new(RichText::new(name).size(11.0).color(TEXT)).truncate());
-                    });
-                    if widgets::button(ui, "Equip", Kind::Normal, item.is_some(), vec2(52.0, 24.0), "").clicked()
-                        && let Some(item) = item.cloned()
+                    let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+                    if widgets::button(ui, "Equip Full Set", Kind::Primary, true, vec2(width, 32.0), "").clicked() {
+                        equip_set(set);
+                    }
+                    if widgets::button(ui, "Delete Set", Kind::Danger, true, vec2(width, 32.0), "").clicked()
+                        && let Some(i) = self.selected_set.take()
                     {
-                        act("Equip", move |bot| avatar::equip(bot, &item));
+                        library.remove_set(i);
                     }
                 });
-            }
-            ui.add_space(4.0);
-            let width = ui.available_width();
-            if widgets::button(
-                ui,
-                "Equip Full Set",
-                Kind::Primary,
-                set.is_some(),
-                vec2(width, 30.0),
-                "",
-            )
-            .clicked()
-                && let Some(set) = set
-            {
-                equip_set(set);
-            }
-            if widgets::button(ui, "Delete Set", Kind::Danger, set.is_some(), vec2(width, 26.0), "").clicked()
-                && let Some(i) = self.selected_set.take()
-            {
-                library.remove_set(i);
-            }
+            });
         });
     }
 
@@ -838,89 +919,104 @@ impl CosmeticsWindow {
 
     fn colors_tab(&mut self, ui: &mut Ui) {
         let cc_status = lock(&self.shared).cc_status.clone();
-        ui.horizontal_top(|ui| {
-            let width = (ui.available_width() - DETAIL_WIDTH - 8.0).max(300.0);
-            ui.allocate_ui(vec2(width, ui.available_height()), |ui| {
-                widgets::card(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(
-                        RichText::new("Character Color Customizer")
-                            .size(15.0)
-                            .strong()
-                            .color(TEXT),
-                    );
-                    ui.label(
-                        RichText::new("Directly modify your client-side Base, Trim, Accessory, and Eye colors.")
-                            .small()
-                            .color(MUTED),
-                    );
-                    egui::Grid::new("turu_cosmetics_cc")
-                        .num_columns(3)
-                        .spacing(vec2(10.0, 8.0))
-                        .show(ui, |ui| {
-                            for ((label, what), hex) in COLOR_ROWS.iter().zip(self.hex.iter_mut()) {
-                                ui.vertical(|ui| {
-                                    ui.label(RichText::new(*label).strong().color(TEXT));
-                                    ui.label(RichText::new(*what).size(10.0).color(MUTED));
-                                });
-                                widgets::text_box(ui, hex, "#RRGGBB", 110.0);
-                                let mut rgb =
-                                    parse_hex(hex).map_or([0, 0, 0], |c| [(c >> 16) as u8, (c >> 8) as u8, c as u8]);
-                                if ui.color_edit_button_srgb(&mut rgb).changed() {
-                                    *hex = format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
-                                }
-                                ui.end_row();
-                            }
-                        });
+        let [mut left, mut right] = split(ui, SIDE_WIDTH);
+        {
+            let ui = &mut left;
+            full_card(ui, |ui| {
+                ui.label(
+                    RichText::new("Character Color Customizer")
+                        .size(15.0)
+                        .strong()
+                        .color(TEXT),
+                );
+                ui.label(
+                    RichText::new("Change your avatar's colors on this client. Click a swatch to pick a color.")
+                        .small()
+                        .color(MUTED),
+                );
+                ui.add_space(4.0);
+                // The rows scroll when the window is short; the buttons stay below them.
+                let footer = 32.0 + 12.0 + if cc_status.is_empty() { 0.0 } else { 20.0 };
+                ScrollArea::vertical()
+                    .id_salt("turu_cosmetics_cc")
+                    .max_height((ui.available_height() - footer).max(40.0))
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        for ((label, what), hex) in COLOR_ROWS.iter().zip(self.hex.iter_mut()) {
+                            color_row(ui, label, what, hex);
+                        }
+                    });
+                ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                    if !cc_status.is_empty() {
+                        ui.label(RichText::new(&cc_status).small().color(SUCCESS));
+                    }
                     ui.horizontal(|ui| {
-                        if widgets::button(ui, "Apply Palette", Kind::Primary, true, vec2(0.0, 28.0), "").clicked() {
+                        if widgets::button(ui, "Apply Palette", Kind::Primary, true, vec2(130.0, 32.0), "").clicked() {
                             let colors = ColorChange(self.hex.each_ref().map(|h| parse_hex(h)));
                             act("SetColors", move |bot| avatar::set_colors(bot, colors, true));
                             lock(&self.shared).cc_status = "Applied palette colors to character!".into();
                         }
-                        if widgets::button(ui, "Read Avatar Colors", Kind::Normal, true, vec2(0.0, 28.0), "").clicked()
+                        if widgets::button(ui, "Read Avatar Colors", Kind::Normal, true, vec2(0.0, 32.0), "")
+                            .on_hover_text("Fill the boxes with the colors your avatar has now")
+                            .clicked()
                         {
                             self.read_colors(true);
                         }
                     });
-                    if !cc_status.is_empty() {
-                        ui.label(RichText::new(cc_status).small().color(SUCCESS));
-                    }
                 });
             });
-            ui.allocate_ui(vec2(DETAIL_WIDTH, ui.available_height()), |ui| {
+        }
+        {
+            let ui = &mut right;
+            widgets::section_label(ui, "THEMED PRESETS");
+            inset(ui, ui.available_height(), |ui| {
                 ScrollArea::vertical()
                     .id_salt("turu_cosmetics_presets")
+                    .auto_shrink([false, false])
                     .show(ui, |ui| self.presets(ui));
             });
-        });
+        }
     }
 
     /// VibeSkua's preset cards: set the first four colors and apply them with the skin and hair
     /// in the boxes.
     fn presets(&mut self, ui: &mut Ui) {
-        widgets::section_label(ui, "THEMED PRESETS");
+        ui.spacing_mut().item_spacing.y = 2.0;
         for (name, description, colors) in PRESETS {
             let response = row(ui, false, 44.0, |ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 1.0;
-                    ui.label(RichText::new(name).strong().color(TEXT));
-                    ui.label(RichText::new(description).size(10.0).color(MUTED));
-                });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.add_space(6.0);
+                    ui.spacing_mut().item_spacing.x = 3.0;
                     for hex in colors.iter().rev() {
                         swatch(ui, parse_hex(hex).unwrap_or(0));
                     }
+                    ui.add_space(6.0);
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.add_space(5.0);
+                        ui.add(
+                            Label::new(RichText::new(name).strong().color(TEXT))
+                                .truncate()
+                                .selectable(false),
+                        );
+                        ui.add(
+                            Label::new(RichText::new(description).size(10.0).color(MUTED))
+                                .truncate()
+                                .selectable(false),
+                        );
+                    });
                 });
             });
-            if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            if response
+                .on_hover_text("Apply this preset")
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
                 for (box_, hex) in self.hex.iter_mut().zip(colors) {
                     *box_ = hex.to_owned();
                 }
                 let colors = ColorChange(self.hex.each_ref().map(|h| parse_hex(h)));
                 act("SetColors", move |bot| avatar::set_colors(bot, colors, true));
-                lock(&self.shared).cc_status = "Preset applied!".into();
+                lock(&self.shared).cc_status = format!("Preset {name} applied!");
             }
         }
     }
@@ -929,73 +1025,87 @@ impl CosmeticsWindow {
     // Manual SWF
 
     fn manual_tab(&mut self, ui: &mut Ui) {
-        widgets::card(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(RichText::new("Direct SWF Injection").size(15.0).strong().color(TEXT));
-            ui.label(
-                RichText::new("Visually loads any raw SWF file onto your avatar by path and linkage ID.")
+        let width = ui.available_width().min(MANUAL_WIDTH);
+        ui.allocate_ui(vec2(width, ui.available_height()), |ui| {
+            widgets::card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new("Direct SWF Injection").size(15.0).strong().color(TEXT));
+                ui.label(
+                    RichText::new(
+                        "Loads any SWF onto your avatar by its file path and linkage ID, on this client only.",
+                    )
                     .small()
                     .color(MUTED),
-            );
-            let width = ui.available_width();
-            ui.label(RichText::new("SWF File Path (sFile)").strong().color(TEXT));
-            widgets::text_box(
-                ui,
-                &mut self.manual_file,
-                "e.g. classes/M/Warrior.swf or items/helms/MyHelm.swf",
-                width,
-            );
-            ui.label(RichText::new("Linkage Identifier (sLink)").strong().color(TEXT));
-            widgets::text_box(ui, &mut self.manual_link, "e.g. mWarrior or HelmLink", width);
-            ui.label(RichText::new("Equipment Slot / Group").strong().color(TEXT));
-            ComboBox::from_id_salt("turu_cosmetics_manual_slot")
-                .selected_text(MANUAL_SLOTS[self.manual_slot].0)
-                .width(width.min(260.0))
-                .show_ui(ui, |ui| {
-                    for (i, (label, _)) in MANUAL_SLOTS.iter().enumerate() {
-                        ui.selectable_value(&mut self.manual_slot, i, *label);
-                    }
-                });
-            ui.label(RichText::new("Meta Data (sMeta, Optional)").strong().color(TEXT));
-            widgets::text_box(
-                ui,
-                &mut self.manual_meta,
-                "Optional metadata or buff identifiers",
-                width,
-            );
-            ui.add_space(4.0);
-            if widgets::button(
-                ui,
-                "Inject SWF Onto Character",
-                Kind::Primary,
-                true,
-                vec2(width, 32.0),
-                "",
-            )
-            .clicked()
-            {
-                let (file, link, meta) = (
-                    self.manual_file.trim().to_owned(),
-                    self.manual_link.trim().to_owned(),
-                    self.manual_meta.trim().to_owned(),
                 );
-                let group = MANUAL_SLOTS[self.manual_slot].1;
-                if file.is_empty() || link.is_empty() {
-                    self.manual_status = "Error: File path and Linkage ID cannot be empty.".into();
-                } else {
-                    self.manual_status = format!("Injected '{link}' into slot '{group}'!");
-                    act("Equip", move |bot| avatar::inject(bot, group, &file, &link, &meta));
-                }
-            }
-            if !self.manual_status.is_empty() {
-                let color = if self.manual_status.starts_with("Error") {
-                    DANGER
-                } else {
-                    SUCCESS
-                };
-                ui.label(RichText::new(&self.manual_status).small().color(color));
-            }
+                ui.add_space(6.0);
+                let label_width = 150.0;
+                let field = (ui.available_width() - label_width - ui.spacing().item_spacing.x).max(120.0);
+                egui::Grid::new("turu_cosmetics_manual")
+                    .num_columns(2)
+                    .spacing(vec2(8.0, 10.0))
+                    .min_col_width(label_width)
+                    .show(ui, |ui| {
+                        form_label(ui, "SWF File Path", "sFile");
+                        input(
+                            ui,
+                            &mut self.manual_file,
+                            "e.g. classes/M/Warrior.swf or items/helms/MyHelm.swf",
+                            field,
+                        );
+                        ui.end_row();
+                        form_label(ui, "Linkage Identifier", "sLink");
+                        input(ui, &mut self.manual_link, "e.g. mWarrior or HelmLink", field);
+                        ui.end_row();
+                        form_label(ui, "Equipment Slot", "group");
+                        ComboBox::from_id_salt("turu_cosmetics_manual_slot")
+                            .selected_text(MANUAL_SLOTS[self.manual_slot].0)
+                            .width(field)
+                            .show_ui(ui, |ui| {
+                                for (i, (label, _)) in MANUAL_SLOTS.iter().enumerate() {
+                                    ui.selectable_value(&mut self.manual_slot, i, *label);
+                                }
+                            });
+                        ui.end_row();
+                        form_label(ui, "Meta Data", "sMeta, optional");
+                        input(
+                            ui,
+                            &mut self.manual_meta,
+                            "Optional metadata or buff identifiers",
+                            field,
+                        );
+                        ui.end_row();
+                        ui.label("");
+                        ui.horizontal(|ui| {
+                            let ready = !self.manual_file.trim().is_empty() && !self.manual_link.trim().is_empty();
+                            if widgets::button(
+                                ui,
+                                "Inject SWF Onto Character",
+                                Kind::Primary,
+                                ready,
+                                vec2(0.0, 32.0),
+                                "Fill in the file path and the linkage ID first",
+                            )
+                            .clicked()
+                            {
+                                let (file, link, meta) = (
+                                    self.manual_file.trim().to_owned(),
+                                    self.manual_link.trim().to_owned(),
+                                    self.manual_meta.trim().to_owned(),
+                                );
+                                let group = MANUAL_SLOTS[self.manual_slot].1;
+                                self.manual_status = format!("Injected '{link}' into slot '{group}'!");
+                                act("Equip", move |bot| avatar::inject(bot, group, &file, &link, &meta));
+                            }
+                            if !self.manual_status.is_empty() {
+                                ui.label(RichText::new(&self.manual_status).small().color(SUCCESS));
+                            }
+                        });
+                        ui.end_row();
+                    });
+            });
         });
+        // Keep the window's size: the form is shorter than the other tabs.
+        ui.allocate_space(ui.available_size());
     }
 }
 
@@ -1004,19 +1114,140 @@ fn equip_set(set: &CosmeticSet) {
     act("Equip set", move |bot| avatar::equip_set(bot, &set));
 }
 
-/// A clickable row with a selection background behind what `add_contents` draws.
-fn row(ui: &mut Ui, selected: bool, height: f32, add_contents: impl FnOnce(&mut Ui)) -> egui::Response {
-    let background = ui.painter().add(Shape::Noop);
-    let inner = ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), height),
+/// A text box of the window's control height.
+fn input(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> egui::Response {
+    ui.add(
+        egui::TextEdit::singleline(text)
+            .hint_text(hint)
+            .desired_width(width - 16.0)
+            .min_size(vec2(width, CONTROL_HEIGHT))
+            .vertical_align(Align::Center)
+            .margin(Margin::symmetric(8, 4))
+            .background_color(INSET),
+    )
+}
+
+/// Splits the rest of `ui` into a column that fills and a `side`-wide column on the right,
+/// both as tall as the space left.
+fn split(ui: &mut Ui, side: f32) -> [Ui; 2] {
+    let rect = ui.available_rect_before_wrap();
+    let side = side.min(rect.width() * 0.45);
+    let gap = 10.0;
+    let left = Rect::from_min_max(rect.min, pos2(rect.right() - side - gap, rect.bottom()));
+    let right = Rect::from_min_max(pos2(rect.right() - side, rect.top()), rect.max);
+    let columns = [("left", left), ("right", right)].map(|(id, column)| {
+        let builder = UiBuilder::new()
+            .id_salt(id)
+            .max_rect(column)
+            .layout(Layout::top_down(Align::Min));
+        ui.new_child(builder)
+    });
+    ui.allocate_rect(rect, Sense::hover());
+    columns
+}
+
+/// A list well `height` tall and as wide as `ui`.
+fn inset(ui: &mut Ui, height: f32, add_contents: impl FnOnce(&mut Ui)) {
+    ui.allocate_ui(vec2(ui.available_width(), height), |ui| {
+        Frame::new()
+            .fill(INSET)
+            .stroke(Stroke::new(1.0, EDGE))
+            .corner_radius(CornerRadius::same(SMALL_RADIUS))
+            .inner_margin(Margin::same(4))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                add_contents(ui);
+            });
+    });
+}
+
+/// A card that fills the rest of `ui`.
+fn full_card(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
+    widgets::card(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        add_contents(ui);
+    });
+}
+
+/// What an empty list or card says: a title and a hint.
+fn empty_state(ui: &mut Ui, title: &str, hint: &str) {
+    ui.add_space(16.0);
+    ui.vertical_centered(|ui| {
+        ui.label(RichText::new(title).strong().color(MUTED));
+        if !hint.is_empty() {
+            ui.add(Label::new(RichText::new(hint).small().color(MUTED)).wrap());
+        }
+    });
+}
+
+/// A small tinted tag ("Weapon (Dagger)").
+fn tag(ui: &mut Ui, text: &str) {
+    let font = egui::FontId::proportional(10.0);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, ACCENT_HOVER);
+    let (rect, _) = ui.allocate_exact_size(galley.size() + vec2(12.0, 6.0), Sense::hover());
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same(6), ACCENT.gamma_multiply(0.18));
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, ACCENT_HOVER);
+}
+
+/// A label in a column `width` wide.
+fn fixed_label(ui: &mut Ui, width: f32, text: RichText) {
+    ui.allocate_ui_with_layout(vec2(width, 18.0), Layout::left_to_right(Align::Center), |ui| {
+        ui.set_min_width(width);
+        ui.add(Label::new(text).truncate());
+    });
+}
+
+/// A form row's label with the game's field name under it.
+fn form_label(ui: &mut Ui, label: &str, field: &str) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        ui.label(RichText::new(label).strong().color(TEXT));
+        ui.label(RichText::new(field).size(10.0).color(MUTED));
+    });
+}
+
+/// A CC row: the swatch (a color picker), the name and what it colors, and the hex box.
+fn color_row(ui: &mut Ui, label: &str, what: &str, hex: &mut String) {
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), 38.0),
         Layout::left_to_right(Align::Center),
         |ui| {
-            ui.set_min_size(vec2(ui.available_width(), height));
-            ui.add_space(6.0);
-            add_contents(ui);
+            let mut rgb = parse_hex(hex).map_or([0, 0, 0], |c| [(c >> 16) as u8, (c >> 8) as u8, c as u8]);
+            ui.scope(|ui| {
+                ui.spacing_mut().interact_size = vec2(CONTROL_HEIGHT + 8.0, CONTROL_HEIGHT);
+                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                    *hex = format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
+                }
+            });
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let valid = hex.trim().is_empty() || parse_hex(hex).is_some();
+                let response = input(ui, hex, "#RRGGBB", 110.0);
+                if !valid {
+                    let rect = response.rect;
+                    ui.painter().rect_stroke(
+                        rect,
+                        CornerRadius::same(SMALL_RADIUS),
+                        (1.0, DANGER),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.add_space(3.0);
+                    ui.add(Label::new(RichText::new(label).strong().color(TEXT)).truncate());
+                    ui.add(Label::new(RichText::new(what).size(10.0).color(MUTED)).truncate());
+                });
+            });
         },
     );
-    let response = inner.response.interact(Sense::click());
+}
+
+/// A clickable row `height` tall with a selection background; what `add_contents` adds goes
+/// on top, so a button in it gets its own clicks.
+fn row(ui: &mut Ui, selected: bool, height: f32, add_contents: impl FnOnce(&mut Ui)) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     let fill = if selected {
         TRACK
     } else if response.hovered() {
@@ -1024,78 +1255,86 @@ fn row(ui: &mut Ui, selected: bool, height: f32, add_contents: impl FnOnce(&mut 
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().set(
-        background,
-        Shape::rect_filled(response.rect, CornerRadius::same(6), fill),
-    );
+    ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
+    if selected {
+        let bar = Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, height - 12.0));
+        ui.painter().rect_filled(bar, CornerRadius::same(2), ACCENT);
+    }
+    let builder = UiBuilder::new()
+        .max_rect(rect.shrink2(vec2(10.0, 0.0)))
+        .layout(Layout::left_to_right(Align::Center));
+    add_contents(&mut ui.new_child(builder));
     response
 }
 
-/// A catalog row: name, category and favorite mark; file and ID below.
+/// A catalog row: favorite mark and name over the ID and file; the category on the right.
 fn item_row(ui: &mut Ui, item: &CosmeticItem, selected: bool, favorite: bool) -> egui::Response {
-    row(ui, selected, ROW_HEIGHT - 2.0, |ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
-            ui.horizontal(|ui| {
-                if favorite {
-                    ui.label(RichText::new("♥").color(DANGER));
-                }
+    row(ui, selected, ROW_HEIGHT, |ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            tag(ui, &item.display_category());
+            ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if favorite {
+                        ui.label(RichText::new("♥").color(DANGER));
+                    }
+                    ui.add(
+                        Label::new(RichText::new(&item.name).strong().color(TEXT))
+                            .truncate()
+                            .selectable(false),
+                    );
+                });
                 ui.add(
-                    egui::Label::new(RichText::new(&item.name).strong().color(TEXT))
-                        .truncate()
-                        .selectable(false),
+                    Label::new(
+                        RichText::new(format!("#{} · {}", item.id, item.path))
+                            .size(10.0)
+                            .color(MUTED),
+                    )
+                    .truncate()
+                    .selectable(false),
                 );
-                ui.label(RichText::new(item.display_category()).size(10.0).color(ACCENT));
             });
-            ui.add(
-                egui::Label::new(
-                    RichText::new(format!("ID: {} · {}", item.id, item.path))
-                        .size(10.0)
-                        .color(MUTED),
-                )
-                .truncate()
-                .selectable(false),
-            );
         });
     })
 }
 
-/// An outfit row: name, summary and date, with Equip.
+/// An outfit row: name, summary and date, with Equip on the right.
 fn set_row(ui: &mut Ui, set: &CosmeticSet, selected: bool) -> egui::Response {
-    let response = row(ui, selected, 52.0, |ui| {
-        ui.vertical(|ui| {
-            ui.set_width(ui.available_width() - 70.0);
-            ui.spacing_mut().item_spacing.y = 1.0;
-            ui.add(
-                egui::Label::new(RichText::new(&set.name).strong().color(TEXT))
-                    .truncate()
-                    .selectable(false),
-            );
-            ui.add(
-                egui::Label::new(RichText::new(set.summary()).size(10.0).color(MUTED))
-                    .truncate()
-                    .selectable(false),
-            );
-            let date = format!("Saved: {}", set.created_label());
-            ui.add(egui::Label::new(RichText::new(date).size(10.0).color(MUTED)).selectable(false));
+    row(ui, selected, 54.0, |ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if widgets::button(ui, "Equip", Kind::Normal, true, vec2(64.0, 26.0), "").clicked() {
+                equip_set(set);
+            }
+            ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.add_space(4.0);
+                ui.add(
+                    Label::new(RichText::new(&set.name).strong().color(TEXT))
+                        .truncate()
+                        .selectable(false),
+                );
+                ui.add(
+                    Label::new(RichText::new(set.summary()).size(10.0).color(MUTED))
+                        .truncate()
+                        .selectable(false),
+                );
+                let date = format!("Saved {}", set.created_label());
+                ui.add(Label::new(RichText::new(date).size(10.0).color(MUTED)).selectable(false));
+            });
         });
-    });
-    // The row's Equip button, over its right end.
-    let rect = egui::Rect::from_min_size(response.rect.right_center() - vec2(64.0, 12.0), vec2(56.0, 24.0));
-    if ui.put(rect, egui::Button::new("Equip")).clicked() {
-        equip_set(set);
-    }
-    response
+    })
 }
 
 /// A small color square.
 fn swatch(ui: &mut Ui, color: i64) {
-    let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
     let [r, g, b] = [(color >> 16) as u8, (color >> 8) as u8, color as u8];
     ui.painter()
-        .rect_filled(rect, CornerRadius::same(3), Color32::from_rgb(r, g, b));
+        .rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(r, g, b));
     ui.painter()
-        .rect_stroke(rect, CornerRadius::same(3), (1.0, INSET), egui::StrokeKind::Inside);
+        .rect_stroke(rect, CornerRadius::same(4), (1.0, EDGE), egui::StrokeKind::Inside);
 }
 
 /// "#1A0826" or "1a0826" (VibeSkua `ParseHexToInt`); `None` for anything else.

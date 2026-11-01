@@ -161,16 +161,22 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   for this account (class type, obey summons), saved on change. Following stops the tab's Auto
   Attack.
 * **Cosmetics & Outfits** (`cosmetics.rs`, 900x620; VibeSkua's Cosmetics plugin, one per tab,
-  the catalog shared): a quick bar (Copy Target Look, a room player list and Copy, Reset to Real
-  Gear, M / F / Swap gender, a character name box with Copy from Character Page (Enter works
-  too), the last action's outcome) over four tabs. **Catalog**: search (an
-  ID when it is a number, else the name), sort, Check Updates, the category chips (Weapon adds
-  the weapon kind), a paged list (50 to 500 a page; double-click shows the item) and the
-  selected item's card (Equip Look, favorite, Open on AQW Wiki). **Outfits & Inspector**: Save
-  Current Look, the saved outfits (Equip, double-click), the inspector (a slot's Equip, Equip
-  Full Set, Delete Set). **Color Custom (CC)**: six hex boxes with a color picker each, Apply
-  Palette, Read Avatar Colors, VibeSkua's eight presets. **Manual SWF**: file, link, slot and
-  meta, Inject.
+  the catalog shared): a quick bar card of two aligned rows (the room player list and Copy
+  Player, then Copy Target Look; on the right M / F / Swap gender. Below: a character name box
+  and Copy Page, which copies from its character page (Enter works too); the last action's
+  outcome; Reset to Real Gear on the right), then the tab chips with the catalog's state on the
+  right. Every control is 28 px high. The Catalog, Outfits and CC tabs split into a list that
+  fills and a 270 px column on the right, both as tall as the window. **Catalog**: search (an
+  ID when it is a number, else the name; × clears it), sort, Check Updates, the category chips
+  (Weapon adds the weapon kind), a paged list in an inset (rows: name, `#id · file`, the
+  category tag; 50 to 500 a page with "1–50 of N items"; double-click equips the item) and the
+  selected item's card (ID, file and link; Equip Look, favorite and Open on AQW Wiki pinned to
+  the bottom). **Outfits & Inspector**: Save Current Look, the saved outfits (each row with
+  Equip; double-click equips), the inspector (each slot's item and Equip; Equip Full Set and
+  Delete Set side by side at the bottom). **Color Custom (CC)**: six rows of swatch (a color
+  picker), name and hex box (outlined red when it isn't hex), Apply Palette, Read Avatar Colors,
+  VibeSkua's eight presets on the right. **Manual SWF**: a form (file, link, slot, meta) whose
+  Inject is enabled once the file and link are filled. Empty lists and cards say what to do.
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
