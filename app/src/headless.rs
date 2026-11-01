@@ -66,6 +66,7 @@ fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<
         Rc::new(content),
         HeadlessNavigatorInterface,
     );
+    let navigator = crate::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));
     let player = PlayerBuilder::new()
         .with_navigator(navigator)
         .with_renderer(NullRenderer::new(ViewportDimensions {

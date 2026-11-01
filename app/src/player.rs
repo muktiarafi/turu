@@ -243,6 +243,11 @@ impl ActivePlayer {
                 opt.filesystem_access_mode,
             ),
         );
+        // Turu: the tab's game socket goes through its Interceptor capture.
+        let navigator = crate::capture::CaptureNavigator::new(
+            navigator,
+            bot.as_ref().map(|bot| bot.capture.clone()),
+        );
 
         if cfg!(feature = "external_video") && preferences.openh264_enabled() {
             #[cfg(feature = "external_video")]

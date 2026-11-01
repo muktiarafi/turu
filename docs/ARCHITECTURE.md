@@ -46,6 +46,9 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     models.rs            game JSON models (InventoryItem, Monster, Quest, ShopItem, ...)
     skills.rs            skill rotations (advanced skill sets) + the background `Worker` loops
     cbo.rs               the CoreBots Options file (`CBO_Storage(<user>).txt`)
+    capture.rs           Diagnostics > Interceptor: the game socket's packets (VibeSkua `CaptureProxy`),
+                         interceptors that edit or drop them
+    spammer.rs           Diagnostics > Spammer: a packet queue sent on a timer
     paths.rs, log.rs     data directory, skill set files; log buffers
     repo.rs              Search Scripts: the script repository's index, downloads, update, reset
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
@@ -59,6 +62,7 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
 app/                     crate `turu`, the app: started from ruffle-aqw's desktop frontend (Ruffle's,
                          with Mugetsu's changes marked `AQW build:`), plus Turu's tabs and UI
   src/turu.rs            Flash integration: FlashHost impl, ExternalInterface provider, spawn_action
+  src/capture.rs         wraps Ruffle's navigator so the game socket goes through `bot.capture`
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 scripts/                 submodule: muktiarafi/turu-scripts, the TypeScript scripts (Core libraries,
                          ported farms) and their index generator

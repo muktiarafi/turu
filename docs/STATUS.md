@@ -248,8 +248,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   data; the Options window's Report section and QR code only built, not looked at. Not built:
   browser notifications.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/UI.md` (Script Loader, Script
-  Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Console, Logger, Current Drops,
-  Loader, Grabber, Auto, Jump).
+  Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Console,
+  Spammer, Logger, Interceptor, Current Drops, Loader, Grabber, Auto, Jump).
+  Diagnostics > Spammer and Interceptor are tested against a fake game and fake socket bytes
+  (`bot/tests/spammer_interceptor.rs`), not yet in game: the capture's socket wrapper
+  (`app/src/capture.rs`) on a live connection, inflating the server's compressed packets, an
+  edited or blocked packet reaching (or not) the server or the client, Connect's relog.
   Tools > Loader and Grabber are unverified in game: the quest cache (`quest_cache.rs`: VibeSkua's
   `QuestData.json` format, Add missing / Rebuild all / Update range, merging, cancel, the
   community download with its ETag, over a local HTTP server too) and the
@@ -367,7 +371,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
-  Junk Items, Notify Drop, Spammer, Interceptor, Plugins, Auto Hunt
+  Junk Items, Notify Drop, Plugins, Auto Hunt
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.

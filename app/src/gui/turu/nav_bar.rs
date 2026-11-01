@@ -211,11 +211,15 @@ impl NavBar {
             if item(ui, "Console", true) {
                 windows.console = true;
             }
-            item(ui, "Spammer", false);
+            if item(ui, "Spammer", true) {
+                windows.spammer = true;
+            }
             if item(ui, "Logger", true) {
                 windows.packet_logger = true;
             }
-            item(ui, "Interceptor", false);
+            if item(ui, "Interceptor", true) {
+                windows.interceptor = true;
+            }
         });
         ui.menu_button("Plugins", |ui| {
             item(ui, "View Plugins", false);

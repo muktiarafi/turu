@@ -7,6 +7,7 @@ pub mod api;
 pub mod army;
 mod background;
 pub mod butler;
+pub mod capture;
 pub mod cbo;
 pub mod control;
 pub mod control_api;
@@ -29,6 +30,7 @@ pub mod script;
 pub mod settings;
 pub mod skill_editor;
 pub mod skills;
+pub mod spammer;
 pub mod startup;
 pub mod state;
 pub mod webhooks;
@@ -89,6 +91,11 @@ pub struct Bot {
     pub gear: gear::GearCache,
     /// What Cosmetics shows over the real gear (VibeSkua's Cosmetics plugin).
     pub cosmetics: cosmetics::Look,
+    /// Diagnostics > Interceptor: the game socket's packets (VibeSkua `GameProxy`). The app's
+    /// socket wrapper holds a clone.
+    pub capture: Arc<capture::CaptureProxy>,
+    /// Diagnostics > Spammer.
+    pub spammer: Arc<spammer::Spammer>,
     pub paths: paths::Paths,
 }
 
@@ -120,6 +127,8 @@ impl Bot {
             butler: butler::Butler::new(&paths),
             gear: gear::GearCache::default(),
             cosmetics: cosmetics::Look::default(),
+            capture: Arc::default(),
+            spammer: Arc::default(),
             paths,
         });
         background::start(&bot);

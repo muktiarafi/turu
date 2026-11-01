@@ -251,7 +251,7 @@ const SERVERS: [&str; 12] = [
 
 /// VibeSkua `ServersList`: the names from the server list API, else from the game's login
 /// screen, else [`SERVERS`]; without duplicates (ignoring case), sorted.
-fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
+pub fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
     let names = |servers: Vec<turu_bot::models::Server>| -> Vec<String> {
         servers
             .into_iter()
