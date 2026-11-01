@@ -176,7 +176,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `options.json` | bot options (Options > Game, Save; Relogin Try Delay and Relogin Watchdog are saved from Options > Application) |
 | `accounts.json` | Army > Accounts: accounts, groups, the launch setup (no passwords: those are in the system keychain, service "Turu") |
 | `settings.json` | application settings (Options > Application, `bot/src/settings.rs`), saved on every change |
-| `QuestData.json` | Tools > Loader's quest cache, VibeSkua's format (`bot/src/quest_cache.rs`); not shipped: copy VibeSkua's over or fill it with Add missing |
+| `QuestData.json` | Tools > Loader's quest cache, VibeSkua's format (`bot/src/quest_cache.rs`); not shipped: downloaded from `auqw/Scripts` when the Loader first opens (and by its Download button), its ETag in `QuestData.json.etag` |
 | `butler.json` | Butler's options, shared by every client (re-read when another client changes it) |
 | `cosmetics/` | Cosmetics' `catalog.json` (VibeSkua's community item sheet, downloaded on first open and by Check Updates), `favorites.json` and `outfits.json`, shared by every client |
 | `gear/<username>.json` | each account's wearable items (inventory, and the bank as last loaded, dated `bankAsOf`), written by its client within 5 s of a change (`bot/src/gear.rs`); the Army Control Gear window reads it |

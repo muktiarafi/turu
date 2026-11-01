@@ -1,15 +1,16 @@
 //! Tools & Helpers > Loader (VibeSkua `LoaderView`): loads a shop or quests by ID, and lists
 //! the quest cache (`QuestData.json`, `turu_bot::quest_cache`) to load, copy or fake complete
-//! quests from. The cache is read and updated on bot threads; the list keeps IDs and names.
+//! quests from. The cache is read, downloaded and updated on bot threads; the list keeps IDs
+//! and names. With no cache file, opening the window downloads the community one.
 
-use super::theme::{MUTED, TEXT, WARNING};
+use super::theme::{MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind, Selection};
 use egui::{Align, Context, Label, Layout, RichText, ScrollArea, Ui, vec2};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use turu_bot::api::{player, quests, shops};
-use turu_bot::quest_cache::{self, QuestSummary, UpdateMode};
+use turu_bot::quest_cache::{self, Downloaded, HttpSource, QuestSummary, UpdateMode};
 
 const ROW_HEIGHT: f32 = 22.0;
 const CONTROL_HEIGHT: f32 = 26.0;
@@ -25,8 +26,9 @@ struct Shared {
     progress: String,
     /// The cache as read or updated, for the window to take.
     quests: Option<Arc<Vec<QuestSummary>>>,
-    /// A message shown for a few seconds (a bad range, a failure).
-    notice: Option<(String, Instant)>,
+    /// A message shown for a few seconds (a bad range, a failure, a download's result), and
+    /// whether it is good news.
+    notice: Option<(String, Instant, bool)>,
 }
 
 fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
@@ -34,7 +36,34 @@ fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
 }
 
 fn notify(shared: &Mutex<Shared>, text: impl Into<String>, seconds: u64) {
-    lock(shared).notice = Some((text.into(), Instant::now() + Duration::from_secs(seconds)));
+    lock(shared).notice = Some((text.into(), Instant::now() + Duration::from_secs(seconds), false));
+}
+
+fn notify_ok(shared: &Mutex<Shared>, text: impl Into<String>, seconds: u64) {
+    lock(shared).notice = Some((text.into(), Instant::now() + Duration::from_secs(seconds), true));
+}
+
+/// Downloads the community cache into the file (`quest_cache::download`) and hands the list
+/// to the window; reports the result as a notice.
+fn download(bot: &turu_bot::Bot, shared: &Mutex<Shared>) {
+    lock(shared).progress = "Downloading quest cache...".into();
+    match quest_cache::download(&bot.paths.quest_data_file(), &HttpSource::from_env()) {
+        Ok(Downloaded::Updated {
+            quests,
+            downloaded,
+            kept,
+        }) => {
+            lock(shared).quests = Some(Arc::new(quests.iter().map(QuestSummary::from).collect()));
+            let kept = if kept > 0 {
+                format!(", kept {kept} of yours")
+            } else {
+                String::new()
+            };
+            notify_ok(shared, format!("Downloaded {downloaded} quests{kept}."), 5);
+        }
+        Ok(Downloaded::Unchanged) => notify_ok(shared, "The quest cache is up to date.", 4),
+        Err(e) => notify(shared, format!("Couldn't download the quest cache: {e}"), 8),
+    }
 }
 
 #[derive(Default)]
@@ -71,7 +100,8 @@ impl LoaderWindow {
         }
     }
 
-    /// VibeSkua `GetQuestsAsync`: the cache file's quests, when the window opens.
+    /// VibeSkua `GetQuestsAsync`: the cache file's quests, when the window opens; without a
+    /// file, the community cache is downloaded first (VibeSkua ships one).
     fn read_cache(&self) {
         let shared = self.shared.clone();
         {
@@ -80,10 +110,29 @@ impl LoaderWindow {
             s.progress = "Getting quests".into();
         }
         crate::turu::spawn_action("Read the quest cache", move |bot| {
-            match quest_cache::read_summaries(&bot.paths.quest_data_file()) {
-                Ok(quests) => lock(&shared).quests = Some(Arc::new(quests)),
-                Err(e) => notify(&shared, format!("Failed to load quests: {e}"), 6),
+            let path = bot.paths.quest_data_file();
+            // Not in the layout test, which would download into the real data folder.
+            if !path.exists() && !cfg!(test) {
+                download(bot, &shared);
+            } else {
+                match quest_cache::read_summaries(&path) {
+                    Ok(quests) => lock(&shared).quests = Some(Arc::new(quests)),
+                    Err(e) => notify(&shared, format!("Failed to load quests: {e}"), 6),
+                }
             }
+            let mut s = lock(&shared);
+            s.busy = false;
+            s.progress.clear();
+            Ok(())
+        });
+    }
+
+    /// Download: the community cache merged into the file.
+    fn download_cache(&self) {
+        let shared = self.shared.clone();
+        lock(&shared).busy = true;
+        crate::turu::spawn_action("Download the quest cache", move |bot| {
+            download(bot, &shared);
             let mut s = lock(&shared);
             s.busy = false;
             s.progress.clear();
@@ -225,7 +274,7 @@ impl LoaderWindow {
                 let text = if lock(&self.shared).busy && self.quests.is_empty() {
                     "Getting quests..."
                 } else if self.quests.is_empty() {
-                    "The quest cache is empty. Log in and use Add missing to fill it."
+                    "The quest cache is empty: use Download, or log in and use Add missing."
                 } else {
                     "No quests match."
                 };
@@ -264,18 +313,19 @@ impl LoaderWindow {
         }
     }
 
-    /// Update cache (Add missing, Rebuild all) or the progress with Cancel, and Update range.
+    /// Update cache (Add missing, Rebuild all, Download) or the progress with Cancel, and Update
+    /// range.
     fn cache_bar(&mut self, ui: &mut Ui) {
         let (busy, cancellable, progress, notice) = {
             let mut s = lock(&self.shared);
-            if s.notice.as_ref().is_some_and(|(_, until)| Instant::now() >= *until) {
+            if s.notice.as_ref().is_some_and(|(_, until, _)| Instant::now() >= *until) {
                 s.notice = None;
             }
             (
                 s.busy,
                 s.cancellable,
                 s.progress.clone(),
-                s.notice.as_ref().map(|(text, _)| text.clone()),
+                s.notice.as_ref().map(|(text, _, ok)| (text.clone(), *ok)),
             )
         };
         if notice.is_some() {
@@ -295,9 +345,18 @@ impl LoaderWindow {
                     }
                 } else {
                     match &notice {
-                        Some(text) => ui.label(RichText::new(text).size(11.0).color(WARNING)),
-                        None => ui.label(RichText::new("Update cache").size(11.0).color(MUTED)),
-                    };
+                        Some((text, ok)) => {
+                            let color = if *ok { SUCCESS } else { WARNING };
+                            ui.scope(|ui| {
+                                ui.set_max_width(170.0);
+                                ui.add(Label::new(RichText::new(text).size(11.0).color(color)).truncate())
+                                    .on_hover_text(text);
+                            });
+                        }
+                        None => {
+                            ui.label(RichText::new("Update cache").size(11.0).color(MUTED));
+                        }
+                    }
                     if widgets::button(ui, "+ Add missing", Kind::Normal, true, vec2(112.0, CONTROL_HEIGHT), "")
                         .on_hover_text("Keep the quests already cached and add new ones")
                         .clicked()
@@ -309,6 +368,15 @@ impl LoaderWindow {
                         .clicked()
                     {
                         self.update_cache(UpdateMode::RebuildAll);
+                    }
+                    if widgets::button(ui, "Download", Kind::Normal, true, small, "")
+                        .on_hover_text(
+                            "Download the community quest cache (auqw/Scripts) and merge it in, \
+                             keeping the quests only yours has",
+                        )
+                        .clicked()
+                    {
+                        self.download_cache();
                     }
                 }
                 ui.separator();

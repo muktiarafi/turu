@@ -254,19 +254,26 @@ runs.
   spaces only; Shop loads a single ID with `shops.load`, Quests shows them with `quests.load`).
   QUEST CACHE with its count and "Search by name" (name or ID); the cached quests (name, ID on
   the right), where a click picks or unpicks a row and Shift+click picks a range. The card below:
-  "Update cache" with + Add missing (loads after the last cached ID) and Rebuild all (from 1,
-  replacing the cache), or while it runs the progress ("Loading Quests 30-59...") and Cancel;
+  "Update cache" with + Add missing (loads after the last cached ID), Rebuild all (from 1,
+  replacing the cache) and Download (the community cache, below), or while it runs the progress ("Loading Quests 30-59...") and Cancel;
   then the range box ("Range, e.g. 2566, 2599") and Update range. A bad range, a failure, or
   updating while logged out (which only reads the file, as VibeSkua) shows a yellow note there
-  for a few seconds. Footer: "None selected" / "N selected", Copy ▾ (Copy IDs "1,2", Copy names,
+  for a few seconds; a download's result ("Downloaded 10345 quests.", "The quest cache is up to
+  date.") a green one. Footer: "None selected" / "N selected", Copy ▾ (Copy IDs "1,2", Copy names,
   Copy as `// Name | ID` lines), Fake complete (the row clicked last: `quests.updateQuest`, a
   client-side `updateQuest` packet) and Load selected. The engine is `turu_bot::quest_cache`:
   `QuestData.json` in the data folder, VibeSkua's format field for field (a VibeSkua file can be
-  copied over; Turu ships none), read when the window opens (IDs and names only) and updated
+  copied over; Turu ships none), read when the window opens (downloaded first when there is no
+  file) (IDs and names only) and updated
   on a `spawn_action` thread: 29 quests a request (`world.questTree` cleared, `showQuests`, up to
   10 s for them, 1.5 s between requests), stopping at the first request that loads nothing;
   quests loaded again replace their cached copy; a cancelled Rebuild all keeps what it read plus
-  the cached quests after it. Unlike VibeSkua, the list keeps showing while the cache updates.
+  the cached quests after it. Download (VibeSkua `UpdateQuestDataFile`, which VibeSkua runs
+  with its updates) fetches `auqw/Scripts`' `QuestData.json` (Skua branch; `TURU_QUEST_DATA_URL`
+  overrides it) gzipped, about 1 MB, and merges it in: a downloaded quest replaces the local
+  copy, quests only the local file has stay. Its ETag is kept in `QuestData.json.etag`, so an
+  unchanged file is a 304; a body that isn't a quest list leaves the cache alone. Unlike
+  VibeSkua, the list keeps showing while the cache updates.
 * **Grabber** (`grabber.rs`, 800x560, VibeSkua `GrabberView`, one per tab, each list keeping its
   rows, search and selection): a 164 px sidebar of boxed entries under SHOPS (Shop Items, Shop
   IDs), QUESTS (Quests, GetMap Item IDs: greyed, VibeSkua decompiles the map SWF with FFDec),

@@ -630,3 +630,145 @@ fn register_and_unregister_all_change_the_registered_quests() {
     grabber::run(&bot, GrabAction::UnregisterAll, &[], None, &|_| {}, &cancel).unwrap();
     assert!(bot.quests.registered().is_empty());
 }
+
+/// The community cache as a fake source: answers `Unchanged` for `etag`.
+struct FakeSource {
+    body: String,
+    etag: &'static str,
+    asked_with: Mutex<Vec<Option<String>>>,
+}
+
+impl quest_cache::QuestSource for FakeSource {
+    fn fetch(&self, etag: Option<&str>) -> Result<quest_cache::Fetched, String> {
+        self.asked_with.lock().push(etag.map(str::to_owned));
+        if etag == Some(self.etag) {
+            return Ok(quest_cache::Fetched::Unchanged);
+        }
+        Ok(quest_cache::Fetched::File {
+            body: self.body.clone().into_bytes(),
+            etag: Some(self.etag.to_owned()),
+        })
+    }
+}
+
+#[test]
+fn download_merges_the_community_cache_and_remembers_its_etag() {
+    let (bot, _) = setup("download");
+    let path = cache_path(&bot, "download");
+    quest_cache::write(&path, &[quest(1, "local one"), quest(9000, "only local")]).unwrap();
+    let source = FakeSource {
+        body: serde_json::to_string(&vec![quest(1, "remote one"), quest(2, "remote two")]).unwrap(),
+        etag: "\"v1\"",
+        asked_with: Mutex::new(Vec::new()),
+    };
+    // No ETag yet: a full download; the remote copy wins, the local-only quest stays.
+    let quests = match quest_cache::download(&path, &source).unwrap() {
+        quest_cache::Downloaded::Updated {
+            quests,
+            downloaded,
+            kept,
+        } => {
+            assert_eq!((downloaded, kept), (2, 1));
+            quests
+        }
+        other => panic!("{other:?}"),
+    };
+    let names: Vec<&str> = quests.iter().map(|q| q.name.as_str()).collect();
+    assert_eq!(names, ["remote one", "remote two", "only local"]);
+    assert_eq!(quest_cache::read(&path).unwrap(), quests);
+    // Again: the ETag is sent and nothing changes.
+    assert_eq!(
+        quest_cache::download(&path, &source).unwrap(),
+        quest_cache::Downloaded::Unchanged
+    );
+    assert_eq!(*source.asked_with.lock(), [None, Some("\"v1\"".to_owned())]);
+    // Without the cache file, the ETag isn't sent: the file is downloaded again.
+    std::fs::remove_file(&path).unwrap();
+    assert!(matches!(
+        quest_cache::download(&path, &source).unwrap(),
+        quest_cache::Downloaded::Updated { kept: 0, .. }
+    ));
+    assert_eq!(source.asked_with.lock()[2], None);
+}
+
+#[test]
+fn download_rejects_a_broken_file_and_keeps_the_cache() {
+    let (bot, _) = setup("download-broken");
+    let path = cache_path(&bot, "download-broken");
+    quest_cache::write(&path, &[quest(1, "local")]).unwrap();
+    let source = FakeSource {
+        body: "<html>rate limited</html>".into(),
+        etag: "\"x\"",
+        asked_with: Mutex::new(Vec::new()),
+    };
+    let error = quest_cache::download(&path, &source).unwrap_err();
+    assert!(
+        error.starts_with("The downloaded quest cache isn't valid"),
+        "{error}"
+    );
+    assert_eq!(quest_cache::read(&path).unwrap(), [quest(1, "local")]);
+}
+
+/// Serves `body` gzipped with an ETag, and 304 to a request that sends it back.
+fn serve_once_per_request(
+    body: &str,
+    requests: usize,
+) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/QuestData.json", listener.local_addr().unwrap());
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(body.as_bytes()).unwrap();
+    let gzipped = gz.finish().unwrap();
+    let handle = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for _ in 0..requests {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+            if request.contains("if-none-match: \"abc\"") {
+                stream.write_all(b"HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            } else {
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nETag: \"abc\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    gzipped.len()
+                );
+                stream.write_all(head.as_bytes()).unwrap();
+                stream.write_all(&gzipped).unwrap();
+            }
+            seen.push(request);
+        }
+        seen
+    });
+    (url, handle)
+}
+
+#[test]
+fn http_source_gets_gzip_and_honours_the_etag() {
+    let (bot, _) = setup("download-http");
+    let path = cache_path(&bot, "download-http");
+    let body = serde_json::to_string(&vec![quest(5, "five")]).unwrap();
+    let (url, server) = serve_once_per_request(&body, 2);
+    let source = quest_cache::HttpSource::new(&url);
+    assert!(matches!(
+        quest_cache::download(&path, &source).unwrap(),
+        quest_cache::Downloaded::Updated { downloaded: 1, .. }
+    ));
+    assert_eq!(
+        quest_cache::download(&path, &source).unwrap(),
+        quest_cache::Downloaded::Unchanged
+    );
+    let requests = server.join().unwrap();
+    assert!(
+        requests[0].contains("accept-encoding: gzip"),
+        "{}",
+        requests[0]
+    );
+    assert!(
+        requests[1].contains("if-none-match: \"abc\""),
+        "{}",
+        requests[1]
+    );
+    assert_eq!(quest_cache::read(&path).unwrap(), [quest(5, "five")]);
+}

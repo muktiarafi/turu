@@ -19,7 +19,7 @@ regex = "1"
 rquickjs = { version = "0.14", features = ["loader", "macro"] }
 oxc = { version = "0.156", features = ["transformer", "codegen", "semantic"] }
 # The server list (`bot.servers.getServers`); the desktop already builds it.
-reqwest = { workspace = true, features = ["blocking", "native-tls"] }
+reqwest = { workspace = true, features = ["blocking", "native-tls", "gzip"] }
 # The control API (`control_api.rs`) and its token; reqwest already builds hyper and tokio.
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
@@ -41,6 +41,8 @@ keyring = { version = "3.6", features = ["async-secret-service", "tokio", "crypt
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# A gzip answer for the quest cache download test.
+flate2 = "1.1.9"
 
 [lints]
 workspace = true

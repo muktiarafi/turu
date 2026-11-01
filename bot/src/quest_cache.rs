@@ -1,6 +1,7 @@
 //! The quest cache of Tools > Loader (VibeSkua `QuestDataLoaderService`): `QuestData.json` in
 //! the data folder, in VibeSkua's format (a VibeSkua file can be copied over), filled by
-//! loading quests into the client 29 at a time.
+//! loading quests into the client 29 at a time, or by downloading the community cache
+//! (VibeSkua `UpdateQuestDataFile`).
 
 use crate::Bot;
 use crate::api::{player, quests};
@@ -13,6 +14,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// The cache's file name in the data folder (VibeSkua `ClientFileSources.SkuaQuestsFile`).
 pub const FILE_NAME: &str = "QuestData.json";
@@ -694,4 +696,135 @@ pub fn copy_comments(quests: &[&QuestSummary]) -> String {
         .map(|q| format!("// {} | {}", q.name, q.id))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The community quest cache VibeSkua downloads (`auqw/Scripts`, Skua branch).
+pub const COMMUNITY_URL: &str =
+    "https://raw.githubusercontent.com/auqw/Scripts/refs/heads/Skua/QuestData.json";
+
+/// What the download request answered.
+pub enum Fetched {
+    /// Same as the ETag sent.
+    Unchanged,
+    File {
+        body: Vec<u8>,
+        etag: Option<String>,
+    },
+}
+
+/// Where Download gets the cache (the community file, or a fake one in tests).
+pub trait QuestSource: Send + Sync {
+    /// The file, or [`Fetched::Unchanged`] when it still has `etag`.
+    fn fetch(&self, etag: Option<&str>) -> Result<Fetched, String>;
+}
+
+/// The cache at a URL, over HTTP (gzip, so the 20 MB file is about 1 MB on the wire).
+pub struct HttpSource {
+    url: String,
+    client: reqwest::blocking::Client,
+}
+
+impl HttpSource {
+    pub fn new(url: &str) -> Self {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .user_agent(concat!("Turu/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        Self {
+            url: url.to_owned(),
+            client,
+        }
+    }
+
+    /// [`COMMUNITY_URL`], or the URL in `TURU_QUEST_DATA_URL`.
+    pub fn from_env() -> Self {
+        let url = std::env::var("TURU_QUEST_DATA_URL")
+            .ok()
+            .filter(|u| u.trim().starts_with("http"))
+            .unwrap_or_else(|| COMMUNITY_URL.to_owned());
+        Self::new(url.trim())
+    }
+}
+
+impl QuestSource for HttpSource {
+    fn fetch(&self, etag: Option<&str>) -> Result<Fetched, String> {
+        let mut request = self.client.get(&self.url);
+        if let Some(etag) = etag {
+            request = request.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
+        let response = request.send().map_err(|e| format!("{}: {e}", self.url))?;
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            return Ok(Fetched::Unchanged);
+        }
+        let response = response
+            .error_for_status()
+            .map_err(|e| format!("{}: {e}", self.url))?;
+        let etag = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let body = response
+            .bytes()
+            .map_err(|e| format!("{}: {e}", self.url))?
+            .to_vec();
+        Ok(Fetched::File { body, etag })
+    }
+}
+
+/// What a download did.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Downloaded {
+    /// The community file hasn't changed since the last download; the cache is as it was.
+    Unchanged,
+    /// The cache now holds the downloaded quests plus `kept` quests only the local file had.
+    Updated {
+        quests: Vec<QuestData>,
+        downloaded: usize,
+        kept: usize,
+    },
+}
+
+/// The ETag of the last download, next to the cache (`QuestData.json.etag`).
+fn etag_path(path: &Path) -> std::path::PathBuf {
+    path.with_extension("json.etag")
+}
+
+/// VibeSkua `UpdateQuestDataFile`: downloads the community cache and merges it into the file
+/// at `path` (a downloaded quest replaces the local copy; quests only the local file has are
+/// kept). Sends the last download's ETag while the file exists, so an unchanged file costs an
+/// empty answer. A local file that can't be read is replaced.
+pub fn download(path: &Path, source: &dyn QuestSource) -> Result<Downloaded, String> {
+    let etag_file = etag_path(path);
+    let etag = path
+        .exists()
+        .then(|| fs::read_to_string(&etag_file).ok())
+        .flatten();
+    let (body, etag) = match source.fetch(etag.as_deref().map(str::trim))? {
+        Fetched::Unchanged => return Ok(Downloaded::Unchanged),
+        Fetched::File { body, etag } => (body, etag),
+    };
+    let remote: Vec<QuestData> = serde_json::from_slice::<Option<Vec<QuestData>>>(&body)
+        .map_err(|e| format!("The downloaded quest cache isn't valid: {e}"))?
+        .unwrap_or_default();
+    let local = read(path).unwrap_or_default();
+    let remote_ids: HashSet<i64> = remote.iter().map(|q| q.id).collect();
+    let downloaded = remote_ids.len();
+    let kept = local.iter().filter(|q| !remote_ids.contains(&q.id)).count();
+    let quests = merge(remote, local);
+    write(path, &quests).map_err(|e| format!("{}: {e}", path.display()))?;
+    match etag {
+        Some(etag) => {
+            let _ = fs::write(&etag_file, etag);
+        }
+        None => {
+            let _ = fs::remove_file(&etag_file);
+        }
+    }
+    Ok(Downloaded::Updated {
+        quests,
+        downloaded,
+        kept,
+    })
 }

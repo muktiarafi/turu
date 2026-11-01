@@ -240,7 +240,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Console, Logger, Current Drops,
   Loader, Grabber, Auto, Jump).
   Tools > Loader and Grabber are unverified in game: the quest cache (`quest_cache.rs`: VibeSkua's
-  `QuestData.json` format, Add missing / Rebuild all / Update range, merging, cancel) and the
+  `QuestData.json` format, Add missing / Rebuild all / Update range, merging, cancel, the
+  community download with its ETag, over a local HTTP server too) and the
   Grabber's readers and actions (`grabber.rs`) are tested against a fake game
   (`bot/tests/loader_grabber.rs`), the windows only opened. Grabber's GetMap Item IDs isn't built
   (VibeSkua decompiles the map SWF with FFDec).
