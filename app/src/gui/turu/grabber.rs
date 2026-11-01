@@ -120,7 +120,7 @@ impl List {
             s.message = Some(("Working...".into(), None));
         }
         crate::turu::spawn_action("Grab", move |bot| {
-            match grabber::grab(bot, kind) {
+            match grabber::grab(bot, kind, &crate::map_items::scan) {
                 Ok(items) => {
                     lock(&shared).grabbed = Some(items);
                     report(&shared, "Finished.", 1);
@@ -240,7 +240,7 @@ impl GrabberWindow {
                         ui.add_space(if kind == GrabKind::ALL[0] { 0.0 } else { 4.0 });
                         widgets::section_label(ui, group);
                     }
-                    if nav_item(ui, kind.title(), self.tab == kind, kind.available()) {
+                    if nav_item(ui, kind.title(), self.tab == kind) {
                         self.tab = kind;
                     }
                 }
@@ -267,22 +267,13 @@ impl GrabberWindow {
 
         // Grab, search, Multi-select.
         ui.horizontal(|ui| {
-            let available = list.kind.available();
-            let tip = if available {
-                "Busy"
+            let grab = widgets::button(ui, "⟳ Grab", Kind::Primary, !busy, vec2(112.0, CONTROL_HEIGHT), "Busy");
+            let grab = if list.kind == GrabKind::MapItems {
+                grab.on_hover_text("Download the current map's SWF and read its map items (kept per map file)")
             } else {
-                "Needs the map SWF decompiled (FFDec): not in Turu"
+                grab
             };
-            if widgets::button(
-                ui,
-                "⟳ Grab",
-                Kind::Primary,
-                !busy && available,
-                vec2(112.0, CONTROL_HEIGHT),
-                tip,
-            )
-            .clicked()
-            {
+            if grab.clicked() {
                 list.grab();
             }
             let chip = if list.kind.select_multiple() { 120.0 } else { 0.0 };
@@ -510,12 +501,12 @@ impl GrabberWindow {
     }
 }
 
-/// A sidebar entry: a boxed row, accent-tinted when picked; greyed when not available.
-fn nav_item(ui: &mut Ui, title: &str, selected: bool, available: bool) -> bool {
+/// A sidebar entry: a boxed row, accent-tinted when picked.
+fn nav_item(ui: &mut Ui, title: &str, selected: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
     let (fill, stroke) = if selected {
         (ACCENT.gamma_multiply(0.25), ACCENT)
-    } else if response.hovered() && available {
+    } else if response.hovered() {
         (HOVER, EDGE)
     } else {
         (CARD, EDGE)
@@ -527,13 +518,7 @@ fn nav_item(ui: &mut Ui, title: &str, selected: bool, available: bool) -> bool {
         Stroke::new(1.0, stroke),
         egui::StrokeKind::Inside,
     );
-    let color = if !available {
-        MUTED.gamma_multiply(0.6)
-    } else if selected {
-        TEXT
-    } else {
-        MUTED
-    };
+    let color = if selected { TEXT } else { MUTED };
     let font = egui::FontId::proportional(13.0);
     ui.painter().text(
         rect.left_center() + vec2(10.0, 0.0),
@@ -542,10 +527,6 @@ fn nav_item(ui: &mut Ui, title: &str, selected: bool, available: bool) -> bool {
         font,
         color,
     );
-    if !available {
-        response.on_hover_text("Needs the map SWF decompiled (FFDec): not in Turu");
-        return false;
-    }
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }

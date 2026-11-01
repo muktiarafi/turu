@@ -6834,6 +6834,7 @@ dependencies = [
  "ruffle_video_software",
  "rustc-demangle",
  "serde_json",
+ "swf 0.3.0",
  "sys-locale",
  "thiserror 2.0.18",
  "tokio",

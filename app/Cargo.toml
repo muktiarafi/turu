@@ -31,6 +31,9 @@ fontdb = "0.23"
 turu_bot = { path = "../bot" }
 # Turu: the web monitor's phone link as a QR code (Options > Application > Monitor).
 qrcode = { version = "0.14.1", default-features = false }
+# Turu: Grabber > GetMap Item IDs reads the map SWF's AS3 bytecode (`map_items.rs`). Ruffle's
+# core already builds it with its compression features.
+swf = { path = "../ruffle/swf", default-features = false }
 ruffle_core = { path = "../ruffle/core", features = ["audio", "clap", "mp3", "aac", "nellymoser", "default_compatibility_rules", "egui"] }
 ruffle_render = { path = "../ruffle/render", features = ["clap"] }
 ruffle_render_wgpu = { path = "../ruffle/render/wgpu", features = ["clap"] }

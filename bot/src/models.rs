@@ -554,6 +554,18 @@ pub struct ShopItem {
     pub token_name: String,
 }
 
+/// A map item found in the current map's SWF (VibeSkua `MapItem`): the ID
+/// `world.getMapItem(id)` picks up and the quest it is for (0 when the map doesn't say).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MapItem {
+    pub id: i64,
+    pub quest_id: i64,
+    /// `strMapFileName` of the map it was found in.
+    pub map_file_path: String,
+    pub map_name: String,
+}
+
 /// A shop loaded this session (VibeSkua `ShopInfo`, kept in `Shops.LoadedCache`), from its
 /// `loadShop` packet.
 #[derive(Debug, Clone, Default, Serialize)]

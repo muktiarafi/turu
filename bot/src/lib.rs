@@ -18,6 +18,7 @@ pub mod gear;
 pub mod grabber;
 pub mod host;
 pub mod log;
+pub mod map_items;
 pub mod models;
 pub mod monitor;
 pub mod options;

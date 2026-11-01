@@ -15,6 +15,7 @@ mod gui;
 mod headless;
 mod heap_census;
 mod log;
+mod map_items;
 mod mugetsu;
 mod player;
 mod preferences;

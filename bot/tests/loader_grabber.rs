@@ -456,22 +456,26 @@ fn formats_grabbed_rows_like_vibeskua() {
 #[test]
 fn grabs_from_the_game() {
     let (bot, _) = setup("grab");
-    let inventory = grabber::grab(&bot, GrabKind::Inventory).unwrap();
+    let inventory = grabber::grab(&bot, GrabKind::Inventory, &no_scan).unwrap();
     assert_eq!(inventory.len(), 2);
     assert_eq!(
         inventory[1].summary(),
         "[2] Void Highlord x1 | Category: Class [Member]"
     );
-    let temp = grabber::grab(&bot, GrabKind::TempInventory).unwrap();
+    let temp = grabber::grab(&bot, GrabKind::TempInventory, &no_scan).unwrap();
     assert_eq!(temp[0].summary(), "[9] Bone x3");
-    assert!(grabber::grab(&bot, GrabKind::ShopIds).unwrap().is_empty());
+    assert!(
+        grabber::grab(&bot, GrabKind::ShopIds, &no_scan)
+            .unwrap()
+            .is_empty()
+    );
     // A loadShop packet records the shop for Shop IDs; loading it again replaces it.
     for name in ["Old Name", "Blacksmith"] {
         let packet = json!({ "params": { "type": "json", "dataObj": { "cmd": "loadShop", "shopinfo": {
             "ShopID": "250", "sName": name, "items": [ { "ItemID": 7, "sName": "Blade", "iCost": 5 } ] } } } });
         bot.on_flash_call("pext", vec![Value::String(packet.to_string())]);
     }
-    let shops = grabber::grab(&bot, GrabKind::ShopIds).unwrap();
+    let shops = grabber::grab(&bot, GrabKind::ShopIds, &no_scan).unwrap();
     assert_eq!(shops.len(), 1);
     assert_eq!(shops[0].summary(), "[250] Blacksmith");
     assert!(
@@ -480,7 +484,6 @@ fn grabs_from_the_game() {
             .iter()
             .any(|(k, v)| k == "items" && v.contains("[7] Blade"))
     );
-    assert!(!GrabKind::MapItems.available());
     assert!(!GrabKind::ShopIds.select_multiple());
     assert_eq!(GrabKind::Quests.actions().len(), 5);
 }
@@ -585,7 +588,7 @@ fn buy_without_enough_gold_shows_vibeskuas_message() {
 fn fake_complete_sends_the_update_quest_packet() {
     let (bot, game) = setup("fake-complete");
     game.tree.lock().insert("12".into(), raw_quest(12));
-    let grabbed = grabber::grab(&bot, GrabKind::Quests).unwrap();
+    let grabbed = grabber::grab(&bot, GrabKind::Quests, &no_scan).unwrap();
     assert_eq!(grabbed[0].summary(), "[12] Quest 12 (Slot: 3)");
     let messages = Mutex::new(Vec::new());
     let progress = |m: String| messages.lock().push(m);
@@ -615,7 +618,7 @@ fn fake_complete_sends_the_update_quest_packet() {
 fn register_and_unregister_all_change_the_registered_quests() {
     let (bot, game) = setup("register");
     game.tree.lock().insert("12".into(), raw_quest(12));
-    let grabbed = grabber::grab(&bot, GrabKind::Quests).unwrap();
+    let grabbed = grabber::grab(&bot, GrabKind::Quests, &no_scan).unwrap();
     let cancel = AtomicBool::new(false);
     grabber::run(
         &bot,
@@ -771,4 +774,104 @@ fn http_source_gets_gzip_and_honours_the_etag() {
         requests[1]
     );
     assert_eq!(quest_cache::read(&path).unwrap(), [quest(5, "five")]);
+}
+
+/// A scanner for tests that don't grab map items.
+fn no_scan(_: &[u8]) -> Result<Vec<(i64, i64)>, String> {
+    Err("no scanner".into())
+}
+
+/// Serves `body` for `requests` requests; returns the base URL and the paths asked for.
+fn serve_bytes(
+    body: &'static [u8],
+    requests: usize,
+) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/maps/", listener.local_addr().unwrap());
+    let handle = std::thread::spawn(move || {
+        let mut paths = Vec::new();
+        for _ in 0..requests {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+            paths.push(
+                request
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(body).unwrap();
+        }
+        paths
+    });
+    (url, handle)
+}
+
+#[test]
+fn finds_map_items_in_the_downloaded_map_and_keeps_them() {
+    let (bot, _) = setup("map-items");
+    let _ = std::fs::remove_file(bot.paths.map_items_file());
+    let scan = |swf: &[u8]| -> Result<Vec<(i64, i64)>, String> {
+        assert_eq!(swf, b"FWS map");
+        Ok(vec![(1465, 2365), (42, 0)])
+    };
+    // Without a map there is nothing to download.
+    let error =
+        turu_bot::map_items::find_at(&bot, "http://127.0.0.1:9/", &scan, false).unwrap_err();
+    assert!(error.to_string().contains("Join a map first"), "{error}");
+
+    {
+        let mut state = bot.state.lock();
+        state.map_file_path = Some("ChiralValley/town-Mobius-21Feb14.swf".into());
+        state.map_name = Some("mobius".into());
+    }
+    // One request: the second find reads the saved result.
+    let (url, server) = serve_bytes(b"FWS map", 1);
+    let items = turu_bot::map_items::find_at(&bot, &url, &scan, false).unwrap();
+    let again = turu_bot::map_items::find_at(&bot, &url, &scan, false).unwrap();
+    assert_eq!(
+        server.join().unwrap(),
+        ["/maps/ChiralValley/town-Mobius-21Feb14.swf"]
+    );
+    assert_eq!(items, again);
+    let found: Vec<(i64, i64)> = items.iter().map(|i| (i.id, i.quest_id)).collect();
+    assert_eq!(found, [(42, 0), (1465, 2365)]);
+    assert_eq!(items[0].map_name, "mobius");
+    assert_eq!(
+        items[0].map_file_path,
+        "ChiralValley/town-Mobius-21Feb14.swf"
+    );
+
+    // The rows, and Open / Accept use the items' quests (none for an item without one).
+    let rows: Vec<Grabbed> = items.into_iter().map(Grabbed::MapItem).collect();
+    assert_eq!(rows[1].summary(), "[1465] Map Item (Quest: 2365)");
+    assert_eq!(rows[1].row(), "Map Item (Quest: 2365)");
+    let messages = Mutex::new(Vec::new());
+    let progress = |m: String| messages.lock().push(m);
+    let all: Vec<&Grabbed> = rows.iter().collect();
+    grabber::run(
+        &bot,
+        GrabAction::Open,
+        &all,
+        None,
+        &progress,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(messages.lock()[0], "Showing 1 quests...");
+    assert_eq!(
+        grabber::prepare(GrabAction::GetMapItem, &[&rows[1]]),
+        Prepared::AskQuantity {
+            title: "Getting 1465".into(),
+            prompt: "Quantity:".into()
+        }
+    );
 }

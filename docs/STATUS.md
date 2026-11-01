@@ -243,8 +243,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `QuestData.json` format, Add missing / Rebuild all / Update range, merging, cancel, the
   community download with its ETag, over a local HTTP server too) and the
   Grabber's readers and actions (`grabber.rs`) are tested against a fake game
-  (`bot/tests/loader_grabber.rs`), the windows only opened. Grabber's GetMap Item IDs isn't built
-  (VibeSkua decompiles the map SWF with FFDec).
+  (`bot/tests/loader_grabber.rs`), the windows only opened. GetMap Item IDs' bytecode reader
+  (`app/src/map_items.rs`) is tested on built SWFs and was checked on Mobius
+  (`TURU_MAP_SWF=<file> cargo test -p turu ... real_map -- --nocapture`), where it agrees with the
+  story scripts' map items and quests; other maps may need more patterns.
   Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; its
   Notifications button (Notify Drop) isn't built. Combat > Skills' editor is unverified on
   screen: its model and file writing are tested, the window only built.
@@ -346,7 +348,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
-  Junk Items, Notify Drop, Spammer, Interceptor, Plugins, Auto Hunt, Grabber's GetMap Item IDs
+  Junk Items, Notify Drop, Spammer, Interceptor, Plugins, Auto Hunt
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.

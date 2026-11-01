@@ -6,7 +6,8 @@ use crate::Bot;
 use crate::api::inventory::{self, Container};
 use crate::api::{NameOrId, combat, map, monsters, player, quests, shops, wait};
 use crate::error::BotResult;
-use crate::models::{ItemBase, Monster, Quest, ShopInfo, ShopItem};
+use crate::map_items::{self, Scanner};
+use crate::models::{ItemBase, MapItem, Monster, Quest, ShopInfo, ShopItem};
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,12 +69,6 @@ impl GrabKind {
     /// Whether the list offers Multi-select.
     pub fn select_multiple(self) -> bool {
         !matches!(self, Self::ShopIds | Self::TempInventory)
-    }
-
-    /// Whether Turu can grab it. GetMap Item IDs needs the map SWF decompiled (VibeSkua runs
-    /// FFDec on it), which Turu doesn't do.
-    pub fn available(self) -> bool {
-        self != Self::MapItems
     }
 
     /// The list's action buttons, left to right.
@@ -168,6 +163,7 @@ pub enum Grabbed {
     /// A temp inventory item (VibeSkua `ItemBase`: no category in its text).
     TempItem(ItemBase),
     Monster(Monster),
+    MapItem(MapItem),
 }
 
 /// `1234567` as `1,234,567` (C# `N0`).
@@ -206,6 +202,7 @@ impl Grabbed {
             Self::Quest(q) => q.id,
             Self::Item(i) | Self::TempItem(i) => i.id,
             Self::Monster(m) => m.id,
+            Self::MapItem(m) => m.id,
         }
     }
 
@@ -217,6 +214,7 @@ impl Grabbed {
             Self::Quest(q) => &q.name,
             Self::Item(i) | Self::TempItem(i) => &i.name,
             Self::Monster(m) => &m.name,
+            Self::MapItem(_) => "Map Item",
         }
     }
 
@@ -268,6 +266,7 @@ impl Grabbed {
                 m.id, m.name, m.cell, m.hp, m.max_hp
             ),
             Self::ShopInfo(s) => format!("[{}] {}", s.id, s.name),
+            Self::MapItem(m) => format!("[{}] Map Item (Quest: {})", m.id, m.quest_id),
             Self::TempItem(i) => format!(
                 "[{}] {} x{}{}",
                 i.id,
@@ -299,6 +298,7 @@ impl Grabbed {
             Self::Quest(q) => serde_json::to_value(q),
             Self::Item(i) | Self::TempItem(i) => serde_json::to_value(i),
             Self::Monster(m) => serde_json::to_value(m),
+            Self::MapItem(m) => serde_json::to_value(m),
         };
         value.unwrap_or(Value::Null)
     }
@@ -415,8 +415,9 @@ pub fn detailed_export_text(title: &str, items: &[&Grabbed]) -> String {
     text
 }
 
-/// VibeSkua `Grab(type)`: reads the list from the game.
-pub fn grab(bot: &Bot, kind: GrabKind) -> BotResult<Vec<Grabbed>> {
+/// VibeSkua `Grab(type)`: reads the list from the game. GetMap Item IDs scans the map's SWF
+/// with `scan` ([`map_items::find`]).
+pub fn grab(bot: &Bot, kind: GrabKind, scan: &Scanner) -> BotResult<Vec<Grabbed>> {
     Ok(match kind {
         GrabKind::ShopItems => shops::items(bot)?.into_iter().map(Grabbed::Shop).collect(),
         GrabKind::ShopIds => bot
@@ -428,7 +429,10 @@ pub fn grab(bot: &Bot, kind: GrabKind) -> BotResult<Vec<Grabbed>> {
             .map(Grabbed::ShopInfo)
             .collect(),
         GrabKind::Quests => quests::tree(bot)?.into_iter().map(Grabbed::Quest).collect(),
-        GrabKind::MapItems => Vec::new(),
+        GrabKind::MapItems => map_items::find(bot, scan, false)?
+            .into_iter()
+            .map(Grabbed::MapItem)
+            .collect(),
         GrabKind::Inventory => inventory::items(bot, Container::Inventory)?
             .into_iter()
             .map(Grabbed::Item)
@@ -610,11 +614,14 @@ fn each_item(
     Ok(())
 }
 
+/// The selected quests' IDs, or the selected map items' quests (VibeSkua `DefaultQuestTask`);
+/// a map item with no known quest is left out.
 fn quest_ids(selected: &[&Grabbed]) -> Vec<i64> {
     selected
         .iter()
         .filter_map(|g| match g {
             Grabbed::Quest(q) => Some(q.id),
+            Grabbed::MapItem(m) if m.quest_id > 0 => Some(m.quest_id),
             _ => None,
         })
         .collect()

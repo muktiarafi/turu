@@ -276,7 +276,7 @@ runs.
   VibeSkua, the list keeps showing while the cache updates.
 * **Grabber** (`grabber.rs`, 800x560, VibeSkua `GrabberView`, one per tab, each list keeping its
   rows, search and selection): a 164 px sidebar of boxed entries under SHOPS (Shop Items, Shop
-  IDs), QUESTS (Quests, GetMap Item IDs: greyed, VibeSkua decompiles the map SWF with FFDec),
+  IDs), QUESTS (Quests, GetMap Item IDs),
   ITEMS (Inventory, House Inventory, Temp Inventory, Bank Items) and MONSTERS (Cell Monsters,
   Map Monsters). Each list: ⟳ Grab (reads it through `spawn_action`), Search (the row's summary
   contains it), Multi-select (not for Shop IDs and Temp Inventory); ITEMS with its count, the
@@ -289,16 +289,25 @@ runs.
   quantity; AC items that cost AC are refused; not enough gold shows VibeSkua's box), Shop IDs
   Load Shop (the shops loaded in this client, from their `loadShop` packets; a shop loaded again
   replaces its row, VibeSkua lists it twice), Quests Open / Accept / Register / Fake Complete
-  (exactly one) / Unregister All, Inventory Equip / Sell / Sell All (one item, not equipped; Sell
+  (exactly one) / Unregister All, GetMap Item IDs Open / Accept (the items' quests) / Get Map
+  Item (asks the quantity, picks each item up that many times), Inventory Equip / Sell / Sell All (one item, not equipped; Sell
   asks the quantity) / To Bank, House To Bank, Bank To Inventory, Cell Monsters Kill, Map
   Monsters Kill / Teleport To. Kill is disabled while a script, a Console snippet or Auto Attack
-  runs. The readers, texts, checks and actions are `turu_bot::grabber`.
+  runs. The readers, texts, checks and actions are `turu_bot::grabber`. GetMap Item IDs
+  (`turu_bot::map_items`, VibeSkua `FindMapItems`) downloads the current map's SWF from
+  `game.aq.com/game/gamefiles/maps/<strMapFileName>` and reads its AS3 bytecode
+  (`app/src/map_items.rs`, Ruffle's `swf` crate; VibeSkua decompiles it with FFDec and searches
+  the text): in each function, a constant set as `mapItem` / `itemdrop` on an object, its quest
+  the `intQuest` / `questnum` set on the same object; and a constant passed to `getMapItem`, its
+  quest the `isQuestInProgress` check before it. Rows read "[1465] Map Item (Quest: 2365)"; an
+  item the map ties to no quest shows Quest 0 (VibeSkua drops it). The result is kept per map
+  file in `map-items.json` (map files are versioned by name), so a second Grab doesn't download.
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
 Not built at all (greyed in the menus): Scheduler, Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Junk Items, Spammer,
-Interceptor, Plugins, Auto Hunt, Notify Drop, Grabber's GetMap Item IDs.
+Interceptor, Plugins, Auto Hunt, Notify Drop.
 
 ## Adding a window
 
