@@ -150,11 +150,11 @@ runs.
   everyone need a second click ("Log out all?") within 4 s. The last outcome shows below, with
   the earlier ones under History. VibeSkua's "Include this window's tabs" is gone: tabs are rows.
 * **Gear** (`gear.rs`, 460x440, one per client, from a row's ⋯ menu): online or offline, the
-  running script, "Bank as of …" (or "Bank not read yet") with Load bank and Refresh; per
+  running script, "Bank as of …" (or "Bank not read yet") with Refresh; per
   slot (class, weapon, armor, helm, cape, pet, necklace, ground) what's worn and a drop-down of
   what could be (inventory first, then bank items, marked) with Equip; the last outcome
   (`EquipReport::summary`). It reads the account's `gear/<username>.json`, so it shows an
-  offline account's last gear. While a script runs, Equip and Load bank are disabled until
+  offline account's last gear. While a script runs, Equip is disabled until
   "Stop the script first" is on (off each time the window opens); the script then stays stopped.
 * **Logs** (`client_logs.rs`, one per launched client): its script and debug logs, read from
   its control API every 2 s while open, with Copy / Save / Clear.

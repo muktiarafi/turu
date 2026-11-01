@@ -1,7 +1,7 @@
 //! Army Control > ⋯ > Gear (docs/ARMY_EQUIPMENT_PROPOSAL.md, phase 1): one account's worn
 //! slots and what it could wear instead, from its gear file (`gear/<username>.json`, which its
 //! client keeps current), so it works for a client without a window and shows an offline
-//! account's last gear. Equip and Load bank go to the client through its control API.
+//! account's last gear. Equip and Refresh go to the client through its control API.
 
 use super::army::Peer;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
@@ -103,13 +103,6 @@ impl GearWindow {
                 };
                 ui.label(RichText::new(bank).small().color(MUTED));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let can = online && busy.is_none() && (script.is_none() || self.stop_script);
-                    if widgets::small_button(ui, "Load bank", can)
-                        .on_hover_text("Open and load the bank, and add it to the gear file")
-                        .clicked()
-                    {
-                        self.run("Load bank", Command::LoadBank { stop: self.stop_script });
-                    }
                     if widgets::small_button(ui, "Refresh", online && busy.is_none())
                         .on_hover_text("Read the gear from the game now")
                         .clicked()
@@ -225,10 +218,6 @@ impl GearWindow {
                 let result = peer.send(&command).map(|reply| match command {
                     Command::Equip { .. } => serde_json::from_value::<EquipReport>(reply)
                         .map_or_else(|_| "done".to_owned(), |report| report.summary()),
-                    Command::LoadBank { .. } => match reply["stoppedScript"].as_str() {
-                        Some(name) => format!("stopped {name}; bank loaded"),
-                        None => "bank loaded".to_owned(),
-                    },
                     _ => "gear read".to_owned(),
                 });
                 if !matches!(command, Command::RefreshGear) {
