@@ -21,6 +21,21 @@ use std::time::Duration;
 pub use loader::normalize;
 pub use runtime::RunError;
 
+/// Finds a script given on the command line, to the control API or in a playlist: absolute, or
+/// relative to the scripts folder (else to the working folder), `.ts` optional.
+pub fn resolve(scripts: &Path, path: &Path) -> Option<PathBuf> {
+    let with_ts = path.with_extension("ts");
+    let bases: &[&Path] = if path.is_absolute() {
+        &[Path::new("")]
+    } else {
+        &[scripts, Path::new(".")]
+    };
+    bases
+        .iter()
+        .flat_map(|base| [base.join(path), base.join(&with_ts)])
+        .find(|p| p.is_file())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptStatus {
     /// No script loaded: "[No Script Loaded]".

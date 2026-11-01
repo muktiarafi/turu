@@ -21,6 +21,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   logs in once the game has loaded and then starts the script. `TURU_PASSWORD` can replace
   `--password` (a command line is visible to other users). `--load-script` only loads,
   `--exit-on-script-stop` logs out and quits when the script stops (not for auto-relogin).
+  `--run-playlist <file>` / `--load-playlist <file>` do the same with a Scheduler playlist
+  (below), and `--exit-on-script-stop` then waits for the playlist to end. Scripts given there
+  or in the playlist are absolute, or relative to the scripts folder (else the working folder),
+  `.ts` optional; one in Search Scripts' index is downloaded (or updated) with what it imports
+  before the game starts (`configure_startup`), so an empty data folder works. Checked: a
+  windowless client with an empty data folder downloaded a playlist's script and loaded it.
   `bot/src/startup.rs`, flags in `app/src/turu.rs`.
 - **Windowless mode** (`--headless`, `app/src/headless.rs`): no window, GPU or sound; the
   player draws nothing (Ruffle's null renderer) and a loop on the main thread runs it, its
@@ -33,7 +39,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
   VibeSkua-Docker's for status, loading/starting/stopping/pausing scripts, logs (`since`
   paging), the bot options, login, relogin and logout (`bot/src/control_api.rs` lists them).
-  `/status` also tells whether the Scheduler's playlist runs (`script.scheduler`).
+  `/status` also tells whether the Scheduler's playlist runs (`script.scheduler`), and
+  `/scheduler` edits, starts and stops it (`/script/stop` moves the playlist on;
+  `/scheduler/stop` stops it).
   Every request needs the token (`Authorization: Bearer` or `X-Api-Token`): `TURU_API_TOKEN`,
   else the data folder's `api-token`, made on first use and readable by you only. Works with
   or without the window. Example:
@@ -222,9 +230,14 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   VibeSkua `ScriptSchedulerViewModel`): a playlist per tab, run top to bottom without the Script
   Options window, each entry with its own options (`options/Queue_<name>_<id>.cfg`); any end of a
   script moves on, Stop queue stops; a disconnection waits for the login and resumes the entry;
-  VibeSkua's playlist files and webhook embeds. Tested against a fake game
-  (`bot/tests/scheduler.rs`: order, errors and missing files, Stop Script vs Stop queue, the
-  disconnection, the options, the playlist files); not yet in game, nor with a real relogin.
+  VibeSkua's playlist files and webhook embeds. Save writes scripts in the scripts folder
+  relative to it, and Load finds relative paths there, so a playlist moves between computers.
+  Without a window: `--run-playlist` and the control API's `/scheduler` routes (list, add,
+  remove, move, rename, clear, load from a file or the request body, save, start, stop).
+  Tested against a fake game (`bot/tests/scheduler.rs`: order, errors and missing files, Stop
+  Script vs Stop queue, the disconnection, the options, the playlist files, the API routes,
+  the command line); not yet in game, nor with a real relogin. Per-entry options stay in the
+  data folder (`options/Queue_*.cfg`): a playlist copied to another computer comes without them.
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
   the title, the client's starting frame rate (24 by default, AQW's own rate; Set FPS defaults to
   0, leaving the game's own FPS setting alone),

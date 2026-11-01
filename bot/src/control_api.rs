@@ -24,10 +24,20 @@
 //! | `POST /bank/load[?stop=1]` | Load the bank into the gear file. |
 //! | `POST /auto/attack/start[?class=][&mode=][&mapIds=]` | Start Auto Attack (`crate::auto`): `class`'s skills in `mode` (Base), else the equipped class; `mapIds` "1,2" in priority order. |
 //! | `POST /auto/stop` | Stop Auto Attack or Auto Hunt. |
+//! | `GET /scheduler` | The Scheduler's playlist: whether it runs, the summary, the current entry and each entry (id, name, path, status, seconds). |
+//! | `POST /scheduler/add?path=` | Add a script at the end (found as `/script/load` finds it). |
+//! | `POST /scheduler/remove?id=`, `/scheduler/move?id=&by=-1\|1`, `/scheduler/rename?id=&name=`, `/scheduler/clear` | Edit the playlist. |
+//! | `POST /scheduler/load[?path=]` | Replace the playlist: VibeSkua's playlist JSON in the body, or the file at `path`. |
+//! | `POST /scheduler/save?path=` | Save the playlist to a file. |
+//! | `POST /scheduler/start`, `/scheduler/stop` | Start queue, Stop queue. |
 //!
 //! `/equip` and `/bank/load` answer 409 while a script runs, unless `stop=1`: then the script
 //! is stopped first and stays stopped. `/auto/attack/start` answers 409 while a script, a
 //! Console snippet or Auto Attack/Hunt runs, or when not logged in.
+//!
+//! The playlist can't be changed while it runs (409; renaming can). `/script/stop` is Stop
+//! Script: with the playlist running, the next entry starts; `/scheduler/stop` stops the
+//! playlist.
 //!
 //! The Army window sends these to the clients it launched (`crate::army`), and to its own
 //! client through [`local`].
@@ -332,11 +342,78 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             auto::stop(bot);
             ok(json!({ "stopping": stopping }))
         }
+        ("/scheduler", false) => ok(scheduler(bot)),
+        ("/scheduler/add", true) => {
+            let Some(path) = query("path") else {
+                return error(400, "path is missing");
+            };
+            let Some(found) = crate::script::resolve(&bot.paths.scripts_dir(), Path::new(&path))
+            else {
+                return error(404, format!("no script at {path}"));
+            };
+            edited(bot, bot.scheduler.add(&found))
+        }
+        ("/scheduler/remove", true) => match query("id") {
+            Some(id) => edited(bot, bot.scheduler.remove(&id)),
+            None => error(400, "id is missing"),
+        },
+        ("/scheduler/move", true) => {
+            let (Some(id), Some(by)) = (
+                query("id"),
+                query("by").and_then(|b| b.parse::<isize>().ok()),
+            ) else {
+                return error(400, "id or by is missing (by: -1 moves up, 1 down)");
+            };
+            edited(bot, bot.scheduler.move_by(&id, by.signum()))
+        }
+        ("/scheduler/rename", true) => {
+            let (Some(id), Some(name)) = (query("id"), query("name")) else {
+                return error(400, "id or name is missing");
+            };
+            bot.scheduler.rename(&id, &name);
+            ok(scheduler(bot))
+        }
+        ("/scheduler/clear", true) => edited(bot, bot.scheduler.clear()),
+        ("/scheduler/load", true) => {
+            let scripts = bot.paths.scripts_dir();
+            let loaded = match query("path") {
+                Some(path) => bot.scheduler.load(Path::new(&path), &scripts),
+                None => match std::str::from_utf8(body) {
+                    Ok(text) => bot.scheduler.load_json(text, &scripts),
+                    Err(e) => Err(e.to_string()),
+                },
+            };
+            match loaded {
+                Ok(_) => ok(scheduler(bot)),
+                Err(e) if bot.scheduler.is_running() => error(409, e),
+                Err(e) => error(400, e),
+            }
+        }
+        ("/scheduler/save", true) => match query("path") {
+            Some(path) => match bot
+                .scheduler
+                .save(Path::new(&path), &bot.paths.scripts_dir())
+            {
+                Ok(()) => ok(json!({ "saved": path })),
+                Err(e) => error(409, e),
+            },
+            None => error(400, "path is missing"),
+        },
+        ("/scheduler/start", true) => match bot.scheduler.start(bot) {
+            Ok(()) => ok(scheduler(bot)),
+            Err(e) => error(409, e),
+        },
+        ("/scheduler/stop", true) => {
+            bot.scheduler.stop(bot);
+            ok(scheduler(bot))
+        }
         (
             "/status" | "/snapshot" | "/script/load" | "/script/start" | "/script/stop"
             | "/script/pause" | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout"
             | "/map/join" | "/player/goto" | "/house" | "/quests/register" | "/gear" | "/equip"
-            | "/bank/load" | "/auto/attack/start" | "/auto/stop",
+            | "/bank/load" | "/auto/attack/start" | "/auto/stop" | "/scheduler" | "/scheduler/add"
+            | "/scheduler/remove" | "/scheduler/move" | "/scheduler/rename" | "/scheduler/clear"
+            | "/scheduler/load" | "/scheduler/save" | "/scheduler/start" | "/scheduler/stop",
             _,
         ) => error(405, "wrong method"),
         _ => error(404, "no such route"),
@@ -447,10 +524,42 @@ fn status(bot: &Bot) -> Value {
     status
 }
 
+/// `GET /scheduler`: the playlist.
+fn scheduler(bot: &Bot) -> Value {
+    let scheduler = &bot.scheduler;
+    let entries: Vec<Value> = scheduler
+        .entries()
+        .iter()
+        .map(|e| {
+            json!({
+                "id": e.id,
+                "name": e.name,
+                "path": e.path,
+                "status": e.status.label(),
+                "seconds": e.duration.map(|d| d.as_secs()),
+            })
+        })
+        .collect();
+    json!({
+        "running": scheduler.is_running(),
+        "summary": scheduler.summary(),
+        "current": scheduler.current(),
+        "entries": entries,
+    })
+}
+
+/// The playlist after an edit, or 409 (it runs).
+fn edited(bot: &Bot, result: Result<(), String>) -> Reply {
+    match result {
+        Ok(()) => ok(scheduler(bot)),
+        Err(e) => error(409, e),
+    }
+}
+
 /// Loads a script: absolute, or relative to the scripts folder (else to the working folder),
 /// `.ts` optional.
 fn load(bot: &Bot, path: &str) -> Result<PathBuf, Reply> {
-    let Some(path) = resolve(&bot.paths.scripts_dir(), Path::new(path)) else {
+    let Some(path) = crate::script::resolve(&bot.paths.scripts_dir(), Path::new(path)) else {
         return Err(error(404, format!("no script at {path}")));
     };
     if bot.scripts.is_running() {
@@ -458,19 +567,6 @@ fn load(bot: &Bot, path: &str) -> Result<PathBuf, Reply> {
     }
     bot.scripts.load(&path);
     Ok(path)
-}
-
-fn resolve(scripts: &Path, path: &Path) -> Option<PathBuf> {
-    let with_ts = path.with_extension("ts");
-    let bases: &[&Path] = if path.is_absolute() {
-        &[Path::new("")]
-    } else {
-        &[scripts, Path::new(".")]
-    };
-    bases
-        .iter()
-        .flat_map(|base| [base.join(path), base.join(&with_ts)])
-        .find(|p| p.is_file())
 }
 
 fn set_options(bot: &Bot, body: &[u8]) -> Reply {

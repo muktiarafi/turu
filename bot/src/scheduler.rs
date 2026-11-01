@@ -9,7 +9,9 @@
 //! the login and then resumes it, or carries on with the script auto-relogin restarted.
 //!
 //! The playlist lives in memory, one per tab (`Bot::scheduler`); Save and Load write and read
-//! VibeSkua's playlist files (`[{"Path", "Id", "Name"}]`).
+//! VibeSkua's playlist files (`[{"Path", "Id", "Name"}]`), with the scripts in the scripts
+//! folder saved relative to it. Without a window, `--run-playlist` loads one and the control
+//! API's `/scheduler` routes edit, start and stop it.
 
 use crate::Bot;
 use crate::script::{self, RunEnd};
@@ -263,15 +265,30 @@ impl Scheduler {
         }
     }
 
-    /// Save (VibeSkua `SavePlaylist`): the entries as indented JSON.
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    /// Clears the playlist.
+    pub fn clear(&self) -> Result<(), String> {
+        let mut queue = self.queue.lock();
+        if queue.running {
+            return Err(RUNNING_REMOVE.into());
+        }
+        queue.entries.clear();
+        Ok(())
+    }
+
+    /// Save (VibeSkua `SavePlaylist`): the entries as indented JSON. A script in the scripts
+    /// folder is saved relative to it, so the playlist works on another computer.
+    pub fn save(&self, path: &Path, scripts: &Path) -> Result<(), String> {
+        let scripts = full(scripts);
         let items: Vec<SavedScriptItem> = self
             .queue
             .lock()
             .entries
             .iter()
             .map(|e| SavedScriptItem {
-                path: e.path.to_string_lossy().into_owned(),
+                path: full(&e.path).strip_prefix(&scripts).map_or_else(
+                    |_| e.path.to_string_lossy().into_owned(),
+                    |relative| relative.to_string_lossy().replace('\\', "/"),
+                ),
                 id: e.id.clone(),
                 name: e.name.clone(),
             })
@@ -284,22 +301,28 @@ impl Scheduler {
     }
 
     /// Load (VibeSkua `LoadPlaylist`): replaces the playlist, skipping scripts whose file is
-    /// gone. Returns how many were loaded.
-    pub fn load(&self, path: &Path) -> Result<usize, String> {
+    /// gone. Paths are found as [`script::resolve`] does. Returns how many were loaded.
+    pub fn load(&self, path: &Path, scripts: &Path) -> Result<usize, String> {
         if self.is_running() {
             return Err(RUNNING_LOAD.into());
         }
         let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let items: Vec<SavedScriptItem> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        self.load_json(&text, scripts)
+    }
+
+    /// [`Scheduler::load`] from the playlist's JSON (the control API's `POST /scheduler/load`).
+    pub fn load_json(&self, text: &str, scripts: &Path) -> Result<usize, String> {
+        let items: Vec<SavedScriptItem> = serde_json::from_str(text).map_err(|e| e.to_string())?;
         let entries: Vec<Entry> = items
             .into_iter()
-            .filter(|item| !item.path.is_empty() && Path::new(&item.path).is_file())
-            .map(|item| {
-                let mut entry = Entry::new(Path::new(&item.path), item.id);
+            .filter(|item| !item.path.is_empty())
+            .filter_map(|item| {
+                let found = script::resolve(scripts, Path::new(&item.path))?;
+                let mut entry = Entry::new(&found, item.id);
                 if !item.name.is_empty() {
                     entry.name = item.name;
                 }
-                entry
+                Some(entry)
             })
             .collect();
         let mut queue = self.queue.lock();
@@ -612,14 +635,26 @@ fn logged_in(bot: &Bot) -> bool {
     crate::api::player::logged_in(bot).unwrap_or(false)
 }
 
+/// The scripts a playlist file names, as written (`--run-playlist` downloads the missing ones
+/// before loading it).
+pub fn saved_paths(path: &Path) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let items: Vec<SavedScriptItem> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    Ok(items
+        .into_iter()
+        .map(|item| item.path)
+        .filter(|p| !p.is_empty())
+        .collect())
+}
+
+fn full(path: &Path) -> PathBuf {
+    script::normalize(&std::path::absolute(path).unwrap_or_else(|_| path.to_owned()))
+}
+
 /// VibeSkua compares the full paths ignoring case.
 fn same_file(a: &Path, b: &Path) -> bool {
-    let full = |p: &Path| {
-        script::normalize(&std::path::absolute(p).unwrap_or_else(|_| p.to_owned()))
-            .to_string_lossy()
-            .to_lowercase()
-    };
-    full(a) == full(b)
+    let text = |p: &Path| full(p).to_string_lossy().to_lowercase();
+    text(a) == text(b)
 }
 
 fn embed(bot: &Bot, title: &str, text: &str, color: u32, fields: Vec<(String, String, bool)>) {

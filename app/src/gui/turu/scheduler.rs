@@ -84,13 +84,13 @@ impl SchedulerWindow {
         }
         if let Some(path) = self.load.poll() {
             self.selected = None;
-            self.note = match bot.scheduler.load(&path) {
+            self.note = match bot.scheduler.load(&path, &bot.paths.scripts_dir()) {
                 Ok(_) => None,
                 Err(e) => Some((format!("Failed to load playlist: {e}"), WARNING)),
             };
         }
         if let Some(path) = self.save.poll() {
-            self.note = Some(match bot.scheduler.save(&path) {
+            self.note = Some(match bot.scheduler.save(&path, &bot.paths.scripts_dir()) {
                 Ok(()) => ("Playlist saved successfully.".into(), SUCCESS),
                 Err(e) => (format!("Failed to save playlist: {e}"), WARNING),
             });

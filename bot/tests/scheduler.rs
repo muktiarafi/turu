@@ -364,15 +364,16 @@ fn playlists_round_trip_in_vibeskua_format() {
     );
 
     let file = dir.join("playlist.json");
-    bot.scheduler.save(&file).unwrap();
+    bot.scheduler.save(&file, &dir).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(json[1]["Name"], "a (2).ts");
-    assert_eq!(json[2]["Path"], b.to_string_lossy().as_ref());
+    // In the scripts folder: saved relative to it.
+    assert_eq!(json[2]["Path"], "b.ts");
     assert_eq!(json[0]["Id"], ids[0].as_str());
 
     let (other, _) = new_bot();
-    assert_eq!(other.scheduler.load(&file).unwrap(), 3);
+    assert_eq!(other.scheduler.load(&file, &dir).unwrap(), 3);
     assert_eq!(
         other
             .scheduler
@@ -405,7 +406,7 @@ fn playlists_round_trip_in_vibeskua_format() {
         ),
     )
     .unwrap();
-    assert_eq!(other.scheduler.load(&file).unwrap(), 1);
+    assert_eq!(other.scheduler.load(&file, &dir).unwrap(), 1);
     let entry = &other.scheduler.entries()[0];
     assert_eq!(entry.name, "a.ts");
     assert_eq!(
@@ -413,14 +414,111 @@ fn playlists_round_trip_in_vibeskua_format() {
         "Queue_a_3f2504e0-4f89-11d3-9a0c-0305e82c3301"
     );
 
+    // Relative to the scripts folder, `.ts` optional (a playlist made on another computer).
+    let text = r#"[{ "Path": "b", "Id": "3f2504e0-4f89-11d3-9a0c-0305e82c3303", "Name": "" }]"#;
+    assert_eq!(other.scheduler.load_json(text, &dir).unwrap(), 1);
+    assert_eq!(other.scheduler.entries()[0].path, b);
+    assert_eq!(other.scheduler.entries()[0].name, "b.ts");
+    assert!(
+        other.scheduler.load_json("{}", &dir).is_err(),
+        "loaded an object"
+    );
+
+    let entry = &other.scheduler.entries()[0];
     other.scheduler.remove(&entry.id.clone()).unwrap();
     assert!(other.scheduler.entries().is_empty());
     assert!(
-        other.scheduler.save(&file).is_err(),
+        other.scheduler.save(&file, &dir).is_err(),
         "saved an empty playlist"
     );
     assert!(
         other.scheduler.start(&other).is_err(),
         "started an empty playlist"
     );
+}
+
+#[test]
+fn the_control_api_edits_runs_and_stops_the_playlist() {
+    let (bot, _) = new_bot();
+    let dir = bot.paths.scripts_dir().join("api");
+    std::fs::create_dir_all(&dir).unwrap();
+    let quick = script(&dir, "quick.ts", "bot.log(\"[api] quick\");");
+    script(
+        &dir,
+        "slow.ts",
+        "bot.log(\"[api] slow\"); while (true) { bot.sleep(20); }",
+    );
+    let call = |post: bool, path: &str, body: &str| {
+        turu_bot::control_api::local(&bot, post, path, body.as_bytes())
+    };
+
+    // Relative to the scripts folder, `.ts` optional.
+    assert_eq!(call(true, "/scheduler/add?path=api/quick", "").0, 200);
+    let (status, body) = call(true, "/scheduler/add?path=api/slow.ts", "");
+    assert_eq!(status, 200);
+    assert_eq!(body["entries"][0]["path"], quick.to_string_lossy().as_ref());
+    assert_eq!(body["entries"][1]["status"], "Queued");
+    assert_eq!(call(true, "/scheduler/add?path=api/nothing", "").0, 404);
+    assert_eq!(call(false, "/scheduler/start", "").0, 405);
+
+    let (status, body) = call(true, "/scheduler/start", "");
+    assert_eq!(status, 200);
+    assert_eq!(body["running"], true);
+    wait_for("the slow script", || {
+        lines(&bot, "[api]").len() == 2 && bot.scripts.is_running()
+    });
+    assert_eq!(lines(&bot, "[api]"), ["[api] quick", "[api] slow"]);
+    let (_, body) = call(false, "/scheduler", "");
+    assert_eq!(body["current"], 1);
+    assert_eq!(body["entries"][0]["status"], "Completed");
+    assert_eq!(body["entries"][1]["status"], "Running");
+    assert_eq!(call(true, "/scheduler/clear", "").0, 409);
+
+    let (_, body) = call(true, "/scheduler/stop", "");
+    assert_eq!(body["running"], false);
+    assert_eq!(body["entries"][1]["status"], "Stopped");
+    wait_for("the script to stop", || !bot.scripts.is_running());
+
+    // Load from the body: a playlist made elsewhere, the scripts relative to the scripts folder.
+    let playlist =
+        r#"[{ "Path": "api/slow", "Id": "3f2504e0-4f89-11d3-9a0c-0305e82c3304", "Name": "Slow" }]"#;
+    let (status, body) = call(true, "/scheduler/load", playlist);
+    assert_eq!(status, 200);
+    assert_eq!(body["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(body["entries"][0]["name"], "Slow");
+    assert_eq!(call(true, "/scheduler/load", "not json").0, 400);
+    assert_eq!(call(true, "/scheduler/clear", "").0, 200);
+    assert_eq!(call(true, "/scheduler/start", "").0, 409);
+}
+
+#[test]
+fn the_command_line_loads_a_playlist() {
+    let (bot, _) = new_bot();
+    let dir = bot.paths.scripts_dir().join("cli");
+    std::fs::create_dir_all(&dir).unwrap();
+    let farm = script(&dir, "farm.ts", "");
+    let file = scripts_dir("cli").join("cli-playlist.json");
+    std::fs::write(
+        &file,
+        r#"[{ "Path": "cli/farm", "Id": "3f2504e0-4f89-11d3-9a0c-0305e82c3305", "Name": "" },
+            { "Path": "cli/gone.ts", "Id": "3f2504e0-4f89-11d3-9a0c-0305e82c3306", "Name": "" }]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        turu_bot::scheduler::saved_paths(&file).unwrap(),
+        ["cli/farm", "cli/gone.ts"]
+    );
+    turu_bot::startup::configure(
+        &bot,
+        turu_bot::startup::Startup {
+            script: Some("cli/farm".into()),
+            playlist: Some(file),
+            run_playlist: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(bot.scripts.loaded(), Some(farm.clone()));
+    let entries = bot.scheduler.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].path, farm);
 }

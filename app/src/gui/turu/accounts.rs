@@ -516,6 +516,7 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>) {
             server: launch.server,
             script: launch.script,
             run_script: launch.run_script,
+            ..Default::default()
         };
         if !startup.logs_in() {
             crate::turu::bot().logs.debug.push(format!(

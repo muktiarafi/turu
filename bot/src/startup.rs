@@ -1,5 +1,6 @@
 //! Logging in and starting a script from the command line (VibeSkua `SkuaStartupHandler`):
-//! once the game has loaded, log in on a server and start (or just load) a script.
+//! once the game has loaded, log in on a server and start (or just load) a script, or a
+//! Scheduler playlist (`--run-playlist`, Turu's).
 
 use crate::Bot;
 use crate::api::{player, servers};
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// What to do at startup. VibeSkua's flags: `--user`, `--password`, `--server`, `--run-script`,
-/// `--load-script`.
+/// `--load-script`; Turu's `--run-playlist`, `--load-playlist`.
 #[derive(Debug, Clone, Default)]
 pub struct Startup {
     pub username: Option<String>,
@@ -20,6 +21,10 @@ pub struct Startup {
     pub script: Option<PathBuf>,
     /// Start the script once logged in (`--run-script`), not only load it (`--load-script`).
     pub run_script: bool,
+    /// The Scheduler playlist to load (VibeSkua's playlist JSON).
+    pub playlist: Option<PathBuf>,
+    /// Start the playlist once logged in (`--run-playlist`), instead of the script.
+    pub run_playlist: bool,
 }
 
 impl Startup {
@@ -32,10 +37,33 @@ impl Startup {
     }
 }
 
-/// Loads the script and remembers the login; the login itself waits for the game (`loaded`).
-pub fn configure(bot: &Bot, startup: Startup) {
-    if let Some(script) = &startup.script {
-        bot.scripts.load(script);
+/// Loads the script and the playlist and remembers the login; the login itself waits for the
+/// game (`loaded`). Scripts are found as [`crate::script::resolve`] does.
+pub fn configure(bot: &Bot, mut startup: Startup) {
+    let scripts = bot.paths.scripts_dir();
+    if let Some(script) = startup.script.take() {
+        match crate::script::resolve(&scripts, &script) {
+            Some(found) => {
+                bot.scripts.load(&found);
+                startup.script = Some(found);
+            }
+            None => bot.log(format!("No script at {}.", script.display())),
+        }
+    }
+    if let Some(playlist) = &startup.playlist {
+        match bot.scheduler.load(playlist, &scripts) {
+            Ok(count) => bot.log(format!(
+                "Loaded {count} script(s) from the playlist {}.",
+                playlist.display()
+            )),
+            Err(e) => {
+                bot.log(format!(
+                    "Couldn't load the playlist {}: {e}",
+                    playlist.display()
+                ));
+                startup.playlist = None;
+            }
+        }
     }
     // VibeSkua also keeps a username without a password; relogins would then send an empty
     // password instead of the one the game remembers from your own login.
@@ -84,7 +112,11 @@ pub(crate) fn auto_login(bot: &Arc<Bot>) {
         return;
     }
     std::thread::sleep(Duration::from_secs(1));
-    if startup.run_script
+    if startup.run_playlist && startup.playlist.is_some() {
+        if let Err(e) = bot.scheduler.start(bot) {
+            bot.log(format!("Couldn't start the playlist: {e}"));
+        }
+    } else if startup.run_script
         && startup.script.is_some()
         && let Err(e) = crate::script::start_silent(bot)
     {

@@ -48,6 +48,8 @@ static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
 static API: Mutex<Option<String>> = Mutex::new(None);
+/// The startup flags, until `configure_startup`.
+static STARTUP: Mutex<Option<Startup>> = Mutex::new(None);
 /// The web monitor (Options > Application > Web Monitor); [`apply_monitor`] starts and stops it.
 static MONITOR: Mutex<Monitor> = Mutex::new(Monitor {
     server: None,
@@ -309,9 +311,12 @@ pub fn skua_swf_url() -> anyhow::Result<String> {
 ///   loaded.
 /// * `--server <name>`: the server to log in on (default Twilly).
 /// * `--run-script <path>`: load the script and start it once logged in; `--load-script <path>`
-///   only loads it.
+///   only loads it. Absolute, or relative to the scripts folder (else to the working folder),
+///   `.ts` optional; one Search Scripts lists is downloaded first (see [`configure_startup`]).
+/// * `--run-playlist <file>` / `--load-playlist <file>`: the same for a Scheduler playlist
+///   (VibeSkua's playlist JSON), started in place of the script.
 /// * `--exit-on-script-stop` (or `--exit-on-finish`): log out and quit when the script stops
-///   (not when auto-relogin stops it).
+///   (not when auto-relogin stops it), or with a playlist, when the playlist ends.
 /// * `--headless`: no window (see `headless.rs`).
 /// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
@@ -348,13 +353,72 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     if startup.password.is_none() {
         startup.password = std::env::var("TURU_PASSWORD").ok().filter(|p| !p.is_empty());
     }
+    if exit_on_stop {
+        exit_on_script_stop(startup.playlist.is_some());
+    }
+    *STARTUP.lock().unwrap_or_else(|e| e.into_inner()) = Some(startup);
+}
+
+/// Hands the startup flags to the bot, once logging is up. A script or a playlist entry given
+/// relative to the scripts folder that Search Scripts lists is downloaded (or updated) first,
+/// with what it imports, so a new server needs no scripts folder. This blocks: the game isn't
+/// loading yet, so the login can't start before the scripts are there.
+pub fn configure_startup() {
+    let Some(startup) = STARTUP.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        return;
+    };
     if startup.username.is_some() && !startup.logs_in() {
         tracing::warn!("--user without --password (or TURU_PASSWORD): log in yourself");
     }
-    turu_bot::startup::configure(&bot(), startup);
-    if exit_on_stop {
-        exit_on_script_stop();
+    if startup.script.is_some() && startup.playlist.is_some() {
+        tracing::warn!("Both a script and a playlist were given: the playlist runs");
     }
+    let bot = bot();
+    let scripts = bot.paths.scripts_dir();
+    let mut wanted: Vec<String> = startup
+        .script
+        .iter()
+        .filter_map(|p| repo_path(&scripts, &p.to_string_lossy()))
+        .collect();
+    if let Some(playlist) = &startup.playlist {
+        match turu_bot::scheduler::saved_paths(playlist) {
+            Ok(paths) => wanted.extend(paths.iter().filter_map(|p| repo_path(&scripts, p))),
+            Err(e) => tracing::error!("--run-playlist {}: {e}", playlist.display()),
+        }
+    }
+    wanted.sort_unstable();
+    wanted.dedup();
+    if !wanted.is_empty() {
+        let repo = script_repo();
+        if let Err(e) = repo.refresh() {
+            tracing::warn!("Couldn't get the script list ({e}); using the scripts folder as it is");
+        }
+        for path in &wanted {
+            match repo.ensure(path) {
+                Ok(local) => tracing::info!("Script {path}: {}", local.display()),
+                Err(e) => tracing::warn!("Script {path}: {e}"),
+            }
+        }
+    }
+    turu_bot::startup::configure(&bot, startup);
+}
+
+/// The repository path of a script given relative to the scripts folder (`farm/GoldFarm`,
+/// `.ts` optional); `None` for an absolute path or a file in the working folder.
+fn repo_path(scripts: &Path, given: &str) -> Option<String> {
+    let given = Path::new(given);
+    if given.is_absolute() || given.as_os_str().is_empty() {
+        return None;
+    }
+    let with_ts = match given.extension() {
+        Some(_) => given.to_owned(),
+        None => given.with_extension("ts"),
+    };
+    if !scripts.join(&with_ts).is_file() && (given.is_file() || with_ts.is_file()) {
+        return None;
+    }
+    let path = turu_bot::script::normalize(&with_ts).to_string_lossy().replace('\\', "/");
+    Some(path.trim_start_matches('/').to_owned())
 }
 
 /// Starts the control API if `--api` was given (once logging is up, so its messages show). The
@@ -705,6 +769,14 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
                 startup.script = value().map(Into::into);
                 startup.run_script = false;
             }
+            "--run-playlist" => {
+                startup.playlist = value().map(Into::into);
+                startup.run_playlist = true;
+            }
+            "--load-playlist" => {
+                startup.playlist = value().map(Into::into);
+                startup.run_playlist = false;
+            }
             "--exit-on-script-stop" | "--exit-on-finish" => flags.exit_on_stop = true,
             "--headless" => flags.headless = true,
             "--exit-with-parent" => flags.exit_with_parent = true,
@@ -720,23 +792,43 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
     flags
 }
 
-/// VibeSkua `--exit-on-script-stop`: 2 s after the script stops, log out; 1 s later, quit.
-fn exit_on_script_stop() {
+/// VibeSkua `--exit-on-script-stop`: 2 s after the script stops, log out; 1 s later, quit. With
+/// a playlist (`--run-playlist`), once the playlist has run and ended (finished or Stop queue)
+/// and no script runs: a script stopping only moves the playlist on.
+fn exit_on_script_stop(playlist: bool) {
     let first = bot();
+    if playlist {
+        let watched = Arc::downgrade(&first);
+        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(move || {
+            let mut started = false;
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let Some(bot) = watched.upgrade() else { return };
+                if bot.scheduler.is_running() {
+                    started = true;
+                } else if started && !bot.scripts.is_running() && !bot.servers.is_relogging() {
+                    exit_after_stop(&bot);
+                }
+            }
+        });
+        return;
+    }
     let watched = Arc::downgrade(&first);
     first.events.subscribe(move |event| {
         let Some(bot) = watched.upgrade() else { return };
         if !matches!(event, BotEvent::ScriptStopped) || bot.servers.is_relogging() {
             return;
         }
-        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(move || {
-            std::thread::sleep(Duration::from_secs(2));
-            let _ = turu_bot::api::servers::logout(&bot);
-            std::thread::sleep(Duration::from_secs(1));
-            close_butlers();
-            std::process::exit(0);
-        });
+        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(move || exit_after_stop(&bot));
     });
+}
+
+fn exit_after_stop(bot: &Arc<Bot>) -> ! {
+    std::thread::sleep(Duration::from_secs(2));
+    let _ = turu_bot::api::servers::logout(bot);
+    std::thread::sleep(Duration::from_secs(1));
+    close_butlers();
+    std::process::exit(0);
 }
 
 /// Runs a bot action for the active tab off the UI thread (bot calls block until the player
