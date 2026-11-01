@@ -148,10 +148,6 @@ pub enum Command {
         item: String,
         stop: bool,
     },
-    /// Load the bank into the gear file; with `stop`, stop the running script first.
-    LoadBank {
-        stop: bool,
-    },
     /// Write the gear file from the game now.
     RefreshGear,
 }
@@ -173,7 +169,6 @@ impl Command {
             Self::SetOptions(values) => format!("Set {values}"),
             Self::Relogin => "Relog".into(),
             Self::Equip { item, .. } => format!("Equip {item}"),
-            Self::LoadBank { .. } => "Load bank".into(),
             Self::RefreshGear => "Read gear".into(),
         }
     }
@@ -225,10 +220,6 @@ impl Command {
                     pairs.push(("stop", "1"));
                 }
                 (with("/equip", &pairs), Vec::new())
-            }
-            Self::LoadBank { stop } => {
-                let pairs: &[(&str, &str)] = if *stop { &[("stop", "1")] } else { &[] };
-                (with("/bank/load", pairs), Vec::new())
             }
             Self::RefreshGear => return (false, with("/gear", &[]), Vec::new()),
         };
@@ -706,8 +697,6 @@ mod tests {
             }),
             "/equip?item=Necrotic+Sword+of+Doom&stop=1"
         );
-        assert_eq!(path(Command::LoadBank { stop: false }), "/bank/load");
-        assert_eq!(path(Command::LoadBank { stop: true }), "/bank/load?stop=1");
         assert_eq!(path(Command::Relogin), "/relogin");
         assert!(!Command::RefreshGear.request().0);
         assert_eq!(path(Command::RefreshGear), "/gear");

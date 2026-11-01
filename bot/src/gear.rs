@@ -4,7 +4,7 @@
 //!   loaded (dated by `bankAsOf`). The launcher reads it to show and pick gear for an account
 //!   that has no window, or isn't online. The bank is never loaded for the file's sake: it's
 //!   taken whenever something loaded it this login (CoreBots at every script start, an equip
-//!   that needed it, Load bank), and kept from the last file otherwise.
+//!   that needed it, the control API's `/bank/load`), and kept from the last file otherwise.
 //! * [`equip`] and [`load_bank`] are what the control API's `/equip` and `/bank/load` run.
 //!   They refuse while a script runs (the script owns the gear: CoreBots puts its own back at
 //!   its next `equipClass`), unless asked to stop it first; it then stays stopped.

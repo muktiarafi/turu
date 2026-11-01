@@ -202,7 +202,7 @@ the client stops the script, equips, and answers with the report and `"stoppedSc
   least every 30 s while logged in, and writes only when something changed; `equip`,
   `load_bank`, `prepare` (the script rule) and `EquipReport`.
 * Control API: `GET /gear`, `POST /equip?item=&stop=1`, `POST /bank/load?stop=1`; Army
-  `Command::{Equip, LoadBank, RefreshGear, Relogin}`, `Army::restart`, `broadcast` to a list of
+  `Command::{Equip, RefreshGear, Relogin}`, `Army::restart`, `broadcast` to a list of
   usernames, `army::send_local` for tabs.
 * Army Control: actions to the checked rows or everyone (Group ▾ checks a group), per-row
   buttons and ⋯ menu (redone after phase 1 as a selection list, `docs/UI.md`), the Gear window
