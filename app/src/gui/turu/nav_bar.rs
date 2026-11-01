@@ -198,7 +198,9 @@ impl NavBar {
             if item(ui, "Logs", true) {
                 windows.logs = true;
             }
-            item(ui, "Console", false);
+            if item(ui, "Console", true) {
+                windows.console = true;
+            }
             item(ui, "Spammer", false);
             if item(ui, "Logger", true) {
                 windows.packet_logger = true;
@@ -277,6 +279,7 @@ impl NavBar {
         let bot = crate::turu::bot();
         let running = auto::running(&crate::turu::bot());
         let script_active = bot.scripts.status().is_active();
+        let snippet = bot.scripts.is_snippet_running();
         ui.set_width(256.0);
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         ui.horizontal(|ui| {
@@ -293,6 +296,8 @@ impl NavBar {
         ui.horizontal(|ui| {
             let tip = if running {
                 "Already running"
+            } else if snippet {
+                "Stop the Console snippet first"
             } else {
                 "Stop the script first"
             };
@@ -300,7 +305,7 @@ impl NavBar {
                 ui,
                 "Auto Attack",
                 Kind::Primary,
-                !running && !script_active,
+                !running && !script_active && !snippet,
                 vec2(half, 30.0),
                 tip,
             );

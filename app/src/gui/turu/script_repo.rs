@@ -268,10 +268,13 @@ impl ScriptRepoWindow {
                 let bot = crate::turu::bot();
                 let active = bot.scripts.status().is_active();
                 let auto = super::auto::running(&bot);
+                let snippet = bot.scripts.is_snippet_running();
                 let tip = if busy {
                     "Wait for the current task"
                 } else if active {
                     "Stop the script first"
+                } else if snippet {
+                    "Stop the Console snippet first"
                 } else {
                     "Stop Auto Attack first"
                 };
@@ -282,7 +285,7 @@ impl ScriptRepoWindow {
                     ui,
                     "Start",
                     Kind::Primary,
-                    !busy && !active && !auto,
+                    !busy && !active && !auto && !snippet,
                     vec2(64.0, 28.0),
                     tip,
                 )

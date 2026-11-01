@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 pub use loader::normalize;
+pub use runtime::RunError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptStatus {
@@ -109,6 +110,8 @@ pub struct ScriptManager {
     loaded: Mutex<Option<PathBuf>>,
     status: Mutex<ScriptStatus>,
     running: AtomicBool,
+    /// A Console snippet runs (`run_snippet`); it and a script never run together.
+    snippet: AtomicBool,
     paths: Paths,
     options: Mutex<ScriptOptionsState>,
     /// A UI is there to show the Script Options window (not `--headless`, not the tests).
@@ -148,6 +151,7 @@ impl ScriptManager {
             loaded: Mutex::new(None),
             status: Mutex::new(ScriptStatus::Empty),
             running: AtomicBool::new(false),
+            snippet: AtomicBool::new(false),
             paths,
             options: Mutex::new(ScriptOptionsState::NoOptions),
             interactive: AtomicBool::new(false),
@@ -175,6 +179,11 @@ impl ScriptManager {
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Acquire)
+    }
+
+    /// Whether a Console snippet runs.
+    pub fn is_snippet_running(&self) -> bool {
+        self.snippet.load(Ordering::Acquire)
     }
 
     /// "Load Script": remembers the file and reads its options (`scriptOptions`) with their saved
@@ -420,8 +429,13 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
     let Some(path) = bot.scripts.loaded() else {
         return Err("No script loaded".into());
     };
-    if bot.scripts.running.swap(true, Ordering::AcqRel) {
+    // SeqCst with `run_snippet`'s swap: each sets its flag and then reads the other's.
+    if bot.scripts.running.swap(true, Ordering::SeqCst) {
         return Err("A script is already running".into());
+    }
+    if bot.scripts.snippet.load(Ordering::SeqCst) {
+        bot.scripts.running.store(false, Ordering::Release);
+        return Err("A Console snippet is running".into());
     }
     bot.scripts.silent.store(silent, Ordering::Release);
     bot.control.reset();
@@ -464,6 +478,43 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
 pub fn stop(bot: &Bot) {
     if bot.scripts.is_running() {
         bot.scripts.set_status(ScriptStatus::Stopping);
+        bot.control.request_stop();
+    }
+}
+
+/// Diagnostics > Console: runs a TypeScript snippet on the calling thread with `bot` (and the
+/// rest of the "turu" module) in scope. The thread counts as a script thread meanwhile, so
+/// [`stop_snippet`] stops it. Returns the value of the snippet's last expression as JSON;
+/// `on_log` gets each `bot.log` line, which also goes to the script log. Refused while a script
+/// runs (and a script won't start while a snippet runs).
+pub fn run_snippet(
+    bot: &Arc<Bot>,
+    source: &str,
+    on_log: impl Fn(&str) + Send + Sync + 'static,
+) -> Result<String, RunError> {
+    if bot.scripts.snippet.swap(true, Ordering::SeqCst) {
+        return Err(RunError::Failed("A snippet is already running".into()));
+    }
+    if bot.scripts.running.load(Ordering::SeqCst) {
+        bot.scripts.snippet.store(false, Ordering::Release);
+        return Err(RunError::Failed("Stop the script first".into()));
+    }
+    bot.control.reset();
+    mark_script_thread(true);
+    let result = transpile::transpile_snippet(source)
+        .map_err(RunError::Failed)
+        .and_then(|js| runtime::run_snippet(bot, &js, Arc::new(on_log)));
+    mark_script_thread(false);
+    // Its handlers ran in its JS, which is gone.
+    bot.handlers.clear();
+    bot.control.reset();
+    bot.scripts.snippet.store(false, Ordering::Release);
+    result
+}
+
+/// Stops the running Console snippet: its next bot call (or any running JS) stops it.
+pub fn stop_snippet(bot: &Bot) {
+    if bot.scripts.is_snippet_running() {
         bot.control.request_stop();
     }
 }

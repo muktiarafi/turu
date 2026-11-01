@@ -10,6 +10,7 @@ mod army;
 mod auto;
 mod butler;
 mod client_logs;
+mod console;
 mod core_bots;
 mod cosmetics;
 mod current_drops;
@@ -48,6 +49,7 @@ pub struct Windows {
     pub stats: bool,
     pub runtime: bool,
     pub logs: bool,
+    pub console: bool,
     pub packet_logger: bool,
     pub current_drops: bool,
     pub accounts: bool,
@@ -127,6 +129,7 @@ struct TabUi {
     stats: stats::StatsWindow,
     runtime: runtime::RuntimeWindow,
     logs: logs::LogsWindow,
+    console: console::ConsoleWindow,
     packet_logger: packet_logger::PacketLogger,
     current_drops: current_drops::CurrentDrops,
     butler: butler::ButlerWindow,
@@ -210,6 +213,7 @@ impl TuruUi {
         tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
         tab.logs.show(ctx, &picker, &mut w.logs);
+        tab.console.show(ctx, &mut w.console);
         tab.packet_logger.show(ctx, &picker, &mut w.packet_logger);
         tab.butler.show(ctx, &mut w.butler);
         tab.cosmetics.show(ctx, &mut w.cosmetics);
@@ -223,12 +227,16 @@ impl TuruUi {
         message_box::show(ctx);
     }
 
-    /// Whether the bot is doing something the UI shows live (a script runs, Auto Attack).
+    /// Whether the bot is doing something the UI shows live (a script, a Console snippet, Auto
+    /// Attack).
     pub fn is_busy(&self) -> bool {
-        crate::turu::tabs()
-            .iter()
-            .any(|(_, bot)| bot.scripts.status().is_active() || auto::running(bot))
+        crate::turu::tabs().iter().any(|(_, bot)| busy(bot))
     }
+}
+
+/// Whether the bot runs a script, a Console snippet or Auto Attack.
+fn busy(bot: &turu_bot::Bot) -> bool {
+    bot.scripts.status().is_active() || bot.scripts.is_snippet_running() || auto::running(bot)
 }
 
 /// Auto Attack fights the butler's own movement and skills: a tab that follows stops it
@@ -300,6 +308,10 @@ mod tests {
             (
                 "Advanced Skills",
                 boxed(skills::SkillsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Console",
+                boxed(console::ConsoleWindow::default(), |w, c, o| w.show(c, o)),
             ),
             ("Butler", boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o))),
             (

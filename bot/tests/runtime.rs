@@ -658,3 +658,118 @@ fn stopping_handlers_dont_run_when_main_returns() {
         "{log}"
     );
 }
+
+#[test]
+fn snippets_return_their_last_value_and_log_lines() {
+    temp_dir("snippet");
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    let logged = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = logged.clone();
+    let value = script::run_snippet(
+        &bot,
+        "bot.log(\"hi\");\nconst gold: number = bot.player.gold;\n({ gold, double: gold * 2 })",
+        move |line| sink.lock().unwrap().push(line.to_owned()),
+    )
+    .unwrap();
+    assert_eq!(value, "{\n  \"gold\": 1234,\n  \"double\": 2468\n}");
+    assert_eq!(*logged.lock().unwrap(), ["hi"]);
+    assert!(bot.logs.script.text().contains("hi"));
+    assert_eq!(script::run_snippet(&bot, "1 + 1", |_| {}).unwrap(), "2");
+    assert_eq!(
+        script::run_snippet(&bot, "bot.log(\"x\");", |_| {}).unwrap(),
+        "undefined"
+    );
+    assert!(!bot.scripts.is_snippet_running());
+}
+
+#[test]
+fn snippet_errors_are_reported_with_their_stack() {
+    temp_dir("snippet-error");
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    let error = script::run_snippet(
+        &bot,
+        "function boom(): never { throw new Error(\"boom\"); }\nboom();",
+        |_| {},
+    )
+    .unwrap_err();
+    let script::RunError::Failed(text) = error else {
+        panic!("{error:?}")
+    };
+    assert!(
+        text.starts_with("boom\n") && text.contains("at boom"),
+        "{text}"
+    );
+
+    let error = script::run_snippet(&bot, "const = ;", |_| {}).unwrap_err();
+    let script::RunError::Failed(text) = error else {
+        panic!("{error:?}")
+    };
+    assert!(text.starts_with("snippet.ts:1:"), "{text}");
+}
+
+#[test]
+fn stop_interrupts_a_snippet_and_scripts_wait_for_it() {
+    let dir = temp_dir("snippet-stop");
+    std::fs::write(
+        dir.join("main.ts"),
+        "export default function main(): void {}\n",
+    )
+    .unwrap();
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&dir.join("main.ts"));
+    let thread_bot = bot.clone();
+    let run = std::thread::spawn(move || {
+        script::run_snippet(&thread_bot, "while (true) { bot.sleep(50); }", |_| {})
+    });
+    let start = Instant::now();
+    while !bot.scripts.is_snippet_running() {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "snippet didn't start"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        script::start(&bot).is_err(),
+        "a script started beside the snippet"
+    );
+    script::stop_snippet(&bot);
+    assert!(matches!(
+        run.join().unwrap(),
+        Err(script::RunError::Stopped)
+    ));
+    assert!(!bot.scripts.is_snippet_running() && !bot.control.should_exit());
+
+    // A loop that never calls the bot is interrupted too.
+    let thread_bot = bot.clone();
+    let run =
+        std::thread::spawn(move || script::run_snippet(&thread_bot, "while (true) {}", |_| {}));
+    std::thread::sleep(Duration::from_millis(200));
+    script::stop_snippet(&bot);
+    assert!(matches!(
+        run.join().unwrap(),
+        Err(script::RunError::Stopped)
+    ));
+
+    // Scripts start again once it's over, and no snippet runs beside one.
+    script::start(&bot).unwrap();
+    wait_until_done(&bot);
+    assert_eq!(bot.scripts.status(), ScriptStatus::Loaded);
+    std::fs::write(
+        dir.join("main.ts"),
+        "import { bot } from \"turu\";\nexport default function main(): void { while (true) bot.sleep(50); }\n",
+    )
+    .unwrap();
+    script::start(&bot).unwrap();
+    let refused = script::run_snippet(&bot, "1", |_| {});
+    assert!(
+        matches!(&refused, Err(script::RunError::Failed(e)) if e == "Stop the script first"),
+        "{refused:?}"
+    );
+    script::stop(&bot);
+    wait_until_done(&bot);
+}

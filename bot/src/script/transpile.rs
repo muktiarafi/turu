@@ -10,10 +10,24 @@ use oxc::transformer::{TransformOptions, Transformer};
 use std::path::Path;
 
 pub fn transpile(source: &str, path: &Path) -> Result<String, String> {
-    let allocator = Allocator::default();
     let source_type = SourceType::from_path(path)
         .unwrap_or_else(|_| SourceType::ts())
         .with_module(true);
+    transpile_as(source, path, source_type)
+}
+
+/// A Console snippet: TypeScript run as a script, not a module, so the value of its last
+/// expression is the result of `eval`.
+pub fn transpile_snippet(source: &str) -> Result<String, String> {
+    transpile_as(
+        source,
+        Path::new("snippet.ts"),
+        SourceType::ts().with_module(false),
+    )
+}
+
+fn transpile_as(source: &str, path: &Path, source_type: SourceType) -> Result<String, String> {
+    let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, source_type).parse();
     if let Some(error) = parsed.diagnostics.first() {
         return Err(describe(source, path, error));

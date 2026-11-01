@@ -34,7 +34,7 @@ impl TabStrip {
                             ui.spacing_mut().item_spacing.x = 2.0;
                             let active = turu::active_tab();
                             for (tab, bot) in turu::tabs() {
-                                let busy = bot.scripts.status().is_active() || super::auto::running(&bot);
+                                let busy = super::busy(&bot);
                                 let waits = bot.scripts.waits_for();
                                 tab_button(ui, tab, &turu::tab_label(&bot), tab == active, busy, waits);
                             }

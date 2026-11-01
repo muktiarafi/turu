@@ -168,7 +168,8 @@ impl ScriptLoader {
             *options_open = true;
         }
         ui.horizontal(|ui| {
-            let auto = super::auto::running(&crate::turu::bot());
+            let auto = super::auto::running(&bot);
+            let snippet = bot.scripts.is_snippet_running();
             if active {
                 // While stopping, CoreBots may still be going to the stop location; a second
                 // press interrupts that.
@@ -190,6 +191,8 @@ impl ScriptLoader {
             } else {
                 let tip = if auto {
                     "Stop Auto Attack first"
+                } else if snippet {
+                    "Stop the Console snippet first"
                 } else {
                     "Load a script first"
                 };
@@ -197,7 +200,7 @@ impl ScriptLoader {
                     ui,
                     "Start Script",
                     Kind::Primary,
-                    loaded.is_some() && !auto,
+                    loaded.is_some() && !auto && !snippet,
                     vec2(half, 30.0),
                     tip,
                 )

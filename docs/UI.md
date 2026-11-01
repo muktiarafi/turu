@@ -50,7 +50,7 @@ top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Game, Application, CoreBots, Current Drops, Skills, Stats, Runtime, Logs, Logger | implemented |
+| Script Loader, Game, Application, CoreBots, Current Drops, Skills, Stats, Runtime, Logs, Console, Logger | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -59,7 +59,8 @@ top, and + at the end.
 
 **Auto Attack** (`auto.rs`): a bot thread marked as a script thread, so `bot.control.request_stop()`
 (Stop Automation) makes the next call fail. It runs the steps in the Auto popup row above. It is
-disabled while a script runs, and Start Script is disabled while Auto Attack runs.
+disabled while a script or a Console snippet runs, and Start Script is disabled while Auto Attack
+runs.
 
 ## Windows
 
@@ -183,6 +184,19 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
+* **Console** (`console.rs`, 700x520, VibeSkua's `ConsoleView`, one per tab): header card "TS
+  SNIPPET" ("runs with `bot` in scope"), a monospace editor (default `bot.log("Test");`), Clear and
+  Run (Ctrl/Cmd+Enter too), Stop while it runs; OUTPUT below with Copy/Clear: "› " and the
+  snippet's first line, its `bot.log` lines as they come, then its result (the value of the last
+  expression, as JSON; `undefined` when there is none) in green, its error with the stack in red,
+  or "Stopped". The engine side is `script::run_snippet` (`bot/src/script/mod.rs`): oxc strips the
+  types (as a script, not a module, so `eval` gives the last value), QuickJS runs it with the
+  "turu" module's exports (`bot`, ...) as globals, on a `spawn_action` thread marked as a script
+  thread, so Stop (`script::stop_snippet`) ends a `while (true)` loop; `import` isn't available.
+  Its `bot.log` lines also go to the script log. Run is disabled while a script or Auto Attack
+  runs, and Start Script (Script Loader, Search Scripts) and Auto Attack while a snippet runs (the
+  engine also refuses either way). VibeSkua shows no output, can't stop a snippet and lets it run
+  beside a script.
 * **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,
   DEATHS, PICKUPS, ACCEPTED, COMPLETED, RE-LOGINS, Reset. The STORAGE section is not built.
 * **Runtime** (`runtime.rs`, 955x596, VibeSkua `RuntimeHelpersView`): two columns. DROPS HELPER:
@@ -236,7 +250,7 @@ disabled while a script runs, and Start Script is disabled while Auto Attack run
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
 Not built at all (greyed in the menus): Scheduler, Application Themes,
-HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Console, Spammer,
+HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Spammer,
 Interceptor, Plugins, Auto Hunt, Notify Drop.
 
 ## Adding a window
