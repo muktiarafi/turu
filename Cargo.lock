@@ -6824,7 +6824,6 @@ dependencies = [
  "os_info",
  "qrcode",
  "rand 0.10.2",
- "reqwest",
  "rfd",
  "ruffle_core",
  "ruffle_frontend_utils",

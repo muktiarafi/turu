@@ -1,6 +1,6 @@
 //! AQW build (Mugetsu): things the release player does on its own, without a launcher:
 //! the window title, remembering that the Vulkan driver crashed on this PC (so the next start
-//! uses DirectX 12), the "running on the built-in graphics" tip and the new-version notice.
+//! uses DirectX 12) and the "running on the built-in graphics" tip.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,15 +12,11 @@ use winit::window::Window;
 /// ([package.metadata.winresource]) and to the GitHub release tag (`v1.1.1`).
 pub const VERSION: &str = "1.6.0";
 
-const RELEASES_API: &str = "https://api.github.com/repos/mugetsu-aqw/mugetsu/releases/latest";
-const RELEASES_PAGE: &str = "https://github.com/mugetsu-aqw/mugetsu/releases/latest";
-
 // --- Window title -------------------------------------------------------------------------
 
 static TITLE_NOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// "Turu {version}" (Turu: was "Mugetsu"), plus notes such as "DirectX 12" or
-/// "update 1.0.2 available".
+/// "Turu {version}" (Turu: was "Mugetsu"), plus notes such as "DirectX 12".
 pub fn window_title() -> String {
     let notes = TITLE_NOTES.lock().unwrap_or_else(|e| e.into_inner());
     let name = format!("{} {}", crate::turu::APP_NAME, crate::turu::VERSION);
@@ -44,7 +40,7 @@ fn config_dir() -> Option<PathBuf> {
     dirs::config_local_dir().map(|dir| dir.join("ruffle"))
 }
 
-/// A file named `name` next to Mugetsu's program exists (`verbose-log`, `no-update-check`).
+/// A file named `name` next to Mugetsu's program exists (`verbose-log`, `safe-drawing`).
 pub fn exe_flag(name: &str) -> bool {
     // Also `name.txt`: Windows hides extensions, so a "new text document" renamed to `name`
     // is really `name.txt`.
@@ -750,100 +746,6 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power: 
                 .set_buttons(rfd::MessageButtons::Ok)
                 .show();
         });
-}
-
-// --- New version notice -------------------------------------------------------------------
-
-/// Asks GitHub for the latest release once at startup. If it is newer, the window title says
-/// so and a message (once per version) offers to open the download page. Nothing is
-/// downloaded or installed; a `no-update-check` file next to Mugetsu.exe turns this off.
-pub fn spawn_update_check(window: Arc<Window>) {
-    if exe_flag("no-update-check") {
-        return;
-    }
-    let _ = std::thread::Builder::new()
-        .name("update check".to_string())
-        .spawn(move || {
-            let latest = match latest_release() {
-                Ok(latest) => latest,
-                Err(error) => {
-                    tracing::info!("Update check failed: {error}");
-                    return;
-                }
-            };
-            let Some(latest_number) = parse_version(&latest) else {
-                return;
-            };
-            // `RUFFLE_TEST_UPDATE_FROM=0.9` pretends to be that version (testing).
-            let current = std::env::var("RUFFLE_TEST_UPDATE_FROM").unwrap_or(VERSION.to_string());
-            if Some(latest_number) <= parse_version(&current) {
-                tracing::info!("Mugetsu {current} is up to date (latest release: {latest})");
-                return;
-            }
-            let latest = latest.trim_start_matches('v').to_string();
-            tracing::info!("Mugetsu {latest} is available");
-            add_title_note(format!("update {latest} available"));
-            window.set_title(&window_title());
-
-            let Some(dir) = config_dir() else { return };
-            let marker = dir.join("mugetsu-update-notified");
-            if std::fs::read_to_string(&marker).is_ok_and(|seen| seen.trim() == latest) {
-                return;
-            }
-            let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::write(&marker, &latest);
-            let answer = rfd::MessageDialog::new()
-                .set_level(rfd::MessageLevel::Info)
-                .set_title("Mugetsu")
-                .set_description(format!(
-                    "Mugetsu {latest} is available (you have {current}).\n\n\
-                    Open the download page?"
-                ))
-                .set_buttons(rfd::MessageButtons::YesNo)
-                .show();
-            if answer == rfd::MessageDialogResult::Yes {
-                let _ = webbrowser::open(RELEASES_PAGE);
-            }
-        });
-}
-
-fn latest_release() -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .user_agent(format!("Mugetsu/{VERSION}"))
-        .build()?;
-    let body = client
-        .get(RELEASES_API)
-        .header("Accept", "application/vnd.github+json")
-        .send()?
-        .error_for_status()?
-        .text()?;
-    let release: serde_json::Value = serde_json::from_str(&body)?;
-    let tag = release["tag_name"]
-        .as_str()
-        .ok_or("no tag_name in the release")?;
-    Ok(tag.to_string())
-}
-
-/// "v1.0.2" / "1.0.2" -> (1, 0, 2); missing parts are 0.
-fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
-    let mut parts = text.trim().trim_start_matches('v').split('.');
-    let mut next = || -> Option<u32> { parts.next().map_or(Some(0), |p| p.parse().ok()) };
-    Some((next()?, next()?, next()?))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_version;
-
-    #[test]
-    fn versions() {
-        assert_eq!(parse_version("v1.0.2"), Some((1, 0, 2)));
-        assert_eq!(parse_version("1.1"), Some((1, 1, 0)));
-        assert_eq!(parse_version("v2"), Some((2, 0, 0)));
-        assert_eq!(parse_version("v1.0-beta"), None);
-        assert!(parse_version("v1.0.10") > parse_version("1.0.9"));
-    }
 }
 
 #[cfg(all(test, windows))]

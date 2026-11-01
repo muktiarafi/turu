@@ -45,8 +45,6 @@ tracing-subscriber = { workspace = true }
 tracing-appender = "0.2.5"
 winit = "0.30.13"
 webbrowser = "1.2.4"
-# AQW build: Mugetsu's new-version check (already in the program for OpenH264's download).
-reqwest = { workspace = true, features = ["blocking"] }
 serde_json = { workspace = true }
 url = { workspace = true }
 dirs = "6.0"
