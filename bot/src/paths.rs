@@ -209,6 +209,11 @@ impl Paths {
         self.root.join(crate::quest_cache::FILE_NAME)
     }
 
+    /// Tools > Junk Items' sell list (VibeSkua `JunkItems.json`, `junk`).
+    pub fn junk_items_file(&self) -> PathBuf {
+        self.root.join(crate::junk::FILE_NAME)
+    }
+
     /// The map items found in each map's SWF, by map file (`map_items`; VibeSkua
     /// `cache/0SavedMaps.json`).
     pub fn map_items_file(&self) -> PathBuf {

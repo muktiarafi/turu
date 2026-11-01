@@ -1367,6 +1367,11 @@ export class Bot {
     /** True once Stop was pressed. */
     get shouldExit(): boolean { return call("shouldExit"); }
     /**
+     * Sells every inventory item marked as junk in Tools & Helpers > Junk Items
+     * (`JunkItems.json`), the whole stack each. Equipped, favourited and banked items are kept.
+     */
+    sellJunk(): void { call("sellJunk"); }
+    /**
      * The lines of your CoreBots Options file (Options > CoreBots, saved per character as
      * `options/CBO_Storage(<username>).txt`), e.g. `["PrivateRooms: True", ...]`; null when
      * you aren't logged in or haven't saved one. CoreBots reads it in `setOptions()`.

@@ -82,6 +82,10 @@ fn root(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(())
         }
         "shouldExit" => ok(bot.should_exit()),
+        "sellJunk" => {
+            crate::junk::sell_all(bot)?;
+            ok(())
+        }
         // `showMessageBox(message, caption, buttons)`: the clicked button's index, or null.
         "showMessageBox" => {
             let button = bot.scripts.show_message_box(

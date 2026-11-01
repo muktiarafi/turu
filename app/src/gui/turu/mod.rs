@@ -19,6 +19,7 @@ mod game_options;
 mod gear;
 mod grabber;
 mod interceptor;
+mod junk_items;
 mod loader;
 mod logs;
 mod message_box;
@@ -62,6 +63,7 @@ pub struct Windows {
     pub current_drops: bool,
     pub loader: bool,
     pub grabber: bool,
+    pub junk_items: bool,
     pub accounts: bool,
     pub army: bool,
     pub butler: bool,
@@ -147,6 +149,7 @@ struct TabUi {
     current_drops: current_drops::CurrentDrops,
     loader: loader::LoaderWindow,
     grabber: grabber::GrabberWindow,
+    junk_items: junk_items::JunkItemsWindow,
     butler: butler::ButlerWindow,
     cosmetics: cosmetics::CosmeticsWindow,
 }
@@ -234,6 +237,7 @@ impl TuruUi {
         tab.loader.show(ctx, &mut w.loader);
         tab.grabber.show(ctx, &mut w.grabber);
         tab.grabber.save_export(&picker, ctx);
+        tab.junk_items.show(ctx, &mut w.junk_items);
         tab.stats.show(ctx, &mut w.stats);
         tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
@@ -378,6 +382,10 @@ mod tests {
             ),
             ("Loader", boxed(loader::LoaderWindow::default(), |w, c, o| w.show(c, o))),
             ("Grabber", boxed(grabber::GrabberWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                "Junk Items",
+                boxed(junk_items::JunkItemsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
             ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
             (
                 "Runtime",

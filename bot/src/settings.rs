@@ -22,6 +22,8 @@ pub struct AppSettings {
     pub auto_update_advance_skill_sets_updates: bool,
     pub check_junk_items_updates: bool,
     pub auto_update_junk_items: bool,
+    /// Tools > Junk Items' "Skip sell warning" (VibeSkua `JunkSkipSellWarning`).
+    pub junk_skip_sell_warning: bool,
     // Webhooks & Alerts (`crate::webhooks`)
     pub discord_webhook_url: String,
     pub webhook_notify_started: bool,
@@ -62,6 +64,7 @@ impl Default for AppSettings {
             auto_update_advance_skill_sets_updates: true,
             check_junk_items_updates: true,
             auto_update_junk_items: true,
+            junk_skip_sell_warning: false,
             discord_webhook_url: String::new(),
             webhook_notify_started: true,
             webhook_notify_stopped: true,

@@ -246,7 +246,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   0, leaving the game's own FPS setting alone),
   relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
-  Unverified against a real webhook; the skill-set and junk-item update switches are stored only.
+  Unverified against a real webhook; the skill-set and junk-item update switches are stored only
+  (VibeSkua never reads the junk-item ones either).
+- **Junk Items:** Tools & Helpers > Junk Items (`app/src/gui/turu/junk_items.rs`) lists the
+  inventory and bank items, marks the selected ones as junk and sells the junk in the inventory;
+  scripts call `bot.sellJunk()`. The list is `JunkItems.json` in the data folder, in VibeSkua's
+  format (`bot/src/junk.rs`; a VibeSkua file, or `auqw/Scripts`' community list, can be copied
+  over). Tested against a fake game (`bot/tests/junk.rs`); not yet sold in game.
 - **Web monitor** (`docs/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
   Nexus webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`)
   on `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
@@ -407,7 +413,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Themes, HotKeys, Loadouts, Fast Travel,
-  Junk Items, Notify Drop, Plugins
+  Notify Drop, Plugins
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.

@@ -378,9 +378,19 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   file in `map-items.json` (map files are versioned by name), so a second Grab doesn't download.
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
+* **Junk Items** (`junk_items.rs`, 550x500, VibeSkua `JunkItemsView`): search (ID, name or
+  category) and ⟳; a select-all check box ("n selected", partly checked when only some shown rows
+  are), Mark as junk and Unmark; the inventory and bank items by name, each row with a check box
+  (a click on the row toggles it), the ID, the name (category on hover) and a red "Junk" chip;
+  Skip sell warning, Unmark all, Sell selected (marks them as junk, then sells) and Sell all junk
+  (n). Opening the window refreshes it, loading the bank first if needed; refresh and selling run
+  through `spawn_action` (`turu_bot::junk`), the list is saved to `JunkItems.json` at each change.
+  Selling asks first (VibeSkua's texts) unless Skip sell warning is on, which asks once itself and
+  is saved in `settings.json` (`junkSkipSellWarning`). Only unequipped, unfavourited inventory
+  items are sold, the whole stack each.
 
 Not built at all (greyed in the menus): Application Themes,
-HotKeys, Loadouts Manager, Fast Travel, Junk Items, Plugins, Auto Hunt, Notify Drop.
+HotKeys, Loadouts Manager, Fast Travel, Plugins, Auto Hunt, Notify Drop.
 
 ## Adding a window
 

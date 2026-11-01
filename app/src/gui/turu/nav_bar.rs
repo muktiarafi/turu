@@ -191,7 +191,9 @@ impl NavBar {
             if item(ui, "Current Drops", true) {
                 windows.current_drops = true;
             }
-            item(ui, "Junk Items", false);
+            if item(ui, "Junk Items", true) {
+                windows.junk_items = true;
+            }
         });
         ui.menu_button("Combat", |ui| {
             if item(ui, "Skills", true) {

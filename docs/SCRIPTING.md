@@ -78,6 +78,8 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   index). The script waits for the click; closing the box is No (`{ text: "Cancel", value: -1 }`),
   and Stop ends the wait. Nobody can answer runs started from the command line, the HTTP API or
   a relogin, or `--headless`: there the message is logged and the box counts as closed.
+- **Junk**: `bot.sellJunk()` sells the inventory items listed in Tools & Helpers > Junk Items
+  (`JunkItems.json` in the data folder, VibeSkua's format), as VibeSkua's `Bot.SellJunk()`.
 - **Imports** are relative, without extension: `import { Core } from "../core/CoreBots";`.
 - **Missing API**: `bot.flash.get("world.strMapName")`, `bot.flash.callGameFunction(...)` and
   `bot.send.packet("%xt%zm%...%")` reach the game directly, using the same paths VibeSkua uses.
