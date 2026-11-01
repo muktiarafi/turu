@@ -79,9 +79,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   every tick of a player that thinks the mouse is over it, which was 22% of the main thread with
   seven tabs, and a tab shown again after the cursor left the window ignored clicks. Flash calls name their tab, and `turu::bot()` is the
   active tab's bot, so the UI and `spawn_action` act on the tab you look at; each tab keeps its
-  own tool windows, Auto Attack and nav bar state (Accounts and Army Control are shared). The
+  own tool windows, Auto Attack/Hunt and nav bar state (Accounts and Army Control are shared). The
   tab strip shows above the nav bar once there are two tabs: the name (character, else login),
-  a dot while its script or Auto Attack runs (a yellow "!" while its script waits for its
+  a dot while its script or Auto Attack/Hunt runs (a yellow "!" while its script waits for its
   Script Options window or a message box, which show when you open that tab; Army Control
   says so too), × to close (stops its script), + for a new tab at the login screen (also
   Army > New Tab). Checked by hand: opening, switching and closing a second tab at the login
@@ -109,7 +109,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   a quitting app (window, `--exit-with-parent`, `--exit-on-script-stop`, the graphics restart)
   write the account offline at once (`butler::close`). Its tests run a master and a butler
   against two fake games. The window (`docs/UI.md`) lists the other online accounts with
-  Follow and Summon, and edits the options; following stops the tab's Auto Attack. Not built:
+  Follow and Summon, and edits the options; following stops the tab's Auto Attack/Hunt. Not built:
   quest cloning (V5 copies the master's quest slots). The quest fakes, the level fake, AntiLag
   and the question are unverified in game.
 - **Cosmetics** (Plugins > Cosmetics, `bot/src/cosmetics/`, VibeSkua's Cosmetics plugin): shows
@@ -371,7 +371,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
 - Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
-  Junk Items, Notify Drop, Plugins, Auto Hunt
+  Junk Items, Notify Drop, Plugins
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.

@@ -398,7 +398,7 @@ impl GrabberWindow {
                 };
                 let blocked = action.fights() && fights_blocked;
                 let tip = if blocked {
-                    "Stop the script, Console snippet or Auto Attack first"
+                    "Stop the script, Console snippet or Auto Attack/Hunt first"
                 } else {
                     "Busy"
                 };

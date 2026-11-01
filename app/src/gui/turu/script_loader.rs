@@ -190,7 +190,7 @@ impl ScriptLoader {
                 }
             } else {
                 let tip = if auto {
-                    "Stop Auto Attack first"
+                    "Stop Auto Attack/Hunt first"
                 } else if snippet {
                     "Stop the Console snippet first"
                 } else {

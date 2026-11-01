@@ -323,16 +323,30 @@ impl NavBar {
                 vec2(half, 30.0),
                 tip,
             );
-            if attack.clicked() {
+            let hunt = widgets::button(
+                ui,
+                "Auto Hunt",
+                Kind::Normal,
+                !running && !script_active && !snippet,
+                vec2(half, 30.0),
+                tip,
+            );
+            let mode = if attack.clicked() {
+                Some(auto::AutoMode::Attack)
+            } else if hunt.clicked() {
+                Some(auto::AutoMode::Hunt)
+            } else {
+                None
+            };
+            if let Some(mode) = mode {
                 // VibeSkua: the picked class and mode only when both are set, else the
                 // equipped class in Base.
                 let map_ids = auto::parse_map_ids(&self.map_ids);
                 match (self.auto_class.clone(), self.auto_mode.clone()) {
-                    (Some(class), Some(mode)) => auto::start(Some(class), mode, map_ids),
-                    _ => auto::start(None, "Base".into(), map_ids),
+                    (Some(class), Some(class_mode)) => auto::start(mode, Some(class), class_mode, map_ids),
+                    _ => auto::start(mode, None, "Base".into(), map_ids),
                 }
             }
-            widgets::button(ui, "Auto Hunt", Kind::Normal, false, vec2(half, 30.0), "Coming soon");
         });
         if widgets::button(
             ui,

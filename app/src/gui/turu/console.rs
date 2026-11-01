@@ -145,7 +145,7 @@ impl ConsoleWindow {
                     let tip = if script_active {
                         "Stop the script first"
                     } else if auto {
-                        "Stop Auto Attack first"
+                        "Stop Auto Attack/Hunt first"
                     } else {
                         "Write a snippet first"
                     };

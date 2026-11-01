@@ -276,7 +276,7 @@ impl ScriptRepoWindow {
                 } else if snippet {
                     "Stop the Console snippet first"
                 } else {
-                    "Stop Auto Attack first"
+                    "Stop Auto Attack/Hunt first"
                 };
                 if widgets::button(ui, "Load", Kind::Normal, !busy && !active, vec2(56.0, 28.0), tip).clicked() {
                     load(&info.path, false);

@@ -131,7 +131,7 @@ pub(crate) fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
     (id, bot)
 }
 
-/// Removes the tab (never the last one): stops its script and Auto Attack.
+/// Removes the tab (never the last one): stops its script and Auto Attack/Hunt.
 pub(crate) fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
     let removed = {
         let mut tabs = tabs_lock();

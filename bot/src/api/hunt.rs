@@ -23,7 +23,8 @@ fn throttle(bot: &Bot) -> BotResult<()> {
     Ok(())
 }
 
-fn hunt_jump(bot: &Bot, cell: &str) -> BotResult<()> {
+/// Jumps to `cell` (pad Left) once `HuntDelay` passed since the last hunt jump.
+pub(crate) fn hunt_jump(bot: &Bot, cell: &str) -> BotResult<()> {
     throttle(bot)?;
     map::jump(bot, cell, "Left", true, false)?;
     bot.state.lock().last_hunt_jump = Some(Instant::now());

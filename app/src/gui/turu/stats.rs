@@ -76,7 +76,7 @@ impl StatsWindow {
             });
         }
         ui.label(
-            RichText::new("Counters follow the running script and Auto Attack.")
+            RichText::new("Counters follow the running script and Auto Attack/Hunt.")
                 .small()
                 .color(MUTED),
         );

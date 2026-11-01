@@ -52,15 +52,15 @@ top, and + at the end.
 |---|---|
 | Script Loader, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Logger, Interceptor | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
-| Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
+| Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | + | opens the Script Loader (VibeSkua opens the tabbed tool host) |
 | everything else | greyed, tooltip "Coming soon" |
 
-**Auto Attack** (`auto.rs`): a bot thread marked as a script thread, so `bot.control.request_stop()`
-(Stop Automation) makes the next call fail. It runs the steps in the Auto popup row above. It is
-disabled while a script or a Console snippet runs, and Start Script is disabled while Auto Attack
-runs.
+**Auto Attack / Auto Hunt** (`auto.rs`, loop in `turu_bot::auto`): a bot thread marked as a
+script thread, so `bot.control.request_stop()` (Stop Automation) makes the next call fail. It runs
+the steps in the Auto popup row above. Both are disabled while a script or a Console snippet runs
+(or either of them runs), and Start Script is disabled while one runs.
 
 ## Windows
 
@@ -170,7 +170,7 @@ runs.
   account (class type, obey summons), saved on change, V5's descriptions on hover. DEBUG LOG:
   Butler's log lines (time, component, message; repeats counted), colored by level, following
   the end, with Copy, Save (to `butler_logs/`), Clear and Open folder. Following stops the
-  tab's Auto Attack. When a script starts while following, a modal asks whether to keep the
+  tab's Auto Attack/Hunt. When a script starts while following, a modal asks whether to keep the
   follow suspended until the script stops (Yes, or closing it) or stop following (No); a tab
   in the back shows "!" until it's answered.
 * **Cosmetics & Outfits** (`cosmetics.rs`, 900x620; VibeSkua's Cosmetics plugin, one per tab,
@@ -202,8 +202,8 @@ runs.
   types (as a script, not a module, so `eval` gives the last value), QuickJS runs it with the
   "turu" module's exports (`bot`, ...) as globals, on a `spawn_action` thread marked as a script
   thread, so Stop (`script::stop_snippet`) ends a `while (true)` loop; `import` isn't available.
-  Its `bot.log` lines also go to the script log. Run is disabled while a script or Auto Attack
-  runs, and Start Script (Script Loader, Search Scripts) and Auto Attack while a snippet runs (the
+  Its `bot.log` lines also go to the script log. Run is disabled while a script or Auto Attack/Hunt
+  runs, and Start Script (Script Loader, Search Scripts) and Auto Attack/Hunt while a snippet runs (the
   engine also refuses either way). VibeSkua shows no output, can't stop a snippet and lets it run
   beside a script.
 * **Spammer** (`spammer.rs`, 620x460, VibeSkua `PacketSpammerView`, one per tab: the queue is
@@ -327,7 +327,7 @@ runs.
   (exactly one) / Unregister All, GetMap Item IDs Open / Accept (the items' quests) / Get Map
   Item (asks the quantity, picks each item up that many times), Inventory Equip / Sell / Sell All (one item, not equipped; Sell
   asks the quantity) / To Bank, House To Bank, Bank To Inventory, Cell Monsters Kill, Map
-  Monsters Kill / Teleport To. Kill is disabled while a script, a Console snippet or Auto Attack
+  Monsters Kill / Teleport To. Kill is disabled while a script, a Console snippet or Auto Attack/Hunt
   runs. The readers, texts, checks and actions are `turu_bot::grabber`. GetMap Item IDs
   (`turu_bot::map_items`, VibeSkua `FindMapItems`) downloads the current map's SWF from
   `game.aq.com/game/gamefiles/maps/<strMapFileName>` and reads its AS3 bytecode

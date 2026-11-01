@@ -296,18 +296,18 @@ pub fn show_headless_screen(ctx: &Context, top: f32) {
         });
 }
 
-/// Whether the bot runs a script, a Console snippet or Auto Attack.
+/// Whether the bot runs a script, a Console snippet or Auto Attack/Hunt.
 fn busy(bot: &turu_bot::Bot) -> bool {
     bot.scripts.status().is_active() || bot.scripts.is_snippet_running() || auto::running(bot)
 }
 
-/// Auto Attack fights the butler's own movement and skills: a tab that follows stops it
+/// Auto Attack/Hunt fights the butler's own movement and skills: a tab that follows stops it
 /// (VibeSkua ButlerV5 `StopUserAuto`). Not while a script runs: the follow is suspended then,
 /// and Stop would stop the script.
 fn stop_auto_while_following() {
     for (_, bot) in crate::turu::tabs() {
         if auto::running(&bot) && !bot.scripts.is_running() && bot.butler.following().is_some() {
-            bot.log("[Butler] Stopped Auto Attack: it conflicts with following.");
+            bot.log("[Butler] Stopped Auto Attack/Hunt: it conflicts with following.");
             bot.control.request_stop();
         }
     }

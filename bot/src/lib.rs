@@ -5,6 +5,7 @@
 pub mod accounts;
 pub mod api;
 pub mod army;
+pub mod auto;
 mod background;
 pub mod butler;
 pub mod capture;
@@ -75,6 +76,8 @@ pub struct Bot {
     pub skills: skills::SkillRunner,
     /// The counter-attack pause (`Combat.StopAttacking`, `UltraBossHelper`).
     pub combat: api::combat::CombatState,
+    /// The Auto popup's Auto Attack / Auto Hunt.
+    pub auto: auto::AutoState,
     pub drops: api::drops::DropRunner,
     pub handlers: api::handlers::HandlerRunner,
     pub boosts: api::boosts::BoostRunner,
@@ -116,6 +119,7 @@ impl Bot {
             scripts: script::ScriptManager::new(paths.clone()),
             skills: skills::SkillRunner::default(),
             combat: api::combat::CombatState::default(),
+            auto: auto::AutoState::default(),
             drops: api::drops::DropRunner::default(),
             handlers: api::handlers::HandlerRunner::default(),
             boosts: api::boosts::BoostRunner::default(),
