@@ -7,19 +7,26 @@
 //! Two threads per bot run it: "Butler Broadcast" writes the file every 500 ms (when it
 //! changed, else every [`HEARTBEAT`]), "Butler Orders" reads the others' files and obeys.
 //!
-//! Not ported yet: AntiLag while following, the quest bypass table, quest cloning, the
-//! level fake, stopping the UI's Auto Attack, and the suspend message box.
+//! The follower also fakes quests, the level and AntiLag on its own client while it follows
+//! ([`quest_bypass`], [`antilag`]); every component logs to [`debug_log`] for the window's
+//! viewer. Not ported: quest cloning (copying the master's quest slots).
 
+pub mod antilag;
+pub mod debug_log;
 pub mod follower;
+pub mod quest_bypass;
 pub mod sync;
 
 use crate::Bot;
 use crate::api::{inventory, map, player};
+pub use debug_log::Level;
+use debug_log::{DebugLog, LogLine};
 use follower::{Follow, Mode};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant, SystemTime};
 use sync::{SyncData, SyncDir};
@@ -113,6 +120,22 @@ pub struct ButlerSettings {
     pub leech_mode: bool,
     /// Gotos without reaching the master before joining its room from its file (1-10).
     pub rescue_threshold: u32,
+    /// "Quest bypasses": fake the table's quests for each map the butler enters.
+    pub quest_bypass: bool,
+    /// "Custom bypass quest IDs" ("1234, 5678"), faked when the follow starts.
+    pub quest_bypass_custom: String,
+    /// "Unlock all quests": max every quest slot instead (wins over the bypasses).
+    pub quest_unlock_all: bool,
+    /// "Fake level 100" on this client while following.
+    pub fake_level: bool,
+    /// AntiLag while summoned.
+    pub anti_lag_summoned: bool,
+    /// AntiLag while following by hand.
+    pub anti_lag_following: bool,
+    /// Record diagnostics in the window's log viewer.
+    pub debug_logs: bool,
+    /// Also append every log line to `butler_logs/debug_<account>.log`.
+    pub auto_save_log: bool,
     /// Per account, by lowercase username.
     pub accounts: BTreeMap<String, AccountSettings>,
 }
@@ -127,6 +150,14 @@ impl Default for ButlerSettings {
             park: ParkSpot::House,
             leech_mode: false,
             rescue_threshold: 3,
+            quest_bypass: true,
+            quest_bypass_custom: String::new(),
+            quest_unlock_all: true,
+            fake_level: false,
+            anti_lag_summoned: true,
+            anti_lag_following: false,
+            debug_logs: true,
+            auto_save_log: false,
             accounts: BTreeMap::new(),
         }
     }
@@ -161,9 +192,33 @@ struct Broadcast {
     written: Option<(SyncData, Instant)>,
 }
 
+/// "A script started while following" (VibeSkua `ShowSuspendNotice`): the question the UI
+/// shows until it's answered, the script stops or the follow ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuspendNotice {
+    pub id: u64,
+    pub master: String,
+}
+
+impl SuspendNotice {
+    pub const CAPTION: &str = "Butler";
+
+    pub fn message(&self) -> String {
+        format!(
+            "A script started while this account was following {}.\n\n\
+             Following is now SUSPENDED and will resume automatically when the script stops.\n\n\
+             Yes - keep it suspended (resume after the script)\n\
+             No - stop following entirely",
+            self.master
+        )
+    }
+}
+
 /// Butler's state on a bot.
 pub struct Butler {
     pub dir: SyncDir,
+    /// Saved logs and, with auto-save, the running log (`butler_logs`).
+    pub logs_dir: PathBuf,
     settings_file: PathBuf,
     settings: RwLock<ButlerSettings>,
     /// The settings file's modification time when last read.
@@ -174,12 +229,21 @@ pub struct Butler {
     declined: Mutex<Option<String>>,
     follow: Mutex<Option<Follow>>,
     broadcast: Mutex<Broadcast>,
+    log: DebugLog,
+    /// The account the auto-saved log is named after (not in `broadcast`: logging happens
+    /// under that lock).
+    log_name: Mutex<String>,
+    notice: Mutex<Option<SuspendNotice>>,
+    next_notice: AtomicU64,
+    /// The client or tab closed: no more broadcasts.
+    closed: AtomicBool,
 }
 
 impl Butler {
     pub fn new(paths: &crate::paths::Paths) -> Self {
         let butler = Self {
             dir: SyncDir::new(paths.butler_dir()),
+            logs_dir: paths.butler_logs_dir(),
             settings_file: paths.butler_settings_file(),
             settings: RwLock::new(ButlerSettings::default()),
             settings_stamp: Mutex::new(None),
@@ -187,6 +251,11 @@ impl Butler {
             declined: Mutex::new(None),
             follow: Mutex::new(None),
             broadcast: Mutex::new(Broadcast::default()),
+            log: DebugLog::default(),
+            log_name: Mutex::new(String::new()),
+            notice: Mutex::new(None),
+            next_notice: AtomicU64::new(1),
+            closed: AtomicBool::new(false),
         };
         butler.reload_settings();
         butler
@@ -261,6 +330,11 @@ impl Butler {
             .is_some_and(|f| f.running() && f.shared.parked())
     }
 
+    /// No follower thread runs: a stopped follow has put the options back and parked.
+    pub fn follow_ended(&self) -> bool {
+        self.follow.lock().as_ref().is_none_or(|f| f.finished())
+    }
+
     /// On the way to the park spot.
     pub fn is_parking(&self) -> bool {
         self.follow
@@ -284,18 +358,96 @@ impl Butler {
         let me = self.username();
         self.dir.online((!me.is_empty()).then_some(me.as_str()))
     }
+
+    /// Adds a line to the log viewer (and the auto-saved file), when debug logs are on.
+    pub fn record(&self, component: &str, message: &str, level: Level) {
+        let (enabled, auto_save) = {
+            let s = self.settings.read();
+            (s.debug_logs, s.auto_save_log)
+        };
+        if !enabled {
+            return;
+        }
+        let file = auto_save.then(|| {
+            let name = self.log_name.lock().clone();
+            let name = if name.is_empty() {
+                format!("pid{}", std::process::id())
+            } else {
+                name.to_lowercase()
+            };
+            self.logs_dir.join(format!("debug_{name}.log"))
+        });
+        self.log.push(component, message, level, file.as_deref());
+    }
+
+    pub fn log_lines(&self) -> Vec<LogLine> {
+        self.log.lines()
+    }
+
+    /// Changes whenever the log does.
+    pub fn log_version(&self) -> u64 {
+        self.log.version()
+    }
+
+    /// The log as text (Copy).
+    pub fn log_text(&self) -> String {
+        self.log.text()
+    }
+
+    pub fn clear_log(&self) {
+        self.log.clear();
+    }
+
+    /// Writes the log to a new file in [`Butler::logs_dir`] (Save); its path.
+    pub fn save_log(&self) -> std::io::Result<PathBuf> {
+        let name = self.log_name.lock().clone();
+        let path = self.log.save(&self.logs_dir, &name)?;
+        self.record(
+            "UI",
+            &format!("saved the log to {}", path.display()),
+            Level::Success,
+        );
+        Ok(path)
+    }
+
+    /// The suspend question waiting for an answer, if any.
+    pub fn suspend_notice(&self) -> Option<SuspendNotice> {
+        self.notice.lock().clone()
+    }
+
+    fn ask_suspend(&self, master: &str) {
+        let id = self.next_notice.fetch_add(1, Ordering::Relaxed);
+        *self.notice.lock() = Some(SuspendNotice {
+            id,
+            master: master.to_owned(),
+        });
+    }
+
+    fn drop_suspend_notice(&self) {
+        *self.notice.lock() = None;
+    }
 }
 
 fn modified(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-fn debug(bot: &Bot, text: impl AsRef<str>) {
-    bot.logs.debug.push(format!("[Butler] {}", text.as_ref()));
+/// A diagnostic: to the debug log and Butler's log viewer.
+pub(crate) fn trace(bot: &Bot, component: &str, level: Level, text: impl AsRef<str>) {
+    let text = text.as_ref();
+    bot.logs.debug.push(format!("[Butler] {text}"));
+    bot.butler.record(component, text, level);
 }
 
-fn log(bot: &Bot, text: impl AsRef<str>) {
-    bot.log(format!("[Butler] {}", text.as_ref()));
+fn debug(bot: &Bot, component: &str, text: impl AsRef<str>) {
+    trace(bot, component, Level::Info, text);
+}
+
+/// A message for the user: to the script log and Butler's log viewer.
+fn log(bot: &Bot, component: &str, text: impl AsRef<str>) {
+    let text = text.as_ref();
+    bot.log(format!("[Butler] {text}"));
+    bot.butler.record(component, text, Level::Info);
 }
 
 pub(crate) fn start(bot: &Arc<Bot>) {
@@ -321,6 +473,9 @@ fn broadcast_loop(weak: Weak<Bot>) {
     loop {
         std::thread::sleep(TICK);
         let Some(bot) = weak.upgrade() else { break };
+        if bot.butler.closed.load(Ordering::Acquire) {
+            break;
+        }
         bot.butler.reload_settings();
         let enabled = bot.butler.enabled();
         if !enabled {
@@ -351,12 +506,19 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
         return Ok(());
     }
     let butler = &bot.butler;
+    {
+        let mut name = butler.log_name.lock();
+        if *name != username {
+            name.clone_from(&username);
+        }
+    }
     let map_name = map::name(bot)?.to_lowercase();
     // Mid-transition the map isn't loaded or is named "-1": keep the last state, but keep
     // the heartbeat going.
     if !map::loaded(bot)? || map_name.is_empty() || map_name == "-1" {
         let mut b = butler.broadcast.lock();
         if let Some((data, at)) = &b.written
+            && !butler.closed.load(Ordering::Acquire)
             && data.username.eq_ignore_ascii_case(&username)
             && at.elapsed() >= HEARTBEAT
         {
@@ -452,6 +614,10 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
 }
 
 fn write_if_changed(butler: &Butler, b: &mut Broadcast, data: SyncData) {
+    // Checked under the lock `close` takes, so no broadcast lands after its offline write.
+    if butler.closed.load(Ordering::Acquire) {
+        return;
+    }
     let due = match &b.written {
         Some((last, at)) => !last.same_state(&data) || at.elapsed() >= HEARTBEAT,
         None => true,
@@ -485,6 +651,21 @@ pub fn write_offline(bot: &Bot) {
     }
     b.class_name.clear();
     b.class_checked = None;
+}
+
+/// The client or its tab closes (VibeSkua's process-exit hook): marks the account offline at
+/// once, so the other clients drop it without waiting for the heartbeat to age out, and ends
+/// any follow. Doesn't call Flash or wait: safe on the UI thread.
+pub fn close(bot: &Bot) {
+    let butler = &bot.butler;
+    {
+        // Under the broadcast lock: a broadcast in progress finishes first and none follows.
+        let _b = butler.broadcast.lock();
+        butler.closed.store(true, Ordering::Release);
+    }
+    write_offline(bot);
+    butler.drop_suspend_notice();
+    stop_follow_with(bot, Mode::Abort);
 }
 
 fn non_empty(value: String, default: &str) -> String {
@@ -531,14 +712,17 @@ fn order_loop(weak: Weak<Bot>) {
     loop {
         std::thread::sleep(TICK);
         let Some(bot) = weak.upgrade() else { break };
+        if bot.butler.closed.load(Ordering::Acquire) {
+            break;
+        }
         let enabled = bot.butler.enabled();
         if enabled != was_enabled {
             was_enabled = enabled;
             if enabled {
-                log(&bot, "Butler enabled - resuming.");
+                log(&bot, "Orders", "Butler enabled - resuming.");
             } else {
                 // Off: stop where it stands, no parking.
-                log(&bot, "Butler disabled - stopped.");
+                log(&bot, "Orders", "Butler disabled - stopped.");
                 stop_follow_with(&bot, Mode::Abort);
             }
         }
@@ -568,7 +752,11 @@ fn obey_orders(bot: &Arc<Bot>, orders: &mut Orders) {
     let ordered = current.filter(|(_, s)| *s == FollowSource::Ordered);
     if !butler.settings().account(&me).obey_summons {
         if ordered.is_some() {
-            debug(bot, "Obey summons turned off - dropping the ordered follow");
+            debug(
+                bot,
+                "Orders",
+                "Obey summons turned off - dropping the ordered follow",
+            );
             stop_follow_with(bot, Mode::StopAndPark);
         }
         return;
@@ -589,6 +777,7 @@ fn obey_orders(bot: &Arc<Bot>, orders: &mut Orders) {
                 orders.busy_logged = true;
                 debug(
                     bot,
+                    "Orders",
                     format!("{}'s summon on hold - a script is running", master.username),
                 );
             }
@@ -597,7 +786,11 @@ fn obey_orders(bot: &Arc<Bot>, orders: &mut Orders) {
             .is_none_or(|(m, _)| !m.eq_ignore_ascii_case(&master.username))
         {
             orders.busy_logged = false;
-            debug(bot, format!("{} summoned {me} - obeying", master.username));
+            debug(
+                bot,
+                "Orders",
+                format!("{} summoned {me} - obeying", master.username),
+            );
             follow(bot, &master.username, FollowSource::Ordered);
         }
     } else if let Some((current, _)) = ordered {
@@ -609,13 +802,17 @@ fn obey_orders(bot: &Arc<Bot>, orders: &mut Orders) {
             .is_some_and(|d| !d.lists_follower(&me));
         if released {
             orders.gone_since = None;
-            debug(bot, format!("{current} released me - parking"));
+            debug(bot, "Orders", format!("{current} released me - parking"));
             stop_follow_with(bot, Mode::StopAndPark);
         } else {
             let since = *orders.gone_since.get_or_insert_with(Instant::now);
             if since.elapsed() >= ORDER_GONE_AFTER {
                 orders.gone_since = None;
-                debug(bot, "Summon gone (master offline or unreadable) - parking");
+                debug(
+                    bot,
+                    "Orders",
+                    "Summon gone (master offline or unreadable) - parking",
+                );
                 stop_follow_with(bot, Mode::StopAndPark);
             }
         }
@@ -636,7 +833,7 @@ fn handshakes(bot: &Bot, me: &str, online: &[SyncData]) {
                 .find(|d| d.username.eq_ignore_ascii_case(master))
                 .is_some_and(|d| d.lists_follower(me));
             if !still_listed {
-                debug(bot, format!("{master} acknowledged the decline"));
+                debug(bot, "Orders", format!("{master} acknowledged the decline"));
                 *declined = None;
             }
         }
@@ -653,6 +850,7 @@ fn handshakes(bot: &Bot, me: &str, online: &[SyncData]) {
         {
             log(
                 bot,
+                "Orders",
                 format!("{} declined the summon - released.", d.username),
             );
             butler.set_followers(
@@ -703,6 +901,7 @@ pub fn start_follow(bot: &Arc<Bot>, master: &str) -> Result<(), String> {
     if butler.is_follower(master) {
         log(
             bot,
+            "UI",
             format!("Releasing {master} (can't follow an account that follows me)."),
         );
         let followers = butler
@@ -720,10 +919,29 @@ pub fn start_follow(bot: &Arc<Bot>, master: &str) -> Result<(), String> {
 /// follow declines the summon, or the order would be obeyed again at the next tick.
 pub fn stop_follow(bot: &Bot) {
     if let Some((master, FollowSource::Ordered)) = bot.butler.following() {
-        debug(bot, format!("Declining {master}'s summon"));
+        debug(bot, "UI", format!("Declining {master}'s summon"));
         *bot.butler.declined.lock() = Some(master);
     }
     stop_follow_with(bot, Mode::Stop);
+}
+
+/// The answer to the suspend question `id`: keep the follow suspended until the script stops
+/// (Yes, or the box closed), or stop following (No). Doesn't call Flash or wait: safe on the UI
+/// thread. An answer to a question no longer asked does nothing.
+pub fn answer_suspend(bot: &Bot, id: u64, keep_suspended: bool) {
+    {
+        let mut notice = bot.butler.notice.lock();
+        if notice.as_ref().is_none_or(|n| n.id != id) {
+            return;
+        }
+        *notice = None;
+    }
+    if keep_suspended {
+        debug(bot, "UI", "suspend notice: keep suspended");
+    } else {
+        debug(bot, "UI", "suspend notice: stop following");
+        stop_follow(bot);
+    }
 }
 
 /// Summons or releases one account (VibeSkua `ToggleFollower`); the message to show.
@@ -737,7 +955,7 @@ pub fn toggle_follower(bot: &Bot, username: &str) -> Result<String, String> {
         followers.remove(i);
         butler.set_followers(followers);
         let message = format!("Released {username}.");
-        log(bot, &message);
+        log(bot, "UI", &message);
         return Ok(message);
     }
     // No chains: a butler can't summon.
@@ -752,7 +970,7 @@ pub fn toggle_follower(bot: &Bot, username: &str) -> Result<String, String> {
     followers.push(username.to_owned());
     butler.set_followers(followers);
     let message = format!("Summoned {username} to follow me.");
-    log(bot, &message);
+    log(bot, "UI", &message);
     Ok(message)
 }
 
@@ -803,6 +1021,7 @@ pub fn summon_all(bot: &Bot) -> Result<String, String> {
         let names: Vec<&str> = skipped.iter().map(|d| d.username.as_str()).collect();
         log(
             bot,
+            "UI",
             format!(
                 "Skipped (busy, following, a master, another server or parking): {}",
                 names.join(", ")
@@ -824,12 +1043,12 @@ pub fn summon_all(bot: &Bot) -> Result<String, String> {
     butler.set_followers(followers);
     let names: Vec<&str> = available.iter().map(|d| d.username.as_str()).collect();
     let message = format!("Summoned: {}", names.join(", "));
-    log(bot, &message);
+    log(bot, "UI", &message);
     Ok(message)
 }
 
 /// Releases every summoned account (VibeSkua `ReleaseFollowers`).
 pub fn release_all(bot: &Bot) {
     bot.butler.set_followers(Vec::new());
-    log(bot, "Released all followers.");
+    log(bot, "UI", "Released all followers.");
 }

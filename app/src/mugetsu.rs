@@ -346,15 +346,19 @@ pub fn log_folder() -> Option<&'static std::path::Path> {
 
 /// Opens the folder holding ruffle.log in the file manager.
 pub fn open_log_folder() {
-    let Some(folder) = LOG_FOLDER.get() else {
-        return;
-    };
+    if let Some(folder) = LOG_FOLDER.get() {
+        open_folder(folder);
+    }
+}
+
+/// Opens a folder in the file manager.
+pub fn open_folder(folder: &std::path::Path) {
     #[cfg(windows)]
     let result = std::process::Command::new("explorer").arg(folder).spawn().map(|_| ());
     #[cfg(not(windows))]
     let result = webbrowser::open(&folder.to_string_lossy());
     if let Err(e) = result {
-        tracing::warn!("Couldn't open the log folder {folder:?}: {e}");
+        tracing::warn!("Couldn't open the folder {folder:?}: {e}");
     }
 }
 

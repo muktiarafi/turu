@@ -568,6 +568,16 @@ pub fn update_quest(bot: &Bot, id: i64) -> BotResult<bool> {
     Ok(true)
 }
 
+/// [`update_quest`] off the script thread: the wait for the quest to load ends early (false)
+/// once `cancel` is set.
+pub fn update_quest_cancellable(bot: &Bot, id: i64, cancel: &AtomicBool) -> BotResult<bool> {
+    let Some(quest) = ensure_load_cancellable(bot, id, Some(cancel))? else {
+        return Ok(false);
+    };
+    update_quest_slot(bot, quest.value, quest.slot)?;
+    Ok(true)
+}
+
 /// VibeSkua `UpdateQuest(value, slot)`: the same fake `updateQuest` packet with a chain value and
 /// quest slot of your own.
 pub fn update_quest_slot(bot: &Bot, value: i64, slot: i64) -> BotResult<()> {
