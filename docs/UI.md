@@ -50,7 +50,7 @@ top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Logger | implemented |
+| Script Loader, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Logger, Interceptor | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -206,6 +206,33 @@ runs.
   runs, and Start Script (Script Loader, Search Scripts) and Auto Attack while a snippet runs (the
   engine also refuses either way). VibeSkua shows no output, can't stop a snippet and lets it run
   beside a script.
+* **Spammer** (`spammer.rs`, 620x460, VibeSkua `PacketSpammerView`, one per tab: the queue is
+  the tab's `bot.spammer`): Start / Stop (primary / danger; Start needs a packet), "Every" with a
+  milliseconds box (default 1000), the Send to client switch (`sendClientPacket` with `str`, or
+  `json` for a packet starting with `{`; otherwise `sfc.sendString` / `sfc.sendJson`), and a green
+  "Sending n of m" chip while it runs. QUEUE with its count, Load (replaces the queue), Save and
+  Clear; the numbered rows (monospace, cut off with the whole packet on hover; the one being sent
+  is selected), ✕ on the hovered or selected row, Delete removes the selected one. Below: the
+  packet box ("%xt%zm%...  packet to add or send"), + Add and Send now (through `spawn_action`).
+  The loop (`turu_bot::spammer`) runs on its own thread, reads the queue live, waits the delay
+  after each packet and stops on Stop, when the queue is emptied, or when a send fails (written
+  to the Debug log). Queue files are VibeSkua's: one packet per line.
+* **Interceptor** (`interceptor.rs`, 760x540, VibeSkua `PacketInterceptorView`, one per tab):
+  the server box ("Current server" first, then the server list) with ⟳ (fetches the list again),
+  Connect / Disconnect, the Log packets switch (on by default) and a green "Connected" chip;
+  "Search packets"; the packets, newest at the bottom (1000 kept): an OUT (accent), IN (green)
+  or BLOCK (red) tag and the packet in monospace (struck through when blocked); a click toggles
+  a packet, Shift+click adds a range, Ctrl/Cmd+C copies. Footer: "n packets · m selected" with
+  ✕ to unselect, Copy (the selection, or every shown packet), Export (every packet, search
+  ignored, as `[OUT] packet` lines with `\r` `\n` escaped) and Clear. The capture
+  (`turu_bot::capture`, VibeSkua `CaptureProxy`) sits in the game socket itself: the app wraps
+  Ruffle's navigator (`app/src/capture.rs`), each direction's bytes are cut into NUL-terminated
+  packets, inbound `Z...` packets are inflated for the interceptors (and packed again when one
+  edits them), and the interceptors (`Interceptor`, lowest priority first) edit
+  `MessageInfo.content` or clear `send` to drop a packet; the log runs after them. VibeSkua's
+  proxy needs a relog through `127.0.0.1:5588`; here Connect starts capturing at once, and a
+  picked server only makes it relog there. Disconnect stops capturing and leaves the game
+  connected (VibeSkua's drops the connection). Not built: the category filter button.
 * **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,
   DEATHS, PICKUPS, ACCEPTED, COMPLETED, RE-LOGINS, Reset. The STORAGE section is not built.
 * **Runtime** (`runtime.rs`, 955x596, VibeSkua `RuntimeHelpersView`): two columns. DROPS HELPER:
@@ -314,8 +341,7 @@ runs.
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
 Not built at all (greyed in the menus): Scheduler, Application Themes,
-HotKeys, Loadouts Manager, Fast Travel, Junk Items, Spammer,
-Interceptor, Plugins, Auto Hunt, Notify Drop.
+HotKeys, Loadouts Manager, Fast Travel, Junk Items, Plugins, Auto Hunt, Notify Drop.
 
 ## Adding a window
 

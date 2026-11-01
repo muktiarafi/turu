@@ -29,6 +29,8 @@ getrandom = "0.3"
 # Search Scripts (`repo.rs`): checking downloads, and the repository zip.
 sha2 = { workspace = true }
 zip = { workspace = true, features = ["deflate"] }
+# The Interceptor (`capture.rs`): the server's compressed packets.
+flate2 = "1.1.9"
 
 # Account passwords (`accounts.rs`), in the system's keychain: Keychain, Credential Manager,
 # the Secret Service (pure Rust on Linux: no libdbus to build against).
@@ -41,8 +43,6 @@ keyring = { version = "3.6", features = ["async-secret-service", "tokio", "crypt
 
 [dev-dependencies]
 tempfile = { workspace = true }
-# A gzip answer for the quest cache download test.
-flate2 = "1.1.9"
 
 [lints]
 workspace = true

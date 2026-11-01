@@ -18,6 +18,7 @@ mod files;
 mod game_options;
 mod gear;
 mod grabber;
+mod interceptor;
 mod loader;
 mod logs;
 mod message_box;
@@ -28,6 +29,7 @@ mod script_loader;
 mod script_options;
 mod script_repo;
 mod skills;
+mod spammer;
 mod stats;
 mod tab_strip;
 pub mod theme;
@@ -53,6 +55,8 @@ pub struct Windows {
     pub logs: bool,
     pub console: bool,
     pub packet_logger: bool,
+    pub spammer: bool,
+    pub interceptor: bool,
     pub current_drops: bool,
     pub loader: bool,
     pub grabber: bool,
@@ -135,6 +139,8 @@ struct TabUi {
     logs: logs::LogsWindow,
     console: console::ConsoleWindow,
     packet_logger: packet_logger::PacketLogger,
+    spammer: spammer::SpammerWindow,
+    interceptor: interceptor::InterceptorWindow,
     current_drops: current_drops::CurrentDrops,
     loader: loader::LoaderWindow,
     grabber: grabber::GrabberWindow,
@@ -224,6 +230,10 @@ impl TuruUi {
         tab.logs.show(ctx, &picker, &mut w.logs);
         tab.console.show(ctx, &mut w.console);
         tab.packet_logger.show(ctx, &picker, &mut w.packet_logger);
+        tab.spammer.show(ctx, &mut w.spammer);
+        tab.spammer.files(&picker, ctx);
+        tab.interceptor.show(ctx, &mut w.interceptor);
+        tab.interceptor.files(&picker, ctx);
         tab.butler.show(ctx, &mut w.butler);
         tab.cosmetics.show(ctx, &mut w.cosmetics);
         stop_auto_while_following();
@@ -366,6 +376,14 @@ mod tests {
             (
                 "Console",
                 boxed(console::ConsoleWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Spammer",
+                boxed(spammer::SpammerWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Interceptor",
+                boxed(interceptor::InterceptorWindow::default(), |w, c, o| w.show(c, o)),
             ),
             ("Butler", boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o))),
             (

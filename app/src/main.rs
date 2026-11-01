@@ -8,6 +8,7 @@
 
 mod app;
 mod backends;
+mod capture;
 mod cli;
 mod custom_event;
 mod dbus;
