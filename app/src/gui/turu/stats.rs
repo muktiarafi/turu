@@ -68,7 +68,7 @@ impl StatsWindow {
                         .corner_radius(CornerRadius::same(10))
                         .inner_margin(egui::Margin::same(8))
                         .show(ui, |ui| {
-                            ui.set_width(width - 18.0);
+                            ui.set_width((width - 18.0).max(0.0));
                             widgets::section_label(ui, label);
                             ui.label(RichText::new(value.to_string()).size(18.0).strong().color(TEXT));
                         });

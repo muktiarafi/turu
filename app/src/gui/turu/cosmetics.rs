@@ -797,7 +797,8 @@ impl CosmeticsWindow {
                 let item = set.and_then(|s| s.get(slot));
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.set_width(ui.available_width() - 60.0);
+                        // Never negative: egui panics on it, as in a narrow window.
+                        ui.set_width((ui.available_width() - 60.0).max(0.0));
                         ui.label(RichText::new(slot.label()).size(10.0).strong().color(MUTED));
                         let name = item.map_or("None", |i| i.name.as_str());
                         ui.add(egui::Label::new(RichText::new(name).size(11.0).color(TEXT)).truncate());

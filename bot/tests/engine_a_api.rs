@@ -332,19 +332,21 @@ fn hidden_tabs_slow_down_and_come_back() {
     let bot = new_bot(&game);
     options::apply(&bot).unwrap();
 
-    // VibeSkua's tabbed host: a hidden tab runs at 2 FPS in LOW quality.
+    // VibeSkua's tabbed host: a hidden tab runs at 2 FPS. Its quality stays (it isn't drawn).
     bot.state.lock().hidden_tab = true;
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
     assert_eq!(frame_rates(&game), [FlashArg::Number(2.0)]);
-    assert_eq!(qualities(&game), ["LOW"]);
+    assert!(qualities(&game).is_empty());
 
-    // Headless Mode while hidden changes nothing; shown again, the tab stays slowed by it.
+    // Headless Mode while hidden only lowers the quality; shown again, the tab stays slowed by
+    // it.
     bot.options.write().headless_mode = true;
     options::apply(&bot).unwrap();
     bot.state.lock().hidden_tab = false;
     options::apply(&bot).unwrap();
     assert_eq!(frame_rates(&game), [FlashArg::Number(2.0)]);
+    assert_eq!(qualities(&game), ["LOW"]);
 
     // Neither: the rate and quality from before.
     bot.options.write().headless_mode = false;

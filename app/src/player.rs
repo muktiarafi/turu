@@ -13,7 +13,7 @@ use ruffle_core::backend::navigator::{OwnedFuture, SocketMode};
 use ruffle_core::config::Letterbox;
 use ruffle_core::events::{GamepadButton, KeyCode};
 use ruffle_core::font::DefaultFont;
-use ruffle_core::{LoadBehavior, Player, PlayerBuilder, PlayerEvent};
+use ruffle_core::{LoadBehavior, Player, PlayerBuilder, PlayerEvent, PlayerThreadState};
 use ruffle_frontend_utils::backends::audio::CpalAudioBackend;
 use ruffle_frontend_utils::backends::navigator::{ExternalNavigatorBackend, FutureSpawner};
 use ruffle_frontend_utils::bundle::source::BundleSourceError;
@@ -27,8 +27,10 @@ use ruffle_render_wgpu::backend::WgpuRenderBackend;
 use ruffle_render_wgpu::clap::PowerPreference;
 use ruffle_render_wgpu::descriptors::Descriptors;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -112,6 +114,9 @@ struct ActivePlayer {
     /// Turu: the tab this player is the game of (when it plays AQW).
     tab: Option<crate::turu::TabId>,
     player: Arc<Mutex<Player>>,
+    /// Turu: this player's thread-local state while another player is the active one (see
+    /// `PlayerThreadState`); the active player's is the thread's, and this is left default.
+    thread_state: RefCell<PlayerThreadState>,
 
     #[cfg(target_os = "linux")]
     _gamemode_session: crate::dbus::GameModeSession,
@@ -434,13 +439,62 @@ impl ActivePlayer {
             id: player_id,
             tab,
             player,
+            thread_state: RefCell::default(),
             #[cfg(target_os = "linux")]
             _gamemode_session: crate::dbus::GameModeSession::new(gamemode_enable),
         }
     }
 }
 
+/// Turu: while alive, a player that isn't the active one has its own thread-local state.
+struct SwappedIn<'a>(&'a RefCell<PlayerThreadState>);
+
+impl<'a> SwappedIn<'a> {
+    fn new(state: &'a RefCell<PlayerThreadState>) -> Self {
+        state.borrow_mut().swap();
+        Self(state)
+    }
+}
+
+impl Drop for SwappedIn<'_> {
+    fn drop(&mut self) {
+        self.0.borrow_mut().swap();
+    }
+}
+
+/// Turu: a tab's locked player. Unless it's the active tab's, its own thread-local state is
+/// swapped in until this drops, as its code may run.
+pub struct TabPlayer<'a> {
+    player: MutexGuard<'a, Player>,
+    _swapped: Option<SwappedIn<'a>>,
+}
+
+impl Deref for TabPlayer<'_> {
+    type Target = Player;
+
+    fn deref(&self) -> &Player {
+        &self.player
+    }
+}
+
+impl DerefMut for TabPlayer<'_> {
+    fn deref_mut(&mut self) -> &mut Player {
+        &mut self.player
+    }
+}
+
 impl ActivePlayer {
+    /// Turu: locks the player, swapping its thread-local state in unless it's the active one.
+    fn lock(&self, active: bool) -> TabPlayer<'_> {
+        TabPlayer {
+            _swapped: (!active).then(|| SwappedIn::new(&self.thread_state)),
+            player: self
+                .player
+                .try_lock()
+                .expect("Player lock must be available"),
+        }
+    }
+
     /// Turu: detaches the tab's bot, which would otherwise take the closed game for a
     /// disconnect.
     fn detach_bot(&self) {
@@ -499,6 +553,8 @@ impl PlayerController {
         let player = self.new_player(opt, content_descriptor, movie_view, tab);
         if let Some(slot) = self.players.get_mut(self.active) {
             slot.detach_bot();
+            // The thread gets a new player's state; the old one's goes with it.
+            slot.thread_state.borrow_mut().swap();
             *slot = player;
         } else {
             self.players.push(player);
@@ -525,7 +581,14 @@ impl PlayerController {
         let Some(i) = self.players.iter().position(|p| p.tab == Some(tab)) else {
             return false;
         };
-        self.active = i;
+        if i != self.active {
+            // The old active player's state goes into its slot, the new one's into the thread.
+            if let Some(old) = self.players.get(self.active) {
+                old.thread_state.borrow_mut().swap();
+            }
+            self.players[i].thread_state.borrow_mut().swap();
+            self.active = i;
+        }
         true
     }
 
@@ -534,10 +597,18 @@ impl PlayerController {
         let Some(i) = self.players.iter().position(|p| p.tab == Some(tab)) else {
             return;
         };
+        let was_active = i == self.active;
+        if was_active {
+            // The thread's state is the closed player's: it goes with it.
+            self.players[i].thread_state.borrow_mut().swap();
+        }
         let player = self.players.remove(i);
         player.detach_bot();
         if self.active > i || self.active >= self.players.len() {
             self.active = self.active.saturating_sub(1);
+        }
+        if was_active && let Some(new) = self.players.get(self.active) {
+            new.thread_state.borrow_mut().swap();
         }
     }
 
@@ -546,24 +617,17 @@ impl PlayerController {
     }
 
     /// Turu: every player (to tick them all), the active one first.
-    pub fn all(&self) -> impl Iterator<Item = (bool, MutexGuard<'_, Player>)> {
+    /// Use one at a time: each other player's state is swapped in while its guard lives.
+    pub fn all(&self) -> impl Iterator<Item = (bool, TabPlayer<'_>)> {
         let active = self.active;
         let order = std::iter::once(active).chain((0..self.players.len()).filter(move |i| *i != active));
-        order.filter_map(move |i| {
-            let player = self.players.get(i)?;
-            Some((
-                i == active,
-                player.player.try_lock().expect("Player lock must be available"),
-            ))
-        })
+        order.filter_map(move |i| Some((i == active, self.players.get(i)?.lock(i == active))))
     }
 
     /// Turu: the tab's player.
-    pub fn get_tab(&self, tab: crate::turu::TabId) -> Option<MutexGuard<'_, Player>> {
-        self.players
-            .iter()
-            .find(|p| p.tab == Some(tab))
-            .map(|p| p.player.try_lock().expect("Player lock must be available"))
+    pub fn get_tab(&self, tab: crate::turu::TabId) -> Option<TabPlayer<'_>> {
+        let i = self.players.iter().position(|p| p.tab == Some(tab))?;
+        Some(self.players[i].lock(i == self.active))
     }
 
     fn new_player(
@@ -589,6 +653,10 @@ impl PlayerController {
 
     /// Closes every player.
     pub fn destroy(&mut self) {
+        // The thread's state is the active player's: it goes with it.
+        if let Some(active) = self.players.get(self.active) {
+            active.thread_state.borrow_mut().swap();
+        }
         for player in self.players.drain(..) {
             player.detach_bot();
         }
@@ -622,7 +690,11 @@ impl PlayerController {
         // Only run the task if it matches our current player;
         // otherwise it is stale, and should be cancelled (which
         // happens implicitly on drop).
-        if self.players.iter().any(|player| *task.0.metadata() == player.id) {
+        let id = *task.0.metadata();
+        if let Some(i) = self.players.iter().position(|player| id == player.id) {
+            // Turu: another tab's future runs with that player's thread-local state.
+            let _swapped =
+                (i != self.active).then(|| SwappedIn::new(&self.players[i].thread_state));
             task.0.run();
         }
     }

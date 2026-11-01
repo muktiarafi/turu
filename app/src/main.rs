@@ -161,10 +161,24 @@ fn panic_hook(info: &PanicHookInfo) {
     let message = info.payload_as_str().unwrap_or("panic occurred");
 
     // AQW build: keep the crash and where it happened in ruffle.log.
-    tracing::error!(
-        "fatal error: {info}\n{}",
-        std::backtrace::Backtrace::force_capture()
-    );
+    let backtrace = std::backtrace::Backtrace::force_capture();
+    tracing::error!("fatal error: {info}\n{backtrace}");
+    // Turu: and in a file of its own, written now: the log is written on another thread, which
+    // a release build's abort may not let finish.
+    let crash_file = mugetsu::log_folder().map(|folder| {
+        let thread = std::thread::current();
+        let report = format!(
+            "Turu {APP_VERSION}\n{}\nthread '{}': {info}\n\n{backtrace}\n",
+            chrono::Local::now().to_rfc3339(),
+            thread.name().unwrap_or("<unnamed>"),
+        );
+        let path = folder.join(format!(
+            "crash-{}.log",
+            chrono::Local::now().format("%F_%H-%M-%S")
+        ));
+        let _ = std::fs::write(&path, report);
+        path
+    });
 
     // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
     // its crashes aren't theirs to triage). Say plainly what happened instead.
@@ -184,11 +198,12 @@ fn panic_hook(info: &PanicHookInfo) {
         in AQW's options."
             .to_string()
     } else {
-        format!(
-            "Mugetsu ran into an error and has to close.\n\n{message}\n\n\
-            Details were saved to %LOCALAPPDATA%\\ruffle\\log\\ruffle.log (it is replaced \
-            the next time Mugetsu starts)."
-        )
+        // Turu: the crash file's real path (the log folder isn't the same on every system).
+        let saved = crash_file.map_or_else(
+            || "Details were saved to ruffle.log (it is replaced the next time Turu starts).".to_string(),
+            |path| format!("Details were saved to {}.", path.display()),
+        );
+        format!("Turu ran into an error and has to close.\n\n{message}\n\n{saved}")
     };
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
@@ -340,6 +355,12 @@ fn main() -> Result<(), Error> {
     }
     if let Err(err) = migrate_logs(&preferences, logs_path) {
         tracing::warn!("Failed to migrate logs: {}", err);
+    }
+
+    // Turu: keep the last run's log as ruffle.prev.log, so what led to a crash survives the
+    // restart after it.
+    if log_path.exists() {
+        let _ = std::fs::rename(&log_path, log_path.with_extension("prev.log"));
     }
 
     // [NA] `_guard` cannot be `_` or it'll immediately drop

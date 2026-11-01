@@ -62,10 +62,16 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
   the players run on the event loop thread and are ticked every loop; only the active one is
-  drawn and heard (the others are muted). Hidden tabs that are in game run at 2 FPS in LOW
-  quality, as VibeSkua's tabbed host throttles them (`WM_SKUA_THROTTLE`), and get their rate
-  and quality back when shown (`state.hidden_tab`, applied with Headless Mode in
-  `api/options.rs`; tabs at the login screen keep full speed, so logins aren't slowed). Flash calls name their tab, and `turu::bot()` is the
+  drawn and heard (the others are muted). Hidden tabs that are in game run at 2 FPS, as
+  VibeSkua's tabbed host throttles them (`WM_SKUA_THROTTLE`), and get their rate back when
+  shown (`state.hidden_tab`, applied with Headless Mode in `api/options.rs`; tabs at the login
+  screen keep full speed, so logins aren't slowed). Unlike VibeSkua they keep their quality: an
+  undrawn tab gains nothing from LOW, and going back to HIGH re-tessellated every shape on each
+  switch (only Headless Mode sets LOW). Each player keeps its own copy of Ruffle's thread-local
+  state (`ruffle_core::PlayerThreadState`: pending shape tessellations, replay's change count,
+  frame interpolation's frame), swapped in by `PlayerController` while a hidden tab's code runs
+  (ticks, Flash calls, futures), so hidden tabs neither spoil the shown tab's replays and
+  interpolation nor leave tessellations only their renderer can finish. Flash calls name their tab, and `turu::bot()` is the
   active tab's bot, so the UI and `spawn_action` act on the tab you look at; each tab keeps its
   own tool windows, Auto Attack and nav bar state (Accounts and Army Control are shared). The
   tab strip shows above the nav bar once there are two tabs: the name (character, else login),
@@ -344,6 +350,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   lock, freeze each other until the call times out; meanwhile no game runs and the server
   drops every tab (Butler's broadcast did this; `butler_state_reads_never_wait_for_a_game_call`
   tests for it). Read the game first, then lock.
+- **Crashes:** a panic is written to `crash-<date>.log` in the log folder (Ruffle's cache folder's
+  `log/`, e.g. `~/Library/Caches/ruffle/log` on macOS; Mugetsu's "Open Log Folder"), at once, as
+  the log itself is written on another thread that an abort may cut off. `ruffle.log` is made anew
+  at each start; the previous run's is kept as `ruffle.prev.log`.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/` and `app/` (the `ruffle/` crates are path dependencies outside the

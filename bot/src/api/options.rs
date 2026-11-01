@@ -22,8 +22,10 @@ pub struct Applied {
     show_fps: Option<bool>,
     set_fps: Option<i32>,
     headless: Option<bool>,
-    /// 2 FPS and LOW quality: Headless Mode, or a hidden tab.
+    /// 2 FPS: Headless Mode, or a hidden tab.
     slowed: Option<bool>,
+    /// LOW quality: Headless Mode only.
+    low_quality: Option<bool>,
     walk_speed: Option<i32>,
     custom_name: Option<String>,
     custom_guild: Option<String>,
@@ -105,35 +107,47 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         bot.flash.set("ui.mcFPS.visible", o.show_fps)?;
     }
     // VibeSkua `OnHeadlessModeChanged` and the tabbed host's `WM_SKUA_THROTTLE` (a hidden tab,
-    // unless Headless Mode already slows it): 2 FPS and LOW quality. Leaving both restores the
-    // rate and quality the game had (VibeSkua's Headless Mode: Set FPS), unless Set FPS forces
-    // a rate.
+    // unless Headless Mode already slows it): 2 FPS. Leaving both restores the rate the game
+    // had (VibeSkua's Headless Mode: Set FPS), unless Set FPS forces a rate.
     let headless_changed = changed(&mut a.headless, o.headless_mode);
     let slowed = o.headless_mode || bot.state.lock().hidden_tab;
     if changed(&mut a.slowed, slowed) {
         if slowed {
             if bot.state.lock().before_slowed.is_none() {
                 let fps = bot.flash.get::<f64>("stage.frameRate")?.round() as i32;
-                let quality = bot.flash.get_or::<String>("stage.quality", "HIGH".into())?;
-                bot.state.lock().before_slowed = Some((fps, quality));
+                bot.state.lock().before_slowed = Some(fps);
             }
             bot.flash.set("stage.frameRate", 2)?;
-            bot.flash.set("stage.quality", "LOW")?;
         } else {
-            let before = bot.state.lock().before_slowed.take();
-            let fps = match &before {
+            let fps = match bot.state.lock().before_slowed.take() {
                 _ if o.set_fps > 0 => o.set_fps,
-                Some((fps, _)) if *fps > 2 => *fps,
+                Some(fps) if fps > 2 => fps,
                 _ => crate::settings::GAME_FRAME_RATE,
             };
-            let quality = before
-                .map(|(_, q)| q)
-                .filter(|q| !q.is_empty() && !q.eq_ignore_ascii_case("low"))
-                .unwrap_or_else(|| "HIGH".into());
             bot.flash.set("stage.frameRate", fps)?;
-            bot.flash.set("stage.quality", quality.as_str())?;
         }
         a.set_fps = Some(o.set_fps);
+    }
+    // Headless Mode also drops to LOW quality, as VibeSkua's does. A hidden tab doesn't (unlike
+    // VibeSkua's tabbed host, whose hidden clients still draw): Turu doesn't draw it, so LOW
+    // would save nothing, and HIGH again re-tessellates every shape, a hitch on every switch.
+    if changed(&mut a.low_quality, o.headless_mode) {
+        if o.headless_mode {
+            if bot.state.lock().before_low_quality.is_none() {
+                let quality = bot.flash.get_or::<String>("stage.quality", "HIGH".into())?;
+                bot.state.lock().before_low_quality = Some(quality);
+            }
+            bot.flash.set("stage.quality", "LOW")?;
+        } else {
+            let quality = bot
+                .state
+                .lock()
+                .before_low_quality
+                .take()
+                .filter(|q| !q.is_empty() && !q.eq_ignore_ascii_case("low"))
+                .unwrap_or_else(|| "HIGH".into());
+            bot.flash.set("stage.quality", quality.as_str())?;
+        }
     }
     if headless_changed {
         let volume = if o.headless_mode { 0 } else { 1 };

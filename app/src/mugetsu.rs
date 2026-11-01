@@ -339,6 +339,11 @@ pub fn set_log_folder(path: PathBuf) {
     let _ = LOG_FOLDER.set(path);
 }
 
+/// The folder holding ruffle.log (and Turu's crash files), once known.
+pub fn log_folder() -> Option<&'static std::path::Path> {
+    LOG_FOLDER.get().map(PathBuf::as_path)
+}
+
 /// Opens the folder holding ruffle.log in the file manager.
 pub fn open_log_folder() {
     let Some(folder) = LOG_FOLDER.get() else {
