@@ -50,7 +50,7 @@ top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Game, Application, CoreBots, Current Drops, Skills, Stats, Runtime, Logs, Console, Logger | implemented |
+| Script Loader, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Logger | implemented |
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | Auto Attack and Stop Automation implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack uses that class and mode, or the equipped class in Base when either is unset; it turns Infinite Range on, sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster. Auto Hunt is disabled. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -246,12 +246,49 @@ runs.
   egui modals. Not ported: adding a `[Current]` class with no skill set to the skill file
   (`EnsureSkillEntryExists`). Unlike VibeSkua, the drop-downs list your classes and gear as soon
   as the window knows who you are, even without a saved file.
+* **Loader** (`loader.rs`, 720x520, VibeSkua `LoaderView`, one per tab): Shop / Quests chips, the
+  IDs box ("IDs, e.g. 2566 or 101, 102"; Load and Enter are enabled for digits, commas and
+  spaces only; Shop loads a single ID with `shops.load`, Quests shows them with `quests.load`).
+  QUEST CACHE with its count and "Search by name" (name or ID); the cached quests (name, ID on
+  the right), where a click picks or unpicks a row and Shift+click picks a range. The card below:
+  "Update cache" with + Add missing (loads after the last cached ID) and Rebuild all (from 1,
+  replacing the cache), or while it runs the progress ("Loading Quests 30-59...") and Cancel;
+  then the range box ("Range, e.g. 2566, 2599") and Update range. A bad range, a failure, or
+  updating while logged out (which only reads the file, as VibeSkua) shows a yellow note there
+  for a few seconds. Footer: "None selected" / "N selected", Copy ▾ (Copy IDs "1,2", Copy names,
+  Copy as `// Name | ID` lines), Fake complete (the row clicked last: `quests.updateQuest`, a
+  client-side `updateQuest` packet) and Load selected. The engine is `turu_bot::quest_cache`:
+  `QuestData.json` in the data folder, VibeSkua's format field for field (a VibeSkua file can be
+  copied over; Turu ships none), read when the window opens (IDs and names only) and updated
+  on a `spawn_action` thread: 29 quests a request (`world.questTree` cleared, `showQuests`, up to
+  10 s for them, 1.5 s between requests), stopping at the first request that loads nothing;
+  quests loaded again replace their cached copy; a cancelled Rebuild all keeps what it read plus
+  the cached quests after it. Unlike VibeSkua, the list keeps showing while the cache updates.
+* **Grabber** (`grabber.rs`, 800x560, VibeSkua `GrabberView`, one per tab, each list keeping its
+  rows, search and selection): a 164 px sidebar of boxed entries under SHOPS (Shop Items, Shop
+  IDs), QUESTS (Quests, GetMap Item IDs: greyed, VibeSkua decompiles the map SWF with FFDec),
+  ITEMS (Inventory, House Inventory, Temp Inventory, Bank Items) and MONSTERS (Cell Monsters,
+  Map Monsters). Each list: ⟳ Grab (reads it through `spawn_action`), Search (the row's summary
+  contains it), Multi-select (not for Shop IDs and Temp Inventory); ITEMS with its count, the
+  status ("Working...", "Finished.", the action's progress) and Cancel while busy, the selected
+  count, Unselect, Copy (VibeSkua's one-line summaries under "=== Title (n items) ===", of the
+  selection or of every shown row) and Export (every field, nested lists expanded, to a .txt
+  through the save dialog); the rows (ID column, VibeSkua's summary such as "Blade | Cost: 25,000
+  Gold [Member]"); DETAILS, the picked row's fields as scripts see them (`turu.ts` names; VibeSkua
+  shows C# property names). The actions, right-aligned: Shop Items Buy (one item asks the
+  quantity; AC items that cost AC are refused; not enough gold shows VibeSkua's box), Shop IDs
+  Load Shop (the shops loaded in this client, from their `loadShop` packets; a shop loaded again
+  replaces its row, VibeSkua lists it twice), Quests Open / Accept / Register / Fake Complete
+  (exactly one) / Unregister All, Inventory Equip / Sell / Sell All (one item, not equipped; Sell
+  asks the quantity) / To Bank, House To Bank, Bank To Inventory, Cell Monsters Kill, Map
+  Monsters Kill / Teleport To. Kill is disabled while a script, a Console snippet or Auto Attack
+  runs. The readers, texts, checks and actions are `turu_bot::grabber`.
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
 
 Not built at all (greyed in the menus): Scheduler, Application Themes,
-HotKeys, Loadouts Manager, Fast Travel, Loader, Grabber, Junk Items, Spammer,
-Interceptor, Plugins, Auto Hunt, Notify Drop.
+HotKeys, Loadouts Manager, Fast Travel, Junk Items, Spammer,
+Interceptor, Plugins, Auto Hunt, Notify Drop, Grabber's GetMap Item IDs.
 
 ## Adding a window
 

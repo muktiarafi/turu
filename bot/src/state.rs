@@ -33,6 +33,9 @@ pub struct GameState {
     pub stats: Stats,
     /// Shop data from the last `loadShop` packet.
     pub shop_loaded_at: Option<Instant>,
+    /// The shops loaded in this client, by `loadShop` packet (VibeSkua `Shops.LoadedCache`;
+    /// Grabber > Shop IDs). A shop loaded again replaces its entry.
+    pub loaded_shops: Vec<crate::models::ShopInfo>,
     /// Bank was loaded (`loadBank` packet) since login.
     pub bank_loaded: bool,
     /// The user clicked Logout / Change server (don't auto-relogin).

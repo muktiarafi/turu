@@ -8,7 +8,7 @@
 
 use crate::Bot;
 use crate::events::{BotEvent, Work};
-use crate::models::ItemBase;
+use crate::models::{ItemBase, ShopInfo};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
@@ -134,7 +134,15 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
             bot.events.emit(BotEvent::BankLoaded);
         }
         "loadShop" => {
-            bot.state.lock().shop_loaded_at = Some(Instant::now());
+            let shop = data.get("shopinfo").and_then(ShopInfo::from_packet);
+            {
+                let mut state = bot.state.lock();
+                state.shop_loaded_at = Some(Instant::now());
+                if let Some(shop) = shop {
+                    state.loaded_shops.retain(|s| s.id != shop.id);
+                    state.loaded_shops.push(shop);
+                }
+            }
             bot.events.emit(BotEvent::ShopLoaded);
         }
         _ => {}

@@ -17,6 +17,8 @@ mod current_drops;
 mod files;
 mod game_options;
 mod gear;
+mod grabber;
+mod loader;
 mod logs;
 mod message_box;
 mod nav_bar;
@@ -52,6 +54,8 @@ pub struct Windows {
     pub console: bool,
     pub packet_logger: bool,
     pub current_drops: bool,
+    pub loader: bool,
+    pub grabber: bool,
     pub accounts: bool,
     pub army: bool,
     pub butler: bool,
@@ -132,6 +136,8 @@ struct TabUi {
     console: console::ConsoleWindow,
     packet_logger: packet_logger::PacketLogger,
     current_drops: current_drops::CurrentDrops,
+    loader: loader::LoaderWindow,
+    grabber: grabber::GrabberWindow,
     butler: butler::ButlerWindow,
     cosmetics: cosmetics::CosmeticsWindow,
 }
@@ -209,6 +215,9 @@ impl TuruUi {
         tab.application_options.show(ctx, &mut w.application_options);
         tab.core_bots.show(ctx, &mut w.core_bots);
         tab.current_drops.show(ctx, &mut w.current_drops);
+        tab.loader.show(ctx, &mut w.loader);
+        tab.grabber.show(ctx, &mut w.grabber);
+        tab.grabber.save_export(&picker, ctx);
         tab.stats.show(ctx, &mut w.stats);
         tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
@@ -300,6 +309,8 @@ mod tests {
                 "Current Drops",
                 boxed(current_drops::CurrentDrops::default(), |w, c, o| w.show(c, o)),
             ),
+            ("Loader", boxed(loader::LoaderWindow::default(), |w, c, o| w.show(c, o))),
+            ("Grabber", boxed(grabber::GrabberWindow::default(), |w, c, o| w.show(c, o))),
             ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
             (
                 "Runtime",

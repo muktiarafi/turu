@@ -172,8 +172,14 @@ impl NavBar {
             }
         });
         ui.menu_button("Tools & Helpers", |ui| {
-            for name in ["Loadouts Manager", "Fast Travel", "Loader", "Grabber"] {
+            for name in ["Loadouts Manager", "Fast Travel"] {
                 item(ui, name, false);
+            }
+            if item(ui, "Loader", true) {
+                windows.loader = true;
+            }
+            if item(ui, "Grabber", true) {
+                windows.grabber = true;
             }
             if item(ui, "Current Drops", true) {
                 windows.current_drops = true;

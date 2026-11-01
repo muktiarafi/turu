@@ -296,3 +296,113 @@ pub fn server_combo(ui: &mut Ui, id: &str, bot: &std::sync::Arc<turu_bot::Bot>, 
         });
     picked
 }
+
+/// A list well `height` tall and as wide as `ui` (inset colour, rounded edge).
+pub fn list_well(ui: &mut Ui, height: f32, add_contents: impl FnOnce(&mut Ui)) {
+    ui.allocate_ui(vec2(ui.available_width(), height), |ui| {
+        Frame::new()
+            .fill(INSET)
+            .stroke(Stroke::new(1.0, EDGE))
+            .corner_radius(CornerRadius::same(SMALL_RADIUS))
+            .inner_margin(Margin::same(4))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                add_contents(ui);
+            });
+    });
+}
+
+/// A clickable list row `height` tall: hover fill, and the track fill with an accent bar when
+/// selected. `add_contents` lays out left to right, centred.
+pub fn list_row(ui: &mut Ui, selected: bool, height: f32, add_contents: impl FnOnce(&mut Ui)) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    let fill = if selected {
+        TRACK
+    } else if response.hovered() {
+        HOVER
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
+    if selected {
+        let bar = egui::Rect::from_min_size(rect.min + vec2(0.0, 4.0), vec2(3.0, (height - 8.0).max(2.0)));
+        ui.painter().rect_filled(bar, CornerRadius::same(2), ACCENT);
+    }
+    let builder = egui::UiBuilder::new()
+        .max_rect(rect.shrink2(vec2(8.0, 0.0)))
+        .layout(Layout::left_to_right(Align::Center));
+    add_contents(&mut ui.new_child(builder));
+    response
+}
+
+/// The picked rows of a list (VibeSkua's `ListBox` selection), as indices into the full list:
+/// a click toggles a row in multiple mode or picks only it, Shift+click picks the shown rows
+/// from the last clicked one.
+#[derive(Default)]
+pub struct Selection {
+    picked: std::collections::BTreeSet<usize>,
+    anchor: Option<usize>,
+}
+
+impl Selection {
+    pub fn clear(&mut self) {
+        self.picked.clear();
+        self.anchor = None;
+    }
+
+    pub fn contains(&self, index: usize) -> bool {
+        self.picked.contains(&index)
+    }
+
+    pub fn len(&self) -> usize {
+        self.picked.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.picked.is_empty()
+    }
+
+    /// The picked indices, in list order.
+    pub fn picked(&self) -> Vec<usize> {
+        self.picked.iter().copied().collect()
+    }
+
+    /// The row clicked last, when it is still picked (VibeSkua's `SelectedItem`).
+    pub fn current(&self) -> Option<usize> {
+        self.anchor.filter(|a| self.picked.contains(a))
+    }
+
+    /// Keeps only one row (Multi-select turned off).
+    pub fn keep_one(&mut self) {
+        if self.picked.len() > 1 {
+            let keep = self.current().or_else(|| self.picked.first().copied());
+            self.picked.retain(|i| Some(*i) == keep);
+        }
+    }
+
+    /// A click on `index`; `shown` are the indices the list shows, in order.
+    pub fn click(&mut self, index: usize, shown: &[usize], multiple: bool, shift: bool) {
+        let range = (multiple && shift)
+            .then(|| {
+                let from = shown.iter().position(|i| Some(*i) == self.anchor)?;
+                let to = shown.iter().position(|i| *i == index)?;
+                Some(shown[from.min(to)..=from.max(to)].to_vec())
+            })
+            .flatten();
+        match range {
+            Some(rows) => self.picked.extend(rows),
+            None if multiple => {
+                if !self.picked.remove(&index) {
+                    self.picked.insert(index);
+                }
+            }
+            None => {
+                self.picked.clear();
+                self.picked.insert(index);
+            }
+        }
+        if !shift || self.anchor.is_none() {
+            self.anchor = Some(index);
+        }
+    }
+}

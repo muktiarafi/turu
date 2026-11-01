@@ -554,6 +554,37 @@ pub struct ShopItem {
     pub token_name: String,
 }
 
+/// A shop loaded this session (VibeSkua `ShopInfo`, kept in `Shops.LoadedCache`), from its
+/// `loadShop` packet.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShopInfo {
+    pub id: i64,
+    pub name: String,
+    pub items: Vec<ShopItem>,
+}
+
+impl ShopInfo {
+    /// The packet's `shopinfo` (`ShopID`, `sName`, `items`); `None` without a shop ID.
+    pub fn from_packet(shopinfo: &serde_json::Value) -> Option<Self> {
+        let id = lenient_i64(shopinfo.get("ShopID")?.clone()).unwrap_or(0);
+        if id == 0 {
+            return None;
+        }
+        let name = shopinfo
+            .get("sName")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        let items = values_of(shopinfo.get("items").unwrap_or(&serde_json::Value::Null))
+            .filter(|v| v.is_object())
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+        Some(Self { id, name, items })
+    }
+}
+
 impl ShopItem {
     /// The game-shaped JSON of the item (for `inventoryHasSpaceFor`).
     pub fn game_json(&self) -> serde_json::Value {

@@ -190,6 +190,11 @@ impl Paths {
         self.root.join("settings.json")
     }
 
+    /// Tools > Loader's quest cache (VibeSkua `QuestData.json`, `quest_cache`).
+    pub fn quest_data_file(&self) -> PathBuf {
+        self.root.join(crate::quest_cache::FILE_NAME)
+    }
+
     /// Butler's sync files, one per account (`butler::sync`).
     pub fn butler_dir(&self) -> PathBuf {
         self.root.join("butler")
