@@ -974,6 +974,39 @@ pub fn toggle_follower(bot: &Bot, username: &str) -> Result<String, String> {
     Ok(message)
 }
 
+/// Summons one online account, with the checks the window's Summon button makes (the control
+/// API's `/butler/summon`); summoning one already summoned does nothing.
+pub fn summon(bot: &Bot, username: &str) -> Result<String, String> {
+    let butler = &bot.butler;
+    if butler.is_follower(username) {
+        return Ok(format!("{username} is already summoned."));
+    }
+    if !butler.enabled() {
+        return Err("Butler is disabled. Turn it on first.".into());
+    }
+    let Some(account) = butler
+        .roster()
+        .into_iter()
+        .find(|d| d.username.eq_ignore_ascii_case(username))
+    else {
+        return Err(format!("{username} isn't online with Butler."));
+    };
+    if butler.following().is_none()
+        && let Some(why) = unavailable(bot, &account)
+    {
+        return Err(format!("{} {why}.", account.username));
+    }
+    toggle_follower(bot, &account.username)
+}
+
+/// Releases one summoned account (the control API's `/butler/release`).
+pub fn release(bot: &Bot, username: &str) -> Result<String, String> {
+    if !bot.butler.is_follower(username) {
+        return Err(format!("{username} isn't summoned."));
+    }
+    toggle_follower(bot, username)
+}
+
 /// Why an account can't be summoned now (VibeSkua's `Summon all` filter, which greys the
 /// per-row Summon button out too); `None` when it can.
 pub fn unavailable(bot: &Bot, account: &SyncData) -> Option<&'static str> {

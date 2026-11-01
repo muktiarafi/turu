@@ -17,7 +17,7 @@ steer it with:
 * the **log** on stdout (journald under systemd);
 * the **web monitor** (`--monitor`): the page with the bot's card, logs, history and commands;
 * **reporting** to the monitor on another machine (`--report-to`), e.g. your desktop's;
-* the **control API** (`--api`): HTTP routes for status, logs, scripts and the playlist;
+* the **control API** (`--api`): HTTP routes for status, logs, scripts, the playlist and Butler;
 * Discord **webhooks** (Options > Application), if you set them up.
 
 At the login screen it takes about a quarter of the CPU and memory of a client with a window.
@@ -62,8 +62,9 @@ The log shows the download, the login (`Logging in on Twilly.`) and then the scr
 `RUST_LOG=warn,turu=debug` shows more.
 
 Everything Turu keeps (scripts, options, tokens, keys) is in its data folder,
-`~/.local/share/Turu` on Linux. `TURU_DATA_DIR=/some/dir` uses another one: give each account
-its own (see "Several accounts").
+`~/.local/share/Turu` on Linux. `TURU_DATA_DIR=/some/dir` uses another one. Several clients
+can share one data folder, and accounts that play together (Butler, army scripts) must: see
+"Several accounts".
 
 ## Scripts
 
@@ -93,6 +94,7 @@ the desktop's data folder to the server's:
 | `options.json` | Options > Game (the bot options). |
 | `UserAdvancedSkills.json` | Your skill sets. |
 | `settings.json` | Options > Application (webhooks, relogin delay, monitor settings). |
+| `butler.json` | Butler's options, and each account's Obey Summons and class type. |
 
 CoreBots scripts turn Auto Relogin on themselves; for others set `autoRelogin` in
 `options.json`, or send it with the control API's `POST /options` once the script runs.
@@ -166,11 +168,11 @@ After=network-online.target
 [Service]
 User=turu
 EnvironmentFile=/etc/turu/%i.env
-# Makes /var/lib/turu/<account>, owned by the turu user: the account's data folder.
-StateDirectory=turu/%i
-Environment=TURU_DATA_DIR=/var/lib/turu/%i
+# One data folder for every account (see "Several accounts"), owned by the turu user.
+StateDirectory=turu
+Environment=TURU_DATA_DIR=/var/lib/turu
 ExecStart=/opt/turu/turu --headless --user ${TURU_USER} --server ${TURU_SERVER} \
-    --run-playlist /var/lib/turu/%i/playlist.json --api=${TURU_API}
+    --run-playlist /var/lib/turu/playlists/%i.json --api=${TURU_API} $TURU_ARGS
 Restart=on-failure
 RestartSec=30
 
@@ -187,6 +189,8 @@ TURU_PASSWORD=your password
 TURU_SERVER=Twilly
 TURU_API=127.0.0.1:8791
 TURU_API_TOKEN=a long random string, at least 16 characters
+# Anything else for this account, e.g. --monitor=127.0.0.1:8790 or --report-to ...
+TURU_ARGS=
 ```
 
 ```bash
@@ -206,26 +210,71 @@ Notes:
 
 ## Several accounts
 
-Run one client per account, each with its **own data folder** (`TURU_DATA_DIR`) and its own
-ports: two clients can't share an API or monitor port. With the unit above, give each account
-its own env file and `TURU_API` port (`8791`, `8792`, ...) and start `turu@<name>`.
+Run one client per account, all with the **same data folder** and each with its **own ports**
+(two clients can't share an API or monitor port). With the unit above, give each account its
+own env file with its own `TURU_API` port (`8791`, `8792`, ...) and start `turu@<name>` for
+each.
 
-Serve the web monitor from one of them (`--monitor`) and have the others report to it, so one
-page shows them all:
+Why one folder: that's how clients that play together find each other, as the clients Army >
+Accounts launches do on a desktop.
+
+* **Butler** writes each account's state to `butler/<username>` and reads the others' there.
+* **Army scripts** (CoreArmyLite) sync through `army/<name>.log`, and their private room
+  (`bot.army.roomNumber()`) is a hash of the data folder's path: clients with different folders
+  wait in different rooms.
+* Scripts, script options, playlists and the keys are kept once for all of them. Per-account
+  files are named after the account (`options/CBO_Storage(<username>).txt`,
+  `gear/<username>.json`); Options > Game (`options.json`) is shared, as in Army.
+
+Start the clients a few seconds apart (e.g. `sleep 10` between the `systemctl start`s): each
+updates the scripts it names before the game starts, and two doing it at the same moment
+write the same files.
+
+Serve the web monitor from one of them and have the others report to it, so one page shows them
+all. In the first account's env file:
 
 ```bash
-# the first account: the monitor
---monitor=127.0.0.1:8790
-# the others: report to it, with the first one's push key
-TURU_MONITOR_PUSH_KEY=$(sudo cat /var/lib/turu/main/monitor-push-key)
---report-to http://127.0.0.1:8790
+TURU_ARGS=--monitor=127.0.0.1:8790
 ```
 
-(Army > Accounts, which launches and steers several clients, needs a window: on a server, use
-one client per account as above.)
+and, once it has run (it makes the key), in the others':
+
+```bash
+TURU_ARGS=--report-to http://127.0.0.1:8790
+TURU_MONITOR_PUSH_KEY=<the contents of /var/lib/turu/monitor-push-key>
+```
+
+Leave Enable Web Monitor off in `settings.json`: it's shared, so every client would try to
+serve the monitor on the same port.
 
 Ruffle's own log file (in `~/.cache/ruffle/log`) is one per user, so clients started as the
 same user overwrite each other's; use journald for each client's log.
+
+## Army and Butler
+
+**Army > Accounts** (launching accounts from a list) and **Army Control** need a window. On a
+desktop, Army > Accounts can launch its accounts "Without a window"; on a server, the systemd
+unit above is the launcher, and the web monitor gives most of Army Control: Start / Stop /
+Relog / Join map / House on one bot or the selected ones.
+
+**Army scripts** (`scripts/army`, CoreArmyLite) run one per account, as on a desktop: give each
+account the army script (`--run-script army/...`) in the shared data folder, set its options
+(CoreArmyLite's player list) on a desktop and copy them. Scripts that log in other accounts
+with `bot.army.login` need the passwords in the system keychain (Army > Accounts saves them
+there): on Linux that's the Secret Service, which a server usually doesn't run (no desktop
+session, no keyring daemon), so those scripts fail there.
+
+**Butler** works between clients that share the data folder (so on one machine: a master on
+your desktop can't summon a follower on the server):
+
+* A **follower** obeys a summon without a window: it follows, fights, fakes quests and parks
+  as with one. When a script starts while it follows, there's nobody to ask whether to keep
+  following: it stays suspended and follows again when the script stops.
+* A **master** summons and releases with the control API (below), or from a desktop client
+  that shares the folder.
+* The options (Obey Summons and the class type per account, passive and leech modes, quest
+  bypasses, AntiLag, parking) are in `butler.json`: set them in a desktop's Plugins > Butler
+  and copy the file. Turn Obey Summons off for the account you play by hand.
 
 ## Watching and steering it
 
@@ -301,6 +350,22 @@ curl -H "$T" -X POST localhost:8791/scheduler/stop
 `/scheduler/add` and `/scheduler/load` find scripts in the scripts folder but don't download
 them; `--run-script` and `--run-playlist` do.
 
+Butler, on the master's API (here on port 8791) or a follower's:
+
+```bash
+curl -H "$T" localhost:8791/butler                       # online accounts, who follows whom
+curl -H "$T" -X POST "localhost:8791/butler/summon?user=MyAlt"
+curl -H "$T" -X POST localhost:8791/butler/summon-all     # every available account
+curl -H "$T" -X POST "localhost:8791/butler/release?user=MyAlt"
+curl -H "$T" -X POST localhost:8791/butler/release-all
+curl -H "$T" -X POST "localhost:8792/butler/follow?master=MyMain"   # on the follower
+curl -H "$T" -X POST localhost:8792/butler/stop
+```
+
+`GET /butler` lists each online account with `unavailable`, the reason it can't be summoned
+now (a script runs, it follows someone else, it's on another server, ...). A refused command
+answers 409 with Butler's message.
+
 ### Webhooks
 
 Options > Application's Discord webhooks (script start, stop and crash, relogins, listed drops,
@@ -315,6 +380,9 @@ Set them up on a desktop and copy `settings.json` to the server's data folder.
 | `No script at ...` | The path: relative paths are looked up in the scripts folder, then the working folder. |
 | `Script ...: isn't in the scripts folder` | The script isn't in Search Scripts' index and isn't on disk (or there was no network). |
 | `Loaded 0 script(s) from the playlist` | None of its paths were found: check them against the scripts folder. |
+| Butler doesn't list the other accounts | They don't share the data folder, aren't logged in, or Butler is off in `butler.json`. |
+| Army clients wait in different rooms | They don't share the data folder (the room is a hash of its path). |
+| `Web monitor: ...` address in use | `settings.json` has Enable Web Monitor on: every client tries to serve it. |
 | `--user without --password` | `TURU_PASSWORD` isn't set in the environment Turu runs in. |
 | `Login failed` / `Couldn't log in.` | The account, the password, or the server name (`--server`). |
 | `Control API: ...` | The port is taken (another client?) or the token is shorter than 16 characters. |

@@ -30,6 +30,10 @@
 //! | `POST /scheduler/load[?path=]` | Replace the playlist: VibeSkua's playlist JSON in the body, or the file at `path`. |
 //! | `POST /scheduler/save?path=` | Save the playlist to a file. |
 //! | `POST /scheduler/start`, `/scheduler/stop` | Start queue, Stop queue. |
+//! | `GET /butler` | Butler: whether it's on, this account, whom it follows and summons, the suspend question, and the other online accounts (each with why it can't be summoned now). |
+//! | `POST /butler/summon?user=`, `/butler/release?user=` | Summon or release one account (`user` must be online with Butler to summon). |
+//! | `POST /butler/summon-all`, `/butler/release-all` | Summon every available account; release them all. |
+//! | `POST /butler/follow?master=`, `/butler/stop` | Follow an account from this client; stop following (declining a summon). |
 //!
 //! `/equip` and `/bank/load` answer 409 while a script runs, unless `stop=1`: then the script
 //! is stopped first and stays stopped. `/auto/attack/start` answers 409 while a script, a
@@ -39,13 +43,16 @@
 //! Script: with the playlist running, the next entry starts; `/scheduler/stop` stops the
 //! playlist.
 //!
+//! The Butler routes answer 409 when Butler refuses (it's off, this account follows someone, a
+//! script runs, ...), with its message.
+//!
 //! The Army window sends these to the clients it launched (`crate::army`), and to its own
 //! client through [`local`].
 
 use crate::api::{map, player, send, servers};
 use crate::auto::{self, AutoMode};
 use crate::log::LogKind;
-use crate::{Bot, gear};
+use crate::{Bot, butler, gear};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
@@ -407,13 +414,73 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             bot.scheduler.stop(bot);
             ok(scheduler(bot))
         }
+        ("/butler", false) => ok(butler_state(bot)),
+        ("/butler/summon", true) | ("/butler/release", true) => {
+            let Some(user) = query("user") else {
+                return error(400, "user is missing");
+            };
+            let result = if url.path() == "/butler/summon" {
+                butler::summon(bot, &user)
+            } else {
+                butler::release(bot, &user)
+            };
+            butler_reply(bot, result)
+        }
+        ("/butler/summon-all", true) => butler_reply(bot, butler::summon_all(bot)),
+        ("/butler/release-all", true) => {
+            butler::release_all(bot);
+            butler_reply(bot, Ok("Released all followers.".into()))
+        }
+        ("/butler/follow", true) => match query("master") {
+            Some(master) => {
+                let result =
+                    butler::start_follow(bot, &master).map(|()| format!("Following {master}."));
+                butler_reply(bot, result)
+            }
+            None => error(400, "master is missing"),
+        },
+        ("/butler/stop", true) => {
+            butler::stop_follow(bot);
+            butler_reply(bot, Ok("Stopped following.".into()))
+        }
         (
-            "/status" | "/snapshot" | "/script/load" | "/script/start" | "/script/stop"
-            | "/script/pause" | "/script/resume" | "/log" | "/login" | "/relogin" | "/logout"
-            | "/map/join" | "/player/goto" | "/house" | "/quests/register" | "/gear" | "/equip"
-            | "/bank/load" | "/auto/attack/start" | "/auto/stop" | "/scheduler" | "/scheduler/add"
-            | "/scheduler/remove" | "/scheduler/move" | "/scheduler/rename" | "/scheduler/clear"
-            | "/scheduler/load" | "/scheduler/save" | "/scheduler/start" | "/scheduler/stop",
+            "/status"
+            | "/snapshot"
+            | "/script/load"
+            | "/script/start"
+            | "/script/stop"
+            | "/script/pause"
+            | "/script/resume"
+            | "/log"
+            | "/login"
+            | "/relogin"
+            | "/logout"
+            | "/map/join"
+            | "/player/goto"
+            | "/house"
+            | "/quests/register"
+            | "/gear"
+            | "/equip"
+            | "/bank/load"
+            | "/auto/attack/start"
+            | "/auto/stop"
+            | "/scheduler"
+            | "/scheduler/add"
+            | "/scheduler/remove"
+            | "/scheduler/move"
+            | "/scheduler/rename"
+            | "/scheduler/clear"
+            | "/scheduler/load"
+            | "/scheduler/save"
+            | "/scheduler/start"
+            | "/scheduler/stop"
+            | "/butler"
+            | "/butler/summon"
+            | "/butler/release"
+            | "/butler/summon-all"
+            | "/butler/release-all"
+            | "/butler/follow"
+            | "/butler/stop",
             _,
         ) => error(405, "wrong method"),
         _ => error(404, "no such route"),
@@ -546,6 +613,60 @@ fn scheduler(bot: &Bot) -> Value {
         "current": scheduler.current(),
         "entries": entries,
     })
+}
+
+/// `GET /butler`: this account's Butler and the other online accounts. Reads files and state
+/// only, no game call.
+fn butler_state(bot: &Bot) -> Value {
+    let b = &bot.butler;
+    let following = b.following().map(|(master, source)| {
+        json!({
+            "master": master,
+            "summoned": source == butler::FollowSource::Ordered,
+            "parked": b.is_parked(),
+        })
+    });
+    let accounts: Vec<Value> = b
+        .roster()
+        .iter()
+        .map(|d| {
+            json!({
+                "username": d.username,
+                "server": d.server,
+                "map": d.map_with_room(),
+                "cell": d.cell,
+                "class": d.class_name,
+                "attacking": d.attacking,
+                "following": d.following,
+                "followers": d.followers,
+                "script": d.script_on.then_some(&d.script_name),
+                "parking": d.parking,
+                "summoned": b.followers().iter().any(|f| f.eq_ignore_ascii_case(&d.username)),
+                "unavailable": butler::unavailable(bot, d),
+            })
+        })
+        .collect();
+    json!({
+        "enabled": b.enabled(),
+        "username": b.username(),
+        "server": b.server(),
+        "following": following,
+        "followers": b.followers(),
+        "suspended": b.suspend_notice().map(|n| n.master),
+        "accounts": accounts,
+    })
+}
+
+/// Butler's message and state after a command, or 409 with its refusal.
+fn butler_reply(bot: &Bot, result: Result<String, String>) -> Reply {
+    match result {
+        Ok(message) => {
+            let mut state = butler_state(bot);
+            state["message"] = json!(message);
+            ok(state)
+        }
+        Err(e) => error(409, e),
+    }
 }
 
 /// The playlist after an edit, or 409 (it runs).

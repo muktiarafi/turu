@@ -773,3 +773,71 @@ fn closing_marks_the_account_offline_at_once() {
     std::thread::sleep(Duration::from_millis(1200));
     assert!(!dir.read_user("Leaving").unwrap().logged_in);
 }
+
+/// A master without a window: the control API summons and releases, a butler follows by hand.
+#[test]
+fn the_control_api_summons_releases_and_follows() {
+    let _follows = FOLLOWS.lock();
+    let master_game = FakeGame::new("ApiMaster", "battleon", "5", "r2");
+    let alt_game = FakeGame::new("ApiAlt", "yulgar", "1", "Enter");
+    *alt_game.other.lock() = Some(("ApiMaster".into(), master_game.clone()));
+    let master = client(&master_game);
+    let alt = client(&alt_game);
+    let call =
+        |bot: &Arc<Bot>, post: bool, path: &str| turu_bot::control_api::local(bot, post, path, b"");
+
+    until("both files", Duration::from_secs(5), || {
+        master.butler.username() == "ApiMaster"
+            && master
+                .butler
+                .roster()
+                .iter()
+                .any(|d| d.username == "ApiAlt")
+    });
+    let (status, state) = call(&master, false, "/butler");
+    assert_eq!(status, 200);
+    assert_eq!(state["enabled"], true);
+    assert_eq!(state["username"], "ApiMaster");
+    let alt_row = state["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["username"] == "ApiAlt")
+        .unwrap();
+    assert_eq!(alt_row["summoned"], false);
+    assert_eq!(alt_row["unavailable"], serde_json::Value::Null);
+
+    assert_eq!(call(&master, true, "/butler/summon").0, 400);
+    assert_eq!(call(&master, true, "/butler/summon?user=Nobody").0, 409);
+    assert_eq!(call(&master, true, "/butler/release?user=apialt").0, 409);
+    assert_eq!(call(&master, false, "/butler/summon?user=ApiAlt").0, 405);
+    let (status, state) = call(&master, true, "/butler/summon?user=apialt");
+    assert_eq!(status, 200, "{state}");
+    assert_eq!(state["message"], "Summoned ApiAlt to follow me.");
+    assert_eq!(state["followers"], serde_json::json!(["ApiAlt"]));
+    until("the follow", Duration::from_secs(5), || {
+        alt.butler.following() == Some(("ApiMaster".into(), FollowSource::Ordered))
+    });
+    let (_, state) = call(&alt, false, "/butler");
+    assert_eq!(state["following"]["master"], "ApiMaster");
+    assert_eq!(state["following"]["summoned"], true);
+    // A butler can't summon its master.
+    assert_eq!(call(&alt, true, "/butler/summon?user=ApiMaster").0, 409);
+
+    assert_eq!(call(&master, true, "/butler/release?user=ApiAlt").0, 200);
+    until("the release", Duration::from_secs(5), || {
+        alt.butler.following().is_none()
+    });
+    until_follow_ended(&alt);
+
+    // Following by hand, then Stop.
+    let (status, state) = call(&alt, true, "/butler/follow?master=ApiMaster");
+    assert_eq!(status, 200, "{state}");
+    assert_eq!(state["following"]["summoned"], false);
+    assert_eq!(call(&alt, true, "/butler/stop").0, 200);
+    until("the stop", Duration::from_secs(5), || {
+        alt.butler.following().is_none()
+    });
+    until_follow_ended(&alt);
+    assert_eq!(call(&master, true, "/butler/release-all").0, 200);
+}

@@ -41,7 +41,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   paging), the bot options, login, relogin and logout (`bot/src/control_api.rs` lists them).
   `/status` also tells whether the Scheduler's playlist runs (`script.scheduler`), and
   `/scheduler` edits, starts and stops it (`/script/stop` moves the playlist on;
-  `/scheduler/stop` stops it).
+  `/scheduler/stop` stops it). `/butler` summons, releases and follows (Butler without a
+  window: `butler::summon` and `release` make the window's Summon checks).
   Every request needs the token (`Authorization: Bearer` or `X-Api-Token`): `TURU_API_TOKEN`,
   else the data folder's `api-token`, made on first use and readable by you only. Works with
   or without the window. Example:
@@ -118,7 +119,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   debug log (`butler/debug_log.rs`, also to the debug log as before), shown in the window with
   Copy, Save (`butler_logs/`), Clear and Open folder, optionally auto-saved. A closing tab and
   a quitting app (window, `--exit-with-parent`, `--exit-on-script-stop`, the graphics restart)
-  write the account offline at once (`butler::close`). Its tests run a master and a butler
+  write the account offline at once (`butler::close`). Without a window a follower works as it
+  is (the suspend question stays unanswered: it stays suspended), and a master uses the control
+  API's `/butler` routes; Butler only sees clients sharing its data folder. Its tests run a master and a butler
   against two fake games. The window (`docs/UI.md`) lists the other online accounts with
   Follow and Summon, and edits the options; following stops the tab's Auto Attack/Hunt. Not built:
   quest cloning (V5 copies the master's quest slots). The quest fakes, the level fake, AntiLag
