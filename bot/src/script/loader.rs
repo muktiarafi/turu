@@ -8,7 +8,7 @@ use rquickjs::{Ctx, Error, Module, Result};
 use std::path::{Path, PathBuf};
 
 pub const TURU_MODULE: &str = "turu";
-const TURU_SOURCE: &str = include_str!("../../js/turu.ts");
+const TURU_SOURCE: &str = crate::TURU_TS;
 
 pub struct ScriptResolver;
 

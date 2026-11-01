@@ -325,3 +325,40 @@ fn scripts_repo_types_match_the_api() {
         "scripts/types/turu.ts differs from bot/js/turu.ts: copy bot/js/turu.ts over it"
     );
 }
+
+#[test]
+fn scripts_folder_gets_editor_types_but_keeps_its_tsconfig() {
+    let (dir, _fake, repo) = setup();
+    let scripts = dir.path().join("scripts");
+    assert_eq!(
+        fs::read_to_string(scripts.join("types/turu.ts")).unwrap(),
+        turu_bot::TURU_TS
+    );
+    assert!(
+        fs::read_to_string(scripts.join("tsconfig.json"))
+            .unwrap()
+            .contains(r#""turu": ["./types/turu.ts"]"#)
+    );
+    assert!(
+        repo.snapshot()
+            .entries
+            .iter()
+            .all(|e| !e.info.path.starts_with("types/"))
+    );
+
+    fs::write(scripts.join("tsconfig.json"), "{}").unwrap();
+    fs::write(scripts.join("types/turu.ts"), "old").unwrap();
+    Paths {
+        root: dir.path().to_path_buf(),
+    }
+    .write_script_types()
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(scripts.join("tsconfig.json")).unwrap(),
+        "{}"
+    );
+    assert_eq!(
+        fs::read_to_string(scripts.join("types/turu.ts")).unwrap(),
+        turu_bot::TURU_TS
+    );
+}

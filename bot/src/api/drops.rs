@@ -7,7 +7,7 @@ use super::inventory::{self, name_or_ids};
 use super::{Args, NameOrId, map, ok, player, wait};
 use crate::Bot;
 use crate::error::{BotError, BotResult};
-use crate::models::ItemBase;
+use crate::models::{ItemBase, game_name};
 use crate::skills::{Worker, nap};
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -75,8 +75,9 @@ impl DropRunner {
         for item in items {
             match *item {
                 NameOrId::Name(name) => {
-                    if !names.iter().any(|n| n == name) {
-                        names.push(name.to_owned());
+                    let name = game_name(name);
+                    if !names.iter().any(|n| *n == name) {
+                        names.push(name.into_owned());
                     }
                 }
                 NameOrId::Id(id) => {
@@ -94,7 +95,10 @@ impl DropRunner {
         let mut ids = self.to_pickup_ids.lock();
         for item in items {
             match *item {
-                NameOrId::Name(name) => names.retain(|n| n != name),
+                NameOrId::Name(name) => {
+                    let name = game_name(name);
+                    names.retain(|n| *n != name)
+                }
                 NameOrId::Id(id) => ids.retain(|i| *i != id),
             }
         }
@@ -240,7 +244,10 @@ pub fn pickup_ac_items(bot: &Bot) -> BotResult<()> {
 /// VibeSkua `RejectExceptCore`: `rejectExcept(csv of lowercase names)` (AC drops are kept
 /// with `acceptACDrops`), then forgets the rejected drops.
 fn reject_except_names(bot: &Bot, names: Vec<String>) -> BotResult<()> {
-    let mut keep: HashSet<String> = names.iter().map(|n| n.trim().to_lowercase()).collect();
+    let mut keep: HashSet<String> = names
+        .iter()
+        .map(|n| game_name(n.trim()).to_lowercase())
+        .collect();
     if bot.opts().accept_ac_drops {
         keep.extend(
             current(bot)

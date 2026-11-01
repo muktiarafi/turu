@@ -2,6 +2,22 @@
 //! they serialize to camelCase for scripts (see scripts/types/turu.d.ts).
 
 use serde::{Deserialize, Deserializer, Serialize};
+use std::borrow::Cow;
+
+/// A name a script gave, as the game spells it. VibeSkua reads game strings back as XML text
+/// (`XText.ToString()` in `FlashUtil.Call`), so its names have `&amp;`, `&lt;` and `&gt;` where
+/// the game has `&`, `<` and `>`, and the C# scripts were written against that. Turu reads the
+/// real names, so names copied from those scripts are decoded before they're compared.
+pub fn game_name(name: &str) -> Cow<'_, str> {
+    if !name.contains('&') {
+        return Cow::Borrowed(name);
+    }
+    Cow::Owned(
+        name.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&"),
+    )
+}
 
 /// Accepts numbers, numeric strings, booleans and null as an i64 (the game mixes them).
 pub fn lenient_i64<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
@@ -219,9 +235,12 @@ impl ItemBase {
         self.max_stack > 0 && self.quantity >= self.max_stack
     }
 
-    /// Case-insensitive, trimmed name match (how VibeSkua compares item names).
+    /// Case-insensitive, trimmed name match (how VibeSkua compares item names). `name` may use
+    /// VibeSkua's `&amp;` spelling ([`game_name`]).
     pub fn name_is(&self, name: &str) -> bool {
-        self.name.trim().eq_ignore_ascii_case(name.trim())
+        self.name
+            .trim()
+            .eq_ignore_ascii_case(game_name(name.trim()).as_ref())
     }
 }
 
@@ -290,10 +309,15 @@ impl Monster {
         self.hp > 0 && self.state > 0
     }
 
-    /// VibeSkua matching: `*` matches all, otherwise case-insensitive name equality.
+    /// VibeSkua matching: `*` matches all, otherwise case-insensitive name equality (`name`
+    /// may use VibeSkua's `&amp;` spelling, see [`game_name`]).
     pub fn name_matches(&self, name: &str) -> bool {
         let name = name.trim();
-        name == "*" || self.name.trim().eq_ignore_ascii_case(name)
+        name == "*"
+            || self
+                .name
+                .trim()
+                .eq_ignore_ascii_case(game_name(name).as_ref())
     }
 }
 
@@ -996,4 +1020,21 @@ pub struct Badge {
         default
     )]
     pub category: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_match_vibeskua_spelling() {
+        let item = ItemBase {
+            name: "Crag & Bamboozle".into(),
+            ..Default::default()
+        };
+        assert!(item.name_is("Crag & Bamboozle"));
+        assert!(item.name_is("crag &amp; bamboozle"));
+        assert!(!item.name_is("Crag and Bamboozle"));
+        assert_eq!(game_name("a &lt;b&gt; &amp;amp;"), "a <b> &amp;");
+    }
 }

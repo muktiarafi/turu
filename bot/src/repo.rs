@@ -458,6 +458,9 @@ impl ScriptRepo {
     /// Reads the cached index, the manifest and the pins, and scans the scripts folder. No
     /// network.
     pub fn new(paths: Paths, remote: Box<dyn Remote>) -> Arc<Self> {
+        if let Err(e) = paths.write_script_types() {
+            tracing::warn!("Couldn't write the script types for editors: {e}");
+        }
         let mut cache: CachedIndex =
             read_json(&paths.root.join("scripts-index.json")).unwrap_or_default();
         sanitize(&mut cache.index);
@@ -1045,13 +1048,13 @@ fn safe_relative(path: &str) -> Option<PathBuf> {
 }
 
 /// The `.ts`/`.js` files under `dir`, as (`/`-separated path relative to `root`, path).
-/// Hidden folders are skipped.
+/// Hidden folders are skipped, and so is `types` at the top (the API types for editors).
 fn list_scripts(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
     let Ok(read) = fs::read_dir(dir) else { return };
     for entry in read.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == "node_modules" {
+        if name.starts_with('.') || name == "node_modules" || (dir == root && name == "types") {
             continue;
         }
         if path.is_dir() {

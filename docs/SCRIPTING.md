@@ -2,6 +2,8 @@
 
 Turu scripts are TypeScript. The API is `bot/js/turu.ts`: every member has a doc comment, and
 your editor shows them once `scripts/tsconfig.json` is in use (`"turu"` maps to that file).
+For downloaded scripts, open the data folder's `scripts/` in your editor: Turu writes the API
+there as `types/turu.ts`, with a `tsconfig.json` that points `"turu"` at it.
 
 ## The smallest script
 
@@ -173,7 +175,10 @@ marker. By hand:
    `export default function main(): void`.
 3. Change `Bot.X.Y` to `bot.x.y`, and `Core.X` to `Core.x`. Port any Core members the script
    needs that aren't ported yet, in C# order.
-4. Type-check: `cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .`. Then also run
+4. Write `&` where the C# writes `&amp;` in a name (`"Crag &amp; Bamboozle"`). VibeSkua reads
+   game strings back as XML text, so its names carry `&amp;`, `&lt;` and `&gt;`; Turu reads the
+   game's own `&`. The engine still accepts the `&amp;` spelling in item, monster and drop names.
+5. Type-check: `cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .`. Then also run
    `cargo test -p turu_bot --test scripts_transpile`.
 
 ## Publishing

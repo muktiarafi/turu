@@ -51,6 +51,10 @@ use std::time::Duration;
 /// client from game.aq.com and exposes the game to the bot through ExternalInterface.
 pub const SKUA_SWF: &[u8] = include_bytes!("../assets/skua.swf");
 
+/// The script API (`import ... from "turu"`): the runtime scripts load, and the types editors
+/// read from the scripts folder's `types/turu.ts`.
+pub const TURU_TS: &str = include_str!("../js/turu.ts");
+
 /// VibeSkua's shipped skill sets, used to seed the user's `AdvancedSkills.json`.
 pub const DEFAULT_ADVANCED_SKILLS: &str = include_str!("../assets/AdvancedSkills.json");
 
