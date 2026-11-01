@@ -126,6 +126,21 @@ pub struct ScriptManager {
     message_box: Mutex<MessageBoxSlot>,
     message_box_answered: Condvar,
     next_message_box: AtomicU64,
+    /// This run reached `main` (VibeSkua compiles in `StartScript`: a script that fails before
+    /// failed to start).
+    reached_main: AtomicBool,
+    /// How the last run ended, and how many runs have ended.
+    last_end: Mutex<Option<RunEnd>>,
+    ended: AtomicU64,
+}
+
+/// How a run ended, for the Scheduler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunEnd {
+    /// It reached the script's `main`.
+    pub started: bool,
+    /// Why it failed (not when it finished or was stopped).
+    pub error: Option<String>,
 }
 
 /// A message box a script asked for (VibeSkua `ShowMessageBox`), until the UI answers it.
@@ -162,6 +177,9 @@ impl ScriptManager {
             message_box: Mutex::new(MessageBoxSlot::default()),
             message_box_answered: Condvar::new(),
             next_message_box: AtomicU64::new(1),
+            reached_main: AtomicBool::new(false),
+            last_end: Mutex::new(None),
+            ended: AtomicU64::new(0),
         }
     }
 
@@ -189,8 +207,14 @@ impl ScriptManager {
     /// "Load Script": remembers the file and reads its options (`scriptOptions`) with their saved
     /// values. The script is compiled on Start.
     pub fn load(&self, path: &Path) {
+        self.load_with_storage(path, None);
+    }
+
+    /// [`Self::load`] with the options saved in `options/<storage>.cfg` instead of the script's
+    /// own storage (VibeSkua `OverrideStorage`), until another script is loaded.
+    pub fn load_with_storage(&self, path: &Path, storage: Option<&str>) {
         let path = normalize(&std::path::absolute(path).unwrap_or(path.into()));
-        let options = self.read_options(&path);
+        let options = self.read_options(&path, storage);
         *self.options.lock() = options;
         *self.loaded.lock() = Some(path);
         if !self.is_running() {
@@ -198,11 +222,15 @@ impl ScriptManager {
         }
     }
 
-    fn read_options(&self, path: &Path) -> ScriptOptionsState {
+    /// The options `path` declares with their values saved in `storage` (default: the script's
+    /// own). Runs the script's top level: not on the UI thread.
+    pub fn read_options(&self, path: &Path, storage: Option<&str>) -> ScriptOptionsState {
         match options::declaration(path) {
             Ok(None) => ScriptOptionsState::NoOptions,
             Ok(Some(decl)) => {
-                let file = self.paths.script_options_file(&decl.storage);
+                let file = self
+                    .paths
+                    .script_options_file(storage.unwrap_or(&decl.storage));
                 match ScriptOptions::load(decl, file) {
                     Ok(options) => ScriptOptionsState::Loaded(options),
                     Err(e) => {
@@ -212,6 +240,12 @@ impl ScriptManager {
             }
             Err(e) => ScriptOptionsState::Failed(e),
         }
+    }
+
+    /// How many runs have ended, and how the last one did.
+    pub fn last_end(&self) -> (u64, Option<RunEnd>) {
+        let end = self.last_end.lock().clone();
+        (self.ended.load(Ordering::Acquire), end)
     }
 
     /// The loaded script's options (a copy: the window edits its own).
@@ -438,6 +472,7 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
         return Err("A Console snippet is running".into());
     }
     bot.scripts.silent.store(silent, Ordering::Release);
+    bot.scripts.reached_main.store(false, Ordering::Release);
     bot.control.reset();
     // VibeSkua's `Handlers.Clear()` before the script thread starts.
     bot.handlers.clear();
@@ -458,6 +493,7 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
             );
             bot.webhooks.send(Notice::ScriptStarted {
                 script: script_stem(&path),
+                quiet: false,
             });
             bot.state.lock().stats.started = Some(std::time::Instant::now());
             let result = match bot.scripts.preconfigure(&bot.control) {
@@ -531,6 +567,7 @@ pub fn set_paused(bot: &Bot, paused: bool) {
 }
 
 pub(crate) fn set_running(bot: &Bot) {
+    bot.scripts.reached_main.store(true, Ordering::Release);
     bot.scripts.set_status(ScriptStatus::Running);
 }
 
@@ -575,13 +612,22 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     };
     bot.control.reset();
     bot.scripts.set_status(status);
+    *bot.scripts.last_end.lock() = Some(RunEnd {
+        started: bot.scripts.reached_main.load(Ordering::Acquire),
+        error: error.clone(),
+    });
     bot.scripts.running.store(false, Ordering::Release);
+    bot.scripts.ended.fetch_add(1, Ordering::AcqRel);
     bot.events.emit(crate::events::BotEvent::ScriptStopped);
     let script = bot
         .scripts
         .loaded()
         .map_or_else(String::new, |p| script_stem(&p));
-    bot.webhooks.send(Notice::ScriptStopped { script, error });
+    bot.webhooks.send(Notice::ScriptStopped {
+        script,
+        error,
+        quiet: false,
+    });
 }
 
 /// The script's name as the webhooks show it (VibeSkua: the file name without extension).

@@ -159,7 +159,9 @@ impl NavBar {
                 windows.script_options = true;
                 ui.close();
             }
-            item(ui, "Scheduler", false);
+            if item(ui, "Scheduler", true) {
+                windows.scheduler = true;
+            }
         });
         ui.menu_button("Options", |ui| {
             if item(ui, "Game", true) {

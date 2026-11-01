@@ -26,6 +26,7 @@ pub mod options;
 pub mod paths;
 pub mod quest_cache;
 pub mod repo;
+pub mod scheduler;
 pub mod script;
 pub mod settings;
 pub mod skill_editor;
@@ -96,6 +97,8 @@ pub struct Bot {
     pub capture: Arc<capture::CaptureProxy>,
     /// Diagnostics > Spammer.
     pub spammer: Arc<spammer::Spammer>,
+    /// Scripts > Scheduler: the playlist this client runs.
+    pub scheduler: scheduler::Scheduler,
     pub paths: paths::Paths,
 }
 
@@ -129,6 +132,7 @@ impl Bot {
             cosmetics: cosmetics::Look::default(),
             capture: Arc::default(),
             spammer: Arc::default(),
+            scheduler: scheduler::Scheduler::default(),
             paths,
         });
         background::start(&bot);

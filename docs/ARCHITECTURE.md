@@ -49,6 +49,7 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     capture.rs           Diagnostics > Interceptor: the game socket's packets (VibeSkua `CaptureProxy`),
                          interceptors that edit or drop them
     spammer.rs           Diagnostics > Spammer: a packet queue sent on a timer
+    scheduler.rs         Scripts > Scheduler: a playlist of scripts run one after another
     paths.rs, log.rs     data directory, skill set files; log buffers
     repo.rs              Search Scripts: the script repository's index, downloads, update, reset
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,

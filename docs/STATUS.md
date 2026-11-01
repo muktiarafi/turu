@@ -33,6 +33,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
   VibeSkua-Docker's for status, loading/starting/stopping/pausing scripts, logs (`since`
   paging), the bot options, login, relogin and logout (`bot/src/control_api.rs` lists them).
+  `/status` also tells whether the Scheduler's playlist runs (`script.scheduler`).
   Every request needs the token (`Authorization: Bearer` or `X-Api-Token`): `TURU_API_TOKEN`,
   else the data folder's `api-token`, made on first use and readable by you only. Works with
   or without the window. Example:
@@ -205,10 +206,17 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
 - **Search Scripts** (`bot/src/repo.rs`, `app/src/gui/turu/script_repo.rs`): VibeSkua's
   Script Repo for the scripts in `muktiarafi/turu-scripts` (the `scripts/` submodule): search,
-  categories, pins, Start/Load (downloading the script and what it imports), Update all,
+  categories, pins, Start/Load/Queue (downloading the script and what it imports), Update all,
   Download all and Reset Scripts, and the launch-time check and auto update (Options >
   Application). Edited scripts are kept by updates and backed up by a reset.
   `docs/ARCHITECTURE.md` ("Script repository") has the design.
+- **Scheduler** (Scripts > Scheduler, `bot/src/scheduler.rs`, `app/src/gui/turu/scheduler.rs`,
+  VibeSkua `ScriptSchedulerViewModel`): a playlist per tab, run top to bottom without the Script
+  Options window, each entry with its own options (`options/Queue_<name>_<id>.cfg`); any end of a
+  script moves on, Stop queue stops; a disconnection waits for the login and resumes the entry;
+  VibeSkua's playlist files and webhook embeds. Tested against a fake game
+  (`bot/tests/scheduler.rs`: order, errors and missing files, Stop Script vs Stop queue, the
+  disconnection, the options, the playlist files); not yet in game, nor with a real relogin.
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
   the title, the client's starting frame rate (24 by default, AQW's own rate; Set FPS defaults to
   0, leaving the game's own FPS setting alone),
@@ -247,8 +255,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   command (about 0.1 s) and its log. The in-game cards, commands and history only with sample
   data; the Options window's Report section and QR code only built, not looked at. Not built:
   browser notifications.
-- **UI:** VibeSkua's nav bar and the windows listed in `docs/UI.md` (Script Loader, Script
-  Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Console,
+- **UI:** VibeSkua's nav bar and the windows listed in `docs/UI.md` (Script Loader, Scheduler,
+  Script Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Console,
   Spammer, Logger, Interceptor, Current Drops, Loader, Grabber, Auto, Jump).
   Diagnostics > Spammer and Interceptor are tested against a fake game and fake socket bytes
   (`bot/tests/spammer_interceptor.rs`), not yet in game: the capture's socket wrapper
@@ -316,9 +324,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   with no time left, as Grimlite-Li's `AuraManager` does; check in game that `remaining` is set
   for every timed aura, or live auras would read as gone. The same goes for
   `bot.reputation` (`world.myAvatar.factions`), which CoreBots' `factionRank` now uses.
-- **Script options:** the window never opens by itself with `--headless`, or for runs started from the command line, the HTTP API
-  or auto-relogin (VibeSkua's `SilentConfig` covers only the command line and the scheduler; its
-  relogin restart can show it).
+- **Script options:** the window never opens by itself with `--headless`, or for runs started from the command line, the HTTP API,
+  auto-relogin or the Scheduler (VibeSkua's `SilentConfig` covers only the command line and the
+  scheduler; its relogin restart can show it).
 - **CoreStory is unverified in game:** its test only checks that `preLoad` finds the quests of a
   story function. `killQuest`, `mapItemQuest` and the unlock-recovery loop of `questProgression`
   need a story run.
@@ -370,7 +378,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   codeload downloads and the ETag 304 against it aren't covered by a test. Scripts made for a
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
-- Not built in the UI: Scheduler, Themes, HotKeys, Loadouts, Fast Travel,
+- Not built in the UI: Themes, HotKeys, Loadouts, Fast Travel,
   Junk Items, Notify Drop, Plugins, Auto Hunt
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's

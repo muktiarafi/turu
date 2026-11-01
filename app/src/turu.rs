@@ -146,6 +146,8 @@ pub(crate) fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
         }
         bot
     };
+    // Its playlist would start the next script once this one stops.
+    removed.scheduler.stop(&removed);
     turu_bot::script::stop(&removed);
     removed.control.request_stop();
     // The other clients' Butler drops the account at once, not when its heartbeat ages out.
