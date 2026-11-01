@@ -108,7 +108,6 @@ impl GuiController {
             &adapter_info,
             preferences.graphics_power_preference().into(),
         );
-        crate::mugetsu::spawn_update_check(window.clone());
         #[cfg(windows)]
         if crate::mugetsu::plays_aqw() {
             crate::windows::add_graphics_menu(&window);
