@@ -95,12 +95,23 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   master's `map-room` (houses by name), the cell jump, fighting (passive and leech modes),
   the packet warnings (locked zone, room full, ignoring goto), the CoreBots class type,
   Infinite Range and Skip Cutscenes while following, relogin re-arm, suspending while a script
-  runs, and parking (house, whitemap, stay). Its test runs a master and a butler against two
-  fake games. The window (`docs/UI.md`) lists the other online accounts with
+  runs (with V5's question: Yes stays suspended, No stops following; a modal in the tab and
+  its "!" in the tab strip), and parking (house, whitemap, stay). While following, on its own
+  client only (`butler/quest_bypass.rs`, `antilag.rs`): V5's per-map quest bypass table (64
+  entries; faked through `quests::update_quest` on arming, on each new map and for the master's
+  map before travelling there), the custom quest IDs, doomvaultb's achievement, Unlock All
+  Quests (maxes the `strQuests` slot strings; wins over the bypasses), the level 100 fake, and
+  AntiLag when summoned or following by hand (the nine settings are saved first and put back
+  when the follow ends; re-applied after a relogin, and after a suspending script, whose stop
+  turns Lag Killer off: V5 leaves it off). Every component logs to an in-memory
+  debug log (`butler/debug_log.rs`, also to the debug log as before), shown in the window with
+  Copy, Save (`butler_logs/`), Clear and Open folder, optionally auto-saved. A closing tab and
+  a quitting app (window, `--exit-with-parent`, `--exit-on-script-stop`, the graphics restart)
+  write the account offline at once (`butler::close`). Its tests run a master and a butler
+  against two fake games. The window (`docs/UI.md`) lists the other online accounts with
   Follow and Summon, and edits the options; following stops the tab's Auto Attack. Not built:
-  AntiLag while following, the quest bypass table, quest cloning, the level fake, V5's debug
-  log viewer (Butler logs to the script and debug logs), the suspend message box, and an offline write when the window
-  closes (the heartbeat ages out instead). Unverified in game.
+  quest cloning (V5 copies the master's quest slots). The quest fakes, the level fake, AntiLag
+  and the question are unverified in game.
 - **Cosmetics** (Plugins > Cosmetics, `bot/src/cosmetics/`, VibeSkua's Cosmetics plugin): shows
   any item on your avatar without owning it, client side only (`objData.eqp`, `loadMovieAtES`,
   the colors, a `genderSwap` packet to the client), from VibeSkua's 67,000-item community catalog

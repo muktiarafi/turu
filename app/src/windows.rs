@@ -444,6 +444,8 @@ mod graphics_menu {
         }
         mugetsu::save_graphics(choice);
         tracing::info!("Graphics changed to {name}; starting Mugetsu again");
+        // Turu: the other clients' Butler drops the accounts at once.
+        crate::turu::close_butlers();
         super::start_again();
         std::process::exit(0);
     }

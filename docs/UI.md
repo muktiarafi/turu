@@ -163,10 +163,16 @@ runs.
   action's outcome); ACCOUNTS, the other online accounts read from the sync files every second,
   with chips (fighting, following me / following X / summoned, busy: script, parking, other
   server), map-room, server and class, and Follow/Stop and Summon/Release, disabled with
-  V5's reasons; the online count, Summon all and Settings. Settings for every client (Enable,
-  passive attack, leech mode, always goto, goto delay, rescue threshold, park location) and
-  for this account (class type, obey summons), saved on change. Following stops the tab's Auto
-  Attack.
+  V5's reasons; the online count, Summon all, Settings and Debug Log. Settings for every
+  client (Enable, passive attack, leech mode, always goto, goto delay, rescue threshold, park
+  location; WHILE FOLLOWING: quest bypasses, custom bypass quest IDs, unlock all quests, fake
+  level 100, AntiLag while summoned / following, debug logs, auto-save logs) and for this
+  account (class type, obey summons), saved on change, V5's descriptions on hover. DEBUG LOG:
+  Butler's log lines (time, component, message; repeats counted), colored by level, following
+  the end, with Copy, Save (to `butler_logs/`), Clear and Open folder. Following stops the
+  tab's Auto Attack. When a script starts while following, a modal asks whether to keep the
+  follow suspended until the script stops (Yes, or closing it) or stop following (No); a tab
+  in the back shows "!" until it's answered.
 * **Cosmetics & Outfits** (`cosmetics.rs`, 900x620; VibeSkua's Cosmetics plugin, one per tab,
   the catalog shared): a quick bar card of two aligned rows (the room player list and Copy
   Player, then Copy Target Look; on the right M / F / Swap gender. Below: a character name box

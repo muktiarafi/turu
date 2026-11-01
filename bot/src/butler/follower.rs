@@ -3,10 +3,13 @@
 //! and is fastest); after failed gotos, a locked zone, a full room or goto turned off, a join
 //! of the master's exact `map-room` from its file. In the master's room it jumps to its cell
 //! and fights (or, in leech mode, waits at Enter). It parks while the master is offline or on
-//! another server, and suspends while a script runs in this client.
+//! another server, and suspends while a script runs in this client. While it follows it fakes
+//! quests and the level on its own client, and turns AntiLag on, as the options say.
 
 use super::sync::{self, SyncData};
-use super::{ButlerSettings, FollowSource, ParkSpot, debug, log, server_name};
+use super::{
+    ButlerSettings, FollowSource, Level, ParkSpot, antilag, quest_bypass, server_name, trace,
+};
 use crate::api::inventory::{self, Container};
 use crate::api::{NameOrId, combat, map, player, wait};
 use crate::events::BotEvent;
@@ -38,10 +41,24 @@ pub enum Mode {
     Abort = 3,
 }
 
+fn debug(bot: &Bot, text: impl AsRef<str>) {
+    super::debug(bot, "Follower", text);
+}
+
+fn log(bot: &Bot, text: impl AsRef<str>) {
+    super::log(bot, "Follower", text);
+}
+
+fn error(bot: &Bot, text: impl AsRef<str>) {
+    trace(bot, "Follower", Level::Error, text);
+}
+
 /// What the follower thread shares with the rest of Butler.
 #[derive(Default)]
 pub struct Shared {
     mode: AtomicU8,
+    /// Set with any stop: ends a wait for a quest to load.
+    cancel: AtomicBool,
     parked: AtomicBool,
     parking: AtomicBool,
     /// Set by the packet listener: "Locked zone" / "is not available".
@@ -135,6 +152,7 @@ impl Follow {
     /// Asks the follow to end; doesn't wait. A stronger request replaces a weaker one.
     pub fn stop(&self, mode: Mode) {
         self.shared.mode.fetch_max(mode as u8, Ordering::AcqRel);
+        self.shared.cancel.store(true, Ordering::Release);
     }
 
     /// Ends the follow at once and waits for its thread.
@@ -175,6 +193,13 @@ struct Follower<'a> {
     last_with_master: Option<bool>,
     /// Infinite Range and Skip Cutscenes before the follow turned them on.
     prior_options: Option<(bool, bool)>,
+    /// The map whose quest fakes were last applied (on arrival or before travelling there).
+    last_bypass_map: Option<String>,
+    /// The master's map whose fakes were last applied before travelling.
+    last_pre_apply_map: Option<String>,
+    /// Set while the follow has AntiLag on: the user's settings before (`None` when they
+    /// couldn't be read).
+    anti_lag: Option<Option<antilag::Snapshot>>,
     /// (username, `house-<CharID>`) of this account's own house.
     own_house: Option<(String, String)>,
 }
@@ -207,6 +232,9 @@ impl<'a> Follower<'a> {
             was_logged_in: false,
             last_with_master: None,
             prior_options: None,
+            last_bypass_map: None,
+            last_pre_apply_map: None,
+            anti_lag: None,
             own_house: None,
         }
     }
@@ -248,14 +276,89 @@ impl<'a> Follower<'a> {
         self.finish();
     }
 
-    /// Prepares the character (VibeSkua `Arm`): the class and its skills, Infinite Range and
-    /// Skip Cutscenes. Again after every relogin, as a disconnect undoes all of it.
+    /// Prepares the character (VibeSkua `Arm`): the class and its skills, the level and quest
+    /// fakes, AntiLag, Infinite Range and Skip Cutscenes. Again after every relogin, as a
+    /// disconnect undoes all of it.
     fn arm(&mut self, fresh_login: bool) {
+        let bot = self.bot;
         self.stop_skills();
         if let Err(e) = self.setup_class(fresh_login) {
-            debug(self.bot, format!("Class setup failed: {e}"));
+            error(bot, format!("Class setup failed: {e}"));
         }
+        let settings = self.settings();
+        if settings.fake_level {
+            quest_bypass::apply_level_fake(bot);
+        }
+        self.last_bypass_map = None;
+        self.last_pre_apply_map = None;
+        // Unlock All maxes every slot: the bypasses would only be overwritten.
+        if settings.quest_unlock_all {
+            quest_bypass::unlock_all(bot);
+        } else if settings.quest_bypass {
+            let ids = quest_bypass::parse_custom_ids(&settings.quest_bypass_custom);
+            quest_bypass::apply_custom(bot, &ids, &self.shared.cancel);
+        }
+        self.apply_anti_lag(&settings);
         self.apply_butler_options();
+    }
+
+    /// AntiLag on, when the option for this follow's source is (VibeSkua `ApplyAntiLag`). The
+    /// user's settings are saved the first time only: a relogin re-applies over its own.
+    fn apply_anti_lag(&mut self, settings: &ButlerSettings) {
+        let want = match self.source {
+            FollowSource::Ordered => settings.anti_lag_summoned,
+            FollowSource::Manual => settings.anti_lag_following,
+        };
+        if !want {
+            return;
+        }
+        let bot = self.bot;
+        if self.anti_lag.is_none() {
+            let snapshot = antilag::capture(bot)
+                .map_err(|e| {
+                    error(bot, format!("AntiLag capture failed: {e}"));
+                })
+                .ok();
+            self.anti_lag = Some(snapshot);
+            debug(bot, format!("AntiLag ON (source={:?})", self.source));
+        }
+        if let Err(e) = antilag::set(bot, true) {
+            error(bot, format!("AntiLag on failed: {e}"));
+        }
+    }
+
+    /// Puts the user's AntiLag settings back (VibeSkua `RevertAntiLag`).
+    fn revert_anti_lag(&mut self) {
+        if let Some(snapshot) = self.anti_lag.take() {
+            antilag::restore(self.bot, snapshot.as_ref());
+            debug(
+                self.bot,
+                "AntiLag OFF (restored the settings from before the follow)",
+            );
+        }
+    }
+
+    /// The quest fakes for the map the butler just entered: Unlock All again, or the map's
+    /// bypasses.
+    fn apply_quest_access(&mut self, settings: &ButlerSettings) -> BotResult<()> {
+        if !settings.quest_unlock_all && !settings.quest_bypass {
+            return Ok(());
+        }
+        let map = map::name(self.bot)?;
+        if self
+            .last_bypass_map
+            .as_deref()
+            .is_some_and(|m| m.eq_ignore_ascii_case(&map))
+        {
+            return Ok(());
+        }
+        self.last_bypass_map = Some(map.clone());
+        if settings.quest_unlock_all {
+            quest_bypass::unlock_all(self.bot);
+        } else {
+            quest_bypass::apply_for_map(self.bot, &map, &self.shared.cancel);
+        }
+        Ok(())
     }
 
     /// Equips the CoreBots class picked for this account's class type (VibeSkua
@@ -365,14 +468,17 @@ impl<'a> Follower<'a> {
                         self.master
                     ),
                 );
+                bot.butler.ask_suspend(&self.master);
             }
             return Ok(1000);
         }
         if self.suspended {
             self.suspended = false;
+            bot.butler.drop_suspend_notice();
             self.goto_attempts = 0;
-            // A stopping script turns Skip Cutscenes off.
+            // A stopping script turns Skip Cutscenes and Lag Killer off.
             self.apply_butler_options();
+            self.apply_anti_lag(&self.settings());
             log(
                 bot,
                 format!("Script stopped - following {} again.", self.master),
@@ -471,6 +577,9 @@ impl<'a> Follower<'a> {
         if my_room.is_empty() {
             return Ok(LOOP_MS);
         }
+        // A new map: the quest fakes again (entry gates and locked cells).
+        let settings = self.settings();
+        self.apply_quest_access(&settings)?;
         let same_room = my_room.eq_ignore_ascii_case(&m.map_with_room());
         if Some(same_room) != self.last_with_master {
             self.last_with_master = Some(same_room);
@@ -492,7 +601,6 @@ impl<'a> Follower<'a> {
         self.room_full_attempts = 0;
         self.full_count_room = None;
         self.goto_attempts = 0;
-        let settings = self.settings();
         if settings.leech_mode {
             // Stay in the room at Enter, never fight.
             self.stop_skills();
@@ -572,6 +680,21 @@ impl<'a> Follower<'a> {
         }
         self.stop_attacking(true)?;
         let settings = self.settings();
+        // Entry gates are checked on arrival: fake the master's map's quests before going
+        // there (doomvaultb sends a late butler back to battleon). Unlock All has them already.
+        if !settings.quest_unlock_all
+            && settings.quest_bypass
+            && self
+                .last_pre_apply_map
+                .as_deref()
+                .is_none_or(|p| !p.eq_ignore_ascii_case(&m.map))
+        {
+            self.last_pre_apply_map = Some(m.map.clone());
+            // Counts as the arrival's too, or the quests would be faked twice.
+            self.last_bypass_map = Some(m.map.clone());
+            debug(bot, format!("pre-applying the quest fakes for {}", m.map));
+            quest_bypass::apply_for_map(bot, &m.map, &self.shared.cancel);
+        }
         let on_master_map = || map::name(bot).is_ok_and(|n| n.eq_ignore_ascii_case(&m.map));
         let room = m.map_with_room();
         if m.off_goto || self.shared.goto_off.load(Ordering::Acquire) {
@@ -1023,7 +1146,9 @@ impl<'a> Follower<'a> {
         if mode != Mode::Abort {
             let _ = self.stop_attacking(true);
         }
+        self.revert_anti_lag();
         self.revert_butler_options();
+        bot.butler.drop_suspend_notice();
         if mode == Mode::StopAndPark {
             let home = self.settings().park == ParkSpot::House
                 && self

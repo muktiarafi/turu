@@ -234,6 +234,7 @@ impl TuruUi {
         self.army.show(ctx, &picker, &mut self.army_open);
         // Last, so the script's message box sits over the other windows.
         message_box::show(ctx);
+        butler::show_suspend_notice(ctx);
     }
 
     /// Whether the bot is doing something the UI shows live (a script, a Console snippet, Auto
@@ -399,6 +400,18 @@ mod tests {
             .expect("shown");
         let overflow = OVERFLOW.with(|o| *o.borrow().last().expect("recorded"));
         (rect, area, overflow)
+    }
+
+    /// Butler with its settings and debug log open (it scrolls then) stays on screen.
+    #[test]
+    fn butler_settings_and_log_render() {
+        crate::turu::bot().butler.record("Follower", "AntiLag ON", turu_bot::butler::Level::Success);
+        let mut window = butler::ButlerWindow::expanded();
+        let mut show: Show = Box::new(move |ctx, open| window.show(ctx, open));
+        for screen in [vec2(1400.0, 1000.0), vec2(640.0, 420.0)] {
+            let (rect, area, _) = run(screen, "Butler", &mut show);
+            assert!(area.expand(1.0).contains_rect(rect), "{screen:?}: {rect:?} outside {area:?}");
+        }
     }
 
     /// Every window stays below the nav bar and on screen, however small the app window is

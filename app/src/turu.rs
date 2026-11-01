@@ -148,7 +148,16 @@ pub(crate) fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
     };
     turu_bot::script::stop(&removed);
     removed.control.request_stop();
+    // The other clients' Butler drops the account at once, not when its heartbeat ages out.
+    turu_bot::butler::close(&removed);
     Some(removed)
+}
+
+/// Marks every tab's account offline for the other clients' Butler: the app quits.
+pub fn close_butlers() {
+    for (_, bot) in tabs() {
+        turu_bot::butler::close(&bot);
+    }
 }
 
 /// Makes the tab the active one; false when there's no such tab. The others' games slow down
@@ -318,7 +327,10 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     } = parse_startup_args(args);
     if exit_with_parent {
         LAUNCHED_BY_ARMY.store(true, Ordering::Relaxed);
-        turu_bot::army::exit_with_parent(|| std::process::exit(0));
+        turu_bot::army::exit_with_parent(|| {
+            close_butlers();
+            std::process::exit(0)
+        });
     }
     HEADLESS.store(headless, Ordering::Relaxed);
     if let Ok(mut slot) = API.lock() {
@@ -719,6 +731,7 @@ fn exit_on_script_stop() {
             std::thread::sleep(Duration::from_secs(2));
             let _ = turu_bot::api::servers::logout(&bot);
             std::thread::sleep(Duration::from_secs(1));
+            close_butlers();
             std::process::exit(0);
         });
     });

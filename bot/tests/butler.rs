@@ -1,5 +1,6 @@
 //! Butler (VibeSkua ButlerV5): the sync file, and a master summoning a butler, both on fake
-//! games that share one data folder.
+//! games that share one data folder; the follower's quest, level and AntiLag fakes, the
+//! suspend question and the offline write on close.
 
 use parking_lot::{Condvar, Mutex};
 use std::collections::HashMap;
@@ -7,8 +8,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
 use turu_bot::butler::sync::{SyncData, SyncDir, master_ordering, now};
-use turu_bot::butler::{self, FollowSource, room_of};
-use turu_bot::{Bot, FlashArg, FlashHost, HostError};
+use turu_bot::butler::{self, ButlerSettings, FollowSource, antilag, quest_bypass, room_of};
+use turu_bot::{Bot, FlashArg, FlashHost, HostError, script};
+
+/// Held by the tests that follow: they share `butler.json`, and some change it.
+static FOLLOWS: Mutex<()> = Mutex::new(());
 
 #[test]
 fn sync_data_round_trips_and_goes_stale() {
@@ -189,6 +193,43 @@ impl FakeGame {
             .map(|a| arg(&a, 1))
             .collect()
     }
+
+    /// The packets faked to this client (`sendClientPacket`).
+    fn client_packets(&self) -> Vec<String> {
+        self.calls_to("sendClientPacket")
+            .into_iter()
+            .map(|a| arg(&a, 0))
+            .collect()
+    }
+
+    fn update_quest_packets(&self) -> Vec<String> {
+        self.client_packets()
+            .into_iter()
+            .filter(|p| p.contains("\"updateQuest\""))
+            .collect()
+    }
+
+    fn sets_of(&self, path: &str) -> Vec<String> {
+        self.calls_to("setGameObject")
+            .into_iter()
+            .filter(|a| arg(a, 0) == path)
+            .map(|a| to_json(&a[1]))
+            .collect()
+    }
+}
+
+fn to_json(value: &FlashArg) -> String {
+    fn convert(value: &FlashArg) -> serde_json::Value {
+        match value {
+            FlashArg::Null => serde_json::Value::Null,
+            FlashArg::Bool(b) => (*b).into(),
+            FlashArg::Number(n) => (*n).into(),
+            FlashArg::String(s) => s.clone().into(),
+            FlashArg::List(l) => l.iter().map(convert).collect(),
+            FlashArg::Object(o) => o.iter().map(|(k, v)| (k.clone(), convert(v))).collect(),
+        }
+    }
+    convert(value).to_string()
 }
 
 fn arg(args: &[FlashArg], i: usize) -> String {
@@ -256,6 +297,15 @@ impl FlashHost for FakeGame {
                 "null".into()
             }
             "attackMonsterName" | "attackMonsterID" => "true".into(),
+            "setGameObject" => {
+                self.set(&a0, &to_json(&args[1]));
+                "null".into()
+            }
+            "callGameFunction0" if a0 == "world.toggleMonsters" => {
+                let hidden = self.get("ui.monsterIcon.redX.visible") == "true";
+                self.set("ui.monsterIcon.redX.visible", &(!hidden).to_string());
+                "null".into()
+            }
             _ => "null".into(),
         })
     }
@@ -291,6 +341,7 @@ fn client(game: &Arc<FakeGame>) -> Arc<Bot> {
 
 #[test]
 fn a_summoned_butler_goes_to_its_master_fights_and_parks_on_release() {
+    let _follows = FOLLOWS.lock();
     let master_game = FakeGame::new("Master", "battleon", "5", "r2");
     let alt_game = FakeGame::new("Alt", "yulgar", "1", "Enter");
     *alt_game.other.lock() = Some(("Master".into(), master_game.clone()));
@@ -320,6 +371,13 @@ fn a_summoned_butler_goes_to_its_master_fights_and_parks_on_release() {
             .any(|a| arg(a, 0) == "*")
     });
     assert!(alt.opts().infinite_range, "on while following");
+    // AntiLag while summoned is on by default.
+    assert!(alt.opts().lag_killer);
+    assert_eq!(
+        alt_game.get("litePreference.data.bDisMonAnim"),
+        "true",
+        "the Lite animation cuts"
+    );
     // The master's roster shows the butler following it.
     until("the following state", Duration::from_secs(5), || {
         master
@@ -343,6 +401,8 @@ fn a_summoned_butler_goes_to_its_master_fights_and_parks_on_release() {
     until("the options back", Duration::from_secs(5), || {
         !alt.opts().infinite_range
     });
+    assert!(!alt.opts().lag_killer, "AntiLag restored");
+    assert_eq!(alt_game.get("litePreference.data.bDisMonAnim"), "false");
 
     // A summon on hold while a script runs is covered by `obey_orders`; a manual stop of
     // an ordered follow declines it, and the master releases the butler.
@@ -400,4 +460,316 @@ fn butler_state_reads_never_wait_for_a_game_call() {
     *released.lock() = true;
     wake.notify_all();
     assert!(answered, "reading Butler's state waited for a game call");
+}
+
+/// A quest tree with these `(id, slot, value)` quests loaded.
+fn quest_tree(quests: &[(i64, i64, i64)]) -> String {
+    let entries: Vec<String> = quests
+        .iter()
+        .map(|(id, slot, value)| {
+            format!(r#""{id}":{{"QuestID":{id},"sName":"Q{id}","iSlot":{slot},"iValue":{value}}}"#)
+        })
+        .collect();
+    format!("{{{}}}", entries.join(","))
+}
+
+fn update_quest(value: i64, slot: i64) -> String {
+    format!(
+        r#"{{"t":"xt","b":{{"r":-1,"o":{{"cmd":"updateQuest","iValue":{value},"iIndex":{slot}}}}}}}"#
+    )
+}
+
+#[test]
+fn the_bypass_table_fakes_a_maps_quests_on_this_client() {
+    let game = FakeGame::new("Faker", "battleon", "2", "Enter");
+    game.set(
+        "world.questTree",
+        &quest_tree(&[(3004, 10, 2), (3008, 11, 5), (793, 12, 1)]),
+    );
+    let bot = client(&game);
+    let cancel = AtomicBool::new(false);
+
+    quest_bypass::apply_for_map(&bot, "doomvaultb", &cancel);
+    assert_eq!(
+        game.client_packets(),
+        [
+            update_quest(2, 10),
+            update_quest(5, 11),
+            quest_bypass::ACHIEVEMENT_PACKET.to_owned()
+        ],
+        "both quests, then the achievement"
+    );
+    assert!(
+        game.game_function_calls("world.showQuests")
+            .iter()
+            .any(|a| arg(a, 1) == "3004")
+    );
+
+    quest_bypass::apply_for_map(&bot, "battleon", &cancel);
+    assert_eq!(
+        game.client_packets().len(),
+        3,
+        "nothing for an unlisted map"
+    );
+    quest_bypass::apply_custom(&bot, &quest_bypass::parse_custom_ids("793, x"), &cancel);
+    assert_eq!(game.client_packets().last(), Some(&update_quest(1, 12)));
+
+    // A quest that never loads is skipped once the follow stops.
+    cancel.store(true, Ordering::SeqCst);
+    let start = Instant::now();
+    quest_bypass::apply_custom(&bot, &[999_999], &cancel);
+    assert!(start.elapsed() < Duration::from_secs(3));
+    assert_eq!(game.client_packets().len(), 4);
+}
+
+#[test]
+fn unlock_all_and_the_level_fake() {
+    let game = FakeGame::new("Unlocker", "battleon", "2", "Enter");
+    game.set(
+        "world.myAvatar.objData",
+        r#"{"strQuests":"0a1B","strQuests2":"7","strQuests3":"","intGold":5}"#,
+    );
+    game.set("world.myAvatar.dataLeaf.intLevel", "35");
+    let bot = client(&game);
+
+    quest_bypass::unlock_all(&bot);
+    assert_eq!(
+        game.sets_of("world.myAvatar.objData.strQuests"),
+        [r#""zzzz""#]
+    );
+    assert_eq!(
+        game.sets_of("world.myAvatar.objData.strQuests2"),
+        [r#""z""#]
+    );
+    assert!(
+        game.sets_of("world.myAvatar.objData.strQuests3").is_empty(),
+        "an empty string stays empty"
+    );
+
+    quest_bypass::apply_level_fake(&bot);
+    assert_eq!(game.client_packets(), [quest_bypass::LEVEL_PACKET]);
+    game.set("world.myAvatar.dataLeaf.intLevel", "100");
+    quest_bypass::apply_level_fake(&bot);
+    assert_eq!(game.client_packets().len(), 1, "already level 100");
+}
+
+#[test]
+fn antilag_puts_the_users_settings_back_exactly() {
+    let game = FakeGame::new("Lagger", "battleon", "2", "Enter");
+    game.set("litePreference.data.bDisMonAnim", "true");
+    game.set("litePreference.data.bDisAuraAnim", "true");
+    game.set("ui.monsterIcon.redX.visible", "false");
+    let bot = client(&game);
+    bot.options.write().lag_killer = false;
+
+    let before = antilag::capture(&bot).unwrap();
+    assert_eq!(before.lite, [false, true, false, false, false, false, true]);
+    assert!(!before.lag_killer && !before.monsters_hidden);
+
+    antilag::set(&bot, true).unwrap();
+    assert!(bot.opts().lag_killer);
+    for key in antilag::LITE_KEYS {
+        assert_eq!(
+            game.get(&format!("litePreference.data.{key}")),
+            "true",
+            "{key}"
+        );
+    }
+    assert_eq!(
+        game.get("ui.monsterIcon.redX.visible"),
+        "true",
+        "monsters hidden"
+    );
+
+    antilag::restore(&bot, Some(&before));
+    assert_eq!(antilag::capture(&bot).unwrap(), before);
+    assert_eq!(
+        game.game_function_calls("world.toggleMonsters").len(),
+        0,
+        "toggleMonsters takes no arguments"
+    );
+    assert_eq!(
+        game.calls_to("callGameFunction0")
+            .iter()
+            .filter(|a| arg(a, 0) == "world.toggleMonsters")
+            .count(),
+        2
+    );
+}
+
+/// Waits for the follower thread to end (the follow's options are back by then).
+fn until_follow_ended(bot: &Bot) {
+    until("the follow to end", Duration::from_secs(10), || {
+        bot.butler.follow_ended()
+    });
+}
+
+#[test]
+fn a_butler_fakes_quests_and_its_level_and_unlock_all_wins() {
+    let _follows = FOLLOWS.lock();
+    let chief_game = FakeGame::new("Chief", "doomvaultb", "9", "r1");
+    let page_game = FakeGame::new("Page", "battleon", "4", "Enter");
+    *page_game.other.lock() = Some(("Chief".into(), chief_game.clone()));
+    page_game.set(
+        "world.questTree",
+        &quest_tree(&[(3004, 10, 2), (3008, 11, 5), (4242, 12, 1)]),
+    );
+    page_game.set("world.myAvatar.dataLeaf.intLevel", "10");
+    page_game.set("litePreference.data.bDisMonAnim", "true");
+    let chief = client(&chief_game);
+    let page = client(&page_game);
+    until("both files", Duration::from_secs(5), || {
+        chief.butler.username() == "Chief"
+            && page.butler.roster().iter().any(|d| d.username == "Chief")
+    });
+    let defaults = page.butler.settings();
+    page.butler
+        .set_settings(ButlerSettings {
+            quest_unlock_all: false,
+            quest_bypass: true,
+            quest_bypass_custom: "4242".into(),
+            fake_level: true,
+            anti_lag_following: true,
+            ..defaults.clone()
+        })
+        .unwrap();
+
+    // The bypasses: the custom ID at the start, the master's map before going there.
+    butler::start_follow(&page, "Chief").unwrap();
+    until("the goto", Duration::from_secs(10), || {
+        page_game.spot().0 == "doomvaultb"
+    });
+    until("the fakes", Duration::from_secs(5), || {
+        page_game.update_quest_packets().len() >= 3
+    });
+    let packets = page_game.client_packets();
+    assert!(packets.contains(&quest_bypass::LEVEL_PACKET.to_owned()));
+    assert!(packets.contains(&quest_bypass::ACHIEVEMENT_PACKET.to_owned()));
+    assert_eq!(
+        page_game.update_quest_packets(),
+        [
+            update_quest(1, 12),
+            update_quest(2, 10),
+            update_quest(5, 11)
+        ],
+        "the custom ID, then doomvaultb's, once: arriving doesn't fake them again"
+    );
+    // AntiLag while following by hand: on, then back as it was.
+    assert!(page.opts().lag_killer);
+    assert_eq!(page_game.get("litePreference.data.bFreezeMons"), "true");
+    butler::stop_follow(&page);
+    until_follow_ended(&page);
+    assert!(!page.opts().lag_killer);
+    assert_eq!(page_game.get("litePreference.data.bFreezeMons"), "false");
+    assert_eq!(
+        page_game.get("litePreference.data.bDisMonAnim"),
+        "true",
+        "the user's own setting stays on"
+    );
+
+    // Unlock All wins: every slot maxed, no bypass faked.
+    page_game.set("world.myAvatar.objData", r#"{"strQuests":"012"}"#);
+    page.butler
+        .set_settings(ButlerSettings {
+            quest_unlock_all: true,
+            ..page.butler.settings()
+        })
+        .unwrap();
+    let faked = page_game.update_quest_packets().len();
+    butler::start_follow(&page, "Chief").unwrap();
+    until("the unlock", Duration::from_secs(5), || {
+        !page_game
+            .sets_of("world.myAvatar.objData.strQuests")
+            .is_empty()
+    });
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(
+        page_game.sets_of("world.myAvatar.objData.strQuests")[0],
+        r#""zzz""#
+    );
+    assert_eq!(page_game.update_quest_packets().len(), faked);
+    butler::stop_follow(&page);
+    until_follow_ended(&page);
+    page.butler.set_settings(defaults).unwrap();
+}
+
+#[test]
+fn a_script_starting_while_following_asks_whether_to_keep_following() {
+    let _follows = FOLLOWS.lock();
+    let lead_game = FakeGame::new("Lead", "battleon", "6", "Enter");
+    let tail_game = FakeGame::new("Tail", "battleon", "6", "Enter");
+    *tail_game.other.lock() = Some(("Lead".into(), lead_game.clone()));
+    let lead = client(&lead_game);
+    let tail = client(&tail_game);
+    until("both files", Duration::from_secs(5), || {
+        lead.butler.username() == "Lead"
+            && tail.butler.roster().iter().any(|d| d.username == "Lead")
+    });
+    let dir = data_dir().join("suspend-script");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("Busy.ts");
+    std::fs::write(
+        &path,
+        "import { bot } from \"turu\";\nexport default function main(): void {\n    while (true) bot.sleep(50);\n}\n",
+    )
+    .unwrap();
+    tail.scripts.load(&path);
+
+    butler::start_follow(&tail, "Lead").unwrap();
+    assert!(tail.butler.suspend_notice().is_none());
+    script::start(&tail).unwrap();
+    until("the question", Duration::from_secs(5), || {
+        tail.butler.suspend_notice().is_some()
+    });
+    let notice = tail.butler.suspend_notice().unwrap();
+    assert_eq!(notice.master, "Lead");
+    assert!(notice.message().contains("following Lead"));
+
+    // Yes: stays suspended, follows again once the script stops.
+    butler::answer_suspend(&tail, notice.id, true);
+    assert!(tail.butler.suspend_notice().is_none());
+    assert_eq!(
+        tail.butler.following(),
+        Some(("Lead".into(), FollowSource::Manual))
+    );
+    script::stop(&tail);
+    until("the script to stop", Duration::from_secs(5), || {
+        !tail.scripts.is_running()
+    });
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(tail.butler.following().is_some(), "following again");
+
+    // No: stops following.
+    script::start(&tail).unwrap();
+    until("the second question", Duration::from_secs(5), || {
+        tail.butler.suspend_notice().is_some()
+    });
+    let second = tail.butler.suspend_notice().unwrap();
+    assert_ne!(second.id, notice.id);
+    butler::answer_suspend(&tail, notice.id, false);
+    assert!(
+        tail.butler.following().is_some(),
+        "an old question's answer does nothing"
+    );
+    butler::answer_suspend(&tail, second.id, false);
+    assert!(tail.butler.following().is_none());
+    assert!(tail.butler.suspend_notice().is_none());
+    script::stop(&tail);
+    until_follow_ended(&tail);
+}
+
+#[test]
+fn closing_marks_the_account_offline_at_once() {
+    let game = FakeGame::new("Leaving", "battleon", "8", "Enter");
+    let bot = client(&game);
+    let dir = SyncDir::new(data_dir().join("butler"));
+    until("a broadcast", Duration::from_secs(5), || {
+        dir.read_user("Leaving").is_some_and(|d| d.logged_in)
+    });
+    butler::close(&bot);
+    assert!(!dir.read_user("Leaving").unwrap().logged_in);
+    assert!(dir.online(None).iter().all(|d| d.username != "Leaving"));
+    // No broadcast after it.
+    std::thread::sleep(Duration::from_millis(1200));
+    assert!(!dir.read_user("Leaving").unwrap().logged_in);
 }

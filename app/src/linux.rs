@@ -31,6 +31,8 @@ pub fn choose_graphics(_window: &winit::window::Window, choice: Option<Graphics>
     }
     mugetsu::save_graphics(choice);
     tracing::info!("Graphics changed to {name}; starting Mugetsu again");
+    // Turu: the other clients' Butler drops the accounts at once.
+    crate::turu::close_butlers();
     start_again();
     std::process::exit(0);
 }

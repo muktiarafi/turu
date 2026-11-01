@@ -1508,6 +1508,7 @@ impl ApplicationHandler<RuffleEvent> for App {
             for (_, bot) in crate::turu::tabs() {
                 bot.set_host(None);
             }
+            crate::turu::close_butlers();
         }
         // `MainWindow` needs a tokio context to properly drop.
         {

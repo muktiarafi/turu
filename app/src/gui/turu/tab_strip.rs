@@ -1,7 +1,7 @@
 //! The tab strip above the nav bar (VibeSkua's `TabbedHostWindow`), once there are two tabs:
 //! one tab per game client, named after its character, with a dot while its script or Auto
-//! Attack runs ("!" when its script waits for you), "×" to close it, and "+" for a new one at
-//! the login screen.
+//! Attack runs ("!" when its script or Butler waits for you), "×" to close it, and "+" for a
+//! new one at the login screen.
 
 use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
 use crate::gui::TAB_STRIP_HEIGHT;
@@ -35,7 +35,10 @@ impl TabStrip {
                             let active = turu::active_tab();
                             for (tab, bot) in turu::tabs() {
                                 let busy = super::busy(&bot);
-                                let waits = bot.scripts.waits_for();
+                                let waits = bot
+                                    .scripts
+                                    .waits_for()
+                                    .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"));
                                 tab_button(ui, tab, &turu::tab_label(&bot), tab == active, busy, waits);
                             }
                             let plus = ui
@@ -85,7 +88,7 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
     }
     let dot = pos2(rect.left() + 12.0, rect.center().y);
     match waits {
-        // The script waits for an answer only this tab can give: a warning badge.
+        // The script (or Butler) waits for an answer only this tab can give: a warning badge.
         Some(_) => {
             ui.painter().circle_filled(dot, 6.0, WARNING);
             ui.painter().text(
@@ -129,7 +132,7 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
         turu::request_tab(TabRequest::Close(tab));
     } else if response
         .on_hover_text(match waits {
-            Some(what) => format!("{label}: its script waits for you ({what})"),
+            Some(what) => format!("{label}: waits for you ({what})"),
             None => label.to_owned(),
         })
         .clicked()
