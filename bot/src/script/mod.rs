@@ -601,6 +601,7 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.quests.unregister_all();
     bot.handlers.clear();
     bot.options.write().reset_after_script();
+    bot.state.lock().options_applied.restore_world();
     use crate::monitor::EventKind;
     let mut error = None;
     let status = match result {

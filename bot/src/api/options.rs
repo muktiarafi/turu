@@ -36,6 +36,12 @@ impl Applied {
     pub fn headless(&self) -> bool {
         self.headless == Some(true)
     }
+
+    /// Sends `killLag(false)` on the next tick even when Lag Killer wasn't on, which shows the
+    /// world again (VibeSkua's `ScriptStopped` toggles Lag Killer on and off for this).
+    pub fn restore_world(&mut self) {
+        self.lag_killer = Some(true);
+    }
 }
 
 /// True when a toggle must be sent: it changed, and "off" isn't sent before anything was
@@ -213,7 +219,14 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         )?;
     }
     if o.skip_cutscenes {
+        // `skipCutscenes` removes the cutscene but leaves the world as the cutscene left it,
+        // hidden: show it again unless Lag Killer hides it (VibeSkua's black screen until Lag
+        // Killer is toggled).
+        let cutscene = bot.flash.get_or::<i64>("mcExtSWF.numChildren", 0)? > 0;
         bot.flash.call("skipCutscenes", vec![])?;
+        if cutscene && !o.lag_killer {
+            bot.flash.set("world.visible", true)?;
+        }
     }
     if o.walk_speed != 8 {
         player::set_walk_speed(bot, o.walk_speed.into())?;

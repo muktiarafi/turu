@@ -289,6 +289,42 @@ fn options_send_toggles_once_and_repeat_ticks() {
     assert_eq!(game.calls_to("killLag").len(), 3);
 }
 
+#[test]
+fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    let world_shown = |game: &FakeGame| {
+        game.calls_to("setGameObject")
+            .iter()
+            .filter(|a| arg(a, 0) == "world.visible")
+            .count()
+    };
+    bot.options.write().skip_cutscenes = true;
+    options::apply(&bot).unwrap();
+    assert_eq!(game.calls_to("skipCutscenes").len(), 1);
+    assert_eq!(world_shown(&game), 0, "no cutscene, nothing to show");
+
+    game.set("mcExtSWF.numChildren", "1");
+    bot.options.write().lag_killer = true;
+    options::apply(&bot).unwrap();
+    assert_eq!(world_shown(&game), 0, "Lag Killer keeps the world hidden");
+
+    bot.options.write().lag_killer = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(world_shown(&game), 1);
+
+    // A stopping script shows the world even when Lag Killer was never on.
+    let kills = game.calls_to("killLag").len();
+    bot.state.lock().options_applied.restore_world();
+    options::apply(&bot).unwrap();
+    options::apply(&bot).unwrap();
+    assert_eq!(game.calls_to("killLag").len(), kills + 1);
+    assert_eq!(
+        game.calls_to("killLag").last().unwrap(),
+        &[FlashArg::Bool(false)]
+    );
+}
+
 fn frame_rates(game: &FakeGame) -> Vec<FlashArg> {
     game.calls_to("setGameObject")
         .into_iter()

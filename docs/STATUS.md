@@ -354,6 +354,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   {})`, used by CoreStory's `preLoad`), but nothing has sent one in game yet. Equipping still goes
   through the `equipItem` packet (check consumables in game), and CoreBots' quest-limit handler
   isn't restored.
+- **The black screen after a cutscene is fixed only in tests:** skua.swf's `skipCutscenes` removes
+  the cutscene but leaves `world.visible` off, so the game stayed black until Lag Killer was
+  toggled. `api/options.rs` now shows the world again after a skipped cutscene (unless Lag Killer
+  is on), and a stopping script sends `killLag(false)` even when Lag Killer was off (VibeSkua's
+  `ScriptStopped` toggle). That the cutscene hides the world is inferred, not seen in game.
 - **The counter-attack pause is unverified in game:** its tests run the `ct` packets against a
   fake game. Check the skill timer's 10 s wait and the re-attack on a real counter-attack boss.
 - **The FarmerJoe Core members are unverified in game:** the new CoreBots (`killKitsune`,
