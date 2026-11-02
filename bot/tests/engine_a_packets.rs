@@ -257,3 +257,39 @@ fn every_packet_is_forwarded() {
     sent(&bot, "%xt%zm%restRequest%1%%");
     assert_eq!(*count.lock(), (2, 1));
 }
+
+#[test]
+fn refused_turn_ins_and_server_warnings_are_logged() {
+    let bot = new_bot();
+    sent(&bot, "%xt%zm%tryQuestComplete%5%599%-1%false%1%wvz%");
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    sent(&bot, "%xt%zm%tryQuestComplete%5%599%-1%false%1%wvz%");
+    pext_json(
+        &bot,
+        json!({ "cmd": "ccqr", "bSuccess": 0, "QuestID": 599, "rewardObj": { "big": [1, 2, 3] } }),
+    );
+    pext_str(
+        &bot,
+        &["warning", "-1", "You can't carry any more of that item."],
+    );
+    // A turn-in that went through isn't logged.
+    pext_json(
+        &bot,
+        json!({ "cmd": "ccqr", "bSuccess": 1, "QuestID": 236 }),
+    );
+
+    let log = bot.logs.debug.text();
+    assert!(
+        log.contains("Quest 599: the server refused the turn-in; its last two attempts were sent "),
+        "{log}"
+    );
+    assert!(
+        log.contains(r#"Reply: {"QuestID":599,"bSuccess":0,"cmd":"ccqr"}"#),
+        "{log}"
+    );
+    assert!(
+        log.contains("Server warning: You can't carry any more of that item."),
+        "{log}"
+    );
+    assert!(!log.contains("Quest 236"), "{log}");
+}

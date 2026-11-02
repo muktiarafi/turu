@@ -119,10 +119,30 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
             }
         }
         "ccqr" => {
+            let quest_id = num(data.get("QuestID")).unwrap_or_default();
             if num(data.get("bSuccess")) == Some(1) {
-                let quest_id = num(data.get("QuestID")).unwrap_or_default();
                 bot.state.lock().stats.quests_completed += 1;
                 bot.events.emit(BotEvent::QuestTurnedIn { quest_id });
+            } else {
+                // Turu: a refused turn-in was silent, which left scripts' watchdogs guessing
+                // ("completable without a turn-in").
+                let sent = bot.state.lock().turn_ins_sent.get(&quest_id).copied();
+                let apart = match sent {
+                    Some((Some(earlier), latest)) => format!(
+                        "; its last two attempts were sent {} ms apart",
+                        latest.duration_since(earlier).as_millis()
+                    ),
+                    _ => String::new(),
+                };
+                let mut reply = data.clone();
+                if let Value::Object(fields) = &mut reply {
+                    fields.remove("rewardObj");
+                }
+                let mut reply = reply.to_string();
+                reply.truncate(300);
+                bot.note(format!(
+                    "Quest {quest_id}: the server refused the turn-in{apart}. Reply: {reply}"
+                ));
             }
         }
         "loadBank" => {
@@ -230,6 +250,15 @@ fn on_str(bot: &Arc<Bot>, data: &Value) {
             bot.events.emit(BotEvent::Login { username });
         }
         "popup" => tracing::debug!("popup packet: {data}"),
+        // Turu: the server's messages and warnings, which give the reason when it refuses
+        // something (a turn-in, a join, ...).
+        kind @ ("warning" | "server") => {
+            let text: Vec<String> = data
+                .as_array()
+                .map(|fields| fields.iter().skip(2).map(|v| text(Some(v))).collect())
+                .unwrap_or_default();
+            bot.note(format!("Server {kind}: {}", text.join(" ").trim()));
+        }
         _ => {}
     }
 }
@@ -262,6 +291,17 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
             item_id: part(4).parse().unwrap_or_default(),
             shop_item_id: part(6).parse().unwrap_or_default(),
         }),
+        "tryQuestComplete" => {
+            let quest_id = part(4).parse().unwrap_or_default();
+            let mut state = bot.state.lock();
+            let earlier = state
+                .turn_ins_sent
+                .get(&quest_id)
+                .map(|(_, latest)| *latest);
+            state
+                .turn_ins_sent
+                .insert(quest_id, (earlier, Instant::now()));
+        }
         "acceptQuest" => {
             let quest_id = part(4).parse().unwrap_or_default();
             bot.state.lock().stats.quests_accepted += 1;

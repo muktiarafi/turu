@@ -377,6 +377,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `main thread` line shows what it costs. Not built: VibeSkua's hidden title and nav bars in
   the tiles (Turu's bar stays, for the active tab) and a hover state for tiles.
 
+- **Refusals are logged:** a turn-in the server refuses (`ccqr` without `bSuccess`), with its
+  reply and how far apart the quest's last two `tryQuestComplete` were sent, and the server's
+  `warning`/`server` messages go to the Debug log and to the app's log with the account
+  (`Bot::note`). VibeSkua ignores both; CoreBots' turn-in watchdog ("completable without a
+  turn-in") had no way to say why.
 - **Logins that differ from VibeSkua:** a login that isn't an auto-relogin (`--user` at start,
   `ensureRelogin` from a script or the control API's `/login`) counts as a relogin under way, so
   the `connectionLost` that its own retries cause doesn't start a second, competing auto-relogin

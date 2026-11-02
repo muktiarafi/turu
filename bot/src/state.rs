@@ -18,6 +18,9 @@ pub struct GameState {
     pub in_game: bool,
     /// `catchPackets` was called for this login (VibeSkua: the timer's `catching`).
     pub catching_packets: bool,
+    /// When the last two `tryQuestComplete` packets for each quest were sent (earlier, latest),
+    /// for the log of a refused turn-in.
+    pub(crate) turn_ins_sent: HashMap<i64, (Option<Instant>, Instant)>,
     /// The last reads of `isLoggedIn` and of the avatar's `intState`, reused for a moment by
     /// every thread (`api::player::logged_in` and `state`).
     pub(crate) logged_in_read: Option<(Instant, bool)>,

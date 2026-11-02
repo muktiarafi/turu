@@ -175,6 +175,18 @@ impl Bot {
         self.logs.script.push(text);
     }
 
+    /// A line in the Debug log that also goes to the app's log, with the account (Turu: what the
+    /// game refused, for runs looked at afterwards). Never waits and never asks the game, so
+    /// packet handlers can call it.
+    pub(crate) fn note(&self, text: impl Into<String>) {
+        let text = text.into();
+        match self.log_name() {
+            Some(name) => tracing::info!(target: "turu::debug", "[{name}] {text}"),
+            None => tracing::info!(target: "turu::debug", "{text}"),
+        }
+        self.logs.debug.push(text);
+    }
+
     /// The account, for the app's log: the logged-in character, else the login being used.
     /// Never waits on a lock (a caller may hold one) and never asks the game.
     fn log_name(&self) -> Option<String> {
