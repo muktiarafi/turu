@@ -167,19 +167,25 @@ pub fn for_fully_rested(bot: &Bot, timeout: i64) -> BotResult<bool> {
 }
 
 /// Until the item is in the drop stack.
+///
+/// The drop stack is checked before `Playing` (VibeSkua checks `Playing` first): it's ours, so
+/// a drop that's there costs no call to the game.
 pub fn for_drop(bot: &Bot, item: NameOrId, timeout: i64) -> BotResult<bool> {
     until(
         bot,
-        || Ok(!player::playing(bot)? || bot.state.lock().drop_exists(item)),
+        || Ok(bot.state.lock().drop_exists(item) || !player::playing(bot)?),
         timeout,
     )
 }
 
 /// Until the item left the drop stack.
+///
+/// The drop stack is checked before `Playing`, as in [`for_drop`]: the pickup loop waits on
+/// every listed item, dropped or not, which read `Playing` (three calls to the game) for each.
 pub fn for_pickup(bot: &Bot, item: NameOrId, timeout: i64) -> BotResult<bool> {
     until(
         bot,
-        || Ok(!player::playing(bot)? || !bot.state.lock().drop_exists(item)),
+        || Ok(!bot.state.lock().drop_exists(item) || !player::playing(bot)?),
         timeout,
     )
 }

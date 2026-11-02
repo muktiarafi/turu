@@ -250,6 +250,19 @@ fn inventory_api_reads_the_game() {
 }
 
 #[test]
+fn picking_up_items_that_didnt_drop_asks_the_game_nothing() {
+    let (bot, game) = setup();
+    game.calls.lock().clear();
+    // The pickup loop does this every second for each listed item.
+    call(
+        &bot,
+        "drops.pickup",
+        json!([["Dragon Scale", "Void Aura", 11]]),
+    );
+    assert_eq!(*game.calls.lock(), Vec::<String>::new());
+}
+
+#[test]
 fn drops_pickup_sends_get_drop() {
     let (bot, game) = setup();
     bot.state
