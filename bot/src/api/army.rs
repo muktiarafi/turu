@@ -14,6 +14,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// `army/<name>.log` in the data folder, which every client of this machine shares (C# puts it
 /// in Skua's options folder). The name must be a plain file name.
@@ -75,9 +76,13 @@ pub fn write_log(bot: &Bot, name: &str, lines: &[String]) -> BotResult<()> {
 }
 
 fn write_log_in(dir: &Path, name: &str, lines: &[String]) -> BotResult<()> {
+    // Each write gets its own temporary file: the clients of one process (tabs) write the same
+    // log at once, and a shared name would be renamed away under another client's write.
+    static WRITES: AtomicU64 = AtomicU64::new(0);
     let path = log_file(dir, name)?;
     fs::create_dir_all(dir).map_err(|e| io_error(dir, e))?;
-    let temp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    let write = WRITES.fetch_add(1, Ordering::Relaxed);
+    let temp = dir.join(format!(".{name}.{}.{write}.tmp", std::process::id()));
     let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
     fs::write(&temp, text).map_err(|e| io_error(&temp, e))?;
     fs::rename(&temp, &path).map_err(|e| io_error(&path, e))
@@ -202,6 +207,27 @@ mod tests {
         clear_log_in(&dir, "ArmyLog").unwrap();
         assert!(read_log_in(&dir, "ArmyLog").unwrap().is_empty());
         assert!(append_log_in(&dir, "../escape", "x").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clients_of_one_process_can_write_the_log_at_once() {
+        let dir = std::env::temp_dir().join(format!("turu-army-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let writers: Vec<_> = (0..4)
+            .map(|i| {
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    for n in 0..200 {
+                        write_log_in(&dir, "Sync", &[format!("c{i}:1:{n}")]).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        assert_eq!(read_log_in(&dir, "Sync").unwrap().len(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
 
