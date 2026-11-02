@@ -9,9 +9,10 @@
 use crate::Bot;
 use crate::events::{BotEvent, Work};
 use crate::models::{ItemBase, ShopInfo};
+use crate::state::TurnInSent;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// A server packet: `{ params: { type: "json" | "str", dataObj } }`.
 pub fn on_extension_packet(bot: &Arc<Bot>, packet: Value) {
@@ -120,8 +121,13 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
         }
         "ccqr" => {
             let quest_id = num(data.get("QuestID")).unwrap_or_default();
+            let sent = bot.state.lock().unanswered_turn_ins.remove(&quest_id);
+            let after = sent.as_ref().map(after_text).unwrap_or_default();
             if num(data.get("bSuccess")) == Some(1) {
                 bot.state.lock().stats.quests_completed += 1;
+                bot.logs
+                    .debug
+                    .push(format!("Quest {quest_id}: turned in{after}."));
                 bot.events.emit(BotEvent::QuestTurnedIn { quest_id });
             } else {
                 // Turu: a refused turn-in was silent, which left scripts' watchdogs guessing
@@ -141,7 +147,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 let mut reply = reply.to_string();
                 reply.truncate(300);
                 bot.note(format!(
-                    "Quest {quest_id}: the server refused the turn-in{apart}. Reply: {reply}"
+                    "Quest {quest_id}: the server refused the turn-in{after}{apart}. Reply: {reply}"
                 ));
             }
         }
@@ -263,6 +269,18 @@ fn on_str(bot: &Arc<Bot>, data: &Value) {
     }
 }
 
+/// "; sent 12 ms after a turn-in of quest 2857" when another quest's turn-in went out shortly
+/// before this one (Turu: the server may drop a turn-in sent right after another).
+fn after_text(sent: &TurnInSent) -> String {
+    match sent.after {
+        Some((quest, gap)) if gap < Duration::from_secs(10) => format!(
+            "; sent {} ms after a turn-in of quest {quest}",
+            gap.as_millis()
+        ),
+        _ => String::new(),
+    }
+}
+
 /// A client packet: `%xt%zm%cmd%room%...%`.
 pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
     // VibeSkua: `Split('%', RemoveEmptyEntries)`.
@@ -293,14 +311,31 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
         }),
         "tryQuestComplete" => {
             let quest_id = part(4).parse().unwrap_or_default();
-            let mut state = bot.state.lock();
-            let earlier = state
-                .turn_ins_sent
-                .get(&quest_id)
-                .map(|(_, latest)| *latest);
-            state
-                .turn_ins_sent
-                .insert(quest_id, (earlier, Instant::now()));
+            let now = Instant::now();
+            let unanswered = {
+                let mut state = bot.state.lock();
+                let earlier = state
+                    .turn_ins_sent
+                    .get(&quest_id)
+                    .map(|(_, latest)| *latest);
+                state.turn_ins_sent.insert(quest_id, (earlier, now));
+                let after = state
+                    .last_turn_in
+                    .filter(|(quest, _)| *quest != quest_id)
+                    .map(|(quest, at)| (quest, now.duration_since(at)));
+                state.last_turn_in = Some((quest_id, now));
+                state
+                    .unanswered_turn_ins
+                    .insert(quest_id, TurnInSent { at: now, after })
+            };
+            // Turu: a turn-in the server drops without a `ccqr` was silent too.
+            if let Some(sent) = unanswered {
+                bot.note(format!(
+                    "Quest {quest_id}: no reply to the turn-in sent {} ms before this one{}.",
+                    now.duration_since(sent.at).as_millis(),
+                    after_text(&sent)
+                ));
+            }
         }
         "acceptQuest" => {
             let quest_id = part(4).parse().unwrap_or_default();
@@ -313,6 +348,8 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
             let intentional = {
                 let mut state = bot.state.lock();
                 state.drops.clear();
+                state.unanswered_turn_ins.clear();
+                state.last_turn_in = None;
                 state.intentional_logout
             };
             bot.events.emit(BotEvent::Logout);

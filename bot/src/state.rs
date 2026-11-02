@@ -6,7 +6,15 @@
 use crate::api::NameOrId;
 use crate::models::ItemBase;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// A `tryQuestComplete` sent, for the log of its outcome (Turu).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TurnInSent {
+    pub at: Instant,
+    /// Another quest's turn-in sent before it, and how long before.
+    pub after: Option<(i64, Duration)>,
+}
 
 #[derive(Debug, Default)]
 pub struct GameState {
@@ -21,6 +29,10 @@ pub struct GameState {
     /// When the last two `tryQuestComplete` packets for each quest were sent (earlier, latest),
     /// for the log of a refused turn-in.
     pub(crate) turn_ins_sent: HashMap<i64, (Option<Instant>, Instant)>,
+    /// Turn-ins the server hasn't answered (`ccqr`) yet, by quest.
+    pub(crate) unanswered_turn_ins: HashMap<i64, TurnInSent>,
+    /// The quest and time of the last `tryQuestComplete` sent.
+    pub(crate) last_turn_in: Option<(i64, Instant)>,
     /// The last reads of `isLoggedIn` and of the avatar's `intState`, reused for a moment by
     /// every thread (`api::player::logged_in` and `state`).
     pub(crate) logged_in_read: Option<(Instant, bool)>,

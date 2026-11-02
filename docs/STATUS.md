@@ -381,7 +381,16 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   reply and how far apart the quest's last two `tryQuestComplete` were sent, and the server's
   `warning`/`server` messages go to the Debug log and to the app's log with the account
   (`Bot::note`). VibeSkua ignores both; CoreBots' turn-in watchdog ("completable without a
-  turn-in") had no way to say why.
+  turn-in") had no way to say why. A turn-in the server never answers is noted when the same
+  quest is sent again, and turn-ins that went through go to the Debug log; each says how soon
+  after another quest's turn-in it was sent.
+- **Registered quests turn in and accept one at a time:** CoreBots' watcher sends one
+  `tryQuestComplete`, checks it `ActionDelay * 2` later and only then goes on with the next
+  quest, as C#'s `foreach` awaits `CompleteQuest`; the manager accepts one quest per
+  `ActionDelay * 2`, as C# waits after each. Both used to send everything at once. A packet
+  capture of 0MaxBags showed the cost: of two accepts sent together the server dropped the
+  second ("Please slow down"), the client still showed that quest (The Dark Deal) in progress,
+  and its turn-ins went unanswered until the stuck check accepted it again 20 tries later.
 - **Combat stalls are logged:** when the skill timer goes 2 minutes without attacking, it notes
   the same way the player's state (dead or alive), HP, map, cell and pad, the living monsters in
   the cell and whether attacks are stopped; again every 10 minutes while that lasts, and once
