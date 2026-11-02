@@ -164,11 +164,24 @@ impl Bot {
         events::on_flash_call(self, name, args);
     }
 
-    /// `bot.log(...)`: a line in the script log.
+    /// `bot.log(...)`: a line in the script log. In the app's log (`ruffle.log`, the terminal) it
+    /// starts with the account, as several clients write there (Turu).
     pub fn log(&self, text: impl Into<String>) {
         let text = text.into();
-        tracing::info!(target: "turu::script", "{text}");
+        match self.log_name() {
+            Some(name) => tracing::info!(target: "turu::script", "[{name}] {text}"),
+            None => tracing::info!(target: "turu::script", "{text}"),
+        }
         self.logs.script.push(text);
+    }
+
+    /// The account, for the app's log: the logged-in character, else the login being used.
+    /// Never waits on a lock (a caller may hold one) and never asks the game.
+    fn log_name(&self) -> Option<String> {
+        let character = self.state.try_lock().and_then(|s| s.username.clone());
+        character
+            .or_else(|| self.servers.try_login_info_name())
+            .filter(|n| !n.trim().is_empty())
     }
 
     /// `bot.sleep(ms)`: on the script thread, wakes early (and fails) when the script stops.

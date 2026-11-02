@@ -119,6 +119,8 @@ struct FakeGame {
     values: Mutex<HashMap<String, String>>,
     calls: Mutex<Vec<(String, Vec<FlashArg>)>>,
     logged_in: AtomicBool,
+    /// Server clicks that connect but never get into the world.
+    stuck_connects: std::sync::atomic::AtomicUsize,
 }
 
 const LIST: &str = r#"[{"sName":"Artix","sIP":"1.1.1.1","iPort":5588,"bOnline":1,"iCount":5,"iMax":1000},
@@ -204,7 +206,13 @@ impl FlashHost for FakeGame {
                 "null".into()
             }
             "clickServer" | "connectToServer" => {
-                self.enter_world();
+                let stuck = self
+                    .stuck_connects
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok();
+                if !stuck {
+                    self.enter_world();
+                }
                 "true".into()
             }
             "callGameFunction" => {
@@ -486,4 +494,53 @@ fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
         "{:?}",
         started.elapsed()
     );
+}
+
+#[test]
+fn a_login_that_retries_keeps_its_server_and_isnt_raced_by_the_watchdog() {
+    let game = FakeGame::new();
+    game.leave_world();
+    // The first connect never gets into the world: the attempt times out.
+    game.stuck_connects.store(1, Ordering::SeqCst);
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        o.relogin_watchdog = true;
+        o.login_timeout = 300;
+        o.relogin_try_delay = 0;
+    }
+    let login = {
+        let bot = bot.clone();
+        std::thread::spawn(move || {
+            let ctx = turu_bot::api::servers::Ctx::new(&bot);
+            turu_bot::api::servers::ensure_relogin(&ctx, Some("Twilly")).unwrap()
+        })
+    };
+    assert!(wait_until(Duration::from_secs(5), || !game
+        .calls_to("clickServer")
+        .is_empty()));
+    // The login counts as a relogin under way, so the game's `connectionLost` (which follows
+    // its own disconnect between attempts) doesn't start another one.
+    assert!(bot.servers.is_relogging());
+    bot.on_flash_call("connectionLost", vec![]);
+
+    assert!(login.join().unwrap(), "logged in on the second attempt");
+    let clicks: Vec<String> = game
+        .calls_to("clickServer")
+        .iter()
+        .map(|a| arg(a, 0))
+        .collect();
+    assert_eq!(
+        clicks,
+        ["Twilly", "Twilly"],
+        "stays on the requested server"
+    );
+    let log = bot.logs.script.text();
+    assert!(!log.contains("Auto re-login triggered"), "{log}");
+    assert!(
+        log.contains("failed on Twilly (connected: false, avatar state: 0, world: false)"),
+        "{log}"
+    );
+    assert!(!bot.servers.is_relogging(), "the mark goes with the login");
 }

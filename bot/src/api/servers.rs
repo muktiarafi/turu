@@ -40,6 +40,9 @@ pub struct ServerRunner {
     login_info: Mutex<Option<(String, String)>>,
     last_ip: Mutex<String>,
     last_name: Mutex<String>,
+    /// Turu: the server the last `ensureRelogin` was asked for, for an auto-relogin before any
+    /// login got in.
+    requested: Mutex<String>,
     fetcher: Mutex<Fetcher>,
     /// A background refresh of the list (for the UI) is running.
     refreshing: AtomicBool,
@@ -59,6 +62,7 @@ impl Default for ServerRunner {
             login_info: Mutex::new(None),
             last_ip: Mutex::new(String::new()),
             last_name: Mutex::new(String::new()),
+            requested: Mutex::new(String::new()),
             fetcher: Mutex::new(Arc::new(fetch_servers)),
             refreshing: AtomicBool::new(false),
             refreshed_at: Mutex::new(None),
@@ -98,6 +102,14 @@ impl ServerRunner {
 
     pub fn last_name(&self) -> String {
         self.last_name.lock().clone()
+    }
+
+    /// The `setLoginInfo` username without waiting on its lock (for the log's account names).
+    pub(crate) fn try_login_info_name(&self) -> Option<String> {
+        self.login_info
+            .try_lock()?
+            .as_ref()
+            .map(|(username, _)| username.clone())
     }
 
     /// An auto-relogin is under way.
@@ -777,10 +789,63 @@ pub fn relogin_named(ctx: &Ctx, name: &str) -> BotResult<bool> {
     )
 }
 
+/// Turu: a login that isn't an auto-relogin (the command-line login, a script's or the control
+/// API's `ensureRelogin`) counts as one while it runs. Its retries disconnect, and the game's
+/// `connectionLost` that follows started an auto-relogin of its own (VibeSkua's rule: only
+/// `_waitForLogin` holds it back), which fought this login over the tab: seven tabs logging in
+/// at once kept logging in and out, on two servers. (Scripted relogins turn auto-relogin off.)
+struct LoginUnderWay<'a> {
+    bot: &'a Bot,
+    marked: bool,
+}
+
+impl<'a> LoginUnderWay<'a> {
+    fn new(bot: &'a Bot) -> Self {
+        let marked = !bot.servers.waiting_for_login.swap(true, Ordering::AcqRel);
+        Self { bot, marked }
+    }
+}
+
+impl Drop for LoginUnderWay<'_> {
+    fn drop(&mut self) {
+        // Unless an auto-relogin started meanwhile (after a cancel): it clears the flag itself.
+        if self.marked && self.bot.servers.cancel.lock().is_none() {
+            self.bot
+                .servers
+                .waiting_for_login
+                .store(false, Ordering::Release);
+        }
+    }
+}
+
+/// Turu: where an auto-relogin logs back in: `ReloginServer` (or with `AutoReloginAny`, another
+/// server) when set, else the server you were on, else the one the last login asked for.
+/// VibeSkua takes the first server of the list then, which put accounts on whatever server
+/// came first.
+fn reconnect_target(bot: &Bot) -> Option<String> {
+    let (any, relogin_server) = {
+        let o = bot.opts();
+        (o.auto_relogin_any, o.relogin_server.clone())
+    };
+    if any || !relogin_server.trim().is_empty() {
+        return None;
+    }
+    [
+        bot.servers.last_name(),
+        bot.servers.requested.lock().clone(),
+    ]
+    .into_iter()
+    .find(|name| !name.trim().is_empty())
+}
+
 /// VibeSkua `EnsureRelogin([serverName])`: logs in (up to `ReloginTries` attempts, trying other
 /// servers) unless you're already playing. Log out first.
 pub fn ensure_relogin(ctx: &Ctx, name: Option<&str>) -> BotResult<bool> {
     let bot = ctx.bot;
+    let _under_way = LoginUnderWay::new(bot);
+    if let Some(name) = name.filter(|n| !n.trim().is_empty()) {
+        *bot.servers.requested.lock() = name.to_owned();
+    }
     set_intentional(bot, false);
     get_servers(bot, true);
     ctx.check()?;
@@ -844,7 +909,7 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
     let max = bot.opts().relogin_tries;
     let mut tries = 0;
     let mut attempted = HashSet::new();
-    let mut preferred = Some(server.name.clone());
+    let preferred = Some(server.name.clone());
     while !player::playing(bot).unwrap_or(false) && tries < max {
         ctx.check()?;
         tries += 1;
@@ -854,6 +919,12 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
             format!("Attempt {tries}/{max}: refreshed server list ({n} servers)."),
         );
         let candidates = candidates(bot);
+        // Turu: the requested server is tried again while it's usable (VibeSkua drops it after
+        // a failed attempt and takes the first server of the list, so a burst of logins that
+        // timed out scattered the accounts over servers).
+        if let Some(preferred) = &preferred {
+            attempted.remove(&preferred.to_lowercase());
+        }
         let target = Preferences::with(bot, |prefs| {
             select_server(
                 &candidates,
@@ -913,7 +984,6 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
                 bot,
                 format!("Attempt {tries}/{max}: server list screen not ready."),
             );
-            preferred = None;
             if tries < max {
                 relogin_delay(ctx)?;
             }
@@ -972,14 +1042,19 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
             );
             return Ok(true);
         }
+        // Turu: what the world check saw, to tell a login that never got in from one the check
+        // missed.
         relogin_log(
             bot,
             format!(
-                "Attempt {tries}/{max} failed on {}. Watchdog aborting attempt.",
-                target.name
+                "Attempt {tries}/{max} failed on {} (connected: {}, avatar state: {}, world: {}). \
+                 Watchdog aborting attempt.",
+                target.name,
+                describe(player::logged_in(bot)),
+                describe(player::state(bot)),
+                describe(player::world_loaded(bot)),
             ),
         );
-        preferred = None;
         disconnect_for_relogin(bot);
         if tries < max {
             relogin_delay(ctx)?;
@@ -990,6 +1065,14 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
         relogin_log(bot, "Unable to reconnect within configured retries.");
     }
     Ok(playing)
+}
+
+/// A read of the game for the log: its value, or why it failed.
+fn describe<T: std::fmt::Display>(read: BotResult<T>) -> String {
+    match read {
+        Ok(value) => value.to_string(),
+        Err(e) => format!("unreadable ({e})"),
+    }
 }
 
 /// `LoginTimeout`, at most 15 s.
@@ -1161,7 +1244,7 @@ fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>)
     ctx.sleep(delay as u64)?;
 
     bot.state.lock().stats.relogins += 1;
-    let relogged = ensure_relogin(&ctx, None)?;
+    let relogged = ensure_relogin(&ctx, reconnect_target(bot).as_deref())?;
     ctx.check()?;
     if was_running && relogged {
         if let Err(e) = crate::script::start_silent(bot) {

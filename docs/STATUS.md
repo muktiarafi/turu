@@ -372,6 +372,16 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `main thread` line shows what it costs. Not built: VibeSkua's hidden title and nav bars in
   the tiles (Turu's bar stays, for the active tab) and a hover state for tiles.
 
+- **Logins that differ from VibeSkua:** a login that isn't an auto-relogin (`--user` at start,
+  `ensureRelogin` from a script or the control API's `/login`) counts as a relogin under way, so
+  the `connectionLost` that its own retries cause doesn't start a second, competing auto-relogin
+  (seven tabs logging in at once kept logging in and out on two servers). Retries keep the
+  requested server while it's usable (VibeSkua drops it after a failed attempt), and an
+  auto-relogin goes back to the server you were on (or the last one asked for) unless
+  `ReloginServer` or `AutoReloginAny` is set (VibeSkua: the first server of the list). A timed-out
+  attempt logs what the world check saw, and script log lines in the app's log start with the
+  account. Why seven simultaneous first logins missed the 15 s world check (three didn't) is
+  still open: the next such run logs it.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
