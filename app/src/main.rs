@@ -423,6 +423,7 @@ fn main() -> Result<(), Error> {
     turu::start_api();
     turu::start_monitor();
     turu::start_perf_log();
+    turu::start_grid_test();
 
     // Turu: `--headless` runs the game without a window.
     if turu::headless() {

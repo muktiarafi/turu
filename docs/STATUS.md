@@ -334,7 +334,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   the run time means that thread is busy with ticks or other tabs' calls. With a window, the log
   also has a `main thread` line (`app/src/thread_perf.rs`): idle, drawing (the movie and its GPU
   wait, getting the window's next picture, the UI, submit and present), the games and bot calls,
-  and the rest. They led to the
+  and the rest. `TURU_GRID_TEST=<fps>` measures what a grid of live tiles (VibeSkua's Grid View)
+  would cost: hidden tabs run at `fps` instead of 2 and draw every frame into their own movie view
+  (never shown, at the window's size, so drawing costs more than a tile would); the line then
+  has the hidden tabs' drawing too. They led to the
   background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
   while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
   checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind

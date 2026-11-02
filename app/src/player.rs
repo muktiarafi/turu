@@ -672,9 +672,17 @@ impl PlayerController {
                 Some((last, due)) if now >= due => {
                     let mut player = slot.lock(false);
                     let started = Instant::now();
+                    let frames_before = player.frames_run();
                     player.tick(FloatDuration::from_std(now - last));
                     if let Some(perf) = &slot.perf {
                         perf.record_tick(started.elapsed());
+                    }
+                    // Turu: `TURU_GRID_TEST` draws each frame a hidden tab runs, into its own
+                    // movie view (never shown), as a grid of tiles would.
+                    if crate::turu::grid_test_fps().is_some() && player.frames_run() != frames_before {
+                        let drawing = Instant::now();
+                        player.render();
+                        crate::thread_perf::add(crate::thread_perf::Phase::HiddenDraw, drawing.elapsed());
                     }
                     now + player.time_til_next_frame().min(HIDDEN_TICK_MAX)
                 }

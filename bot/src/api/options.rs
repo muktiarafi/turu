@@ -10,6 +10,15 @@ use crate::error::{BotError, BotResult};
 use crate::host::FlashArg;
 use serde_json::Value;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
+
+/// Turu: the frame rate of a hidden tab (VibeSkua's tabbed host: 2). The app's
+/// `TURU_GRID_TEST` raises it, to measure what a grid of live tiles would cost.
+static HIDDEN_TAB_FPS: AtomicI32 = AtomicI32::new(2);
+
+pub fn set_hidden_tab_fps(fps: i32) {
+    HIDDEN_TAB_FPS.store(fps.max(1), Ordering::Relaxed);
+}
 
 /// What [`apply`] last pushed into the game (`None`: nothing yet this login).
 #[derive(Debug, Default, Clone)]
@@ -130,7 +139,12 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
                 let fps = bot.flash.get::<f64>("stage.frameRate")?.round() as i32;
                 bot.state.lock().before_slowed = Some(fps);
             }
-            bot.flash.set("stage.frameRate", 2)?;
+            let fps = if o.headless_mode {
+                2
+            } else {
+                HIDDEN_TAB_FPS.load(Ordering::Relaxed)
+            };
+            bot.flash.set("stage.frameRate", fps)?;
         } else {
             let fps = match bot.state.lock().before_slowed.take() {
                 _ if o.set_fps > 0 => o.set_fps,

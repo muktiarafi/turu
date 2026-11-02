@@ -214,6 +214,7 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |
 | `TURU_SCRIPTS_REPO` | Another scripts repository (`owner/name`). |
 | `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks. |
+| `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |
 | `RUST_LOG` | What the log shows. |
 
 ## Troubleshooting

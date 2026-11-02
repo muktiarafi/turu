@@ -22,11 +22,13 @@ pub enum Phase {
     Ui,
     /// Submitting the window's commands and presenting the picture.
     Present,
+    /// A hidden tab drawing its movie, which only `TURU_GRID_TEST` does.
+    HiddenDraw,
 }
 
-const PHASES: usize = 6;
+const PHASES: usize = 7;
 static MICROS: [AtomicU64; PHASES] = [const { AtomicU64::new(0) }; PHASES];
-static DRAWS: AtomicU64 = AtomicU64::new(0);
+static COUNTS: [AtomicU64; PHASES] = [const { AtomicU64::new(0) }; PHASES];
 
 thread_local! {
     static IDLE_SINCE: Cell<Option<Instant>> = const { Cell::new(None) };
@@ -34,9 +36,7 @@ thread_local! {
 
 pub fn add(phase: Phase, took: Duration) {
     MICROS[phase as usize].fetch_add(took.as_micros() as u64, Ordering::Relaxed);
-    if matches!(phase, Phase::Draw) {
-        DRAWS.fetch_add(1, Ordering::Relaxed);
-    }
+    COUNTS[phase as usize].fetch_add(1, Ordering::Relaxed);
 }
 
 /// The event loop goes to sleep (end of `about_to_wait`).
@@ -54,7 +54,7 @@ pub fn woke() {
 pub struct Snapshot {
     at: Instant,
     micros: [u64; PHASES],
-    draws: u64,
+    counts: [u64; PHASES],
     /// The renderer's wait for the GPU, part of drawing the movie (ruffle-aqw keeps at most two
     /// frames queued for the GPU).
     gpu_wait_micros: u64,
@@ -65,7 +65,7 @@ pub fn snapshot() -> Snapshot {
     Snapshot {
         at: Instant::now(),
         micros: std::array::from_fn(|i| MICROS[i].load(Ordering::Relaxed)),
-        draws: DRAWS.load(Ordering::Relaxed),
+        counts: std::array::from_fn(|i| COUNTS[i].load(Ordering::Relaxed)),
         gpu_wait_micros: timers::snapshot()[timers::GPU_WAIT],
     }
 }
@@ -78,13 +78,26 @@ impl Snapshot {
         let secs = self.at.duration_since(earlier.at).as_secs_f64().max(0.001);
         let ms = |phase: Phase| (self.micros[phase as usize] - earlier.micros[phase as usize]) as f64 / 1000.0;
         let per_sec = |phase: Phase| ms(phase) / secs;
-        let draws = self.draws - earlier.draws;
+        let count = |phase: Phase| self.counts[phase as usize] - earlier.counts[phase as usize];
+        let draws = count(Phase::Draw);
         let per_draw = |phase: Phase| if draws > 0 { ms(phase) / draws as f64 } else { 0.0 };
-        let rest = (1000.0 - per_sec(Phase::Idle) - per_sec(Phase::Draw) - game_ms / secs).max(0.0);
+        let rest = (1000.0 - per_sec(Phase::Idle) - per_sec(Phase::Draw) - per_sec(Phase::HiddenDraw) - game_ms / secs)
+            .max(0.0);
+        let hidden_draws = count(Phase::HiddenDraw);
+        let hidden = if hidden_draws > 0 {
+            format!(
+                "; hidden tabs drawing {:.0} ms/s, {:.1} draws/s [{:.2} ms/draw]",
+                per_sec(Phase::HiddenDraw),
+                hidden_draws as f64 / secs,
+                ms(Phase::HiddenDraw) / hidden_draws as f64
+            )
+        } else {
+            String::new()
+        };
         format!(
             "main thread: idle {:.0} ms/s; drawing {:.0} ms/s, {:.1} draws/s (movie {:.0} of which GPU wait {:.0}, \
-             next picture {:.0} [{:.2} ms/draw], UI {:.0}, submit+present {:.0} [{:.2} ms/draw]); games and bot \
-             calls {:.0} ms/s; rest {:.0} ms/s",
+             next picture {:.0} [{:.2} ms/draw], UI {:.0}, submit+present {:.0} [{:.2} ms/draw]){hidden}; games \
+             and bot calls {:.0} ms/s; rest {:.0} ms/s",
             per_sec(Phase::Idle),
             per_sec(Phase::Draw),
             draws as f64 / secs,

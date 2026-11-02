@@ -504,6 +504,23 @@ pub fn start_perf_log() {
     }
 }
 
+/// `TURU_GRID_TEST=<fps>`: hidden tabs run at `fps` (not 2) and draw every frame they run, to
+/// measure with `TURU_PERF_LOG` what a grid of live tiles would cost (each tile is a tab).
+pub fn grid_test_fps() -> Option<i32> {
+    static FPS: OnceLock<Option<i32>> = OnceLock::new();
+    *FPS.get_or_init(|| {
+        std::env::var("TURU_GRID_TEST").ok().and_then(|s| s.trim().parse::<i32>().ok()).filter(|f| *f > 0)
+    })
+}
+
+/// Applies `TURU_GRID_TEST` (see [`grid_test_fps`]).
+pub fn start_grid_test() {
+    if let Some(fps) = grid_test_fps() {
+        turu_bot::api::options::set_hidden_tab_fps(fps);
+        tracing::info!("Grid test (TURU_GRID_TEST): hidden tabs run at {fps} FPS and draw every frame");
+    }
+}
+
 struct Monitor {
     server: Option<turu_bot::monitor::server::Server>,
     /// What `server` was started with: allow other devices, port.
