@@ -391,6 +391,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   capture of 0MaxBags showed the cost: of two accepts sent together the server dropped the
   second ("Please slow down"), the client still showed that quest (The Dark Deal) in progress,
   and its turn-ins went unanswered until the stuck check accepted it again 20 tries later.
+  Unlike C#, the watcher and the manager also keep `ActionDelay` between their quest packets
+  (a turn-in right after an accept, or the reverse, was still dropped now and then); a quest
+  whose turn is too soon waits for the next run.
 - **Combat stalls are logged:** when the skill timer goes 2 minutes without attacking, it notes
   the same way the player's state (dead or alive), HP, map, cell and pad, the living monsters in
   the cell and whether attacks are stopped; again every 10 minutes while that lasts, and once
