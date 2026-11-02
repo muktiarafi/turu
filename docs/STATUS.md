@@ -331,7 +331,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   and how long the player ran it (timed in `answer_flash_call`); each tab's player ticks too.
   Read with `GET /debug/perf`, or logged per tab with `TURU_PERF_LOG=<seconds>`
   (`docs/HEADLESS.md`). The wait includes the queue on the player's thread, so a wait far above
-  the run time means that thread is busy with ticks or other tabs' calls.
+  the run time means that thread is busy with ticks or other tabs' calls. They led to the
+  background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
+  while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
+  checks were about half of all calls.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.

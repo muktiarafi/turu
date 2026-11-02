@@ -125,15 +125,25 @@ fn item_added(bot: &Bot, item_id: i64, quantity_now: i64, fallback: &ItemBase) {
     }
 }
 
+/// How often the timer checks that you're still in game, and the loading screen while in game
+/// (Turu: VibeSkua checks both on every 20 ms tick and the loading screen every 100 ms, where
+/// a call to the game is nearly free; here each is a trip to the player's thread, and these
+/// were about half of all calls). Out of game the timer checks on every tick, so a login is
+/// caught, and `catchPackets` sent, as soon as the world appears.
+const IN_GAME_CHECK: Duration = Duration::from_millis(100);
+const IN_GAME_LOAD_CHECK: Duration = Duration::from_millis(250);
+
 /// 20 ms tick (VibeSkua `ScriptInterface.ScriptTimer`): tracks login state, calls
 /// `catchPackets` once per login, sends rest packets every 1200 ms and applies the options
 /// every 250 ms while playing. Its watchdog starts auto-relogin on an unexpected disconnect,
-/// a kick (checked every 1 s) or a loading screen that's stuck (checked every 100 ms).
+/// a kick (checked every 1 s) or a loading screen that's stuck (checked every 100 ms, in game
+/// every [`IN_GAME_LOAD_CHECK`]).
 fn timer(weak: Weak<Bot>) {
     let mut last_options = Instant::now();
     let mut last_rest = Instant::now();
     let mut last_kick_check = Instant::now();
     let mut last_load_check = Instant::now();
+    let mut last_game_check = Instant::now();
     let mut load = LoadWatch::default();
     loop {
         std::thread::sleep(Duration::from_millis(20));
@@ -141,7 +151,13 @@ fn timer(weak: Weak<Bot>) {
         if !bot.state.lock().game_loaded || !bot.flash.has_host() {
             continue;
         }
-        let in_game = crate::api::player::is_in_game(&bot).unwrap_or(false);
+        let checked_in_game = bot.state.lock().in_game;
+        let in_game = if !checked_in_game || last_game_check.elapsed() >= IN_GAME_CHECK {
+            last_game_check = Instant::now();
+            crate::api::player::is_in_game(&bot).unwrap_or(false)
+        } else {
+            true
+        };
         let (was_in_game, catching, intentional) = {
             let mut state = bot.state.lock();
             let was = state.in_game;
@@ -185,7 +201,12 @@ fn timer(weak: Weak<Bot>) {
                 servers::begin_logout(&bot, false);
             }
         }
-        if last_load_check.elapsed() >= Duration::from_millis(100) {
+        let load_check = if in_game {
+            IN_GAME_LOAD_CHECK
+        } else {
+            Duration::from_millis(100)
+        };
+        if last_load_check.elapsed() >= load_check {
             last_load_check = Instant::now();
             check_stuck_loading(&bot, &mut load);
         }

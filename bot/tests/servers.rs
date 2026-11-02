@@ -449,3 +449,41 @@ fn a_stuck_message_on_the_login_screen_logs_out_only_once() {
     std::thread::sleep(Duration::from_millis(1000));
     assert_eq!(logouts(), 1);
 }
+
+#[test]
+fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    bot.state.lock().game_loaded = true;
+    let catches = || game.calls_to("catchPackets").len();
+    assert!(wait_until(Duration::from_secs(2), || catches() == 1));
+
+    // In game: "still in game?" every 100 ms, not every 20 ms tick.
+    let world_checks = || {
+        game.calls_to("isNull")
+            .iter()
+            .filter(|a| arg(a, 0) == "world")
+            .count()
+    };
+    let before = world_checks();
+    std::thread::sleep(Duration::from_millis(1000));
+    let checks = world_checks() - before;
+    assert!((5..=15).contains(&checks), "{checks} checks in a second");
+
+    // A logout is still noticed within a check or two.
+    game.leave_world();
+    assert!(wait_until(Duration::from_millis(500), || !bot
+        .state
+        .lock()
+        .in_game));
+
+    // Out of game it checks every tick: the next login gets `catchPackets` right away.
+    game.enter_world();
+    let started = Instant::now();
+    assert!(wait_until(Duration::from_secs(1), || catches() == 2));
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "{:?}",
+        started.elapsed()
+    );
+}
