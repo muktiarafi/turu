@@ -8,7 +8,7 @@
 //! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats. |
 //! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, and `next`. Army polls it. |
 //! | `POST /script/load?path=` | Load a script (relative to the scripts folder, or absolute). |
-//! | `POST /script/start[?path=]` | Start the loaded script, or load and start `path`. |
+//! | `POST /script/start[?path=][&configure=1]` | Start the loaded script, or load and start `path`; with `configure=1` it shows the Script Options window first, as Start does in the window (Army Control sends it). |
 //! | `POST /script/stop`, `/script/pause`, `/script/resume` | |
 //! | `GET /log?type=script\|debug\|packet[&since=]` | Log lines from number `since`, and `next`. |
 //! | `GET /options` | The bot options (Options > Game). |
@@ -251,7 +251,12 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             {
                 return e;
             }
-            match crate::script::start_silent(bot) {
+            let started = if query("configure").as_deref() == Some("1") {
+                crate::script::start(bot)
+            } else {
+                crate::script::start_silent(bot)
+            };
+            match started {
                 Ok(()) => ok(json!({ "started": bot.scripts.loaded() })),
                 Err(e) => error(409, e),
             }

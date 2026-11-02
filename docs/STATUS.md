@@ -431,9 +431,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   with no time left, as Grimlite-Li's `AuraManager` does; check in game that `remaining` is set
   for every timed aura, or live auras would read as gone. The same goes for
   `bot.reputation` (`world.myAvatar.factions`), which CoreBots' `factionRank` now uses.
-- **Script options:** the window never opens by itself with `--headless`, or for runs started from the command line, the HTTP API,
-  auto-relogin or the Scheduler (VibeSkua's `SilentConfig` covers only the command line and the
-  scheduler; its relogin restart can show it).
+- **Script options:** the window never opens by itself with `--headless`, or for runs started from the HTTP API
+  (unless it passes `configure=1`), auto-relogin or the Scheduler (VibeSkua's `SilentConfig` covers only
+  `--script-options-storage` runs and the scheduler; its relogin restart can show it). As in VibeSkua it does
+  open for `--run-script` (so Accounts' auto-start) and Army Control's Start, in each client.
 - **CoreStory is unverified in game:** its test only checks that `preLoad` finds the quests of a
   story function. `killQuest`, `mapItemQuest` and the unlock-recovery loop of `questProgression`
   need a story run.

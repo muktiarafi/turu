@@ -193,8 +193,12 @@ impl Command {
             }
         };
         let (path, body) = match self {
-            Self::StartScript(None) => (with("/script/start", &[]), Vec::new()),
-            Self::StartScript(Some(path)) => (with("/script/start", &[("path", path)]), Vec::new()),
+            // VibeSkua's Army start runs the client's own Start: the Script Options window shows.
+            Self::StartScript(None) => (with("/script/start", &[("configure", "1")]), Vec::new()),
+            Self::StartScript(Some(path)) => (
+                with("/script/start", &[("path", path), ("configure", "1")]),
+                Vec::new(),
+            ),
             Self::StopScript => (with("/script/stop", &[]), Vec::new()),
             Self::LoadScript(path) => (with("/script/load", &[("path", path)]), Vec::new()),
             Self::Login => (with("/login", &[]), Vec::new()),
@@ -671,10 +675,13 @@ mod tests {
     #[test]
     fn builds_requests() {
         let path = |c: Command| c.request().1;
-        assert_eq!(path(Command::StartScript(None)), "/script/start");
+        assert_eq!(
+            path(Command::StartScript(None)),
+            "/script/start?configure=1"
+        );
         assert_eq!(
             path(Command::StartScript(Some("farm/Gold Farm.ts".into()))),
-            "/script/start?path=farm%2FGold+Farm.ts"
+            "/script/start?path=farm%2FGold+Farm.ts&configure=1"
         );
         assert_eq!(
             path(Command::JumpMap {

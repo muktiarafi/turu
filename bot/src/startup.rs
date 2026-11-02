@@ -118,7 +118,8 @@ pub(crate) fn auto_login(bot: &Arc<Bot>) {
         }
     } else if startup.run_script
         && startup.script.is_some()
-        && let Err(e) = crate::script::start_silent(bot)
+        // VibeSkua is silent only with `--script-options-storage`: the window shows (not headless).
+        && let Err(e) = crate::script::start(bot)
     {
         bot.log(format!("Couldn't start the script: {e}"));
     }

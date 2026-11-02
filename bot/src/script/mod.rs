@@ -469,7 +469,7 @@ pub fn start(bot: &Arc<Bot>) -> Result<(), String> {
 }
 
 /// Starts the script without showing the Script Options window (VibeSkua `SilentConfig`): for
-/// runs nobody is there to answer it, such as the command line, the HTTP API and auto-relogin.
+/// runs nobody is there to answer it, such as the HTTP API, auto-relogin and the Scheduler.
 pub fn start_silent(bot: &Arc<Bot>) -> Result<(), String> {
     start_with(bot, true)
 }

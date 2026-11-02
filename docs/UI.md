@@ -188,6 +188,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   reward) and Misc options fold away, closed at first. Stop script and Log out sent to
   everyone need a second click ("Log out all?") within 4 s. The last outcome shows below, with
   the earlier ones under History. VibeSkua's "Include this window's tabs" is gone: tabs are rows.
+  Start script (▶ Start too) shows each client's Script Options window first, as VibeSkua's Army
+  start does, unless the script sets `dontPreconfigure` or the client is headless; in a tab it
+  shows when you open that tab.
   Start/Stop Auto-Attack are VibeSkua's tabbed host's "Start/Stop Auto-Attack for All"
   (`WM_SKUA_AUTO_ATTACK`), sent through the control API (`/auto/attack/start`, `/auto/stop`),
   with no second click (VibeSkua asks none; stopping loses nothing). A client starts Auto Attack
