@@ -12,6 +12,7 @@ mod capture;
 mod cli;
 mod custom_event;
 mod dbus;
+mod grid;
 mod gui;
 mod headless;
 mod heap_census;

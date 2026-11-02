@@ -390,7 +390,13 @@ impl GuiController {
         PhysicalPosition::new(x, y)
     }
 
-    pub fn render(&mut self, mut player: Option<MutexGuard<Player>>) {
+    /// Draws the window: the active tab's movie, or with `tiles` (Grid View: each tab's picture
+    /// and its tile, below the top bar) every tab's; then the UI.
+    pub fn render(
+        &mut self,
+        mut player: Option<MutexGuard<Player>>,
+        tiles: &[(crate::grid::Tile, wgpu::BindGroup)],
+    ) {
         use crate::thread_perf::{Phase, add}; // Turu: `TURU_PERF_LOG`.
         let acquiring = Instant::now();
         let acquired = self.surface.get_current_texture();
@@ -564,7 +570,23 @@ impl GuiController {
                 })
                 .forget_lifetime();
 
-            if let Some(movie_view) = movie_view {
+            if !tiles.is_empty() {
+                // Turu: Grid View. Each tile is drawn with the viewport set to it; the UI after
+                // them gets the whole window back.
+                let top = self.height_offset() as f32;
+                for (tile, picture) in tiles {
+                    render_pass.set_viewport(
+                        tile.x as f32,
+                        top + tile.y as f32,
+                        tile.width as f32,
+                        tile.height as f32,
+                        0.0,
+                        1.0,
+                    );
+                    self.movie_view_renderer.render_tile(picture, &mut render_pass);
+                }
+                render_pass.set_viewport(0.0, 0.0, self.size.width as f32, self.size.height as f32, 0.0, 1.0);
+            } else if let Some(movie_view) = movie_view {
                 movie_view.render(&self.movie_view_renderer, &mut render_pass);
             }
 

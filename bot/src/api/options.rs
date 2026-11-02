@@ -12,8 +12,8 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-/// Turu: the frame rate of a hidden tab (VibeSkua's tabbed host: 2). The app's
-/// `TURU_GRID_TEST` raises it, to measure what a grid of live tiles would cost.
+/// Turu: the frame rate of a hidden tab (VibeSkua's tabbed host: 2). The app raises it for
+/// Grid View's tiles (and `TURU_GRID_TEST`), and the next options pass applies it.
 static HIDDEN_TAB_FPS: AtomicI32 = AtomicI32::new(2);
 
 pub fn set_hidden_tab_fps(fps: i32) {
@@ -31,8 +31,9 @@ pub struct Applied {
     show_fps: Option<bool>,
     set_fps: Option<i32>,
     headless: Option<bool>,
-    /// 2 FPS: Headless Mode, or a hidden tab.
-    slowed: Option<bool>,
+    /// The frame rate a slowed client runs at (2 for Headless Mode, [`HIDDEN_TAB_FPS`] for a
+    /// hidden tab), `None` when it isn't slowed.
+    slowed: Option<Option<i32>>,
     /// LOW quality: Headless Mode only.
     low_quality: Option<bool>,
     walk_speed: Option<i32>,
@@ -132,18 +133,26 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
     // unless Headless Mode already slows it): 2 FPS. Leaving both restores the rate the game
     // had (VibeSkua's Headless Mode: Set FPS), unless Set FPS forces a rate.
     let headless_changed = changed(&mut a.headless, o.headless_mode);
-    let slowed = o.headless_mode || bot.state.lock().hidden_tab;
-    if changed(&mut a.slowed, slowed) {
-        if slowed {
+    let slow_fps = if o.headless_mode {
+        Some(2)
+    } else if bot.state.lock().hidden_tab {
+        Some(HIDDEN_TAB_FPS.load(Ordering::Relaxed))
+    } else {
+        None
+    };
+    let slowed = slow_fps.is_some();
+    // As `changed`, but a change of the slowed rate counts too (Grid View in or out).
+    let slow_changed = match a.slowed {
+        Some(old) => old != slow_fps,
+        None => slowed,
+    };
+    a.slowed = Some(slow_fps);
+    if slow_changed {
+        if let Some(fps) = slow_fps {
             if bot.state.lock().before_slowed.is_none() {
                 let fps = bot.flash.get::<f64>("stage.frameRate")?.round() as i32;
                 bot.state.lock().before_slowed = Some(fps);
             }
-            let fps = if o.headless_mode {
-                2
-            } else {
-                HIDDEN_TAB_FPS.load(Ordering::Relaxed)
-            };
             bot.flash.set("stage.frameRate", fps)?;
         } else {
             let fps = match bot.state.lock().before_slowed.take() {

@@ -186,6 +186,8 @@ pub enum TabRequest {
     Open(Box<Startup>),
     Select(TabId),
     Close(TabId),
+    /// Turn Grid View on or off (`crate::grid`).
+    Grid(bool),
 }
 
 pub fn set_event_loop(event_loop: EventLoopProxy<RuffleEvent>) {

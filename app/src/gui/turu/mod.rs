@@ -34,6 +34,7 @@ mod skills;
 mod spammer;
 mod stats;
 mod tab_strip;
+mod grid_overlay;
 pub mod theme;
 mod widgets;
 
@@ -212,6 +213,7 @@ impl TuruUi {
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
         hotkeys(ctx);
+        grid_overlay::show(ctx);
         let picker = self.picker.clone();
         let tab = self.active();
         let w = &mut tab.windows;

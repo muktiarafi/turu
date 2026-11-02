@@ -277,6 +277,7 @@ impl NavBar {
 
         self.jump_toggle(ui);
         self.auto_toggle(ui);
+        grid_toggle(ui);
     }
 
     fn auto_toggle(&mut self, ui: &mut Ui) {
@@ -684,6 +685,22 @@ fn close_on_click_outside(ctx: &egui::Context, open: &mut bool, popup: Option<eg
         .is_some_and(|layer| matches!(layer.order, egui::Order::Foreground | egui::Order::Tooltip));
     if !on_popup {
         *open = false;
+    }
+}
+
+/// Grid View (VibeSkua's tabbed host's): every tab at once, with two tabs or more.
+fn grid_toggle(ui: &mut Ui) {
+    if crate::turu::tabs().len() < 2 {
+        return;
+    }
+    let on = crate::grid::on();
+    let response = toggle_button(ui, "Grid", None, on).on_hover_text(if on {
+        "Back to one tab at a time"
+    } else {
+        "Show every tab at once; click a tile to make it the active tab"
+    });
+    if response.clicked() {
+        crate::turu::request_tab(crate::turu::TabRequest::Grid(!on));
     }
 }
 

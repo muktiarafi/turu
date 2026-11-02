@@ -11,6 +11,8 @@ pub struct MovieViewRenderer {
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     vertices: wgpu::Buffer,
+    /// Turu: the whole viewport, for Grid View's tiles (each drawn with the viewport set to it).
+    tile_vertices: wgpu::Buffer,
 }
 
 fn get_vertices(has_menu: bool, height: u32, scale_factor: f64) -> [[f32; 4]; 6] {
@@ -128,12 +130,28 @@ impl MovieViewRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
+        let tile_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&get_vertices(false, height, scale_factor)),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         Self {
             bind_group_layout,
             pipeline,
             sampler,
             vertices,
+            tile_vertices,
         }
+    }
+
+    /// Turu: draws a movie view's picture (its [`MovieView::bind_group`]) over the render pass's
+    /// viewport, which the caller sets to the tile.
+    pub fn render_tile(&self, bind_group: &wgpu::BindGroup, render_pass: &mut wgpu::RenderPass<'static>) {
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.tile_vertices.slice(..));
+        render_pass.draw(0..6, 0..1);
     }
 
     pub fn update_resolution(
@@ -206,6 +224,11 @@ impl MovieView {
             #[cfg(feature = "tracy_images")]
             tracy_frame_captures,
         }
+    }
+
+    /// Turu: the picture, for drawing it elsewhere (Grid View's tiles).
+    pub fn bind_group(&self) -> wgpu::BindGroup {
+        self.bind_group.clone()
     }
 
     pub fn render(

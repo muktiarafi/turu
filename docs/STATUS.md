@@ -360,8 +360,17 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
   all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
   login), as VibeSkua's processes do. `--api` steers the first tab only. Not built: VibeSkua's
-  Grid View, Army Scheduler and per-squad Army Queue. Logging
+  Army Scheduler and per-squad Army Queue. Logging
   in and farming in several tabs is unverified with real accounts.
+- **Grid View is new and unchecked with real accounts** (`app/src/grid.rs`, nav bar Grid, with
+  two tabs or more): every tab at once, each in a tile in VibeSkua's layout (rows of ⌈√n⌉),
+  its player sized to the tile. The active tab keeps the keyboard, sound and its full frame rate,
+  and its tile is outlined; the others run at 12 FPS (`grid::TILE_FPS`; VibeSkua's tiles run
+  unthrottled, each a process of its own) and draw each frame they run. Clicking another tile
+  makes it the active tab (that click goes no further). Each tile shows the tab's name, a dot
+  while it's busy and "!" while it waits for you. All on the one thread: `TURU_PERF_LOG`'s
+  `main thread` line shows what it costs. Not built: VibeSkua's hidden title and nav bars in
+  the tiles (Turu's bar stays, for the active tab) and a hover state for tiles.
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
