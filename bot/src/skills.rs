@@ -11,7 +11,7 @@
 
 use crate::Bot;
 use crate::api::auras::{self, Subject};
-use crate::api::{inventory, player};
+use crate::api::{inventory, map, monsters, player};
 use crate::control::mark_script_thread;
 use crate::error::{BotError, BotResult};
 use crate::models::{Monster, Skill};
@@ -1335,6 +1335,10 @@ impl Default for SkillRunner {
 const SKILL_INTERVAL: u64 = 100;
 /// How long the skill timer waits for a counter attack to fade (VibeSkua: 10 s).
 const COUNTER_ATTACK_WAIT: u64 = 10_000;
+/// How long the timer goes without attacking before it says so in the log (Turu).
+const IDLE_NOTE_AFTER: Duration = Duration::from_secs(120);
+/// How often it says so again while that lasts.
+const IDLE_NOTE_EVERY: Duration = Duration::from_secs(600);
 
 impl SkillRunner {
     /// VibeSkua `TimerRunning`.
@@ -1477,9 +1481,84 @@ fn current(shared: &SkillShared) -> Option<(Arc<Mutex<SkillProvider>>, SkillUseM
     Some((s.provider.clone()?, s.use_mode))
 }
 
+/// A stretch of the skill timer without attacking (Turu: a script stuck dead, or attacking
+/// nothing, left no trace in the log for hours).
+#[derive(Default)]
+struct IdleWatch {
+    since: Option<Instant>,
+    /// When this stretch was last logged.
+    noted: Option<Instant>,
+}
+
+#[derive(Debug, PartialEq)]
+enum IdleNote {
+    /// Not attacking for this long.
+    Idle(Duration),
+    /// Attacking again after a stretch that was logged, this long.
+    Resumed(Duration),
+}
+
+impl IdleWatch {
+    fn update(&mut self, now: Instant, attacking: bool) -> Option<IdleNote> {
+        if attacking {
+            let since = self.since.take();
+            return self
+                .noted
+                .take()
+                .and(since)
+                .map(|s| IdleNote::Resumed(now - s));
+        }
+        let since = *self.since.get_or_insert(now);
+        let due = match self.noted {
+            None => now - since >= IDLE_NOTE_AFTER,
+            Some(at) => now - at >= IDLE_NOTE_EVERY,
+        };
+        if !due {
+            return None;
+        }
+        self.noted = Some(now);
+        Some(IdleNote::Idle(now - since))
+    }
+}
+
+/// Logs an [`IdleNote`] with what the game shows (reads that fail are left out).
+fn note_idle(bot: &Bot, note: IdleNote) {
+    let idle = match note {
+        IdleNote::Resumed(d) => {
+            bot.note(format!(
+                "Skill timer: attacking again after {} s without a target.",
+                d.as_secs()
+            ));
+            return;
+        }
+        IdleNote::Idle(d) => d,
+    };
+    let state = match player::state(bot) {
+        Ok(0) => "dead",
+        Ok(1) => "alive, idle",
+        Ok(2) => "alive, in combat",
+        _ => "state unknown",
+    };
+    let hp = player::health(bot).unwrap_or_default();
+    let max_hp = player::max_health(bot).unwrap_or_default();
+    let map = map::full_name(bot).unwrap_or_default();
+    let cell = player::cell(bot).unwrap_or_default();
+    let pad = player::pad(bot).unwrap_or_default();
+    let monsters = monsters::current_monsters(bot).unwrap_or_default();
+    let living = monsters.iter().filter(|m| m.alive()).count();
+    bot.note(format!(
+        "Skill timer: no target for {} s ({state}, HP {hp}/{max_hp}, /{map} {cell} {pad}, \
+         {living} of {} monsters in the cell alive, attacks stopped: {}).",
+        idle.as_secs(),
+        monsters.len(),
+        bot.combat.stop_attacking(),
+    ));
+}
+
 fn skill_timer(weak: &Weak<Bot>, shared: &SkillShared, cancel: &AtomicBool) {
     let mut cache: Option<Vec<Skill>> = None;
     let mut last_rank = -1;
+    let mut idle = IdleWatch::default();
     if let Some(bot) = weak.upgrade()
         && let Ok(list) = skills(&bot)
         && !list.is_empty()
@@ -1520,6 +1599,9 @@ fn skill_timer(weak: &Weak<Bot>, shared: &SkillShared, cancel: &AtomicBool) {
             } else {
                 player::has_target(&bot)? && player::loaded(&bot)? && player::playing(&bot)?
             };
+            if let Some(note) = idle.update(Instant::now(), attack) {
+                note_idle(&bot, note);
+            }
             if attack {
                 poll(
                     &bot,
@@ -1644,5 +1726,38 @@ fn wait_for_cooldown(
             return Ok(false);
         }
         tries += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_stretches_are_logged_once_then_every_interval_and_when_they_end() {
+        let start = Instant::now();
+        let at = |secs: u64| start + Duration::from_secs(secs);
+        let mut watch = IdleWatch::default();
+
+        assert_eq!(watch.update(at(0), true), None);
+        assert_eq!(watch.update(at(1), false), None);
+        assert_eq!(watch.update(at(120), false), None);
+        assert_eq!(
+            watch.update(at(121), false),
+            Some(IdleNote::Idle(Duration::from_secs(120)))
+        );
+        assert_eq!(watch.update(at(200), false), None);
+        assert_eq!(
+            watch.update(at(721), false),
+            Some(IdleNote::Idle(Duration::from_secs(720)))
+        );
+        assert_eq!(
+            watch.update(at(730), true),
+            Some(IdleNote::Resumed(Duration::from_secs(729)))
+        );
+
+        // A short stretch that was never logged ends quietly.
+        assert_eq!(watch.update(at(740), false), None);
+        assert_eq!(watch.update(at(800), true), None);
     }
 }

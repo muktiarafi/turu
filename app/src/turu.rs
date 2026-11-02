@@ -473,6 +473,8 @@ pub fn start_perf_log() {
         return;
     };
     let every = Duration::from_secs_f64(every.max(1.0));
+    // Turu: the 12 busiest calls hid half a stuck script's calls.
+    let rows = std::env::var("TURU_PERF_LOG_ROWS").ok().and_then(|s| s.trim().parse::<usize>().ok()).unwrap_or(12);
     tracing::info!("Logging Flash calls and ticks every {} s (TURU_PERF_LOG)", every.as_secs_f64());
     let spawned = std::thread::Builder::new().name("Turu Perf Log".into()).spawn(move || {
         let mut last: HashMap<TabId, turu_bot::perf::PerfSnapshot> = HashMap::new();
@@ -488,7 +490,7 @@ pub fn start_perf_log() {
                 let window = last.get(tab).map_or_else(|| now.clone(), |before| now.since(before));
                 busy += window.busy_ms();
                 seconds = seconds.max(window.seconds);
-                tracing::info!(target: "turu_perf", "{}", window.report(&format!("tab {}", tab_label(bot)), 12));
+                tracing::info!(target: "turu_perf", "{}", window.report(&format!("tab {}", tab_label(bot)), rows));
                 last.insert(*tab, now);
             }
             if tabs.len() > 1 {

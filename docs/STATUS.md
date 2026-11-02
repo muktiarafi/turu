@@ -382,6 +382,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `warning`/`server` messages go to the Debug log and to the app's log with the account
   (`Bot::note`). VibeSkua ignores both; CoreBots' turn-in watchdog ("completable without a
   turn-in") had no way to say why.
+- **Combat stalls are logged:** when the skill timer goes 2 minutes without attacking, it notes
+  the same way the player's state (dead or alive), HP, map, cell and pad, the living monsters in
+  the cell and whether attacks are stopped; again every 10 minutes while that lasts, and once
+  it attacks again. VibeSkua logs nothing; a 0MaxBags run stood for 2.5 h without a target
+  and left no trace.
 - **Logins that differ from VibeSkua:** a login that isn't an auto-relogin (`--user` at start,
   `ensureRelogin` from a script or the control API's `/login`) counts as a relogin under way, so
   the `connectionLost` that its own retries cause doesn't start a second, competing auto-relogin
