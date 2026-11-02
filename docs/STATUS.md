@@ -88,9 +88,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   interpolation nor leave tessellations only their renderer can finish, and no tab submits
   another's segments (which crashed with seven tabs: "StagingBelt staging buffer is still
   mapped"). A tab keeps how far it got since its last cut, not the pass count at that cut
-  (counted for every tab), and at most 128 segments wait: a hidden tab otherwise cut between
-  nearly every pass and, submitting only every 100 offscreen draws, the tabs reached Metal's
-  4096 outstanding command buffers (a lost device: "the graphics driver stopped working"). Hidden tabs' players
+  (counted for every tab), else a hidden tab cut between nearly every pass.
+- **Metal command buffers:** on Metal, wgpu makes a command buffer of every render pass when a
+  frame's encoders are finished, and they count against the queue's 4096 until submitted.
+  Crowded frames with skill animations on (2000+ passes) ran out in one submit, which wgpu
+  treats as a lost device ("the graphics driver stopped working"). `segments::finish_all`
+  submits a frame's segments 16 at a time (ruffle-aqw; Mugetsu's D3D12 merges them instead). Hidden tabs' players
   are ticked only when a frame or timer is due, or every 50 ms for their sockets
   (`PlayerController::tick_hidden`), not on every pass of the event loop, and only the active
   tab has the mouse (`give_mouse`, on every tab change): Ruffle hit-tests the whole stage on
