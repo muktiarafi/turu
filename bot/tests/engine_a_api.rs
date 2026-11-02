@@ -358,6 +358,31 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
         .filter(|a| arg(a, 0) == "world.setUserData")
         .count();
     assert_eq!(redraws, 1);
+
+    // Without a custom name: the character's own name and guild, from objData.
+    game.set("world.myAvatar.objData.strUsername", "\"Hero\"");
+    game.set("world.myAvatar.objData.guild.Name", "\"Heroes\"");
+    {
+        let mut o = bot.options.write();
+        o.streamer_mode = true;
+        o.custom_name.clear();
+    }
+    options::apply(&bot).unwrap();
+    bot.options.write().streamer_mode = false;
+    options::apply(&bot).unwrap();
+    options::apply(&bot).unwrap();
+    assert_eq!(
+        sets_of(&game, "world.myAvatar.pMC.pname.ti.text").last(),
+        Some(&FlashArg::String("Hero".into()))
+    );
+    assert_eq!(
+        sets_of(&game, "world.rootClass.ui.mcPortrait.strName.text").last(),
+        Some(&FlashArg::String("Hero".into()))
+    );
+    assert_eq!(
+        sets_of(&game, "world.myAvatar.pMC.pname.tg.text").last(),
+        Some(&FlashArg::String("Heroes".into()))
+    );
 }
 
 #[test]

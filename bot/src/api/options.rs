@@ -132,14 +132,27 @@ fn write_streamer(bot: &Bot) {
     }
 }
 
-/// Streamer Mode turned off: the gold, coins and chat shown again, and the names redrawn from
-/// the game's data (VibeSkua: `world.setUserData`).
-fn clear_streamer(bot: &Bot) -> BotResult<()> {
+/// Streamer Mode turned off: the gold, coins and chat shown again, and the name and guild
+/// written back from `objData`, which Streamer Mode leaves alone. VibeSkua only calls
+/// `world.setUserData`, which leaves the name tag as it is. As in [`write_streamer`], one failed
+/// write doesn't stop the others, and it isn't tried again.
+fn clear_streamer(bot: &Bot) {
+    let f = &bot.flash;
     for path in STREAMER_HIDDEN {
-        bot.flash.set(path, true)?;
+        let _ = f.set(path, true);
     }
-    bot.flash.call_game_function("world.setUserData", vec![])?;
-    Ok(())
+    let name: String = f
+        .get_or("world.myAvatar.objData.strUsername", String::new())
+        .unwrap_or_default();
+    if !name.is_empty() {
+        let _ = f.set("world.myAvatar.pMC.pname.ti.text", name.as_str());
+        let _ = f.set("world.rootClass.ui.mcPortrait.strName.text", name.as_str());
+    }
+    let guild: String = f
+        .get_or("world.myAvatar.objData.guild.Name", String::new())
+        .unwrap_or_default();
+    let _ = f.set("world.myAvatar.pMC.pname.tg.text", guild);
+    let _ = f.call_game_function("world.setUserData", vec![]);
 }
 
 /// Custom Name and Custom Guild, on change.
@@ -293,7 +306,7 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         a.streamer = Some(true);
     } else {
         if a.streamer == Some(true) {
-            clear_streamer(bot)?;
+            clear_streamer(bot);
             a.custom_name = None;
             a.custom_guild = None;
         }
