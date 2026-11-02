@@ -50,6 +50,8 @@ pub struct GuiController {
     /// AQW build: whether egui drew anything (menu bar, dialog, context menu, debug UI) in the
     /// last frame. Without any of it, a GUI-only repaint would present the same picture again.
     ui_visible: bool,
+    /// Turu: an input event wants the UI repainted (see `handle_event`).
+    input_repaint: bool,
     theme_controller: ThemeController,
     /// Turu: the window title last set, to follow the character's name.
     title: String,
@@ -212,6 +214,7 @@ impl GuiController {
             size,
             no_gui,
             ui_visible: true,
+            input_repaint: false,
             theme_controller,
             title: crate::window_title(),
             #[cfg(feature = "tracy_images")]
@@ -294,10 +297,17 @@ impl GuiController {
         // repaint would only present the movie's last frame again (extra presents that frame
         // counters and frame generation tools such as Lossless Scaling count as frames); the
         // input still reaches egui with the next movie frame.
+        // Turu: not drawn at once, but by `MainWindow::check_redraw`, which caps how often the UI
+        // alone redraws (a mouse moves at the monitor's rate or faster).
         if response.repaint && self.wants_redraws() {
-            self.window.request_redraw();
+            self.input_repaint = true;
         }
         response.consumed
+    }
+
+    /// Turu: an input event asked for a UI repaint that hasn't been drawn yet.
+    pub fn input_repaint_pending(&self) -> bool {
+        self.input_repaint
     }
 
     pub fn close_movie(&mut self, player: &mut PlayerController) {
@@ -438,6 +448,7 @@ impl GuiController {
         }
 
         let building_ui = Instant::now();
+        self.input_repaint = false;
         let raw_input = self.egui_winit.take_egui_input(&self.window);
         let show_menu = self.window.fullscreen().is_none() && !self.no_gui;
         let mut counter_shapes = 0;
@@ -459,6 +470,7 @@ impl GuiController {
             }
         });
         add(Phase::Ui, building_ui.elapsed());
+        crate::thread_perf::count_repaint_causes(self.egui_winit.egui_ctx().repaint_causes());
         // AQW build: the FPS counter (Mugetsu's settings) is redrawn with the movie's frames
         // only, so on its own it isn't UI that wants repaints (see `wants_redraws`).
         self.ui_visible = full_output.shapes.len() > counter_shapes;

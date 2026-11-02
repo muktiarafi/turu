@@ -337,7 +337,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   and the rest. `TURU_GRID_TEST=<fps>` measures what a grid of live tiles (VibeSkua's Grid View)
   would cost: hidden tabs run at `fps` instead of 2 and draw every frame into their own movie view
   (never shown, at the window's size, so drawing costs more than a tile would); the line then
-  has the hidden tabs' drawing too. They led to the
+  has the hidden tabs' drawing too, and what asked egui to repaint (by code location).
+- **Redraws:** with the window shown, the UI alone redraws at most every 1.5 monitor refreshes
+  (16 ms at least: 60/s at 120 Hz), with or without the nav bar (Mugetsu caps it only with the
+  menu bar hidden). egui asks for a repaint on every mouse move, so the window presented at the
+  monitor's rate, and each present waited for the next refresh: 35-40% of the main thread,
+  which every tab's game and bot call waited behind. Nothing asks for a redraw while the window
+  is minimized or covered (it spun the event loop, ~450 ms/s). They led to the
   background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
   while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
   checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind

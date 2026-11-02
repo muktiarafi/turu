@@ -4,6 +4,8 @@
 //! these.
 
 use std::cell::Cell;
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -30,8 +32,22 @@ const PHASES: usize = 7;
 static MICROS: [AtomicU64; PHASES] = [const { AtomicU64::new(0) }; PHASES];
 static COUNTS: [AtomicU64; PHASES] = [const { AtomicU64::new(0) }; PHASES];
 
+/// What asked egui to repaint, by "file:line reason", and how many UI passes it did so in.
+static REPAINT_CAUSES: Mutex<Option<HashMap<String, u64>>> = Mutex::new(None);
+
 thread_local! {
     static IDLE_SINCE: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+
+/// Counts what asked for the repaint after a UI pass (`egui::Context::repaint_causes`).
+pub fn count_repaint_causes(causes: impl IntoIterator<Item = impl std::fmt::Display>) {
+    let Ok(mut map) = REPAINT_CAUSES.lock() else {
+        return;
+    };
+    let map = map.get_or_insert_with(HashMap::new);
+    for cause in causes {
+        *map.entry(cause.to_string()).or_default() += 1;
+    }
 }
 
 pub fn add(phase: Phase, took: Duration) {
@@ -58,6 +74,7 @@ pub struct Snapshot {
     /// The renderer's wait for the GPU, part of drawing the movie (ruffle-aqw keeps at most two
     /// frames queued for the GPU).
     gpu_wait_micros: u64,
+    repaint_causes: HashMap<String, u64>,
 }
 
 pub fn snapshot() -> Snapshot {
@@ -67,6 +84,7 @@ pub fn snapshot() -> Snapshot {
         micros: std::array::from_fn(|i| MICROS[i].load(Ordering::Relaxed)),
         counts: std::array::from_fn(|i| COUNTS[i].load(Ordering::Relaxed)),
         gpu_wait_micros: timers::snapshot()[timers::GPU_WAIT],
+        repaint_causes: REPAINT_CAUSES.lock().ok().and_then(|m| m.clone()).unwrap_or_default(),
     }
 }
 
@@ -94,10 +112,32 @@ impl Snapshot {
         } else {
             String::new()
         };
+        let mut causes: Vec<(&String, f64)> = self
+            .repaint_causes
+            .iter()
+            .map(|(cause, n)| {
+                (
+                    cause,
+                    (n - earlier.repaint_causes.get(cause).unwrap_or(&0)) as f64 / secs,
+                )
+            })
+            .filter(|(_, rate)| *rate > 0.0)
+            .collect();
+        causes.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let causes = if causes.is_empty() {
+            String::new()
+        } else {
+            let top: Vec<String> = causes
+                .iter()
+                .take(4)
+                .map(|(cause, rate)| format!("{rate:.1}/s {cause}"))
+                .collect();
+            format!("; UI repaints asked by: {}", top.join(", "))
+        };
         format!(
             "main thread: idle {:.0} ms/s; drawing {:.0} ms/s, {:.1} draws/s (movie {:.0} of which GPU wait {:.0}, \
              next picture {:.0} [{:.2} ms/draw], UI {:.0}, submit+present {:.0} [{:.2} ms/draw]){hidden}; games \
-             and bot calls {:.0} ms/s; rest {:.0} ms/s",
+             and bot calls {:.0} ms/s; rest {:.0} ms/s{causes}",
             per_sec(Phase::Idle),
             per_sec(Phase::Draw),
             draws as f64 / secs,

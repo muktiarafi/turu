@@ -75,6 +75,8 @@ struct MainWindow {
     /// The monitor's refresh interval, and when it was last looked up.
     refresh_interval: Duration,
     refresh_checked: Option<Instant>,
+    /// Turu: when a UI repaint held back by `check_redraw`'s cap is due.
+    ui_redraw_at: std::cell::Cell<Option<Instant>>,
 }
 
 /// Logs frame cost and pacing every few seconds (target `ruffle_aqw_perf`), for comparing builds.
@@ -1024,6 +1026,9 @@ impl MainWindow {
                 self.check_redraw();
             }
             self.pace_interpolation();
+        } else {
+            // Turu: the UI repaints before a movie has loaded too (see `check_redraw`).
+            self.check_redraw();
         }
     }
 
@@ -1035,33 +1040,12 @@ impl MainWindow {
     /// frame, else it draws once per frame as without interpolation.
     fn pace_interpolation(&mut self) {
         self.next_draw_time = None;
+        // Turu: looked up with interpolation off too, for `check_redraw`'s cap on UI repaints.
+        self.update_refresh_interval();
         if !ruffle_core::frame_interpolation::enabled() || self.minimized || self.occluded {
             return;
         }
         let now = Instant::now();
-        if self
-            .refresh_checked
-            .is_none_or(|checked| now.duration_since(checked) > Duration::from_secs(2))
-        {
-            let first = self.refresh_checked.is_none();
-            self.refresh_checked = Some(now);
-            let millihertz = self
-                .gui
-                .window()
-                .current_monitor()
-                .and_then(|monitor| monitor.refresh_rate_millihertz())
-                .unwrap_or(60_000)
-                .clamp(24_000, 360_000);
-            let interval = Duration::from_secs_f64(1000.0 / millihertz as f64);
-            if interval != self.refresh_interval || first {
-                tracing::info!(
-                    target: "ruffle_aqw_perf",
-                    "frame interpolation: monitor refreshes at {:.1} Hz",
-                    millihertz as f64 / 1000.0
-                );
-            }
-            self.refresh_interval = interval;
-        }
         let frame_rate = match self.player.get() {
             Some(player) if player.is_playing() => player.frame_rate(),
             _ => return,
@@ -1127,7 +1111,51 @@ impl MainWindow {
         self.check_redraw();
     }
 
+    /// The monitor's refresh interval (`refresh_interval`), looked up at most every 2 seconds.
+    fn update_refresh_interval(&mut self) {
+        let now = Instant::now();
+        if self
+            .refresh_checked
+            .is_some_and(|checked| now.duration_since(checked) <= Duration::from_secs(2))
+        {
+            return;
+        }
+        let first = self.refresh_checked.is_none();
+        self.refresh_checked = Some(now);
+        let millihertz = self
+            .gui
+            .window()
+            .current_monitor()
+            .and_then(|monitor| monitor.refresh_rate_millihertz())
+            .unwrap_or(60_000)
+            .clamp(24_000, 360_000);
+        let interval = Duration::from_secs_f64(1000.0 / millihertz as f64);
+        if interval != self.refresh_interval || first {
+            tracing::info!(
+                target: "ruffle_aqw_perf",
+                "monitor refreshes at {:.1} Hz",
+                millihertz as f64 / 1000.0
+            );
+        }
+        self.refresh_interval = interval;
+    }
+
+    /// Turu: the shortest time between redraws for the UI alone: 1.5 refreshes, at least 16 ms
+    /// (60/s on a 120 Hz monitor, 40/s on a 60 Hz one). Presenting faster than the monitor
+    /// refreshes makes each present wait for the next refresh, and the main thread, which runs
+    /// every tab's game and answers every bot call, waits with it.
+    fn ui_redraw_interval(&self) -> Duration {
+        (self.refresh_interval * 3 / 2).max(Duration::from_millis(16))
+    }
+
     fn check_redraw(&self) {
+        // Turu: nothing is drawn while minimized or covered (see `RedrawRequested`), so the SWF
+        // frame waiting to be drawn stayed pending and every pass of the event loop asked for a
+        // redraw again: the loop never slept. Becoming visible asks for one.
+        if self.minimized || self.occluded {
+            self.ui_redraw_at.set(None);
+            return;
+        }
         let player = self.player.get();
         // AQW build: like Flash Player's normal pacing, only draw once a new SWF frame has run.
         // AQW calls `updateAfterEvent()` from timers and hovers change between frames, which
@@ -1142,11 +1170,15 @@ impl MainWindow {
             .unwrap_or_default();
         // AQW build: egui asks for a repaint on every mouse move. Each repaint presents, and
         // presenting faster than the monitor refreshes blocks the main thread, so moving the
-        // mouse made frames late. With the menu bar hidden there is usually nothing to update,
-        // so GUI-only repaints are capped at ~60/s (popups and dialogs still work).
-        let gui_needs_render = self.gui.needs_render()
-            && self.gui.wants_redraws()
-            && (!self.no_gui || self.last_redraw.elapsed() >= Duration::from_millis(16));
+        // mouse made frames late. GUI-only repaints are capped (Mugetsu: at ~60/s, with the menu
+        // bar hidden; Turu: always, its nav bar is always shown, see `ui_redraw_interval`). A
+        // repaint held back is drawn when due (`ui_redraw_at`), or with the next SWF frame.
+        let gui_wants_render =
+            (self.gui.needs_render() || self.gui.input_repaint_pending()) && self.gui.wants_redraws();
+        let ui_due = self.last_redraw + self.ui_redraw_interval();
+        let gui_needs_render = gui_wants_render && Instant::now() >= ui_due;
+        self.ui_redraw_at
+            .set((gui_wants_render && !gui_needs_render && !player_needs_render).then_some(ui_due));
         if player_needs_render || gui_needs_render {
             self.gui.window().request_redraw();
         }
@@ -1351,6 +1383,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                 divisor_down_since: None,
                 refresh_interval: Duration::from_secs_f64(1.0 / 60.0),
                 refresh_checked: None,
+                ui_redraw_at: std::cell::Cell::new(None),
             });
         }
     }
@@ -1502,6 +1535,11 @@ impl ApplicationHandler<RuffleEvent> for App {
             let wake = match (main_window.next_frame_time, main_window.next_draw_time) {
                 (Some(frame), Some(draw)) => Some(frame.min(draw)),
                 (frame, draw) => frame.or(draw),
+            };
+            // Turu: a UI repaint held back by the cap (see `check_redraw`).
+            let wake = match (wake, main_window.ui_redraw_at.get()) {
+                (Some(wake), Some(ui)) => Some(wake.min(ui)),
+                (wake, ui) => wake.or(ui),
             };
             if let Some(wake) = wake {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
