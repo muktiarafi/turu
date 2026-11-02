@@ -13,7 +13,7 @@ use crate::turu::TabId;
 use egui::{Align, CollapsingHeader, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use rfd::AsyncFileDialog;
 use serde_json::{Value, json};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
@@ -200,10 +200,12 @@ impl Row {
         }
     }
 
-    /// Its game comes from the monitor's hub, which the Army poll feeds.
-    fn of_client(client: &Arc<Client>) -> Self {
+    /// Its game comes from the monitor's hub, which the Army poll feeds. The `n`th client is
+    /// "Client n" while its Streamer Mode is on.
+    fn of_client(n: usize, client: &Arc<Client>) -> Self {
         let state = client.state();
         let snapshot = crate::turu::monitor_hub().army_snapshot(&client.username);
+        let streamer = snapshot.as_ref().is_some_and(|s| s.streamer);
         let (color, summary) = match (&state.exited, state.answered, &snapshot) {
             (Some(exit), _, _) => (DANGER, format!("ended ({exit})")),
             (None, true, Some(snapshot)) => (SUCCESS, summarize(snapshot)),
@@ -214,7 +216,11 @@ impl Row {
             key: client.username.to_lowercase(),
             peer: Peer::Client {
                 username: client.username.clone(),
-                label: client.label.clone(),
+                label: if streamer {
+                    format!("Client {n}")
+                } else {
+                    client.label.clone()
+                },
             },
             tab: None,
             username: client.username.clone(),
@@ -313,7 +319,8 @@ impl ArmyWindow {
     /// Every tab, then every launched client.
     fn rows() -> Vec<Row> {
         let tabs = crate::turu::tabs().into_iter().map(|(tab, bot)| Row::of_tab(tab, &bot));
-        tabs.chain(crate::turu::army().clients().iter().map(Row::of_client))
+        let clients = crate::turu::army().clients();
+        tabs.chain(clients.iter().enumerate().map(|(i, c)| Row::of_client(i + 1, c)))
             .collect()
     }
 
@@ -331,13 +338,21 @@ impl ArmyWindow {
         let results = self.results.clone();
         let mut local = Vec::new();
         let mut only = Vec::new();
+        // The outcomes name a client by its launch label: "Client 2" instead in Streamer Mode.
+        let mut shown = HashMap::new();
         for row in rows {
             match &row.peer {
                 Peer::Tab(bot) => local.push((format!("{} (tab)", crate::turu::tab_label(bot)), bot.clone())),
-                Peer::Client { username, .. } => only.push(username.clone()),
+                Peer::Client { username, label } => {
+                    only.push(username.clone());
+                    if let Some(client) = crate::turu::army().client(username) {
+                        shown.insert(client.label.clone(), label.clone());
+                    }
+                }
             }
         }
         crate::turu::army().broadcast(command, local, Some(&only), move |name, result| {
+            let name = shown.get(name).map_or(name, String::as_str);
             push_result(&results, outcome_line(name, &label, result));
         });
     }
@@ -882,6 +897,8 @@ fn summarize(snapshot: &Snapshot) -> String {
         BotState::NotLoaded => return "loading the game".into(),
         BotState::LoggedOut => return "login screen".into(),
         _ if snapshot.map.is_empty() => return "joining".into(),
+        // Streamer Mode: the map without its room number.
+        _ if snapshot.streamer => snapshot.map.split('-').next().unwrap_or_default(),
         _ => &snapshot.map,
     };
     let mut text = format!("{map}, {} · {}/{} HP", snapshot.cell, snapshot.hp.cur, snapshot.hp.max);

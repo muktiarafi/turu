@@ -39,6 +39,7 @@ pub struct Applied {
     walk_speed: Option<i32>,
     custom_name: Option<String>,
     custom_guild: Option<String>,
+    streamer: Option<bool>,
 }
 
 impl Applied {
@@ -83,6 +84,89 @@ fn write_name(bot: &Bot, name: &str) -> BotResult<()> {
     Ok(())
 }
 
+/// The name tag and portrait name while Streamer Mode is on (VibeSkua: "VibeSkuaUser").
+pub const STREAMER_NAME: &str = "TuruUser";
+/// The guild tag and target portrait name while Streamer Mode is on.
+const STREAMER_GUILD: &str = "Hidden";
+
+/// The gold, coins and chat Streamer Mode hides (VibeSkua tries every spelling the interface
+/// has had).
+const STREAMER_HIDDEN: [&str; 8] = [
+    "world.rootClass.ui.mcInterface.teGold.visible",
+    "world.rootClass.ui.mcInterface.teCoins.visible",
+    "world.rootClass.ui.mcInterface.strGold.visible",
+    "world.rootClass.ui.mcInterface.strCoins.visible",
+    "world.rootClass.ui.mcInterface.txtGold.visible",
+    "world.rootClass.ui.mcInterface.txtCoins.visible",
+    "world.rootClass.ui.mcInterface.t1.visible",
+    "world.rootClass.ui.mcInterface.te.visible",
+];
+
+/// VibeSkua `ApplyStreamerMode`'s loop: the drawn names only (never `objData`, which shops and
+/// the inventory read), the gold, coins and chat hidden, and the area title without the room
+/// number. Each write may fail on its own, as VibeSkua ignores them.
+fn write_streamer(bot: &Bot) {
+    let f = &bot.flash;
+    let _ = f.set("world.myAvatar.pMC.pname.ti.text", STREAMER_NAME);
+    let _ = f.set("world.myAvatar.pMC.pname.tg.text", STREAMER_GUILD);
+    let _ = f.set("world.rootClass.ui.mcPortrait.strName.text", STREAMER_NAME);
+    let _ = f.set(
+        "world.rootClass.ui.mcPortraitTarget.strName.text",
+        STREAMER_GUILD,
+    );
+    for path in STREAMER_HIDDEN {
+        let _ = f.set(path, false);
+    }
+    let map: String = f
+        .get_or("world.strMapName", String::new())
+        .unwrap_or_default();
+    if !map.is_empty() && map != "null" {
+        let mut chars = map.chars();
+        let title: String = chars
+            .next()
+            .into_iter()
+            .flat_map(char::to_uppercase)
+            .chain(chars.flat_map(char::to_lowercase))
+            .collect();
+        let _ = f.set("ui.mcInterface.areaList.title.t1.text", title);
+    }
+}
+
+/// Streamer Mode turned off: the gold, coins and chat shown again, and the names redrawn from
+/// the game's data (VibeSkua: `world.setUserData`).
+fn clear_streamer(bot: &Bot) -> BotResult<()> {
+    for path in STREAMER_HIDDEN {
+        bot.flash.set(path, true)?;
+    }
+    bot.flash.call_game_function("world.setUserData", vec![])?;
+    Ok(())
+}
+
+/// Custom Name and Custom Guild, on change.
+fn apply_custom_names(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> BotResult<()> {
+    if a.custom_name.as_deref() != Some(o.custom_name.as_str()) {
+        if !o.custom_name.is_empty() {
+            write_name(bot, &o.custom_name)?;
+        } else if a.custom_name.as_deref().is_some_and(|n| !n.is_empty()) {
+            write_name(bot, &player::username(bot)?)?;
+        }
+        a.custom_name = Some(o.custom_name.clone());
+    }
+    if a.custom_guild.as_deref() != Some(o.custom_guild.as_str()) {
+        if !o.custom_guild.is_empty() {
+            bot.flash
+                .set("world.myAvatar.pMC.pname.tg.text", o.custom_guild.as_str())?;
+        } else if a.custom_guild.as_deref().is_some_and(|n| !n.is_empty()) {
+            let guild: String = bot
+                .flash
+                .get_or("world.myAvatar.objData.guild.Name", String::new())?;
+            bot.flash.set("world.myAvatar.pMC.pname.tg.text", guild)?;
+        }
+        a.custom_guild = Some(o.custom_guild.clone());
+    }
+    Ok(())
+}
+
 /// Runs every 250 ms while playing (VibeSkua `ScriptInterface.CheckOptions` and the
 /// options' setters).
 pub fn apply(bot: &Bot) -> BotResult<()> {
@@ -108,9 +192,14 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         return Ok(());
     }
 
-    // Setters: only on change.
+    // Setters: only on change. Streamer Mode hides the other players too, and turned off
+    // gives back Hide Players as it was (VibeSkua `_originalHidePlayers`).
     for (name, value, slot) in [
-        ("HidePlayers", o.hide_players, &mut a.hide_players),
+        (
+            "HidePlayers",
+            o.hide_players || o.streamer_mode,
+            &mut a.hide_players,
+        ),
         ("DisableFX", o.disable_fx, &mut a.disable_fx),
         (
             "DisableCollisions",
@@ -197,25 +286,19 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         }
         a.set_fps = Some(o.set_fps);
     }
-    if a.custom_name.as_deref() != Some(o.custom_name.as_str()) {
-        if !o.custom_name.is_empty() {
-            write_name(bot, &o.custom_name)?;
-        } else if a.custom_name.as_deref().is_some_and(|n| !n.is_empty()) {
-            write_name(bot, &player::username(bot)?)?;
+    // Streamer Mode: rewritten on every pass (VibeSkua's loop), over Custom Name and Guild,
+    // which apply again once it's off.
+    if o.streamer_mode {
+        write_streamer(bot);
+        a.streamer = Some(true);
+    } else {
+        if a.streamer == Some(true) {
+            clear_streamer(bot)?;
+            a.custom_name = None;
+            a.custom_guild = None;
         }
-        a.custom_name = Some(o.custom_name.clone());
-    }
-    if a.custom_guild.as_deref() != Some(o.custom_guild.as_str()) {
-        if !o.custom_guild.is_empty() {
-            bot.flash
-                .set("world.myAvatar.pMC.pname.tg.text", o.custom_guild.as_str())?;
-        } else if a.custom_guild.as_deref().is_some_and(|n| !n.is_empty()) {
-            let guild: String = bot
-                .flash
-                .get_or("world.myAvatar.objData.guild.Name", String::new())?;
-            bot.flash.set("world.myAvatar.pMC.pname.tg.text", guild)?;
-        }
-        a.custom_guild = Some(o.custom_guild.clone());
+        a.streamer = Some(false);
+        apply_custom_names(bot, o, a)?;
     }
 
     // CheckOptions: every tick while on.

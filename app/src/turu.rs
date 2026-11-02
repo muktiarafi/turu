@@ -203,8 +203,13 @@ pub fn request_tab(request: TabRequest) -> bool {
         .is_some_and(|e| e.send_event(RuffleEvent::TuruTab(request)).is_ok())
 }
 
-/// A tab's name: the character once in game, else the login name it was opened with.
+/// A tab's name: the character once in game, else the login name it was opened with; "Tab 2"
+/// while its Streamer Mode is on.
 pub fn tab_label(bot: &Bot) -> String {
+    if bot.opts().streamer_mode {
+        let tab = tabs().iter().position(|(_, b)| std::ptr::eq(Arc::as_ptr(b), bot));
+        return tab.map_or_else(|| "Tab".into(), |i| format!("Tab {}", i + 1));
+    }
     let state = bot.state.lock();
     if let Some(name) = state.username.as_deref().filter(|n| state.in_game && !n.trim().is_empty()) {
         return name.to_owned();
@@ -279,11 +284,12 @@ pub fn save_directory() -> Option<&'static Path> {
 }
 
 /// Mugetsu's title, plus the character's name while you play when Options > Application >
-/// "Show Username in Title" is on (VibeSkua names its tab after the character).
+/// "Show Username in Title" is on (VibeSkua names its tab after the character) and Streamer Mode
+/// is off.
 pub fn window_title() -> String {
     let title = crate::mugetsu::window_title();
     let bot = bot();
-    if !bot.settings.read().show_username_in_title {
+    if !bot.settings.read().show_username_in_title || bot.opts().streamer_mode {
         return title;
     }
     let state = bot.state.lock();

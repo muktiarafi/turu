@@ -31,6 +31,8 @@ pub struct Snapshot {
     pub name: String,
     pub state: BotState,
     pub relogging: bool,
+    /// Its Streamer Mode is on: Army Control hides its name and room number.
+    pub streamer: bool,
     pub script: ScriptInfo,
     /// "Auto Attack" or "Auto Hunt" while one runs (`crate::auto`).
     pub auto: Option<String>,
@@ -137,6 +139,7 @@ impl Snapshot {
         let mut snapshot = Self {
             name: bot_name(bot),
             relogging: bot.servers.is_relogging(),
+            streamer: bot.opts().streamer_mode,
             script: ScriptInfo {
                 name: path
                     .as_ref()

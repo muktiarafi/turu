@@ -139,6 +139,14 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   While Headless Mode is on in game, the game area shows VibeSkua's headless overlay ("Headless
   Mode Active", `show_headless_screen` in `mod.rs`) instead of the 2 FPS game: the movie isn't
   drawn and the overlay takes the game's clicks; the bar and tool windows work as usual.
+  Streamer Mode (VibeSkua `ApplyStreamerMode`, `api/options.rs`) turns Hide Players on and, on
+  every options pass, draws "TuruUser" / "Hidden" over the name tag, guild and portraits (never
+  `objData`), hides gold, coins and chat, and writes the area title without the room number;
+  off, it gives back Hide Players, Custom Name/Guild and the chat, and redraws the names
+  (`world.setUserData`). Beyond VibeSkua, whose tabs keep the character's name, it hides the
+  name from Turu's own UI too: the tab is "Tab 2" in the tab strip, Grid View and Army
+  Control, the window title drops the name, and an Army client with it on is "Client 3" in
+  Army Control (its `GET /snapshot` says so), with its map shown without the room number.
 * **Application Options** (`application_options.rs`, 580x650, VibeSkua `ApplicationOptionsView`):
   search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title

@@ -290,6 +290,69 @@ fn options_send_toggles_once_and_repeat_ticks() {
 }
 
 #[test]
+fn streamer_mode_hides_names_and_gives_custom_names_back() {
+    let game = FakeGame::new();
+    game.set("world.strMapName", "\"ULTRADAGE\"");
+    let bot = new_bot(&game);
+    let sets_of = |game: &FakeGame, path: &str| -> Vec<FlashArg> {
+        game.calls_to("setGameObject")
+            .into_iter()
+            .filter(|a| arg(a, 0) == path)
+            .map(|a| a[1].clone())
+            .collect()
+    };
+    {
+        let mut o = bot.options.write();
+        o.streamer_mode = true;
+        o.custom_name = "Custom".into();
+    }
+    options::apply(&bot).unwrap();
+    options::apply(&bot).unwrap();
+    // Hide Players comes with it; the drawn names are rewritten on every pass, never objData.
+    assert_eq!(
+        game.calls_to("modEnable"),
+        [[FlashArg::String("HidePlayers".into())]]
+    );
+    let name = FlashArg::String(options::STREAMER_NAME.into());
+    assert_eq!(
+        sets_of(&game, "world.myAvatar.pMC.pname.ti.text"),
+        [name.clone(), name]
+    );
+    assert!(sets_of(&game, "world.myAvatar.objData.strUsername").is_empty());
+    assert_eq!(
+        sets_of(&game, "world.rootClass.ui.mcInterface.t1.visible"),
+        [FlashArg::Bool(false), FlashArg::Bool(false)]
+    );
+    assert_eq!(
+        sets_of(&game, "ui.mcInterface.areaList.title.t1.text").last(),
+        Some(&FlashArg::String("Ultradage".into()))
+    );
+
+    // Off: chat back, names redrawn, Hide Players as it was, and the custom name again.
+    bot.options.write().streamer_mode = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(
+        sets_of(&game, "world.rootClass.ui.mcInterface.t1.visible").last(),
+        Some(&FlashArg::Bool(true))
+    );
+    assert_eq!(
+        game.calls_to("modDisable"),
+        [[FlashArg::String("HidePlayers".into())]]
+    );
+    assert_eq!(
+        sets_of(&game, "world.myAvatar.pMC.pname.ti.text").last(),
+        Some(&FlashArg::String("Custom".into()))
+    );
+    let redraws = game
+        .calls_to("callGameFunction")
+        .into_iter()
+        .chain(game.calls_to("callGameFunction0"))
+        .filter(|a| arg(a, 0) == "world.setUserData")
+        .count();
+    assert_eq!(redraws, 1);
+}
+
+#[test]
 fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
     let game = FakeGame::new();
     let bot = new_bot(&game);
