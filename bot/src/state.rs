@@ -18,6 +18,10 @@ pub struct GameState {
     pub in_game: bool,
     /// `catchPackets` was called for this login (VibeSkua: the timer's `catching`).
     pub catching_packets: bool,
+    /// The last reads of `isLoggedIn` and of the avatar's `intState`, reused for a moment by
+    /// every thread (`api::player::logged_in` and `state`).
+    pub(crate) logged_in_read: Option<(Instant, bool)>,
+    pub(crate) avatar_state_read: Option<(Instant, i64)>,
     /// The logged-in username (`loginResponse`, then `loginInfo.strUsername`), as the game
     /// spells it. Used by packet handlers, which can't ask Flash.
     pub username: Option<String>,

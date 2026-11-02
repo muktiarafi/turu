@@ -4,23 +4,58 @@ use super::{Args, ok, wait};
 use crate::Bot;
 use crate::error::{BotError, BotResult};
 use crate::models::{Badge, Monster, lenient_bool, lenient_i64, lenient_string};
+use crate::state::GameState;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 const AVATAR: &str = "world.myAvatar";
 
+/// How long a read of [`logged_in`] or [`state`] is reused (Turu). Nearly every wait and
+/// background loop asks them (through `alive`, `playing`, ...), each on its own: about 25 times
+/// a second per client in game, three calls to the game each time. One wait try
+/// ([`wait::WAIT_SLEEP`]) is the most a change can go unseen.
+const SHARED_READ: Duration = Duration::from_millis(100);
+
+/// The value `slot` holds if it's younger than [`SHARED_READ`], else `read`'s (kept in `slot`).
+/// The game is read without the state lock held.
+fn shared<T: Copy>(
+    bot: &Bot,
+    slot: impl Fn(&mut GameState) -> &mut Option<(Instant, T)>,
+    read: impl FnOnce() -> BotResult<T>,
+) -> BotResult<T> {
+    if let Some((at, value)) = *slot(&mut bot.state.lock())
+        && at.elapsed() < SHARED_READ
+    {
+        return Ok(value);
+    }
+    let value = read()?;
+    *slot(&mut bot.state.lock()) = Some((Instant::now(), value));
+    Ok(value)
+}
+
 /// `isLoggedIn`: the SmartFox client is connected.
 pub fn logged_in(bot: &Bot) -> BotResult<bool> {
-    bot.flash.call_bool("isLoggedIn", vec![])
+    shared(
+        bot,
+        |s| &mut s.logged_in_read,
+        || bot.flash.call_bool("isLoggedIn", vec![]),
+    )
 }
 
 /// `dataLeaf.intState`: 0 dead, 1 idle, 2 in combat (0 without an avatar).
 pub fn state(bot: &Bot) -> BotResult<i64> {
-    if bot.flash.is_null(AVATAR)? {
-        return Ok(0);
-    }
-    bot.flash.get_or("world.myAvatar.dataLeaf.intState", 0)
+    shared(
+        bot,
+        |s| &mut s.avatar_state_read,
+        || {
+            if bot.flash.is_null(AVATAR)? {
+                return Ok(0);
+            }
+            bot.flash.get_or("world.myAvatar.dataLeaf.intState", 0)
+        },
+    )
 }
 
 pub fn alive(bot: &Bot) -> BotResult<bool> {

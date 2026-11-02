@@ -334,7 +334,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   the run time means that thread is busy with ticks or other tabs' calls. They led to the
   background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
   while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
-  checks were about half of all calls.
+  checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind
+  `alive`, `playing`, `inCombat`, ...) are read at most every 100 ms per client, each read
+  shared by every thread (`api::player::shared`): nearly every wait and background loop asks.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.

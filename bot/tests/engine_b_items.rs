@@ -250,6 +250,31 @@ fn inventory_api_reads_the_game() {
 }
 
 #[test]
+fn alive_and_logged_in_reads_are_shared_for_a_moment() {
+    let (bot, game) = setup();
+    let reads = || {
+        game.calls
+            .lock()
+            .iter()
+            .filter(|c| c.starts_with("isLoggedIn") || c.starts_with("isNull(world.myAvatar)"))
+            .count()
+    };
+    assert!(api::player::playing(&bot).unwrap());
+    let after_first = reads();
+    // What a wait, the skill timer and the drop loop ask in the same moment: no more calls.
+    for _ in 0..10 {
+        assert!(api::player::playing(&bot).unwrap());
+        assert!(api::player::alive(&bot).unwrap());
+        assert!(!api::player::in_combat(&bot).unwrap());
+    }
+    assert_eq!(reads(), after_first);
+    // A moment later the game is asked again.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(api::player::playing(&bot).unwrap());
+    assert!(reads() > after_first);
+}
+
+#[test]
 fn picking_up_items_that_didnt_drop_asks_the_game_nothing() {
     let (bot, game) = setup();
     game.calls.lock().clear();
