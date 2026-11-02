@@ -244,14 +244,23 @@ fn on_login(bot: &Bot) {
 struct LoadWatch {
     detail: String,
     since: Instant,
+    /// The watchdog already recovered from this message.
+    recovered: bool,
+}
+
+impl LoadWatch {
+    fn new(detail: String) -> Self {
+        Self {
+            detail,
+            since: Instant::now(),
+            recovered: false,
+        }
+    }
 }
 
 impl Default for LoadWatch {
     fn default() -> Self {
-        Self {
-            detail: String::new(),
-            since: Instant::now(),
-        }
+        Self::new(String::new())
     }
 }
 
@@ -261,10 +270,7 @@ impl Default for LoadWatch {
 fn check_stuck_loading(bot: &Arc<Bot>, load: &mut LoadWatch) {
     let detail = servers::conn_detail(bot);
     if detail == "null" {
-        *load = LoadWatch {
-            detail,
-            since: Instant::now(),
-        };
+        *load = LoadWatch::new(detail);
         return;
     }
     let relogging = bot.servers.is_relogging();
@@ -276,19 +282,23 @@ fn check_stuck_loading(bot: &Arc<Bot>, load: &mut LoadWatch) {
             servers::begin_logout(bot, false);
         }
     } else if load.since.elapsed() >= timeout && detail == load.detail && !relogging {
-        bot.log(format!(
-            "Stuck on the loading screen (\"{detail}\"). Recovering."
-        ));
-        recover_stuck_loading(bot, detail.contains("loading map"));
+        // Turu: once logged out, recover from a message only once. The recovery is a logout,
+        // and a message that stays on the login screen after it ("Authenticating Account
+        // Info..." after a login that never finished) had it logging out every LoadTimeout,
+        // getting in the way of logging in.
+        if !(load.recovered && !bot.state.lock().in_game) {
+            bot.log(format!(
+                "Stuck on the loading screen (\"{detail}\"). Recovering."
+            ));
+            recover_stuck_loading(bot, detail.contains("loading map"));
+            load.recovered = true;
+        }
         // Turu: wait another LoadTimeout before trying again (VibeSkua's timer is blocked by
         // the recovery instead).
         load.since = Instant::now();
     }
     if detail != load.detail {
-        *load = LoadWatch {
-            detail,
-            since: Instant::now(),
-        };
+        *load = LoadWatch::new(detail);
     }
 }
 

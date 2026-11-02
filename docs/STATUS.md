@@ -13,7 +13,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   logout, connect, `relogin`, `ensureRelogin`) in `bot/src/api/servers.rs`. With Auto Relogin on,
   a server logout, a kick, a lost connection or an unexpected disconnect (the last two need
   Options > Relogin Watchdog) stops the script, logs back in with the game's remembered login
-  and restarts the script; a loading screen stuck for `LoadTimeout` reloads the map or relogs.
+  and restarts the script; a loading screen stuck for `LoadTimeout` reloads the map or relogs
+  (logged out, only once per message: a login that never finished left "Authenticating Account
+  Info..." up, and VibeSkua's rule logged out again every `LoadTimeout`).
   Logging out yourself (the game's Logout or Change Server, `bot.servers.logout()`) disarms it.
   CoreBots' `relogin()` uses it.
 - **Command-line login** (VibeSkua's flags, long forms only, as Ruffle has `-p` and `-s`):

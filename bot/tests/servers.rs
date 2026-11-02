@@ -423,3 +423,29 @@ fn startup_logs_in_once_the_game_has_loaded() {
         Some("Alt")
     );
 }
+
+#[test]
+fn a_stuck_message_on_the_login_screen_logs_out_only_once() {
+    let game = FakeGame::new();
+    game.leave_world();
+    // A login that never finished leaves its message up.
+    game.set("mcConnDetail.stage", "{}");
+    game.set(
+        "mcConnDetail.txtDetail.text",
+        "\"Authenticating Account Info...\"",
+    );
+    let bot = new_bot(&game);
+    bot.options.write().load_timeout = 200;
+    bot.state.lock().game_loaded = true;
+    // `game.logout()` takes no arguments: `callGameFunction0`.
+    let logouts = || {
+        game.calls_to("callGameFunction0")
+            .iter()
+            .filter(|a| arg(a, 0) == "logout")
+            .count()
+    };
+    assert!(wait_until(Duration::from_secs(5), || logouts() == 1));
+    // Several more LoadTimeouts: the message stays, and so does the login screen.
+    std::thread::sleep(Duration::from_millis(1000));
+    assert_eq!(logouts(), 1);
+}
