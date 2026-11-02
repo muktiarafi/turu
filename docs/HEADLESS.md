@@ -189,7 +189,8 @@ since it started (by thread and callback, with the path for `getGameObject` and 
 many, how long they waited, how long the player took to run them, reply bytes) and its player's
 ticks. `TURU_PERF_LOG=<seconds>` logs the same for each tab every `seconds`, over that window
 (`turu_perf` lines: the player thread's milliseconds per second, then the busiest calls). With a
-window it covers every tab, plus a total line.
+window it covers every tab, plus a total line and a `main thread` line: where the event loop's
+time goes (idle, drawing and its parts, the games and bot calls, the rest).
 
 ## Reference
 

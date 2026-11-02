@@ -23,6 +23,7 @@ mod player;
 mod preferences;
 #[cfg(feature = "tracy")]
 mod tracy;
+mod thread_perf;
 mod turu;
 mod util;
 #[cfg(target_os = "linux")]

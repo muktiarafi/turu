@@ -468,6 +468,7 @@ pub fn start_perf_log() {
     tracing::info!("Logging Flash calls and ticks every {} s (TURU_PERF_LOG)", every.as_secs_f64());
     let spawned = std::thread::Builder::new().name("Turu Perf Log".into()).spawn(move || {
         let mut last: HashMap<TabId, turu_bot::perf::PerfSnapshot> = HashMap::new();
+        let mut last_main = crate::thread_perf::snapshot();
         loop {
             std::thread::sleep(every);
             let tabs = tabs();
@@ -489,6 +490,12 @@ pub fn start_perf_log() {
                     tabs.len(),
                     busy / seconds.max(0.001)
                 );
+            }
+            // With a window, the event loop thread as a whole (see `thread_perf`).
+            if !headless() {
+                let main = crate::thread_perf::snapshot();
+                tracing::info!(target: "turu_perf", "{}", main.report(&last_main, busy));
+                last_main = main;
             }
         }
     });

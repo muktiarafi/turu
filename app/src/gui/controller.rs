@@ -381,7 +381,11 @@ impl GuiController {
     }
 
     pub fn render(&mut self, mut player: Option<MutexGuard<Player>>) {
-        let surface_texture = match self.surface.get_current_texture() {
+        use crate::thread_perf::{Phase, add}; // Turu: `TURU_PERF_LOG`.
+        let acquiring = Instant::now();
+        let acquired = self.surface.get_current_texture();
+        add(Phase::Acquire, acquiring.elapsed());
+        let surface_texture = match acquired {
             wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
             wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
                 // The acquired texture is still usable - no reason to waste
@@ -433,6 +437,7 @@ impl GuiController {
                 .set_target(&self.descriptors.device, None);
         }
 
+        let building_ui = Instant::now();
         let raw_input = self.egui_winit.take_egui_input(&self.window);
         let show_menu = self.window.fullscreen().is_none() && !self.no_gui;
         let mut counter_shapes = 0;
@@ -453,6 +458,7 @@ impl GuiController {
                 counter_shapes = fps_counter(ui.ctx(), counter_top);
             }
         });
+        add(Phase::Ui, building_ui.elapsed());
         // AQW build: the FPS counter (Mugetsu's settings) is redrawn with the movie's frames
         // only, so on its own it isn't UI that wants repaints (see `wants_redraws`).
         self.ui_visible = full_output.shapes.len() > counter_shapes;
@@ -562,6 +568,7 @@ impl GuiController {
         }
 
         command_buffers.push(encoder.finish());
+        let presenting = Instant::now();
         self.descriptors.queue.submit(command_buffers);
 
         // Free textures only after submitting the command buffer that may still
@@ -573,6 +580,7 @@ impl GuiController {
 
         self.window.pre_present_notify();
         self.descriptors.queue.present(surface_texture);
+        add(Phase::Present, presenting.elapsed());
         crate::mugetsu::frame_presented();
         #[cfg(feature = "tracy")]
         tracing_tracy::client::frame_mark();

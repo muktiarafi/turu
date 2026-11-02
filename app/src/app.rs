@@ -470,8 +470,10 @@ impl MainWindow {
                     }
                 }
                 let movie_ms = started.elapsed().as_secs_f64() * 1000.0;
+                crate::thread_perf::add(crate::thread_perf::Phase::Movie, started.elapsed());
 
                 self.gui.render(player);
+                crate::thread_perf::add(crate::thread_perf::Phase::Draw, started.elapsed());
                 self.perf.presents += 1;
                 self.count_fps();
                 self.frame_since_render = false;
@@ -1220,6 +1222,7 @@ impl App {
 
 impl ApplicationHandler<RuffleEvent> for App {
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
+        crate::thread_perf::woke(); // Turu: `TURU_PERF_LOG`.
         enter_runtime!(self);
 
         if cause == StartCause::Init {
@@ -1504,6 +1507,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
             }
         }
+        crate::thread_perf::going_idle(); // Turu: `TURU_PERF_LOG`.
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {

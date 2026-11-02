@@ -331,7 +331,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   and how long the player ran it (timed in `answer_flash_call`); each tab's player ticks too.
   Read with `GET /debug/perf`, or logged per tab with `TURU_PERF_LOG=<seconds>`
   (`docs/HEADLESS.md`). The wait includes the queue on the player's thread, so a wait far above
-  the run time means that thread is busy with ticks or other tabs' calls. They led to the
+  the run time means that thread is busy with ticks or other tabs' calls. With a window, the log
+  also has a `main thread` line (`app/src/thread_perf.rs`): idle, drawing (the movie and its GPU
+  wait, getting the window's next picture, the UI, submit and present), the games and bot calls,
+  and the rest. They led to the
   background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
   while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
   checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind
