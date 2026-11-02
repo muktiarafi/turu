@@ -1,5 +1,7 @@
 //! map / combat / kill / monsters / options against a fake skua.swf.
 
+mod common;
+
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -88,7 +90,13 @@ impl FlashHost for FakeGame {
         Ok(match name {
             "isLoggedIn" => "true".into(),
             "isNull" => (!self.values.lock().contains_key(&a0)).to_string(),
-            "getGameObject" | "getGameObjectS" => self.get(&a0),
+            "getGameObject" | "getGameObjectS" => {
+                let whole = [
+                    ("world.myAvatar.items", self.get("world.myAvatar.items")),
+                    ("world.questTree", self.get("world.questTree")),
+                ];
+                common::sub_path(&a0, &whole).unwrap_or_else(|| self.get(&a0))
+            }
             "callGameFunction0" if a0 == "world.myAvatar.pMC.artLoaded" => "true".into(),
             "callGameFunction" if a0 == "sfc.sendString" => {
                 // %xt%zm%cmd%room%tfer%user%map%cell%pad%

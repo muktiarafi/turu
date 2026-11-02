@@ -1,5 +1,7 @@
 //! Item matching, quest/shop JSON parsing and the item APIs against a fake game.
 
+mod common;
+
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -146,6 +148,14 @@ fn parses_the_action_bar() {
 }
 
 /// A logged-in player with an inventory, and a packet log.
+fn inventory_json() -> String {
+    json!([
+        { "ItemID": 1, "CharItemID": 100, "sName": "Dragon Scale", "iQty": 5, "iStk": 5, "sType": "Item" },
+        { "ItemID": 2, "CharItemID": 200, "sName": "Void Highlord", "iQty": 1, "sType": "Class", "bEquip": "1" }
+    ])
+    .to_string()
+}
+
 struct FakeGame {
     sent: Mutex<Vec<String>>,
     calls: Mutex<Vec<String>>,
@@ -159,15 +169,20 @@ impl FlashHost for FakeGame {
             _ => String::new(),
         };
         self.calls.lock().push(format!("{name}({})", arg(0)));
+        let whole = [
+            ("world.myAvatar.items", inventory_json()),
+            ("world.questTree", QUEST_TREE.to_owned()),
+        ];
+        if name == "getGameObject"
+            && let Some(value) = common::sub_path(&arg(0), &whole)
+        {
+            return Ok(value);
+        }
         let answer = match (name, arg(0).as_str()) {
             ("isLoggedIn", _) | ("inventoryHasSpaceFor", _) | ("rejectExcept", _) => "true".into(),
             ("getGameObject", "world.myAvatar.dataLeaf.intState") => "1".into(),
             ("getGameObject", "world.curRoom") => "42".into(),
-            ("getGameObject", "world.myAvatar.items") => json!([
-                { "ItemID": 1, "CharItemID": 100, "sName": "Dragon Scale", "iQty": 5, "iStk": 5, "sType": "Item" },
-                { "ItemID": 2, "CharItemID": 200, "sName": "Void Highlord", "iQty": 1, "sType": "Class", "bEquip": "1" }
-            ])
-            .to_string(),
+            ("getGameObject", "world.myAvatar.items") => inventory_json(),
             ("getGameObject", "world.myAvatar.objData.iBagSlots") => "30".into(),
             ("inventoryBagUsedSlots", _) => "12".into(),
             ("getGameObject", "world.questTree") => QUEST_TREE.into(),

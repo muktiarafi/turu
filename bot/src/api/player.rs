@@ -83,8 +83,9 @@ pub fn is_in_game(bot: &Bot) -> BotResult<bool> {
 
 /// Items loaded, no map load in progress and the avatar's art is loaded.
 pub fn loaded(bot: &Bot) -> BotResult<bool> {
-    let items: Option<Vec<Value>> = bot.flash.get_opt("world.myAvatar.items")?;
-    if items.is_none_or(|i| i.is_empty()) {
+    // The item count, as VibeSkua reads it: the skill timer asks this every tick, and reading
+    // the items themselves sent the whole inventory as JSON each time.
+    if bot.flash.get_or::<i64>("world.myAvatar.items.length", 0)? <= 0 {
         return Ok(false);
     }
     if bot.flash.get_or("world.mapLoadInProgress", true)? {

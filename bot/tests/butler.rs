@@ -2,6 +2,8 @@
 //! games that share one data folder; the follower's quest, level and AntiLag fakes, the
 //! suspend question and the offline write on close.
 
+mod common;
+
 use parking_lot::{Condvar, Mutex};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -257,7 +259,13 @@ impl FlashHost for FakeGame {
         Ok(match name {
             "isLoggedIn" => "true".into(),
             "isNull" => (!self.values.lock().contains_key(&a0)).to_string(),
-            "getGameObject" | "getGameObjectS" => self.get(&a0),
+            "getGameObject" | "getGameObjectS" => {
+                let whole = [
+                    ("world.myAvatar.items", self.get("world.myAvatar.items")),
+                    ("world.questTree", self.get("world.questTree")),
+                ];
+                common::sub_path(&a0, &whole).unwrap_or_else(|| self.get(&a0))
+            }
             "getGameObjectKey" if a0 == "world.uoTree" => {
                 let other = self.other.lock().clone();
                 match other {

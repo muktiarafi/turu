@@ -1,5 +1,7 @@
 //! Runs `scripts/core/CoreDailies.ts` against a fake game.
 
+mod common;
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use turu_bot::script;
@@ -26,6 +28,15 @@ impl FlashHost for FakeGame {
             Some(FlashArg::String(s)) => s.as_str(),
             _ => "",
         };
+        let whole = [
+            ("world.questTree", QUEST_TREE.to_owned()),
+            ("world.myAvatar.items", INVENTORY.to_owned()),
+        ];
+        if name == "getGameObject"
+            && let Some(value) = common::sub_path(first, &whole)
+        {
+            return Ok(value);
+        }
         Ok(match (name, first) {
             ("getGameObject", "world.questTree") => QUEST_TREE.into(),
             ("getGameObject", "world.myAvatar.items") => INVENTORY.into(),

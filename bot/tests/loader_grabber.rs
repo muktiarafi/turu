@@ -1,5 +1,7 @@
 //! Tools > Loader's quest cache and Tools > Grabber's readers and actions against a fake game.
 
+mod common;
+
 use parking_lot::Mutex;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -24,6 +26,14 @@ fn raw_quest(id: i64) -> Value {
         "oRewards": { "itemsS": { "559": { "ItemID": 559, "sName": "Sword", "iQty": 1, "sType": "Sword" } } },
         "reward": [ { "ItemID": 559, "iQty": 1, "iRate": 100, "iType": 0, "sType": "Sword" } ]
     })
+}
+
+fn inventory_json() -> String {
+    json!([
+        { "ItemID": 1, "CharItemID": 100, "sName": "Dragon Scale", "iQty": 5, "iStk": 99, "sType": "Item", "bCoins": "1" },
+        { "ItemID": 2, "CharItemID": 200, "sName": "Void Highlord", "iQty": 1, "sType": "Class", "bEquip": "1", "bUpg": "1" }
+    ])
+    .to_string()
 }
 
 struct FakeGame {
@@ -52,23 +62,40 @@ impl FlashHost for FakeGame {
             Some(FlashArg::Number(n)) => n.to_string(),
             _ => String::new(),
         };
+        let whole = [
+            (
+                "world.questTree",
+                Value::Object(self.tree.lock().clone()).to_string(),
+            ),
+            ("world.myAvatar.items", inventory_json()),
+        ];
+        if name == "getGameObject"
+            && let Some(value) = common::sub_path(&arg(0), &whole)
+        {
+            return Ok(value);
+        }
         let answer = match (name, arg(0).as_str()) {
             ("isLoggedIn", _) => self.logged_in.load(Ordering::SeqCst).to_string(),
             ("isNull", _) => "false".into(),
             ("getGameObject", "world.myAvatar.dataLeaf.intState") => {
-                if self.nothing_found.load(Ordering::SeqCst) { "0" } else { "1" }.into()
+                if self.nothing_found.load(Ordering::SeqCst) {
+                    "0"
+                } else {
+                    "1"
+                }
+                .into()
             }
-            ("getGameObject", "world.questTree") => Value::Object(self.tree.lock().clone()).to_string(),
+            ("getGameObject", "world.questTree") => {
+                Value::Object(self.tree.lock().clone()).to_string()
+            }
             ("getGameObject", "world.myAvatar.objData.intGold") => "1000".into(),
-            ("getGameObject", "world.myAvatar.items") => json!([
-                { "ItemID": 1, "CharItemID": 100, "sName": "Dragon Scale", "iQty": 5, "iStk": 99, "sType": "Item", "bCoins": "1" },
-                { "ItemID": 2, "CharItemID": 200, "sName": "Void Highlord", "iQty": 1, "sType": "Class", "bEquip": "1", "bUpg": "1" }
-            ])
-            .to_string(),
+            ("getGameObject", "world.myAvatar.items") => inventory_json(),
             ("getGameObject", "world.myAvatar.tempitems") => {
                 json!([{ "ItemID": 9, "sName": "Bone", "iQty": 3, "sType": "Item" }]).to_string()
             }
-            ("getGameObject", "world.monsters") | ("getGameObject", "world.getMonstersByCell") => "null".into(),
+            ("getGameObject", "world.monsters") | ("getGameObject", "world.getMonstersByCell") => {
+                "null".into()
+            }
             ("setGameObject", "world.questTree") => {
                 self.tree.lock().clear();
                 "null".into()

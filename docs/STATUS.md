@@ -343,7 +343,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   menu bar hidden). egui asks for a repaint on every mouse move, so the window presented at the
   monitor's rate, and each present waited for the next refresh: 35-40% of the main thread,
   which every tab's game and bot call waited behind. Nothing asks for a redraw while the window
-  is minimized or covered (it spun the event loop, ~450 ms/s). They led to the
+  is minimized or covered (it spun the event loop, ~450 ms/s).
+- **Reads that copied whole objects:** `player::loaded` (asked by the skill timer every tick and
+  by many waits) reads `world.myAvatar.items.length`, as VibeSkua does, not the whole inventory;
+  `quests.get`/`canComplete` read `world.questTree.<id>`, not the whole quest tree. With nine
+  tabs these copies were a large part of the bot calls' time. Inventory and bank checks
+  (`contains`, ...) still read every item. They led to the
   background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
   while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
   checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind
@@ -365,7 +370,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Grid View is new and unchecked with real accounts** (`app/src/grid.rs`, nav bar Grid, with
   two tabs or more): every tab at once, each in a tile in VibeSkua's layout (rows of ⌈√n⌉),
   its player sized to the tile. The active tab keeps the keyboard, sound and its full frame rate,
-  and its tile is outlined; the others run at 12 FPS (`grid::TILE_FPS`; VibeSkua's tiles run
+  and its tile is outlined; the others run at 8 FPS (`grid::TILE_FPS`; VibeSkua's tiles run
   unthrottled, each a process of its own) and draw each frame they run. Clicking another tile
   makes it the active tab (that click goes no further). Each tile shows the tab's name, a dot
   while it's busy and "!" while it waits for you. All on the one thread: `TURU_PERF_LOG`'s

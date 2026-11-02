@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The frame rate of the tiles other than the active tab's (VibeSkua's tiles run unthrottled,
 /// each in a process of its own; here every tab shares one thread).
-pub const TILE_FPS: i32 = 12;
+pub const TILE_FPS: i32 = 8;
 
 static ON: AtomicBool = AtomicBool::new(false);
 /// Each tile's tab and area, in physical pixels of the window, for the UI's labels.

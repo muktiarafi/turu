@@ -1,6 +1,8 @@
 //! Runs the enhancement part of `scripts/core/CoreAdvanced.ts` (SmartEnhance, EnhanceItem)
 //! against a fake game with the enhancement shops, and checks the `enhanceItemShop` packets.
 
+mod common;
+
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -89,12 +91,38 @@ fn shop_items(shop: i64) -> &'static str {
     }
 }
 
+impl FakeGame {
+    fn quest_tree(&self) -> String {
+        let quests: Vec<String> = UNLOCK_QUESTS
+            .iter()
+            .map(|id| {
+                let slot = if self.unlocked.contains(id) { 1 } else { 2 };
+                format!(r#""{id}": {{"QuestID": {id}, "sName": "Unlock {id}", "iSlot": {slot}, "iValue": 1}}"#)
+            })
+            .collect();
+        format!("{{{}}}", quests.join(","))
+    }
+
+    /// The values `getGameObject` also reads paths inside of.
+    fn whole(&self) -> [(&'static str, String); 2] {
+        [
+            ("world.questTree", self.quest_tree()),
+            ("world.myAvatar.items", self.inventory.to_owned()),
+        ]
+    }
+}
+
 impl FlashHost for FakeGame {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
         let first = match args.first() {
             Some(FlashArg::String(s)) => s.as_str(),
             _ => "",
         };
+        if name == "getGameObject"
+            && let Some(value) = common::sub_path(first, &self.whole())
+        {
+            return Ok(value);
+        }
         Ok(match (name, first) {
             ("callGameFunction", "sfc.sendString") => {
                 if let Some(FlashArg::String(packet)) = args.get(1) {
@@ -118,18 +146,7 @@ impl FlashHost for FakeGame {
             ("isNull", "world.shopinfo") => (*self.shop.lock() == 0).to_string(),
             ("getGameObject", "world.shopinfo.ShopID") => self.shop.lock().to_string(),
             ("getGameObject", "world.shopinfo.items") => shop_items(*self.shop.lock()).into(),
-            ("getGameObject", "world.questTree") => {
-                let quests: Vec<String> = UNLOCK_QUESTS
-                    .iter()
-                    .map(|id| {
-                        let slot = if self.unlocked.contains(id) { 1 } else { 2 };
-                        format!(
-                            r#""{id}": {{"QuestID": {id}, "sName": "Unlock {id}", "iSlot": {slot}, "iValue": 1}}"#
-                        )
-                    })
-                    .collect();
-                format!("{{{}}}", quests.join(","))
-            }
+            ("getGameObject", "world.questTree") => self.quest_tree(),
             ("getGameObject", "world.myAvatar.items") => self.inventory.into(),
             ("getGameObject", "world.bankinfo.items") => "[]".into(),
             ("getGameObject", "world.strMapName") => "\"forge\"".into(),

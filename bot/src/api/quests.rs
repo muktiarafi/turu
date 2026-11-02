@@ -311,9 +311,14 @@ pub fn tree(bot: &Bot) -> BotResult<Vec<Quest>> {
     Ok(raw.map(Quest::tree_from).unwrap_or_default())
 }
 
-/// The loaded quest with this ID (VibeSkua `TryGetQuest`).
+/// The loaded quest with this ID (VibeSkua `TryGetQuest`). Turu reads that one quest
+/// (`world.questTree.<id>`), not the whole tree: scripts ask in loops, and the tree of a client
+/// that loaded many quests is large.
 pub fn get(bot: &Bot, id: i64) -> BotResult<Option<Quest>> {
-    Ok(tree(bot)?.into_iter().find(|q| q.id == id))
+    let raw: Option<Value> = bot.flash.get_opt(&format!("world.questTree.{id}"))?;
+    Ok(raw
+        .map(|quest| Quest::tree_from(serde_json::json!({ id.to_string(): quest })))
+        .and_then(|quests| quests.into_iter().find(|q| q.id == id)))
 }
 
 /// VibeSkua `Load(ids)`: `world.showQuests("1,2,3", "q")`, in chunks of 30 (sleeping
@@ -383,7 +388,7 @@ pub fn is_in_progress(bot: &Bot, id: i64) -> BotResult<bool> {
 
 /// The quest's turn-in requirements are met (`status == "c"` in `world.questTree`).
 pub fn can_complete(bot: &Bot, id: i64) -> BotResult<bool> {
-    Ok(tree(bot)?.iter().any(|q| q.id == id && q.completable()))
+    Ok(get(bot, id)?.is_some_and(|q| q.completable()))
 }
 
 // ---------------------------------------------------------------------------------------
