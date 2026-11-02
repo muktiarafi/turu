@@ -303,13 +303,22 @@ pub fn equip_item(bot: &Bot, which: NameOrId) -> BotResult<bool> {
 
 /// VibeSkua `EquipUsableItem`: puts a consumable in the potion slot.
 ///
-/// VibeSkua calls `world.equipUseableItem({ItemID, sDesc, sFile, sName})`; object arguments
-/// aren't supported by the Flash bridge yet, so this sends the `equipItem` packet.
+/// `world.equipUseableItem({ItemID, sDesc, sFile, sName})` sends the `equipItem` packet and also
+/// fills the client's potion action (`world.actions.active[5]`), which using the potion fires;
+/// the bare packet only equips it on the server.
 pub fn equip_usable_item(bot: &Bot, which: NameOrId) -> BotResult<()> {
     let Some(item) = get_item(bot, Container::Inventory, which)? else {
         return Ok(());
     };
-    send_equip(bot, item.id)?;
+    wait::for_action_cooldown(bot, "equipItem", 40)?;
+    let arg = serde_json::json!({
+        "ItemID": item.id,
+        "sDesc": item.description,
+        "sFile": item.file_link,
+        "sName": item.name,
+    });
+    bot.flash
+        .call_game_function("world.equipUseableItem", vec![arg.into()])?;
     wait::for_item_equip(bot, NameOrId::Id(item.id), 10)?;
     Ok(())
 }
