@@ -2,19 +2,23 @@
 
 use super::files::SaveText;
 use super::theme::MUTED;
-use super::widgets::{self, LogView};
-use egui::{Context, Ui};
+use super::widgets::{self, Kind, LogView};
+use egui::{Context, Ui, vec2};
 use turu_bot::log::LogBuffer;
 
 /// "Copy", "Save", "Clear" for one log buffer; call [`SaveText::poll`] each frame too.
 pub fn log_buttons(ui: &mut Ui, buffer: &LogBuffer, save: &mut SaveText, file_name: &str) {
-    if widgets::small_button(ui, "Clear", true).clicked() {
+    // Finger-sized on a touch screen; Save only where it can ask where to save.
+    let size = vec2(0.0, widgets::target(22.0, 40.0));
+    if widgets::button(ui, "Clear", Kind::Normal, true, size, "").clicked() {
         buffer.clear();
     }
-    if widgets::small_button(ui, "Save", !buffer.is_empty()).clicked() {
+    if crate::platform::platform().has_file_dialogs()
+        && widgets::button(ui, "Save", Kind::Normal, !buffer.is_empty(), size, "").clicked()
+    {
         save.ask(ui.ctx(), file_name, buffer.text());
     }
-    if widgets::small_button(ui, "Copy", !buffer.is_empty()).clicked() {
+    if widgets::button(ui, "Copy", Kind::Normal, !buffer.is_empty(), size, "").clicked() {
         ui.ctx().copy_text(buffer.text());
     }
 }

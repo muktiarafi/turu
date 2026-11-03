@@ -48,6 +48,21 @@ pub fn button(ui: &mut Ui, label: &str, kind: Kind, enabled: bool, size: Vec2, t
     }
 }
 
+/// Whether the screen is touched (`Platform::is_touch`): no hover, finger-sized targets.
+pub fn touch() -> bool {
+    crate::platform::platform().is_touch()
+}
+
+/// `height` for a pointer; on a touch screen at least `touch_height`.
+pub fn target(height: f32, touch_height: f32) -> f32 {
+    if touch() { height.max(touch_height) } else { height }
+}
+
+/// The size of the small labels: 10 points, 12 on a touch screen (a phone held at arm's length).
+fn small_label_size() -> f32 {
+    if touch() { 12.0 } else { 10.0 }
+}
+
 /// A small text button for a card header ("Copy", "Save", "Clear").
 pub fn small_button(ui: &mut Ui, label: &str, enabled: bool) -> Response {
     button(ui, label, Kind::Normal, enabled, vec2(0.0, 22.0), "")
@@ -55,7 +70,7 @@ pub fn small_button(ui: &mut Ui, label: &str, enabled: bool) -> Response {
 
 /// The tiny uppercase heading of VibeSkua's cards (`section-label`).
 pub fn section_label(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(10.0).strong().color(MUTED));
+    ui.label(RichText::new(text).size(small_label_size()).strong().color(MUTED));
 }
 
 /// A rounded card (`card`).
@@ -88,7 +103,7 @@ pub fn dot(ui: &mut Ui, color: Color32, radius: f32) {
 /// The grey number next to a heading (`count`).
 pub fn count_badge(ui: &mut Ui, count: usize) {
     pill(ui, |ui| {
-        ui.label(RichText::new(count.to_string()).size(10.0).color(MUTED));
+        ui.label(RichText::new(count.to_string()).size(small_label_size()).color(MUTED));
     });
 }
 
@@ -162,6 +177,8 @@ pub struct LogView {
     version: Option<u64>,
     rows: Vec<String>,
     count: usize,
+    /// The row [`Self::reveal`] scrolls to on the next draw.
+    reveal: std::cell::Cell<Option<usize>>,
 }
 
 impl LogView {
@@ -190,6 +207,13 @@ impl LogView {
         self.count
     }
 
+    /// Scrolls to the last row containing `text` on the next draw; whether there is one.
+    pub fn reveal(&self, text: &str) -> bool {
+        let row = self.rows.iter().rposition(|row| row.contains(text));
+        self.reveal.set(row);
+        row.is_some()
+    }
+
     /// Draws the list into the remaining space, following the end like a console.
     pub fn show(&self, ui: &mut Ui, id: &str, height: f32) {
         Frame::new()
@@ -200,23 +224,28 @@ impl LogView {
             .show(ui, |ui| {
                 let row_height = ui.text_style_height(&TextStyle::Monospace) + 2.0;
                 ui.set_width(ui.available_width());
-                ScrollArea::both()
+                let mut scroll = ScrollArea::both()
                     .id_salt(id)
                     .auto_shrink([false, false])
                     .max_height((height - 14.0).max(40.0))
-                    .stick_to_bottom(true)
-                    .show_rows(ui, row_height, self.rows.len(), |ui, range| {
-                        ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                            ui.spacing_mut().item_spacing.y = 2.0;
-                            for row in &self.rows[range] {
-                                ui.add(
-                                    Label::new(RichText::new(row).monospace().color(TEXT))
-                                        .wrap_mode(TextWrapMode::Extend)
-                                        .selectable(true),
-                                );
-                            }
-                        });
+                    .stick_to_bottom(true);
+                if let Some(row) = self.reveal.take() {
+                    // `show_rows` spaces rows by the outer item spacing; two rows of context above.
+                    let step = row_height + ui.spacing().item_spacing.y;
+                    scroll = scroll.vertical_scroll_offset(row.saturating_sub(2) as f32 * step);
+                }
+                scroll.show_rows(ui, row_height, self.rows.len(), |ui, range| {
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        for row in &self.rows[range] {
+                            ui.add(
+                                Label::new(RichText::new(row).monospace().color(TEXT))
+                                    .wrap_mode(TextWrapMode::Extend)
+                                    .selectable(true),
+                            );
+                        }
                     });
+                });
             });
     }
 }

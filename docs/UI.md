@@ -65,14 +65,25 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 
 ## Windows
 
-* **Script Loader** (`script_loader.rs`, 370x500): header card ("LOADED SCRIPT", file name in
-  monospace or "No script loaded", status pill with a coloured dot and `ScriptStatus::label()`);
+* **Script Loader** (`script_loader.rs`, 370x500): status card: the state in words with a
+  coloured dot (No script loaded, Ready, Starting..., Running, Paused, Stopping..., Stopped with an
+  error; `ScriptStatus::label()` keeps VibeSkua's "[Running]" for the control API and the
+  monitor) and, while a script runs, how long (the Stats clock, "45s", "12m", "3h 05m"); the file
+  name in monospace (full path on hover) or "Load Script or Search Scripts to pick one"; after a
+  failure the error's first line in red, which scrolls the log to the error when clicked;
+  under it the run controls, 38 px high: Start/Stop Script (primary/danger, about 60% of the
+  width; "Force Stop" while stopping handlers run) and Pause/Resume; then, 14 px lower, the setup
+  buttons, outlined and 28 px high (VibeSkua's grid is reordered so the run controls lead;
+  on a touch screen (`Platform::is_touch`, Android) every button is 48 points high, the log's
+  Clear/Copy 40, the small labels 12, and why Start or Edit Script Options is disabled shows as a
+  line under its group instead of a tooltip; buttons the platform can't serve are hidden: Load
+  Script and the log's Save without file dialogs, Edit Script and Open VSCode where files don't
+  open in an app):
   Load Script (rfd dialog filtered to .ts/.js, starting in the repo's `scripts/` found next to the
   working directory or above the executable, else the bot's scripts folder); Open VSCode (enabled
   when `code` is on PATH, or the macOS app bundle is found); Edit Script (OS default app);
   Search Scripts (opens the window below); Edit Script Options (enabled once a script with options is loaded);
-  Start/Stop Script (primary/danger; "Force
-  Stop" while stopping handlers run); Pause/Resume; SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
+  SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
   The "Report Issues" footer is omitted.
 * **Search Scripts** (`script_repo.rs`, 969x500; VibeSkua's Script Repo; also Scripts > Search
   Scripts): search box ("Search scripts by name, path or tag") with a clear button, scope (All,

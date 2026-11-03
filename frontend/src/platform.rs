@@ -62,6 +62,23 @@ pub trait Platform: Send + Sync {
 
     /// Opens a file with the program the system associates with it.
     fn open_file(&self, path: &Path);
+
+    /// Whether [`Platform::pick_file`] and [`Platform::save_file`] show dialogs; the windows
+    /// hide what needs one when they don't.
+    fn has_file_dialogs(&self) -> bool {
+        true
+    }
+
+    /// Whether [`Platform::open_file`] opens files in an app (Edit Script, Open VSCode).
+    fn opens_files(&self) -> bool {
+        true
+    }
+
+    /// Whether the screen is touched rather than pointed at: no hover, so tooltips never show,
+    /// and controls need finger-sized targets (48 points, Android's minimum).
+    fn is_touch(&self) -> bool {
+        false
+    }
 }
 
 static PLATFORM: OnceLock<Arc<dyn Platform>> = OnceLock::new();

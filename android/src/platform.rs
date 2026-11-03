@@ -1,7 +1,7 @@
 //! What the bot windows ask of Android (`turu_frontend::platform`). There are no file dialogs
-//! yet (the system picker answers through the activity, which needs Java of ours): Load Script
-//! and the other dialogs say so, and scripts come from Search Scripts. Web pages open in the
-//! browser; folders and files only get logged.
+//! yet (the system picker answers through the activity, which needs Java of ours): the windows
+//! hide Load Script and Save, and scripts come from Search Scripts. Web pages open in the
+//! browser; folders and files only get logged, so Edit Script and Open VSCode are hidden too.
 
 use android_activity::AndroidApp;
 use jni::JavaVM;
@@ -41,6 +41,18 @@ impl Platform for AndroidPlatform {
 
     fn open_file(&self, path: &Path) {
         tracing::info!("The file is {} (on the phone's storage)", path.display());
+    }
+
+    fn has_file_dialogs(&self) -> bool {
+        false
+    }
+
+    fn opens_files(&self) -> bool {
+        false
+    }
+
+    fn is_touch(&self) -> bool {
+        true
     }
 }
 
