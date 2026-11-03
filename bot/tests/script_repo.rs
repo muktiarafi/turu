@@ -197,8 +197,11 @@ fn download_brings_the_imports_and_update_keeps_edits() {
         status(&repo, "farm/GoldFarm.ts"),
         Some(Status::NotDownloaded)
     );
+    // Not downloaded: Load and Start need the download task.
+    assert_eq!(repo.ready("farm/GoldFarm.ts"), None);
 
     let path = repo.ensure("farm/GoldFarm.ts").unwrap();
+    assert_eq!(repo.ready("farm/GoldFarm.ts"), Some(path.clone()));
     assert_eq!(fs::read_to_string(&path).unwrap(), FARM);
     assert_eq!(status(&repo, "core/CoreBots.ts"), Some(Status::UpToDate));
     // The two scripts and tsconfig.json.
@@ -219,11 +222,14 @@ fn download_brings_the_imports_and_update_keeps_edits() {
     repo.refresh().unwrap();
     assert_eq!(status(&repo, "farm/GoldFarm.ts"), Some(Status::Outdated));
     assert_eq!(status(&repo, "core/CoreBots.ts"), Some(Status::Modified));
+    // Outdated: not ready; an edited import doesn't stop it once the script is current.
+    assert_eq!(repo.ready("farm/GoldFarm.ts"), None);
 
     let message = repo.update_all().unwrap();
     assert!(message.contains("Kept 1 modified"), "{message}");
     assert_eq!(fs::read_to_string(&path).unwrap(), farm2);
     assert_eq!(fs::read_to_string(&core).unwrap(), "// mine\n");
+    assert!(repo.ready("farm/GoldFarm.ts").is_some());
 
     // Download on the script itself replaces it.
     repo.download(&["core/CoreBots.ts".into()], true).unwrap();
@@ -296,6 +302,10 @@ fn many_files_come_as_one_zip_and_reset_moves_files_aside() {
     assert_eq!(status(&repo, "story/S0.ts"), Some(Status::Removed));
     repo.delete("story/S0.ts").unwrap();
     assert_eq!(status(&repo, "story/S0.ts"), None);
+
+    // Downloaded and current: ready without a download; my own script too.
+    assert!(repo.ready("story/S7.ts").is_some());
+    assert!(repo.ready("mine/Mine.ts").is_some());
 
     // Deleting my own script moves it to the backup, not away for good.
     let moved = repo.delete("mine/Mine.ts").unwrap().expect("moved");

@@ -530,6 +530,30 @@ impl ScriptRepo {
         safe_relative(path).map(|p| self.paths.scripts_dir().join(p))
     }
 
+    /// The script at `path` when it and what it imports are downloaded and current (or it isn't
+    /// in the index: your own script), so Load and Start need no download and can run while a
+    /// task does (`None` when a download is needed).
+    pub fn ready(&self, path: &str) -> Option<PathBuf> {
+        let local = self.local_path(path).filter(|p| p.is_file())?;
+        let data = self.data.lock();
+        let stale = |p: &str| {
+            data.entries.iter().any(|e| {
+                e.info.path == p && matches!(e.status, Status::NotDownloaded | Status::Outdated)
+            })
+        };
+        if let Some(info) = data.cache.index.scripts.iter().find(|s| s.path == path)
+            && (stale(path) || info.deps.iter().any(|dep| stale(dep)))
+        {
+            return None;
+        }
+        Some(local)
+    }
+
+    /// Sets the snapshot's `message`, for work done without a task (a Load of a ready script).
+    pub fn set_message(&self, message: String, failed: bool) {
+        *self.message.lock() = (message, failed);
+    }
+
     /// Runs `task` on a thread of its own, unless a task is running (then `false`). Its result
     /// becomes the snapshot's `message`.
     pub fn spawn(

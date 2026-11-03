@@ -8,7 +8,7 @@ use super::files;
 use super::theme::{DANGER, MUTED, SUCCESS, TRACK, WARNING};
 use super::widgets::{self, Kind};
 use egui::{
-    Align, Button, ComboBox, Context, CornerRadius, FontId, Layout, Modal, RichText, ScrollArea, Sense, Ui, vec2,
+    Align, Button, ComboBox, Context, CornerRadius, FontId, Key, Layout, Modal, RichText, ScrollArea, Sense, Ui, vec2,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -79,7 +79,21 @@ pub struct ScriptRepoWindow {
     vscode: Option<Option<PathBuf>>,
 }
 
-/// What a row's buttons may do, and why not.
+/// What the rows may do now, before asking whether a script is ready ([`Rules::for_row`]).
+struct Rules {
+    /// A repo task runs: only ready scripts can be loaded or started.
+    busy: bool,
+    start: bool,
+    load: bool,
+    queue: bool,
+    /// Why Start or Load can't (another script runs, ...).
+    reason: String,
+    /// Why a script that needs a download waits ([`wait_tip`]).
+    wait: String,
+    queue_tip: String,
+}
+
+/// What one row's buttons may do, and why not.
 struct Allowed {
     start: bool,
     load: bool,
@@ -87,6 +101,39 @@ struct Allowed {
     run_tip: String,
     queue_tip: String,
 }
+
+impl Rules {
+    /// While a task runs, a script that's downloaded and current still loads and starts
+    /// (`ScriptRepo::ready`); one that needs a download waits.
+    fn for_row(&self, path: &str) -> Allowed {
+        let can_run = !self.busy || crate::turu::script_repo().ready(path).is_some();
+        let run_tip = if !can_run {
+            format!("{} (this script needs a download first)", self.wait)
+        } else {
+            self.reason.clone()
+        };
+        Allowed {
+            start: self.start && can_run,
+            load: self.load && can_run,
+            queue: self.queue,
+            run_tip,
+            queue_tip: self.queue_tip.clone(),
+        }
+    }
+}
+
+/// How a row's work went at once.
+enum Ran {
+    /// It runs as the repo's task.
+    Spawned,
+    /// Done at once (a ready script); whether it worked.
+    Done(bool),
+    /// Another task runs.
+    Refused,
+}
+
+/// The key that, with Enter in the search box, starts the top hit.
+const COMMAND_KEY: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
 
 impl ScriptRepoWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
@@ -134,12 +181,16 @@ impl ScriptRepoWindow {
 
         // The search box across the window, then what it looks in and the filters, which wrap
         // on a narrow screen. On a touch screen they're 48 points high, their rows about 44.
-        // Words, not symbols: Turu's fonts have no ✕ or arrows.
         let control = widgets::target(26.0, 40.0);
+        let mut enter = None;
         ui.horizontal(|ui| {
             // The box's width leaves out its margins (8 each side).
             let width = (ui.available_width() - 56.0 - 6.0 - 16.0).max(120.0);
-            widgets::text_box(ui, &mut self.search, "Search scripts", width);
+            let search = widgets::text_box(ui, &mut self.search, "Search scripts", width);
+            // Enter loads the top hit, Cmd/Ctrl+Enter starts it.
+            if search.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                enter = Some(ui.input(|i| i.modifiers.command));
+            }
             if widgets::button(
                 ui,
                 "Clear",
@@ -222,8 +273,24 @@ impl ScriptRepoWindow {
             );
         });
 
-        // The list, above the bottom bar.
-        let bar = widgets::target(30.0, 48.0) + 14.0;
+        let rules = rules(snapshot);
+        if let Some(start) = enter
+            && !self.search.trim().is_empty()
+            && let Some(&top) = self.filtered.first()
+        {
+            let path = entries[top].info.path.clone();
+            let allowed = rules.for_row(&path);
+            if start && allowed.start {
+                self.run(&path, Work::Start);
+            } else if !start && allowed.load {
+                self.run(&path, Work::Load);
+            }
+        }
+
+        // The list, above the bottom bar (on a narrow screen two lines: the status, then the
+        // buttons).
+        let bar_line = widgets::target(30.0, 48.0);
+        let bar = if narrow { 2.0 * bar_line + 22.0 } else { bar_line + 14.0 };
         let list_height = (ui.available_height() - bar).max(80.0);
         ui.allocate_ui(vec2(ui.available_width(), list_height), |ui| {
             let busy = snapshot.busy.is_some();
@@ -258,7 +325,6 @@ impl ScriptRepoWindow {
                     }
                 });
             } else {
-                let allowed = allowed(snapshot);
                 // The top search hit gets the accent on a touch screen (no hover there).
                 let top_hit = (!self.search.trim().is_empty()).then(|| self.filtered[0]);
                 let filtered = std::mem::take(&mut self.filtered);
@@ -269,7 +335,7 @@ impl ScriptRepoWindow {
                     |ui, rows| {
                         for i in rows {
                             let index = filtered[i];
-                            self.row(ui, &entries[index], &allowed, narrow, top_hit == Some(index));
+                            self.row(ui, &entries[index], &rules, narrow, top_hit == Some(index));
                         }
                     },
                 );
@@ -277,7 +343,7 @@ impl ScriptRepoWindow {
             }
         });
 
-        self.bottom_bar(ui, snapshot);
+        self.bottom_bar(ui, snapshot, narrow);
     }
 
     fn refilter(&mut self, snapshot: &Snapshot) {
@@ -337,8 +403,9 @@ impl ScriptRepoWindow {
     /// One script: its text, then Start, Load, Queue and the menu (on a narrow screen Start and
     /// the menu, which holds Load and Queue). Start is a plain button but on the row under the
     /// pointer and the top search hit, so a long list doesn't shout.
-    fn row(&mut self, ui: &mut Ui, entry: &Entry, allowed: &Allowed, narrow: bool, top_hit: bool) {
+    fn row(&mut self, ui: &mut Ui, entry: &Entry, rules: &Rules, narrow: bool, top_hit: bool) {
         let info = &entry.info;
+        let allowed = &rules.for_row(&info.path);
         let height = self.row_height.max(ROW_HEIGHT);
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), egui::Sense::hover());
         let lead = top_hit || ui.rect_contains_pointer(rect);
@@ -386,7 +453,11 @@ impl ScriptRepoWindow {
                         vec2(56.0, button_height),
                         &allowed.run_tip,
                     )
-                    .on_hover_text("Load it in the Script Loader")
+                    .on_hover_text(if top_hit {
+                        "Load it in the Script Loader (Enter)".to_owned()
+                    } else {
+                        "Load it in the Script Loader".to_owned()
+                    })
                     .clicked()
                     {
                         self.run(&info.path, Work::Load);
@@ -401,7 +472,11 @@ impl ScriptRepoWindow {
                     vec2(64.0, button_height),
                     &allowed.run_tip,
                 )
-                .on_hover_text("Load it and start it")
+                .on_hover_text(if top_hit {
+                    format!("Load it and start it ({COMMAND_KEY}+Enter)")
+                } else {
+                    "Load it and start it".to_owned()
+                })
                 .clicked()
                 {
                     self.run(&info.path, Work::Start);
@@ -415,10 +490,13 @@ impl ScriptRepoWindow {
             .hline(rect.x_range(), rect.bottom() - 0.5, egui::Stroke::new(1.0, TRACK));
     }
 
-    /// Starts `work` for the script at `path`, its row showing a spinner until it's done.
+    /// Starts `work` for the script at `path`, its row showing a spinner until it's done; a
+    /// Start that worked brings up the Script Loader.
     fn run(&mut self, path: &str, work: Work) {
-        if run(path, work) {
-            self.working = Some((path.to_owned(), work == Work::Start));
+        match run(path, work) {
+            Ran::Spawned => self.working = Some((path.to_owned(), work == Work::Start)),
+            Ran::Done(worked) => self.open_loader |= worked && work == Work::Start,
+            Ran::Refused => {}
         }
     }
 
@@ -430,6 +508,13 @@ impl ScriptRepoWindow {
         egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
             ui.set_min_width(190.0);
             touch_rows(ui);
+            let touch = widgets::touch();
+            // A touch screen shows no tooltips: what the badge means, and why an item rests,
+            // are lines in the menu.
+            if touch && let Some((label, _, meaning)) = badge(entry.status) {
+                reason_line(ui, &format!("{label}: {meaning}"));
+                ui.separator();
+            }
             if narrow {
                 let load = ui
                     .add_enabled(allowed.load, Button::new("Load"))
@@ -438,12 +523,18 @@ impl ScriptRepoWindow {
                     self.run(&info.path, Work::Load);
                     ui.close();
                 }
+                if touch && !allowed.load {
+                    reason_line(ui, &allowed.run_tip);
+                }
                 let queue = ui
                     .add_enabled(allowed.queue, Button::new("Add to the queue"))
                     .on_disabled_hover_text(&allowed.queue_tip);
                 if queue.clicked() {
                     self.run(&info.path, Work::Queue);
                     ui.close();
+                }
+                if touch && !allowed.queue {
+                    reason_line(ui, &allowed.queue_tip);
                 }
                 ui.separator();
             }
@@ -489,7 +580,10 @@ impl ScriptRepoWindow {
         });
     }
 
-    fn bottom_bar(&mut self, ui: &mut Ui, snapshot: &Snapshot) {
+    /// Update all, Refresh, Download all and the menu, with the running task or the last
+    /// result on the right; on a narrow screen the status takes a line above the buttons and
+    /// Download all moves into the menu.
+    fn bottom_bar(&mut self, ui: &mut Ui, snapshot: &Snapshot, narrow: bool) {
         let repo = crate::turu::script_repo();
         let busy = snapshot.busy.is_some();
         let height = widgets::target(30.0, 48.0);
@@ -500,7 +594,14 @@ impl ScriptRepoWindow {
             .count();
         let wait = wait_tip(snapshot);
         ui.add_space(2.0);
-        ui.horizontal_wrapped(|ui| {
+        if narrow {
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    status_line(ui, snapshot, height)
+                });
+            });
+        }
+        ui.horizontal(|ui| {
             let update_tip = if busy {
                 wait.as_str()
             } else {
@@ -522,9 +623,10 @@ impl ScriptRepoWindow {
             if outdated > 0 {
                 ui.label(RichText::new(format!("{outdated} to update")).size(12.0).color(WARNING));
             }
-            if widgets::button(ui, "Download all", Kind::Normal, !busy, vec2(104.0, height), &wait)
-                .on_hover_text("Download every script that's missing or outdated")
-                .clicked()
+            if !narrow
+                && widgets::button(ui, "Download all", Kind::Normal, !busy, vec2(104.0, height), &wait)
+                    .on_hover_text("Download every script that's missing or outdated")
+                    .clicked()
             {
                 repo.spawn("Download all", |repo| repo.download_all());
             }
@@ -538,6 +640,10 @@ impl ScriptRepoWindow {
             egui::containers::menu::MenuButton::from_button(more).ui(ui, |ui| {
                 ui.set_min_width(200.0);
                 touch_rows(ui);
+                if narrow && ui.add_enabled(!busy, Button::new("Download all")).clicked() {
+                    repo.spawn("Download all", |repo| repo.download_all());
+                    ui.close();
+                }
                 if ui.add_enabled(!busy, Button::new("Reset Scripts...")).clicked() {
                     self.confirm_reset = true;
                     ui.close();
@@ -559,45 +665,11 @@ impl ScriptRepoWindow {
                     ui.close();
                 }
             });
-
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if let Some(progress) = &snapshot.busy {
-                    if widgets::button(ui, "Cancel", Kind::Outline, true, vec2(70.0, height - 4.0), "").clicked() {
-                        repo.cancel();
-                    }
-                    if progress.total > 0 {
-                        ui.add(
-                            egui::ProgressBar::new(progress.done as f32 / progress.total as f32)
-                                .desired_width(120.0)
-                                .desired_height(8.0),
-                        );
-                    } else {
-                        ui.spinner();
-                    }
-                    ui.add(egui::Label::new(RichText::new(&progress.message).size(12.0)).truncate());
-                } else {
-                    // The last result (red when it failed), then how fresh the list is.
-                    let checked = snapshot.fetched_ago().map(|ago| {
-                        let text = if ago < Duration::from_secs(60) {
-                            "List updated just now".to_owned()
-                        } else {
-                            format!("List updated {} ago", super::script_loader::duration_text(ago))
-                        };
-                        let commit: String = snapshot.commit.chars().take(7).collect();
-                        (text, format!("Commit {commit}, fetched {} UTC", snapshot.fetched))
-                    });
-                    if let Some((text, tip)) = checked {
-                        ui.label(RichText::new(text).size(12.0).color(MUTED)).on_hover_text(tip);
-                    }
-                    if !snapshot.message.is_empty() {
-                        let color = if snapshot.failed { DANGER } else { MUTED };
-                        ui.add(egui::Label::new(RichText::new(&snapshot.message).size(12.0).color(color)).truncate());
-                        if !snapshot.failed {
-                            widgets::dot(ui, SUCCESS, 4.0);
-                        }
-                    }
-                }
-            });
+            if !narrow {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    status_line(ui, snapshot, height)
+                });
+            }
         });
     }
 
@@ -661,8 +733,54 @@ impl ScriptRepoWindow {
     }
 }
 
-/// What a row's buttons can do now, and the reasons they can't (as tooltips, or in the menu).
-fn allowed(snapshot: &Snapshot) -> Allowed {
+/// The running task with its progress and Cancel, or the last result (red when it failed, a
+/// green dot when it worked) and how fresh the list is. Laid out right to left.
+fn status_line(ui: &mut Ui, snapshot: &Snapshot, height: f32) {
+    if let Some(progress) = &snapshot.busy {
+        if widgets::button(ui, "Cancel", Kind::Outline, true, vec2(70.0, height - 4.0), "").clicked() {
+            crate::turu::script_repo().cancel();
+        }
+        if progress.total > 0 {
+            ui.add(
+                egui::ProgressBar::new(progress.done as f32 / progress.total as f32)
+                    .desired_width(120.0)
+                    .desired_height(8.0),
+            );
+        } else {
+            ui.spinner();
+        }
+        ui.add(egui::Label::new(RichText::new(&progress.message).size(12.0)).truncate());
+        return;
+    }
+    let checked = snapshot.fetched_ago().map(|ago| {
+        let text = if ago < Duration::from_secs(60) {
+            "List updated just now".to_owned()
+        } else {
+            format!("List updated {} ago", super::script_loader::duration_text(ago))
+        };
+        let commit: String = snapshot.commit.chars().take(7).collect();
+        (text, format!("Commit {commit}, fetched {} UTC", snapshot.fetched))
+    });
+    if let Some((text, tip)) = checked {
+        ui.label(RichText::new(text).size(12.0).color(MUTED)).on_hover_text(tip);
+    }
+    if !snapshot.message.is_empty() {
+        let color = if snapshot.failed { DANGER } else { MUTED };
+        ui.add(egui::Label::new(RichText::new(&snapshot.message).size(12.0).color(color)).truncate());
+        if !snapshot.failed {
+            widgets::dot(ui, SUCCESS, 4.0);
+        }
+    }
+}
+
+/// A muted line under a menu item: why it rests, or what a badge means (a touch screen shows
+/// no tooltips).
+fn reason_line(ui: &mut Ui, text: &str) {
+    ui.add(egui::Label::new(RichText::new(text).size(12.0).color(MUTED)).wrap());
+}
+
+/// What the rows can do now, and the reasons they can't (as tooltips, or in the menu).
+fn rules(snapshot: &Snapshot) -> Rules {
     let bot = crate::turu::bot();
     let busy = snapshot.busy.is_some();
     let active = bot.scripts.status().is_active();
@@ -670,25 +788,25 @@ fn allowed(snapshot: &Snapshot) -> Allowed {
     let snippet = bot.scripts.is_snippet_running();
     let queue_running = bot.scheduler.is_running();
     let wait = wait_tip(snapshot);
-    let run_tip = if busy {
-        wait.clone()
-    } else if active {
-        "Stop the script first".into()
+    let reason = if active {
+        "Stop the script first"
     } else if snippet {
-        "Stop the Console snippet first".into()
+        "Stop the Console snippet first"
     } else {
-        "Stop Auto Attack/Hunt first".into()
+        "Stop Auto Attack/Hunt first"
     };
-    Allowed {
-        start: !busy && !active && !auto && !snippet,
-        load: !busy && !active,
+    Rules {
+        busy,
+        start: !active && !auto && !snippet,
+        load: !active,
         queue: !busy && !queue_running,
-        run_tip,
+        reason: reason.into(),
         queue_tip: if busy {
-            wait
+            wait.clone()
         } else {
             "Cannot add scripts while the playlist is running".into()
         },
+        wait,
     }
 }
 
@@ -713,6 +831,10 @@ fn delete_text(status: Status) -> &'static str {
     match status {
         Status::Local => {
             "This is your own script: the repository has no copy of it. The file moves to \
+             scripts-backup in the data folder, where you can get it back."
+        }
+        Status::Removed => {
+            "The repository no longer has this script, so this is the only copy. The file moves to \
              scripts-backup in the data folder, where you can get it back."
         }
         Status::Modified => {
@@ -743,15 +865,36 @@ enum Work {
     Replace,
 }
 
-/// Runs `work` for the script at `path` on the repo's thread; whether it started (one task
-/// runs at a time).
-fn run(path: &str, work: Work) -> bool {
+/// Runs `work` for the script at `path`: a Load or Start of a ready script at once (it needs
+/// no download, so it doesn't wait for a task), the rest on the repo's thread (one task at a
+/// time).
+fn run(path: &str, work: Work) -> Ran {
     let bot = crate::turu::bot();
-    let path = path.to_owned();
     let repo = crate::turu::script_repo();
-    match work {
-        // Downloads the script (and what it imports) if needed, then loads it in the active tab
-        // and, for Start, starts it.
+    if matches!(work, Work::Start | Work::Load)
+        && let Some(local) = repo.ready(path)
+    {
+        bot.scripts.load(&local);
+        bot.log(format!("Loaded script {}", local.display()));
+        let result = if work == Work::Start {
+            turu_bot::script::start(&bot)
+                .map(|()| format!("Started {path}."))
+                .map_err(|e| format!("Start failed: couldn't start the script: {e}"))
+        } else {
+            Ok(format!("Loaded {path}."))
+        };
+        let worked = result.is_ok();
+        let (message, failed) = match result {
+            Ok(message) => (message, false),
+            Err(message) => (message, true),
+        };
+        repo.set_message(message, failed);
+        return Ran::Done(worked);
+    }
+    let path = path.to_owned();
+    let spawned = match work {
+        // Downloads the script (and what it imports), then loads it in the active tab and, for
+        // Start, starts it.
         Work::Start | Work::Load => {
             let start = work == Work::Start;
             repo.spawn(if start { "Start" } else { "Load" }, move |repo| {
@@ -776,7 +919,8 @@ fn run(path: &str, work: Work) -> bool {
             let count = repo.download(&[path], work == Work::Replace)?;
             Ok(format!("Downloaded {count} files."))
         }),
-    }
+    };
+    if spawned { Ran::Spawned } else { Ran::Refused }
 }
 
 /// A row's left side: name, badges and path; the description; the tags. Returns its height.
@@ -853,17 +997,23 @@ fn chip(ui: &mut Ui, galley: std::sync::Arc<egui::Galley>, width: f32) -> egui::
     response
 }
 
-/// VibeSkua's "Update" and "Local" badges, and Turu's Modified and Removed.
-fn badges(ui: &mut Ui, status: Status) {
-    let (label, color, tip) = match status {
+/// VibeSkua's "Update" and "Local" badges, and Turu's Modified and Removed: label, colour and
+/// what it means.
+fn badge(status: Status) -> Option<(&'static str, egui::Color32, &'static str)> {
+    Some(match status {
         Status::Outdated => ("Update", WARNING, "The repository has a newer version"),
         Status::Modified => ("Modified", WARNING, "Edited here: updates keep it"),
         Status::Local => ("Local", MUTED, "Your own script, not in the repository"),
         Status::Removed => ("Removed", MUTED, "No longer in the repository"),
         Status::UpToDate => ("Downloaded", SUCCESS, "Up to date"),
-        Status::NotDownloaded => return,
-    };
-    widgets::pill(ui, |ui| ui.label(RichText::new(label).size(10.0).color(color))).on_hover_text(tip);
+        Status::NotDownloaded => return None,
+    })
+}
+
+fn badges(ui: &mut Ui, status: Status) {
+    if let Some((label, color, meaning)) = badge(status) {
+        widgets::pill(ui, |ui| ui.label(RichText::new(label).size(10.0).color(color))).on_hover_text(meaning);
+    }
 }
 
 fn empty_state(ui: &mut Ui, title: &str, text: &str) {
@@ -994,6 +1144,7 @@ mod tests {
     fn delete_warns_about_your_own_work() {
         assert!(delete_text(Status::Local).contains("your own script"));
         assert!(delete_text(Status::Modified).contains("Your edits"));
+        assert!(delete_text(Status::Removed).contains("only copy"));
         assert!(delete_text(Status::UpToDate).contains("download it again"));
     }
 
