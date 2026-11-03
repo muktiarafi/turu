@@ -9,7 +9,6 @@
 use super::files::SaveText;
 use super::theme::{ACCENT, DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
-use crate::gui::FilePicker;
 use egui::{Align, Context, CornerRadius, Key, Label, Layout, Modifiers, RichText, ScrollArea, Ui, vec2};
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -47,11 +46,11 @@ impl InterceptorWindow {
         }
     }
 
-    /// The Export dialog (it needs the file picker).
-    pub fn files(&mut self, picker: &FilePicker, ctx: &Context) {
+    /// The Export dialog (not drawn in the window).
+    pub fn files(&mut self, ctx: &Context) {
         self.save.poll();
         if let Some(text) = self.export.take() {
-            self.save.ask(picker, ctx, "packets.txt", text);
+            self.save.ask(ctx, "packets.txt", text);
         }
     }
 

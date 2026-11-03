@@ -137,7 +137,7 @@ the client stops the script, equips, and answers with the report and `"stoppedSc
 * **Row actions.** Each client row gets a "⋯" menu: Start / Stop script, Load script, Relog,
   Logs (a window that pages `/log?since=` as the monitor does), Gear, and Restart (kill and
   relaunch with the same `Launch`).
-* **Gear window** (`app/src/gui/turu/gear.rs`, one per account): the worn slots, a slot's
+* **Gear window** (`frontend/src/gui/turu/gear.rs`, one per account): the worn slots, a slot's
   drop-down from the cache (inventory first, then bank, marked, with "bank as of <time>" or
   "bank not read yet" and a Load bank button while the account plays), Equip; the loadouts with a
   source chip (Account, Army, Overrides army, CoreBots) and Equip / Save current / Save to

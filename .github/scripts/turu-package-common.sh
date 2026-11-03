@@ -6,7 +6,7 @@
 #
 # The scripts aren't shipped: Scripts > Search Scripts downloads them from turu-scripts into the
 # data folder and keeps them updated (bot/src/repo.rs). A copy here would go stale, and Load
-# Script would open it first (app/src/gui/turu/files.rs looks above the executable).
+# Script would open it first (frontend/src/gui/turu/files.rs looks above the executable).
 set -Eeuo pipefail
 
 out="$1"

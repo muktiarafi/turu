@@ -6,7 +6,6 @@
 use super::files::SaveText;
 use super::theme::{ACCENT, CARD, EDGE, HOVER, MUTED, TEXT};
 use super::widgets::{self, Kind, Selection};
-use crate::gui::FilePicker;
 use egui::{
     Align, Context, CornerRadius, Label, Layout, Modal, Rect, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2,
     vec2,
@@ -206,11 +205,11 @@ impl GrabberWindow {
         }
     }
 
-    /// Opens the save dialog for an Export (needs the file picker, which the window doesn't).
-    pub fn save_export(&mut self, picker: &FilePicker, ctx: &Context) {
+    /// Opens the save dialog for an Export.
+    pub fn save_export(&mut self, ctx: &Context) {
         self.save.poll();
         if let Some((file_name, text)) = self.export.take() {
-            self.save.ask(picker, ctx, &file_name, text);
+            self.save.ask(ctx, &file_name, text);
         }
     }
 

@@ -152,8 +152,8 @@ Calls are synchronous, so there's no `await`. The API with its docs is in
 | `bot/` | Bot engine (`turu_bot`): Flash bridge, script API, runners, TypeScript runtime |
 | `bot/js/turu.ts` | The script API (types + runtime) |
 | `bot/assets/skua.swf` | VibeSkua's game-side SWF, embedded in the app |
-| `app/src/turu.rs` | Connects the bot to the Flash player |
-| `app/src/gui/turu/` | The UI (top bar, Script Loader, options, logs, ...) |
+| `frontend/src/turu.rs` | Connects the bot to the Flash player |
+| `frontend/src/gui/turu/` | The UI (top bar, Script Loader, options, logs, ...) |
 | `app/` | The app (`turu`): window, player tabs, UI; started from Ruffle's desktop frontend |
 | `scripts/` | TypeScript scripts (`core/`, `nation/`, ...) |
 | `ruffle/` | [ruffle-aqw](https://github.com/muktiarafi/ruffle-aqw): Ruffle with Mugetsu's patches |

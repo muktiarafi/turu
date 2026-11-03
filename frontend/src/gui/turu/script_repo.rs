@@ -417,7 +417,7 @@ impl ScriptRepoWindow {
                 }
                 let dir = crate::turu::bot().paths.scripts_dir();
                 if ui.button("Open the scripts folder").clicked() {
-                    files::open_with_default(&dir);
+                    crate::platform::platform().open_folder(&dir);
                     ui.close();
                 }
                 let code = self.vscode.get_or_insert_with(files::find_vscode).clone();

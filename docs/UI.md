@@ -2,7 +2,7 @@
 
 Turu uses **VibeSkua's layout and flow** (see `VIBESKUA_SPEC.md`, section 5) in **Mugetsu's
 look** (its right-click panel: dark panel, purple accent, corner radius 12, soft shadow).
-Code: `app/src/gui/turu/`. Integration points: `app/src/gui.rs` (`RuffleGui::update`
+Code: `frontend/src/gui/turu/`. Integration points: `app/src/gui.rs` (`RuffleGui::update`
 draws the Turu nav bar instead of Ruffle's menu bar and then the tool windows when
 `mugetsu::plays_aqw()`), `gui::MENU_HEIGHT` (34), `mugetsu::window_title()` ("Turu <version>").
 
@@ -55,7 +55,7 @@ top, and + at the end.
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | + | opens the Script Loader (VibeSkua opens the tabbed tool host) |
-| Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `app/src/grid.rs`); clicking a tile makes its tab the active one |
+| Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
 | everything else | greyed, tooltip "Coming soon" |
 
 **Auto Attack / Auto Hunt** (`auto.rs`, loop in `turu_bot::auto`): a bot thread marked as a
@@ -277,7 +277,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   ✕ to unselect, Copy (the selection, or every shown packet), Export (every packet, search
   ignored, as `[OUT] packet` lines with `\r` `\n` escaped) and Clear. The capture
   (`turu_bot::capture`, VibeSkua `CaptureProxy`) sits in the game socket itself: the app wraps
-  Ruffle's navigator (`app/src/capture.rs`), each direction's bytes are cut into NUL-terminated
+  Ruffle's navigator (`frontend/src/capture.rs`), each direction's bytes are cut into NUL-terminated
   packets, inbound `Z...` packets are inflated for the interceptors (and packed again when one
   edits them), and the interceptors (`Interceptor`, lowest priority first) edit
   `MessageInfo.content` or clear `send` to drop a packet; the log runs after them. VibeSkua's
@@ -382,7 +382,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   runs. The readers, texts, checks and actions are `turu_bot::grabber`. GetMap Item IDs
   (`turu_bot::map_items`, VibeSkua `FindMapItems`) downloads the current map's SWF from
   `game.aq.com/game/gamefiles/maps/<strMapFileName>` and reads its AS3 bytecode
-  (`app/src/map_items.rs`, Ruffle's `swf` crate; VibeSkua decompiles it with FFDec and searches
+  (`frontend/src/map_items.rs`, Ruffle's `swf` crate; VibeSkua decompiles it with FFDec and searches
   the text): in each function, a constant set as `mapItem` / `itemdrop` on an object, its quest
   the `intQuest` / `questnum` set on the same object; and a constant passed to `getMapItem`, its
   quest the `isQuestInProgress` check before it. Rows read "[1465] Map Item (Quest: 2365)"; an

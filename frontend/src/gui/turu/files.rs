@@ -1,7 +1,6 @@
 //! File dialogs (never blocking the UI thread) and opening files with other programs.
 
-use crate::gui::FilePicker;
-use rfd::AsyncFileDialog;
+use crate::platform::{FileDialog, platform};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 
@@ -31,41 +30,28 @@ impl Pending {
     }
 
     /// Opens an "open file" dialog.
-    pub fn pick_file(&mut self, picker: &FilePicker, ctx: &egui::Context, dialog: AsyncFileDialog) {
-        if self.is_open() {
-            return;
-        }
-        let (sender, receiver) = channel();
-        // The dialog is created here, on the UI thread (macOS needs that); only waiting for it
-        // happens on the runtime.
-        let Some(future) = picker.show_dialog(dialog, |d| d.pick_file()) else {
-            return;
-        };
-        let ctx = ctx.clone();
-        tokio::spawn(async move {
-            let path = future.await.map(|h| h.path().to_path_buf());
-            let _ = sender.send(path);
-            ctx.request_repaint();
-        });
-        self.0 = Some(receiver);
+    pub fn pick_file(&mut self, ctx: &egui::Context, dialog: FileDialog) {
+        self.open(ctx, |answer| platform().pick_file(dialog, answer));
     }
 
     /// Opens a "save file" dialog.
-    pub fn save_file(&mut self, picker: &FilePicker, ctx: &egui::Context, dialog: AsyncFileDialog) {
+    pub fn save_file(&mut self, ctx: &egui::Context, dialog: FileDialog) {
+        self.open(ctx, |answer| platform().save_file(dialog, answer));
+    }
+
+    fn open(&mut self, ctx: &egui::Context, show: impl FnOnce(crate::platform::Answer) -> bool) {
         if self.is_open() {
             return;
         }
         let (sender, receiver) = channel();
-        let Some(future) = picker.show_dialog(dialog, |d| d.save_file()) else {
-            return;
-        };
         let ctx = ctx.clone();
-        tokio::spawn(async move {
-            let path = future.await.map(|h| h.path().to_path_buf());
+        let shown = show(Box::new(move |path| {
             let _ = sender.send(path);
             ctx.request_repaint();
-        });
-        self.0 = Some(receiver);
+        }));
+        if shown {
+            self.0 = Some(receiver);
+        }
     }
 }
 
@@ -77,13 +63,12 @@ pub struct SaveText {
 }
 
 impl SaveText {
-    pub fn ask(&mut self, picker: &FilePicker, ctx: &egui::Context, file_name: &str, text: String) {
+    pub fn ask(&mut self, ctx: &egui::Context, file_name: &str, text: String) {
         if self.pending.is_open() {
             return;
         }
         self.text = text;
-        self.pending
-            .save_file(picker, ctx, AsyncFileDialog::new().set_file_name(file_name));
+        self.pending.save_file(ctx, FileDialog::new().set_file_name(file_name));
     }
 
     pub fn poll(&mut self) {
@@ -97,18 +82,7 @@ impl SaveText {
 
 /// Opens `path` with the program the OS associates with it.
 pub fn open_with_default(path: &Path) {
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(path).spawn();
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/C", "start", ""])
-        .arg(path)
-        .spawn();
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let result = std::process::Command::new("xdg-open").arg(path).spawn();
-    if let Err(e) = result {
-        tracing::warn!("Couldn't open {}: {e}", path.display());
-    }
+    platform().open_file(path);
 }
 
 /// The VS Code launcher, when there is one: the `code` command on `PATH`, or the macOS app.

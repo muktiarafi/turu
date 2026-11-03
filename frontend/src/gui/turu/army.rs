@@ -8,10 +8,9 @@ use super::files::{self, Pending};
 use super::gear::GearWindow;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use crate::gui::FilePicker;
+use crate::platform::FileDialog;
 use crate::turu::TabId;
 use egui::{Align, CollapsingHeader, Context, Layout, RichText, ScrollArea, Ui, vec2};
-use rfd::AsyncFileDialog;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -293,7 +292,7 @@ impl Default for ArmyWindow {
 }
 
 impl ArmyWindow {
-    pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool) {
+    pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         if let Some(path) = self.pending_script.poll()
             && let Some(targets) = self.pending_targets.take()
         {
@@ -305,14 +304,14 @@ impl ArmyWindow {
         }
         self.logs.retain(|w| w.open);
         for window in &mut self.logs {
-            window.show(ctx, picker);
+            window.show(ctx);
         }
         if !*open {
             return;
         }
         super::window(ctx, "Army Control", [560.0, 620.0], 5)
             .open(open)
-            .show(ctx, |ui| self.ui(ui, picker));
+            .show(ctx, |ui| self.ui(ui));
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 
@@ -419,13 +418,13 @@ impl ArmyWindow {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    fn ui(&mut self, ui: &mut Ui) {
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
         let rows = Self::rows();
         self.checked
             .retain(|key| rows.iter().any(|r| &r.key == key && !r.ended));
         self.clients_card(ui, &rows);
-        self.actions_card(ui, picker, &rows);
+        self.actions_card(ui, &rows);
         self.results_card(ui);
     }
 
@@ -526,7 +525,7 @@ impl ArmyWindow {
         }
     }
 
-    fn actions_card(&mut self, ui: &mut Ui, picker: &FilePicker, rows: &[Row]) {
+    fn actions_card(&mut self, ui: &mut Ui, rows: &[Row]) {
         let targets = self.targets(rows);
         let names: Vec<String> = targets.iter().map(|&i| rows[i].label()).collect();
         let everyone = self.checked.is_empty();
@@ -575,11 +574,11 @@ impl ArmyWindow {
                 if load.clicked() {
                     self.pending_targets = Some(targets.iter().map(|&i| rows[i].clone()).collect());
                     let start = files::scripts_start_dir(crate::turu::bot().paths.scripts_dir());
-                    let dialog = AsyncFileDialog::new()
+                    let dialog = FileDialog::new()
                         .set_title("Load Script")
                         .add_filter("Scripts", &["ts", "js"])
                         .set_directory(start);
-                    self.pending_script.pick_file(picker, ui.ctx(), dialog);
+                    self.pending_script.pick_file(ui.ctx(), dialog);
                 }
             });
             let width = (ui.available_width() - 18.0) / 4.0;
@@ -865,11 +864,15 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
 fn outcome_line(name: &str, label: &str, result: Result<Value, String>) -> String {
     match result {
         Ok(reply) => match serde_json::from_value::<turu_bot::gear::EquipReport>(reply) {
-            Ok(report) if label.starts_with("Equip ") => format!("{name}: {label}: {}", report.summary()),
+            Ok(report) if label.starts_with("Equip ") => {
+                format!("{name}: {label}: {}", report.summary())
+            }
             _ => format!("{name}: {label}: done"),
         },
         // The client said no (a script runs, not logged in, ...): nothing started there.
-        Err(e) if label == Command::StartAutoAttack.label() => format!("{name}: {label}: skipped ({e})"),
+        Err(e) if label == Command::StartAutoAttack.label() => {
+            format!("{name}: {label}: skipped ({e})")
+        }
         Err(e) => format!("{name}: {label}: {e}"),
     }
 }

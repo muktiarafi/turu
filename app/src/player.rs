@@ -364,10 +364,13 @@ impl ActivePlayer {
             .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled);
         let player = builder.build();
         if let (Some(bot), Some(tab)) = (&bot, tab) {
-            bot.set_host(Some(Arc::new(crate::turu::DesktopFlashHost::new(
-                event_loop.clone(),
-                tab,
-            ))));
+            // Turu: the tab's bot calls Flash through the event loop.
+            let event_loop = std::sync::Mutex::new(event_loop.clone());
+            bot.set_host(Some(Arc::new(crate::turu::TuruFlashHost::new(tab, move |call| {
+                event_loop
+                    .lock()
+                    .is_ok_and(|e| e.send_event(RuffleEvent::TuruFlashCall(call)).is_ok())
+            }))));
         }
 
         window.set_title(&crate::window_title()); // AQW build: name the window after the launcher, not the SWF.
@@ -564,7 +567,12 @@ impl PlayerController {
         preferences: GlobalPreferences,
         file_picker: FilePicker,
     ) -> Self {
-        crate::turu::set_event_loop(event_loop.clone());
+        let requests = std::sync::Mutex::new(event_loop.clone()); // Turu: the bot windows' tab requests
+        crate::turu::set_tab_requests(Box::new(move |request| {
+            requests
+                .lock()
+                .is_ok_and(|e| e.send_event(RuffleEvent::TuruTab(request)).is_ok())
+        }));
         Self {
             players: Vec::new(),
             active: 0,

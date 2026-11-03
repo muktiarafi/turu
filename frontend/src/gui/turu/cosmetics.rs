@@ -728,9 +728,7 @@ impl CosmeticsWindow {
                         "http://aqwwiki.wikidot.com/{}",
                         turu_bot::cosmetics::escape_data(&item.name)
                     );
-                    if let Err(e) = webbrowser::open(&url) {
-                        crate::turu::bot().log(format!("[Cosmetics] Failed to open browser: {e}"));
-                    }
+                    crate::platform::platform().open_url(&url);
                 }
                 let label = if library.is_favorite(&item) {
                     "♥ Remove Favorite"

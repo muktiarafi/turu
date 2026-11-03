@@ -5,9 +5,8 @@
 use super::files::Pending;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use crate::gui::FilePicker;
+use crate::platform::FileDialog;
 use egui::{Align, Context, DragValue, Key, Label, Layout, RichText, ScrollArea, Ui, vec2};
-use rfd::AsyncFileDialog;
 use std::time::Duration;
 
 #[derive(Default)]
@@ -36,15 +35,14 @@ impl SpammerWindow {
         }
     }
 
-    /// The Load and Save dialogs (they need the file picker).
-    pub fn files(&mut self, picker: &FilePicker, ctx: &Context) {
+    /// The Load and Save dialogs (not drawn in the window).
+    pub fn files(&mut self, ctx: &Context) {
         let spammer = crate::turu::bot().spammer.clone();
         if std::mem::take(&mut self.want_load) {
-            self.load.pick_file(picker, ctx, text_dialog());
+            self.load.pick_file(ctx, text_dialog());
         }
         if std::mem::take(&mut self.want_save) {
-            self.save
-                .save_file(picker, ctx, text_dialog().set_file_name("packets.txt"));
+            self.save.save_file(ctx, text_dialog().set_file_name("packets.txt"));
         }
         if let Some(path) = self.load.poll() {
             self.selected = None;
@@ -246,8 +244,8 @@ impl SpammerWindow {
     }
 }
 
-fn text_dialog() -> AsyncFileDialog {
-    AsyncFileDialog::new()
+fn text_dialog() -> FileDialog {
+    FileDialog::new()
         .add_filter("Text", &["txt"])
         .add_filter("All files", &["*"])
 }

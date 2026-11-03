@@ -1,8 +1,8 @@
-//! Turu's egui look: Mugetsu's dark palette (the right-click panel in `context_menu.rs`) with
+//! Turu's egui look: Mugetsu's dark palette (the right-click panel, `crate::gui::mugetsu`) with
 //! VibeSkua's status colours.
 
-use crate::gui::context_menu::{ACCENT as MUGETSU_ACCENT, EDGE as MUGETSU_EDGE, MUTED as MUGETSU_MUTED};
-use crate::gui::context_menu::{ROW_HOVER as MUGETSU_HOVER, TEXT as MUGETSU_TEXT, TRACK as MUGETSU_TRACK};
+use crate::gui::mugetsu::{ACCENT as MUGETSU_ACCENT, EDGE as MUGETSU_EDGE, MUTED as MUGETSU_MUTED};
+use crate::gui::mugetsu::{ROW_HOVER as MUGETSU_HOVER, TEXT as MUGETSU_TEXT, TRACK as MUGETSU_TRACK};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Shadow, Stroke, Style, TextStyle, vec2};
 
 /// Window and bar background (Mugetsu's panel colour, opaque).

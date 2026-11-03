@@ -62,11 +62,20 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
                          login tracking, rest packets, option enforcement, the relogin watchdog
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
-app/                     crate `turu`, the app: started from ruffle-aqw's desktop frontend (Ruffle's,
-                         with Mugetsu's changes marked `AQW build:`), plus Turu's tabs and UI
-  src/turu.rs            Flash integration: FlashHost impl, ExternalInterface provider, spawn_action
+frontend/                crate `turu_frontend`: what any Turu frontend shares (no winit, rfd or window)
+  src/turu.rs            Flash integration: tabs, `TuruFlashHost`, ExternalInterface provider,
+                         spawn_action; the app hands in how to reach its loop (`set_tab_requests`,
+                         `TuruFlashHost::new`)
+  src/platform.rs        `Platform`: file dialogs, browser, file manager for the bot windows; the
+                         app installs its own (`app/src/desktop_platform.rs`, rfd)
   src/capture.rs         wraps Ruffle's navigator so the game socket goes through `bot.capture`
+  src/map_items.rs, map_pads.rs   the map SWF's AS3 bytecode readers (Grabber, Jump's pads)
+  src/grid.rs            Grid View's tiles
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
+app/                     crate `turu`, the desktop app: started from ruffle-aqw's desktop frontend
+                         (Ruffle's, with Mugetsu's changes marked `AQW build:`), plus the window,
+                         the headless loop and the dialogs; it re-exports `turu_frontend`'s modules
+                         at its root (`crate::turu`, `crate::grid`, ...)
 scripts/                 submodule: muktiarafi/turu-scripts, the TypeScript scripts (Core libraries,
                          ported farms) and their index generator
 docs/                    these docs
@@ -75,7 +84,7 @@ docs/                    these docs
 ## Process and threads
 
 One window can hold several tabs, each a game client of its own: a `Player` and its `Bot`
-(`app/src/turu.rs`). Every tab's player lives on the event loop thread below; Flash calls
+(`frontend/src/turu.rs`). Every tab's player lives on the event loop thread below; Flash calls
 carry their tab, and the window draws the active tab's player.
 
 ```
@@ -167,7 +176,7 @@ The window keeps VibeSkua's layout: a 34 px top nav bar (Scripts, Options, Tools
 Combat, Bank, Diagnostics, Plugins; Auto / Jump / + on the right) above the game, and tool
 windows (Script Loader, Game Options, Skills, Logs, Packet Logger, ...) as egui windows over
 the game. Colours, corner radii and fonts come from Mugetsu's menu style
-(`app/src/gui/turu/theme.rs`). Details: `docs/UI.md`.
+(`frontend/src/gui/turu/theme.rs`). Details: `docs/UI.md`.
 
 ## Data directory
 

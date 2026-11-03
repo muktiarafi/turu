@@ -5,10 +5,9 @@
 use super::files::{self, Pending};
 use super::theme::{MUTED, SUCCESS};
 use super::widgets::{self, Kind};
-use crate::gui::FilePicker;
+use crate::platform::FileDialog;
 use crate::turu::TabRequest;
 use egui::{Align, ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
-use rfd::AsyncFileDialog;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use turu_bot::accounts::{self, Account, Accounts, LaunchMode};
@@ -58,7 +57,7 @@ fn set_status(status: &Mutex<String>, text: impl Into<String>) {
 }
 
 impl AccountsWindow {
-    pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool) {
+    pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         if let Some(path) = self.pending_script.poll() {
             self.list.script = Some(path);
             self.save();
@@ -68,7 +67,7 @@ impl AccountsWindow {
         }
         super::window(ctx, "Accounts", [520.0, 560.0], 4)
             .open(open)
-            .show(ctx, |ui| self.ui(ui, picker));
+            .show(ctx, |ui| self.ui(ui));
         // Launches finish on their own thread.
         ctx.request_repaint_after(Duration::from_millis(500));
     }
@@ -79,11 +78,11 @@ impl AccountsWindow {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    fn ui(&mut self, ui: &mut Ui) {
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
         self.form_card(ui);
         self.list_card(ui);
-        self.launch_card(ui, picker);
+        self.launch_card(ui);
         let status = self.status.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if !status.is_empty() {
             ui.label(RichText::new(status).small().color(MUTED));
@@ -361,7 +360,7 @@ impl AccountsWindow {
         }
     }
 
-    fn launch_card(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    fn launch_card(&mut self, ui: &mut Ui) {
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             widgets::section_label(ui, "LAUNCH");
@@ -404,11 +403,11 @@ impl AccountsWindow {
                 }
                 if widgets::small_button(ui, "Browse…", !self.pending_script.is_open()).clicked() {
                     let start = files::scripts_start_dir(crate::turu::bot().paths.scripts_dir());
-                    let dialog = AsyncFileDialog::new()
+                    let dialog = FileDialog::new()
                         .set_title("Script for launched accounts")
                         .add_filter("Scripts", &["ts", "js"])
                         .set_directory(start);
-                    self.pending_script.pick_file(picker, ui.ctx(), dialog);
+                    self.pending_script.pick_file(ui.ctx(), dialog);
                 }
                 if self.list.script.is_some() && widgets::small_button(ui, "Clear", true).clicked() {
                     self.list.script = None;

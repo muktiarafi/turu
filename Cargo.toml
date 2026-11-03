@@ -1,5 +1,5 @@
 [workspace]
-members = ["app", "bot"]
+members = ["app", "bot", "frontend"]
 default-members = ["app"]
 # `ruffle/` is the ruffle-aqw submodule (Ruffle with Mugetsu's AQW patches), a workspace of its
 # own; `app` uses its crates by path. `scripts/` is the turu-scripts submodule.

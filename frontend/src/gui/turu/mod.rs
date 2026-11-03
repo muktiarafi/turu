@@ -38,7 +38,7 @@ mod grid_overlay;
 pub mod theme;
 mod widgets;
 
-use crate::gui::{FilePicker, top_height};
+use crate::gui::top_height;
 use crate::turu::TabId;
 use egui::{Context, Rect, Vec2, Window, pos2, vec2};
 use std::collections::HashMap;
@@ -157,7 +157,6 @@ struct TabUi {
 
 pub struct TuruUi {
     themed: bool,
-    picker: FilePicker,
     tabs: HashMap<TabId, TabUi>,
     tab_strip: tab_strip::TabStrip,
     // Shared by the tabs.
@@ -168,14 +167,14 @@ pub struct TuruUi {
 }
 
 impl TuruUi {
-    pub fn new(picker: FilePicker) -> Self {
+    #[allow(clippy::new_without_default)] // It starts the script updates: not a default value.
+    pub fn new() -> Self {
         // Scripts may now ask for the Script Options window (`bot.config.configure`) and show
         // message boxes (`bot.showMessageBox`). New tabs' bots are set up by `turu::add_tab`.
         crate::turu::bot().scripts.set_interactive(true);
         crate::turu::start_script_updates();
         Self {
             themed: false,
-            picker,
             tabs: HashMap::new(),
             tab_strip: Default::default(),
             accounts: Default::default(),
@@ -214,18 +213,16 @@ impl TuruUi {
         self.ensure_theme(ctx);
         hotkeys(ctx);
         grid_overlay::show(ctx);
-        let picker = self.picker.clone();
         let tab = self.active();
         let w = &mut tab.windows;
         tab.script_loader.show(
             ctx,
-            &picker,
             &mut w.script_loader,
             &mut w.script_options,
             &mut w.script_repo,
         );
         tab.scheduler.show(ctx, &mut w.scheduler);
-        tab.scheduler.files(&picker, ctx);
+        tab.scheduler.files(ctx);
         w.script_repo |= std::mem::take(&mut tab.scheduler.open_repo);
         if let Some(options) = tab.scheduler.edit_options.take() {
             tab.script_options.edit_queued(options);
@@ -239,26 +236,26 @@ impl TuruUi {
         tab.current_drops.show(ctx, &mut w.current_drops);
         tab.loader.show(ctx, &mut w.loader);
         tab.grabber.show(ctx, &mut w.grabber);
-        tab.grabber.save_export(&picker, ctx);
+        tab.grabber.save_export(ctx);
         tab.junk_items.show(ctx, &mut w.junk_items);
         tab.stats.show(ctx, &mut w.stats);
         tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
-        tab.logs.show(ctx, &picker, &mut w.logs);
+        tab.logs.show(ctx, &mut w.logs);
         tab.console.show(ctx, &mut w.console);
-        tab.packet_logger.show(ctx, &picker, &mut w.packet_logger);
+        tab.packet_logger.show(ctx, &mut w.packet_logger);
         tab.spammer.show(ctx, &mut w.spammer);
-        tab.spammer.files(&picker, ctx);
+        tab.spammer.files(ctx);
         tab.interceptor.show(ctx, &mut w.interceptor);
-        tab.interceptor.files(&picker, ctx);
+        tab.interceptor.files(ctx);
         tab.butler.show(ctx, &mut w.butler);
         tab.cosmetics.show(ctx, &mut w.cosmetics);
         stop_auto_while_following();
         let (accounts, army) = (std::mem::take(&mut w.accounts), std::mem::take(&mut w.army));
         self.accounts_open |= accounts;
         self.army_open |= army;
-        self.accounts.show(ctx, &picker, &mut self.accounts_open);
-        self.army.show(ctx, &picker, &mut self.army_open);
+        self.accounts.show(ctx, &mut self.accounts_open);
+        self.army.show(ctx, &mut self.army_open);
         // Last, so the script's message box sits over the other windows.
         message_box::show(ctx);
         butler::show_suspend_notice(ctx);
@@ -362,7 +359,7 @@ mod tests {
 
     pub(super) type Show = Box<dyn FnMut(&Context, &mut bool)>;
 
-    /// The windows that need no file picker (which needs a winit event loop).
+    /// The windows that open no file dialog (none opens in tests).
     fn windows() -> Vec<(&'static str, Show)> {
         fn boxed<W: 'static>(mut w: W, show: fn(&mut W, &Context, &mut bool)) -> Show {
             Box::new(move |ctx, open| show(&mut w, ctx, open))

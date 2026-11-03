@@ -6,7 +6,6 @@ use super::files::SaveText;
 use super::logs::log_buttons;
 use super::theme::{DANGER, MUTED};
 use super::widgets::{self, LogView};
-use crate::gui::FilePicker;
 use egui::{Context, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -61,7 +60,7 @@ impl ClientLogs {
         }
     }
 
-    pub fn show(&mut self, ctx: &Context, picker: &FilePicker) {
+    pub fn show(&mut self, ctx: &Context) {
         self.save.poll();
         if !self.open {
             self.shared.open.store(false, Ordering::Relaxed);
@@ -74,12 +73,12 @@ impl ClientLogs {
         let mut open = self.open;
         super::window(ctx, &title, [560.0, 380.0], 7)
             .open(&mut open)
-            .show(ctx, |ui| self.ui(ui, picker));
+            .show(ctx, |ui| self.ui(ui));
         self.open = open;
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    fn ui(&mut self, ui: &mut Ui) {
         let shared = self.shared.clone();
         let (buffer, view, file_name) = match self.tab {
             Tab::Script => (&shared.script, &mut self.script, "script-log.txt"),
@@ -98,7 +97,7 @@ impl ClientLogs {
                 ui.label(RichText::new(error).small().color(DANGER));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                log_buttons(ui, picker, buffer, &mut self.save, file_name);
+                log_buttons(ui, buffer, &mut self.save, file_name);
             });
         });
         let height = ui.available_height();

@@ -40,7 +40,10 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     let _guard = runtime.enter();
     let (sender, events) = channel();
     let player = build_player(&preferences, movie_url, sender.clone());
-    turu::bot().set_host(Some(Arc::new(turu::DesktopFlashHost::headless(sender))));
+    let host = turu::TuruFlashHost::new(turu::active_tab(), move |call| {
+        sender.send(HeadlessEvent::TuruFlashCall(call)).is_ok()
+    });
+    turu::bot().set_host(Some(Arc::new(host)));
     tracing::info!("Running without a window (--headless); stop with Ctrl+C");
     run_loop(&player, &events);
     turu::bot().set_host(None);

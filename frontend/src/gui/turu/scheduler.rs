@@ -7,10 +7,9 @@
 use super::files::Pending;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use crate::gui::FilePicker;
 use egui::{Align, Color32, Context, Key, Label, Layout, RichText, ScrollArea, Sense, TextEdit, Ui, vec2};
 
-use rfd::AsyncFileDialog;
+use crate::platform::FileDialog;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use turu_bot::scheduler::{Entry, EntryStatus};
@@ -67,20 +66,17 @@ impl SchedulerWindow {
         }
     }
 
-    /// The Load and Save dialogs (they need the file picker).
-    pub fn files(&mut self, picker: &FilePicker, ctx: &Context) {
+    /// The Load and Save dialogs (not drawn in the window).
+    pub fn files(&mut self, ctx: &Context) {
         let bot = crate::turu::bot();
         let folder = bot.paths.playlists_dir();
         let _ = std::fs::create_dir_all(&folder);
         if std::mem::take(&mut self.want_load) {
-            self.load.pick_file(picker, ctx, json_dialog().set_directory(&folder));
+            self.load.pick_file(ctx, json_dialog().set_directory(&folder));
         }
         if std::mem::take(&mut self.want_save) {
-            self.save.save_file(
-                picker,
-                ctx,
-                json_dialog().set_directory(&folder).set_file_name("playlist.json"),
-            );
+            self.save
+                .save_file(ctx, json_dialog().set_directory(&folder).set_file_name("playlist.json"));
         }
         if let Some(path) = self.load.poll() {
             self.selected = None;
@@ -395,8 +391,8 @@ fn menu(ui: &mut Ui, index: usize, entry: &Entry, count: usize) -> Option<Action
     action
 }
 
-fn json_dialog() -> AsyncFileDialog {
-    AsyncFileDialog::new()
+fn json_dialog() -> FileDialog {
+    FileDialog::new()
         .add_filter("JSON Files", &["json"])
         .add_filter("All files", &["*"])
 }

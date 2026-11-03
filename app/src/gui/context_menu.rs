@@ -253,12 +253,8 @@ impl ContextMenu {
 
 pub(crate) const WIDTH: f32 = 268.0;
 pub(crate) const PANEL: Color32 = Color32::from_rgba_premultiplied(17, 19, 26, 242);
-pub(crate) const EDGE: Color32 = Color32::from_rgba_premultiplied(58, 62, 78, 255);
-pub(crate) const ROW_HOVER: Color32 = Color32::from_rgba_premultiplied(40, 44, 58, 255);
-pub(crate) const TRACK: Color32 = Color32::from_rgba_premultiplied(48, 52, 66, 255);
-pub(crate) const ACCENT: Color32 = Color32::from_rgb(124, 108, 240);
-pub(crate) const TEXT: Color32 = Color32::from_rgb(232, 234, 242);
-pub(crate) const MUTED: Color32 = Color32::from_rgb(140, 146, 166);
+// Turu: shared with the bot windows' theme.
+pub(crate) use turu_frontend::gui::mugetsu::{ACCENT, EDGE, MUTED, ROW_HOVER, TEXT, TRACK};
 
 /// The graphics API choices on this system, and the values they stand for.
 pub(crate) fn graphics_options() -> (&'static [&'static str], &'static [Option<Graphics>]) {

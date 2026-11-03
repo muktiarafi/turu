@@ -8,25 +8,23 @@
 
 mod app;
 mod backends;
-mod capture;
 mod cli;
 mod custom_event;
 mod dbus;
-mod grid;
+mod desktop_platform; // Turu: file dialogs and links for the bot windows
 mod gui;
 mod headless;
 mod heap_census;
 mod log;
-mod map_items;
-mod map_pads;
 mod mugetsu;
 mod player;
 mod preferences;
 #[cfg(feature = "tracy")]
 mod tracy;
 mod thread_perf;
-mod turu;
 mod util;
+// Turu: the bridge to the bot, the bot windows and what they share, from `turu_frontend`.
+use turu_frontend::{capture, grid, platform, turu};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]
@@ -41,7 +39,10 @@ use clap::Parser;
 use cli::Opt;
 use ruffle_core::StaticCallstack;
 use std::cell::RefCell;
-pub use turu::window_title; // Turu: was `mugetsu::window_title`, adds the character's name
+// Turu: was `mugetsu::window_title`, adds the character's name.
+pub fn window_title() -> String {
+    turu::window_title(mugetsu::window_title())
+}
 use std::env;
 use std::fs::File;
 use std::panic::PanicHookInfo;
@@ -423,7 +424,16 @@ fn main() -> Result<(), Error> {
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
-    turu::start_perf_log();
+    turu::start_perf_log((!turu::headless()).then(|| {
+        // With a window, the event loop thread as a whole (see `thread_perf`).
+        let mut last = thread_perf::snapshot();
+        Box::new(move |busy| {
+            let now = thread_perf::snapshot();
+            let report = now.report(&last, busy);
+            last = now;
+            report
+        }) as turu::ThreadReport
+    }));
     turu::start_grid_test();
 
     // Turu: `--headless` runs the game without a window.

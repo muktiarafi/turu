@@ -4,7 +4,6 @@
 use super::files::SaveText;
 use super::theme::MUTED;
 use super::widgets::{self, Kind, LogView};
-use crate::gui::FilePicker;
 use egui::{Context, RichText, Ui, vec2};
 use std::sync::atomic::Ordering;
 
@@ -26,20 +25,20 @@ impl PacketLogger {
         crate::turu::bot().logs.packet_logging.store(on, Ordering::Relaxed);
     }
 
-    pub fn show(&mut self, ctx: &Context, picker: &FilePicker, open: &mut bool) {
+    pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         self.save.poll();
         if !*open {
             return;
         }
         super::window(ctx, "Logger", [560.0, 380.0], 5)
             .open(open)
-            .show(ctx, |ui| self.ui(ui, picker));
+            .show(ctx, |ui| self.ui(ui));
         if self.logging() {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker) {
+    fn ui(&mut self, ui: &mut Ui) {
         let buffer = &crate::turu::bot().logs.packets;
         let key = (buffer.version(), self.search.clone());
         if self.built_from.as_ref() != Some(&key) {
@@ -70,7 +69,7 @@ impl PacketLogger {
                     .color(MUTED),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                super::logs::log_buttons(ui, picker, buffer, &mut self.save, "packets.txt");
+                super::logs::log_buttons(ui, buffer, &mut self.save, "packets.txt");
             });
         });
         ui.horizontal(|ui| {

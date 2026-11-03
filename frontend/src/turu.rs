@@ -4,13 +4,16 @@
 //!   process per tab instead). All the players run on the event loop thread; the window shows
 //!   the active tab's, and [`bot()`] is the active tab's bot, which the UI shows.
 //! * [`TuruExternalInterface`] receives a tab's `skua.swf`'s `ExternalInterface.call(...)`s.
-//! * [`DesktopFlashHost`] lets bot threads call `skua.swf`'s callbacks: each call is sent to
-//!   the event loop as [`RuffleEvent::TuruFlashCall`] (without a window, to the `headless`
-//!   loop), names its tab, and is answered by [`answer_flash_call`] with that tab's player.
+//! * [`TuruFlashHost`] lets bot threads call `skua.swf`'s callbacks: each call is handed to the
+//!   thread that runs the players (the window's event loop, the `headless` loop, Android's
+//!   engine thread), names its tab, and is answered by [`answer_flash_call`] with that tab's
+//!   player.
+//!
+//! Nothing here knows the window: the app hands in how to reach its loop
+//! ([`set_tab_requests`], [`TuruFlashHost::new`]).
 //!
 //! See docs/ARCHITECTURE.md.
 
-use crate::custom_event::RuffleEvent;
 use ruffle_core::Player;
 use ruffle_core::context::UpdateContext;
 use ruffle_core::external::{ExternalInterfaceProvider, Value as ExternalValue};
@@ -25,7 +28,6 @@ use std::time::{Duration, Instant};
 use turu_bot::events::BotEvent;
 use turu_bot::startup::Startup;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
-use winit::event_loop::EventLoopProxy;
 
 pub const APP_NAME: &str = "Turu";
 /// The release workflow sets `TURU_VERSION` from the git tag; local builds show the crate version.
@@ -39,7 +41,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
 static TABS: Mutex<Option<Tabs>> = Mutex::new(None);
 /// Where tab requests go ([`request_tab`]); set when the window opens.
-static EVENT_LOOP: Mutex<Option<EventLoopProxy<RuffleEvent>>> = Mutex::new(None);
+static TAB_REQUESTS: Mutex<Option<TabRequests>> = Mutex::new(None);
 static ARMY: OnceLock<Arc<turu_bot::army::Army>> = OnceLock::new();
 static MONITOR_HUB: OnceLock<Arc<turu_bot::monitor::Hub>> = OnceLock::new();
 // Turu: Search Scripts' repository, and whether Army > Accounts launched this client.
@@ -122,7 +124,7 @@ pub fn tab_bot(tab: TabId) -> Option<Arc<Bot>> {
 
 /// Adds a tab with a new bot (its player is the event loop's job: [`request_tab`]). With a
 /// login, the bot logs in once its game has loaded, as with `--user`.
-pub(crate) fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
+pub fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
     let bot = Bot::new();
     bot.scripts.set_interactive(!headless());
     turu_bot::startup::configure(&bot, startup);
@@ -135,7 +137,7 @@ pub(crate) fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
 }
 
 /// Removes the tab (never the last one): stops its script and Auto Attack/Hunt.
-pub(crate) fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
+pub fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
     let removed = {
         let mut tabs = tabs_lock();
         let tabs = tabs.as_mut().expect("made by tabs_lock");
@@ -167,7 +169,7 @@ pub fn close_butlers() {
 
 /// Makes the tab the active one; false when there's no such tab. The others' games slow down
 /// once in game (VibeSkua's tabbed host throttles hidden tabs: `options::apply`).
-pub(crate) fn set_active_tab(tab: TabId) -> bool {
+pub fn set_active_tab(tab: TabId) -> bool {
     let mut tabs = tabs_lock();
     let tabs = tabs.as_mut().expect("made by tabs_lock");
     if !tabs.list.iter().any(|(id, _)| *id == tab) {
@@ -190,17 +192,21 @@ pub enum TabRequest {
     Grid(bool),
 }
 
-pub fn set_event_loop(event_loop: EventLoopProxy<RuffleEvent>) {
-    *EVENT_LOOP.lock().unwrap_or_else(|e| e.into_inner()) = Some(event_loop);
+/// Hands a tab request to the loop that owns the players; false when it's gone.
+pub type TabRequests = Box<dyn Fn(TabRequest) -> bool + Send>;
+
+/// Where [`request_tab`] sends; the window sets it when it opens.
+pub fn set_tab_requests(send: TabRequests) {
+    *TAB_REQUESTS.lock().unwrap_or_else(|e| e.into_inner()) = Some(send);
 }
 
 /// Hands the request to the event loop; false without a window (`--headless` has one tab).
 pub fn request_tab(request: TabRequest) -> bool {
-    EVENT_LOOP
+    TAB_REQUESTS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
-        .is_some_and(|e| e.send_event(RuffleEvent::TuruTab(request)).is_ok())
+        .is_some_and(|send| send(request))
 }
 
 /// A tab's name: the character once in game, else the login name it was opened with; "Tab 2"
@@ -283,11 +289,10 @@ pub fn save_directory() -> Option<&'static Path> {
     SAVE_DIRECTORY.get().map(PathBuf::as_path)
 }
 
-/// Mugetsu's title, plus the character's name while you play when Options > Application >
-/// "Show Username in Title" is on (VibeSkua names its tab after the character) and Streamer Mode
-/// is off.
-pub fn window_title() -> String {
-    let title = crate::mugetsu::window_title();
+/// The window's `title` (Mugetsu's), plus the character's name while you play when Options >
+/// Application > "Show Username in Title" is on (VibeSkua names its tab after the character) and
+/// Streamer Mode is off.
+pub fn window_title(title: String) -> String {
     let bot = bot();
     if !bot.settings.read().show_username_in_title || bot.opts().streamer_mode {
         return title;
@@ -466,9 +471,14 @@ pub fn start_api() {
     }
 }
 
+/// Reports on the thread that runs the players as a whole, given the milliseconds the games took
+/// over the last period ([`start_perf_log`]).
+pub type ThreadReport = Box<dyn FnMut(f64) -> String + Send>;
+
 /// With `TURU_PERF_LOG=<seconds>`, logs each tab's Flash calls and player ticks over the last
-/// `seconds` (`turu_bot::perf`), and with several tabs the player thread's time for all of them.
-pub fn start_perf_log() {
+/// `seconds` (`turu_bot::perf`), with several tabs the player thread's time for all of them, and
+/// `main_thread`'s report (the window's event loop).
+pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
     let Some(every) = std::env::var("TURU_PERF_LOG").ok().and_then(|s| s.trim().parse::<f64>().ok()) else {
         return;
     };
@@ -478,7 +488,6 @@ pub fn start_perf_log() {
     tracing::info!("Logging Flash calls and ticks every {} s (TURU_PERF_LOG)", every.as_secs_f64());
     let spawned = std::thread::Builder::new().name("Turu Perf Log".into()).spawn(move || {
         let mut last: HashMap<TabId, turu_bot::perf::PerfSnapshot> = HashMap::new();
-        let mut last_main = crate::thread_perf::snapshot();
         loop {
             std::thread::sleep(every);
             let tabs = tabs();
@@ -501,11 +510,8 @@ pub fn start_perf_log() {
                     busy / seconds.max(0.001)
                 );
             }
-            // With a window, the event loop thread as a whole (see `thread_perf`).
-            if !headless() {
-                let main = crate::thread_perf::snapshot();
-                tracing::info!(target: "turu_perf", "{}", main.report(&last_main, busy));
-                last_main = main;
+            if let Some(report) = &mut main_thread {
+                tracing::info!(target: "turu_perf", "{}", report(busy));
             }
         }
     });
@@ -974,35 +980,24 @@ pub fn answer_flash_call(call: TuruFlashCall, player: Option<&mut Player>) {
     }
 }
 
-pub struct DesktopFlashHost {
+pub struct TuruFlashHost {
     tab: TabId,
     /// Hands a call to the thread that runs the player; false when it's gone.
     send: Box<dyn Fn(TuruFlashCall) -> bool + Send + Sync>,
 }
 
-impl DesktopFlashHost {
-    pub fn new(event_loop: EventLoopProxy<RuffleEvent>, tab: TabId) -> Self {
-        let event_loop = Mutex::new(event_loop);
+impl TuruFlashHost {
+    /// The tab's host; `send` hands a call to the thread that runs its player (false when it's
+    /// gone).
+    pub fn new(tab: TabId, send: impl Fn(TuruFlashCall) -> bool + Send + Sync + 'static) -> Self {
         Self {
             tab,
-            send: Box::new(move |call| {
-                event_loop
-                    .lock()
-                    .is_ok_and(|e| e.send_event(RuffleEvent::TuruFlashCall(call)).is_ok())
-            }),
-        }
-    }
-
-    /// For the windowless loop.
-    pub fn headless(sender: std::sync::mpsc::Sender<crate::headless::HeadlessEvent>) -> Self {
-        Self {
-            tab: active_tab(),
-            send: Box::new(move |call| sender.send(crate::headless::HeadlessEvent::TuruFlashCall(call)).is_ok()),
+            send: Box::new(send),
         }
     }
 }
 
-impl FlashHost for DesktopFlashHost {
+impl FlashHost for TuruFlashHost {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
         self.call_timed(name, args).map(|(reply, _)| reply)
     }

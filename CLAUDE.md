@@ -17,12 +17,13 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 
 | Path | What |
 |---|---|
-| `bot/` | crate `turu_bot`: the engine. No dependency on Ruffle or the app crate. |
+| `bot/` | crate `turu_bot`: the engine. No dependency on Ruffle or the app crate. TLS is a feature (`native-tls` default, `rustls-tls`). |
 | `bot/js/turu.ts` | **The script API contract** (runtime + types, embedded). Rust implements each `"module.method"` it calls in `bot/src/api/<module>.rs`. Change both sides together. |
 | `bot/assets/skua.swf` | VibeSkua's AS3 host (`Skua.AS3/skua/bin/skua.swf`), unchanged. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
-| `app/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
-| `app/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
+| `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (for Android later: `docs/ANDROID_PROPOSAL.md`). The app re-exports its modules (`crate::turu`, ...). |
+| `frontend/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
+| `frontend/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
 | `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |
 | `ruffle/` | Submodule ruffle-aqw: Ruffle's crates (`core`, `render`, `frontend-utils`, `video`) and Mugetsu's patched crates (`ruffle/patches/`, wired up by `[patch.crates-io]` in the root `Cargo.toml`). Change it only when a Flash API is missing: commit in ruffle-aqw, then bump the submodule. |
 
@@ -42,7 +43,8 @@ it, bump `ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/
 cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ./target/debug/turu                      # starts skua.swf -> AQW; log in with the game's own screen
 cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
-cargo clippy -p turu_bot -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
+cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md)
+cargo clippy -p turu_bot -p turu_frontend -p turu --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
 cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (their CI checks it)
 ```
@@ -53,6 +55,8 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 
 ## Rules that keep it working
 
+* **No winit, rfd or window in `frontend/`.** Reach the app through `turu::set_tab_requests`,
+  `TuruFlashHost::new` and `platform::platform()`; desktop-only pieces stay in `app/`.
 * **Never call into Flash from the winit/UI thread.** `Flash::call` marshals to the event
   loop and blocks; from the UI thread it would wait for itself (the host refuses). UI actions
   that touch the game go through `turu::spawn_action`.
@@ -66,7 +70,7 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
   oxc at load (no runtime type check); `tsc --noEmit` in `scripts/` is the type check.
 * Keep `bot/js/turu.ts` readable for humans who write scripts: JSDoc on every member,
   VibeSkua names in camelCase, `string | number` for "name or ID".
-* Match the surrounding code's style. Rust: `cargo fmt` for `bot/`; `app/src/gui/turu/`
+* Match the surrounding code's style. Rust: `cargo fmt` for `bot/`; `frontend/src/gui/turu/`
   files use `max_width = 120`, formatted one file at a time (see STATUS.md). Upstream Ruffle files keep their
   conventions; mark Turu changes in them with `// Turu:` comments.
 * Don't commit unless asked.

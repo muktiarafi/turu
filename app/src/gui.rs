@@ -7,7 +7,7 @@ mod mugetsu_menu;
 mod movie;
 mod picker;
 mod theme;
-mod turu; // Turu: VibeSkua-style nav bar and bot windows.
+use turu_frontend::gui::turu; // Turu: VibeSkua-style nav bar and bot windows.
 mod widgets;
 
 pub use controller::GuiController;
@@ -39,14 +39,12 @@ use winit::event_loop::EventLoopProxy;
 /// Size of the top menu bar in pixels.
 /// This is the offset at which the movie will be shown,
 /// and added to the window size if trying to match a movie.
-pub const MENU_HEIGHT: u32 = 34; // Turu: VibeSkua's 34 px top nav bar.
-/// Turu: the tab strip above the nav bar, shown once there are two tabs.
-pub const TAB_STRIP_HEIGHT: u32 = 30;
+pub const MENU_HEIGHT: u32 = turu_frontend::gui::NAV_BAR_HEIGHT; // Turu: VibeSkua's 34 px top nav bar.
 
 /// Turu: the height above the movie: the nav bar, and the tab strip when it shows.
 pub fn top_height() -> u32 {
-    if crate::mugetsu::plays_aqw() && crate::turu::tabs().len() > 1 {
-        MENU_HEIGHT + TAB_STRIP_HEIGHT
+    if crate::mugetsu::plays_aqw() {
+        turu_frontend::gui::top_height()
     } else {
         MENU_HEIGHT
     }
@@ -84,7 +82,13 @@ impl RuffleGui {
             was_suspended_before_debug: false,
 
             context_menu: None,
-            turu: turu::TuruUi::new(dialogs.file_picker()),
+            // Turu: the bot windows' file dialogs and links.
+            turu: {
+                crate::platform::set(std::sync::Arc::new(crate::desktop_platform::DesktopPlatform::new(
+                    dialogs.file_picker(),
+                )));
+                turu::TuruUi::new()
+            },
             dialogs,
             menu_bar: MenuBar::new(
                 event_loop.clone(),

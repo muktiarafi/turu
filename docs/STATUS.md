@@ -29,7 +29,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `.ts` optional; one in Search Scripts' index is downloaded (or updated) with what it imports
   before the game starts (`configure_startup`), so an empty data folder works. Checked: a
   windowless client with an empty data folder downloaded a playlist's script and loaded it.
-  `bot/src/startup.rs`, flags in `app/src/turu.rs`.
+  `bot/src/startup.rs`, flags in `frontend/src/turu.rs`.
 - **Windowless mode** (`--headless`, `app/src/headless.rs`): no window, GPU or sound; the
   player draws nothing (Ruffle's null renderer) and a loop on the main thread runs it, its
   network tasks and the bot's calls. With the login flags and `--run-script` it farms on its
@@ -73,7 +73,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   stops it and leaves it stopped. Army Control's Gear window uses them, for a client without a
   window too. Tested against a fake game (`bot/tests/gear.rs`); unverified in game: the `sES`
   slot codes, the bank opening in a client without a window, and the equip timings.
-- **Tabs** (`app/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
+- **Tabs** (`frontend/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
   client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
   the players run on the event loop thread and are ticked every loop; only the active one is
@@ -238,13 +238,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   reads them (`docs/SCRIPTING.md`, "Options"). Start opens the window and waits for it
   unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
-- **Search Scripts** (`bot/src/repo.rs`, `app/src/gui/turu/script_repo.rs`): VibeSkua's
+- **Search Scripts** (`bot/src/repo.rs`, `frontend/src/gui/turu/script_repo.rs`): VibeSkua's
   Script Repo for the scripts in `muktiarafi/turu-scripts` (the `scripts/` submodule): search,
   categories, pins, Start/Load/Queue (downloading the script and what it imports), Update all,
   Download all and Reset Scripts, and the launch-time check and auto update (Options >
   Application). Edited scripts are kept by updates and backed up by a reset.
   `docs/ARCHITECTURE.md` ("Script repository") has the design.
-- **Scheduler** (Scripts > Scheduler, `bot/src/scheduler.rs`, `app/src/gui/turu/scheduler.rs`,
+- **Scheduler** (Scripts > Scheduler, `bot/src/scheduler.rs`, `frontend/src/gui/turu/scheduler.rs`,
   VibeSkua `ScriptSchedulerViewModel`): a playlist per tab, run top to bottom without the Script
   Options window, each entry with its own options (`options/Queue_<name>_<id>.cfg`); any end of a
   script moves on, Stop queue stops; a disconnection waits for the login and resumes the entry;
@@ -263,7 +263,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook; the skill-set and junk-item update switches are stored only
   (VibeSkua never reads the junk-item ones either).
-- **Junk Items:** Tools & Helpers > Junk Items (`app/src/gui/turu/junk_items.rs`) lists the
+- **Junk Items:** Tools & Helpers > Junk Items (`frontend/src/gui/turu/junk_items.rs`) lists the
   inventory and bank items, marks the selected ones as junk and sells the junk in the inventory;
   scripts call `bot.sellJunk()`. The list is `JunkItems.json` in the data folder, in VibeSkua's
   format (`bot/src/junk.rs`; a VibeSkua file, or `auqw/Scripts`' community list, can be copied
@@ -305,17 +305,17 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Spammer, Logger, Interceptor, Current Drops, Loader, Grabber, Auto, Jump).
   Diagnostics > Spammer and Interceptor are tested against a fake game and fake socket bytes
   (`bot/tests/spammer_interceptor.rs`), not yet in game: the capture's socket wrapper
-  (`app/src/capture.rs`) on a live connection, inflating the server's compressed packets, an
+  (`frontend/src/capture.rs`) on a live connection, inflating the server's compressed packets, an
   edited or blocked packet reaching (or not) the server or the client, Connect's relog.
   Tools > Loader and Grabber are unverified in game: the quest cache (`quest_cache.rs`: VibeSkua's
   `QuestData.json` format, Add missing / Rebuild all / Update range, merging, cancel, the
   community download with its ETag, over a local HTTP server too) and the
   Grabber's readers and actions (`grabber.rs`) are tested against a fake game
   (`bot/tests/loader_grabber.rs`), the windows only opened. GetMap Item IDs' bytecode reader
-  (`app/src/map_items.rs`) is tested on built SWFs and was checked on Mobius
+  (`frontend/src/map_items.rs`) is tested on built SWFs and was checked on Mobius
   (`TURU_MAP_SWF=<file> cargo test -p turu ... real_map -- --nocapture`), where it agrees with the
   story scripts' map items and quests; other maps may need more patterns.
-  The Jump popup reads each cell's pads from the map SWF too (`app/src/map_pads.rs`: frame labels
+  The Jump popup reads each cell's pads from the map SWF too (`frontend/src/map_pads.rs`: frame labels
   and the named `Pad_<n>` instances on the root timeline, once per map file): picking a
   cell jumps to a pad it has (Spawn for Enter, else the chosen pad, else Left, else its first,
   as VibeSkua's `jumpCorrectRoom` corrects after the fact) and the pad drop-down lists that cell's
@@ -371,7 +371,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   login), as VibeSkua's processes do. `--api` steers the first tab only. Not built: VibeSkua's
   Army Scheduler and per-squad Army Queue. Logging
   in and farming in several tabs is unverified with real accounts.
-- **Grid View is new and unchecked with real accounts** (`app/src/grid.rs`, nav bar Grid, with
+- **Grid View is new and unchecked with real accounts** (`frontend/src/grid.rs`, nav bar Grid, with
   two tabs or more): every tab at once, each in a tile in VibeSkua's layout (rows of ⌈√n⌉),
   its player sized to the tile. The active tab keeps the keyboard, sound and its full frame rate,
   and its tile is outlined; the others run at 8 FPS (`grid::TILE_FPS`; VibeSkua's tiles run
@@ -526,13 +526,21 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   at each start; the previous run's is kept as `ruffle.prev.log`.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
-- **Clippy** lints only `bot/` and `app/` (the `ruffle/` crates are path dependencies outside the
-  workspace). It reports two existing errors in `app/`: `redundant_clone` in `app/src/headless.rs`
+- **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies
+  outside the workspace). It reports two existing errors in `app/`: `redundant_clone` in `app/src/headless.rs`
   (`opt.player.parameters.clone()`) and `unused_async` in Ruffle's `app/src/gui/theme.rs`
   (`get_system_theme`).
-- **HTTPS in `turu_bot`:** the bot crate asks for reqwest's `native-tls` itself; without it a
+- **HTTPS in `turu_bot`:** the bot crate asks for reqwest's TLS itself, through its default
+  `native-tls` feature (`rustls-tls` instead where there's no system TLS: Android); without one a
   `cargo test -p turu_bot` build could only fetch `http://` (the app got TLS from Ruffle's crates).
-- **Formatting:** the bot crate uses `cargo fmt`. The files in `app/src/gui/turu/` are
+  `turu_frontend` takes `turu_bot` without default features: the app picks the backend.
+- **Testing `turu_frontend`:** test it with the app (`cargo test -p turu -p turu_frontend` and the
+  app's features as `turu/...`, as in `CLAUDE.md`). Alone, `ruffle_core` gets other features, so its
+  build script compiles the AS3 playerglobals again, with Java and `ruffle/tools/asc/asc.jar`;
+  that failed here with Java 25 ("Could not find or load main class
+  macromedia.asc.embedding.ScriptCompiler"), while the app's cached build is reused.
+- **Formatting:** the bot crate uses `cargo fmt`. Not the app (Ruffle's files keep their own
+  layout: `cargo fmt -p turu` rewraps 50 of them). The files in `frontend/src/gui/turu/` are
   formatted with `max_width = 120`, so format one file at a time
   (`rustfmt --edition 2024 --config max_width=120 <file>`). Running rustfmt on `mod.rs`
   reformats every window.

@@ -1,11 +1,13 @@
 //! The account list (VibeSkua Manager's Accounts tab): accounts, groups and the launch setup,
 //! saved in `accounts.json`. Passwords aren't in it (VibeSkua keeps them there in the clear):
-//! they are in the system's keychain, under the service [`KEYCHAIN_SERVICE`].
+//! they are in a [`SecretStore`], by default the system's keychain under the service
+//! [`KEYCHAIN_SERVICE`].
 
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// The keychain service account passwords are saved under.
 pub const KEYCHAIN_SERVICE: &str = "Turu";
@@ -207,36 +209,108 @@ impl Accounts {
     }
 }
 
-fn entry(username: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, &username.to_lowercase()).map_err(|e| e.to_string())
+/// Where account passwords are kept. Usernames come lowercased.
+pub trait SecretStore: Send + Sync {
+    fn set(&self, username: &str, password: &str) -> Result<(), String>;
+    /// `None` when none is saved.
+    fn get(&self, username: &str) -> Result<Option<String>, String>;
+    /// None saved is fine.
+    fn delete(&self, username: &str) -> Result<(), String>;
 }
 
-/// Saves the account's password in the keychain.
+static SECRET_STORE: OnceLock<Box<dyn SecretStore>> = OnceLock::new();
+
+/// Replaces the system keychain, before the first password is read or saved (Android has no
+/// keychain `keyring` can use). False when a store is already in use.
+pub fn set_secret_store(store: Box<dyn SecretStore>) -> bool {
+    SECRET_STORE.set(store).is_ok()
+}
+
+fn secret_store() -> &'static dyn SecretStore {
+    SECRET_STORE.get_or_init(default_store).as_ref()
+}
+
+#[cfg(not(target_os = "android"))]
+fn default_store() -> Box<dyn SecretStore> {
+    Box::new(Keychain)
+}
+
+#[cfg(target_os = "android")]
+fn default_store() -> Box<dyn SecretStore> {
+    Box::new(NoStore)
+}
+
+/// The system's keychain (`keyring`).
+#[cfg(not(target_os = "android"))]
+struct Keychain;
+
+#[cfg(not(target_os = "android"))]
+impl Keychain {
+    fn entry(username: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(KEYCHAIN_SERVICE, username).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+impl SecretStore for Keychain {
+    fn set(&self, username: &str, password: &str) -> Result<(), String> {
+        Self::entry(username)?
+            .set_password(password)
+            .map_err(|e| format!("couldn't save the password in the system keychain: {e}"))
+    }
+
+    fn get(&self, username: &str) -> Result<Option<String>, String> {
+        match Self::entry(username)?.get_password() {
+            Ok(password) => Ok(Some(password)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(format!(
+                "couldn't read the password from the system keychain: {e}"
+            )),
+        }
+    }
+
+    fn delete(&self, username: &str) -> Result<(), String> {
+        match Self::entry(username)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!(
+                "couldn't remove the password from the system keychain: {e}"
+            )),
+        }
+    }
+}
+
+/// Until the app installs its store: nothing is saved.
+#[cfg(target_os = "android")]
+struct NoStore;
+
+#[cfg(target_os = "android")]
+impl SecretStore for NoStore {
+    fn set(&self, _username: &str, _password: &str) -> Result<(), String> {
+        Err("no password store on this system".into())
+    }
+
+    fn get(&self, _username: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    fn delete(&self, _username: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Saves the account's password in the secret store.
 pub fn save_password(username: &str, password: &str) -> Result<(), String> {
-    entry(username)?
-        .set_password(password)
-        .map_err(|e| format!("couldn't save the password in the system keychain: {e}"))
+    secret_store().set(&username.to_lowercase(), password)
 }
 
-/// The account's password from the keychain; `None` when none is saved.
+/// The account's password from the secret store; `None` when none is saved.
 pub fn password(username: &str) -> Result<Option<String>, String> {
-    match entry(username)?.get_password() {
-        Ok(password) => Ok(Some(password)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!(
-            "couldn't read the password from the system keychain: {e}"
-        )),
-    }
+    secret_store().get(&username.to_lowercase())
 }
 
-/// Removes the account's password from the keychain (none saved is fine).
+/// Removes the account's password from the secret store (none saved is fine).
 pub fn delete_password(username: &str) -> Result<(), String> {
-    match entry(username)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!(
-            "couldn't remove the password from the system keychain: {e}"
-        )),
-    }
+    secret_store().delete(&username.to_lowercase())
 }
 
 #[cfg(test)]

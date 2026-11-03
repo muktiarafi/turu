@@ -20,7 +20,7 @@ pub fn on() -> bool {
     ON.load(Ordering::Relaxed)
 }
 
-pub(crate) fn set_on(on: bool) {
+pub fn set_on(on: bool) {
     ON.store(on, Ordering::Relaxed);
 }
 
@@ -29,7 +29,7 @@ pub fn tiles() -> Vec<(TabId, Tile)> {
     TILES.lock().map(|t| t.clone()).unwrap_or_default()
 }
 
-pub(crate) fn set_tiles(tiles: Vec<(TabId, Tile)>) {
+pub fn set_tiles(tiles: Vec<(TabId, Tile)>) {
     if let Ok(mut slot) = TILES.lock() {
         *slot = tiles;
     }

@@ -1,0 +1,26 @@
+[package]
+# What Turu's frontends share: the player <-> bot bridge (tabs, `FlashHost`, ExternalInterface),
+# the game socket capture, the map SWF readers, and the egui bot windows. The desktop app (`app/`)
+# adds the window, Mugetsu's settings and the dialogs; no winit or rfd here.
+name = "turu_frontend"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+turu_bot = { path = "../bot", default-features = false }
+ruffle_core = { path = "../ruffle/core" }
+# Grabber > GetMap Item IDs and the map pads read the map SWF's AS3 bytecode.
+swf = { path = "../ruffle/swf", default-features = false }
+egui = { workspace = true }
+# The web monitor's phone link as a QR code (Options > Application > Monitor).
+qrcode = { version = "0.14.1", default-features = false }
+async-channel = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }

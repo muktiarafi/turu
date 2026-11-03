@@ -4,9 +4,8 @@
 use super::files::{self, Pending, SaveText};
 use super::theme::MUTED;
 use super::widgets::{self, Kind};
-use crate::gui::FilePicker;
+use crate::platform::FileDialog;
 use egui::{Align, Context, Layout, RichText, Ui, vec2};
-use rfd::AsyncFileDialog;
 use std::path::PathBuf;
 use std::time::Duration;
 use turu_bot::script::{self, ScriptOptionsState, ScriptStatus};
@@ -20,14 +19,7 @@ pub struct ScriptLoader {
 }
 
 impl ScriptLoader {
-    pub fn show(
-        &mut self,
-        ctx: &Context,
-        picker: &FilePicker,
-        open: &mut bool,
-        options_open: &mut bool,
-        repo_open: &mut bool,
-    ) {
+    pub fn show(&mut self, ctx: &Context, open: &mut bool, options_open: &mut bool, repo_open: &mut bool) {
         let bot = crate::turu::bot();
         self.save.poll();
         if let Some(path) = self.pending_load.poll() {
@@ -39,12 +31,12 @@ impl ScriptLoader {
         }
         super::window(ctx, "Script Loader", [370.0, 500.0], 0)
             .open(open)
-            .show(ctx, |ui| self.ui(ui, picker, options_open, repo_open));
+            .show(ctx, |ui| self.ui(ui, options_open, repo_open));
         // The script writes its log and changes status from its own thread.
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
-    fn ui(&mut self, ui: &mut Ui, picker: &FilePicker, options_open: &mut bool, repo_open: &mut bool) {
+    fn ui(&mut self, ui: &mut Ui, options_open: &mut bool, repo_open: &mut bool) {
         let bot = crate::turu::bot();
         let status = bot.scripts.status();
         let loaded = bot.scripts.loaded();
@@ -106,11 +98,11 @@ impl ScriptLoader {
             );
             if load.clicked() {
                 let start = files::scripts_start_dir(bot.paths.scripts_dir());
-                let dialog = AsyncFileDialog::new()
+                let dialog = FileDialog::new()
                     .set_title("Load Script")
                     .add_filter("Scripts", &["ts", "js"])
                     .set_directory(start);
-                self.pending_load.pick_file(picker, ui.ctx(), dialog);
+                self.pending_load.pick_file(ui.ctx(), dialog);
             }
             let vscode_tip = if code.is_none() {
                 "VS Code (the `code` command) wasn't found"
@@ -236,7 +228,7 @@ impl ScriptLoader {
             widgets::section_label(ui, "SCRIPT LOG");
             widgets::count_badge(ui, self.log.count());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                super::logs::log_buttons(ui, picker, &bot.logs.script, &mut self.save, "script-log.txt");
+                super::logs::log_buttons(ui, &bot.logs.script, &mut self.save, "script-log.txt");
             });
         });
         let height = ui.available_height();

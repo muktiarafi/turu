@@ -465,7 +465,7 @@ impl ButlerWindow {
                         .clicked()
                     {
                         match std::fs::create_dir_all(&butler.logs_dir) {
-                            Ok(()) => crate::mugetsu::open_folder(&butler.logs_dir),
+                            Ok(()) => crate::platform::platform().open_folder(&butler.logs_dir),
                             Err(e) => self.say(Err(format!("Couldn't make {}: {e}", butler.logs_dir.display()))),
                         }
                     }

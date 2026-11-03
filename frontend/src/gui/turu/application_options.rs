@@ -592,7 +592,7 @@ impl ApplicationOptionsWindow {
             && let Some(addr) = serving
             && let Ok(url) = url::Url::parse(&format!("http://127.0.0.1:{}/", addr.port()))
         {
-            crate::util::open_url(&url);
+            crate::platform::platform().open_url(url.as_str());
         }
     }
 
