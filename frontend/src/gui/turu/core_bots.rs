@@ -1,10 +1,10 @@
 //! Options > CoreBots (VibeSkua `CoreBotsView`, 800x608): the per-character CoreBots Options
 //! file (`options/CBO_Storage(<username>).txt`) that CoreBots' `setOptions()` reads. Tabs:
 //! Loadout (classes, modes and gear per role), Options and Other. Opening the window loads the
-//! file; closing it saves.
+//! file; closing it saves. The header says whether the window holds unsaved changes.
 
 use super::skills::SkillSets;
-use super::theme::{ACCENT, CARD, EDGE, HOVER, INSET, MUTED, TEXT};
+use super::theme::{ACCENT, CARD, EDGE, HOVER, INSET, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use egui::{
     Align, Color32, ComboBox, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
@@ -12,6 +12,7 @@ use egui::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 use turu_bot::api::inventory::{self, Container};
 use turu_bot::api::player;
 use turu_bot::models::ItemBase;
@@ -285,6 +286,15 @@ pub struct CoreBotsWindow {
     message: Option<(&'static str, String)>,
     /// Save is waiting for the public room warning's answer.
     confirm_public: bool,
+    /// Revert to saved is waiting for its question's answer.
+    confirm_revert: bool,
+    /// The window's lines as last read or saved: what "Unsaved changes" compares with (None
+    /// until a character's file was looked for).
+    baseline: Option<Vec<String>>,
+    /// The character has a saved file (else the window shows CoreBots' defaults).
+    has_file: bool,
+    /// When Save last wrote the file: "Saved" shows next to the button for a moment.
+    saved_at: Option<Instant>,
 }
 
 impl Default for CoreBotsWindow {
@@ -310,6 +320,10 @@ impl Default for CoreBotsWindow {
             busy: false,
             message: None,
             confirm_public: false,
+            confirm_revert: false,
+            baseline: None,
+            has_file: false,
+            saved_at: None,
         }
     }
 }
@@ -374,7 +388,15 @@ impl CoreBotsWindow {
             return;
         };
         self.busy = false;
-        self.username = fetched.username;
+        let previous = std::mem::replace(&mut self.username, fetched.username);
+        let switched = previous != self.username;
+        let previous_was_empty = previous.is_empty();
+        if switched && !previous_was_empty && self.has_changes() {
+            // Another character now: the last one's changes are saved first, as closing would.
+            let current = std::mem::replace(&mut self.username, previous);
+            self.save(false);
+            self.username = current;
+        }
         self.current_class = fetched.current_class;
         if !self.username.is_empty() {
             self.items = fetched.items;
@@ -383,23 +405,39 @@ impl CoreBotsWindow {
         match fetched.purpose {
             Purpose::Open => self.load(false),
             Purpose::Load => self.load(true),
+            // Not over another character's file with the last one's values: its own first.
+            Purpose::Save if switched && !previous_was_empty && !logged_out => {
+                self.load(true);
+                self.message = Some((
+                    "Save",
+                    format!(
+                        "You're now on {}: the window shows its saved options. Change them and press Save again.",
+                        self.username
+                    ),
+                ));
+            }
             Purpose::Save => self.save(true),
             Purpose::LoadCharacter if logged_out => {
                 self.message = Some((
-                    "Load Character",
+                    "Refresh from game",
                     "Login first so that we can read your character's classes and equipment.".into(),
                 ));
             }
-            Purpose::LoadCharacter => {
-                // Keep the window's selections, with the character's lists.
-                let selections = turu_bot::cbo::parse(&self.lines());
-                self.reload_classes();
-                self.refresh_inventory();
-                self.set_values(&selections);
-            }
-            Purpose::ReloadClasses => self.reload_classes(),
-            Purpose::RefreshInventory => self.refresh_inventory(),
+            // A character the window hadn't loaded (logged in since, or another one): its file.
+            Purpose::LoadCharacter if switched => self.load(true),
+            // Not VibeSkua's, whose Reload Classes clears every role's class and mode: the lists
+            // are read again and the picks kept.
+            Purpose::LoadCharacter | Purpose::ReloadClasses | Purpose::RefreshInventory => self.refresh_keeping_picks(),
         }
+    }
+
+    /// Reads the class and gear lists again and keeps the window's picks (a pick no longer in
+    /// the inventory stays, listed, as when a file names it).
+    fn refresh_keeping_picks(&mut self) {
+        let selections = turu_bot::cbo::parse(&self.lines());
+        self.reload_classes();
+        self.refresh_inventory();
+        self.set_values(&selections);
     }
 
     /// VibeSkua `LoadInternal`.
@@ -419,6 +457,8 @@ impl CoreBotsWindow {
         self.refresh_inventory();
         if let Some(values) = self.read_values.get(&self.username).cloned() {
             self.set_values(&values);
+            self.baseline = Some(self.lines());
+            self.has_file = true;
             return;
         }
         let path = crate::turu::bot().paths.cbo_file(&self.username);
@@ -427,8 +467,13 @@ impl CoreBotsWindow {
                 let values = turu_bot::cbo::parse(&lines);
                 self.set_values(&values);
                 self.read_values.insert(self.username.clone(), values);
+                self.baseline = Some(self.lines());
+                self.has_file = true;
             }
-            Ok(None) => {}
+            Ok(None) => {
+                self.baseline = Some(self.lines());
+                self.has_file = false;
+            }
             Err(e) => {
                 if show_dialog {
                     self.message = Some(("Load", format!("Couldn't read {}: {e}", path.display())));
@@ -449,20 +494,14 @@ impl CoreBotsWindow {
             return;
         }
         let path = crate::turu::bot().paths.cbo_file(&self.username);
-        let public_confirmed = self.public_confirmed();
-        let lines: Vec<String> = self
-            .lines()
-            .into_iter()
-            // VibeSkua asks before saving public rooms; a save without the answer (closing the
-            // window) keeps private rooms.
-            .map(|line| {
-                if line == "PrivateRooms: False" && !public_confirmed {
-                    "PrivateRooms: True".into()
-                } else {
-                    line
-                }
-            })
-            .collect();
+        // VibeSkua asks before saving public rooms; a save without the answer (closing the
+        // window) keeps private rooms, in the window too so that it shows what was saved.
+        if !self.public_confirmed() {
+            for opt in self.options.iter_mut().filter(|o| o.tag == "PrivateRooms") {
+                opt.value = Value::Bool(true);
+            }
+        }
+        let lines = self.lines();
         let values = turu_bot::cbo::parse(&lines);
         let entries: Vec<(String, String)> = lines
             .iter()
@@ -473,13 +512,13 @@ impl CoreBotsWindow {
             .collect();
         match turu_bot::cbo::write(&path, &entries) {
             Ok(()) => {
+                // Said next to Save, not in a message box (VibeSkua's "Save Successful!").
                 if show_dialog {
-                    self.message = Some((
-                        "Save Successful!",
-                        format!("Saved to options/CBO_Storage({}).txt", self.username),
-                    ));
+                    self.saved_at = Some(Instant::now());
                 }
                 self.read_values.insert(self.username.clone(), values);
+                self.baseline = Some(self.lines());
+                self.has_file = true;
             }
             Err(e) => self.message = Some(("Save", format!("Couldn't write {}: {e}", path.display()))),
         }
@@ -620,36 +659,49 @@ impl CoreBotsWindow {
         ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
         self.header(ui);
         self.tab_row(ui);
-        match self.tab {
+        // Logged out there is no character to save to: what you changed would be lost when the
+        // window closes, so the tabs only show the values.
+        let editable = !self.username.is_empty();
+        ui.add_enabled_ui(editable, |ui| match self.tab {
             Tab::Loadout => self.loadout_tab(ui),
             Tab::Options => self.options_tab(ui),
             Tab::Other => self.other_tab(ui),
+        });
+    }
+
+    /// Whether the window differs from what was last read or saved.
+    fn has_changes(&self) -> bool {
+        self.baseline.as_ref().is_some_and(|saved| *saved != self.lines())
+    }
+
+    /// The header's second line: whose file this is and whether it's saved.
+    fn save_state(&self) -> (String, Color32) {
+        if self.busy {
+            ("Reading the game...".into(), MUTED)
+        } else if self.username.is_empty() {
+            ("Not logged in · log in, then press Refresh from game".into(), MUTED)
+        } else if self.has_changes() {
+            ("Unsaved changes · saved when you close this window".into(), WARNING)
+        } else if self.has_file {
+            ("Saved".into(), MUTED)
+        } else {
+            ("CoreBots' defaults · not saved yet".into(), MUTED)
         }
     }
 
-    /// The profile and its actions.
+    /// The character, whether its options are saved, and the actions.
     fn header(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::hover());
-            ui.painter().circle(rect.center(), 16.0, INSET, Stroke::new(1.0, EDGE));
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                self.username
-                    .chars()
-                    .next()
-                    .map_or("?".into(), |c| c.to_uppercase().to_string()),
-                egui::FontId::proportional(14.0),
-                super::theme::ACCENT,
-            );
             ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                ui.label(RichText::new("Profile").size(11.0).color(MUTED));
-                if self.username.is_empty() {
-                    ui.label(RichText::new("Not logged in").strong().color(MUTED));
+                ui.spacing_mut().item_spacing.y = 2.0;
+                let name = if self.username.is_empty() {
+                    RichText::new("No character").size(15.0).strong().color(MUTED)
                 } else {
-                    ui.label(RichText::new(&self.username).strong().color(TEXT));
-                }
+                    RichText::new(&self.username).size(15.0).strong().color(TEXT)
+                };
+                ui.label(name);
+                let (state, color) = self.save_state();
+                ui.add(Label::new(RichText::new(state).size(12.0).color(color)).truncate());
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let enabled = !self.busy;
@@ -667,20 +719,38 @@ impl CoreBotsWindow {
                         self.fetch(Purpose::Save);
                     }
                 }
-                if widgets::button(ui, "Load character", Kind::Normal, enabled, vec2(120.0, 28.0), "")
-                    .on_hover_text("Load in-game character equipment and classes")
+                if widgets::button(ui, "Refresh from game", Kind::Normal, enabled, vec2(140.0, 28.0), "")
+                    .on_hover_text(
+                        "Reads your classes and gear again and keeps your picks; for a character the \
+                         window hasn't loaded, loads its saved options (VibeSkua: Load character)",
+                    )
                     .clicked()
                 {
                     self.fetch(Purpose::LoadCharacter);
                 }
-                if widgets::button(ui, "Load", Kind::Normal, enabled, vec2(84.0, 28.0), "")
-                    .on_hover_text("Load saved CoreBots settings")
-                    .clicked()
+                let changed = self.has_changes();
+                if widgets::button(
+                    ui,
+                    "Revert to saved",
+                    Kind::Normal,
+                    enabled && changed,
+                    vec2(120.0, 28.0),
+                    "Nothing to revert: the window shows the saved options",
+                )
+                .on_hover_text("Puts back the options as last saved (VibeSkua: Load)")
+                .clicked()
                 {
-                    self.fetch(Purpose::Load);
+                    self.confirm_revert = true;
                 }
                 if self.busy {
                     ui.spinner();
+                } else if let Some(at) = self.saved_at {
+                    if at.elapsed() < SAVED_SHOWN_FOR {
+                        ui.label(RichText::new("Saved").size(12.0).color(SUCCESS));
+                        ui.ctx().request_repaint_after(SAVED_SHOWN_FOR - at.elapsed());
+                    } else {
+                        self.saved_at = None;
+                    }
                 }
             });
         });
@@ -711,11 +781,11 @@ impl CoreBotsWindow {
             .id_salt("cbo_loadout")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let reload = "Refresh player classes from current inventory";
+                let reload = "Reads your classes again and keeps each role's pick (VibeSkua: Reload Classes)";
                 if action_bar(
                     ui,
                     "Combat Class & Skill Configurations",
-                    "Reload Classes",
+                    "Refresh classes",
                     reload,
                     self.busy,
                 ) {
@@ -735,11 +805,12 @@ impl CoreBotsWindow {
                         .id_salt("cbo_equipment")
                         .open(Some(self.equipment_open))
                         .show_unindented(ui, |ui| {
-                            let refresh = "Refresh items from player inventory";
+                            let refresh =
+                                "Reads your gear again and keeps each slot's pick (VibeSkua: Refresh Inventory)";
                             if action_bar(
                                 ui,
                                 "Equipment Slots Per Combat Mode",
-                                "Refresh Inventory",
+                                "Refresh gear",
                                 refresh,
                                 self.busy,
                             ) {
@@ -926,6 +997,28 @@ impl CoreBotsWindow {
                 self.fetch(Purpose::Save);
             }
         }
+        if self.confirm_revert {
+            let mut answer = None;
+            Modal::new(egui::Id::new("cbo_revert")).show(ctx, |ui| {
+                ui.set_max_width(380.0);
+                ui.heading("Revert to saved?");
+                ui.label("Your unsaved changes to this character's options will be lost.");
+                ui.horizontal(|ui| {
+                    if widgets::button(ui, "Revert", Kind::Danger, true, vec2(84.0, 28.0), "").clicked() {
+                        answer = Some(true);
+                    }
+                    if widgets::button(ui, "Keep editing", Kind::Normal, true, vec2(110.0, 28.0), "").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+            if let Some(revert) = answer {
+                self.confirm_revert = false;
+                if revert {
+                    self.fetch(Purpose::Load);
+                }
+            }
+        }
         if let Some((title, text)) = &self.message {
             let mut close = false;
             let response = Modal::new(egui::Id::new("cbo_message")).show(ctx, |ui| {
@@ -942,6 +1035,9 @@ impl CoreBotsWindow {
         }
     }
 }
+
+/// How long "Saved" shows next to Save.
+const SAVED_SHOWN_FOR: Duration = Duration::from_secs(3);
 
 /// The character whose public rooms were confirmed (None: not confirmed).
 static PUBLIC_CONFIRMED: Mutex<Option<String>> = Mutex::new(None);
@@ -1085,6 +1181,39 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The header tells a fresh file, saved values and unsaved changes apart, and logged out
+    /// asks for a login.
+    #[test]
+    fn header_says_whether_the_options_are_saved() {
+        let mut window = CoreBotsWindow::default();
+        assert!(window.save_state().0.starts_with("Not logged in"));
+        window.username = "Hero".into();
+        window.baseline = Some(window.lines());
+        assert_eq!(window.save_state().0, "CoreBots' defaults · not saved yet");
+        window.has_file = true;
+        assert_eq!(window.save_state().0, "Saved");
+        window.options[0].value = Value::Bool(false);
+        assert!(window.has_changes());
+        assert!(window.save_state().0.starts_with("Unsaved changes"));
+    }
+
+    /// Refreshing the class and gear lists keeps each role's picks (VibeSkua's Reload Classes
+    /// cleared them), so it changes nothing to save.
+    #[test]
+    fn refresh_keeps_the_picks() {
+        let mut window = CoreBotsWindow::default();
+        window.username = "Hero".into();
+        window.roles[1].select_class("Legion Revenant".into(), &SkillSets::default(), None);
+        window.roles[1].mode = Some("Farm".into());
+        window.roles[1].gear[3] = "Necrotic Sword of Doom".into();
+        window.baseline = Some(window.lines());
+        window.refresh_keeping_picks();
+        assert_eq!(window.roles[1].class.as_deref(), Some("Legion Revenant"));
+        assert_eq!(window.roles[1].mode.as_deref(), Some("Farm"));
+        assert_eq!(window.roles[1].gear[3], "Necrotic Sword of Doom");
+        assert!(!window.has_changes());
+    }
 
     /// The window keeps its width with long class and item names (egui windows grow to fit
     /// content that asks for more than it was given).

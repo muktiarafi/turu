@@ -337,11 +337,22 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Skill needs a class name; a flat (#) value isn't capped at 100; a multi-aura `<` check after a
   `>` one stays `<`, and a skip after `TARGET` survives a reload (VibeSkua loses both). A
   running script keeps the set it loaded until it loads one again.
-* **CoreBots Options** (`core_bots.rs`, 800x608, VibeSkua `CoreBotsView`): profile (username or
-  "Not logged in"), Load / Load character / Save, tabs Loadout / Options / Other. Loadout: Solo,
+* **CoreBots Options** (`core_bots.rs`, 800x608, VibeSkua `CoreBotsView`): header with the
+  character's name and its save state ("Saved", "Unsaved changes · saved when you close this
+  window" in amber against what was last read or saved, "CoreBots' defaults · not saved yet"
+  without a file, "Not logged in · log in, then press Refresh from game"); buttons named by what they do,
+  VibeSkua's names in their tooltips: Revert to saved (VibeSkua's Load; enabled with unsaved
+  changes, and asks first), Refresh from game (Load character: reads the classes and gear
+  again and keeps the picks; for a character the window hasn't loaded, as after logging in or
+  switching, it loads that character's file, saving the last one's changes first) and Save (it
+  shows "Saved" next to the buttons for 3 s; VibeSkua's "Save Successful!" box is gone, errors
+  keep theirs; after a switch of character it loads the new one's options rather than writing
+  the last one's values over them); tabs Loadout / Options / Other, read-only while logged out (no character
+  to save to, so changes would be lost on close). Loadout: Solo,
   Farm, Dodge and Boss cards (class from the enhanced classes you own plus `[Current]`, skill set
-  mode, "Use Dedicated Equipment Loadout") and a collapsible "Detailed Equipment Slots" with six
-  gear drop-downs per role (with a "(none)" entry to clear a slot, which VibeSkua lacks); the
+  mode, "Use Dedicated Equipment Loadout"; Refresh classes, VibeSkua's Reload Classes, keeps
+  each role's pick where VibeSkua cleared them all) and a collapsible "Detailed Equipment Slots" with six
+  gear drop-downs per role and Refresh gear (VibeSkua's Refresh Inventory, keeping the picks) (with a "(none)" entry to clear a slot, which VibeSkua lacks); the
   cards split the window width in two, so long names are cut off rather than widening it.
   Options: the 17 CoreBots settings, searchable, as tiles in two columns under SWITCHES and
   VALUES (numbers, text). Each tile holds one label and its control, lights up under the pointer,
@@ -349,7 +360,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot Creators switches, as
   full-width tiles with their descriptions shown under the label. Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
-  before saving public rooms (a save without the answer keeps private rooms). Game reads
+  before saving public rooms (a save without the answer keeps private rooms, and the window
+  shows them on again). Game reads
   (username, equipped class, inventory) run through `spawn_action`; VibeSkua's message boxes are
   egui modals. Not ported: adding a `[Current]` class with no skill set to the skill file
   (`EnsureSkillEntryExists`). Unlike VibeSkua, the drop-downs list your classes and gear as soon
