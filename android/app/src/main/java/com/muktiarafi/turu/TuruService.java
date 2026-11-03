@@ -137,7 +137,7 @@ public class TuruService extends Service {
         PendingIntent open = PendingIntent.getActivity(
                 this, 0, new Intent(this, TuruActivity.class), PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = new Notification.Builder(this, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setContentIntent(open)

@@ -19,4 +19,8 @@ Colours: violet `#7C6CF0` (the UI accent), white eyes, wordmark `#11131A` on lig
 `app/assets/turu-icon-64.rgba` (window icon, from `turu-symbol.svg`),
 `app/assets/favicon.ico` (Windows; small cut up to 32 px),
 `app/assets/Assets.xcassets/RuffleMacIcon.iconset` (macOS) and
-`app/assets/about_logo.png` (About dialog, from `turu-logo-dark.svg`).
+`app/assets/about_logo.png` (About dialog, from `turu-logo-dark.svg`). Android draws the eyes of
+`turu-symbol.svg` as vectors: `android/app/src/main/res/drawable/ic_launcher_foreground.xml` (the
+adaptive launcher icon's foreground and themed icon, on the violet of
+`values/ic_launcher_background.xml`) and `drawable/ic_notification.xml` (the status bar); they
+hold the path itself, so copy it again when the eyes change.
