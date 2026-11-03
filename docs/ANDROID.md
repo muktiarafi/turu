@@ -4,11 +4,10 @@ How to build, run and check the Android app. The design and the plan are in
 `docs/ANDROID_PROPOSAL.md`.
 
 > **Status (phase 1):** no UI. The app starts the game and the bot without a window, the way
-> `--headless` does on a desktop, set up from a file. Tested on an Android 16 arm64 emulator up to
-> AQW's login screen: the game loads over HTTPS, Search Scripts downloads a script, it loads and
-> starts (QuickJS), and the control API answers. A login and a farm haven't been run yet. The
-> process only lives while Android lets it: there's no foreground service yet (phase 4), so keep
-> the app on screen.
+> `--headless` does on a desktop, set up from a file. On an Android 16 arm64 emulator it logged in
+> and ran GoldFarm for 20 minutes (2026-11-03): 168 kills at a steady ~8 a minute, no deaths, no
+> relogins, ~410 MB (PSS) flat, 4-16% of a CPU. Not yet run on a phone. The process only lives
+> while Android lets it: there's no foreground service yet (phase 4), so keep the app on screen.
 
 ## What's where
 
@@ -123,4 +122,5 @@ openssl rand -hex 24 > api-token && adb shell rm -f /sdcard/Android/data/com.muk
 curl -H "Authorization: Bearer $(cat api-token)" http://127.0.0.1:8791/status
 ```
 
-At AQW's title screen on the emulator the app used ~164 MB (PSS) and ~4% of a CPU.
+On the emulator the app used ~164 MB (PSS) and ~4% of a CPU at AQW's title screen, and ~410 MB
+and 4-16% while farming.

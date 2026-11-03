@@ -1,7 +1,6 @@
 # Proposal: Turu on Android
 
-Status: phases 0 and 1 built (see "As built"); phase 1 is checked on an emulator up to the
-login screen, not yet logged in. Build and run: `docs/ANDROID.md`. Written 2026-11-03 against Turu `db698ca36`, ruffle-aqw on
+Status: phases 0 and 1 built (see "As built"); phase 1 logged in and farmed on an emulator. Build and run: `docs/ANDROID.md`. Written 2026-11-03 against Turu `db698ca36`, ruffle-aqw on
 Ruffle `fda41800` + Mugetsu 1.6.0, and `ruffle-rs/ruffle-android` `main` of 2026-11-02.
 
 Read `docs/ARCHITECTURE.md` first: this doc assumes its thread model (one event loop thread
@@ -313,15 +312,22 @@ Android's limits are the biggest behavioural difference from a desktop:
   `--load-script farm/GoldFarm` downloads it from the repository and loads it; the control API
   answers `/status`; `/script/start` runs CoreBots in QuickJS, which stops at "Please log-in".
   ~164 MB PSS and ~4% CPU at the title screen; the APK is 21 MB (debug, one ABI).
-* **Not done:** logging in and an hour's farm (needs an account's `turu-args.txt`; phase 1's
-  "done when"), a real phone, and keeping the process alive in the background (phase 4).
+* **Logged in and farmed** (2026-11-03, emulator): GoldFarm for 20 minutes, 168 kills (~8 a
+  minute, steady), no deaths or relogins, ~405-416 MB PSS without growth, 4-16% CPU. The first
+  logins all timed out ("avatar state: 0"): with AQW's default settings (a new phone has no saved
+  `AQWUserPref`) the game draws the stage into a bitmap when a map loads, the null renderer
+  couldn't, and the error stopped the avatar's setup. Desktop `--headless` had the same bug,
+  hidden by settings saved from playing in a window; the fix is in ruffle-aqw's
+  `core/src/bitmap/operations.rs` (a draw the renderer can't do leaves the bitmap as it is).
+* **Not done:** the full hour (stopped at 20 minutes), a real phone, and keeping the process
+  alive in the background (phase 4).
 
 ## Phases
 
 | Phase | Goal | Done when |
 |---|---|---|
 | 0. Split (built) | `turu_frontend` crate; the event-loop seam; `Platform` trait; `SecretStore`; TLS feature on `turu_bot`. Desktop only. | Desktop and headless behave as before; `cargo test -p turu_bot` and clippy pass. |
-| 1. Headless spike (built; login untested) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
+| 1. Headless spike (built; farmed 20 min on an emulator) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
 | 2. Game on screen | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
 | 3. Turu UI | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
 | 4. Background | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |

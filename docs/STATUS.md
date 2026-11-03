@@ -416,12 +416,17 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   still open: the next such run logs it.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
-- **Android (phase 1, `docs/ANDROID.md`):** no UI; the engine runs from `turu-args.txt` and loads
-  AQW to the login screen on an emulator. Not logged in or farmed yet, not run on a phone, and
-  killed when Android reclaims the app (no foreground service yet).
-- **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
-  farm without a window still need a run. The control API is the only way to steer it.
-  CoreBots' restart after a logout (`Bot.Manager.RestartScriptAsync`) isn't ported.
+- **Android (phase 1, `docs/ANDROID.md`):** no UI; the engine runs from `turu-args.txt`. On an
+  emulator it logged in and farmed GoldFarm for 20 minutes. Not run on a phone yet, and killed
+  when Android reclaims the app (no foreground service yet).
+- **Windowless mode logs in and farms** (2026-11-03: desktop `--headless` and Android, GoldFarm).
+  It needed a fix in ruffle-aqw (`core/src/bitmap/operations.rs`): with AQW's default settings
+  (no saved `AQWUserPref`, as on a new server or phone) the game draws the stage into a bitmap
+  when a map loads; the null renderer can't, `BitmapData.draw` threw, and the code that makes
+  your avatar never ran, so every login timed out ("avatar state: 0"). Now that draw leaves the
+  bitmap as it is. A desktop that had played AQW in a window kept settings that skip the draw,
+  which hid it. The control API is the only way to steer it. CoreBots' restart after a logout
+  (`Bot.Manager.RestartScriptAsync`) isn't ported.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.

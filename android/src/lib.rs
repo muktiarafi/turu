@@ -124,6 +124,9 @@ fn engine(root: &Path) {
     }
     // AQW (since its 2026-10-10 update) uses Flash APIs newer than its loader's SWF version.
     ruffle_core::set_show_all_apis(true);
+    // Mugetsu's default for a frame waiting on its new shapes (`mugetsu::shape_wait`), as the
+    // desktop sets it; per thread, so here, on the player's.
+    ruffle_core::set_shape_wait(Some(Duration::from_millis(12)));
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
