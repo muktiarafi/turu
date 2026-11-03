@@ -5,7 +5,8 @@ VibeSkua (C#/Avalonia, Windows only) onto **Ruffle + Mugetsu's AQW patches**, wi
 bot engine in **Rust** and scripts in **TypeScript**. Same UI/UX and flow as VibeSkua.
 
 Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
-tooling quirks). The Android port: `docs/ANDROID_PROPOSAL.md` (plan) and `docs/ANDROID.md`
+tooling quirks). The Android port: `docs/ANDROID_HANDOVER.md` (start here: state,
+branches, setup, testing, pitfalls), `docs/ANDROID_PROPOSAL.md` (plan) and `docs/ANDROID.md`
 (build, run). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
 behaviour, Flash bridge, API and UI, surveyed from its source), `docs/SCRIPTING.md`
 (writing scripts), `docs/UI.md`, `docs/HEADLESS.md` (running without a window: flags,
