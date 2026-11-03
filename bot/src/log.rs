@@ -111,6 +111,15 @@ impl LogBuffer {
         self.len() == 0
     }
 
+    /// When the newest line was logged, and how long ago.
+    pub fn last_time(&self) -> Option<(chrono::DateTime<chrono::Local>, std::time::Duration)> {
+        let time = self.lines.lock().back()?.time;
+        Some((
+            time,
+            (chrono::Local::now() - time).to_std().unwrap_or_default(),
+        ))
+    }
+
     pub fn version(&self) -> u64 {
         self.version.load(Ordering::Relaxed)
     }

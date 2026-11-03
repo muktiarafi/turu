@@ -58,9 +58,9 @@ pub fn target(height: f32, touch_height: f32) -> f32 {
     if touch() { height.max(touch_height) } else { height }
 }
 
-/// The size of the small labels: 10 points, 12 on a touch screen (a phone held at arm's length).
+/// The size of the small labels: 11 points, 12 on a touch screen (a phone held at arm's length).
 fn small_label_size() -> f32 {
-    if touch() { 12.0 } else { 10.0 }
+    if touch() { 12.0 } else { 11.0 }
 }
 
 /// A small text button for a card header ("Copy", "Save", "Clear").
@@ -171,14 +171,25 @@ pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respo
     )
 }
 
-/// A cached, scrollable, selectable list of log lines (one row per text line).
+/// A cached, scrollable, selectable list of log lines (one row per text line). With
+/// [`Self::set_wrap`], long rows wrap to the view's width; [`Self::filter_mut`] keeps only the
+/// lines that contain a text.
 #[derive(Default)]
 pub struct LogView {
     version: Option<u64>,
-    rows: Vec<String>,
+    /// The log's lines, formatted (one may hold several text lines).
+    lines: Vec<String>,
     count: usize,
-    /// The row [`Self::reveal`] scrolls to on the next draw.
-    reveal: std::cell::Cell<Option<usize>>,
+    wrap: bool,
+    filter: String,
+    /// The rows as drawn: filtered, split and wrapped, for `shown_for`.
+    shown: Vec<String>,
+    /// The lines that pass the filter.
+    matches: usize,
+    /// What `shown` was built for: the columns it wraps at and the filter (`None`: rebuild).
+    shown_for: Option<(usize, String)>,
+    /// The text [`Self::reveal`] scrolls to on the next draw.
+    reveal: Option<String>,
 }
 
 impl LogView {
@@ -190,54 +201,89 @@ impl LogView {
         }
         let lines = buffer.snapshot();
         self.count = lines.len();
-        self.rows = lines
-            .iter()
-            .flat_map(|line| line.formatted().lines().map(str::to_owned).collect::<Vec<_>>())
-            .collect();
+        self.lines = lines.iter().map(turu_bot::log::LogLine::formatted).collect();
         self.version = Some(version);
+        self.shown_for = None;
     }
 
     /// Re-reads the rows from `lines` (already filtered) and records `count`.
     pub fn set_rows(&mut self, rows: Vec<String>, count: usize) {
-        self.rows = rows;
+        self.lines = rows;
         self.count = count;
+        self.shown_for = None;
     }
 
     pub fn count(&self) -> usize {
         self.count
     }
 
-    /// Scrolls to the last row containing `text` on the next draw; whether there is one.
-    pub fn reveal(&self, text: &str) -> bool {
-        let row = self.rows.iter().rposition(|row| row.contains(text));
-        self.reveal.set(row);
-        row.is_some()
+    /// Wraps long rows to the view's width, continuing under the text after the time.
+    pub fn set_wrap(&mut self, wrap: bool) {
+        if self.wrap != wrap {
+            self.wrap = wrap;
+            self.shown_for = None;
+        }
+    }
+
+    /// The text the shown lines must contain (any case); empty shows them all.
+    pub fn filter_mut(&mut self) -> &mut String {
+        &mut self.filter
+    }
+
+    /// How many lines pass the filter (as of the last draw).
+    pub fn matches(&self) -> usize {
+        self.matches
+    }
+
+    /// Scrolls to the last line containing `text` on the next draw, clearing the filter;
+    /// whether there is one.
+    pub fn reveal(&mut self, text: &str) -> bool {
+        if !self.lines.iter().any(|line| line.contains(text)) {
+            return false;
+        }
+        self.filter.clear();
+        self.reveal = Some(text.to_owned());
+        self.shown_for = None;
+        true
     }
 
     /// Draws the list into the remaining space, following the end like a console.
-    pub fn show(&self, ui: &mut Ui, id: &str, height: f32) {
+    pub fn show(&mut self, ui: &mut Ui, id: &str, height: f32) {
         Frame::new()
             .fill(INSET)
             .stroke(Stroke::new(1.0, EDGE))
             .corner_radius(CornerRadius::same(SMALL_RADIUS))
             .inner_margin(Margin::same(6))
             .show(ui, |ui| {
+                let font = TextStyle::Monospace.resolve(ui.style());
                 let row_height = ui.text_style_height(&TextStyle::Monospace) + 2.0;
                 ui.set_width(ui.available_width());
-                let mut scroll = ScrollArea::both()
-                    .id_salt(id)
-                    .auto_shrink([false, false])
-                    .max_height((height - 14.0).max(40.0))
-                    .stick_to_bottom(true);
-                if let Some(row) = self.reveal.take() {
+                let cols = if self.wrap {
+                    let char_width = ui.ctx().fonts_mut(|f| f.glyph_width(&font, 'M')).max(1.0);
+                    let width = ui.available_width() - ui.spacing().scroll.bar_width - 2.0;
+                    ((width / char_width).floor() as usize).max(20)
+                } else {
+                    usize::MAX
+                };
+                let target = self.rebuild(cols);
+                let mut scroll = if self.wrap {
+                    ScrollArea::vertical()
+                } else {
+                    ScrollArea::both()
+                }
+                .id_salt(id)
+                .auto_shrink([false, false])
+                .max_height((height - 14.0).max(40.0))
+                .stick_to_bottom(true);
+                if let Some(row) = target {
                     // `show_rows` spaces rows by the outer item spacing; two rows of context above.
                     let step = row_height + ui.spacing().item_spacing.y;
                     scroll = scroll.vertical_scroll_offset(row.saturating_sub(2) as f32 * step);
                 }
-                scroll.show_rows(ui, row_height, self.rows.len(), |ui, range| {
+                scroll.show_rows(ui, row_height, self.shown.len(), |ui, range| {
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
-                        for row in &self.rows[range] {
+                        for row in &self.shown[range] {
                             ui.add(
                                 Label::new(RichText::new(row).monospace().color(TEXT))
                                     .wrap_mode(TextWrapMode::Extend)
@@ -247,6 +293,71 @@ impl LogView {
                     });
                 });
             });
+    }
+
+    /// Rebuilds `shown` when the lines, the width or the filter changed; the row to reveal.
+    fn rebuild(&mut self, cols: usize) -> Option<usize> {
+        if self
+            .shown_for
+            .as_ref()
+            .is_some_and(|(c, filter)| *c == cols && *filter == self.filter)
+        {
+            return None;
+        }
+        let needle = self.filter.to_lowercase();
+        let reveal = self.reveal.take();
+        let mut target = None;
+        self.shown.clear();
+        self.matches = 0;
+        for line in &self.lines {
+            if !needle.is_empty() && !line.to_lowercase().contains(&needle) {
+                continue;
+            }
+            self.matches += 1;
+            if reveal.as_deref().is_some_and(|text| line.contains(text)) {
+                target = Some(self.shown.len());
+            }
+            for row in line.lines() {
+                wrap_row(row, cols, &mut self.shown);
+            }
+        }
+        self.shown_for = Some((cols, self.filter.clone()));
+        target
+    }
+}
+
+/// Adds `row` to `out` in pieces of at most `cols` characters, breaking after a space near the
+/// end where there is one. Pieces after the first start under the text after the time
+/// (`[12:00:00] `), so the times stay a clean column.
+fn wrap_row(row: &str, cols: usize, out: &mut Vec<String>) {
+    let chars: Vec<char> = row.chars().collect();
+    if chars.len() <= cols {
+        out.push(row.to_owned());
+        return;
+    }
+    let indent = match row.find("] ") {
+        Some(i) if row.starts_with('[') && i < 12 => (i + 2).min(cols / 2),
+        _ => 0,
+    };
+    let mut start = 0;
+    while start < chars.len() {
+        let (prefix, width) = if start == 0 { (0, cols) } else { (indent, cols - indent) };
+        let end = if chars.len() - start <= width {
+            chars.len()
+        } else {
+            let hard = start + width;
+            (start + width / 2..hard)
+                .rev()
+                .find(|&i| chars[i] == ' ')
+                .map_or(hard, |i| i + 1)
+        };
+        let piece: String = chars[start..end].iter().collect();
+        out.push(format!("{}{}", " ".repeat(prefix), piece.trim_end()));
+        start = end;
+        // A piece never starts with the space it broke at.
+        while chars.get(start) == Some(&' ') {
+            start += 1;
+        }
     }
 }
 
@@ -433,5 +544,40 @@ impl Selection {
         if !shift || self.anchor.is_none() {
             self.anchor = Some(index);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap_row;
+
+    fn wrapped(row: &str, cols: usize) -> Vec<String> {
+        let mut out = Vec::new();
+        wrap_row(row, cols, &mut out);
+        out
+    }
+
+    #[test]
+    fn short_rows_stay_whole() {
+        assert_eq!(wrapped("[12:00:00] Hunting", 40), ["[12:00:00] Hunting"]);
+    }
+
+    /// Long rows break after a word and continue under the text, not under the time.
+    #[test]
+    fn long_rows_wrap_under_the_text() {
+        assert_eq!(
+            wrapped("[12:00:00] Killing Escherion for the Escherion's Helm", 30),
+            [
+                "[12:00:00] Killing Escherion",
+                "           for the Escherion's",
+                "           Helm"
+            ]
+        );
+    }
+
+    /// A word longer than the row breaks where the row ends.
+    #[test]
+    fn long_words_break_hard() {
+        assert_eq!(wrapped("abcdefghij", 4), ["abcd", "efgh", "ij"]);
     }
 }

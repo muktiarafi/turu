@@ -108,6 +108,7 @@ impl LogsWindow {
             Tab::Script => (&bot.logs.script, &mut self.script, "script-log.txt"),
             Tab::Debug => (&bot.logs.debug, &mut self.debug, "debug-log.txt"),
         };
+        view.set_wrap(true);
         view.refresh(buffer);
         ui.horizontal(|ui| {
             if widgets::chip(ui, "Script", self.tab == Tab::Script) {

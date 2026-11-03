@@ -86,20 +86,29 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   after a run, until the next start or load of another script, how it ended and how long it ran
   ("Finished · ran 6h 12m", "Stopped · ran 3h 40m", "Stopped with an error · ran 2h 10m"; "Ended
   at 04:12" on hover; from `RunEnd`, which records the script, finished or not, the run's length
-  and its end time) instead of "Ready";
-  under it the run controls, 38 px high: Start/Stop Script (primary/danger, about 60% of the
-  width; "Force Stop" while stopping handlers run) and Pause/Resume; then, 14 px lower, the setup
-  buttons, outlined and 28 px high (VibeSkua's grid is reordered so the run controls lead;
-  on a touch screen (`Platform::is_touch`, Android) every button is 48 points high, the log's
-  Clear/Copy 40, the small labels 12, and why Start or Edit Script Options is disabled shows as a
-  line under its group instead of a tooltip; buttons the platform can't serve are hidden: Load
-  Script and the log's Save without file dialogs, Edit Script and Open VSCode where files don't
-  open in an app):
+  and its end time) instead of "Ready"; while a script runs, "last log 2m ago" on the right (the
+  script log's newest line; amber once a running script has been quiet 5 minutes). When the
+  error's line is no longer in the log (cleared, or pushed out), clicking it shows the whole
+  error in the card instead. Beside the file name, where files open in an app, a small "Open in
+  VS Code" (when `code` is on PATH or the macOS app bundle is found) or "Open in editor" (the OS
+  default app): VibeSkua's Edit Script and Open VSCode in one, kept out of the setup grid;
+  under it the run controls, 38 px high: Start Script alone across the row while nothing runs;
+  while it runs, Stop Script (danger, about 60% of the width) and Pause/Resume; while stopping
+  handlers run, a disabled "Stopping..." in Stop's place and Force Stop in Pause's, enabled after
+  `FORCE_STOP_AFTER` (1.5 s; F10 forces only then too), so a double press only stops; then,
+  14 px lower, the setup buttons, outlined and 28 px high (VibeSkua's grid is reordered so the
+  run controls lead; on a touch screen (`Platform::is_touch`, Android) every button is 48 points
+  high, the log's Clear/Copy 40, the small labels 12 (11 otherwise), and why Start or Edit Script
+  Options is disabled shows as a line under its group instead of a tooltip; buttons the platform
+  can't serve are hidden: Load Script and the log's Save without file dialogs, the editor button
+  where files don't open in an app):
   Load Script (rfd dialog filtered to .ts/.js, starting in the repo's `scripts/` found next to the
-  working directory or above the executable, else the bot's scripts folder); Open VSCode (enabled
-  when `code` is on PATH, or the macOS app bundle is found); Edit Script (OS default app);
-  Search Scripts (opens the window below); Edit Script Options (enabled once a script with options is loaded);
-  SCRIPT LOG with count badge, Copy/Save/Clear, following the end, selectable text.
+  working directory or above the executable, else the bot's scripts folder) and Search Scripts
+  (opens the window below) side by side; Edit Script Options across the row (enabled once a
+  script with options is loaded);
+  SCRIPT LOG with a Find box (keeps the lines containing its text, any case, with their count;
+  Escape clears it), Copy/Save/Clear, following the end, selectable text; long lines wrap to
+  the width, continuing under the text after the time (also in Diagnostics > Logs).
   The "Report Issues" footer is omitted.
 * **Search Scripts** (`script_repo.rs`, 969x500; VibeSkua's Script Repo; also Scripts > Search
   Scripts): search box ("Search scripts by name, path or tag") with a clear button, scope (All,

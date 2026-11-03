@@ -167,7 +167,7 @@ impl RuntimeWindow {
                 let selected: Vec<i64> = self.selected_quests.drain().collect();
                 bot.quests.unregister(&selected);
             });
-            let height = (ui.available_height() - 290.0).max(60.0);
+            let height = (ui.available_height() - 292.0).max(60.0);
             list(
                 ui,
                 "runtime_quests",

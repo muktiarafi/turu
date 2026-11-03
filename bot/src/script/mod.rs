@@ -18,6 +18,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
+/// How long a script must have been stopping before Stop again forces it (interrupts its
+/// stopping steps), so a double press of Stop or F10 only stops.
+pub const FORCE_STOP_AFTER: Duration = Duration::from_millis(1500);
+
 pub use loader::normalize;
 pub use runtime::RunError;
 
@@ -123,7 +127,8 @@ pub enum ScriptOptionsState {
 
 pub struct ScriptManager {
     loaded: Mutex<Option<PathBuf>>,
-    status: Mutex<ScriptStatus>,
+    /// The status and when it last changed (for Force Stop's wait).
+    status: Mutex<(ScriptStatus, std::time::Instant)>,
     running: AtomicBool,
     /// A Console snippet runs (`run_snippet`); it and a script never run together.
     snippet: AtomicBool,
@@ -193,7 +198,7 @@ impl ScriptManager {
     pub fn new(paths: Paths) -> Self {
         Self {
             loaded: Mutex::new(None),
-            status: Mutex::new(ScriptStatus::Empty),
+            status: Mutex::new((ScriptStatus::Empty, std::time::Instant::now())),
             running: AtomicBool::new(false),
             snippet: AtomicBool::new(false),
             paths,
@@ -213,11 +218,21 @@ impl ScriptManager {
     }
 
     pub fn status(&self) -> ScriptStatus {
-        *self.status.lock()
+        self.status.lock().0
+    }
+
+    /// Whether a Stop now would be a Force Stop that is allowed: the script has been stopping
+    /// for [`FORCE_STOP_AFTER`], so a double press of Stop doesn't skip its stopping steps.
+    pub fn can_force_stop(&self) -> bool {
+        let (status, since) = *self.status.lock();
+        status == ScriptStatus::Stopping && since.elapsed() >= FORCE_STOP_AFTER
     }
 
     fn set_status(&self, status: ScriptStatus) {
-        *self.status.lock() = status;
+        let mut current = self.status.lock();
+        if current.0 != status {
+            *current = (status, std::time::Instant::now());
+        }
     }
 
     pub fn loaded(&self) -> Option<PathBuf> {
