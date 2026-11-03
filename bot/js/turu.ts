@@ -448,6 +448,33 @@ export class Army {
     writeLog(name: string, lines: string[]): void { call("army.writeLog", name, lines); }
     /** Empties the shared log (C# `ArmyLogging.ClearLogFile`). */
     clearLog(name: string): void { call("army.clearLog", name); }
+    /**
+     * Runs `fn` while holding the shared log's lock, so no other client reads or writes the log
+     * in between: wrap a read, change and write of the log in it, or another client's change
+     * made at the same time is lost (C# CoreUltra's machine-wide mutex). Each log operation
+     * already locks on its own; inside `fn` they use this lock. Keep `fn` short: other clients
+     * wait for it (and fail after 30 s). The lock is released when `fn` returns or throws, and
+     * at the latest when the script stops.
+     */
+    withLock<T>(name: string, fn: () => T): T {
+        call("army.lock", name);
+        try {
+            return fn();
+        } finally {
+            call("army.unlock", name);
+        }
+    }
+    /**
+     * Waits until `count` members of the army (this one included) have arrived at the barrier
+     * `name`, then lets them all go on together; false after `timeoutMs` (0: waits until Stop).
+     * Every member must pass the same `count`. A member that looks late still passes: the
+     * last arrival starts the barrier's next round instead of clearing it, so the barrier can be
+     * used again at once. A member gone for 15 s (closed, crashed) no longer counts. Its file,
+     * `army/<name>.barrier`, is apart from the log of the same name.
+     */
+    barrier(name: string, count: number, timeoutMs = 0, member = bot.player.username): boolean {
+        return call("army.barrier", name, member, count, timeoutMs);
+    }
     /** The usernames in Army > Accounts, in list order (VibeSkua `Bot.Accounts.GetAllAccounts()`). */
     accounts(): string[] { return call("army.accounts"); }
     /**

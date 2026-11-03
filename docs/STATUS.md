@@ -202,12 +202,16 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 - **Army and Tools scripts:** `army/CoreArmyLite.ts` on Turu's several accounts, the Army
   scripts (with the Ultras' army sync helpers in `army/CoreArmySync.ts`) and the in-game Tools.
   New engine API `bot.army` (`bot/src/api/army.rs`): a sync log shared by every client of the
-  machine (C#'s Army log and sync files), the Army > Accounts usernames, logging in an account
+  machine (C#'s Army log and sync files), locked per log (`army/.<name>.lock`, held across a
+  read-modify-write by `bot.army.withLock`, released at the latest when the script ends), a
+  barrier with a round count (`bot.army.barrier`, `army/<name>.barrier`; the army waits use it),
+  the Army > Accounts usernames, logging in an account
   with its keychain password (`doForAll`), and the army's private room numbers; and
   `bot.map.getPlayer` / `playerExists` (VibeSkua `TryGetPlayer`). `scripts/README.md` ("Army",
   "Tools") lists what differs from C#, the three Ultra-engine Army scripts that are logged skips,
   the skipped tools and why, and 4 C# bugs fixed on purpose. All type-check and load; none has
-  run in game, and the shared log and keychain login are only unit-tested.
+  run in game, and the shared log, its lock, the barrier and keychain login are only tested
+  without a game (the lock and barrier also from scripts on two clients).
 - **Ultras:** everything in `Ultrasv3` but `TestZone` (it runs on the old `Ultras/` engine): the
   whole `DependenciesUltras` engine (CoreEnginev3's skill engine and every region, CoreUltrav3's
   sync, taunts, scrolls, alchemy and house joins, the class syncs, wait-for-army, wipe and death

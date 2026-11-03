@@ -558,6 +558,7 @@ pub fn run_snippet(
     mark_script_thread(false);
     // Its handlers ran in its JS, which is gone.
     bot.handlers.clear();
+    bot.army.release_all();
     bot.control.reset();
     bot.scripts.snippet.store(false, Ordering::Release);
     result
@@ -600,6 +601,7 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.boosts.reset();
     bot.quests.unregister_all();
     bot.handlers.clear();
+    bot.army.release_all();
     bot.options.write().reset_after_script();
     bot.state.lock().options_applied.restore_world();
     use crate::monitor::EventKind;

@@ -104,6 +104,8 @@ pub struct Bot {
     pub spammer: Arc<spammer::Spammer>,
     /// Scripts > Scheduler: the playlist this client runs.
     pub scheduler: scheduler::Scheduler,
+    /// The army logs a script holds locked (`bot.army.withLock`).
+    pub army: api::army::ArmyLocks,
     pub paths: paths::Paths,
 }
 
@@ -139,6 +141,7 @@ impl Bot {
             capture: Arc::default(),
             spammer: Arc::default(),
             scheduler: scheduler::Scheduler::default(),
+            army: api::army::ArmyLocks::default(),
             paths,
         });
         background::start(&bot);

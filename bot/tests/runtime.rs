@@ -773,3 +773,39 @@ fn stop_interrupts_a_snippet_and_scripts_wait_for_it() {
     script::stop(&bot);
     wait_until_done(&bot);
 }
+
+#[test]
+fn army_logs_lock_across_clients_and_the_barrier_lets_both_through() {
+    temp_dir("army");
+    let pid = std::process::id();
+    let clients: Vec<_> = ["Alice", "Bob"]
+        .into_iter()
+        .map(|member| {
+            let bot = Bot::new();
+            bot.set_host(Some(Arc::new(FakeGame)));
+            std::thread::spawn(move || {
+                let source = format!(
+                    r#"for (let i = 0; i < 30; i++) {{
+    bot.army.withLock("rmw-{pid}", () => {{
+        const lines = bot.army.readLog("rmw-{pid}");
+        bot.army.writeLog("rmw-{pid}", [...lines, "{member}:" + i]);
+    }});
+}}
+try {{
+    bot.army.withLock("rmw-{pid}", () => {{ throw new Error("inside"); }});
+}} catch {{}}
+// Released by the throw, or this would fail as already locked.
+bot.army.withLock("rmw-{pid}", () => 0);
+bot.army.barrier("bar-{pid}", 2, 10000, "{member}")"#
+                );
+                script::run_snippet(&bot, &source, |_| {}).unwrap()
+            })
+        })
+        .collect();
+    for client in clients {
+        assert_eq!(client.join().unwrap(), "true");
+    }
+    let bot = Bot::new();
+    let lines = turu_bot::api::army::read_log(&bot, &format!("rmw-{pid}")).unwrap();
+    assert_eq!(lines.len(), 60, "no update lost");
+}
