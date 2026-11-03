@@ -1,0 +1,9 @@
+# Versions follow ruffle-android's (https://github.com/ruffle-rs/ruffle-android).
+[versions]
+agp = "9.5.0"
+kotlin = "2.4.21"
+
+[plugins]
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidLibrary = { id = "com.android.library", version.ref = "agp" }
+jetbrainsKotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -1,0 +1,39 @@
+[package]
+# Turu on Android (docs/ANDROID_PROPOSAL.md), loaded by the Gradle app next to this file. The
+# library is empty on other systems, so the workspace still builds there.
+name = "turu_android"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+turu_bot = { path = "../bot", default-features = false }
+turu_frontend = { path = "../frontend" }
+ruffle_core = { path = "../ruffle/core", features = ["lzma", "default_compatibility_rules"] }
+ruffle_render = { path = "../ruffle/render" }
+ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }
+android-activity = { version = "0.6.1", features = ["native-activity"] }
+android_logger = "0.15.1"
+log = "0.4"
+# Ruffle's and the bot's messages, as `log` records for logcat.
+tracing = { workspace = true, features = ["log", "log-always"] }
+jni = { version = "0.22.4", default-features = false }
+# TLS as ruffle-android does it: reqwest's rustls without a crypto provider (aws-lc-rs needs
+# CMake), `ring` installed as the provider, and certificates checked against Android's trust
+# store by rustls-platform-verifier (initialised over JNI; its Kotlin part is the Gradle module
+# `rustls-platform-verifier`). Keep it semver-compatible with the one reqwest uses.
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-platform-verifier = "0.7.1"
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+# rquickjs ships no QuickJS bindings for Android: generate them (libclang, and the NDK's
+# sysroot in BINDGEN_EXTRA_CLANG_ARGS; the app's `cargoNdk` task sets both).
+rquickjs = { version = "0.14", features = ["bindgen"] }
+url = { workspace = true }

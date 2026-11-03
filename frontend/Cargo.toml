@@ -14,6 +14,10 @@ workspace = true
 [dependencies]
 turu_bot = { path = "../bot", default-features = false }
 ruffle_core = { path = "../ruffle/core" }
+# The windowless loop (`engine.rs`): its executor and dialog-less navigator. No TLS backend
+# here: each frontend picks one.
+ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }
+async-task = "4.7.1"
 # Grabber > GetMap Item IDs and the map pads read the map SWF's AS3 bytecode.
 swf = { path = "../ruffle/swf", default-features = false }
 egui = { workspace = true }

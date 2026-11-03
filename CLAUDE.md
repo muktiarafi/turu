@@ -5,7 +5,8 @@ VibeSkua (C#/Avalonia, Windows only) onto **Ruffle + Mugetsu's AQW patches**, wi
 bot engine in **Rust** and scripts in **TypeScript**. Same UI/UX and flow as VibeSkua.
 
 Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
-tooling quirks). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
+tooling quirks). The Android port: `docs/ANDROID_PROPOSAL.md` (plan) and `docs/ANDROID.md`
+(build, run). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
 behaviour, Flash bridge, API and UI, surveyed from its source), `docs/SCRIPTING.md`
 (writing scripts), `docs/UI.md`, `docs/HEADLESS.md` (running without a window: flags,
 service, monitoring; keep it in step with the startup flags and the control API).
@@ -22,6 +23,7 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 | `bot/assets/skua.swf` | VibeSkua's AS3 host (`Skua.AS3/skua/bin/skua.swf`), unchanged. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
 | `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (for Android later: `docs/ANDROID_PROPOSAL.md`). The app re-exports its modules (`crate::turu`, ...). |
+| `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): NativeActivity, the engine thread on `turu_frontend::engine`, setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). |
 | `frontend/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
 | `frontend/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
 | `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |
@@ -45,6 +47,7 @@ cargo build -p turu --no-default-features --features software_video,external_vid
 cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md)
 cargo clippy -p turu_bot -p turu_frontend -p turu --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
+cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
 cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (their CI checks it)
 ```

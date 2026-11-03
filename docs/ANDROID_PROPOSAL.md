@@ -1,6 +1,7 @@
 # Proposal: Turu on Android
 
-Status: phase 0 built (see "As built: phase 0"); nothing Android-specific yet. Written 2026-11-03 against Turu `db698ca36`, ruffle-aqw on
+Status: phases 0 and 1 built (see "As built"); phase 1 is checked on an emulator up to the
+login screen, not yet logged in. Build and run: `docs/ANDROID.md`. Written 2026-11-03 against Turu `db698ca36`, ruffle-aqw on
 Ruffle `fda41800` + Mugetsu 1.6.0, and `ruffle-rs/ruffle-android` `main` of 2026-11-02.
 
 Read `docs/ARCHITECTURE.md` first: this doc assumes its thread model (one event loop thread
@@ -286,15 +287,41 @@ Android's limits are the biggest behavioural difference from a desktop:
   keychain (`keyring`) by default, `accounts::set_secret_store` to replace it. `keyring` isn't
   built for Android, where passwords aren't saved until the app installs its store.
 * **TLS feature** on `turu_bot`: `native-tls` (default) or `rustls-tls`.
-* Not done: the shared `PlayerBuilder` setup (phase 1), `monitor/push.rs`'s `hostname` command
-  (phase 3), and a build for an Android target.
+* Not done: `monitor/push.rs`'s `hostname` command (phase 3).
+
+## As built: phase 1
+
+* **Shared loop:** `turu_frontend::engine` holds the windowless pieces (`EngineEvent`,
+  `Executor`, `NoDialogs`, `run_loop`, `flash_host`), taken from `app/src/headless.rs`, which now
+  only maps the desktop's options onto the `PlayerBuilder`. A shared `PlayerBuilder` setup wasn't
+  worth it: the two frontends' option sources differ and the builder calls are a dozen lines.
+* **`turu_android`** (`android/`): NativeActivity (no Java of our own) and `android_main`, which
+  starts the engine thread once per process; the thread outlives the activity. Setup comes from
+  `turu-args.txt` (the desktop's flags, one argument per line) through
+  `turu::take_startup_args`, so `--user`, `--run-script`, `--api` and the rest work unchanged.
+  The data folder is the app's files folder on shared storage (`paths::set_default_root`), so
+  `adb` reaches scripts, options and logs; phase 3 moves the private parts to internal storage.
+* **TLS:** reqwest's `rustls-no-provider` with `ring`, certificates checked by
+  `rustls-platform-verifier` (Kotlin half from the submodule `android/vendor/rustls-platform-verifier`,
+  pinned to the commit the locked crate came from; a Gradle check compares it with
+  `Cargo.lock`). AGP 9's built-in Kotlin needs the sources listed as `kotlin`, not only `java`.
+* **QuickJS:** rquickjs has no pre-generated bindings for Android; its `bindgen` feature makes
+  them at build time (libclang plus the NDK's sysroot, set by the `cargoNdk` Gradle task).
+* **Logging:** `tracing` with `log`/`log-always` into `android_logger` (tag `turu`) with the
+  desktop's default filter.
+* **Checked on an Android 16 arm64 emulator:** the game loads to the title screen over HTTPS;
+  `--load-script farm/GoldFarm` downloads it from the repository and loads it; the control API
+  answers `/status`; `/script/start` runs CoreBots in QuickJS, which stops at "Please log-in".
+  ~164 MB PSS and ~4% CPU at the title screen; the APK is 21 MB (debug, one ABI).
+* **Not done:** logging in and an hour's farm (needs an account's `turu-args.txt`; phase 1's
+  "done when"), a real phone, and keeping the process alive in the background (phase 4).
 
 ## Phases
 
 | Phase | Goal | Done when |
 |---|---|---|
 | 0. Split (built) | `turu_frontend` crate; the event-loop seam; `Platform` trait; `SecretStore`; TLS feature on `turu_bot`. Desktop only. | Desktop and headless behave as before; `cargo test -p turu_bot` and clippy pass. |
-| 1. Headless spike | `android/` with no UI: engine thread, null renderer, a script started from a hard-coded path, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
+| 1. Headless spike (built; login untested) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
 | 2. Game on screen | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
 | 3. Turu UI | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
 | 4. Background | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |

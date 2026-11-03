@@ -6,7 +6,16 @@ use serde_json::Value;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
+
+static DEFAULT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// The data folder to use in place of the system's (Android has none: the app passes its files
+/// folder). Set it before the first bot is made; `TURU_DATA_DIR` still wins. False when it was
+/// already set.
+pub fn set_default_root(root: PathBuf) -> bool {
+    DEFAULT_ROOT.set(root).is_ok()
+}
 
 #[derive(Debug, Clone)]
 pub struct Paths {
@@ -23,6 +32,7 @@ impl Paths {
     pub fn new() -> Self {
         let root = std::env::var_os("TURU_DATA_DIR")
             .map(PathBuf::from)
+            .or_else(|| DEFAULT_ROOT.get().cloned())
             .or_else(|| dirs::data_dir().map(|d| d.join("Turu")))
             .unwrap_or_else(|| PathBuf::from("Turu"));
         Self { root }

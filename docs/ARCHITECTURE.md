@@ -71,7 +71,11 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
   src/capture.rs         wraps Ruffle's navigator so the game socket goes through `bot.capture`
   src/map_items.rs, map_pads.rs   the map SWF's AS3 bytecode readers (Grabber, Jump's pads)
   src/grid.rs            Grid View's tiles
+  src/engine.rs          the windowless player loop (`--headless`, Android): executor, no-dialog
+                         navigator, tick loop
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
+android/                 crate `turu_android` (cdylib, empty off Android) and the Gradle app that
+                         loads it: `docs/ANDROID.md`
 app/                     crate `turu`, the desktop app: started from ruffle-aqw's desktop frontend
                          (Ruffle's, with Mugetsu's changes marked `AQW build:`), plus the window,
                          the headless loop and the dialogs; it re-exports `turu_frontend`'s modules

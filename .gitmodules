@@ -6,3 +6,6 @@
 	path = ruffle
 	url = https://github.com/muktiarafi/ruffle-aqw.git
 	branch = aqw
+[submodule "android/vendor/rustls-platform-verifier"]
+	path = android/vendor/rustls-platform-verifier
+	url = https://github.com/rustls/rustls-platform-verifier

@@ -30,8 +30,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   before the game starts (`configure_startup`), so an empty data folder works. Checked: a
   windowless client with an empty data folder downloaded a playlist's script and loaded it.
   `bot/src/startup.rs`, flags in `frontend/src/turu.rs`.
-- **Windowless mode** (`--headless`, `app/src/headless.rs`): no window, GPU or sound; the
-  player draws nothing (Ruffle's null renderer) and a loop on the main thread runs it, its
+- **Windowless mode** (`--headless`, `app/src/headless.rs` on `turu_frontend::engine`): no
+  window, GPU or sound; the player draws nothing (Ruffle's null renderer) and a loop on the main
+  thread runs it, its
   network tasks and the bot's calls. With the login flags and `--run-script` it farms on its
   own, logging to the terminal; it needs no display (a Linux server). At the login screen
   (debug build, macOS): ~6% CPU and ~96 MB against ~21% and ~420 MB with the window. Device
@@ -415,6 +416,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   still open: the next such run logs it.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
+- **Android (phase 1, `docs/ANDROID.md`):** no UI; the engine runs from `turu-args.txt` and loads
+  AQW to the login screen on an emulator. Not logged in or farmed yet, not run on a phone, and
+  killed when Android reclaims the app (no foreground service yet).
 - **Windowless mode is unverified in game:** it loads AQW to the login screen; a login and a
   farm without a window still need a run. The control API is the only way to steer it.
   CoreBots' restart after a logout (`Bot.Manager.RestartScriptAsync`) isn't ported.
