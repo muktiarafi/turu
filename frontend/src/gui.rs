@@ -4,15 +4,26 @@ pub mod turu;
 
 /// VibeSkua's top nav bar: the window shows the movie this far down.
 pub const NAV_BAR_HEIGHT: u32 = 34;
+/// The nav bar on a touch screen (`Platform::is_touch`): its buttons are 40 points high.
+pub const TOUCH_NAV_BAR_HEIGHT: u32 = 48;
+
+/// The nav bar's height here: [`NAV_BAR_HEIGHT`], or [`TOUCH_NAV_BAR_HEIGHT`] on a touch screen.
+pub fn nav_bar_height() -> u32 {
+    if crate::platform::platform().is_touch() {
+        TOUCH_NAV_BAR_HEIGHT
+    } else {
+        NAV_BAR_HEIGHT
+    }
+}
 /// The tab strip above the nav bar, shown once there are two tabs.
 pub const TAB_STRIP_HEIGHT: u32 = 30;
 
 /// The height above the movie: the nav bar, and the tab strip when it shows.
 pub fn top_height() -> u32 {
     if crate::turu::tabs().len() > 1 {
-        NAV_BAR_HEIGHT + TAB_STRIP_HEIGHT
+        nav_bar_height() + TAB_STRIP_HEIGHT
     } else {
-        NAV_BAR_HEIGHT
+        nav_bar_height()
     }
 }
 

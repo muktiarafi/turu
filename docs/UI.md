@@ -35,13 +35,21 @@ stay reachable (`super::window`; `windows_fit_small_screens` checks the windows 
 
 ## Nav bar (`nav_bar.rs`)
 
-34 px high, left to right as in VibeSkua: **Scripts** (Script Loader, Edit Script Options, Scheduler), **Options**
+34 px high (48 on a touch screen, below), left to right as in VibeSkua: **Scripts** (Script Loader, Edit Script Options, Scheduler), **Options**
 (Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
 Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
 Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
 Interceptor), **Plugins** (View Plugins, Butler, Cosmetics), **Army** (Accounts, Army Control, New Tab; Turu's:
-VibeSkua has them in its Manager app and its tabbed host). Right side: **Auto**, **Jump**, a
-divider, **+**.
+VibeSkua has them in its Manager app and its tabbed host). Right side: **Grid** (two tabs or more),
+**Auto**, **Jump**, a divider, the **script chip**.
+
+When the menus would run into the right side (its width is measured each frame), they fold:
+first to **Scripts** and **More** (the other menus as its submenus, Bank as a row), then, as on
+a phone held upright, to one **Menu** with everything, and the script chip's name gets 80 px
+instead of 150. Leaving the last fold counts the room the chip's name takes back, so the bar
+doesn't flip between two folds. On a touch screen (`Platform::is_touch`, Android) the bar is
+48 points high (`gui::nav_bar_height`, which `top_height` and so the game's offset follow;
+desktop stays 34), its buttons, toggles and chip 40, and menu rows about 44.
 
 With two tabs or more, a 30 px tab strip (`tab_strip.rs`) sits above the nav bar
 (`gui::top_height`): rounded tabs with a status dot (a yellow "!" badge while the tab's script
@@ -54,7 +62,7 @@ top, and + at the end.
 | Bank | implemented: `bank.open` through `spawn_action` |
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
-| + | opens the Script Loader (VibeSkua opens the tabbed tool host) |
+| Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error" or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
 | everything else | greyed, tooltip "Coming soon" |
 

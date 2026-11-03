@@ -1,13 +1,14 @@
-//! VibeSkua's 34 px top nav bar: menus on the left, Auto / Jump / "+" on the right. Entries
-//! for windows Turu doesn't have yet are shown greyed with the tooltip "Coming soon" so the
-//! layout matches VibeSkua.
+//! VibeSkua's 34 px top nav bar: menus on the left, Grid / Auto / Jump and the script chip on
+//! the right. Entries for windows Turu doesn't have yet are shown greyed with the tooltip
+//! "Coming soon" so the layout matches VibeSkua.
 
 use super::skills::SkillSets;
-use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT};
+use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
 use super::widgets::{self, Kind};
-use super::{Windows, auto};
+use super::{Windows, auto, script_loader};
 use crate::map_pads::MapCells;
 use egui::containers::menu::{MenuBar, MenuConfig};
+use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Layout, Margin, Panel, Popup,
     PopupCloseBehavior, RectAlign, Response, RichText, Sense, Style, Ui, vec2,
@@ -15,9 +16,40 @@ use egui::{
 use serde_json::json;
 use std::sync::{Arc, Mutex, MutexGuard};
 use turu_bot::api::dispatch;
+use turu_bot::script::ScriptStatus;
 
-/// Height of the bar; the same as `gui::MENU_HEIGHT`.
-const HEIGHT: f32 = 34.0;
+/// The menus, in VibeSkua's order. Bank is a button, not a menu.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Menu {
+    Scripts,
+    Options,
+    Tools,
+    Combat,
+    Bank,
+    Diagnostics,
+    Plugins,
+    Army,
+}
+
+const MENUS: [(Menu, &str); 8] = [
+    (Menu::Scripts, "Scripts"),
+    (Menu::Options, "Options"),
+    (Menu::Tools, "Tools & Helpers"),
+    (Menu::Combat, "Combat"),
+    (Menu::Bank, "Bank"),
+    (Menu::Diagnostics, "Diagnostics"),
+    (Menu::Plugins, "Plugins"),
+    (Menu::Army, "Army"),
+];
+
+/// How the menus fit next to the right side: all of them; Scripts and a "More" menu with the
+/// rest; or one "Menu" with everything (a phone held upright).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fold {
+    None,
+    More,
+    All,
+}
 /// VibeSkua `MapService.Pads`, in its order.
 const PADS: [&str; 8] = ["Spawn", "Center", "Left", "Right", "Up", "Down", "Top", "Bottom"];
 
@@ -51,6 +83,9 @@ pub struct NavBar {
     jump: Arc<Mutex<JumpState>>,
     jump_open: bool,
     cells_dropdown_was_open: bool,
+    /// The right side's width on the last frame: the menus fold when they'd run into it.
+    right_width: f32,
+    last_fold: Fold,
 }
 
 impl Default for NavBar {
@@ -72,13 +107,15 @@ impl Default for NavBar {
             })),
             jump_open: false,
             cells_dropdown_was_open: false,
+            right_width: 0.0,
+            last_fold: Fold::None,
         }
     }
 }
 
-/// Flat, transparent buttons (the menu bar).
+/// Flat, transparent buttons (the menu bar); 40 points high on a touch screen.
 fn bar_style(style: &mut Style) {
-    style.spacing.button_padding = vec2(10.0, 4.0);
+    style.spacing.button_padding = vec2(10.0, if widgets::touch() { 12.0 } else { 4.0 });
     style.spacing.item_spacing = vec2(2.0, 0.0);
     let w = &mut style.visuals.widgets;
     w.inactive.weak_bg_fill = Color32::TRANSPARENT;
@@ -89,9 +126,9 @@ fn bar_style(style: &mut Style) {
     w.open.weak_bg_fill = HOVER;
 }
 
-/// Menu drop-downs: full-width rows.
+/// Menu drop-downs: full-width rows, about 44 points high on a touch screen.
 fn menu_style(style: &mut Style) {
-    style.spacing.button_padding = vec2(10.0, 4.0);
+    style.spacing.button_padding = vec2(10.0, if widgets::touch() { 14.0 } else { 4.0 });
     style.spacing.item_spacing = vec2(0.0, 1.0);
     let w = &mut style.visuals.widgets;
     w.inactive.weak_bg_fill = Color32::TRANSPARENT;
@@ -126,7 +163,7 @@ impl NavBar {
             bottom: 3,
         });
         Panel::top("turu_nav")
-            .exact_size(HEIGHT)
+            .exact_size(crate::gui::nav_bar_height() as f32)
             .frame(frame)
             .show_separator_line(true)
             .show(ui, |ui| {
@@ -134,139 +171,78 @@ impl NavBar {
                     .style(bar_style)
                     .config(MenuConfig::new().style(menu_style))
                     .ui(ui, |ui| {
-                        self.menus(ui, windows);
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| self.right_side(ui, windows));
+                        let fold = self.fold(ui);
+                        self.last_fold = fold;
+                        self.menus(ui, windows, fold);
+                        let right = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            self.right_side(ui, windows, fold);
+                            ui.min_rect().width()
+                        });
+                        self.right_width = right.inner;
                     });
             });
     }
 
-    fn menus(&self, ui: &mut Ui, windows: &mut Windows) {
-        ui.menu_button("Scripts", |ui| {
-            if item(ui, "Script Loader", true) {
-                windows.script_loader = true;
-            }
-            if item(ui, "Search Scripts", true) {
-                windows.script_repo = true;
-            }
-            let has_options = crate::turu::bot().scripts.has_options();
-            let mut edit = ui.add_enabled(
-                has_options,
-                Button::new("Edit Script Options").min_size(vec2(190.0, 0.0)),
-            );
-            if !has_options {
-                edit = edit.on_disabled_hover_text("The loaded script declares no options");
-            }
-            if edit.clicked() {
-                windows.script_options = true;
-                ui.close();
-            }
-            if item(ui, "Scheduler", true) {
-                windows.scheduler = true;
-            }
-        });
-        ui.menu_button("Options", |ui| {
-            if item(ui, "Game", true) {
-                windows.game_options = true;
-            }
-            if item(ui, "Application", true) {
-                windows.application_options = true;
-            }
-            if item(ui, "CoreBots", true) {
-                windows.core_bots = true;
-            }
-            for name in ["Application Themes", "HotKeys"] {
-                item(ui, name, false);
-            }
-        });
-        ui.menu_button("Tools & Helpers", |ui| {
-            for name in ["Loadouts Manager", "Fast Travel"] {
-                item(ui, name, false);
-            }
-            if item(ui, "Loader", true) {
-                windows.loader = true;
-            }
-            if item(ui, "Grabber", true) {
-                windows.grabber = true;
-            }
-            if item(ui, "Current Drops", true) {
-                windows.current_drops = true;
-            }
-            if item(ui, "Junk Items", true) {
-                windows.junk_items = true;
-            }
-        });
-        ui.menu_button("Combat", |ui| {
-            if item(ui, "Skills", true) {
-                windows.skills = true;
-            }
-            if item(ui, "Stats", true) {
-                windows.stats = true;
-            }
-            if item(ui, "Runtime", true) {
-                windows.runtime = true;
-            }
-        });
-        if ui.add(Button::new("Bank")).clicked() {
-            crate::turu::spawn_action("Bank", |bot| dispatch(bot, "bank.open", &[]).map(|_| ()));
+    /// The fold that leaves the menus clear of the right side (as wide as on the last frame).
+    fn fold(&self, ui: &Ui) -> Fold {
+        let padding = ui.spacing().button_padding.x * 2.0 + ui.spacing().item_spacing.x;
+        let title = |label: &str| {
+            let galley = ui
+                .painter()
+                .layout_no_wrap(label.to_owned(), FontId::proportional(13.0), TEXT);
+            galley.size().x + padding
+        };
+        // Folded all the way, the chip's name was narrower: count the room it would take back,
+        // so the bar doesn't flip between two folds.
+        let regrow = if self.last_fold == Fold::All {
+            CHIP_NAME_WIDTH - COMPACT_CHIP_NAME_WIDTH
+        } else {
+            0.0
+        };
+        let room = ui.available_width() - self.right_width - regrow - 12.0;
+        let all: f32 = MENUS.iter().map(|(_, label)| title(label)).sum();
+        if all <= room {
+            Fold::None
+        } else if title("Scripts") + title("More") <= room {
+            Fold::More
+        } else {
+            Fold::All
         }
-        ui.menu_button("Diagnostics", |ui| {
-            if item(ui, "Logs", true) {
-                windows.logs = true;
-            }
-            if item(ui, "Console", true) {
-                windows.console = true;
-            }
-            if item(ui, "Spammer", true) {
-                windows.spammer = true;
-            }
-            if item(ui, "Logger", true) {
-                windows.packet_logger = true;
-            }
-            if item(ui, "Interceptor", true) {
-                windows.interceptor = true;
-            }
-        });
-        ui.menu_button("Plugins", |ui| {
-            item(ui, "View Plugins", false);
-            // Turu: VibeSkua's ButlerV5 plugin, built in.
-            if item(ui, "Butler", true) {
-                windows.butler = true;
-            }
-            // Turu: VibeSkua's Cosmetics plugin, built in.
-            if item(ui, "Cosmetics", true) {
-                windows.cosmetics = true;
-            }
-        });
-        // Turu: VibeSkua has these in its Manager app and its tabbed host's "Army Control" menu.
-        ui.menu_button("Army", |ui| {
-            if item(ui, "Accounts", true) {
-                windows.accounts = true;
-            }
-            if item(ui, "Army Control", true) {
-                windows.army = true;
-            }
-            // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
-            if item(ui, "New Tab", true) {
-                crate::turu::request_tab(crate::turu::TabRequest::Open(Box::default()));
-            }
-        });
     }
 
-    /// Right to left: "+", a divider, Jump, Auto.
-    fn right_side(&mut self, ui: &mut Ui, windows: &mut Windows) {
-        let (rect, plus) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
-        if plus.hovered() {
-            ui.painter().rect_filled(rect, CornerRadius::same(8), HOVER);
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    /// The menus as `fold` puts them; a folded menu is a submenu of "More" or "Menu".
+    fn menus(&self, ui: &mut Ui, windows: &mut Windows, fold: Fold) {
+        match fold {
+            Fold::None => {
+                for (menu, label) in MENUS {
+                    if menu == Menu::Bank {
+                        if ui.add(Button::new(label)).clicked() {
+                            open_bank();
+                        }
+                    } else {
+                        ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
+                    }
+                }
+            }
+            Fold::More => {
+                ui.menu_button("Scripts", |ui| menu_contents(ui, windows, Menu::Scripts));
+                ui.menu_button("More", |ui| folded(ui, windows, &MENUS[1..]));
+            }
+            Fold::All => {
+                ui.menu_button("Menu", |ui| folded(ui, windows, &MENUS));
+            }
         }
-        ui.painter().text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            "+",
-            FontId::proportional(18.0),
-            TEXT,
-        );
-        if plus.on_hover_text("Show All Bot Windows & Tools").clicked() {
+    }
+
+    /// Right to left: the script chip, a divider, Jump, Auto, Grid. Folded all the way (a phone
+    /// held upright) the chip's name gets less room.
+    fn right_side(&mut self, ui: &mut Ui, windows: &mut Windows, fold: Fold) {
+        let name_width = if fold == Fold::All {
+            COMPACT_CHIP_NAME_WIDTH
+        } else {
+            CHIP_NAME_WIDTH
+        };
+        if script_chip(ui, name_width).clicked() {
             windows.script_loader = true;
         }
 
@@ -652,6 +628,136 @@ impl NavBar {
     }
 }
 
+/// Bank: VibeSkua's direct action (no menu).
+fn open_bank() {
+    crate::turu::spawn_action("Bank", |bot| dispatch(bot, "bank.open", &[]).map(|_| ()));
+}
+
+/// `menus` folded into one drop-down: a submenu each, and Bank as a row.
+fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)]) {
+    for &(menu, label) in menus {
+        if menu == Menu::Bank {
+            if item(ui, label, true) {
+                open_bank();
+            }
+        } else {
+            ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
+        }
+    }
+}
+
+/// A menu's entries.
+fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
+    match menu {
+        Menu::Scripts => {
+            if item(ui, "Script Loader", true) {
+                windows.script_loader = true;
+            }
+            if item(ui, "Search Scripts", true) {
+                windows.script_repo = true;
+            }
+            let has_options = crate::turu::bot().scripts.has_options();
+            let mut edit = ui.add_enabled(
+                has_options,
+                Button::new("Edit Script Options").min_size(vec2(190.0, 0.0)),
+            );
+            if !has_options {
+                edit = edit.on_disabled_hover_text("The loaded script declares no options");
+            }
+            if edit.clicked() {
+                windows.script_options = true;
+                ui.close();
+            }
+            if item(ui, "Scheduler", true) {
+                windows.scheduler = true;
+            }
+        }
+        Menu::Options => {
+            if item(ui, "Game", true) {
+                windows.game_options = true;
+            }
+            if item(ui, "Application", true) {
+                windows.application_options = true;
+            }
+            if item(ui, "CoreBots", true) {
+                windows.core_bots = true;
+            }
+            for name in ["Application Themes", "HotKeys"] {
+                item(ui, name, false);
+            }
+        }
+        Menu::Tools => {
+            for name in ["Loadouts Manager", "Fast Travel"] {
+                item(ui, name, false);
+            }
+            if item(ui, "Loader", true) {
+                windows.loader = true;
+            }
+            if item(ui, "Grabber", true) {
+                windows.grabber = true;
+            }
+            if item(ui, "Current Drops", true) {
+                windows.current_drops = true;
+            }
+            if item(ui, "Junk Items", true) {
+                windows.junk_items = true;
+            }
+        }
+        Menu::Combat => {
+            if item(ui, "Skills", true) {
+                windows.skills = true;
+            }
+            if item(ui, "Stats", true) {
+                windows.stats = true;
+            }
+            if item(ui, "Runtime", true) {
+                windows.runtime = true;
+            }
+        }
+        Menu::Bank => {}
+        Menu::Diagnostics => {
+            if item(ui, "Logs", true) {
+                windows.logs = true;
+            }
+            if item(ui, "Console", true) {
+                windows.console = true;
+            }
+            if item(ui, "Spammer", true) {
+                windows.spammer = true;
+            }
+            if item(ui, "Logger", true) {
+                windows.packet_logger = true;
+            }
+            if item(ui, "Interceptor", true) {
+                windows.interceptor = true;
+            }
+        }
+        Menu::Plugins => {
+            item(ui, "View Plugins", false);
+            // Turu: VibeSkua's ButlerV5 plugin, built in.
+            if item(ui, "Butler", true) {
+                windows.butler = true;
+            }
+            // Turu: VibeSkua's Cosmetics plugin, built in.
+            if item(ui, "Cosmetics", true) {
+                windows.cosmetics = true;
+            }
+        }
+        Menu::Army => {
+            if item(ui, "Accounts", true) {
+                windows.accounts = true;
+            }
+            if item(ui, "Army Control", true) {
+                windows.army = true;
+            }
+            // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
+            if item(ui, "New Tab", true) {
+                crate::turu::request_tab(crate::turu::TabRequest::Open(Box::default()));
+            }
+        }
+    }
+}
+
 impl JumpState {
     /// What the current map's SWF says, once read.
     fn map(&self) -> Option<&MapCells> {
@@ -704,13 +810,98 @@ fn grid_toggle(ui: &mut Ui) {
     }
 }
 
+/// The active tab's script at a glance, at the bar's right end: its status dot ("!" while it
+/// waits for you), its name and how long it has run, or its state when it isn't running. Opens
+/// the Script Loader. Wording and clock are the Script Loader's status card's.
+fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
+    let bot = crate::turu::bot();
+    let status = bot.scripts.status();
+    let waits = bot.scripts.waits_for();
+    let name = bot
+        .scripts
+        .loaded()
+        .and_then(|path| path.file_stem().map(|n| n.to_string_lossy().into_owned()));
+    let elapsed = status
+        .is_active()
+        .then(|| bot.state.lock().stats.started)
+        .flatten()
+        .map(|started| started.elapsed());
+    let state = match status {
+        ScriptStatus::Running => elapsed.map_or_else(|| "Running".to_owned(), script_loader::duration_text),
+        ScriptStatus::Paused => match elapsed {
+            Some(elapsed) => format!("Paused · {}", script_loader::duration_text(elapsed)),
+            None => "Paused".to_owned(),
+        },
+        ScriptStatus::Error => "Error".to_owned(),
+        other => script_loader::state_text(other).to_owned(),
+    };
+    if status.is_active() {
+        // The clock moves while nothing else redraws the bar.
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+    }
+
+    let font = FontId::proportional(12.0);
+    let name_galley = name.as_ref().map(|name| {
+        let mut job = LayoutJob::simple_singleline(name.clone(), font.clone(), TEXT);
+        job.wrap = TextWrapping::truncate_at_width(name_width);
+        ui.painter().layout_job(job)
+    });
+    let state_text = match &name_galley {
+        Some(_) => format!(" · {state}"),
+        None => state.clone(),
+    };
+    let state_galley = ui.painter().layout_no_wrap(state_text, font, MUTED);
+    let name_width = name_galley.as_ref().map_or(0.0, |g| g.size().x);
+    let width = 28.0 + name_width + state_galley.size().x;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, widgets::target(26.0, 40.0)), Sense::click());
+    let fill = if response.hovered() { HOVER } else { TRACK };
+    ui.painter().rect_filled(rect, CornerRadius::same(8), fill);
+    let dot = egui::pos2(rect.left() + 12.0, rect.center().y);
+    if waits.is_some() {
+        ui.painter().circle_filled(dot, 6.0, WARNING);
+        ui.painter().text(
+            dot,
+            Align2::CENTER_CENTER,
+            "!",
+            FontId::proportional(10.0),
+            Color32::BLACK,
+        );
+    } else {
+        ui.painter().circle_filled(dot, 3.5, widgets::status_color(status));
+    }
+    let mut x = rect.left() + 22.0;
+    if let Some(galley) = name_galley {
+        let y = rect.center().y - galley.size().y / 2.0;
+        ui.painter().galley(egui::pos2(x, y), galley, TEXT);
+        x += name_width;
+    }
+    let y = rect.center().y - state_galley.size().y / 2.0;
+    ui.painter().galley(egui::pos2(x, y), state_galley, MUTED);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let mut tip = script_loader::state_text(status).to_owned();
+    if let Some(name) = &name {
+        tip = format!("{name}: {tip}");
+    }
+    if let Some(what) = waits {
+        tip.push_str(&format!(" (waits for you: {what})"));
+    }
+    response.on_hover_text(format!("{tip}\nOpen the Script Loader"))
+}
+
+/// The widest the script chip's name gets; longer names end in "…".
+const CHIP_NAME_WIDTH: f32 = 150.0;
+/// The chip's name with the menus folded all the way.
+const COMPACT_CHIP_NAME_WIDTH: f32 = 80.0;
+
 /// A flat toggle button for a popup ("Auto", "Jump") with an optional status dot, highlighted
 /// while its popup is `open`.
 fn toggle_button(ui: &mut Ui, label: &str, dot: Option<Color32>, open: bool) -> Response {
     let font = FontId::proportional(13.0);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, TEXT);
     let width = galley.size().x + 22.0 + if dot.is_some() { 12.0 } else { 0.0 };
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, widgets::target(26.0, 40.0)), Sense::click());
     if open {
         ui.painter()
             .rect_filled(rect, CornerRadius::same(8), ACCENT.gamma_multiply(0.35));

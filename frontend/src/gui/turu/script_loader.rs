@@ -274,7 +274,7 @@ fn hint_line(ui: &mut Ui, text: &str) {
 
 /// The status in words, for the status card (`ScriptStatus::label` keeps VibeSkua's "[Running]"
 /// for the control API and the monitor).
-fn state_text(status: ScriptStatus) -> &'static str {
+pub(super) fn state_text(status: ScriptStatus) -> &'static str {
     match status {
         ScriptStatus::Empty => "No script loaded",
         ScriptStatus::Loaded => "Ready",
@@ -287,7 +287,7 @@ fn state_text(status: ScriptStatus) -> &'static str {
 }
 
 /// How long the script has run, as the card shows it: "45s", "12m", "3h 05m".
-fn duration_text(elapsed: Duration) -> String {
+pub(super) fn duration_text(elapsed: Duration) -> String {
     let secs = elapsed.as_secs();
     match secs {
         0..60 => format!("{secs}s"),
