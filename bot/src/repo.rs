@@ -415,6 +415,18 @@ pub struct Snapshot {
     pub busy: Option<Progress>,
     /// The last task's result.
     pub message: String,
+    /// The last task failed (`message` says why).
+    pub failed: bool,
+}
+
+impl Snapshot {
+    /// How long ago the index was fetched (`None` before the first fetch).
+    pub fn fetched_ago(&self) -> Option<std::time::Duration> {
+        let fetched = chrono::DateTime::parse_from_rfc3339(&self.fetched).ok()?;
+        (chrono::Utc::now() - fetched.with_timezone(&chrono::Utc))
+            .to_std()
+            .ok()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -457,7 +469,8 @@ pub struct ScriptRepo {
     remote: Box<dyn Remote>,
     data: Mutex<Data>,
     busy: Mutex<Option<Progress>>,
-    message: Mutex<String>,
+    /// The last task's result, and whether it failed.
+    message: Mutex<(String, bool)>,
     cancel: AtomicBool,
 }
 
@@ -482,7 +495,7 @@ impl ScriptRepo {
             remote,
             data: Mutex::new(data),
             busy: Mutex::new(None),
-            message: Mutex::new(String::new()),
+            message: Mutex::new((String::new(), false)),
             cancel: AtomicBool::new(false),
         });
         repo.rescan();
@@ -491,13 +504,15 @@ impl ScriptRepo {
 
     pub fn snapshot(&self) -> Snapshot {
         let data = self.data.lock();
+        let (message, failed) = self.message.lock().clone();
         Snapshot {
             entries: data.entries.clone(),
             generation: data.generation,
             commit: data.cache.index.commit.clone(),
             fetched: data.cache.fetched.clone(),
             busy: self.busy.lock().clone(),
-            message: self.message.lock().clone(),
+            message,
+            failed,
         }
     }
 
@@ -541,10 +556,10 @@ impl ScriptRepo {
             .spawn(move || {
                 let result = work(&repo);
                 let message = match result {
-                    Ok(message) => message,
+                    Ok(message) => (message, false),
                     Err(e) => {
                         tracing::warn!("{task}: {e}");
-                        format!("{task} failed: {e}")
+                        (format!("{task} failed: {e}"), true)
                     }
                 };
                 *repo.message.lock() = message;
@@ -926,13 +941,25 @@ impl ScriptRepo {
     }
 
     /// Deletes a script from the scripts folder (VibeSkua `DeleteScriptAsync`).
-    pub fn delete(&self, path: &str) -> Result<(), String> {
-        let local = self.local_path(path).ok_or("not a script path")?;
-        match fs::remove_file(&local) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.to_string()),
-        }
+    /// Deletes the script's file by moving it to `scripts-backup/<time>/` in the data folder
+    /// (as [`Self::reset`] does), so a delete can be undone by hand. Returns where it went
+    /// (`None` when there was no file).
+    pub fn delete(&self, path: &str) -> Result<Option<PathBuf>, String> {
+        let (Some(local), Some(relative)) = (self.local_path(path), safe_relative(path)) else {
+            return Err("not a script path".into());
+        };
+        let moved = if local.is_file() {
+            let to = self
+                .paths
+                .root
+                .join("scripts-backup")
+                .join(chrono::Local::now().format("%Y%m%d-%H%M%S").to_string())
+                .join(relative);
+            move_file(&local, &to).map_err(|e| e.to_string())?;
+            Some(to)
+        } else {
+            None
+        };
         {
             let mut data = self.data.lock();
             if data.manifest.files.remove(path).is_some() {
@@ -944,7 +971,7 @@ impl ScriptRepo {
             }
         }
         self.rescan();
-        Ok(())
+        Ok(moved)
     }
 
     pub fn set_pinned(&self, path: &str, pinned: bool) {

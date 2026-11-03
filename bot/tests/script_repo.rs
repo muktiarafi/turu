@@ -296,6 +296,13 @@ fn many_files_come_as_one_zip_and_reset_moves_files_aside() {
     assert_eq!(status(&repo, "story/S0.ts"), Some(Status::Removed));
     repo.delete("story/S0.ts").unwrap();
     assert_eq!(status(&repo, "story/S0.ts"), None);
+
+    // Deleting my own script moves it to the backup, not away for good.
+    let moved = repo.delete("mine/Mine.ts").unwrap().expect("moved");
+    assert!(!mine.exists());
+    assert!(moved.starts_with(dir.path().join("scripts-backup")));
+    assert_eq!(fs::read_to_string(&moved).unwrap(), "/*\nname: Mine\n*/\n");
+    assert_eq!(repo.delete("mine/Mine.ts").unwrap(), None);
 }
 
 #[test]

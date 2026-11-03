@@ -112,7 +112,8 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_owned(), FontId::proportional(12.0), TEXT);
-    let size = vec2(galley.size().x + 22.0, 24.0);
+    // 40 points high on a touch screen, as the nav bar's chip.
+    let size = vec2(galley.size().x + 22.0, target(24.0, 40.0));
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let fill = if selected {
         ACCENT

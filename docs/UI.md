@@ -120,21 +120,32 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Diagnostics > Logs).
   The "Report Issues" footer is omitted.
 * **Search Scripts** (`script_repo.rs`, 969x500; VibeSkua's Script Repo; also Scripts > Search
-  Scripts): search box ("Search scripts by name, path or tag") with a clear button, scope (All,
-  Name, Tag, Description, File), category (All, Pinned, Local and the top folders), sort (Name or
-  Date added, up or down); a count line; the list (without the libraries such as CoreBots: files
-  with no `export default`, which VibeSkua lists), pinned first, then the sort, then the search
-  rank (VibeSkua's `SearchRank`). Each row: star when pinned, name, badges (Downloaded, Update,
-  Modified, Local, Removed), path, description, tag chips, Start (primary), Load, Queue and a "…"
-  menu with Pin/Unpin, Download / Update / "Replace with the repository's", Open in VS Code and
-  Delete. Start and Load download the script and what it imports first, then load it in the
-  active tab; Queue downloads it the same way and adds it to the active tab's Scheduler playlist
-  (disabled while the playlist runs).
-  Empty states "Loading scripts..." and "No scripts found" (with Clear search). Bottom bar: Update
-  all, Download all, refresh, a "…" menu (Reset Scripts..., which asks first; Open the scripts
-  folder; the same in VS Code), and on the right the running task with its progress bar and
-  Cancel, or the last result with the index's commit and when it was checked. Not built:
-  "Update dates from Git" (the index has the dates), custom script folders.
+  Scripts; on Android the only way to get a script): the search box across the window with
+  Clear; under it, wrapping on a narrow screen, "Search in" (All fields, Name, Tag, Description,
+  File), the folder (All folders and the top folders), Pinned and Local chips, sort (Name or Date
+  added) with its order as words ("A to Z", "Newest first"; Turu's fonts have no ✕ or arrows),
+  and "N shown"; the list (without the libraries such as CoreBots: files with no
+  `export default`, which VibeSkua lists), pinned first, then the sort, then the search rank
+  (VibeSkua's `SearchRank`). Each row: star when pinned, name, badges (Downloaded, Update,
+  Modified, Local, Removed), path, description, tag chips, Start, Load, Queue and a "…" menu with
+  Pin/Unpin, Download / Update / "Replace with the repository's", Open in VS Code and Delete...;
+  Start is plain but on the row under the pointer and the top search hit (primary), and the row
+  a task runs for shows a spinner. Narrower than 640 points or on a touch screen, a row keeps
+  Start and the menu (which takes Load and "Add to the queue"), and buttons, menus, drop-downs and
+  chips are finger-sized (48, rows about 44, chips 40). Start and Load download the script and
+  what it imports first, then load it in the active tab; after a Start that worked the Script
+  Loader opens on top; Queue downloads it the same way and adds it to the active tab's Scheduler
+  playlist (disabled while the playlist runs). One task runs at a time: the buttons say "Wait for
+  Download all to finish, or Cancel it". Delete asks first, naming the script (your own script:
+  "the repository has no copy of it"; edited: "Your edits go with it"), and moves the file to
+  `scripts-backup/<time>/` in the data folder.
+  Empty states "Loading scripts...", "No scripts yet" (with Refresh) and "No scripts found" (with
+  Clear the filters). Bottom bar: Update all (disabled when nothing is outdated) with "N to
+  update", Download all, Refresh, a "…" menu (Reset Scripts..., which asks first; Open the
+  scripts folder; the same in VS Code), and on the right the running task with its progress bar
+  and Cancel, or the last result (red when it failed, a green dot when it worked) and "List
+  updated 2h ago" (commit and fetch time on hover). Not built: "Update dates from Git" (the index
+  has the dates), custom script folders.
 * **Scheduler** (`scheduler.rs`, 640x460, VibeSkua `ScriptSchedulerView`, one per tab: the
   playlist is the tab's `bot.scheduler`): Start queue / Stop queue (primary / danger), the summary
   ("3 scripts", or "Started at 22:10:05 · running 2 of 3"), Load and Save (VibeSkua's playlist

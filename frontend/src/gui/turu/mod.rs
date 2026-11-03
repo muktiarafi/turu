@@ -234,6 +234,13 @@ impl TuruUi {
         }
         tab.script_options.show(ctx, &mut w.script_options);
         tab.script_repo.show(ctx, &mut w.script_repo);
+        // A Start from Search Scripts worked: the Script Loader shows the run, on top.
+        if tab.script_repo.take_open_loader() {
+            w.script_loader = true;
+            let id = egui::Id::new(("turu_window", "Script Loader"));
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+            ctx.request_repaint();
+        }
         tab.game_options.show(ctx, &mut w.game_options);
         tab.application_options.show(ctx, &mut w.application_options);
         tab.core_bots.show(ctx, &mut w.core_bots);
