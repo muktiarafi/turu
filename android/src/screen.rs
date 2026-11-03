@@ -119,6 +119,8 @@ impl Screen {
             .find(|f| formats.contains(f))
             .or_else(|| formats.first().copied())?;
         let pipeline = blit.pipeline(&descriptors.device, format);
+        let egui = egui::Context::default();
+        egui.set_fonts(system_fonts());
         let egui_renderer = egui_wgpu::Renderer::new(
             &descriptors.device,
             format,
@@ -138,7 +140,7 @@ impl Screen {
             pixels_per_point,
             blit,
             pipeline,
-            egui: egui::Context::default(),
+            egui,
             egui_renderer,
             ui: TuruUi::new(),
             events: Vec::new(),
@@ -371,6 +373,28 @@ impl Screen {
             }
         }
     }
+}
+
+/// egui's fonts, then Android's for what they lack (arrows, symbols), as the desktop's
+/// `load_system_fonts` adds the system's. Each group is the first of its files that's there.
+fn system_fonts() -> egui::FontDefinitions {
+    const GROUPS: [&[&str]; 2] = [
+        &["RobotoStatic-Regular.ttf", "Roboto-Regular.ttf", "DroidSans.ttf"],
+        &["NotoSansSymbols-Regular-Subsetted.ttf"],
+    ];
+    let mut fonts = egui::FontDefinitions::default();
+    for files in GROUPS {
+        let found = files
+            .iter()
+            .find_map(|&file| std::fs::read(std::path::Path::new("/system/fonts").join(file)).ok().map(|data| (file, data)));
+        let Some((file, data)) = found else {
+            tracing::warn!("No system font of {files:?}");
+            continue;
+        };
+        fonts.font_data.insert(file.to_owned(), Arc::new(egui::FontData::from_owned(data)));
+        fonts.families.entry(egui::FontFamily::Proportional).or_default().push(file.to_owned());
+    }
+    fonts
 }
 
 /// Draws a texture over the render pass's viewport: the desktop's `blit.wgsl`. The pipeline,

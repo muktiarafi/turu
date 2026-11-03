@@ -19,6 +19,13 @@ Phases 0 to 4 of the proposal are built and committed, and checked on an emulato
 
 **Nothing has run on a real phone yet.** That is the most useful next step (see "Next").
 
+Since phase 4 (uncommitted): **Cosmetics** works on the emulator (catalog download, equip,
+outfits, colors, reset). A short window (under 480 points of content, as a phone held sideways)
+gets a compact layout: the quick bar becomes a "Copy Look" tab, Reset and the status sit in the
+tab row, the category chips become a drop-down. egui also gets Android's fonts from
+`/system/fonts` (Roboto, symbols) after its own, as the desktop adds the system's: arrows like
+the sort's "↓" were boxes before.
+
 ## Branches and workflow
 
 * `android` is the feature branch, cut from `main` at `db698ca36`. Each phase gets its own
@@ -174,7 +181,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
    bug).
 3. The keyboard-covers-field gap (it blocks logging in by hand on the game's screen).
 4. SAF import and the Keystore `SecretStore` (phone use without a computer).
-5. Proposal phase 5: tabs (several clients), Butler, Cosmetics, a tablet layout, gamepads.
+5. Proposal phase 5: tabs (several clients), Butler, a tablet layout, gamepads (Cosmetics is
+   done, above).
 
 A different direction the owner pointed at: `../aqw-python` is a bot with no Flash at all (it
 speaks AQW's socket protocol and keeps its own game state). That would be far lighter on a
