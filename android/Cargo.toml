@@ -23,6 +23,11 @@ ruffle_render = { path = "../ruffle/render" }
 ruffle_render_wgpu = { path = "../ruffle/render/wgpu" }
 # Keep equal to the desktop's (`[workspace.dependencies]`).
 wgpu = { workspace = true }
+# Turu's bot windows over the game (`screen.rs`).
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+futures = { workspace = true }
+bytemuck = { workspace = true }
 # AAudio (`audio.rs`) and the window; the same ndk android-activity uses.
 ndk = { version = "0.9", features = ["audio"] }
 ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }

@@ -1,7 +1,8 @@
-//! Touch and keys to Ruffle's player events. Touch is the mouse: a finger down is a left click,
-//! dragging moves the mouse. Keys (a hardware keyboard, or the soft keyboard, which NativeActivity
-//! gets as key events) are named from Android's key code, and their character comes from the
-//! device's key character map, so Shift and other layouts type what they show.
+//! Touch and keys, for the game (Ruffle's player events) or Turu's UI (egui's). Touch is the
+//! mouse: a finger down is a left click, dragging moves the mouse. Keys (a hardware keyboard, or
+//! the soft keyboard, which NativeActivity gets as key events) are named from Android's key code,
+//! and their character comes from the device's key character map, so Shift and other layouts
+//! type what they show. `screen.rs` decides who gets which.
 
 use android_activity::AndroidApp;
 use android_activity::input::{
@@ -10,32 +11,120 @@ use android_activity::input::{
 use ruffle_core::PlayerEvent;
 use ruffle_core::events::{KeyDescriptor, KeyLocation, LogicalKey, MouseButton, NamedKey, PhysicalKey};
 
-/// The player events for a touch, in window pixels (the player's viewport).
-pub fn motion(event: &MotionEvent) -> Option<PlayerEvent> {
+/// A touch, in window pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Touch {
+    Down(f64, f64),
+    Move(f64, f64),
+    Up(f64, f64),
+}
+
+pub fn motion(event: &MotionEvent) -> Option<Touch> {
     let pointer = event.pointer_at_index(event.pointer_index());
     let (x, y) = (f64::from(pointer.x()), f64::from(pointer.y()));
     Some(match event.action() {
-        MotionAction::Down | MotionAction::PointerDown | MotionAction::ButtonPress => PlayerEvent::MouseDown {
-            x,
-            y,
-            button: MouseButton::Left,
-            index: None,
-        },
+        MotionAction::Down | MotionAction::PointerDown | MotionAction::ButtonPress => Touch::Down(x, y),
         MotionAction::Up | MotionAction::PointerUp | MotionAction::ButtonRelease | MotionAction::Cancel => {
-            PlayerEvent::MouseUp {
-                x,
-                y,
-                button: MouseButton::Left,
-            }
+            Touch::Up(x, y)
         }
-        MotionAction::Move | MotionAction::HoverMove => PlayerEvent::MouseMove { x, y },
+        MotionAction::Move | MotionAction::HoverMove => Touch::Move(x, y),
         _ => return None,
     })
 }
 
-/// The player events for a key: KeyDown or KeyUp, and with a key down that types a character,
-/// TextInput. None for keys the player has no use for (volume, back).
-pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Vec<PlayerEvent>> {
+impl Touch {
+    /// For the game, with `top` pixels of Turu's bar above it.
+    pub fn player_event(self, top: f64) -> PlayerEvent {
+        match self {
+            Touch::Down(x, y) => PlayerEvent::MouseDown {
+                x,
+                y: y - top,
+                button: MouseButton::Left,
+                index: None,
+            },
+            Touch::Move(x, y) => PlayerEvent::MouseMove { x, y: y - top },
+            Touch::Up(x, y) => PlayerEvent::MouseUp {
+                x,
+                y: y - top,
+                button: MouseButton::Left,
+            },
+        }
+    }
+
+    /// For egui, at `pixels_per_point`.
+    pub fn egui_events(self, pixels_per_point: f32) -> Vec<egui::Event> {
+        let at = |x: f64, y: f64| egui::pos2(x as f32 / pixels_per_point, y as f32 / pixels_per_point);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        match self {
+            Touch::Down(x, y) => vec![egui::Event::PointerMoved(at(x, y)), button(at(x, y), true)],
+            Touch::Move(x, y) => vec![egui::Event::PointerMoved(at(x, y))],
+            Touch::Up(x, y) => vec![button(at(x, y), false), egui::Event::PointerGone],
+        }
+    }
+}
+
+/// A key press or release, before it's given to the game or to Turu's UI.
+pub struct Key {
+    pub down: bool,
+    pub key: KeyDescriptor,
+    /// The character it types, if any (with a key down).
+    pub typed: Option<char>,
+}
+
+impl Key {
+    /// For the game: KeyDown or KeyUp, and TextInput with a typed character.
+    pub fn player_events(&self) -> Vec<PlayerEvent> {
+        if !self.down {
+            return vec![PlayerEvent::KeyUp { key: self.key }];
+        }
+        let mut events = vec![PlayerEvent::KeyDown { key: self.key }];
+        if let Some(c) = self.typed {
+            events.push(PlayerEvent::TextInput { codepoint: c });
+        }
+        events
+    }
+
+    /// For egui: the typed text, or the named key.
+    pub fn egui_events(&self) -> Vec<egui::Event> {
+        if let (true, Some(c)) = (self.down, self.typed) {
+            return vec![egui::Event::Text(c.to_string())];
+        }
+        let LogicalKey::Named(named) = self.key.logical_key else {
+            return Vec::new();
+        };
+        let key = match named {
+            NamedKey::Enter => egui::Key::Enter,
+            NamedKey::Tab => egui::Key::Tab,
+            NamedKey::Backspace => egui::Key::Backspace,
+            NamedKey::Delete => egui::Key::Delete,
+            NamedKey::Escape => egui::Key::Escape,
+            NamedKey::ArrowUp => egui::Key::ArrowUp,
+            NamedKey::ArrowDown => egui::Key::ArrowDown,
+            NamedKey::ArrowLeft => egui::Key::ArrowLeft,
+            NamedKey::ArrowRight => egui::Key::ArrowRight,
+            NamedKey::Home => egui::Key::Home,
+            NamedKey::End => egui::Key::End,
+            NamedKey::PageUp => egui::Key::PageUp,
+            NamedKey::PageDown => egui::Key::PageDown,
+            _ => return Vec::new(),
+        };
+        vec![egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: self.down,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+}
+
+/// A key event, read: None for keys neither the game nor the UI uses (volume, back).
+pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Key> {
     let typed = app
         .device_key_character_map(event.device_id())
         .ok()
@@ -48,22 +137,20 @@ pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Vec<PlayerEvent>> {
         Some(named) => named,
         None => (LogicalKey::Character(typed?), KeyLocation::Standard),
     };
-    let key = KeyDescriptor {
-        physical_key: PhysicalKey::Unknown,
-        logical_key,
-        key_location,
+    let down = match event.action() {
+        KeyAction::Down => true,
+        KeyAction::Up => false,
+        _ => return None,
     };
-    match event.action() {
-        KeyAction::Down => {
-            let mut events = vec![PlayerEvent::KeyDown { key }];
-            if let Some(c) = typed.filter(|c| !c.is_control()) {
-                events.push(PlayerEvent::TextInput { codepoint: c });
-            }
-            Some(events)
-        }
-        KeyAction::Up => Some(vec![PlayerEvent::KeyUp { key }]),
-        _ => None,
-    }
+    Some(Key {
+        down,
+        key: KeyDescriptor {
+            physical_key: PhysicalKey::Unknown,
+            logical_key,
+            key_location,
+        },
+        typed: typed.filter(|c| down && !c.is_control()),
+    })
 }
 
 /// Keys that don't type a character.

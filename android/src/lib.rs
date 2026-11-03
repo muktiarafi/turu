@@ -1,9 +1,9 @@
-//! Turu on Android (docs/ANDROID_PROPOSAL.md, phase 2): the game on screen, with touch, keys and
-//! sound; no Turu UI yet. The engine thread (`turu_frontend::engine`'s loop) owns the player for
-//! as long as the process lives. `android_main` only forwards the activity's events to it: a
-//! window to draw in (the player is built with the first one; later ones get a new surface),
-//! the window going away (drawing stops, the game keeps running at the hidden-tab rate), touch
-//! and keys.
+//! Turu on Android (docs/ANDROID_PROPOSAL.md, phase 3): the game on screen with Turu's nav bar
+//! and bot windows over it, touch, keys and sound. The engine thread (`turu_frontend::engine`'s
+//! loop) owns the player and the screen (`screen.rs`) for as long as the process lives.
+//! `android_main` only forwards the activity's events to it: a window to draw in (the player is
+//! built with the first one; later ones get a new surface), the window going away (drawing
+//! stops, the game keeps running at the hidden-tab rate), touch and keys.
 //!
 //! Setup comes from `turu-args.txt` in the app's files folder (the data folder, reachable with
 //! `adb`): the desktop's flags (`--user`, `--password`, `--server`, `--run-script`, `--api`, ...),
@@ -14,6 +14,8 @@
 
 mod audio;
 mod input;
+mod platform;
+mod screen;
 mod ui;
 
 use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
@@ -27,16 +29,14 @@ use ruffle_core::{LoadBehavior, Player, PlayerBuilder};
 use ruffle_frontend_utils::backends::navigator::ExternalNavigatorBackend;
 use ruffle_frontend_utils::backends::storage::DiskStorageBackend;
 use ruffle_frontend_utils::content::{ContentDescriptor, PlayingContent};
-use ruffle_render::backend::ViewportDimensions;
 use ruffle_render::quality::StageQuality;
 use ruffle_render_wgpu::backend::WgpuRenderBackend;
-use ruffle_render_wgpu::target::SwapChainTarget;
+use screen::{Graphics, MovieTexture, SCREEN, Screen};
 use std::any::Any;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Sender, channel, sync_channel};
 use std::sync::{Arc, Condvar, Mutex, Once, OnceLock};
 use std::time::Duration;
@@ -54,10 +54,6 @@ static ENGINE_TX: OnceLock<Sender<EngineEvent>> = OnceLock::new();
 /// The window to draw in, while the activity has one.
 static WINDOW: Mutex<Option<NativeWindow>> = Mutex::new(None);
 static WINDOW_READY: Condvar = Condvar::new();
-/// The window the renderer's surface was made for (its pointer), 0 for none.
-static SURFACE_FOR: AtomicUsize = AtomicUsize::new(0);
-/// Whether the player draws after each tick: there is a surface.
-static DRAWING: AtomicBool = AtomicBool::new(false);
 
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
@@ -89,14 +85,13 @@ fn android_main(app: AndroidApp) {
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 *lock_window() = app.native_window();
                 WINDOW_READY.notify_all();
-                run_on_engine(attach_surface);
+                run_on_engine(|_| attach_surface());
             }
             PollEvent::Main(MainEvent::TerminateWindow { .. }) => detach_surface(),
             PollEvent::Main(
                 MainEvent::WindowResized { .. } | MainEvent::ConfigChanged { .. } | MainEvent::ContentRectChanged { .. },
             ) => {
-                let density = density(&app);
-                run_on_engine(move |player| resize(player, density));
+                run_on_engine(|_| resize());
             }
             PollEvent::Main(MainEvent::InputAvailable) => forward_input(&app),
             PollEvent::Main(MainEvent::Destroy) => destroyed = true,
@@ -120,8 +115,7 @@ fn run_on_engine(work: impl FnOnce(&mut Player) + Send + 'static) {
 fn detach_surface() {
     let (done, wait) = sync_channel(1);
     run_on_engine(move |_| {
-        DRAWING.store(false, Ordering::Release);
-        SURFACE_FOR.store(0, Ordering::Release);
+        with_screen(Screen::detach);
         // The game slows down like a hidden tab's (`api::options`).
         turu::bot().state.lock().hidden_tab = true;
         let _ = done.send(());
@@ -130,38 +124,26 @@ fn detach_surface() {
     *lock_window() = None;
 }
 
-/// Gives the renderer a surface on the current window, unless it has one there already.
-fn attach_surface(player: &mut Player) {
+fn with_screen(work: impl FnOnce(&mut Screen)) {
+    SCREEN.with_borrow_mut(|screen| {
+        if let Some(screen) = screen {
+            work(screen);
+        }
+    });
+}
+
+/// Draws in the current window from now on (not the first one: `engine` builds the screen on it).
+fn attach_surface() {
     let Some(window) = lock_window().clone() else {
         return;
     };
-    let ptr = window.ptr().as_ptr() as usize;
-    if SURFACE_FOR.load(Ordering::Acquire) != ptr {
-        let size = window_size(&window);
-        let Some(renderer) = <dyn Any>::downcast_mut::<WgpuRenderBackend<SwapChainTarget>>(player.renderer_mut())
-        else {
-            return;
-        };
-        // SAFETY: the window stays valid until `detach_surface`, which stops drawing first.
-        let made = unsafe { renderer.recreate_surface_unsafe(surface_target(&window), size) };
-        if let Err(e) = made {
-            tracing::error!("Couldn't draw in the new window: {e}");
-            return;
-        }
-        SURFACE_FOR.store(ptr, Ordering::Release);
-    }
-    DRAWING.store(true, Ordering::Release);
+    with_screen(|screen| screen.attach(&window));
     turu::bot().state.lock().hidden_tab = false;
 }
 
-fn resize(player: &mut Player, scale_factor: f64) {
+fn resize() {
     if let Some(window) = lock_window().as_ref() {
-        let (width, height) = window_size(window);
-        player.set_viewport_dimensions(ViewportDimensions {
-            width,
-            height,
-            scale_factor,
-        });
+        with_screen(|screen| screen.resize(window));
     }
 }
 
@@ -169,23 +151,22 @@ fn forward_input(app: &AndroidApp) {
     let Ok(mut inputs) = app.input_events_iter() else {
         return;
     };
-    while inputs.next(|event| {
-        let events = match event {
-            android_activity::input::InputEvent::MotionEvent(motion) => input::motion(motion).map(|e| vec![e]),
-            android_activity::input::InputEvent::KeyEvent(key) => input::key(app, key),
-            _ => None,
-        };
-        match events {
-            Some(events) => {
-                run_on_engine(move |player| {
-                    for event in events {
-                        player.handle_event(event);
-                    }
-                });
+    while inputs.next(|event| match event {
+        android_activity::input::InputEvent::MotionEvent(motion) => match input::motion(motion) {
+            Some(touch) => {
+                run_on_engine(move |player| with_screen(|screen| screen.touch(player, touch)));
                 InputStatus::Handled
             }
             None => InputStatus::Unhandled,
-        }
+        },
+        android_activity::input::InputEvent::KeyEvent(key) => match input::key(app, key) {
+            Some(key) => {
+                run_on_engine(move |player| with_screen(|screen| screen.key(player, &key)));
+                InputStatus::Handled
+            }
+            None => InputStatus::Unhandled,
+        },
+        _ => InputStatus::Unhandled,
     }) {}
 }
 
@@ -193,11 +174,11 @@ fn density(app: &AndroidApp) -> f64 {
     app.config().density().map_or(1.0, |dpi| f64::from(dpi) / 160.0)
 }
 
-fn window_size(window: &NativeWindow) -> (u32, u32) {
+pub(crate) fn window_size(window: &NativeWindow) -> (u32, u32) {
     (window.width().max(1) as u32, window.height().max(1) as u32)
 }
 
-fn surface_target(window: &NativeWindow) -> wgpu::SurfaceTargetUnsafe {
+pub(crate) fn surface_target(window: &NativeWindow) -> wgpu::SurfaceTargetUnsafe {
     wgpu::SurfaceTargetUnsafe::RawHandle {
         raw_display_handle: Some(RawDisplayHandle::Android(AndroidDisplayHandle::new())),
         raw_window_handle: window
@@ -241,15 +222,6 @@ fn init_certificates(app: &AndroidApp) -> jni::errors::Result<()> {
     })
 }
 
-/// The graphics API: `--graphics` in `turu-args.txt`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Graphics {
-    /// Vulkan, else OpenGL ES.
-    Auto,
-    Vulkan,
-    Gl,
-}
-
 /// Takes `--graphics <auto|vulkan|gl>` (or `--graphics=...`) out of `args`.
 fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
     let mut graphics = Graphics::Auto;
@@ -278,35 +250,6 @@ fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
     graphics
 }
 
-/// A renderer for `window`: the chosen API, and with Auto, OpenGL ES when Vulkan fails.
-fn make_renderer(window: &NativeWindow, graphics: Graphics) -> Option<WgpuRenderBackend<SwapChainTarget>> {
-    let tries: &[wgpu::Backends] = match graphics {
-        Graphics::Auto => &[wgpu::Backends::VULKAN, wgpu::Backends::GL],
-        Graphics::Vulkan => &[wgpu::Backends::VULKAN],
-        Graphics::Gl => &[wgpu::Backends::GL],
-    };
-    for &backend in tries {
-        // SAFETY: the window stays valid until `detach_surface`, which stops drawing first.
-        let made = unsafe {
-            WgpuRenderBackend::for_window_unsafe(
-                surface_target(window),
-                window_size(window),
-                backend,
-                wgpu::PowerPreference::HighPerformance,
-                None,
-            )
-        };
-        match made {
-            Ok(renderer) => {
-                tracing::info!("Graphics: {backend:?}");
-                return Some(renderer);
-            }
-            Err(e) => tracing::warn!("Graphics: {backend:?} failed: {e}"),
-        }
-    }
-    None
-}
-
 /// The engine thread: sets the bot up from `turu-args.txt`, waits for the first window, then runs
 /// the player.
 fn engine(app: AndroidApp, root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
@@ -318,6 +261,9 @@ fn engine(app: AndroidApp, root: &Path, events: &std::sync::mpsc::Receiver<Engin
         }
     };
     let _guard = runtime.enter();
+    // The UI runs here too: a Flash call from this thread would wait for itself.
+    turu::init_main_thread();
+    turu_frontend::platform::set(Arc::new(platform::AndroidPlatform { app: app.clone() }));
     tracing::info!("Turu {} on Android; data folder {}", turu::VERSION, root.display());
 
     let args_file = root.join(ARGS_FILE);
@@ -356,23 +302,20 @@ fn engine(app: AndroidApp, root: &Path, events: &std::sync::mpsc::Receiver<Engin
         }
         window.clone().expect("waited for it")
     };
-    let Some(renderer) = make_renderer(&window, graphics) else {
+    let Some((screen, renderer)) = Screen::new(app.clone(), &window, graphics, density(&app) as f32) else {
         tracing::error!("No graphics API worked; the game can't start");
         return;
     };
-    SURFACE_FOR.store(window.ptr().as_ptr() as usize, Ordering::Release);
-    DRAWING.store(true, Ordering::Release);
+    SCREEN.set(Some(screen));
     let sender = ENGINE_TX.get().expect("set before the thread started").clone();
-    let player = build_player(&app, root, movie_url, renderer, &window, sender.clone());
+    let player = build_player(&app, root, movie_url, renderer, sender.clone());
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Engine running");
     engine::run_loop_with(&player, events, |player| {
         if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
             audio.recreate_stream_if_needed();
         }
-        if DRAWING.load(Ordering::Acquire) && player.needs_render() {
-            player.render();
-        }
+        with_screen(|screen| screen.draw(player));
     });
     turu::bot().set_host(None);
 }
@@ -394,13 +337,13 @@ fn read_args(file: &Path) -> Vec<OsString> {
     }
 }
 
-/// skua.swf's player, drawing in `window`, with the desktop's defaults.
+/// skua.swf's player, drawing with `renderer`, with the desktop's defaults. Its viewport is set
+/// by the screen's first frame.
 fn build_player(
     app: &AndroidApp,
     root: &Path,
     movie_url: Url,
-    renderer: WgpuRenderBackend<SwapChainTarget>,
-    window: &NativeWindow,
+    renderer: WgpuRenderBackend<MovieTexture>,
     sender: Sender<EngineEvent>,
 ) -> Arc<Mutex<Player>> {
     let content = PlayingContent::DirectFile(ContentDescriptor {
@@ -437,15 +380,9 @@ fn build_player(
         Err(e) => tracing::warn!("No sound: {e}"),
     }
     let player = builder.build();
-    {
-        let mut player = player.lock().expect("the player was just built");
-        let (width, height) = window_size(window);
-        player.set_viewport_dimensions(ViewportDimensions {
-            width,
-            height,
-            scale_factor: density(app),
-        });
-        player.fetch_root_movie(movie_url.to_string(), Vec::new(), Box::new(|_| {}));
-    }
+    player
+        .lock()
+        .expect("the player was just built")
+        .fetch_root_movie(movie_url.to_string(), Vec::new(), Box::new(|_| {}));
     player
 }

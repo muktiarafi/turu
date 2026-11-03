@@ -7104,6 +7104,10 @@ version = "0.1.0"
 dependencies = [
  "android-activity",
  "android_logger",
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "futures",
  "jni 0.22.4",
  "log",
  "ndk",

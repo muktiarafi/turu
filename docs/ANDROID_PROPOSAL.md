@@ -354,6 +354,34 @@ Android's limits are the biggest behavioural difference from a desktop:
   to scroll into view; phase 3's egui can show a text box above it); device fonts from
   `/system/fonts`.
 
+## As built: phase 3
+
+* **Screen** (`android/src/screen.rs`), as the desktop's `gui/controller.rs` does it: one wgpu
+  device; the player draws into a texture of its own (`MovieTexture`, the desktop's
+  `MovieView`); each frame draws it below Turu's nav bar (the desktop's `blit.wgsl`) and paints
+  `TuruUi` (`show_bar`, `show_windows`, Headless Mode's cover) over it with `egui_wgpu`. A new
+  window only gets a new surface (one per window: Vulkan refuses a second); the player's
+  renderer never changes. The engine thread is marked as the UI thread
+  (`turu::init_main_thread`), so a window calling Flash directly fails instead of waiting for
+  itself.
+* **Who gets input:** a touch that starts on the nav bar or an egui window is the UI's (until
+  it lifts), else the game's, shifted below the bar; keys are the UI's while one of its text
+  boxes has the focus, which also shows the soft keyboard. egui runs at the display's density
+  (2.625 on the emulator's Pixel 7 profile: the nav bar is 89 px).
+* **Not built from the plan:** the drawer and full-screen sheets (the desktop windows fit the
+  landscape screen at that density, so they come later); SAF import (no file dialogs:
+  `platform.rs` refuses them, and scripts come from Search Scripts); a text box above the soft
+  keyboard for the game's own fields.
+* **Also:** full screen (Android 15+ draws apps under the status bar, which covered the nav
+  bar); Back moves the app to the background instead of closing the activity (with target SDK
+  36 Back goes to the activity's back callback, not to native code); links open in the
+  browser through an `Intent` (JNI).
+* **Checked on the emulator:** the nav bar's menus open by touch; Search Scripts lists the
+  repository, its search box takes the soft keyboard's typing; from the Script Loader GoldFarm
+  was stopped and started, BuyScrolls was loaded from Search Scripts and its Script Options
+  window opened (toggle, list, number); the engine and the UI's state survived the activity
+  being destroyed and started again.
+
 ## Phases
 
 | Phase | Goal | Done when |
@@ -361,7 +389,7 @@ Android's limits are the biggest behavioural difference from a desktop:
 | 0. Split (built) | `turu_frontend` crate; the event-loop seam; `Platform` trait; `SecretStore`; TLS feature on `turu_bot`. Desktop only. | Desktop and headless behave as before; `cargo test -p turu_bot` and clippy pass. |
 | 1. Headless spike (built; farmed 20 min on an emulator) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
 | 2. Game on screen (built; checked on an emulator) | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
-| 3. Turu UI | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
+| 3. Turu UI (built; checked on an emulator, without the drawer, sheets or SAF) | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
 | 4. Background | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |
 | 5. Later | Tabs (2 clients), Butler, Cosmetics, tablet layout, gamepad. | Per row. |
 

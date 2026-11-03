@@ -3,14 +3,17 @@
 How to build, run and check the Android app. The design and the plan are in
 `docs/ANDROID_PROPOSAL.md`.
 
-> **Status (phase 2):** the game on screen (Vulkan), with touch, keys, the soft keyboard and
-> sound; no Turu UI yet (setup comes from a file). A foreground service keeps it running, and
-> online, in the background. On an Android 16 arm64 emulator (2026-11-03): GoldFarm ran 20
-> minutes windowless (phase 1: 168 kills, no deaths or relogins, ~410 MB flat), then on screen
-> it kept farming through 60 s in the background and drew again on return; on the login screen a
-> tap opens the soft keyboard and typing reaches the field. Not yet run on a phone.
+> **Status (phase 3):** the game on screen (Vulkan) with Turu's nav bar and bot windows over it,
+> touch, keys, the soft keyboard and sound, full screen. A foreground service keeps it running,
+> and online, in the background; Back sends the app to the background like Home. On an Android
+> 16 arm64 emulator (2026-11-03): a script was found in Search Scripts, loaded, its options
+> window opened, and it was started and stopped from the Script Loader, all by touch. Not yet
+> run on a phone.
 >
-> **Known gaps:** the soft keyboard covers the field you type in (close it to see the text);
+> **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
+> text; Turu's text boxes near the top stay visible); no file dialogs (Load Script and the
+> other dialogs do nothing: scripts come from Search Scripts, or `adb push` into `scripts/`);
+> the windows are the desktop's, at the phone's density (no drawer or full-screen sheets yet);
 > OpenGL ES draws only parts of the game (use Vulkan, the default); the notification has no
 > actions and no wake lock is held (phase 4).
 
@@ -18,8 +21,8 @@ How to build, run and check the Android app. The design and the plan are in
 
 | Path | What |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, the window's surface, logcat, `turu-args.txt`. `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the soft keyboard). Empty on other systems. |
-| `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity that starts `TuruService`, the foreground service), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
+| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser; no file dialogs yet). Empty on other systems. |
+| `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity: full screen, Back to the background, starts `TuruService`, the foreground service), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
 | `android/rustls-platform-verifier/` | Gradle module building the Kotlin half of `rustls-platform-verifier` (HTTPS certificate checks against Android's trust store) from the submodule `android/vendor/rustls-platform-verifier`. |
 | `frontend/src/engine.rs` | the windowless player loop, shared with the desktop's `--headless`. |
 
