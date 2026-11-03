@@ -36,6 +36,21 @@ impl ScriptLoader {
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
+    /// Load Script's file dialog (also VibeSkua's LoadScript hotkey, F9), unless a script runs or
+    /// a dialog is open already.
+    pub fn pick_script(&mut self, ctx: &Context) {
+        let bot = crate::turu::bot();
+        if bot.scripts.status().is_active() || self.pending_load.is_open() {
+            return;
+        }
+        let start = files::scripts_start_dir(bot.paths.scripts_dir());
+        let dialog = FileDialog::new()
+            .set_title("Load Script")
+            .add_filter("Scripts", &["ts", "js"])
+            .set_directory(start);
+        self.pending_load.pick_file(ctx, dialog);
+    }
+
     fn ui(&mut self, ui: &mut Ui, options_open: &mut bool, repo_open: &mut bool) {
         let bot = crate::turu::bot();
         let status = bot.scripts.status();
@@ -57,6 +72,7 @@ impl ScriptLoader {
         let error = (status == ScriptStatus::Error)
             .then(|| bot.scripts.last_end().1.and_then(|end| end.error))
             .flatten();
+        let last_run = last_run(&bot);
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 4.0;
@@ -68,7 +84,17 @@ impl ScriptLoader {
                     state.push_str(" · ");
                     state.push_str(&duration_text(elapsed));
                 }
-                ui.label(RichText::new(state).size(16.0).strong().color(TEXT));
+                // After a run: how it ended and how long it ran, until the next start or load.
+                if let Some(run) = &last_run {
+                    state = match status {
+                        ScriptStatus::Error => format!("{state} · ran {}", run.ran),
+                        _ => format!("{} · ran {}", run.how, run.ran),
+                    };
+                }
+                let label = ui.label(RichText::new(state).size(16.0).strong().color(TEXT));
+                if let Some(run) = &last_run {
+                    label.on_hover_text(format!("Ended at {}", run.at));
+                }
             });
             match &loaded {
                 Some(path) => {
@@ -79,7 +105,13 @@ impl ScriptLoader {
                         .on_hover_text(path.display().to_string());
                 }
                 None => {
-                    ui.label(RichText::new("Load Script or Search Scripts to pick one").color(MUTED));
+                    // Only the buttons this platform shows (Android has no file dialogs).
+                    let hint = if crate::platform::platform().has_file_dialogs() {
+                        "Load Script or Search Scripts to pick one"
+                    } else {
+                        "Search Scripts to pick one"
+                    };
+                    ui.label(RichText::new(hint).color(MUTED));
                 }
             }
             if let Some(error) = &error {
@@ -125,7 +157,11 @@ impl ScriptLoader {
                     run_hint = Some(force_tip);
                 }
                 if widgets::button(ui, label, Kind::Danger, true, vec2(run, run_height), "")
-                    .on_hover_text(if stopping { force_tip } else { "" })
+                    .on_hover_text(if stopping {
+                        format!("{force_tip} ({TOGGLE_KEY_NAME})")
+                    } else {
+                        format!("Stops the script ({TOGGLE_KEY_NAME})")
+                    })
                     .clicked()
                 {
                     script::stop(&bot);
@@ -150,6 +186,7 @@ impl ScriptLoader {
                     vec2(run, run_height),
                     tip,
                 )
+                .on_hover_text(format!("Starts the loaded script ({TOGGLE_KEY_NAME})"))
                 .clicked()
                     && let Err(e) = script::start(&bot)
                 {
@@ -211,18 +248,17 @@ impl ScriptLoader {
             ui.horizontal(|ui| {
                 let width = if row.len() == 1 { full } else { half };
                 for &(action, label, enabled, tip) in row {
-                    if !widgets::button(ui, label, Kind::Outline, enabled, vec2(width, setup_height), tip).clicked() {
+                    let button = widgets::button(ui, label, Kind::Outline, enabled, vec2(width, setup_height), tip);
+                    let button = if action == Setup::Load {
+                        button.on_hover_text(format!("Opens a script file ({LOAD_KEY_NAME})"))
+                    } else {
+                        button
+                    };
+                    if !button.clicked() {
                         continue;
                     }
                     match action {
-                        Setup::Load => {
-                            let start = files::scripts_start_dir(bot.paths.scripts_dir());
-                            let dialog = FileDialog::new()
-                                .set_title("Load Script")
-                                .add_filter("Scripts", &["ts", "js"])
-                                .set_directory(start);
-                            self.pending_load.pick_file(ui.ctx(), dialog);
-                        }
+                        Setup::Load => self.pick_script(ui.ctx()),
                         Setup::Search => *repo_open = true,
                         Setup::Edit => {
                             if let Some(path) = &loaded {
@@ -257,8 +293,58 @@ impl ScriptLoader {
     }
 }
 
+/// How the loaded script's last run ended, for the status card and the nav bar's chip.
+pub(super) struct LastRun {
+    /// "Finished" or "Stopped".
+    pub how: &'static str,
+    /// How long it ran ("6h 12m").
+    pub ran: String,
+    /// When it ended ("04:12").
+    pub at: String,
+}
+
+/// The last run's end while it's what the window shows: the script stopped (Ready or Error)
+/// and it's the one that ran (loading another one starts afresh).
+pub(super) fn last_run(bot: &turu_bot::Bot) -> Option<LastRun> {
+    let status = bot.scripts.status();
+    if !matches!(status, ScriptStatus::Loaded | ScriptStatus::Error) {
+        return None;
+    }
+    let end = bot.scripts.last_end().1?;
+    if bot.scripts.loaded().as_deref() != Some(end.script.as_path()) {
+        return None;
+    }
+    Some(LastRun {
+        how: if end.finished { "Finished" } else { "Stopped" },
+        ran: duration_text(end.ran),
+        at: end.ended_clock(),
+    })
+}
+
+/// VibeSkua's default ToggleScript hotkey: starts the loaded script, or stops the running one.
+pub(super) const TOGGLE_KEY: egui::Key = egui::Key::F10;
+const TOGGLE_KEY_NAME: &str = "F10";
+/// VibeSkua's default LoadScript hotkey: Load Script's file dialog.
+pub(super) const LOAD_KEY: egui::Key = egui::Key::F9;
+const LOAD_KEY_NAME: &str = "F9";
+
+/// VibeSkua's ToggleScript hotkey: what Start Script / Stop Script do, under the same rules (no
+/// start while Auto or a Console snippet runs). A stop while stopping is Force Stop.
+pub(super) fn toggle_script() {
+    let bot = crate::turu::bot();
+    if bot.scripts.status().is_active() {
+        script::stop(&bot);
+    } else if bot.scripts.loaded().is_some()
+        && !super::auto::running(&bot)
+        && !bot.scripts.is_snippet_running()
+        && let Err(e) = script::start(&bot)
+    {
+        bot.log(format!("Couldn't start the script: {e}"));
+    }
+}
+
 /// The setup buttons, in their order.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Setup {
     Load,
     Search,

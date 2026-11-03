@@ -69,6 +69,26 @@ impl LogBuffer {
         self.version.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Clears the log and returns what it held, for an undo ([`Self::restore`]).
+    pub fn take(&self) -> Vec<LogLine> {
+        let lines = std::mem::take(&mut *self.lines.lock());
+        self.version.fetch_add(1, Ordering::Relaxed);
+        lines.into()
+    }
+
+    /// Puts back lines [`Self::take`] returned, before the ones pushed since, as many as the
+    /// capacity keeps (the oldest go first).
+    pub fn restore(&self, earlier: Vec<LogLine>) {
+        let mut lines = self.lines.lock();
+        let mut all: VecDeque<LogLine> = earlier.into();
+        all.extend(std::mem::take(&mut *lines));
+        while all.len() > self.capacity {
+            all.pop_front();
+        }
+        *lines = all;
+        self.version.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> Vec<LogLine> {
         self.lines.lock().iter().cloned().collect()
     }
@@ -132,5 +152,32 @@ impl Logs {
             LogKind::Debug => &self.debug,
             LogKind::Packet => &self.packets,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LogBuffer;
+
+    fn texts(buffer: &LogBuffer) -> Vec<String> {
+        buffer.snapshot().into_iter().map(|l| l.text).collect()
+    }
+
+    /// Undoing a Clear puts the old lines back before the ones logged since, within the
+    /// capacity, and keeps `since` numbering them as before.
+    #[test]
+    fn restores_what_was_taken() {
+        let buffer = LogBuffer::new("script", 3);
+        buffer.push("a");
+        buffer.push("b");
+        let taken = buffer.take();
+        assert!(buffer.is_empty());
+        buffer.push("c");
+        buffer.push("d");
+        buffer.restore(taken);
+        assert_eq!(texts(&buffer), ["b", "c", "d"]);
+        let (lines, next) = buffer.since(1);
+        assert_eq!(next, 4);
+        assert_eq!(lines.len(), 3);
     }
 }

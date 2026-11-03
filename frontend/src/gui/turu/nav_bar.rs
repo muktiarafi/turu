@@ -939,6 +939,11 @@ fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
             None => "Paused".to_owned(),
         },
         ScriptStatus::Error => "Error".to_owned(),
+        // After a run: "Finished 6h 12m", "Stopped 3h 40m" (the Script Loader's last run).
+        ScriptStatus::Loaded => match script_loader::last_run(&bot) {
+            Some(run) => format!("{} {}", run.how, run.ran),
+            None => script_loader::state_text(status).to_owned(),
+        },
         other => script_loader::state_text(other).to_owned(),
     };
     if status.is_active() {
@@ -986,7 +991,10 @@ fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let mut tip = script_loader::state_text(status).to_owned();
+    let mut tip = match script_loader::last_run(&bot) {
+        Some(run) => format!("{} after {}, at {}", run.how, run.ran, run.at),
+        None => script_loader::state_text(status).to_owned(),
+    };
     if let Some(name) = &name {
         tip = format!("{name}: {tip}");
     }

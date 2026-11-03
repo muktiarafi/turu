@@ -71,6 +71,10 @@ export default function main(): void {
     let log = bot.logs.script.text();
     assert!(log.contains("gold 2468"), "{log}");
     assert_eq!(bot.scripts.status(), ScriptStatus::Loaded, "{log}");
+    // The Script Loader says how it ended: finished, this script.
+    let end = bot.scripts.last_end().1.expect("a run end");
+    assert!(end.finished && end.error.is_none(), "{end:?}");
+    assert_eq!(Some(end.script), bot.scripts.loaded());
 }
 
 #[test]
@@ -97,6 +101,10 @@ export default function main(): void {
     wait_until_done(&bot);
     let log = bot.logs.script.text();
     assert!(log.contains("stopped"), "{log}");
+    // Stopped, not finished, after the time it ran.
+    let end = bot.scripts.last_end().1.expect("a run end");
+    assert!(!end.finished && end.error.is_none(), "{end:?}");
+    assert!(end.ran >= Duration::from_millis(250), "{end:?}");
 }
 
 #[test]

@@ -149,13 +149,27 @@ pub struct ScriptManager {
     ended: AtomicU64,
 }
 
-/// How a run ended, for the Scheduler.
+/// How a run ended, for the Scheduler and the Script Loader's status card.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunEnd {
+    /// The script that ran.
+    pub script: PathBuf,
     /// It reached the script's `main`.
     pub started: bool,
+    /// `main` returned (not stopped, not failed).
+    pub finished: bool,
     /// Why it failed (not when it finished or was stopped).
     pub error: Option<String>,
+    /// From Start to the end.
+    pub ran: Duration,
+    pub ended: chrono::DateTime<chrono::Local>,
+}
+
+impl RunEnd {
+    /// When it ended, as a clock ("04:12").
+    pub fn ended_clock(&self) -> String {
+        self.ended.format("%H:%M").to_string()
+    }
 }
 
 /// A message box a script asked for (VibeSkua `ShowMessageBox`), until the UI answers it.
@@ -510,13 +524,14 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
                 script: script_stem(&path),
                 quiet: false,
             });
-            bot.state.lock().stats.started = Some(std::time::Instant::now());
+            let run_started = std::time::Instant::now();
+            bot.state.lock().stats.started = Some(run_started);
             let result = match bot.scripts.preconfigure(&bot.control) {
                 Ok(()) => runtime::run(&bot, &path),
                 Err(_) => Err(runtime::RunError::Stopped),
             };
             mark_script_thread(false);
-            finish(&bot, &name, result);
+            finish(&bot, &name, &path, run_started, result);
         })
         .map_err(|e| {
             bot.scripts.running.store(false, Ordering::Release);
@@ -593,7 +608,14 @@ pub(crate) fn set_stopping(bot: &Bot) {
 }
 
 /// Cleanup after `main` returns, throws or is stopped (VibeSkua: ScriptStopping/Stopped).
-fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
+fn finish(
+    bot: &Arc<Bot>,
+    name: &str,
+    path: &Path,
+    run_started: std::time::Instant,
+    result: Result<(), runtime::RunError>,
+) {
+    let finished = result.is_ok();
     bot.skills.stop();
     // VibeSkua `ScriptCombat.ScriptStopped` (the counter handler itself stays on).
     bot.combat.set_stop_attacking(false);
@@ -631,8 +653,12 @@ fn finish(bot: &Arc<Bot>, name: &str, result: Result<(), runtime::RunError>) {
     bot.control.reset();
     bot.scripts.set_status(status);
     *bot.scripts.last_end.lock() = Some(RunEnd {
+        script: path.to_owned(),
         started: bot.scripts.reached_main.load(Ordering::Acquire),
+        finished,
         error: error.clone(),
+        ran: run_started.elapsed(),
+        ended: chrono::Local::now(),
     });
     bot.scripts.running.store(false, Ordering::Release);
     bot.scripts.ended.fetch_add(1, Ordering::AcqRel);

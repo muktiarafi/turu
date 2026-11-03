@@ -572,6 +572,7 @@ fn next(bot: &Arc<Bot>, generation: u64) -> bool {
     if let Some(RunEnd {
         started: false,
         error: Some(error),
+        ..
     }) = end
     {
         // VibeSkua compiles in StartScript: a script that fails before `main` failed to start.

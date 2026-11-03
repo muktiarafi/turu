@@ -65,7 +65,7 @@ top, and + at the end.
 | Bank | implemented: `bank.open` through `spawn_action`. An action, not a menu: drawn like Auto and Jump (a row of More or Menu when folded). A spinner after the menus while it runs; since `bank.open` does nothing logged out or while a map loads, the bar checks first and then says why for 4 s in red ("Bank: Not logged in", "Bank: The map is still loading", or the error), cut to the room the right side leaves |
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
-| Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error" or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
+| Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error", after a run "Finished 6h 12m" or "Stopped 3h 40m" (the Script Loader's last run), or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
 | everything else (Application Themes, HotKeys, Loadouts Manager, Fast Travel, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager, Fast Travel and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
 
@@ -80,8 +80,13 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   coloured dot (No script loaded, Ready, Starting..., Running, Paused, Stopping..., Stopped with an
   error; `ScriptStatus::label()` keeps VibeSkua's "[Running]" for the control API and the
   monitor) and, while a script runs, how long (the Stats clock, "45s", "12m", "3h 05m"); the file
-  name in monospace (full path on hover) or "Load Script or Search Scripts to pick one"; after a
+  name in monospace (full path on hover) or "Load Script or Search Scripts to pick one" ("Search Scripts to pick one" without file
+  dialogs, as on Android, where Load Script is hidden); after a
   failure the error's first line in red, which scrolls the log to the error when clicked;
+  after a run, until the next start or load of another script, how it ended and how long it ran
+  ("Finished · ran 6h 12m", "Stopped · ran 3h 40m", "Stopped with an error · ran 2h 10m"; "Ended
+  at 04:12" on hover; from `RunEnd`, which records the script, finished or not, the run's length
+  and its end time) instead of "Ready";
   under it the run controls, 38 px high: Start/Stop Script (primary/danger, about 60% of the
   width; "Force Stop" while stopping handlers run) and Pause/Resume; then, 14 px lower, the setup
   buttons, outlined and 28 px high (VibeSkua's grid is reordered so the run controls lead;
@@ -280,7 +285,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   picker), name and hex box (outlined red when it isn't hex), Apply Palette, Read Avatar Colors,
   VibeSkua's eight presets on the right. **Manual SWF**: a form (file, link, slot, meta) whose
   Inject is enabled once the file and link are filled. Empty lists and cards say what to do.
-* **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. **Logger** (`packet_logger.rs`):
+* **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. In every log's header
+  (`logs::log_buttons`: Script Loader, Logs, Logger, client logs) Clear stands apart from Copy and
+  Save at the end and turns into "Undo clear" for 8 s, which puts the lines back before those
+  logged since (`LogBuffer::take` / `restore`). **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
   the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
 * **Console** (`console.rs`, 700x520, VibeSkua's `ConsoleView`, one per tab): header card "TS
@@ -466,8 +474,13 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 Not built at all (greyed in the menus): Application Themes,
 HotKeys, Loadouts Manager, Fast Travel, Plugins, Auto Hunt, Notify Drop.
 
-Hotkeys (`hotkeys` in `mod.rs`): only VibeSkua's default F6, which toggles the active tab's Lag
-Killer (and logs it). It can't be rebound: the HotKeys window isn't built.
+Hotkeys (`hotkeys` in `mod.rs`): three of VibeSkua's defaults, for the active tab. F6 toggles
+Lag Killer (and logs it); F10 (`ToggleScript`) starts the loaded script or stops the running
+one, under Start Script's rules (not while Auto or a Console snippet runs; a second press while
+stopping is Force Stop); F9 (`LoadScript`) opens the Script Loader and its Load Script dialog
+(where there are file dialogs, and not while a script runs). Start / Stop and Load Script show
+their key in the tooltip. VibeSkua has no default for pausing, so Turu has none. They can't be
+rebound: the HotKeys window isn't built.
 
 ## Adding a window
 
