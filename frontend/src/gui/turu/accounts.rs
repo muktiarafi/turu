@@ -3,16 +3,78 @@
 //! system keychain; reading and writing them happens off the UI thread.
 
 use super::files::{self, Pending};
-use super::theme::{MUTED, SUCCESS};
+use super::theme::{DANGER, MUTED, SUCCESS, WARNING};
 use super::widgets::{self, Kind};
 use crate::platform::FileDialog;
 use crate::turu::TabRequest;
-use egui::{Align, ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
-use std::sync::{Arc, Mutex};
+use egui::{Align, ComboBox, Context, Label, Layout, Modal, RichText, ScrollArea, Ui, vec2};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use turu_bot::accounts::{self, Account, Accounts, LaunchMode};
 use turu_bot::army::Launch;
 use turu_bot::startup::Startup;
+
+/// How an account's last launch went, shown on its row until it's launched again.
+#[derive(Clone, PartialEq)]
+enum Launched {
+    /// Waiting its turn in the stagger, or its client is starting.
+    Starting,
+    Started,
+    /// Started without a saved password: it waits at the login screen.
+    NeedsLogin,
+    Failed(String),
+}
+
+/// The accounts of the last Start, in order, and how each went (set by the launch threads).
+#[derive(Default)]
+struct Launches {
+    batch: Vec<String>,
+    rows: HashMap<String, Launched>,
+}
+
+impl Launches {
+    fn set(&mut self, username: &str, state: Launched) {
+        self.rows.insert(username.to_owned(), state);
+    }
+
+    /// The last Start in a line: "Starting 3 of 10…", then "Started 8 of 10 · 2 need a login ·
+    /// 1 failed".
+    fn summary(&self) -> Option<String> {
+        if self.batch.is_empty() {
+            return None;
+        }
+        let count = |pick: fn(&Launched) -> bool| {
+            self.batch
+                .iter()
+                .filter(|u| self.rows.get(*u).is_some_and(pick))
+                .count()
+        };
+        let total = self.batch.len();
+        let starting = count(|l| *l == Launched::Starting);
+        let needs_login = count(|l| *l == Launched::NeedsLogin);
+        let failed = count(|l| matches!(l, Launched::Failed(_)));
+        let started = count(|l| *l == Launched::Started) + needs_login;
+        if starting > 0 {
+            return Some(format!("Starting {} of {total}…", total - starting + 1));
+        }
+        let mut line = format!("Started {started} of {total}");
+        if needs_login > 0 {
+            line.push_str(&format!(" · {needs_login} need a login"));
+        }
+        if failed > 0 {
+            line.push_str(&format!(" · {failed} failed"));
+        }
+        Some(line)
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Start All asks first when it would start more accounts than this.
+const START_ALL_ASKS_ABOVE: usize = 3;
 
 /// The add / edit form.
 #[derive(Default)]
@@ -36,6 +98,9 @@ pub struct AccountsWindow {
     pending_script: Pending,
     /// What the last action did, shown at the bottom (set by other threads too).
     status: Arc<Mutex<String>>,
+    launches: Arc<Mutex<Launches>>,
+    /// Start All is waiting for its question's answer: these would start.
+    confirm_start: Option<Vec<Account>>,
 }
 
 impl Default for AccountsWindow {
@@ -48,6 +113,8 @@ impl Default for AccountsWindow {
             confirm_remove: None,
             pending_script: Pending::default(),
             status: Arc::default(),
+            launches: Arc::default(),
+            confirm_start: None,
         }
     }
 }
@@ -68,6 +135,7 @@ impl AccountsWindow {
         super::window(ctx, "Accounts", [520.0, 560.0], 4)
             .open(open)
             .show(ctx, |ui| self.ui(ui));
+        self.confirm_start_all(ctx);
         // Launches finish on their own thread.
         ctx.request_repaint_after(Duration::from_millis(500));
     }
@@ -211,12 +279,16 @@ impl AccountsWindow {
                                 }
                             });
                     }
+                    // Only the rows the tag filter shows: a hidden account isn't started by surprise.
+                    let filter = self.tag_filter.clone();
                     if widgets::small_button(ui, "Unselect All", true).clicked() {
-                        self.list.accounts.iter_mut().for_each(|a| a.selected = false);
+                        let shown = self.list.accounts.iter_mut().filter(|a| shows(a, filter.as_deref()));
+                        shown.for_each(|a| a.selected = false);
                         self.save();
                     }
                     if widgets::small_button(ui, "Select All", true).clicked() {
-                        self.list.accounts.iter_mut().for_each(|a| a.selected = true);
+                        let shown = self.list.accounts.iter_mut().filter(|a| shows(a, filter.as_deref()));
+                        shown.for_each(|a| a.selected = true);
                         self.save();
                     }
                 });
@@ -224,6 +296,7 @@ impl AccountsWindow {
 
             let mut changed = false;
             let mut action: Option<(Row, String)> = None;
+            let launches = lock(&self.launches);
             ScrollArea::vertical()
                 .max_height(200.0)
                 .auto_shrink([false, true])
@@ -232,15 +305,17 @@ impl AccountsWindow {
                         ui.label(RichText::new("No accounts yet: add one above.").color(MUTED));
                     }
                     for account in &mut self.list.accounts {
-                        if let Some(tag) = &self.tag_filter
-                            && !account.tags.iter().any(|t| t.eq_ignore_ascii_case(tag))
-                        {
+                        if !shows(account, self.tag_filter.as_deref()) {
                             continue;
                         }
                         ui.horizontal(|ui| {
                             changed |= ui.checkbox(&mut account.selected, "").changed();
-                            if is_running(&account.username) {
+                            let running = is_running(&account.username);
+                            let launched = launches.rows.get(&account.username);
+                            if running {
                                 widgets::dot(ui, SUCCESS, 4.0);
+                            } else if launched == Some(&Launched::Starting) {
+                                ui.spinner();
                             }
                             ui.label(RichText::new(account.label()).strong());
                             if !account.display_name.trim().is_empty() {
@@ -249,6 +324,7 @@ impl AccountsWindow {
                             for tag in &account.tags {
                                 widgets::pill(ui, |ui| ui.label(RichText::new(tag).size(10.0).color(MUTED)));
                             }
+                            launch_note(ui, launched, running, logged_in_tab(&account.username));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 let confirming = self.confirm_remove.as_deref() == Some(account.username.as_str());
                                 let remove = if confirming { "Sure?" } else { "Remove" };
@@ -272,6 +348,7 @@ impl AccountsWindow {
                         });
                     }
                 });
+            drop(launches);
             if changed {
                 self.save();
             }
@@ -424,6 +501,12 @@ impl AccountsWindow {
             });
             ui.horizontal(|ui| {
                 let selected: Vec<Account> = self.list.accounts.iter().filter(|a| a.selected).cloned().collect();
+                // Selected accounts the tag filter hides still start: said beside the buttons.
+                let hidden = selected
+                    .iter()
+                    .filter(|a| !shows(a, self.tag_filter.as_deref()))
+                    .count();
+                let selected_count = selected.len();
                 let start = widgets::button(
                     ui,
                     "Start Selected",
@@ -437,7 +520,19 @@ impl AccountsWindow {
                 }
                 let all = self.list.accounts.clone();
                 if widgets::button(ui, "Start All", Kind::Normal, !all.is_empty(), vec2(100.0, 30.0), "").clicked() {
-                    self.launch(all);
+                    let starting = all.iter().filter(|a| !is_running(&a.username)).count();
+                    if starting > START_ALL_ASKS_ABOVE {
+                        self.confirm_start = Some(all);
+                    } else {
+                        self.launch(all);
+                    }
+                }
+                if hidden > 0 {
+                    let text = format!("{selected_count} selected · {hidden} hidden by the filter");
+                    ui.add(Label::new(RichText::new(text).size(12.0).color(WARNING)).truncate())
+                        .on_hover_text("Start Selected starts them too; set the filter to All tags to see them");
+                } else if let Some(summary) = lock(&self.launches).summary() {
+                    ui.add(Label::new(RichText::new(summary).size(12.0).color(MUTED)).truncate());
                 }
             });
         });
@@ -460,10 +555,18 @@ impl AccountsWindow {
             ..Default::default()
         };
         let in_tabs = list.mode == LaunchMode::Tab;
-        set_status(&self.status, format!("Starting {} account(s)…", accounts.len()));
+        {
+            let mut launches = lock(&self.launches);
+            launches.batch = accounts.iter().map(|a| a.username.clone()).collect();
+            for account in &accounts {
+                launches.set(&account.username, Launched::Starting);
+            }
+        }
         let status = self.status.clone();
+        let states = self.launches.clone();
         // The keychain may ask the user to unlock it: not on the UI thread.
         let _ = std::thread::Builder::new().name("Turu Keychain".into()).spawn(move || {
+            let mut needs_login = Vec::new();
             let launches = accounts
                 .into_iter()
                 .map(|account| {
@@ -471,6 +574,9 @@ impl AccountsWindow {
                         crate::turu::bot().logs.debug.push(format!("{}: {e}", account.username));
                         None
                     });
+                    if password.is_none() {
+                        needs_login.push(account.username.clone());
+                    }
                     Launch {
                         username: account.username.clone(),
                         label: account.label().to_owned(),
@@ -480,14 +586,19 @@ impl AccountsWindow {
                 })
                 .collect();
             if in_tabs {
-                open_tabs(launches, &status);
+                open_tabs(launches, &status, &states);
                 return;
             }
             army.launch_all(launches, move |username, result| {
-                let text = match result {
-                    Ok(()) => format!("Started {username}."),
-                    Err(e) => format!("{username}: {e}"),
+                let (text, state) = match result {
+                    Ok(()) if needs_login.iter().any(|u| u == username) => (
+                        format!("Started {username}; log in in its window."),
+                        Launched::NeedsLogin,
+                    ),
+                    Ok(()) => (format!("Started {username}."), Launched::Started),
+                    Err(e) => (format!("{username}: {e}"), Launched::Failed(e.to_string())),
                 };
+                lock(&states).set(username, state);
                 crate::turu::bot().logs.debug.push(text.clone());
                 set_status(&status, text);
             });
@@ -495,16 +606,73 @@ impl AccountsWindow {
     }
 }
 
+/// After the name on an account's row: how its last launch went, while it matters. A failure
+/// stays until the account is launched again; "Log in by hand" until it's logged in in a tab
+/// (Army can't tell when a client of its own logs in: there it stays until the next launch).
+fn launch_note(ui: &mut Ui, launched: Option<&Launched>, running: bool, logged_in: bool) {
+    let (text, color, tip) = match launched {
+        Some(Launched::Starting) if !running => ("Starting…".to_owned(), MUTED, None),
+        Some(Launched::NeedsLogin) if !logged_in => (
+            "Log in by hand".to_owned(),
+            WARNING,
+            Some("No saved password: it opened at the login screen. Edit the account to save one."),
+        ),
+        Some(Launched::Failed(why)) if !running => (format!("Failed: {why}"), DANGER, None),
+        _ => return,
+    };
+    let note = ui.add(Label::new(RichText::new(&text).size(11.0).color(color)).truncate());
+    note.on_hover_text(tip.map_or(text.clone(), str::to_owned));
+}
+
+impl AccountsWindow {
+    /// Start All's question, when it would start more than a few accounts.
+    fn confirm_start_all(&mut self, ctx: &Context) {
+        let Some(accounts) = &self.confirm_start else {
+            return;
+        };
+        let count = accounts.iter().filter(|a| !is_running(&a.username)).count();
+        let mut answer = None;
+        Modal::new(egui::Id::new("turu_accounts_start_all")).show(ctx, |ui| {
+            ui.set_max_width(360.0);
+            ui.heading(format!("Start {count} accounts?"));
+            ui.label("Each one opens a game client and logs in, a few seconds apart.");
+            ui.horizontal(|ui| {
+                if widgets::button(ui, "Start", Kind::Primary, true, vec2(84.0, 28.0), "").clicked() {
+                    answer = Some(true);
+                }
+                if widgets::button(ui, "Cancel", Kind::Normal, true, vec2(84.0, 28.0), "").clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+        if let Some(start) = answer
+            && let Some(accounts) = self.confirm_start.take()
+            && start
+        {
+            self.launch(accounts);
+        }
+    }
+}
+
+/// Whether the list shows the account with this tag filter.
+fn shows(account: &Account, tag_filter: Option<&str>) -> bool {
+    tag_filter.is_none_or(|tag| account.tags.iter().any(|t| t.eq_ignore_ascii_case(tag)))
+}
+
 /// The account plays in a tab, or in a client Army launched.
 fn is_running(username: &str) -> bool {
-    crate::turu::army().client(username).is_some()
-        || crate::turu::tabs().iter().any(|(_, bot)| {
-            turu_bot::api::servers::login_name(bot).is_some_and(|name| name.eq_ignore_ascii_case(username))
-        })
+    crate::turu::army().client(username).is_some() || logged_in_tab(username)
+}
+
+/// The account is logged in in one of this window's tabs.
+fn logged_in_tab(username: &str) -> bool {
+    crate::turu::tabs()
+        .iter()
+        .any(|(_, bot)| turu_bot::api::servers::login_name(bot).is_some_and(|name| name.eq_ignore_ascii_case(username)))
 }
 
 /// Opens a tab for each launch, 500-900 ms apart; each logs in once its game has loaded.
-fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>) {
+fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>, states: &Mutex<Launches>) {
     for (i, launch) in launches.into_iter().enumerate() {
         if i > 0 {
             std::thread::sleep(turu_bot::army::launch_delay());
@@ -517,17 +685,25 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>) {
             run_script: launch.run_script,
             ..Default::default()
         };
-        if !startup.logs_in() {
+        let logs_in = startup.logs_in();
+        if !logs_in {
             crate::turu::bot().logs.debug.push(format!(
                 "{}: no saved password, log in yourself in its tab",
                 launch.username
             ));
         }
-        let text = if crate::turu::request_tab(TabRequest::Open(Box::new(startup))) {
-            format!("Opened a tab for {}.", launch.username)
+        let (text, state) = if crate::turu::request_tab(TabRequest::Open(Box::new(startup))) {
+            let state = if logs_in {
+                Launched::Started
+            } else {
+                Launched::NeedsLogin
+            };
+            (format!("Opened a tab for {}.", launch.username), state)
         } else {
-            format!("{}: couldn't open a tab", launch.username)
+            let failed = "couldn't open a tab".to_owned();
+            (format!("{}: {failed}", launch.username), Launched::Failed(failed))
         };
+        lock(states).set(&launch.username, state);
         set_status(status, text);
     }
 }
@@ -539,4 +715,45 @@ enum Row {
     Shift(isize),
     /// Confirmed (the second click).
     Remove(bool),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Launched, Launches, shows};
+    use turu_bot::accounts::Account;
+
+    /// The tag filter shows an account with the tag (ignoring case), and every account without
+    /// a filter: what Select All and the hidden count go by.
+    #[test]
+    fn filter_shows_tagged_accounts() {
+        let account = Account {
+            username: "Hero".into(),
+            tags: vec!["Farm".into()],
+            ..Default::default()
+        };
+        assert!(shows(&account, None));
+        assert!(shows(&account, Some("farm")));
+        assert!(!shows(&account, Some("boss")));
+    }
+
+    /// The launch line counts the last Start's accounts: those still starting, then how many
+    /// started, need a login, or failed.
+    #[test]
+    fn summary_counts_the_last_start() {
+        let mut launches = Launches::default();
+        assert_eq!(launches.summary(), None);
+        launches.batch = ["a", "b", "c", "d"].map(str::to_owned).to_vec();
+        for name in ["a", "b", "c", "d"] {
+            launches.set(name, Launched::Starting);
+        }
+        launches.set("a", Launched::Started);
+        assert_eq!(launches.summary().as_deref(), Some("Starting 2 of 4…"));
+        launches.set("b", Launched::NeedsLogin);
+        launches.set("c", Launched::Failed("couldn't start".into()));
+        launches.set("d", Launched::Started);
+        assert_eq!(
+            launches.summary().as_deref(),
+            Some("Started 3 of 4 · 1 need a login · 1 failed")
+        );
+    }
 }

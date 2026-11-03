@@ -196,6 +196,17 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Unselect All, Add Selected to Group and Select group, and Launch: Server (the same drop-down
   as Relogin Server, `widgets::server_combo`), where (In a tab, In its own window, Without a
   window), the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
+  A launch reports on the rows (not only in the bottom line, which each account overwrote): a
+  spinner and "Starting…" while it waits its turn, then the green dot; "Log in by hand" (amber)
+  when it started without a saved password, until it's logged in in a tab (Army can't tell when
+  a client of its own logs in, so there it stays until the next launch); "Failed: reason" (red)
+  until the account is launched again. Passwords aren't read only to mark the rows: the
+  keychain may ask to be unlocked. Next to the Start buttons, the last Start in a line
+  ("Starting 3 of 10…", then "Started 8 of 10 · 2 need a login · 1 failed"). Start All asks
+  first ("Start 12 accounts?") when more than 3 would start. Select All and Unselect All act on
+  the rows the tag filter shows, and while selected accounts
+  are hidden by the filter the line next to the Start buttons says so in amber ("5 selected · 2
+  hidden by the filter"), as Start Selected starts them too.
 * **Army Control** (`army.rs`, 560x620): one list, CLIENTS, of this window's tabs and the
   clients Accounts launched (from the web monitor's hub, which the Army poll feeds). Each row: a
   check box, a dot, the name ("tab" or "no window" pill), where it is (long text cut off, whole
