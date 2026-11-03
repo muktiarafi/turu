@@ -33,6 +33,16 @@ with the app window, also after they opened; what no longer fits scrolls, so the
 stay reachable (`super::window`; `windows_fit_small_screens` checks the windows at 1400x1000,
 900x600 and 640x420). Runtime stacks its two columns when the window is narrower than 680 px.
 
+Symbols in labels (✕, ↑ ↓, ⋯ menus, ▾, ...) come from egui's own fonts or, for the ones those
+lack, `frontend/assets/DejaVuSans-Symbols.ttf`: DejaVu Sans cut down to ← ↑ → ↓ ⋮ ⋯ ▾ ✕ (2 KB),
+which `theme::add_symbol_font` adds as the last fallback on desktop (after the system fonts) and
+Android. A symbol in neither draws as an empty box: `symbols_render` (in `mod.rs`) lists every
+symbol the windows use; when you add one it lacks, re-cut the font with fonttools, e.g.
+`pyftsubset DejaVuSans.ttf --unicodes=U+2190-2193,U+22EE,U+22EF,U+25BE,U+2715 --layout-features=''
+--no-hinting --desubroutinize --output-file=frontend/assets/DejaVuSans-Symbols.ttf` (from
+[DejaVu 2.37](https://github.com/dejavu-fonts/dejavu-fonts/releases/tag/version_2_37); licence
+next to it).
+
 ## Nav bar (`nav_bar.rs`)
 
 34 px high (48 on a touch screen, below), left to right as in VibeSkua: **Scripts** (Script Loader, Edit Script Options, Scheduler), **Options**

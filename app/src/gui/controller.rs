@@ -192,7 +192,9 @@ impl GuiController {
             LaunchOptions::from(&preferences),
             preferences.clone(),
         );
-        let system_fonts = load_system_fonts(font_database, preferences.language());
+        let mut system_fonts = load_system_fonts(font_database, preferences.language());
+        // Turu: the symbols Turu's windows draw, whatever the system has.
+        turu_frontend::gui::turu::theme::add_symbol_font(&mut system_fonts);
         egui_winit.egui_ctx().set_fonts(system_fonts);
 
         egui_extras::install_image_loaders(egui_winit.egui_ctx());

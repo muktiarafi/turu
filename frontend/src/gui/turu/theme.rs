@@ -123,6 +123,24 @@ pub fn style() -> Style {
     style
 }
 
+/// DejaVu Sans cut down to the symbols Turu's windows draw that egui's own fonts lack (arrows,
+/// ⋮ ⋯ ▾ ✕), so they don't depend on the system fonts (stock Windows' Segoe UI has no ✕).
+/// Licence: `frontend/assets/DejaVuSans-LICENSE.txt`.
+const SYMBOLS: &[u8] = include_bytes!("../../../assets/DejaVuSans-Symbols.ttf");
+
+/// Adds Turu's symbol font as the last fallback of both families. Frontends call this on the
+/// font definitions they hand to `Context::set_fonts`.
+pub fn add_symbol_font(fonts: &mut egui::FontDefinitions) {
+    const NAME: &str = "Turu symbols (DejaVu Sans)";
+    fonts.font_data.insert(
+        NAME.to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(SYMBOLS)),
+    );
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        fonts.families.entry(family).or_default().push(NAME.to_owned());
+    }
+}
+
 /// Installs Turu's style for both of egui's themes (the system theme picks between them, and
 /// Turu is dark either way).
 pub fn install(ctx: &egui::Context) {

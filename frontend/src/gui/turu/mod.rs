@@ -485,6 +485,31 @@ mod tests {
         }
     }
 
+    /// Every symbol the windows draw is in egui's own fonts or Turu's symbol font, whatever fonts
+    /// the system has; a missing one draws egui's ◻ box. (`Fonts::has_glyph` can't tell: it says
+    /// no for every symbol of the font ◻ comes from, NotoEmoji's ▶ and ♥ among them.) Add new
+    /// symbols here, and to `frontend/assets/DejaVuSans-Symbols.ttf` when this fails.
+    #[test]
+    fn symbols_render() {
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        theme::add_symbol_font(&mut fonts);
+        ctx.set_fonts(fonts);
+        theme::install(&ctx);
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
+        let font = egui::FontId::proportional(13.0);
+        let uv = |c: char| {
+            let galley = ctx.fonts_mut(|f| f.layout_no_wrap(c.to_string(), font.clone(), egui::Color32::WHITE));
+            galley.rows[0].glyphs[0].uv_rect
+        };
+        let replacement = uv('\u{FFFF}');
+        assert_eq!(replacement, uv('◻'), "an unknown character draws ◻");
+        let missing: Vec<char> =
+            "«·»×–…‹›←↑→↓≤≥⋮⋯■▶▾★♡♥⚙✕⟳".chars().filter(|&c| uv(c) == replacement).collect();
+        assert!(missing.is_empty(), "missing glyphs: {missing:?}");
+    }
+
     /// Every window stays below the nav bar and on screen, however small the app window is
     /// (what doesn't fit scrolls), and needs no scrolling at its default size.
     #[test]

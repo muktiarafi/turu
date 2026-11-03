@@ -506,6 +506,7 @@ fn system_fonts() -> egui::FontDefinitions {
         fonts.font_data.insert(file.to_owned(), Arc::new(egui::FontData::from_owned(data)));
         fonts.families.entry(egui::FontFamily::Proportional).or_default().push(file.to_owned());
     }
+    turu_frontend::gui::turu::theme::add_symbol_font(&mut fonts);
     fonts
 }
 
