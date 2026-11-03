@@ -196,17 +196,27 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   (empty: the computer's name) and Accept Commands, with the reporter's state and a warning for
   plain `http://` across the internet.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
-  the password goes to the system keychain off the UI thread) behind "+ Add account" (open while
-  editing, or with no accounts yet; it closes on Add or Cancel), the list (each row: Start and a ⋯
+  the password goes to the system keychain off the UI thread; no title when adding, "Editing
+  Hero" when editing, whose greyed username says on hover it's the account's key; Enter in any
+  field saves; Show has a width of its own so the two columns line up) behind "+ Add account" (open while
+  editing, or with no accounts yet; it closes on Add or Cancel; adding a username that's saved
+  already, in any case, is refused with "Hero is already in the list" and an "Edit it" link, where
+  it used to overwrite that account's display name and tags), the list (each row: Start and a ⋯
   menu, on the right and placed first, with Edit, ↑ Move up, ↓ Move down and Remove…, which
   asks in a box and says the saved password goes too; then, in the width left and cut there, the
   check box, a green dot while it runs, the name (the username on hover when it has a display
   name), the launch note, then its groups (in the accent colour) and tags (grey) as pills, as
-  many as fit with "+N" for the rest), a tag filter, Select / Unselect All, Add Selected to
+  many as fit with "+N" for the rest; the list takes the window's height that the form, the group
+  row and Launch leave, at least about four rows, where it was 200 px), a tag filter, Select /
+  Unselect All, Add Selected to
   Group and "Select a group's accounts" (checks that group's accounts and only those; each group
   has Remove, which keeps its accounts), and Launch: Server (the same drop-down
-  as Relogin Server, `widgets::server_combo`), where (In a tab, In its own window, Without a
-  window), the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
+  as Relogin Server, `widgets::server_combo`), Where (In a tab, In its own window, Without a
+  window), the script (Browse / Clear) with Auto-start (disabled without a script, saying so on
+  hover), Start Selected, Start All. Saved on every change.
+  Where Army can't start a `turu` of its own (`Platform::launches_processes`; Android, whose
+  executable is app_process), Launch shows "In a tab" and starts accounts in tabs whatever the
+  saved mode; without file dialogs "Use the loaded script" (the Script Loader's) replaces Browse.
   A launch reports on the rows (not only in the bottom line, which each account overwrote): a
   spinner and "Starting…" while it waits its turn, then the green dot; "Log in by hand" (amber)
   when it started without a saved password, until it's logged in in a tab (Army can't tell when

@@ -76,6 +76,14 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Start Selected and Start All ask first when they would start more accounts than this.
 const START_ASKS_ABOVE: usize = 3;
 
+/// The password field's Show / Hide button.
+const SHOW_WIDTH: f32 = 50.0;
+
+/// The list's height when the window is short: about four rows.
+const LIST_MIN_HEIGHT: f32 = 110.0;
+/// Room kept under the list's scroll area for the list card's own margin and gaps.
+const LIST_SPARE: f32 = 8.0;
+
 /// The add / edit form.
 #[derive(Default)]
 struct Form {
@@ -101,6 +109,10 @@ pub struct AccountsWindow {
     /// What the last action did, shown at the bottom (set by other threads too).
     status: Arc<Mutex<String>>,
     launches: Arc<Mutex<Launches>>,
+    /// Where the list's scroll area ended, and the height of what came after it in the window,
+    /// on the last frame: the list takes the rest of the window's height.
+    list_bottom: f32,
+    below_list: f32,
     /// Start Selected or Start All is waiting for its question's answer: these would start.
     confirm_start: Option<Vec<Account>>,
 }
@@ -117,6 +129,8 @@ impl Default for AccountsWindow {
             status: Arc::default(),
             launches: Arc::default(),
             confirm_start: None,
+            list_bottom: 0.0,
+            below_list: 0.0,
         }
     }
 }
@@ -158,6 +172,8 @@ impl AccountsWindow {
         if !status.is_empty() {
             ui.label(RichText::new(status).small().color(MUTED));
         }
+        // What follows the list, for the next frame's list height.
+        self.below_list = (ui.min_rect().bottom() - self.list_bottom).max(0.0);
     }
 
     /// The add / edit form, behind "+ Add account": you add an account once and launch it every
@@ -173,13 +189,32 @@ impl AccountsWindow {
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             let editing = self.form.editing.is_some();
-            widgets::section_label(ui, if editing { "EDIT ACCOUNT" } else { "ADD ACCOUNT" });
+            // Adding needs no title (the button names it); editing says whose account it is.
+            if let Some(username) = &self.form.editing {
+                ui.label(RichText::new(format!("Editing {username}")).strong().size(13.0));
+            }
             let half = (ui.available_width() - 6.0) / 2.0;
+            // Enter in any field saves, as Add Account / Save Account would.
+            let mut enter = false;
+            let mut submitted = |response: &egui::Response| {
+                enter |= response.lost_focus() && response.ctx.input(|i| i.key_pressed(egui::Key::Enter));
+            };
             ui.horizontal(|ui| {
-                ui.add_enabled_ui(!editing, |ui| {
-                    widgets::text_box(ui, &mut self.form.username, "Username", half)
-                });
-                widgets::text_box(ui, &mut self.form.display_name, "Display Name (optional)", half);
+                let username = ui
+                    .add_enabled_ui(!editing, |ui| {
+                        widgets::text_box(ui, &mut self.form.username, "Username", half)
+                    })
+                    .inner;
+                submitted(&username);
+                username.on_disabled_hover_text(
+                    "The username is the account's key: to rename it, remove the account and add it again",
+                );
+                submitted(&widgets::text_box(
+                    ui,
+                    &mut self.form.display_name,
+                    "Display Name (optional)",
+                    half,
+                ));
             });
             ui.horizontal(|ui| {
                 let hint = if editing {
@@ -187,22 +222,47 @@ impl AccountsWindow {
                 } else {
                     "Password"
                 };
-                ui.add(
+                // Show / Hide has a width of its own, so this row's fields line up with the row
+                // above (the password and the button together are as wide as the username).
+                let gap = ui.spacing().item_spacing.x;
+                let password = ui.add(
                     egui::TextEdit::singleline(&mut self.form.password)
                         .password(!self.form.show_password)
                         .hint_text(hint)
-                        .desired_width(half - 50.0)
+                        .desired_width(half - SHOW_WIDTH - gap)
                         .margin(egui::Margin::symmetric(8, 5))
                         .background_color(super::theme::INSET),
                 );
+                submitted(&password);
                 let eye = if self.form.show_password { "Hide" } else { "Show" };
-                if widgets::small_button(ui, eye, true).clicked() {
+                let size = vec2(SHOW_WIDTH, widgets::target(22.0, 40.0));
+                if widgets::button(ui, eye, Kind::Normal, true, size, "").clicked() {
                     self.form.show_password = !self.form.show_password;
                 }
-                widgets::text_box(ui, &mut self.form.tags, "Tags, comma-separated", half);
+                submitted(&widgets::text_box(
+                    ui,
+                    &mut self.form.tags,
+                    "Tags, comma-separated",
+                    half,
+                ));
             });
+            // Adding a username that's saved already would overwrite that account: say so and
+            // offer to edit it instead.
+            let duplicate = self.duplicate().cloned();
+            if let Some(existing) = &duplicate {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("{} is already in the list", existing.label()))
+                            .size(12.0)
+                            .color(WARNING),
+                    );
+                    if ui.link("Edit it").clicked() {
+                        self.edit(existing);
+                    }
+                });
+            }
             ui.horizontal(|ui| {
-                let can_save = !self.form.username.trim().is_empty();
+                let can_save = !self.form.username.trim().is_empty() && duplicate.is_none();
                 let label = if editing { "Save Account" } else { "Add Account" };
                 if widgets::button(
                     ui,
@@ -210,9 +270,14 @@ impl AccountsWindow {
                     Kind::Primary,
                     can_save,
                     vec2(120.0, 28.0),
-                    "Enter a username",
+                    if duplicate.is_some() {
+                        "That account is saved already: edit it instead"
+                    } else {
+                        "Enter a username"
+                    },
                 )
                 .clicked()
+                    || (enter && can_save)
                 {
                     self.submit_form();
                 }
@@ -223,6 +288,15 @@ impl AccountsWindow {
                 }
             });
         });
+    }
+
+    /// The saved account the form's username names while adding (ignoring case): adding it
+    /// would overwrite that account.
+    fn duplicate(&self) -> Option<&Account> {
+        if self.form.editing.is_some() {
+            return None;
+        }
+        self.list.find(self.form.username.trim())
     }
 
     fn submit_form(&mut self) {
@@ -310,8 +384,11 @@ impl AccountsWindow {
             let mut changed = false;
             let mut action: Option<(Row, String)> = None;
             let launches = lock(&self.launches);
+            // The height the window leaves once what follows the list (as tall as on the last
+            // frame) has its room; at least about four rows.
+            let height = (ui.available_height() - self.below_list - LIST_SPARE).max(LIST_MIN_HEIGHT);
             ScrollArea::vertical()
-                .max_height(200.0)
+                .max_height(height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     if self.list.accounts.is_empty() {
@@ -376,6 +453,7 @@ impl AccountsWindow {
                     }
                 });
             drop(launches);
+            self.list_bottom = ui.min_rect().bottom();
             if changed {
                 self.save();
             }
@@ -498,6 +576,14 @@ impl AccountsWindow {
                     self.save();
                 }
                 ui.add_space(8.0);
+                // Only tabs where Army can't start a `turu` of its own (Android).
+                if !crate::platform::platform().launches_processes() {
+                    ui.label("Where");
+                    ui.label(RichText::new(LaunchMode::Tab.label()).color(MUTED))
+                        .on_hover_text("Here accounts start in tabs of this app");
+                    return;
+                }
+                ui.label("Where");
                 let before = self.list.mode;
                 ComboBox::from_id_salt("turu_accounts_mode")
                     .selected_text(self.list.mode.label())
@@ -527,7 +613,20 @@ impl AccountsWindow {
                 if let Some(path) = &self.list.script {
                     label.on_hover_text(path.display().to_string());
                 }
-                if widgets::small_button(ui, "Browse…", !self.pending_script.is_open()).clicked() {
+                // Without file dialogs (Android), the script loaded in this tab instead.
+                let platform = crate::platform::platform();
+                let loaded = crate::turu::bot().scripts.loaded();
+                if !platform.has_file_dialogs() {
+                    let use_loaded = widgets::small_button(ui, "Use the loaded script", loaded.is_some())
+                        .on_disabled_hover_text("Load one in the Script Loader (Search Scripts) first")
+                        .on_hover_text("The script the Script Loader has loaded");
+                    if use_loaded.clicked()
+                        && let Some(path) = loaded
+                    {
+                        self.list.script = Some(path);
+                        self.save();
+                    }
+                } else if widgets::small_button(ui, "Browse…", !self.pending_script.is_open()).clicked() {
                     let start = files::scripts_start_dir(crate::turu::bot().paths.scripts_dir());
                     let dialog = FileDialog::new()
                         .set_title("Script for launched accounts")
@@ -541,12 +640,17 @@ impl AccountsWindow {
                 }
                 ui.add_space(8.0);
                 let has_script = self.list.script.is_some();
-                ui.add_enabled_ui(has_script, |ui| {
+                let auto_start = ui.add_enabled_ui(has_script, |ui| {
                     if widgets::switch(ui, &mut self.list.auto_start).changed() {
                         self.save();
                     }
                     ui.label("Auto-start");
                 });
+                if !has_script {
+                    auto_start
+                        .response
+                        .on_hover_text("Pick a script first: Auto-start runs it after the login");
+                }
             });
             ui.horizontal(|ui| {
                 let selected: Vec<Account> = self.list.accounts.iter().filter(|a| a.selected).cloned().collect();
@@ -611,7 +715,7 @@ impl AccountsWindow {
             headless: list.mode == LaunchMode::Headless,
             ..Default::default()
         };
-        let in_tabs = list.mode == LaunchMode::Tab;
+        let in_tabs = list.mode == LaunchMode::Tab || !crate::platform::platform().launches_processes();
         {
             let mut launches = lock(&self.launches);
             launches.batch = accounts.iter().map(|a| a.username.clone()).collect();
@@ -858,6 +962,66 @@ enum Row {
 mod tests {
     use super::{Launched, Launches, lock, shows};
     use turu_bot::accounts::Account;
+
+    /// With many accounts the list takes the window's height (more than the old 200 px), and
+    /// everything still fits: the launch card isn't pushed out of the window.
+    #[test]
+    fn list_takes_the_height_left() {
+        let mut window = super::AccountsWindow {
+            list: Default::default(),
+            ..Default::default()
+        };
+        for n in 0..30 {
+            window.list.accounts.push(Account {
+                username: format!("Account{n}"),
+                ..Default::default()
+            });
+        }
+        let ctx = egui::Context::default();
+        let (width, height) = (496.0, 560.0);
+        let mut used = egui::Vec2::ZERO;
+        for _ in 0..4 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 1000.0))),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                ui.allocate_ui(egui::vec2(width, height), |ui| {
+                    ui.set_width(width);
+                    let top = ui.min_rect().top();
+                    window.ui(ui);
+                    used = egui::vec2(window.list_bottom - top, ui.min_rect().height());
+                });
+            });
+            output.textures_delta.clear();
+        }
+        let (list_end, total) = (used.x, used.y);
+        assert!(
+            total <= height + 1.0,
+            "the window's content is {total} px tall, in {height}"
+        );
+        assert!(
+            list_end > 320.0,
+            "the list ends at {list_end} px: it doesn't use the room"
+        );
+    }
+
+    /// Adding a username that's saved already (in any case) is refused; editing it isn't.
+    #[test]
+    fn adding_a_saved_username_is_refused() {
+        let mut window = super::AccountsWindow {
+            list: Default::default(),
+            ..Default::default()
+        };
+        window.list.upsert(Account {
+            username: "Hero".into(),
+            ..Default::default()
+        });
+        window.form.username = " hero ".into();
+        assert_eq!(window.duplicate().map(|a| a.username.as_str()), Some("Hero"));
+        window.form.editing = Some("Hero".into());
+        assert!(window.duplicate().is_none());
+    }
 
     /// A row with a long name, tags and a long failure stays inside the window's width: the
     /// buttons keep their place and the rest is cut.

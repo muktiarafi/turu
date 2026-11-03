@@ -74,6 +74,12 @@ pub trait Platform: Send + Sync {
         true
     }
 
+    /// Whether Army can start accounts in `turu` processes of their own (Army > Accounts' "In
+    /// its own window" and "Without a window"); else only in tabs.
+    fn launches_processes(&self) -> bool {
+        true
+    }
+
     /// Whether the screen is touched rather than pointed at: no hover, so tooltips never show,
     /// and controls need finger-sized targets (48 points, Android's minimum).
     fn is_touch(&self) -> bool {

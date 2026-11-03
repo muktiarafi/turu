@@ -54,6 +54,11 @@ impl Platform for AndroidPlatform {
     fn is_touch(&self) -> bool {
         true
     }
+
+    // The app's executable is Android's app_process, not a `turu` Army could start.
+    fn launches_processes(&self) -> bool {
+        false
+    }
 }
 
 /// `activity.startActivity(new Intent(ACTION_VIEW, Uri.parse(url)))`.
