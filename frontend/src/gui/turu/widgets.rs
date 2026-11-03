@@ -160,12 +160,15 @@ fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
-/// A one-line text box with a hint, in Turu's inset style.
+/// A one-line text box with a hint, in Turu's inset style; on a touch screen as tall as the
+/// small buttons (40 points).
 pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
     ui.add(
         egui::TextEdit::singleline(text)
             .hint_text(hint)
             .desired_width(width)
+            .min_size(vec2(0.0, target(0.0, 40.0)))
+            .vertical_align(Align::Center)
             .margin(Margin::symmetric(8, 5))
             .background_color(INSET),
     )
@@ -242,13 +245,15 @@ impl LogView {
         self.matches
     }
 
-    /// Scrolls to the last line containing `text` on the next draw, clearing the filter;
-    /// whether there is one.
+    /// Scrolls to the last line containing `text` on the next draw; whether there is one. The
+    /// filter stays when that line passes it, else it is cleared (the Find box empties).
     pub fn reveal(&mut self, text: &str) -> bool {
-        if !self.lines.iter().any(|line| line.contains(text)) {
+        let Some(line) = self.lines.iter().rev().find(|line| line.contains(text)) else {
             return false;
+        };
+        if !passes(line, &self.filter.trim().to_lowercase()) {
+            self.filter.clear();
         }
-        self.filter.clear();
         self.reveal = Some(text.to_owned());
         self.shown_for = None;
         true
@@ -288,7 +293,7 @@ impl LogView {
                     scroll = scroll.vertical_scroll_offset(row.saturating_sub(2) as f32 * step);
                 }
                 // Empty: say why, where the lines would be.
-                let empty = if !self.filter.is_empty() {
+                let empty = if !self.filter.trim().is_empty() {
                     Some(format!("No lines contain \"{}\"", self.filter.trim()))
                 } else {
                     (!self.empty_text.is_empty()).then(|| self.empty_text.to_owned())
@@ -324,13 +329,13 @@ impl LogView {
         {
             return None;
         }
-        let needle = self.filter.to_lowercase();
+        let needle = self.filter.trim().to_lowercase();
         let reveal = self.reveal.take();
         let mut target = None;
         self.shown.clear();
         self.matches = 0;
         for line in &self.lines {
-            if !needle.is_empty() && !line.to_lowercase().contains(&needle) {
+            if !passes(line, &needle) {
                 continue;
             }
             self.matches += 1;
@@ -344,6 +349,11 @@ impl LogView {
         self.shown_for = Some((cols, self.filter.clone()));
         target
     }
+}
+
+/// Whether `line` contains `needle` (already lowercased; empty passes everything).
+fn passes(line: &str, needle: &str) -> bool {
+    needle.is_empty() || line.to_lowercase().contains(needle)
 }
 
 /// Adds `row` to `out` in pieces of at most `cols` characters, breaking after a space near the
@@ -569,7 +579,38 @@ impl Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::wrap_row;
+    use super::{LogView, wrap_row};
+
+    fn view(lines: &[&str]) -> LogView {
+        let mut view = LogView::default();
+        view.set_rows(lines.iter().map(|l| (*l).to_owned()).collect(), lines.len());
+        view
+    }
+
+    /// Revealing a line keeps the user's filter when the line passes it, else clears it.
+    #[test]
+    fn reveal_keeps_a_filter_the_line_passes() {
+        let mut log = view(&["[1] Hunting", "[2] Error: no target", "[3] Hunting"]);
+        *log.filter_mut() = "error".into();
+        assert!(log.reveal("no target"));
+        assert_eq!(log.filter_mut(), "error");
+        *log.filter_mut() = "hunting".into();
+        assert!(log.reveal("no target"));
+        assert_eq!(log.filter_mut(), "");
+        assert!(!log.reveal("missing"));
+    }
+
+    /// A filter of spaces filters nothing; spaces around a word are ignored.
+    #[test]
+    fn filters_ignore_surrounding_spaces() {
+        let mut log = view(&["[1] Hunting", "[2] Error"]);
+        *log.filter_mut() = "   ".into();
+        log.rebuild(80);
+        assert_eq!(log.matches(), 2);
+        *log.filter_mut() = " error ".into();
+        log.rebuild(80);
+        assert_eq!(log.matches(), 1);
+    }
 
     fn wrapped(row: &str, cols: usize) -> Vec<String> {
         let mut out = Vec::new();

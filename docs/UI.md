@@ -87,7 +87,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   ("Finished · ran 6h 12m", "Stopped · ran 3h 40m", "Stopped with an error · ran 2h 10m"; "Ended
   at 04:12" on hover; from `RunEnd`, which records the script, finished or not, the run's length
   and its end time) instead of "Ready"; while a script runs, "last log 2m ago" on the right, or
-  on a line under the state when the window is too narrow (the script log's newest line; amber
+  on a line under the state when the window is too narrow (the state itself is cut to fit, whole
+  on hover) (the script log's newest line; amber
   once a running script has been quiet 5 minutes). When the error's line is no longer in the log
   (cleared, or pushed out), clicking it shows the whole error in the card instead, selectable,
   with a Hide button. Beside the file name, where files open in an app, a small "Open in
@@ -95,7 +96,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   default app): VibeSkua's Edit Script and Open VSCode in one, kept out of the setup grid (a VS
   Code that won't start says so in the script log);
   under it the run controls, 38 px high: Start Script alone across the row while nothing runs;
-  while it runs, Stop Script (danger, about 60% of the width) and Pause/Resume; while stopping
+  while it runs, Stop Script (danger, about 60% of the width) and Pause/Resume (Resume is
+  primary while paused: it's what a check-in wants then); while stopping
   handlers run, Stop Script rests (disabled; the card says "Stopping...") and Force Stop takes
   Pause's place, enabled after `FORCE_STOP_AFTER` (1.5 s, which its reason names; F10 forces only
   then too), so a double press only stops; then,
@@ -110,8 +112,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   (opens the window below) side by side; Edit Script Options across the row (enabled once a
   script with options is loaded);
   SCRIPT LOG with a Find box (keeps the lines containing its text, any case, with their count;
-  Escape clears it; with no match the list says `No lines contain "..."`), Copy/Save/Clear,
-  following the end, selectable text, "The script's log shows here when it runs" while empty;
+  spaces around it ignored; Escape clears it; with no match the list says
+  `No lines contain "..."`; revealing the error keeps it when the error's line passes it, else
+  clears it), Copy/Save/Clear, following the end, selectable text, "The script's log shows here
+  when it runs" while empty ("Nothing logged yet" while a script runs);
   long lines wrap to the width, continuing under the text after the time (also in
   Diagnostics > Logs).
   The "Report Issues" footer is omitted.

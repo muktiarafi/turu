@@ -66,7 +66,11 @@ impl ScriptLoader {
         let platform = crate::platform::platform();
         let code = self.vscode.get_or_insert_with(files::find_vscode).clone();
         self.log.set_wrap(true);
-        self.log.set_empty_text("The script's log shows here when it runs");
+        self.log.set_empty_text(if active {
+            "Nothing logged yet"
+        } else {
+            "The script's log shows here when it runs"
+        });
         self.log.refresh(&bot.logs.script);
 
         ui.spacing_mut().item_spacing = vec2(6.0, 10.0);
@@ -123,7 +127,8 @@ impl ScriptLoader {
                         _ => format!("{} · ran {}", run.how, run.ran),
                     };
                 }
-                let label = ui.label(RichText::new(state).size(16.0).strong().color(TEXT));
+                // Cut to fit a narrow window (the whole state on hover).
+                let label = ui.add(Label::new(RichText::new(state).size(16.0).strong().color(TEXT)).truncate());
                 if let Some(run) = &last_run {
                     label.on_hover_text(format!("Ended at {}", run.at));
                 }
@@ -303,8 +308,13 @@ impl ScriptLoader {
                 }
             } else if second {
                 let paused = status == ScriptStatus::Paused;
-                let label = if paused { "Resume Script" } else { "Pause Script" };
-                if widgets::button(ui, label, Kind::Normal, true, size, "").clicked() {
+                // Paused, Resume is what the user came back for: it leads, not Stop.
+                let (label, kind) = if paused {
+                    ("Resume Script", Kind::Primary)
+                } else {
+                    ("Pause Script", Kind::Normal)
+                };
+                if widgets::button(ui, label, kind, true, size, "").clicked() {
                     script::set_paused(&bot, !paused);
                 }
             }
@@ -350,7 +360,7 @@ impl ScriptLoader {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             widgets::section_label(ui, "SCRIPT LOG");
-            if !self.log.filter_mut().is_empty() {
+            if !self.log.filter_mut().trim().is_empty() {
                 widgets::count_badge(ui, self.log.matches());
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
