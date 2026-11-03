@@ -322,13 +322,45 @@ Android's limits are the biggest behavioural difference from a desktop:
 * **Not done:** the full hour (stopped at 20 minutes), a real phone, and keeping the process
   alive in the background (phase 4).
 
+## As built: phase 2
+
+* **Surface:** the engine thread waits for the first window and builds the player with wgpu on
+  it (`--graphics auto|vulkan|gl`; auto tries Vulkan, then OpenGL ES). `android_main` forwards
+  the activity's events as `EngineEvent::Run` closures (new in `turu_frontend::engine`, with
+  `run_loop_with`'s after-tick hook that draws). A new window gets a new surface
+  (`recreate_surface_unsafe`); the window going away stops drawing first (acknowledged before
+  `TerminateWindow` returns) and marks the bot's `hidden_tab`, so the game slows down like a
+  hidden desktop tab and speeds up again on return.
+* **Input** (`input.rs`): touch as the mouse; keys named from the Android key code, their
+  character from the device's key character map (Shift works, unlike ruffle-android's table).
+  **Soft keyboard** (`ui.rs`): Ruffle's `open_virtual_keyboard`/`close_virtual_keyboard` call
+  `show_soft_input`/`hide_soft_input`; NativeActivity gets the keyboard's typing as key events.
+* **Sound:** ruffle-android's AAudio backend, logging instead of panicking; the desktop's
+  decoders (mp3, aac, nellymoser) and `default_font` for `_sans` and friends.
+* **Foreground service, pulled forward from phase 4:** without one, Android 16 cut the app's
+  network about 17 s after Home and the game dropped. `TuruActivity` (a NativeActivity) starts
+  `TuruService` (`specialUse`, a notification, `START_NOT_STICKY`); the wake lock, battery
+  prompt and notification actions stay in phase 4.
+* **Checked on the emulator** (Android 16, arm64, `-gpu host`): the game draws with Vulkan
+  (login screen, HUD, chat); GoldFarm kept farming through 60 s in the background (kills 2 to
+  9, no relogin) and drew again on return; tapping the login screen's Username field opened the
+  soft keyboard and typing reached it with capitals.
+* **Vulkan vs OpenGL ES** (login screen, emulator): Vulkan ~199 MB PSS, 16-23% CPU; OpenGL ES
+  ~196 MB, 12-16%, but it drew only the logo's outline, with no error logged. Mugetsu's
+  renderer changes were made on Metal, Vulkan and DX12; GLES needs work before it can be a
+  fallback. Default: Vulkan.
+* **Not done:** a phone; logging in by hand on the game's screen (typing works; the login itself
+  was done with `--user`); the soft keyboard covers the field (NativeActivity has no text view
+  to scroll into view; phase 3's egui can show a text box above it); device fonts from
+  `/system/fonts`.
+
 ## Phases
 
 | Phase | Goal | Done when |
 |---|---|---|
 | 0. Split (built) | `turu_frontend` crate; the event-loop seam; `Platform` trait; `SecretStore`; TLS feature on `turu_bot`. Desktop only. | Desktop and headless behave as before; `cargo test -p turu_bot` and clippy pass. |
 | 1. Headless spike (built; farmed 20 min on an emulator) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
-| 2. Game on screen | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
+| 2. Game on screen (built; checked on an emulator) | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
 | 3. Turu UI | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
 | 4. Background | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |
 | 5. Later | Tabs (2 clients), Butler, Cosmetics, tablet layout, gamepad. | Per row. |

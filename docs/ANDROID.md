@@ -3,18 +3,23 @@
 How to build, run and check the Android app. The design and the plan are in
 `docs/ANDROID_PROPOSAL.md`.
 
-> **Status (phase 1):** no UI. The app starts the game and the bot without a window, the way
-> `--headless` does on a desktop, set up from a file. On an Android 16 arm64 emulator it logged in
-> and ran GoldFarm for 20 minutes (2026-11-03): 168 kills at a steady ~8 a minute, no deaths, no
-> relogins, ~410 MB (PSS) flat, 4-16% of a CPU. Not yet run on a phone. The process only lives
-> while Android lets it: there's no foreground service yet (phase 4), so keep the app on screen.
+> **Status (phase 2):** the game on screen (Vulkan), with touch, keys, the soft keyboard and
+> sound; no Turu UI yet (setup comes from a file). A foreground service keeps it running, and
+> online, in the background. On an Android 16 arm64 emulator (2026-11-03): GoldFarm ran 20
+> minutes windowless (phase 1: 168 kills, no deaths or relogins, ~410 MB flat), then on screen
+> it kept farming through 60 s in the background and drew again on return; on the login screen a
+> tap opens the soft keyboard and typing reaches the field. Not yet run on a phone.
+>
+> **Known gaps:** the soft keyboard covers the field you type in (close it to see the text);
+> OpenGL ES draws only parts of the game (use Vulkan, the default); the notification has no
+> actions and no wake lock is held (phase 4).
 
 ## What's where
 
 | Path | What |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main` (NativeActivity), the engine thread, logcat, `turu-args.txt`. Empty on other systems. |
-| `android/app/` | the Gradle app module: manifest (NativeActivity, landscape), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
+| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, the window's surface, logcat, `turu-args.txt`. `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the soft keyboard). Empty on other systems. |
+| `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity that starts `TuruService`, the foreground service), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
 | `android/rustls-platform-verifier/` | Gradle module building the Kotlin half of `rustls-platform-verifier` (HTTPS certificate checks against Android's trust store) from the submodule `android/vendor/rustls-platform-verifier`. |
 | `frontend/src/engine.rs` | the windowless player loop, shared with the desktop's `--headless`. |
 
@@ -62,11 +67,11 @@ $HOME/Library/Android/sdk/cmdline-tools/latest/bin/avdmanager create avd -n turu
 ```
 
 ```bash
-$HOME/Library/Android/sdk/emulator/emulator -avd turu_api36 -no-window -no-audio
+$HOME/Library/Android/sdk/emulator/emulator -avd turu_api36 -gpu host
 ```
 
 ```bash
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb shell am start -n com.muktiarafi.turu/android.app.NativeActivity
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb shell am start -n com.muktiarafi.turu/.TuruActivity
 ```
 
 ## Setup: `turu-args.txt`
@@ -74,7 +79,9 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb shell am
 The data folder is the app's files folder on shared storage,
 `/sdcard/Android/data/com.muktiarafi.turu/files` (Turu's usual data folder layout: `scripts/`,
 `options/`, `options.json`, ...). The app reads `turu-args.txt` there at start: the desktop's
-startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments:
+startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
+`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES). Without the file the game starts at
+its login screen:
 
 ```
 --user
@@ -122,5 +129,6 @@ openssl rand -hex 24 > api-token && adb shell rm -f /sdcard/Android/data/com.muk
 curl -H "Authorization: Bearer $(cat api-token)" http://127.0.0.1:8791/status
 ```
 
-On the emulator the app used ~164 MB (PSS) and ~4% of a CPU at AQW's title screen, and ~410 MB
-and 4-16% while farming.
+Windowless (phase 1) the app used ~164 MB (PSS) and ~4% of a CPU at AQW's title screen, and
+~410 MB and 4-16% while farming. On screen at the login screen (emulator, `-gpu host`): Vulkan
+~199 MB and 16-23%. The emulator translates both APIs to the Mac's GPU, so a phone will differ.

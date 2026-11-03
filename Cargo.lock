@@ -7106,11 +7106,13 @@ dependencies = [
  "android_logger",
  "jni 0.22.4",
  "log",
+ "ndk",
  "reqwest",
  "rquickjs",
  "ruffle_core",
  "ruffle_frontend_utils",
  "ruffle_render",
+ "ruffle_render_wgpu",
  "rustls",
  "rustls-platform-verifier",
  "tokio",
@@ -7118,6 +7120,7 @@ dependencies = [
  "turu_bot",
  "turu_frontend",
  "url",
+ "wgpu",
 ]
 
 [[package]]

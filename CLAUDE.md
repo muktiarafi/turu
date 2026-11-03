@@ -23,7 +23,7 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 | `bot/assets/skua.swf` | VibeSkua's AS3 host (`Skua.AS3/skua/bin/skua.swf`), unchanged. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
 | `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (for Android later: `docs/ANDROID_PROPOSAL.md`). The app re-exports its modules (`crate::turu`, ...). |
-| `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): NativeActivity, the engine thread on `turu_frontend::engine`, setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). |
+| `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): `TuruActivity` (NativeActivity) and `TuruService` (foreground service), the engine thread on `turu_frontend::engine` drawing with wgpu, setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). |
 | `frontend/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
 | `frontend/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
 | `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |

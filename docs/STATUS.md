@@ -416,9 +416,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   still open: the next such run logs it.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
-- **Android (phase 1, `docs/ANDROID.md`):** no UI; the engine runs from `turu-args.txt`. On an
-  emulator it logged in and farmed GoldFarm for 20 minutes. Not run on a phone yet, and killed
-  when Android reclaims the app (no foreground service yet).
+- **Android (phase 2, `docs/ANDROID.md`):** the game on screen (Vulkan) with touch, keys, the
+  soft keyboard and sound; no Turu UI (setup from `turu-args.txt`). A foreground service keeps
+  it online in the background. Checked on an emulator, not a phone; OpenGL ES misdraws; the soft
+  keyboard covers the field being typed in.
 - **Windowless mode logs in and farms** (2026-11-03: desktop `--headless` and Android, GoldFarm).
   It needed a fix in ruffle-aqw (`core/src/bitmap/operations.rs`): with AQW's default settings
   (no saved `AQWUserPref`, as on a new server or phone) the game draws the stage into a bitmap

@@ -16,8 +16,15 @@ workspace = true
 [target.'cfg(target_os = "android")'.dependencies]
 turu_bot = { path = "../bot", default-features = false }
 turu_frontend = { path = "../frontend" }
-ruffle_core = { path = "../ruffle/core", features = ["lzma", "default_compatibility_rules"] }
+# The desktop's decoders, and Ruffle's built-in font for `_sans` and friends (no device fonts
+# are loaded yet).
+ruffle_core = { path = "../ruffle/core", features = ["audio", "mp3", "aac", "nellymoser", "lzma", "jpegxr", "default_compatibility_rules", "default_font"] }
 ruffle_render = { path = "../ruffle/render" }
+ruffle_render_wgpu = { path = "../ruffle/render/wgpu" }
+# Keep equal to the desktop's (`[workspace.dependencies]`).
+wgpu = { workspace = true }
+# AAudio (`audio.rs`) and the window; the same ndk android-activity uses.
+ndk = { version = "0.9", features = ["audio"] }
 ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }
 android-activity = { version = "0.6.1", features = ["native-activity"] }
 android_logger = "0.15.1"
