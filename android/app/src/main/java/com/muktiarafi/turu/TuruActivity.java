@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.window.OnBackInvokedDispatcher;
@@ -41,6 +42,10 @@ public class TuruActivity extends NativeActivity {
             nativeKeyboardHeight(keyboardHeight(insets));
             return view.onApplyWindowInsets(insets);
         });
+        // What the soft keyboard types into (KeyInput: a tap on delete works).
+        KeyInput keys = new KeyInput(this);
+        addContentView(keys, new ViewGroup.LayoutParams(1, 1));
+        keys.requestFocus();
         askOnce();
     }
 

@@ -151,6 +151,12 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * **Text fields need `TextControl`:** Ruffle edits a field from `PlayerEvent::TextControl`
   (Backspace, arrows, Ctrl+V), not from `KeyDown`. With Ctrl, Android's key character map types
   nothing, so `input.rs` takes the key's unmodified letter for Ctrl+A/C/V/X.
+* **A tap on the keyboard's delete did nothing until delete was held:** without a text view,
+  Android gives the keyboard a stand-in connection that turns typed text into keys but drops
+  "delete before the cursor", which a keyboard sends while it thinks there's text. `KeyInput.java`
+  (an invisible focused view, `TYPE_NULL`: key events only) is the keyboard's connection now; it
+  accepts NativeActivity's show/hide (`checkInputConnectionProxy`) and turns delete requests into
+  keys. No suggestions or swipe typing, as in a terminal.
 * **The emulator's soft keyboard** stays hidden (an IME of zero height) while the Mac's keyboard
   counts as a hardware one: turn on "show on-screen keyboard" (`settings put secure
   show_ime_with_hard_keyboard 1`) and restart Gboard or the emulator.
