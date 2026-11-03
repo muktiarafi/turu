@@ -211,7 +211,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
    bug).
 3. Log in by hand on the game's screen on a phone, now that typing shows above the keyboard.
 4. SAF import and the Keystore `SecretStore` (phone use without a computer).
-5. Proposal phase 5: tabs (several clients), Butler, a tablet layout, gamepads (Cosmetics is
+5. Proposal phase 5: tabs (several clients), Army scripts and Butler (steps and estimate in
+   `ANDROID_PROPOSAL.md`, "Plan: tabs, Army and Butler"), a tablet layout, gamepads (Cosmetics is
    done, above).
 
 A different direction the owner pointed at: `../aqw-python` is a bot with no Flash at all (it

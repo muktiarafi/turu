@@ -86,9 +86,9 @@ the Android build (stays on desktop); **Later** = possible, not in the first rel
 | Webhooks (Discord) | Port | |
 | Web monitor and control API | Port | Off by default; binding on LAN needs a clear on/off switch and the key, as on desktop. |
 | Accounts (saved logins) | Adapt | Passwords in the Android Keystore instead of `keyring`. |
-| Tabs (several clients in one process) | Later | Already in-process, so it works in principle; memory decides (one client is ~420 MB with a window on desktop). v1: one client, maybe two. |
-| Army (one `turu` process per account, `army.rs`) | Drop | Android apps don't spawn copies of themselves. Tabs are the phone's multi-account story; Army Control of *desktop* clients from the phone is the monitor's job. |
-| Butler | Later | Its file-based sync (`butler/<user>.state`) works within one process's tabs; useful only with tabs. |
+| Tabs (several clients in one process) | Later | Already in-process, so it works in principle; memory decides (one client is ~420 MB with a window on desktop). v1: one client; phase 5: two, at most four ("Plan: tabs, Army and Butler"). |
+| Army (one `turu` process per account, `army.rs`) | Adapt (phase 5) | Android apps don't spawn copies of themselves: Accounts launches into tabs, and army scripts (`bot.army`) sync between tabs as between processes. Army Control of *desktop* clients from the phone is the monitor's job. |
+| Butler | Later (phase 5) | Its file-based sync (`butler/<user>.state`) works within one process's tabs; useful only with tabs. |
 | Cosmetics | Later | Works; large catalog UI needs its own layout. |
 | Grabber, Loader, Console, Interceptor, Packet Logger, Spammer, Junk Items editor | Drop (v1) | Script-writing and debugging tools: keyboard and big screen. They compile; hide them from the phone nav. Revisit for tablets. |
 | Mugetsu settings (edge smoothing, frame interpolation, show FPS) | Port | Graphics API choice becomes Auto/Vulkan/OpenGL ES. |
@@ -410,6 +410,103 @@ Android's limits are the biggest behavioural difference from a desktop:
 * **Not done:** a 6-hour run on two phone brands (the phase's "done when"); restarting a script
   started by hand (only `turu-args.txt`'s); guides for vendors' battery managers.
 
+## Plan: tabs, Army and Butler (phase 5)
+
+Written 2026-11-04 against `script-loader-layout` (`55bce1e5b`). Not started.
+
+### Why tabs, not processes
+
+Army scripts (`bot.army`, `bot/src/api/army.rs`) and Butler (`bot/src/butler/sync.rs`) find
+each other through files in the data folder: the army's sync logs, lock files and barrier, its
+room number (a hash of the folder's path), and each account's `butler/<username>.state`. They
+don't care whether the clients are processes or tabs; Butler's sync already tells tabs of one
+process apart (`beat=` instead of VibeSkua's PID check). The desktop's tabs already hold one bot
+and one player each, Army > Accounts has an "In a tab" launch mode (`LaunchMode::Tab`), and Army
+Control steers tabs through `control_api::local`.
+
+So on Android the multi-account story is several tabs in the one engine thread. Starting one
+process per account (`android:process` services, each loading `libturu_android.so`) would cost
+a whole runtime per account and is not planned.
+
+What's missing is on Android's side: `android/src/lib.rs`'s `engine` builds one player and runs
+`engine::run_loop_with(&player, ...)`, nothing calls `turu::set_tab_requests` (so the tab
+strip's "+", Accounts' "In a tab" and Army Control's Select do nothing), and every Flash call
+goes to that one player whatever its tab.
+
+### Memory decides how many
+
+One client is ~410 MB PSS while farming (phase 1, emulator). A phone holds 2 clients, maybe 3,
+before the system starts killing a foreground service. Enough for Butler (you and one or two
+followers) and small army scripts; not for a 4-6 account army, which stays a desktop or server
+job (`docs/HEADLESS.md`). The limit is a setting (default 2, at most 4), checked on open.
+
+### Steps
+
+1. **Share the multi-player bookkeeping.** The desktop's `PlayerController` (`app/src/player.rs`)
+   keeps, per tab: its player, its `ThreadState` (Ruffle's `PlayerThreadState` and the wgpu
+   renderer's unsubmitted `segments`, swapped into the thread while a player that isn't the
+   active one runs: `SwappedIn`, `TabPlayer`) and `hidden_tick` (`HIDDEN_TICK_MAX`, 50 ms,
+   between a hidden tab's socket polls). Move `ThreadState`, `SwappedIn`, `TabPlayer` and the
+   hidden-tick timing into a `turu_frontend::players` module with no winit, and have
+   `PlayerController` use it, so the desktop and Android swap the same state the same way.
+   Desktop behaviour unchanged (tabs, Grid View, closing a tab).
+2. **A tabbed engine loop.** `engine::run_loop_with` takes the tab list: tick the active
+   player at its frame rate and the others at the hidden tab's rate (`set_hidden_tab_fps`),
+   answer `TuruFlashCall` with `call.tab()`'s player (as `app.rs`'s `user_event` does), run
+   `EngineEvent::Run` on the active one, and add `EngineEvent::Tab(TabRequest)`. The desktop's
+   `--headless` keeps one tab and goes through the same code.
+3. **Tab requests on Android.** `engine` calls `turu::set_tab_requests` with a sender of
+   `EngineEvent::Tab`. Open builds a player with `build_player` (`turu::add_tab` first, its bot
+   given `engine::flash_host`'s host for that tab); Select swaps which player draws to the
+   surface and which one AAudio plays (the others muted, as `set_tab_volumes`); Close detaches
+   the bot and drops the player. Open over the limit is refused with a log line. The tab strip
+   (`frontend/src/gui/turu/tab_strip.rs`, in `TuruUi` already) then shows up by itself with two
+   tabs; it needs a touch size (taller tabs, "×" only on the active one).
+4. **Accounts launch into tabs.** On Android, Army > Accounts offers only "In a tab" and
+   "Log in by hand"; `army::Army::launch` (process spawning) is behind
+   `#[cfg(not(target_os = "android"))]`, so nothing can start a process.
+5. **Passwords in the Android Keystore.** `accounts.rs`'s Android `SecretStore` is a stub, so
+   Accounts can't log in a tab by itself and `bot.army.login` fails. Implement it over JNI: an
+   AES key in the Keystore, the passwords encrypted with it in internal storage (not the shared
+   data folder). Needed for any unattended multi-account run.
+6. **Service and notification.** The wake lock is held while any tab's script runs; the
+   notification lists each tab's state (one line per tab, Pause/Stop for the active one); after
+   a kill the service reopens the tabs that were open (their accounts, written to
+   `android-tabs.json` on each open/close) and starts each one's script, extending phase 4's
+   `turu-args.txt` restart.
+7. **Touch layouts for Butler and Army Control.** Both are 520-560 px floating windows today;
+   give them the sheet frame and enlarge the roster rows and Summon/Follow toggles.
+8. **Run it on a phone.** Two tabs (a Butler master and a follower) for an hour with the screen
+   off; an army script (e.g. one using `bot.army.barrier`) on two tabs; `onTrimMemory` at
+   `TRIM_MEMORY_RUNNING_LOW` logs and, at critical, stops the hidden tabs' scripts instead of
+   letting the system kill the service.
+
+### Effort
+
+| Step | Files | Estimate |
+|---|---|---|
+| 1-3. Shared player bookkeeping, tabbed loop, tab requests | `frontend/src/engine.rs`, new `frontend/src/players.rs`, `app/src/player.rs`, `android/src/{lib,screen,audio}.rs` | 1-2 weeks |
+| 4. Accounts into tabs | `bot/src/army.rs`, `frontend/src/gui/turu/accounts.rs` | 1-2 days |
+| 5. Keystore `SecretStore` | `bot/src/accounts.rs`, `android/` (JNI, Java) | 3-4 days |
+| 6. Service, notification, restart | `android/src/notify.rs`, `TuruService`, `android/src/lib.rs` | 2-3 days |
+| 7. Butler and Army Control layouts | `frontend/src/gui/turu/{butler,army,tab_strip}.rs` | 2-3 days |
+| 8. Phone testing | | ongoing |
+
+About 3-4 weeks in all. Steps 1-2 are the risky part (the thread-state swap is what keeps two
+players' renderers apart); do them first and check the desktop's tabs and Grid View still work
+before any Android code.
+
+### Not in this plan
+
+* **A phone and a desktop in one army or party.** The sync files only reach clients sharing a
+  data folder, so a phone can't follow a desktop master or join a desktop army. That needs the
+  army logs, barrier and Butler state carried over the network (the web monitor's hub, which
+  already collects every client's snapshot, is the natural place). Worth its own design note: it
+  would also let one army span several machines.
+* **Steering desktop armies from the phone.** Already done by the web monitor in the phone's
+  browser (Start / Stop / Relog / Join map on one bot or several).
+* **Grid View** on a phone: the tiles would be too small; tablets only, later.
+
 ## Phases
 
 | Phase | Goal | Done when |
@@ -419,7 +516,7 @@ Android's limits are the biggest behavioural difference from a desktop:
 | 2. Game on screen (built; checked on an emulator) | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
 | 3. Turu UI (built; checked on an emulator, without the drawer, sheets or SAF) | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
 | 4. Background (built; checked on an emulator) | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |
-| 5. Later | Tabs (2 clients), Butler, Cosmetics, tablet layout, gamepad. | Per row. |
+| 5. Later | Tabs (2 clients), Army scripts and Butler between them ("Plan: tabs, Army and Butler"), Cosmetics, tablet layout, gamepad. | Tabs: a Butler master and follower farm for an hour with the screen off on a phone; an army script runs on two tabs. Others per row. |
 
 Phases 0 and 1 are cheap and answer the risky questions (does the engine run, how much memory,
 does the socket survive) before any UI work.
