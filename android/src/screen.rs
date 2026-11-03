@@ -215,15 +215,21 @@ impl Screen {
         (self.size.0, self.size.1.saturating_sub(top).max(1))
     }
 
-    /// A touch: the UI's when it starts on the UI, else the game's.
+    /// A touch: the UI's when it starts on the nav bar or on a window, menu or popup, else the
+    /// game's. The root UI covers the whole screen on egui's background layer, so that layer
+    /// doesn't count. egui sees every touch: one on the game closes an open menu, as a click
+    /// elsewhere does on the desktop.
     pub fn touch(&mut self, player: &mut Player, touch: Touch) {
         if let Touch::Down(x, y) = touch {
             let pos = egui::pos2(x as f32 / self.pixels_per_point, y as f32 / self.pixels_per_point);
-            self.touch_on_ui = y < f64::from(self.top()) || self.egui.layer_id_at(pos).is_some();
+            let on_layer = self
+                .egui
+                .layer_id_at(pos)
+                .is_some_and(|layer| layer.order != egui::Order::Background);
+            self.touch_on_ui = y < f64::from(self.top()) || on_layer;
         }
-        if self.touch_on_ui {
-            self.events.extend(touch.egui_events(self.pixels_per_point));
-        } else {
+        self.events.extend(touch.egui_events(self.pixels_per_point));
+        if !self.touch_on_ui {
             player.handle_event(touch.player_event(f64::from(self.top())));
         }
     }
