@@ -182,6 +182,8 @@ pub struct LogView {
     count: usize,
     wrap: bool,
     filter: String,
+    /// What the empty list says ([`Self::set_empty_text`]).
+    empty_text: &'static str,
     /// The rows as drawn: filtered, split and wrapped, for `shown_for`.
     shown: Vec<String>,
     /// The lines that pass the filter.
@@ -223,6 +225,11 @@ impl LogView {
             self.wrap = wrap;
             self.shown_for = None;
         }
+    }
+
+    /// What the list says while it has no lines (a filter that matches none says so instead).
+    pub fn set_empty_text(&mut self, text: &'static str) {
+        self.empty_text = text;
     }
 
     /// The text the shown lines must contain (any case); empty shows them all.
@@ -279,6 +286,19 @@ impl LogView {
                     // `show_rows` spaces rows by the outer item spacing; two rows of context above.
                     let step = row_height + ui.spacing().item_spacing.y;
                     scroll = scroll.vertical_scroll_offset(row.saturating_sub(2) as f32 * step);
+                }
+                // Empty: say why, where the lines would be.
+                let empty = if !self.filter.is_empty() {
+                    Some(format!("No lines contain \"{}\"", self.filter.trim()))
+                } else {
+                    (!self.empty_text.is_empty()).then(|| self.empty_text.to_owned())
+                };
+                if self.shown.is_empty()
+                    && let Some(text) = empty
+                {
+                    ui.set_min_height((height - 14.0).max(40.0));
+                    ui.add(Label::new(RichText::new(text).color(MUTED)).wrap());
+                    return;
                 }
                 scroll.show_rows(ui, row_height, self.shown.len(), |ui, range| {
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {

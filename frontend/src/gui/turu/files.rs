@@ -112,15 +112,16 @@ pub fn find_vscode() -> Option<PathBuf> {
     None
 }
 
-/// Opens `path` in VS Code.
-pub fn open_in_vscode(code: &Path, path: &Path) {
+/// Opens `path` in VS Code; why it couldn't start, if it couldn't.
+pub fn open_in_vscode(code: &Path, path: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     let result = std::process::Command::new("cmd").arg("/C").arg(code).arg(path).spawn();
     #[cfg(not(windows))]
     let result = std::process::Command::new(code).arg(path).spawn();
-    if let Err(e) = result {
+    if let Err(e) = &result {
         tracing::warn!("Couldn't start VS Code: {e}");
     }
+    result.map(drop)
 }
 
 /// The folder Load Script starts in: the repo's `scripts/` (next to the working directory, or

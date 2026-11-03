@@ -350,7 +350,7 @@ impl ScriptRepoWindow {
                 .clicked()
                 && let (Some(code), Some(local)) = (&code, &local)
             {
-                files::open_in_vscode(code, local);
+                let _ = files::open_in_vscode(code, local);
                 ui.close();
             }
             if ui
@@ -426,7 +426,7 @@ impl ScriptRepoWindow {
                     .clicked()
                     && let Some(code) = &code
                 {
-                    files::open_in_vscode(code, &dir);
+                    let _ = files::open_in_vscode(code, &dir);
                     ui.close();
                 }
             });

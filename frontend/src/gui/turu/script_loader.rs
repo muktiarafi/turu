@@ -66,6 +66,7 @@ impl ScriptLoader {
         let platform = crate::platform::platform();
         let code = self.vscode.get_or_insert_with(files::find_vscode).clone();
         self.log.set_wrap(true);
+        self.log.set_empty_text("The script's log shows here when it runs");
         self.log.refresh(&bot.logs.script);
 
         ui.spacing_mut().item_spacing = vec2(6.0, 10.0);
@@ -84,11 +85,29 @@ impl ScriptLoader {
             self.error_open = false;
         }
         let last_run = last_run(&bot);
-        // While it runs: how long ago the script last logged, the answer to "is it stuck?".
-        let last_log = active.then(|| bot.logs.script.last_time()).flatten();
+        // While it runs: how long ago the script last logged, the answer to "is it stuck?". At
+        // the state's right where it fits, else on a line of its own under it.
+        let last_log = active
+            .then(|| bot.logs.script.last_time())
+            .flatten()
+            .map(|(time, quiet)| {
+                let text = if quiet < Duration::from_secs(5) {
+                    "last log just now".to_owned()
+                } else {
+                    format!("last log {} ago", duration_text(quiet))
+                };
+                let color = if status == ScriptStatus::Running && quiet >= QUIET_FOR {
+                    WARNING
+                } else {
+                    MUTED
+                };
+                let tip = format!("The script log's newest line, at {}", time.format("%H:%M:%S"));
+                (RichText::new(text).size(12.0).color(color), tip)
+            });
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 4.0;
+            let mut age_below = None;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 widgets::dot(ui, widgets::status_color(status), 5.0);
@@ -108,23 +127,28 @@ impl ScriptLoader {
                 if let Some(run) = &last_run {
                     label.on_hover_text(format!("Ended at {}", run.at));
                 }
-                if let Some((time, quiet)) = last_log {
-                    let text = if quiet < Duration::from_secs(5) {
-                        "last log just now".to_owned()
+                if let Some((text, tip)) = last_log {
+                    let width = egui::WidgetText::from(text.clone())
+                        .into_galley(
+                            ui,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::TextStyle::Body,
+                        )
+                        .size()
+                        .x;
+                    if ui.available_width() >= width + 8.0 {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(text).on_hover_text(tip);
+                        });
                     } else {
-                        format!("last log {} ago", duration_text(quiet))
-                    };
-                    let color = if status == ScriptStatus::Running && quiet >= QUIET_FOR {
-                        WARNING
-                    } else {
-                        MUTED
-                    };
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new(text).size(12.0).color(color))
-                            .on_hover_text(format!("The script log's newest line, at {}", time.format("%H:%M:%S")));
-                    });
+                        age_below = Some((text, tip));
+                    }
                 }
             });
+            if let Some((text, tip)) = age_below {
+                ui.label(text).on_hover_text(tip);
+            }
             match &loaded {
                 Some(path) => {
                     let name = path
@@ -148,7 +172,11 @@ impl ScriptLoader {
                                     .clicked()
                                 {
                                     match &code {
-                                        Some(code) => files::open_in_vscode(code, path),
+                                        Some(code) => {
+                                            if let Err(e) = files::open_in_vscode(code, path) {
+                                                bot.log(format!("Couldn't open VS Code: {e}"));
+                                            }
+                                        }
                                         None => files::open_with_default(path),
                                     }
                                 }
@@ -175,12 +203,12 @@ impl ScriptLoader {
                 let first = error.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().trim();
                 if self.error_open {
                     // Its line is gone from the log (cleared, or pushed out): the whole error here.
-                    let text = ui.add(
+                    ui.add(
                         Label::new(RichText::new(error.trim()).size(12.0).color(DANGER))
                             .wrap()
                             .selectable(true),
                     );
-                    if text.clicked() {
+                    if widgets::small_button(ui, "Hide", true).clicked() {
                         self.error_open = false;
                     }
                 } else {
@@ -223,13 +251,14 @@ impl ScriptLoader {
         ui.spacing_mut().item_spacing.y = 6.0;
         ui.horizontal(|ui| {
             if active {
+                // While stopping the card says so; the button keeps its name and rests.
                 let stop = widgets::button(
                     ui,
-                    if stopping { "Stopping..." } else { "Stop Script" },
+                    "Stop Script",
                     Kind::Danger,
                     !stopping,
                     vec2(main_width, run_height),
-                    "The script is running its stopping steps",
+                    "Stopping: the script is running its stopping steps",
                 )
                 .on_hover_text(format!("Stops the script ({TOGGLE_KEY_NAME})"));
                 if stop.clicked() {
@@ -264,9 +293,9 @@ impl ScriptLoader {
             }
             let size = vec2(full - 6.0 - run, run_height);
             if stopping {
-                run_hint = Some(force_tip);
                 let ready = bot.scripts.can_force_stop();
-                if widgets::button(ui, "Force Stop", Kind::Danger, ready, size, "Available in a moment")
+                run_hint = Some(if ready { force_tip } else { FORCE_STOP_WAIT });
+                if widgets::button(ui, "Force Stop", Kind::Danger, ready, size, FORCE_STOP_WAIT)
                     .on_hover_text(format!("{force_tip} ({TOGGLE_KEY_NAME})"))
                     .clicked()
                 {
@@ -328,7 +357,8 @@ impl ScriptLoader {
                 super::logs::log_buttons(ui, &bot.logs.script, &mut self.save, "script-log.txt");
                 let width = (ui.available_width() - 4.0).max(60.0);
                 let find = widgets::text_box(ui, self.log.filter_mut(), "Find", width);
-                if find.has_focus() && ui.input(|i| i.key_pressed(Key::Escape)) {
+                // egui lets go of the focus on Escape before the window is drawn.
+                if find.lost_focus() && ui.input(|i| i.key_pressed(Key::Escape)) {
                     self.log.filter_mut().clear();
                 }
             });
@@ -371,6 +401,9 @@ pub(super) fn last_run(bot: &turu_bot::Bot) -> Option<LastRun> {
         at: end.ended_clock(),
     })
 }
+
+/// Why Force Stop is disabled at first ([`turu_bot::script::FORCE_STOP_AFTER`]).
+const FORCE_STOP_WAIT: &str = "Force Stop is offered after 1.5 s of stopping";
 
 /// VibeSkua's default ToggleScript hotkey: starts the loaded script, or stops the running one.
 pub(super) const TOGGLE_KEY: egui::Key = egui::Key::F10;
@@ -433,6 +466,13 @@ pub(super) fn duration_text(elapsed: Duration) -> String {
 mod tests {
     use super::duration_text;
     use std::time::Duration;
+
+    /// Force Stop's reason names the wait the bot keeps.
+    #[test]
+    fn force_stop_wait_names_the_wait() {
+        let secs = turu_bot::script::FORCE_STOP_AFTER.as_secs_f32();
+        assert!(super::FORCE_STOP_WAIT.contains(&format!("{secs} s")));
+    }
 
     #[test]
     fn durations_read_at_a_glance() {
