@@ -3,12 +3,13 @@
 //! the bot windows (`turu_frontend::gui::turu`, egui) over it. Everything here lives on the
 //! engine thread, which runs the player ([`SCREEN`]).
 //!
-//! A new window only gets a new surface; the player's renderer and its texture stay. Touches go
+//! The GPU is set up without a window ([`gpu`]), so the game can run before one exists (started
+//! by the service after Android killed the app). A window gets a screen and a surface; a new
+//! window only a new surface; the player's renderer and its texture stay. Touches go
 //! to the UI when they start on it (the nav bar, a window), else to the game; keys go to the UI
 //! while one of its text boxes has the focus, which also brings up the soft keyboard.
 
 use crate::input::{Key, Touch};
-use android_activity::AndroidApp;
 use ndk::native_window::NativeWindow;
 use ruffle_core::Player;
 use ruffle_render::backend::ViewportDimensions;
@@ -39,7 +40,6 @@ pub enum Graphics {
 }
 
 pub struct Screen {
-    app: AndroidApp,
     descriptors: Arc<Descriptors>,
     /// The window's surface, while there is a window.
     surface: Option<wgpu::Surface<'static>>,
@@ -50,6 +50,7 @@ pub struct Screen {
     size: (u32, u32),
     pixels_per_point: f32,
     blit: Arc<Blit>,
+    pipeline: wgpu::RenderPipeline,
     egui: egui::Context,
     egui_renderer: egui_wgpu::Renderer,
     ui: TuruUi,
@@ -62,54 +63,62 @@ pub struct Screen {
     movie_size: (u32, u32),
 }
 
-impl Screen {
-    /// Sets up the GPU on `window` (the API `graphics` asks for), the screen, and the renderer
-    /// the player draws with. None when no API works.
-    pub fn new(
-        app: AndroidApp,
-        window: &NativeWindow,
-        graphics: Graphics,
-        pixels_per_point: f32,
-    ) -> Option<(Self, WgpuRenderBackend<MovieTexture>)> {
-        let tries: &[wgpu::Backends] = match graphics {
-            Graphics::Auto => &[wgpu::Backends::VULKAN, wgpu::Backends::GL],
-            Graphics::Vulkan => &[wgpu::Backends::VULKAN],
-            Graphics::Gl => &[wgpu::Backends::GL],
-        };
-        let (descriptors, surface) = tries.iter().find_map(|&backend| {
-            let instance = create_wgpu_instance(backend, Default::default(), None);
-            // SAFETY: the window stays valid until `detach`, which drops the surface first.
-            let surface = match unsafe { instance.create_surface_unsafe(crate::surface_target(window)) } {
-                Ok(surface) => surface,
-                Err(e) => {
-                    tracing::warn!("Graphics: {backend:?} failed: {e}");
-                    return None;
-                }
-            };
-            let made = futures::executor::block_on(request_adapter_and_device(
-                backend,
-                &instance,
-                Some(&surface),
-                wgpu::PowerPreference::HighPerformance,
-            ));
-            match made {
-                Ok((adapter, device, queue)) => {
-                    let info = adapter.get_info();
-                    tracing::info!("Graphics: {} on {}", info.backend.to_str(), info.name);
-                    Some((Arc::new(Descriptors::new(instance, adapter, device, queue)), surface))
-                }
-                Err(e) => {
-                    tracing::warn!("Graphics: {backend:?} failed: {e}");
-                    None
-                }
+/// The GPU, set up without a window (the API `graphics` asks for), the blit the screen draws the
+/// game with, and the renderer the player draws with, at `size`. None when no API works.
+pub fn gpu(graphics: Graphics, size: (u32, u32)) -> Option<(Arc<Descriptors>, Arc<Blit>, WgpuRenderBackend<MovieTexture>)> {
+    let tries: &[wgpu::Backends] = match graphics {
+        Graphics::Auto => &[wgpu::Backends::VULKAN, wgpu::Backends::GL],
+        Graphics::Vulkan => &[wgpu::Backends::VULKAN],
+        Graphics::Gl => &[wgpu::Backends::GL],
+    };
+    let descriptors = tries.iter().find_map(|&backend| {
+        let instance = create_wgpu_instance(backend, Default::default(), None);
+        let made = futures::executor::block_on(request_adapter_and_device(
+            backend,
+            &instance,
+            None,
+            wgpu::PowerPreference::HighPerformance,
+        ));
+        match made {
+            Ok((adapter, device, queue)) => {
+                let info = adapter.get_info();
+                tracing::info!("Graphics: {} on {}", info.backend.to_str(), info.name);
+                Some(Arc::new(Descriptors::new(instance, adapter, device, queue)))
             }
-        })?;
+            Err(e) => {
+                tracing::warn!("Graphics: {backend:?} failed: {e}");
+                None
+            }
+        }
+    })?;
+    let blit = Arc::new(Blit::new(&descriptors.device));
+    let target = MovieTexture::new(blit.clone(), &descriptors.device, size.0, size.1);
+    match WgpuRenderBackend::new(descriptors.clone(), target) {
+        Ok(renderer) => Some((descriptors, blit, renderer)),
+        Err(e) => {
+            tracing::error!("Couldn't make the game's renderer: {e}");
+            None
+        }
+    }
+}
+
+impl Screen {
+    /// The screen in `window`, on the GPU [`gpu`] set up. None when the window can't be drawn in.
+    pub fn new(descriptors: Arc<Descriptors>, blit: Arc<Blit>, window: &NativeWindow, pixels_per_point: f32) -> Option<Self> {
+        // SAFETY: the window stays valid until `detach`, which drops the surface first.
+        let surface = match unsafe { descriptors.wgpu_instance.create_surface_unsafe(crate::surface_target(window)) } {
+            Ok(surface) => surface,
+            Err(e) => {
+                tracing::error!("Couldn't draw in the window: {e}");
+                return None;
+            }
+        };
         let formats = surface.get_capabilities(&descriptors.adapter).formats;
         let format = [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm]
             .into_iter()
             .find(|f| formats.contains(f))
             .or_else(|| formats.first().copied())?;
-        let blit = Arc::new(Blit::new(&descriptors.device, format));
+        let pipeline = blit.pipeline(&descriptors.device, format);
         let egui_renderer = egui_wgpu::Renderer::new(
             &descriptors.device,
             format,
@@ -120,16 +129,15 @@ impl Screen {
                 predictable_texture_filtering: false,
             },
         );
-        let size = crate::window_size(window);
         let screen = Self {
-            app,
-            descriptors: descriptors.clone(),
+            descriptors,
             surface: Some(surface),
             surface_for: window.ptr().as_ptr() as usize,
             format,
-            size,
+            size: crate::window_size(window),
             pixels_per_point,
-            blit: blit.clone(),
+            blit,
+            pipeline,
             egui: egui::Context::default(),
             egui_renderer,
             ui: TuruUi::new(),
@@ -140,15 +148,7 @@ impl Screen {
             movie_size: (0, 0),
         };
         screen.configure();
-        let movie_size = screen.movie_area();
-        let target = MovieTexture::new(blit, &descriptors.device, movie_size.0, movie_size.1);
-        match WgpuRenderBackend::new(descriptors, target) {
-            Ok(renderer) => Some((screen, renderer)),
-            Err(e) => {
-                tracing::error!("Couldn't make the game's renderer: {e}");
-                None
-            }
-        }
+        Some(screen)
     }
 
     fn configure(&self) {
@@ -338,7 +338,7 @@ impl Screen {
                     0.0,
                     1.0,
                 );
-                self.blit.draw(&movie.bind_group, &mut pass);
+                self.blit.draw(&self.pipeline, &movie.bind_group, &mut pass);
                 pass.set_viewport(0.0, 0.0, self.size.0 as f32, self.size.1 as f32, 0.0, 1.0);
             }
             self.egui_renderer.render(&mut pass, &primitives, &screen);
@@ -354,27 +354,30 @@ impl Screen {
     /// Brings the soft keyboard up while a text box of the UI has the focus.
     fn soft_keyboard(&mut self) {
         let wanted = self.egui.egui_wants_keyboard_input();
-        if wanted != self.keyboard_shown {
+        if wanted != self.keyboard_shown
+            && let Some(app) = crate::app()
+        {
             self.keyboard_shown = wanted;
             if wanted {
-                self.app.show_soft_input(true);
+                app.show_soft_input(true);
             } else {
-                self.app.hide_soft_input(true);
+                app.hide_soft_input(true);
             }
         }
     }
 }
 
-/// Draws a texture over the render pass's viewport: the desktop's `blit.wgsl`.
+/// Draws a texture over the render pass's viewport: the desktop's `blit.wgsl`. The pipeline,
+/// which depends on the surface's format, is the screen's ([`Blit::pipeline`]).
 pub struct Blit {
+    module: wgpu::ShaderModule,
     layout: wgpu::BindGroupLayout,
-    pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     vertices: wgpu::Buffer,
 }
 
 impl Blit {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Turu blit"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../../app/src/gui/blit.wgsl"))),
@@ -405,44 +408,6 @@ impl Blit {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[Some(&layout)],
-            immediate_size: 0,
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Turu blit"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: 4 * 4,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2],
-                })],
-                compilation_options: Default::default(),
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some(if format.is_srgb() {
-                    "fs_main_srgb_framebuffer"
-                } else {
-                    "fs_main_linear_framebuffer"
-                }),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
         // The whole viewport: x y u v.
         let quad: [[f32; 4]; 6] = [
             [-1.0, 1.0, 0.0, 0.0],
@@ -458,15 +423,56 @@ impl Blit {
             usage: wgpu::BufferUsages::VERTEX,
         });
         Self {
+            module,
             layout,
-            pipeline,
             sampler,
             vertices,
         }
     }
 
-    fn draw(&self, bind_group: &wgpu::BindGroup, pass: &mut wgpu::RenderPass<'static>) {
-        pass.set_pipeline(&self.pipeline);
+    fn pipeline(&self, device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&self.layout)],
+            immediate_size: 0,
+        });
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Turu blit"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &self.module,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: 4 * 4,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2],
+                })],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &self.module,
+                entry_point: Some(if format.is_srgb() {
+                    "fs_main_srgb_framebuffer"
+                } else {
+                    "fs_main_linear_framebuffer"
+                }),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    }
+
+    fn draw(&self, pipeline: &wgpu::RenderPipeline, bind_group: &wgpu::BindGroup, pass: &mut wgpu::RenderPass<'static>) {
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.draw(0..6, 0..1);

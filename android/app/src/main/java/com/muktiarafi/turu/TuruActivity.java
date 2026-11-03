@@ -1,8 +1,15 @@
 package com.muktiarafi.turu;
 
+import android.Manifest;
 import android.app.NativeActivity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -12,7 +19,9 @@ import android.window.OnBackInvokedDispatcher;
  * NativeActivity, which runs the Rust side (libturu_android.so), plus the foreground service
  * that keeps the process and its network while the app is in the background. Full screen: the
  * status and navigation bars would sit over Turu's nav bar (apps draw under them since Android
- * 15); a swipe from the edge shows them for a moment.
+ * 15); a swipe from the edge shows them for a moment. Asks once for what running in the
+ * background needs: showing the service's notification, and leaving Turu out of battery
+ * optimisation (or Doze cuts its network while the screen is off).
  */
 public class TuruActivity extends NativeActivity {
     @Override
@@ -23,6 +32,31 @@ public class TuruActivity extends NativeActivity {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> moveTaskToBack(true));
         }
+        askOnce();
+    }
+
+    private void askOnce() {
+        SharedPreferences asked = getSharedPreferences("asked", MODE_PRIVATE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                && !asked.getBoolean("notifications", false)) {
+            asked.edit().putBoolean("notifications", true).apply();
+            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, 1);
+            return; // the battery question next time: one dialog at a time
+        }
+        PowerManager power = getSystemService(PowerManager.class);
+        if (!power.isIgnoringBatteryOptimizations(getPackageName()) && !asked.getBoolean("battery", false)) {
+            asked.edit().putBoolean("battery", true).apply();
+            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getPackageName())));
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        TuruService.refresh();
+        askOnce();
     }
 
     /**

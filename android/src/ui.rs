@@ -1,7 +1,6 @@
 //! The player's UI backend: Ruffle's null one, except that a text field taking focus shows the
-//! soft keyboard and losing it hides the keyboard.
+//! soft keyboard and losing it hides the keyboard (while the activity is there to show it).
 
-use android_activity::AndroidApp;
 use ruffle_core::backend::ui::{
     DialogResultFuture, FileFilter, FontDefinition, FullscreenError, LanguageIdentifier, MouseCursor,
     MultiDialogResultFuture, NullUiBackend, UiBackend,
@@ -10,14 +9,12 @@ use ruffle_core::font::FontQuery;
 use url::Url;
 
 pub struct AndroidUiBackend {
-    app: AndroidApp,
     inner: NullUiBackend,
 }
 
 impl AndroidUiBackend {
-    pub fn new(app: AndroidApp) -> Self {
+    pub fn new() -> Self {
         Self {
-            app,
             inner: NullUiBackend::new(),
         }
     }
@@ -25,11 +22,15 @@ impl AndroidUiBackend {
 
 impl UiBackend for AndroidUiBackend {
     fn open_virtual_keyboard(&self) {
-        self.app.show_soft_input(true);
+        if let Some(app) = crate::app() {
+            app.show_soft_input(true);
+        }
     }
 
     fn close_virtual_keyboard(&self) {
-        self.app.hide_soft_input(true);
+        if let Some(app) = crate::app() {
+            app.hide_soft_input(true);
+        }
     }
 
     fn mouse_visible(&self) -> bool {

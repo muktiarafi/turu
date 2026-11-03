@@ -1,9 +1,12 @@
-//! Turu on Android (docs/ANDROID_PROPOSAL.md, phase 3): the game on screen with Turu's nav bar
-//! and bot windows over it, touch, keys and sound. The engine thread (`turu_frontend::engine`'s
-//! loop) owns the player and the screen (`screen.rs`) for as long as the process lives.
-//! `android_main` only forwards the activity's events to it: a window to draw in (the player is
-//! built with the first one; later ones get a new surface), the window going away (drawing
-//! stops, the game keeps running at the hidden-tab rate), touch and keys.
+//! Turu on Android (docs/ANDROID_PROPOSAL.md, phase 4): the game on screen with Turu's nav bar
+//! and bot windows over it, touch, keys and sound, and kept running in the background by a
+//! foreground service (`notify.rs`). The engine thread (`turu_frontend::engine`'s loop) owns the
+//! player and the screen (`screen.rs`) for as long as the process lives; the activity or the
+//! service starts it ([`start_engine`]), whichever comes first, so it also runs with no window
+//! (after Android killed the process, the service comes back alone). `android_main` forwards
+//! the activity's events to it: a window to draw in (the first gets a screen, later ones a new
+//! surface), the window going away (drawing stops, the game keeps running at the hidden-tab
+//! rate), touch and keys.
 //!
 //! Setup comes from `turu-args.txt` in the app's files folder (the data folder, reachable with
 //! `adb`): the desktop's flags (`--user`, `--password`, `--server`, `--run-script`, `--api`, ...),
@@ -14,6 +17,7 @@
 
 mod audio;
 mod input;
+mod notify;
 mod platform;
 mod screen;
 mod ui;
@@ -31,14 +35,17 @@ use ruffle_frontend_utils::backends::storage::DiskStorageBackend;
 use ruffle_frontend_utils::content::{ContentDescriptor, PlayingContent};
 use ruffle_render::quality::StageQuality;
 use ruffle_render_wgpu::backend::WgpuRenderBackend;
-use screen::{Graphics, MovieTexture, SCREEN, Screen};
+use ruffle_render::backend::ViewportDimensions;
+use ruffle_render_wgpu::descriptors::Descriptors;
+use screen::{Blit, Graphics, MovieTexture, SCREEN, Screen};
 use std::any::Any;
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::path::Path;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Sender, channel, sync_channel};
-use std::sync::{Arc, Condvar, Mutex, Once, OnceLock};
+use std::sync::{Arc, Mutex, Once, OnceLock};
 use std::time::Duration;
 use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs};
 use turu_frontend::turu;
@@ -49,42 +56,41 @@ use wgpu::rwh::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 const ARGS_FILE: &str = "turu-args.txt";
 
 static ENGINE: Once = Once::new();
+/// The activity's app, once it started (the service has none): the soft keyboard, the key
+/// maps, the browser.
+static APP: OnceLock<AndroidApp> = OnceLock::new();
+
+thread_local! {
+    /// The engine thread's GPU, for the screen the first window gets.
+    static GPU: RefCell<Option<(Arc<Descriptors>, Arc<Blit>)>> = const { RefCell::new(None) };
+}
+
+/// The activity's app, when it has started.
+pub(crate) fn app() -> Option<&'static AndroidApp> {
+    APP.get()
+}
 /// Work for the engine thread's loop.
 static ENGINE_TX: OnceLock<Sender<EngineEvent>> = OnceLock::new();
 /// The window to draw in, while the activity has one.
 static WINDOW: Mutex<Option<NativeWindow>> = Mutex::new(None);
-static WINDOW_READY: Condvar = Condvar::new();
 
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
-    ENGINE.call_once(|| {
-        init_logging();
-        // Before any reqwest client is built (Search Scripts, the navigator).
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        if let Err(e) = init_certificates(&app) {
-            log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
-        }
-        let root = app
-            .external_data_path()
-            .or_else(|| app.internal_data_path())
-            .expect("Android gives every app a files folder");
-        turu_bot::paths::set_default_root(root.clone());
-        let (sender, events) = channel();
-        let _ = ENGINE_TX.set(sender);
-        let engine_app = app.clone();
-        let spawned = std::thread::Builder::new()
-            .name("Turu Engine".into())
-            .spawn(move || engine(engine_app, &root, &events));
-        if let Err(e) = spawned {
-            log::error!("Couldn't start the engine thread: {e}");
-        }
-    });
+    init_logging();
+    let _ = APP.set(app.clone());
+    if let Err(e) = init_certificates(&app) {
+        log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
+    }
+    let root = app
+        .external_data_path()
+        .or_else(|| app.internal_data_path())
+        .expect("Android gives every app a files folder");
+    start_engine(root);
     let mut destroyed = false;
     while !destroyed {
         app.poll_events(None, |event| match event {
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 *lock_window() = app.native_window();
-                WINDOW_READY.notify_all();
                 run_on_engine(|_| attach_surface());
             }
             PollEvent::Main(MainEvent::TerminateWindow { .. }) => detach_surface(),
@@ -98,6 +104,24 @@ fn android_main(app: AndroidApp) {
             _ => {}
         });
     }
+}
+
+/// Starts the engine thread once per process, with `root` as the data folder. The caller set up
+/// certificate checks first (they need a Java context).
+pub(crate) fn start_engine(root: PathBuf) {
+    ENGINE.call_once(|| {
+        // Before any reqwest client is built (Search Scripts, the navigator).
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        turu_bot::paths::set_default_root(root.clone());
+        let (sender, events) = channel();
+        let _ = ENGINE_TX.set(sender);
+        let spawned = std::thread::Builder::new()
+            .name("Turu Engine".into())
+            .spawn(move || engine(&root, &events));
+        if let Err(e) = spawned {
+            log::error!("Couldn't start the engine thread: {e}");
+        }
+    });
 }
 
 fn lock_window() -> std::sync::MutexGuard<'static, Option<NativeWindow>> {
@@ -132,13 +156,26 @@ fn with_screen(work: impl FnOnce(&mut Screen)) {
     });
 }
 
-/// Draws in the current window from now on (not the first one: `engine` builds the screen on it).
+/// Draws in the current window from now on: the first one gets the screen.
 fn attach_surface() {
     let Some(window) = lock_window().clone() else {
         return;
     };
-    with_screen(|screen| screen.attach(&window));
-    turu::bot().state.lock().hidden_tab = false;
+    let made = SCREEN.with_borrow_mut(|screen| match screen {
+        Some(screen) => {
+            screen.attach(&window);
+            true
+        }
+        None => {
+            let gpu = GPU.with_borrow(Clone::clone);
+            let density = app().map_or(1.0, density) as f32;
+            *screen = gpu.and_then(|(descriptors, blit)| Screen::new(descriptors, blit, &window, density));
+            screen.is_some()
+        }
+    });
+    if made {
+        turu::bot().state.lock().hidden_tab = false;
+    }
 }
 
 fn resize() {
@@ -188,7 +225,14 @@ pub(crate) fn surface_target(window: &NativeWindow) -> wgpu::SurfaceTargetUnsafe
     }
 }
 
-fn init_logging() {
+/// Logcat (tag `turu`) and panics there; once per process (the activity and the service both
+/// call it).
+pub(crate) fn init_logging() {
+    static LOGGING: Once = Once::new();
+    LOGGING.call_once(init_logging_now);
+}
+
+fn init_logging_now() {
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Info)
@@ -250,9 +294,9 @@ fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
     graphics
 }
 
-/// The engine thread: sets the bot up from `turu-args.txt`, waits for the first window, then runs
-/// the player.
-fn engine(app: AndroidApp, root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
+/// The engine thread: sets the bot up from `turu-args.txt`, then runs the player, drawing while
+/// there is a window.
+fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
         Err(e) => {
@@ -263,7 +307,7 @@ fn engine(app: AndroidApp, root: &Path, events: &std::sync::mpsc::Receiver<Engin
     let _guard = runtime.enter();
     // The UI runs here too: a Flash call from this thread would wait for itself.
     turu::init_main_thread();
-    turu_frontend::platform::set(Arc::new(platform::AndroidPlatform { app: app.clone() }));
+    turu_frontend::platform::set(Arc::new(platform::AndroidPlatform));
     tracing::info!("Turu {} on Android; data folder {}", turu::VERSION, root.display());
 
     let args_file = root.join(ARGS_FILE);
@@ -295,20 +339,16 @@ fn engine(app: AndroidApp, root: &Path, events: &std::sync::mpsc::Receiver<Engin
             return;
         }
     };
-    let window = {
-        let mut window = lock_window();
-        while window.is_none() {
-            window = WINDOW_READY.wait(window).unwrap_or_else(|e| e.into_inner());
-        }
-        window.clone().expect("waited for it")
-    };
-    let Some((screen, renderer)) = Screen::new(app.clone(), &window, graphics, density(&app) as f32) else {
+    // skua.swf's stage until a window sets the game's size.
+    let Some((descriptors, blit, renderer)) = screen::gpu(graphics, engine::STAGE) else {
         tracing::error!("No graphics API worked; the game can't start");
         return;
     };
-    SCREEN.set(Some(screen));
+    GPU.set(Some((descriptors, blit)));
     let sender = ENGINE_TX.get().expect("set before the thread started").clone();
-    let player = build_player(&app, root, movie_url, renderer, sender.clone());
+    let player = build_player(root, movie_url, renderer, sender.clone());
+    // A window that came while the engine started up.
+    attach_surface();
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Engine running");
     engine::run_loop_with(&player, events, |player| {
@@ -337,10 +377,9 @@ fn read_args(file: &Path) -> Vec<OsString> {
     }
 }
 
-/// skua.swf's player, drawing with `renderer`, with the desktop's defaults. Its viewport is set
-/// by the screen's first frame.
+/// skua.swf's player, drawing with `renderer`, with the desktop's defaults. Its viewport is
+/// skua.swf's stage until the screen's first frame sets it.
 fn build_player(
-    app: &AndroidApp,
     root: &Path,
     movie_url: Url,
     renderer: WgpuRenderBackend<MovieTexture>,
@@ -367,7 +406,7 @@ fn build_player(
     let mut builder = PlayerBuilder::new()
         .with_navigator(navigator)
         .with_renderer(renderer)
-        .with_ui(ui::AndroidUiBackend::new(app.clone()))
+        .with_ui(ui::AndroidUiBackend::new())
         .with_storage(Box::new(DiskStorageBackend::new(root.join("SharedObjects"))))
         .with_external_interface(Box::new(turu::TuruExternalInterface { bot: turu::bot() }))
         .with_autoplay(true)
@@ -380,9 +419,14 @@ fn build_player(
         Err(e) => tracing::warn!("No sound: {e}"),
     }
     let player = builder.build();
-    player
-        .lock()
-        .expect("the player was just built")
-        .fetch_root_movie(movie_url.to_string(), Vec::new(), Box::new(|_| {}));
+    {
+        let mut player = player.lock().expect("the player was just built");
+        player.set_viewport_dimensions(ViewportDimensions {
+            width: engine::STAGE.0,
+            height: engine::STAGE.1,
+            scale_factor: 1.0,
+        });
+        player.fetch_root_movie(movie_url.to_string(), Vec::new(), Box::new(|_| {}));
+    }
     player
 }

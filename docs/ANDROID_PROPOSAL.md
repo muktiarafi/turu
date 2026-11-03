@@ -382,6 +382,34 @@ Android's limits are the biggest behavioural difference from a desktop:
   window opened (toggle, list, number); the engine and the UI's state survived the activity
   being destroyed and started again.
 
+## As built: phase 4
+
+* **The engine starts without a window:** `start_engine` runs once per process, from
+  `android_main` or from `TuruService.nativeStart` (JNI), whichever comes first. The GPU is set
+  up without a surface (`screen::gpu`), the player is built at once (skua.swf's stage size), and
+  the first window gets the screen. The soft keyboard, the key maps and the browser use the
+  activity's `AndroidApp` when there is one.
+* **`TuruService`** (Java): loads the library and starts the engine in `onCreate`;
+  `START_STICKY`, so after Android kills the process it comes back alone, the engine logs in
+  again and runs `turu-args.txt`'s script. Its notification shows the script and its state
+  ("GoldFarm running", "zykran is farming") with Pause/Resume and Stop, which call
+  `nativeAction` (`turu::spawn_action`, then `script::set_paused` / `script::stop`). A partial
+  wake lock is held while a script runs. `notify.rs` sends the state every 2 s when it changed,
+  through a global reference to the service's class (a native thread can't find app classes).
+* **`TuruActivity`** asks once (remembered in `SharedPreferences`) for notifications (Android
+  13+; the service posts its notification again when it's granted) and for leaving Turu out of
+  battery optimisation.
+* **Checked on the emulator:** both prompts; the notification and its buttons (Pause, then
+  Resume); 3 minutes with the screen off in forced deep Doze (kills 3 to 26, no relogin); the
+  process killed with `kill -9` while in the background: the service restarted it within 1 s,
+  the engine came up without a window, logged in and started GoldFarm, and opening the app
+  later attached a screen to it.
+* **Found on the way:** the notification thread made the bot before `start_engine` set the data
+  folder (the bot then wrote to a relative `Turu/`, which Android refuses), so it starts after
+  the engine now.
+* **Not done:** a 6-hour run on two phone brands (the phase's "done when"); restarting a script
+  started by hand (only `turu-args.txt`'s); guides for vendors' battery managers.
+
 ## Phases
 
 | Phase | Goal | Done when |
@@ -390,7 +418,7 @@ Android's limits are the biggest behavioural difference from a desktop:
 | 1. Headless spike (built; farmed 20 min on an emulator) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
 | 2. Game on screen (built; checked on an emulator) | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
 | 3. Turu UI (built; checked on an emulator, without the drawer, sheets or SAF) | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |
-| 4. Background | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |
+| 4. Background (built; checked on an emulator) | Foreground service, notification actions, wake lock, battery prompt, restart after kill. | A 6-hour farm with the screen off survives on two device brands. |
 | 5. Later | Tabs (2 clients), Butler, Cosmetics, tablet layout, gamepad. | Per row. |
 
 Phases 0 and 1 are cheap and answer the risky questions (does the engine run, how much memory,

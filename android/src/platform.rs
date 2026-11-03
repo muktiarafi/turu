@@ -11,9 +11,7 @@ use jni::{jni_sig, jni_str};
 use std::path::Path;
 use turu_frontend::platform::{Answer, FileDialog, Platform};
 
-pub struct AndroidPlatform {
-    pub app: AndroidApp,
-}
+pub struct AndroidPlatform;
 
 impl Platform for AndroidPlatform {
     fn pick_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
@@ -27,8 +25,13 @@ impl Platform for AndroidPlatform {
     }
 
     fn open_url(&self, url: &str) {
-        if let Err(e) = open_in_browser(&self.app, url) {
-            tracing::warn!("Couldn't open {url}: {e}");
+        match crate::app() {
+            Some(app) => {
+                if let Err(e) = open_in_browser(app, url) {
+                    tracing::warn!("Couldn't open {url}: {e}");
+                }
+            }
+            None => tracing::info!("Not opened without the app on screen: {url}"),
         }
     }
 

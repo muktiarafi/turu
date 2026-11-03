@@ -3,26 +3,32 @@
 How to build, run and check the Android app. The design and the plan are in
 `docs/ANDROID_PROPOSAL.md`.
 
-> **Status (phase 3):** the game on screen (Vulkan) with Turu's nav bar and bot windows over it,
-> touch, keys, the soft keyboard and sound, full screen. A foreground service keeps it running,
-> and online, in the background; Back sends the app to the background like Home. On an Android
-> 16 arm64 emulator (2026-11-03): a script was found in Search Scripts, loaded, its options
-> window opened, and it was started and stopped from the Script Loader, all by touch. Not yet
-> run on a phone.
+> **Status (phase 4):** the game on screen (Vulkan) with Turu's nav bar and bot windows over it,
+> touch, keys, the soft keyboard and sound, full screen, and kept running in the background: a
+> foreground service with the script's state and Stop / Pause in its notification, a wake lock
+> while a script runs, a one-time prompt to leave Turu out of battery optimisation, and a
+> restart without a window after Android kills the process (it logs back in and runs
+> `turu-args.txt`'s script). On an Android 16 arm64 emulator (2026-11-03): scripts found,
+> loaded, configured, started and stopped by touch; farming went on with the screen off in deep
+> Doze; Pause and Resume from the notification worked; after the process was killed the engine
+> came back alone, logged in and farmed, and the app showed it when opened. Not yet run on a
+> phone.
 >
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
 > text; Turu's text boxes near the top stay visible); no file dialogs (Load Script and the
 > other dialogs do nothing: scripts come from Search Scripts, or `adb push` into `scripts/`);
 > the windows are the desktop's, at the phone's density (no drawer or full-screen sheets yet);
-> OpenGL ES draws only parts of the game (use Vulkan, the default); the notification has no
-> actions and no wake lock is held (phase 4).
+> OpenGL ES draws only parts of the game (use Vulkan, the default); after a restart only
+> `turu-args.txt`'s script runs (not one started by hand); phone makers' own battery managers
+> (Xiaomi, Samsung, Huawei) can still kill the service: see their settings.
 
 ## What's where
 
 | Path | What |
 |---|---|
 | `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser; no file dialogs yet). Empty on other systems. |
-| `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity: full screen, Back to the background, starts `TuruService`, the foreground service), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
+| `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's buttons) and the status it shows, sent every 2 s when it changed. |
+| `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity: full screen, Back to the background, asks once for notifications and battery optimisation, starts the service), `TuruService` (the foreground service: starts the engine, also alone after a kill; the notification; the wake lock), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
 | `android/rustls-platform-verifier/` | Gradle module building the Kotlin half of `rustls-platform-verifier` (HTTPS certificate checks against Android's trust store) from the submodule `android/vendor/rustls-platform-verifier`. |
 | `frontend/src/engine.rs` | the windowless player loop, shared with the desktop's `--headless`. |
 

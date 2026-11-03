@@ -418,7 +418,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and
   bot windows (the desktop's, by touch), keys, the soft keyboard and sound; a foreground service
-  keeps it online in the background. Checked on an emulator, not a phone. No file dialogs
+  keeps it online in the background (status and Stop / Pause in its notification, a wake lock
+  while a script runs, back on its own after a kill). Checked on an emulator, not a phone. No file dialogs
   (scripts come from Search Scripts); OpenGL ES misdraws; the soft keyboard covers the game's
   own text fields.
 - **Windowless mode logs in and farms** (2026-11-03: desktop `--headless` and Android, GoldFarm).
