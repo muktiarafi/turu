@@ -36,10 +36,10 @@ stay reachable (`super::window`; `windows_fit_small_screens` checks the windows 
 ## Nav bar (`nav_bar.rs`)
 
 34 px high (48 on a touch screen, below), left to right as in VibeSkua: **Scripts** (Script Loader, Edit Script Options, Scheduler), **Options**
-(Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loadouts
-Manager, Fast Travel, Loader, Grabber, Current Drops, Junk Items), **Combat** (Skills, Stats,
-Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Logger,
-Interceptor), **Plugins** (View Plugins, Butler, Cosmetics), **Army** (Accounts, Army Control, New Tab; Turu's:
+(Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loader,
+Grabber, Current Drops, Junk Items, Loadouts Manager, Fast Travel), **Combat** (Skills, Stats,
+Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Packet Logger,
+Interceptor), **Plugins** (Butler, Cosmetics, View Plugins), **Army** (Accounts, Army Control, New Tab; Turu's:
 VibeSkua has them in its Manager app and its tabbed host). Right side: **Grid** (two tabs or more),
 **Auto**, **Jump**, a divider, the **script chip**.
 
@@ -49,22 +49,25 @@ a phone held upright, to one **Menu** with everything, and the script chip's nam
 instead of 150. Leaving the last fold counts the room the chip's name takes back, so the bar
 doesn't flip between two folds. On a touch screen (`Platform::is_touch`, Android) the bar is
 48 points high (`gui::nav_bar_height`, which `top_height` and so the game's offset follow;
-desktop stays 34), its buttons, toggles and chip 40, and menu rows about 44.
+desktop stays 34), its buttons, toggles and chip 40, and menu rows about 44; in the Auto and
+Jump popups the buttons, drop-downs and text boxes are 48 and the drop-downs' rows about 44,
+and Auto's "RUNNING" is 11 px (9 before, on every platform).
 
-With two tabs or more, a 30 px tab strip (`tab_strip.rs`) sits above the nav bar
+With two tabs or more, a 30 px tab strip (`tab_strip.rs`; 40 points on a touch screen,
+`gui::tab_strip_height`, with a 28-point target round each tab's ×) sits above the nav bar
 (`gui::top_height`): rounded tabs with a status dot (a yellow "!" badge while the tab's script
 waits for you), the name and ×, the active one in the panel colour with an accent line on
 top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Scheduler, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Logger, Interceptor | implemented |
-| Bank | implemented: `bank.open` through `spawn_action` |
+| Script Loader, Scheduler, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Packet Logger (VibeSkua's "Logger" entry), Interceptor | implemented; Edit Script Options, when disabled, gives the Script Loader's reasons (Load a script first, This script declares no options, The script's options couldn't be read) |
+| Bank | implemented: `bank.open` through `spawn_action`. An action, not a menu: drawn like Auto and Jump (a row of More or Menu when folded). A spinner after the menus while it runs; since `bank.open` does nothing logged out or while a map loads, the bar checks first and then says why for 4 s in red ("Bank: Not logged in", "Bank: The map is still loading", or the error), cut to the room the right side leaves |
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error" or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
-| everything else | greyed, tooltip "Coming soon" |
+| everything else (Application Themes, HotKeys, Loadouts Manager, Fast Travel, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager, Fast Travel and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
 
 **Auto Attack / Auto Hunt** (`auto.rs`, loop in `turu_bot::auto`): a bot thread marked as a
 script thread, so `bot.control.request_stop()` (Stop Automation) makes the next call fail. It runs

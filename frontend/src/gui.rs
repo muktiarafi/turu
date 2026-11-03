@@ -17,11 +17,23 @@ pub fn nav_bar_height() -> u32 {
 }
 /// The tab strip above the nav bar, shown once there are two tabs.
 pub const TAB_STRIP_HEIGHT: u32 = 30;
+/// The tab strip on a touch screen.
+pub const TOUCH_TAB_STRIP_HEIGHT: u32 = 40;
+
+/// The tab strip's height here: [`TAB_STRIP_HEIGHT`], or [`TOUCH_TAB_STRIP_HEIGHT`] on a touch
+/// screen.
+pub fn tab_strip_height() -> u32 {
+    if crate::platform::platform().is_touch() {
+        TOUCH_TAB_STRIP_HEIGHT
+    } else {
+        TAB_STRIP_HEIGHT
+    }
+}
 
 /// The height above the movie: the nav bar, and the tab strip when it shows.
 pub fn top_height() -> u32 {
     if crate::turu::tabs().len() > 1 {
-        nav_bar_height() + TAB_STRIP_HEIGHT
+        nav_bar_height() + tab_strip_height()
     } else {
         nav_bar_height()
     }

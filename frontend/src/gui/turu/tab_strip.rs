@@ -4,7 +4,7 @@
 //! new one at the login screen.
 
 use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
-use crate::gui::TAB_STRIP_HEIGHT;
+use crate::gui::tab_strip_height;
 use crate::turu::{self, TabRequest};
 use egui::{Align2, Color32, CornerRadius, FontId, Frame, Margin, Panel, RichText, ScrollArea, Sense, Ui, pos2, vec2};
 
@@ -23,7 +23,7 @@ impl TabStrip {
             bottom: 0,
         });
         Panel::top("turu_tabs")
-            .exact_size(TAB_STRIP_HEIGHT as f32)
+            .exact_size(tab_strip_height() as f32)
             .frame(frame)
             .show_separator_line(false)
             .show(ui, |ui| {
@@ -56,13 +56,18 @@ impl TabStrip {
 }
 
 fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bool, waits: Option<&str>) {
-    let height = TAB_STRIP_HEIGHT as f32 - 3.0;
+    let height = tab_strip_height() as f32 - 3.0;
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_owned(), FontId::proportional(12.0), TEXT);
     let width = (galley.size().x + 52.0).min(TAB_WIDTH);
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
-    let close_rect = egui::Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(16.0, 16.0));
+    // A finger-sized "×" on a touch screen (its mark stays small).
+    let close_size = super::widgets::target(16.0, 28.0);
+    let close_rect = egui::Rect::from_center_size(
+        pos2(rect.right() - 5.0 - close_size / 2.0, rect.center().y),
+        vec2(close_size, close_size),
+    );
     let close = ui.interact(close_rect, ui.id().with(("turu_tab_close", tab)), Sense::click());
 
     let fill = if active {

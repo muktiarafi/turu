@@ -1,22 +1,23 @@
 //! VibeSkua's 34 px top nav bar: menus on the left, Grid / Auto / Jump and the script chip on
-//! the right. Entries for windows Turu doesn't have yet are shown greyed with the tooltip
-//! "Coming soon" so the layout matches VibeSkua.
+//! the right. Entries for windows Turu doesn't have yet sit greyed at the end of their menus,
+//! marked "(soon)".
 
 use super::skills::SkillSets;
-use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
+use super::theme::{ACCENT, DANGER, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
 use super::widgets::{self, Kind};
 use super::{Windows, auto, script_loader};
 use crate::map_pads::MapCells;
 use egui::containers::menu::{MenuBar, MenuConfig};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Layout, Margin, Panel, Popup,
+    Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Label, Layout, Margin, Panel, Popup,
     PopupCloseBehavior, RectAlign, Response, RichText, Sense, Style, Ui, vec2,
 };
 use serde_json::json;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 use turu_bot::api::dispatch;
-use turu_bot::script::ScriptStatus;
+use turu_bot::script::{ScriptOptionsState, ScriptStatus};
 
 /// The menus, in VibeSkua's order. Bank is a button, not a menu.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -57,6 +58,17 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Bank's last press, shown after the menus: a spinner while it runs, then for a moment why
+/// nothing opened (`bank.open` itself does nothing logged out or while a map loads).
+#[derive(Default)]
+struct BankState {
+    busy: bool,
+    failed: Option<(String, Instant)>,
+}
+
+/// How long Bank's failure shows.
+const BANK_NOTE_FOR: Duration = Duration::from_secs(4);
+
 /// Fast Map Jump's choices; filled from the game by bot threads.
 struct JumpState {
     cells: Vec<String>,
@@ -85,6 +97,7 @@ pub struct NavBar {
     cells_dropdown_was_open: bool,
     /// The right side's width on the last frame: the menus fold when they'd run into it.
     right_width: f32,
+    bank: Arc<Mutex<BankState>>,
     last_fold: Fold,
 }
 
@@ -108,6 +121,7 @@ impl Default for NavBar {
             jump_open: false,
             cells_dropdown_was_open: false,
             right_width: 0.0,
+            bank: Arc::default(),
             last_fold: Fold::None,
         }
     }
@@ -137,6 +151,15 @@ fn menu_style(style: &mut Style) {
     w.hovered.bg_stroke = egui::Stroke::NONE;
     w.active.bg_stroke = egui::Stroke::NONE;
     w.open.weak_bg_fill = HOVER;
+}
+
+/// VibeSkua's entries for windows Turu doesn't have yet, after a separator at the end of their
+/// menu: greyed, and "(soon)" in the label so a touch screen (no tooltips) says so too.
+fn soon(ui: &mut Ui, names: &[&str]) {
+    ui.separator();
+    for name in names {
+        item(ui, &format!("{name} (soon)"), false);
+    }
 }
 
 /// A menu entry; greyed with "Coming soon" when disabled. Closes the menu when clicked.
@@ -216,8 +239,12 @@ impl NavBar {
             Fold::None => {
                 for (menu, label) in MENUS {
                     if menu == Menu::Bank {
-                        if ui.add(Button::new(label)).clicked() {
-                            open_bank();
+                        // An action, not a menu: drawn like Auto and Jump.
+                        if toggle_button(ui, label, None, false)
+                            .on_hover_text("Opens the bank window")
+                            .clicked()
+                        {
+                            open_bank(&self.bank);
                         }
                     } else {
                         ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
@@ -226,10 +253,37 @@ impl NavBar {
             }
             Fold::More => {
                 ui.menu_button("Scripts", |ui| menu_contents(ui, windows, Menu::Scripts));
-                ui.menu_button("More", |ui| folded(ui, windows, &MENUS[1..]));
+                ui.menu_button("More", |ui| folded(ui, windows, &MENUS[1..], &self.bank));
             }
             Fold::All => {
-                ui.menu_button("Menu", |ui| folded(ui, windows, &MENUS));
+                ui.menu_button("Menu", |ui| folded(ui, windows, &MENUS, &self.bank));
+            }
+        }
+        self.bank_note(ui);
+    }
+
+    /// After the menus: a spinner while Bank runs, or for a moment why it didn't open.
+    fn bank_note(&self, ui: &mut Ui) {
+        let mut bank = lock(&self.bank);
+        if bank.busy {
+            ui.spinner();
+        } else if let Some((why, at)) = &bank.failed {
+            match BANK_NOTE_FOR.checked_sub(at.elapsed()) {
+                Some(left) => {
+                    // Only in the room the right side leaves, cut with "…".
+                    let room = (ui.available_width() - self.right_width - 12.0).max(0.0);
+                    let text = RichText::new(format!("Bank: {why}")).size(12.0).color(DANGER);
+                    ui.allocate_ui_with_layout(
+                        vec2(room, ui.available_height()),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.set_max_width(room);
+                            ui.add(Label::new(text).truncate());
+                        },
+                    );
+                    ui.ctx().request_repaint_after(left);
+                }
+                None => bank.failed = None,
             }
         }
     }
@@ -278,12 +332,13 @@ impl NavBar {
         let snippet = bot.scripts.is_snippet_running();
         ui.set_width(256.0);
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        touch_controls(ui);
         ui.horizontal(|ui| {
             ui.label(RichText::new("Combat Automation").strong());
             if running {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     widgets::pill(ui, |ui| {
-                        ui.label(RichText::new("RUNNING").size(9.0).strong().color(SUCCESS));
+                        ui.label(RichText::new("RUNNING").size(11.0).strong().color(SUCCESS));
                     });
                 });
             }
@@ -302,7 +357,7 @@ impl NavBar {
                 "Auto Attack",
                 Kind::Primary,
                 !running && !script_active && !snippet,
-                vec2(half, 30.0),
+                vec2(half, widgets::target(30.0, 48.0)),
                 tip,
             );
             let hunt = widgets::button(
@@ -310,7 +365,7 @@ impl NavBar {
                 "Auto Hunt",
                 Kind::Normal,
                 !running && !script_active && !snippet,
-                vec2(half, 30.0),
+                vec2(half, widgets::target(30.0, 48.0)),
                 tip,
             );
             let mode = if attack.clicked() {
@@ -335,7 +390,7 @@ impl NavBar {
             "Stop Automation",
             Kind::Danger,
             running,
-            vec2(ui.available_width(), 30.0),
+            vec2(ui.available_width(), widgets::target(30.0, 48.0)),
             "Nothing is running",
         )
         .clicked()
@@ -351,6 +406,7 @@ impl NavBar {
                 .width(half - 18.0)
                 .height(420.0)
                 .show_ui(ui, |ui| {
+                    touch_rows(ui);
                     // The drop-down is as wide as its button; class names need more room.
                     ui.set_min_width(260.0);
                     if owned.is_empty() {
@@ -375,6 +431,7 @@ impl NavBar {
                 .selected_text(self.auto_mode.as_deref().unwrap_or("Select Mode..."))
                 .width(half - 18.0)
                 .show_ui(ui, |ui| {
+                    touch_rows(ui);
                     if self.auto_class.is_some() && modes.is_empty() {
                         ui.label(RichText::new("No saved skills for this class").small().color(MUTED));
                     }
@@ -455,6 +512,7 @@ impl NavBar {
     fn jump_panel(&mut self, ui: &mut Ui) {
         ui.set_width(236.0);
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        touch_controls(ui);
         ui.label(RichText::new("Fast Map Jump").strong());
         ui.separator();
         let half = (ui.available_width() - 6.0) / 2.0;
@@ -468,6 +526,7 @@ impl NavBar {
                 .width(half - 18.0)
                 .height(320.0)
                 .show_ui(ui, |ui| {
+                    touch_rows(ui);
                     if cells.is_empty() {
                         ui.label(RichText::new("No cells (not in a map?)").small().color(MUTED));
                     }
@@ -489,6 +548,7 @@ impl NavBar {
                 .selected_text(if current.is_empty() { "Select Pad..." } else { &current })
                 .width(half - 18.0)
                 .show_ui(ui, |ui| {
+                    touch_rows(ui);
                     for pad in pads {
                         if ui.selectable_label(current == pad, &pad).clicked() {
                             state.pad = pad;
@@ -527,7 +587,16 @@ impl NavBar {
         self.cells_dropdown_was_open = cells_open;
 
         ui.horizontal(|ui| {
-            if widgets::button(ui, "Current", Kind::Normal, true, vec2(half, 28.0), "").clicked() {
+            if widgets::button(
+                ui,
+                "Current",
+                Kind::Normal,
+                true,
+                vec2(half, widgets::target(28.0, 48.0)),
+                "",
+            )
+            .clicked()
+            {
                 self.refresh_cells();
                 let state = self.jump.clone();
                 crate::turu::spawn_action("Fast Map Jump current", move |bot| {
@@ -548,7 +617,7 @@ impl NavBar {
                 "Jump",
                 Kind::Primary,
                 target.is_some(),
-                vec2(half, 28.0),
+                vec2(half, widgets::target(28.0, 48.0)),
                 "Select a cell and a pad first",
             );
             if jump.clicked()
@@ -629,16 +698,35 @@ impl NavBar {
 }
 
 /// Bank: VibeSkua's direct action (no menu).
-fn open_bank() {
-    crate::turu::spawn_action("Bank", |bot| dispatch(bot, "bank.open", &[]).map(|_| ()));
+fn open_bank(state: &Arc<Mutex<BankState>>) {
+    *lock(state) = BankState {
+        busy: true,
+        failed: None,
+    };
+    let state = state.clone();
+    crate::turu::spawn_action("Bank", move |bot| {
+        use turu_bot::api::player;
+        let failed = if !player::logged_in(bot).unwrap_or(false) {
+            Some("Not logged in".to_owned())
+        } else if !player::world_loaded(bot).unwrap_or(false) {
+            Some("The map is still loading".to_owned())
+        } else {
+            dispatch(bot, "bank.open", &[]).err().map(|e| e.to_string())
+        };
+        *lock(&state) = BankState {
+            busy: false,
+            failed: failed.map(|why| (why, Instant::now())),
+        };
+        Ok(())
+    });
 }
 
 /// `menus` folded into one drop-down: a submenu each, and Bank as a row.
-fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)]) {
+fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], bank: &Arc<Mutex<BankState>>) {
     for &(menu, label) in menus {
         if menu == Menu::Bank {
             if item(ui, label, true) {
-                open_bank();
+                open_bank(bank);
             }
         } else {
             ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
@@ -656,13 +744,20 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Search Scripts", true) {
                 windows.script_repo = true;
             }
-            let has_options = crate::turu::bot().scripts.has_options();
+            // The Script Loader's reasons.
+            let bot = crate::turu::bot();
+            let reason = match (bot.scripts.loaded(), bot.scripts.options()) {
+                (None, _) => Some("Load a script first"),
+                (Some(_), ScriptOptionsState::Loaded(_)) => None,
+                (Some(_), ScriptOptionsState::Failed(_)) => Some("The script's options couldn't be read"),
+                (Some(_), ScriptOptionsState::NoOptions) => Some("This script declares no options"),
+            };
             let mut edit = ui.add_enabled(
-                has_options,
+                reason.is_none(),
                 Button::new("Edit Script Options").min_size(vec2(190.0, 0.0)),
             );
-            if !has_options {
-                edit = edit.on_disabled_hover_text("The loaded script declares no options");
+            if let Some(reason) = reason {
+                edit = edit.on_disabled_hover_text(reason);
             }
             if edit.clicked() {
                 windows.script_options = true;
@@ -682,14 +777,9 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "CoreBots", true) {
                 windows.core_bots = true;
             }
-            for name in ["Application Themes", "HotKeys"] {
-                item(ui, name, false);
-            }
+            soon(ui, &["Application Themes", "HotKeys"]);
         }
         Menu::Tools => {
-            for name in ["Loadouts Manager", "Fast Travel"] {
-                item(ui, name, false);
-            }
             if item(ui, "Loader", true) {
                 windows.loader = true;
             }
@@ -702,6 +792,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Junk Items", true) {
                 windows.junk_items = true;
             }
+            soon(ui, &["Loadouts Manager", "Fast Travel"]);
         }
         Menu::Combat => {
             if item(ui, "Skills", true) {
@@ -725,7 +816,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Spammer", true) {
                 windows.spammer = true;
             }
-            if item(ui, "Logger", true) {
+            if item(ui, "Packet Logger", true) {
                 windows.packet_logger = true;
             }
             if item(ui, "Interceptor", true) {
@@ -733,7 +824,6 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
         }
         Menu::Plugins => {
-            item(ui, "View Plugins", false);
             // Turu: VibeSkua's ButlerV5 plugin, built in.
             if item(ui, "Butler", true) {
                 windows.butler = true;
@@ -742,6 +832,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Cosmetics", true) {
                 windows.cosmetics = true;
             }
+            soon(ui, &["View Plugins"]);
         }
         Menu::Army => {
             if item(ui, "Accounts", true) {
@@ -762,6 +853,21 @@ impl JumpState {
     /// What the current map's SWF says, once read.
     fn map(&self) -> Option<&MapCells> {
         self.map.as_ref().map(|(_, map)| map)
+    }
+}
+
+/// On a touch screen, the Auto and Jump popups' drop-downs and text boxes are 48 points high,
+/// as their buttons are (`widgets::target`).
+fn touch_controls(ui: &mut Ui) {
+    if widgets::touch() {
+        ui.spacing_mut().interact_size.y = 48.0;
+    }
+}
+
+/// On a touch screen, a drop-down's rows are about 44 points high, as the menus' are.
+fn touch_rows(ui: &mut Ui) {
+    if widgets::touch() {
+        ui.spacing_mut().button_padding.y = 14.0;
     }
 }
 
