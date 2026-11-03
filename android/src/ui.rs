@@ -1,12 +1,34 @@
 //! The player's UI backend: Ruffle's null one, except that a text field taking focus shows the
-//! soft keyboard and losing it hides the keyboard (while the activity is there to show it).
+//! soft keyboard and losing it hides the keyboard (while the activity is there to show it). Also
+//! the keyboard's height, which the activity reads from the window's insets.
 
+use jni::EnvUnowned;
+use jni::objects::JClass;
+use jni::sys::jint;
 use ruffle_core::backend::ui::{
     DialogResultFuture, FileFilter, FontDefinition, FullscreenError, LanguageIdentifier, MouseCursor,
     MultiDialogResultFuture, NullUiBackend, UiBackend,
 };
 use ruffle_core::font::FontQuery;
+use std::sync::atomic::{AtomicU32, Ordering};
 use url::Url;
+
+/// The soft keyboard's height in window pixels, 0 while it's down.
+static KEYBOARD_HEIGHT: AtomicU32 = AtomicU32::new(0);
+
+pub fn keyboard_height() -> u32 {
+    KEYBOARD_HEIGHT.load(Ordering::Relaxed)
+}
+
+/// `TuruActivity.nativeKeyboardHeight(pixels)`: the window's insets changed.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeKeyboardHeight<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    pixels: jint,
+) {
+    KEYBOARD_HEIGHT.store(pixels.max(0) as u32, Ordering::Relaxed);
+}
 
 pub struct AndroidUiBackend {
     inner: NullUiBackend,

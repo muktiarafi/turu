@@ -24,6 +24,9 @@ import android.window.OnBackInvokedDispatcher;
  * optimisation (or Doze cuts its network while the screen is off).
  */
 public class TuruActivity extends NativeActivity {
+    /** The soft keyboard's height in window pixels, 0 when it's down (`ui.rs`). */
+    private static native void nativeKeyboardHeight(int pixels);
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -32,7 +35,22 @@ public class TuruActivity extends NativeActivity {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> moveTaskToBack(true));
         }
+        // The window stays as it is under the keyboard (adjustNothing); Turu shows what the game's
+        // text field holds above it instead.
+        getWindow().getDecorView().setOnApplyWindowInsetsListener((view, insets) -> {
+            nativeKeyboardHeight(keyboardHeight(insets));
+            return view.onApplyWindowInsets(insets);
+        });
         askOnce();
+    }
+
+    @SuppressWarnings("deprecation")
+    private static int keyboardHeight(WindowInsets insets) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return insets.isVisible(WindowInsets.Type.ime()) ? insets.getInsets(WindowInsets.Type.ime()).bottom : 0;
+        }
+        // Full screen with the navigation bar hidden: what's left at the bottom is the keyboard.
+        return insets.getSystemWindowInsetBottom();
     }
 
     private void askOnce() {

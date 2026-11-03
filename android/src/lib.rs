@@ -57,17 +57,18 @@ const ARGS_FILE: &str = "turu-args.txt";
 
 static ENGINE: Once = Once::new();
 /// The activity's app, once it started (the service has none): the soft keyboard, the key
-/// maps, the browser.
-static APP: OnceLock<AndroidApp> = OnceLock::new();
+/// maps, the browser. Android makes a new activity for some configuration changes (a new
+/// assets path, after boot), and its `android_main` puts its app here.
+static APP: Mutex<Option<AndroidApp>> = Mutex::new(None);
 
 thread_local! {
     /// The engine thread's GPU, for the screen the first window gets.
     static GPU: RefCell<Option<(Arc<Descriptors>, Arc<Blit>)>> = const { RefCell::new(None) };
 }
 
-/// The activity's app, when it has started.
-pub(crate) fn app() -> Option<&'static AndroidApp> {
-    APP.get()
+/// The latest activity's app, when one has started.
+pub(crate) fn app() -> Option<AndroidApp> {
+    APP.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 /// Work for the engine thread's loop.
 static ENGINE_TX: OnceLock<Sender<EngineEvent>> = OnceLock::new();
@@ -77,7 +78,7 @@ static WINDOW: Mutex<Option<NativeWindow>> = Mutex::new(None);
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     init_logging();
-    let _ = APP.set(app.clone());
+    *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
     if let Err(e) = init_certificates(&app) {
         log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
     }
@@ -168,7 +169,7 @@ fn attach_surface() {
         }
         None => {
             let gpu = GPU.with_borrow(Clone::clone);
-            let density = app().map_or(1.0, density) as f32;
+            let density = app().as_ref().map_or(1.0, density) as f32;
             *screen = gpu.and_then(|(descriptors, blit)| Screen::new(descriptors, blit, &window, density));
             screen.is_some()
         }

@@ -27,7 +27,7 @@ impl Platform for AndroidPlatform {
     fn open_url(&self, url: &str) {
         match crate::app() {
             Some(app) => {
-                if let Err(e) = open_in_browser(app, url) {
+                if let Err(e) = open_in_browser(&app, url) {
                     tracing::warn!("Couldn't open {url}: {e}");
                 }
             }

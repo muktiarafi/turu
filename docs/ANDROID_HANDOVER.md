@@ -19,12 +19,19 @@ Phases 0 to 4 of the proposal are built and committed, and checked on an emulato
 
 **Nothing has run on a real phone yet.** That is the most useful next step (see "Next").
 
-Since phase 4 (uncommitted): **Cosmetics** works on the emulator (catalog download, equip,
+Since phase 4 (`6a35ed1e4`): **Cosmetics** works on the emulator (catalog download, equip,
 outfits, colors, reset). A short window (under 480 points of content, as a phone held sideways)
 gets a compact layout: the quick bar becomes a "Copy Look" tab, Reset and the status sit in the
 tab row, the category chips become a drop-down. egui also gets Android's fonts from
 `/system/fonts` (Roboto, symbols) after its own, as the desktop adds the system's: arrows like
 the sort's "↓" were boxes before.
+
+Also uncommitted: **typing in the game's text fields.** While the soft keyboard is up for one,
+a strip just above it shows the field's text with its caret and selection (a password as dots),
+scrolled to the caret, and a count to 150 (the game's longest message; typing stops there).
+`TuruActivity` passes the keyboard's height from the window's IME insets (`ui.rs`), with
+`windowSoftInputMode="adjustNothing"`. Backspace, Delete, the arrows, Home/End and
+Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it).
 
 ## Branches and workflow
 
@@ -133,6 +140,16 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   surface on (`ERROR_NATIVE_WINDOW_IN_USE_KHR` otherwise).
 * **egui's root UI is a full-screen background layer:** touch routing counts only the nav bar
   and layers above `Order::Background`, or the game never gets a tap.
+* **Android makes a new activity in the same process** for some configuration changes (an
+  assets-path change right after boot; `configChanges` can't opt out of it). Its `android_main`
+  runs again: `lib.rs`'s `APP` is replaced each time, or the keyboard and the browser go through
+  the destroyed one ("Can't show soft input after NativeActivity has been destroyed").
+* **Text fields need `TextControl`:** Ruffle edits a field from `PlayerEvent::TextControl`
+  (Backspace, arrows, Ctrl+V), not from `KeyDown`. With Ctrl, Android's key character map types
+  nothing, so `input.rs` takes the key's unmodified letter for Ctrl+A/C/V/X.
+* **The emulator's soft keyboard** stays hidden (an IME of zero height) while the Mac's keyboard
+  counts as a hardware one: turn on "show on-screen keyboard" (`settings put secure
+  show_ime_with_hard_keyboard 1`) and restart Gboard or the emulator.
 * **Back with target SDK 36** goes to the activity's back callback, not to native code:
   `TuruActivity` handles it (moves the task back).
 * **Edge to edge** (Android 15+): the status bar drew over the nav bar; the activity runs
@@ -156,9 +173,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 ## Known gaps
 
 * No real phone yet; no 6-hour run (phase 4's "done when").
-* The soft keyboard covers the game's own text fields (NativeActivity has no text view to scroll
-  into sight). Idea: an egui text box above the keyboard that sends its text to the focused
-  Flash field.
+* The strip above the keyboard is for the game's fields only; Turu's own text boxes (egui) can
+  still be under the keyboard when a window sits low.
 * OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
   made on Metal, Vulkan and DX12. Vulkan is the default.
 * No file dialogs (`platform.rs` refuses them): scripts come from Search Scripts or `adb push`.
@@ -179,7 +195,7 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
    finger, a long screen-off farm, a vendor battery manager.
 2. Bring the ruffle-aqw fix to `main` (desktop `--headless` on a fresh server has the same login
    bug).
-3. The keyboard-covers-field gap (it blocks logging in by hand on the game's screen).
+3. Log in by hand on the game's screen on a phone, now that typing shows above the keyboard.
 4. SAF import and the Keystore `SecretStore` (phone use without a computer).
 5. Proposal phase 5: tabs (several clients), Butler, a tablet layout, gamepads (Cosmetics is
    done, above).
