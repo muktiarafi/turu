@@ -230,6 +230,11 @@ pub trait SecretStore: Send + Sync {
     fn get(&self, username: &str) -> Result<Option<String>, String>;
     /// None saved is fine.
     fn delete(&self, username: &str) -> Result<(), String>;
+    /// Whether it keeps passwords at all (Android's [`NoStore`], until there's a Keystore one,
+    /// doesn't): the Accounts window doesn't offer a password field when it can't.
+    fn keeps_passwords(&self) -> bool {
+        true
+    }
 }
 
 static SECRET_STORE: OnceLock<Box<dyn SecretStore>> = OnceLock::new();
@@ -294,10 +299,9 @@ impl SecretStore for Keychain {
 }
 
 /// Until the app installs its store: nothing is saved.
-#[cfg(target_os = "android")]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 struct NoStore;
 
-#[cfg(target_os = "android")]
 impl SecretStore for NoStore {
     fn set(&self, _username: &str, _password: &str) -> Result<(), String> {
         Err("no password store on this system".into())
@@ -310,6 +314,15 @@ impl SecretStore for NoStore {
     fn delete(&self, _username: &str) -> Result<(), String> {
         Ok(())
     }
+
+    fn keeps_passwords(&self) -> bool {
+        false
+    }
+}
+
+/// Whether passwords can be saved here (see [`SecretStore::keeps_passwords`]).
+pub fn keeps_passwords() -> bool {
+    secret_store().keeps_passwords()
 }
 
 /// Saves the account's password in the secret store.
@@ -349,6 +362,13 @@ mod tests {
         accounts.save(&path).unwrap();
         assert_eq!(Accounts::load(&path), accounts);
         assert!(!fs::read_to_string(&path).unwrap().contains("password"));
+    }
+
+    #[test]
+    fn no_store_keeps_no_passwords() {
+        assert!(!NoStore.keeps_passwords());
+        assert!(NoStore.set("alpha", "secret").is_err());
+        assert_eq!(NoStore.get("alpha"), Ok(None));
     }
 
     #[test]

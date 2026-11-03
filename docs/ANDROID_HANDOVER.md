@@ -193,7 +193,9 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * The desktop windows at the phone's density work, but there is no drawer or full-screen sheet
   layout yet.
 * After a restart (kill), only `turu-args.txt`'s script runs, not one started by hand.
-* Passwords for Accounts: `SecretStore` has no Android implementation (Keystore via JNI).
+* Passwords for Accounts: `SecretStore` has no Android implementation (Keystore via JNI). Its
+  `NoStore` says `keeps_passwords() == false`, so Accounts shows no password field there; a
+  Keystore store brings the field back by keeping the trait's default.
 * Army > Accounts starts accounts only in tabs on Android (`launches_processes`: the
   executable is app_process, not a `turu`), and its script is the loaded one (no file dialogs).
 * The data folder is on shared storage (for `adb`); private files (tokens, passwords) belong in

@@ -198,16 +198,21 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread; no title when adding, "Editing
   Hero" when editing, whose greyed username says on hover it's the account's key; Enter in any
-  field saves; Show has a width of its own so the two columns line up) behind "+ Add account" (open while
+  field saves; Show has a width of its own so the two columns line up; where nothing keeps
+  passwords, `accounts::keeps_passwords()` false as on Android, the field and Show are replaced
+  by "Passwords can't be saved here yet: log in by hand in the account's tab", which "Log in by
+  hand"'s tooltip says too) behind "+ Add account" (open while
   editing, or with no accounts yet; it closes on Add or Cancel; adding a username that's saved
   already, in any case, is refused with "Hero is already in the list" and an "Edit it" link, where
   it used to overwrite that account's display name and tags), the list (each row: Start and a ⋯
-  menu, on the right and placed first, with Edit, ↑ Move up, ↓ Move down and Remove…, which
+  menu, 40 points high on a touch screen with the ⋯ menu's rows about 44, on the right and placed first, with Edit, ↑ Move up, ↓ Move down and Remove…, which
   asks in a box and says the saved password goes too; then, in the width left and cut there, the
   check box, a green dot while it runs, the name (the username on hover when it has a display
   name), the launch note, then its groups (in the accent colour) and tags (grey) as pills, as
   many as fit with "+N" for the rest; the list takes the window's height that the form, the group
-  row and Launch leave, at least about four rows, where it was 200 px), a tag filter, Select /
+  row and Launch leave, at least about four rows, where it was 200 px), a search box (name,
+  username or a tag containing it, ignoring case; "No account matches…" when nothing does), a tag
+  filter, Select /
   Unselect All, Add Selected to
   Group and "Select a group's accounts" (checks that group's accounts and only those; each group
   has Remove, which keeps its accounts), and Launch: Server (the same drop-down
@@ -227,7 +232,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Selected and Start All ask first ("Start 12 accounts?") when more than 3 would start. Select All and Unselect All act on
   the rows the tag filter shows, and while selected accounts
   are hidden by the filter a line next to the Start buttons says so in amber ("5 selected · 2
-  hidden by the filter"), as Start Selected starts them too.
+  hidden by the filter"), as Start Selected starts them too; the search counts as part of the
+  filter. The bottom status line shows failures (a save, a password, a launch) in red.
 * **Army Control** (`army.rs`, 560x620): one list, CLIENTS, of this window's tabs and the
   clients Accounts launched (from the web monitor's hub, which the Army poll feeds). Each row: a
   check box, a dot, the name ("tab" or "no window" pill), where it is (long text cut off, whole

@@ -76,6 +76,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Start Selected and Start All ask first when they would start more accounts than this.
 const START_ASKS_ABOVE: usize = 3;
 
+/// In the password field's place where nothing keeps passwords.
+const NO_PASSWORDS: &str = "Passwords can't be saved here yet: log in by hand in the account's tab";
+
 /// The password field's Show / Hide button.
 const SHOW_WIDTH: f32 = 50.0;
 
@@ -107,7 +110,9 @@ pub struct AccountsWindow {
     confirm_remove: Option<String>,
     pending_script: Pending,
     /// What the last action did, shown at the bottom (set by other threads too).
-    status: Arc<Mutex<String>>,
+    status: Arc<Mutex<Status>>,
+    /// Filters the list by name, username or tag (with the tag filter).
+    search: String,
     launches: Arc<Mutex<Launches>>,
     /// Where the list's scroll area ended, and the height of what came after it in the window,
     /// on the last frame: the list takes the rest of the window's height.
@@ -127,6 +132,7 @@ impl Default for AccountsWindow {
             confirm_remove: None,
             pending_script: Pending::default(),
             status: Arc::default(),
+            search: String::new(),
             launches: Arc::default(),
             confirm_start: None,
             list_bottom: 0.0,
@@ -135,8 +141,25 @@ impl Default for AccountsWindow {
     }
 }
 
-fn set_status(status: &Mutex<String>, text: impl Into<String>) {
-    *status.lock().unwrap_or_else(|e| e.into_inner()) = text.into();
+/// The bottom line: what the last action did, in red when it failed.
+#[derive(Default, Clone)]
+struct Status {
+    text: String,
+    error: bool,
+}
+
+fn set_status(status: &Mutex<Status>, text: impl Into<String>) {
+    *lock(status) = Status {
+        text: text.into(),
+        error: false,
+    };
+}
+
+fn set_error(status: &Mutex<Status>, text: impl Into<String>) {
+    *lock(status) = Status {
+        text: text.into(),
+        error: true,
+    };
 }
 
 impl AccountsWindow {
@@ -159,7 +182,7 @@ impl AccountsWindow {
 
     fn save(&self) {
         if let Err(e) = self.list.save(&crate::turu::bot().paths.accounts_file()) {
-            set_status(&self.status, format!("Couldn't save the accounts: {e}"));
+            set_error(&self.status, format!("Couldn't save the accounts: {e}"));
         }
     }
 
@@ -168,9 +191,10 @@ impl AccountsWindow {
         self.form_card(ui);
         self.list_card(ui);
         self.launch_card(ui);
-        let status = self.status.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if !status.is_empty() {
-            ui.label(RichText::new(status).small().color(MUTED));
+        let status = lock(&self.status).clone();
+        if !status.text.is_empty() {
+            let color = if status.error { DANGER } else { MUTED };
+            ui.label(RichText::new(status.text).small().color(color));
         }
         // What follows the list, for the next frame's list height.
         self.below_list = (ui.min_rect().bottom() - self.list_bottom).max(0.0);
@@ -222,22 +246,33 @@ impl AccountsWindow {
                 } else {
                     "Password"
                 };
-                // Show / Hide has a width of its own, so this row's fields line up with the row
-                // above (the password and the button together are as wide as the username).
-                let gap = ui.spacing().item_spacing.x;
-                let password = ui.add(
-                    egui::TextEdit::singleline(&mut self.form.password)
-                        .password(!self.form.show_password)
-                        .hint_text(hint)
-                        .desired_width(half - SHOW_WIDTH - gap)
-                        .margin(egui::Margin::symmetric(8, 5))
-                        .background_color(super::theme::INSET),
-                );
-                submitted(&password);
-                let eye = if self.form.show_password { "Hide" } else { "Show" };
-                let size = vec2(SHOW_WIDTH, widgets::target(22.0, 40.0));
-                if widgets::button(ui, eye, Kind::Normal, true, size, "").clicked() {
-                    self.form.show_password = !self.form.show_password;
+                if accounts::keeps_passwords() {
+                    // Show / Hide has a width of its own, so this row's fields line up with the
+                    // row above (the password and the button together are as wide as the
+                    // username).
+                    let gap = ui.spacing().item_spacing.x;
+                    let password = ui.add(
+                        egui::TextEdit::singleline(&mut self.form.password)
+                            .password(!self.form.show_password)
+                            .hint_text(hint)
+                            .desired_width(half - SHOW_WIDTH - gap)
+                            .margin(egui::Margin::symmetric(8, 5))
+                            .background_color(super::theme::INSET),
+                    );
+                    submitted(&password);
+                    let eye = if self.form.show_password { "Hide" } else { "Show" };
+                    let size = vec2(SHOW_WIDTH, widgets::target(22.0, 40.0));
+                    if widgets::button(ui, eye, Kind::Normal, true, size, "").clicked() {
+                        self.form.show_password = !self.form.show_password;
+                    }
+                } else {
+                    // Where nothing keeps passwords (Android, until a Keystore store), no field
+                    // that would fail: what to do instead, in its place.
+                    ui.add_sized(
+                        vec2(half, ui.spacing().interact_size.y),
+                        Label::new(RichText::new(NO_PASSWORDS).size(11.0).color(MUTED)).truncate(),
+                    )
+                    .on_hover_text(NO_PASSWORDS);
                 }
                 submitted(&widgets::text_box(
                     ui,
@@ -330,7 +365,7 @@ impl AccountsWindow {
                     &status,
                     format!("{what} {username}; the password is in the system keychain."),
                 ),
-                Err(e) => set_status(&status, format!("{what} {username}, but {e}")),
+                Err(e) => set_error(&status, format!("{what} {username}, but {e}")),
             }
         });
     }
@@ -353,6 +388,8 @@ impl AccountsWindow {
             ui.horizontal(|ui| {
                 widgets::section_label(ui, "ACCOUNTS");
                 widgets::count_badge(ui, self.list.accounts.len());
+                widgets::text_box(ui, &mut self.search, "Search", 120.0)
+                    .on_hover_text("Shows the accounts whose name, username or a tag contains this");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let tags = self.list.tags();
                     if !tags.is_empty() {
@@ -367,14 +404,22 @@ impl AccountsWindow {
                             });
                     }
                     // Only the rows the tag filter shows: a hidden account isn't started by surprise.
-                    let filter = self.tag_filter.clone();
+                    let (filter, search) = (self.tag_filter.clone(), self.search.clone());
                     if widgets::small_button(ui, "Unselect All", true).clicked() {
-                        let shown = self.list.accounts.iter_mut().filter(|a| shows(a, filter.as_deref()));
+                        let shown = self
+                            .list
+                            .accounts
+                            .iter_mut()
+                            .filter(|a| shows(a, filter.as_deref(), &search));
                         shown.for_each(|a| a.selected = false);
                         self.save();
                     }
                     if widgets::small_button(ui, "Select All", true).clicked() {
-                        let shown = self.list.accounts.iter_mut().filter(|a| shows(a, filter.as_deref()));
+                        let shown = self
+                            .list
+                            .accounts
+                            .iter_mut()
+                            .filter(|a| shows(a, filter.as_deref(), &search));
                         shown.for_each(|a| a.selected = true);
                         self.save();
                     }
@@ -393,6 +438,13 @@ impl AccountsWindow {
                 .show(ui, |ui| {
                     if self.list.accounts.is_empty() {
                         ui.label(RichText::new("No accounts yet: add one above.").color(MUTED));
+                    } else if !self
+                        .list
+                        .accounts
+                        .iter()
+                        .any(|a| shows(a, self.tag_filter.as_deref(), &self.search))
+                    {
+                        ui.label(RichText::new("No account matches the search or the tag filter.").color(MUTED));
                     }
                     let count = self.list.accounts.len();
                     let groups: Vec<Vec<String>> = self
@@ -408,7 +460,7 @@ impl AccountsWindow {
                         })
                         .collect();
                     for (index, account) in self.list.accounts.iter_mut().enumerate() {
-                        if !shows(account, self.tag_filter.as_deref()) {
+                        if !shows(account, self.tag_filter.as_deref(), &self.search) {
                             continue;
                         }
                         let running = is_running(&account.username);
@@ -416,6 +468,11 @@ impl AccountsWindow {
                         // The buttons first, on the right; the rest gets the width left and is
                         // cut there, so a long failure can't push Start out of the window.
                         ui.horizontal(|ui| {
+                            // Finger-sized on a touch screen: Start, ⋯ and the row itself.
+                            if widgets::touch() {
+                                ui.spacing_mut().interact_size.y = 40.0;
+                                ui.spacing_mut().button_padding = vec2(12.0, 12.0);
+                            }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 ui.menu_button("⋯", |ui| {
                                     if let Some(row) = row_menu(ui, index, count) {
@@ -424,7 +481,8 @@ impl AccountsWindow {
                                 })
                                 .response
                                 .on_hover_text("Edit, move, remove");
-                                if widgets::small_button(ui, "Start", !running).clicked() {
+                                let size = vec2(0.0, widgets::target(22.0, 40.0));
+                                if widgets::button(ui, "Start", Kind::Normal, !running, size, "").clicked() {
                                     action = Some((Row::Start, account.username.clone()));
                                 }
                                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
@@ -557,7 +615,7 @@ impl AccountsWindow {
                 let _ = std::thread::Builder::new().name("Turu Keychain".into()).spawn(move || {
                     match accounts::delete_password(&username) {
                         Ok(()) => set_status(&status, format!("Removed {username}.")),
-                        Err(e) => set_status(&status, format!("Removed {username}, but {e}")),
+                        Err(e) => set_error(&status, format!("Removed {username}, but {e}")),
                     }
                 });
             }
@@ -657,7 +715,7 @@ impl AccountsWindow {
                 // Selected accounts the tag filter hides still start: said beside the buttons.
                 let hidden = selected
                     .iter()
-                    .filter(|a| !shows(a, self.tag_filter.as_deref()))
+                    .filter(|a| !shows(a, self.tag_filter.as_deref(), &self.search))
                     .count();
                 let selected_count = selected.len();
                 let start = widgets::button(
@@ -679,7 +737,7 @@ impl AccountsWindow {
                 if hidden > 0 {
                     let text = format!("{selected_count} selected · {hidden} hidden by the filter");
                     ui.add(Label::new(RichText::new(text).size(12.0).color(WARNING)).truncate())
-                        .on_hover_text("Start Selected starts them too; set the filter to All tags to see them");
+                        .on_hover_text("Start Selected starts them too; clear the search and set the filter to All tags to see them");
                 }
             });
             // Under the buttons, on a line of its own, so the warning above never hides it.
@@ -759,9 +817,14 @@ impl AccountsWindow {
                     Ok(()) => (format!("Started {username}."), Launched::Started),
                     Err(e) => (format!("{username}: {e}"), Launched::Failed(e.to_string())),
                 };
+                let failed = matches!(state, Launched::Failed(_));
                 lock(&states).set(username, state);
                 crate::turu::bot().logs.debug.push(text.clone());
-                set_status(&status, text);
+                if failed {
+                    set_error(&status, text);
+                } else {
+                    set_status(&status, text);
+                }
             });
         });
     }
@@ -776,7 +839,11 @@ fn launch_note(ui: &mut Ui, launched: Option<&Launched>, running: bool, logged_i
         Some(Launched::NeedsLogin) if !logged_in => (
             "Log in by hand".to_owned(),
             WARNING,
-            Some("No saved password: it opened at the login screen. Edit the account to save one."),
+            Some(if accounts::keeps_passwords() {
+                "No saved password: it opened at the login screen. Edit the account to save one."
+            } else {
+                NO_PASSWORDS
+            }),
         ),
         Some(Launched::Failed(why)) if !running => (format!("Failed: {why}"), DANGER, None),
         _ => return,
@@ -845,9 +912,16 @@ impl AccountsWindow {
     }
 }
 
-/// Whether the list shows the account with this tag filter.
-fn shows(account: &Account, tag_filter: Option<&str>) -> bool {
-    tag_filter.is_none_or(|tag| account.tags.iter().any(|t| t.eq_ignore_ascii_case(tag)))
+/// Whether the list shows the account with this tag filter and search (its name, username or a
+/// tag containing the search, ignoring case).
+fn shows(account: &Account, tag_filter: Option<&str>, search: &str) -> bool {
+    let tagged = tag_filter.is_none_or(|tag| account.tags.iter().any(|t| t.eq_ignore_ascii_case(tag)));
+    let needle = search.trim().to_lowercase();
+    let found = needle.is_empty()
+        || account.username.to_lowercase().contains(&needle)
+        || account.display_name.to_lowercase().contains(&needle)
+        || account.tags.iter().any(|t| t.to_lowercase().contains(&needle));
+    tagged && found
 }
 
 /// The account plays in a tab, or in a client Army launched.
@@ -863,7 +937,7 @@ fn logged_in_tab(username: &str) -> bool {
 }
 
 /// Opens a tab for each launch, 500-900 ms apart; each logs in once its game has loaded.
-fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>, states: &Mutex<Launches>) {
+fn open_tabs(launches: Vec<Launch>, status: &Mutex<Status>, states: &Mutex<Launches>) {
     for (i, launch) in launches.into_iter().enumerate() {
         if i > 0 {
             std::thread::sleep(turu_bot::army::launch_delay());
@@ -894,8 +968,13 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>, states: &Mutex<Launc
             let failed = "couldn't open a tab".to_owned();
             (format!("{}: {failed}", launch.username), Launched::Failed(failed))
         };
+        let failed = matches!(state, Launched::Failed(_));
         lock(states).set(&launch.username, state);
-        set_status(status, text);
+        if failed {
+            set_error(status, text);
+        } else {
+            set_status(status, text);
+        }
     }
 }
 
@@ -926,6 +1005,10 @@ fn tag_pills(ui: &mut Ui, pills: &[(&str, egui::Color32)]) {
 /// An account row's ⋯ menu: Edit, Move up / down (in the whole list, `index` of `count`) and
 /// Remove (which asks first).
 fn row_menu(ui: &mut Ui, index: usize, count: usize) -> Option<Row> {
+    // Rows about 44 points high on a touch screen, as the nav bar's menus.
+    if widgets::touch() {
+        ui.spacing_mut().button_padding.y = 14.0;
+    }
     let mut row = None;
     if ui.button("Edit").clicked() {
         row = Some(Row::Edit);
@@ -1068,9 +1151,13 @@ mod tests {
             tags: vec!["Farm".into()],
             ..Default::default()
         };
-        assert!(shows(&account, None));
-        assert!(shows(&account, Some("farm")));
-        assert!(!shows(&account, Some("boss")));
+        assert!(shows(&account, None, ""));
+        assert!(shows(&account, Some("farm"), ""));
+        assert!(!shows(&account, Some("boss"), ""));
+        // The search matches the username or a tag, in part and in any case.
+        assert!(shows(&account, None, " he "));
+        assert!(shows(&account, Some("farm"), "FA"));
+        assert!(!shows(&account, None, "nobody"));
     }
 
     /// The launch line counts the last Start's accounts: those still starting, then how many
