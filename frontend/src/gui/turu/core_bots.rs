@@ -63,6 +63,8 @@ impl Value {
 struct Opt {
     label: &'static str,
     description: &'static str,
+    /// Shown after a number ("ms").
+    unit: &'static str,
     tag: &'static str,
     value: Value,
     default: Value,
@@ -72,9 +74,22 @@ fn opt(label: &'static str, tag: &'static str, default: Value) -> Opt {
     Opt {
         label,
         description: "",
+        unit: "",
         tag,
         value: default.clone(),
         default,
+    }
+}
+
+impl Opt {
+    /// What the option does, from CoreBots' own comments on it (`CoreBots.cs`) or, where it has
+    /// none, from what CoreBots and its farms do with it. VibeSkua shows none.
+    fn about(self, description: &'static str) -> Self {
+        Self { description, ..self }
+    }
+
+    fn unit(self, unit: &'static str) -> Self {
+        Self { unit, ..self }
     }
 }
 
@@ -82,73 +97,113 @@ fn opt(label: &'static str, tag: &'static str, default: Value) -> Opt {
 fn options() -> Vec<Opt> {
     use Value::{Bool, Int, Text};
     vec![
-        opt("Private Rooms", "PrivateRooms", Bool(true)),
-        opt("Public on Difficult Parts", "PublicDifficult", Bool(false)),
-        opt("Bank Misc. AC items on Start-Up", "BankMiscAC", Bool(true)),
-        opt("Logger in Chat", "LoggerInChat", Bool(true)),
-        opt("Force Off MessageBoxes", "MessageBoxCheck", Bool(false)),
-        opt("Should Rest", "RestCheck", Bool(false)),
-        opt("Disable AutoEnhance", "DisableAutoEnhance", Bool(false)),
-        opt("Disable BestGear", "DisableBestGear", Bool(false)),
-        opt("Anti Lag", "AntiLag", Bool(true)),
-        opt("Incognito Mode", "IncognitoMode", Bool(true)),
-        opt("Room Number", "PrivateRoomNr", Int(100000)),
-        opt("Action Delay", "ActionDelayNr", Int(700)),
-        opt("Exit Combat Delay", "ExitCombatNr", Int(1600)),
-        opt("Hunt Delay", "HuntDelayNr", Int(100)),
-        opt("Accept and Complete Tries", "QuestTriesNr", Int(20)),
-        opt("Loaded Quests Max.", "QuestMaxNr", Int(150)),
-        opt("Map after stopping the Bot", "StopLocationSelect", Text("Home".into())),
+        opt("Private Rooms", "PrivateRooms", Bool(true)).about("Join private rooms rather than public ones"),
+        opt("Public on Difficult Parts", "PublicDifficult", Bool(false))
+            .about("Use public rooms where the enemy is tough"),
+        opt("Bank Misc. AC items on Start-Up", "BankMiscAC", Bool(true))
+            .about("Clean your inventory by banking Misc. AC items before the bot starts"),
+        opt("Logger in Chat", "LoggerInChat", Bool(true)).about("Also write the bot's log in AQW's chat"),
+        opt("Force Off MessageBoxes", "MessageBoxCheck", Bool(false))
+            .about("Show no message boxes unless absolutely necessary"),
+        opt("Should Rest", "RestCheck", Bool(false)).about("Rest after killing a monster"),
+        opt("Disable AutoEnhance", "DisableAutoEnhance", Bool(false))
+            .about("Don't enhance a class when CoreBots equips it"),
+        opt("Disable BestGear", "DisableBestGear", Bool(false))
+            .about("Don't swap in your best gold, EXP, REP or class point gear while farming"),
+        opt("Anti Lag", "AntiLag", Bool(true)).about("Lag killer, invisible monsters and 10 FPS while the bot runs"),
+        opt("Incognito Mode", "IncognitoMode", Bool(true))
+            .about("Turn off whispers and party, friend, duel and guild invites while the bot runs"),
+        opt("Room Number", "PrivateRoomNr", Int(100000))
+            .about("The private room's number; above 99999 picks a random room"),
+        opt("Action Delay", "ActionDelayNr", Int(700))
+            .about("Delay between common actions; 700 is the safe number")
+            .unit("ms"),
+        opt("Exit Combat Delay", "ExitCombatNr", Int(1600))
+            .about("Delay to get out of combat; 1600 is the safe number")
+            .unit("ms"),
+        opt("Hunt Delay", "HuntDelayNr", Int(100))
+            .about("Delay between jumping rooms while hunting; raise it if the bot jumps too much")
+            .unit("ms"),
+        opt("Accept and Complete Tries", "QuestTriesNr", Int(20))
+            .about("How many times accepting or completing a quest is tried"),
+        opt("Loaded Quests Max.", "QuestMaxNr", Int(150)).about("How many quests the bot can have loaded at once"),
+        opt("Map after stopping the Bot", "StopLocationSelect", Text("Home".into()))
+            .about("A map, Home (your house, else whitemap) or None to stay where you are"),
     ]
 }
 
 /// The Other tab (VibeSkua `CoreBots.CreateOtherOptions`): categories of switches.
 fn other_options() -> Vec<(&'static str, Vec<Opt>)> {
-    let b = |label, tag, default| opt(label, tag, Value::Bool(default));
-    let described = |label, description, tag| Opt {
-        description,
-        ..opt(label, tag, Value::Bool(false))
-    };
+    let b = |label, tag, default, description| opt(label, tag, Value::Bool(default)).about(description);
     vec![
         (
             "Boosters",
             vec![
-                b("Use Gold Boosts when farming gold", "doGoldBoost", false),
-                b("Use Class Boosts when ranking up a class", "doClassBoost", false),
-                b("Use Reputation Boosts when farming REP", "doRepBoost", false),
-                b("Use Experience Boosts when farming EXP", "doExpBoost", false),
+                b(
+                    "Use Gold Boosts when farming gold",
+                    "doGoldBoost",
+                    false,
+                    "CoreFarms uses a Gold Boost from your inventory while it farms gold",
+                ),
+                b(
+                    "Use Class Boosts when ranking up a class",
+                    "doClassBoost",
+                    false,
+                    "CoreFarms uses a Class Boost while it ranks up a class",
+                ),
+                b(
+                    "Use Reputation Boosts when farming REP",
+                    "doRepBoost",
+                    false,
+                    "CoreFarms uses a Reputation Boost while it farms reputation",
+                ),
+                b(
+                    "Use Experience Boosts when farming EXP",
+                    "doExpBoost",
+                    false,
+                    "CoreFarms uses an Experience Boost while it farms EXP",
+                ),
             ],
         ),
         (
             "Nation Farms",
             vec![
-                b("Sell Voucher of Nulgath if not needed", "Nation_SellMemVoucher", true),
+                b(
+                    "Sell Voucher of Nulgath if not needed",
+                    "Nation_SellMemVoucher",
+                    true,
+                    "Sell the Voucher of Nulgath when the farm doesn't need it",
+                ),
                 b(
                     "Do Swindles Return during Supplies",
                     "Nation_ReturnPolicyDuringSupplies",
                     true,
+                    "Run Swindles Return Policy while farming Supplies, when you have the Unidentified items it needs",
                 ),
-                described(
+                b(
                     "Ultra Alteon for Supplies",
-                    "Use Ultra Alteon when farming Supplies instead of Escherion",
                     "UltraAlteonForSupplies",
+                    false,
+                    "Use Ultra Alteon when farming Supplies instead of Escherion",
                 ),
             ],
         ),
         (
             "Bludrut Brawl (PvP)",
-            vec![described(
+            vec![b(
                 "Kill ads before boss",
-                "Whether to kill brawlers and restorers in the PvP before the boss.",
                 "PvP_SoloPvPBoss",
+                false,
+                "Kill the brawlers and restorers in the PvP before the boss",
             )],
         ),
         (
             "Bot Creators Only",
-            vec![described(
+            vec![b(
                 "Story Bot Test Mode",
-                "Toggles innate isCompleteBefore checks. It remains on the for Complete Once Quests",
                 "BCO_Story_TestBot",
+                false,
+                "Turn off CoreStory's isCompleteBefore checks; they stay on for quests you complete once",
             )],
         ),
     ]
@@ -157,9 +212,10 @@ fn other_options() -> Vec<(&'static str, Vec<Opt>)> {
 /// One of the four class roles (Solo = 1, Farm = 2, Dodge = 3, Boss = 4 in the gear keys).
 struct Role {
     name: &'static str,
-    badge: &'static str,
-    /// Badge fill, border and text.
-    colors: [Color32; 3],
+    /// What the role is for, beside its name (VibeSkua's badge: "SINGLE TARGET", ...).
+    purpose: &'static str,
+    /// The role's dot.
+    color: Color32,
     class: Option<String>,
     /// The selected skill set mode (VibeSkua keeps the mode string and the `ClassUseMode`
     /// in sync; every shipped mode is a `ClassUseMode`).
@@ -180,10 +236,10 @@ const SLOTS: [(&str, &str); 6] = [
 ];
 
 fn roles() -> [Role; 4] {
-    let role = |name, badge, colors: [u32; 3]| Role {
+    let role = |name, purpose, color: u32| Role {
         name,
-        badge,
-        colors: colors.map(|c| Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)),
+        purpose,
+        color: Color32::from_rgb((color >> 16) as u8, (color >> 8) as u8, color as u8),
         class: None,
         mode: None,
         modes: Vec::new(),
@@ -191,10 +247,10 @@ fn roles() -> [Role; 4] {
         gear: Default::default(),
     };
     [
-        role("Solo", "SINGLE TARGET", [0x064E3B, 0x059669, 0x34D399]),
-        role("Farm", "AOE FARMING", [0x451A03, 0xD97706, 0xFBBF24]),
-        role("Dodge", "SURVIVABILITY", [0x1E3A8A, 0x3B82F6, 0x93C5FD]),
-        role("Boss", "HEAVY BOSS", [0x2E1065, 0x8B5CF6, 0xC4B5FD]),
+        role("Solo", "Single target", 0x34D399),
+        role("Farm", "AoE farming", 0xFBBF24),
+        role("Dodge", "Survivability", 0x93C5FD),
+        role("Boss", "Heavy bosses", 0xC4B5FD),
     ]
 }
 
@@ -244,8 +300,6 @@ enum Purpose {
     Load,
     LoadCharacter,
     Save,
-    ReloadClasses,
-    RefreshInventory,
 }
 
 /// What a bot thread read from the game for the window.
@@ -427,7 +481,7 @@ impl CoreBotsWindow {
             Purpose::LoadCharacter if switched => self.load(true),
             // Not VibeSkua's, whose Reload Classes clears every role's class and mode: the lists
             // are read again and the picks kept.
-            Purpose::LoadCharacter | Purpose::ReloadClasses | Purpose::RefreshInventory => self.refresh_keeping_picks(),
+            Purpose::LoadCharacter => self.refresh_keeping_picks(),
         }
     }
 
@@ -689,71 +743,101 @@ impl CoreBotsWindow {
         }
     }
 
-    /// The character, whether its options are saved, and the actions.
-    fn header(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 2.0;
-                let name = if self.username.is_empty() {
-                    RichText::new("No character").size(15.0).strong().color(MUTED)
-                } else {
-                    RichText::new(&self.username).size(15.0).strong().color(TEXT)
-                };
-                ui.label(name);
-                let (state, color) = self.save_state();
-                ui.add(Label::new(RichText::new(state).size(12.0).color(color)).truncate());
-            });
+    /// The character, whether its options are saved, and the actions. The name and state get
+    /// the width the buttons leave (cut with "…" past it); in a narrow window (a small screen,
+    /// a phone) the buttons go on a row of their own under them.
+    /// Returns where the text and the buttons went.
+    fn header(&mut self, ui: &mut Ui) -> (egui::Rect, egui::Rect) {
+        let narrow = ui.available_width() < HEADER_BUTTONS_WIDTH + HEADER_TEXT_MIN_WIDTH;
+        let buttons = |this: &mut Self, ui: &mut Ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let enabled = !self.busy;
-                if widgets::button(ui, "Save", Kind::Primary, enabled, vec2(84.0, 28.0), "")
-                    .on_hover_text("Save current CoreBots options")
-                    .clicked()
-                {
-                    let public = self
-                        .options
-                        .iter()
-                        .any(|o| o.tag == "PrivateRooms" && o.value == Value::Bool(false));
-                    if public {
-                        self.confirm_public = true;
-                    } else {
-                        self.fetch(Purpose::Save);
-                    }
-                }
-                if widgets::button(ui, "Refresh from game", Kind::Normal, enabled, vec2(140.0, 28.0), "")
-                    .on_hover_text(
-                        "Reads your classes and gear again and keeps your picks; for a character the \
-                         window hasn't loaded, loads its saved options (VibeSkua: Load character)",
-                    )
-                    .clicked()
-                {
-                    self.fetch(Purpose::LoadCharacter);
-                }
-                let changed = self.has_changes();
-                if widgets::button(
-                    ui,
-                    "Revert to saved",
-                    Kind::Normal,
-                    enabled && changed,
-                    vec2(120.0, 28.0),
-                    "Nothing to revert: the window shows the saved options",
+                this.header_buttons(ui);
+                ui.min_rect()
+            })
+            .inner
+        };
+        if narrow {
+            let text = self.header_text(ui, ui.available_width());
+            (text, buttons(self, ui))
+        } else {
+            ui.horizontal(|ui| {
+                let width = ui.available_width() - HEADER_BUTTONS_WIDTH;
+                let text = self.header_text(ui, width);
+                (text, buttons(self, ui))
+            })
+            .inner
+        }
+    }
+
+    /// The character's name and the save state, `width` wide.
+    fn header_text(&self, ui: &mut Ui, width: f32) -> egui::Rect {
+        ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 2.0;
+            let name = if self.username.is_empty() {
+                RichText::new("No character").size(15.0).strong().color(MUTED)
+            } else {
+                RichText::new(&self.username).size(15.0).strong().color(TEXT)
+            };
+            ui.add(Label::new(name).truncate());
+            let (state, color) = self.save_state();
+            ui.add(Label::new(RichText::new(&state).size(12.0).color(color)).truncate())
+                .on_hover_text(&state);
+        })
+        .response
+        .rect
+    }
+
+    /// Save, Refresh from game and Revert to saved, right to left, with the spinner or "Saved".
+    fn header_buttons(&mut self, ui: &mut Ui) {
+        let enabled = !self.busy;
+        if widgets::button(ui, "Save", Kind::Primary, enabled, vec2(84.0, 28.0), "")
+            .on_hover_text("Save current CoreBots options")
+            .clicked()
+        {
+            let public = self
+                .options
+                .iter()
+                .any(|o| o.tag == "PrivateRooms" && o.value == Value::Bool(false));
+            if public {
+                self.confirm_public = true;
+            } else {
+                self.fetch(Purpose::Save);
+            }
+        }
+        if widgets::button(ui, "Refresh from game", Kind::Normal, enabled, vec2(140.0, 28.0), "")
+                .on_hover_text(
+                    "Reads your classes and gear again and keeps your picks; for a character the \
+                     window hasn't loaded, loads its saved options (VibeSkua: Load character, Reload Classes, Refresh Inventory)",
                 )
-                .on_hover_text("Puts back the options as last saved (VibeSkua: Load)")
                 .clicked()
-                {
-                    self.confirm_revert = true;
-                }
-                if self.busy {
-                    ui.spinner();
-                } else if let Some(at) = self.saved_at {
-                    if at.elapsed() < SAVED_SHOWN_FOR {
-                        ui.label(RichText::new("Saved").size(12.0).color(SUCCESS));
-                        ui.ctx().request_repaint_after(SAVED_SHOWN_FOR - at.elapsed());
-                    } else {
-                        self.saved_at = None;
-                    }
-                }
-            });
-        });
+            {
+                self.fetch(Purpose::LoadCharacter);
+            }
+        let changed = self.has_changes();
+        if widgets::button(
+            ui,
+            "Revert to saved",
+            Kind::Normal,
+            enabled && changed,
+            vec2(120.0, 28.0),
+            "Nothing to revert: the window shows the saved options",
+        )
+        .on_hover_text("Puts back the options as last saved (VibeSkua: Load)")
+        .clicked()
+        {
+            self.confirm_revert = true;
+        }
+        if self.busy {
+            ui.spinner();
+        } else if let Some(at) = self.saved_at {
+            if at.elapsed() < SAVED_SHOWN_FOR {
+                ui.label(RichText::new("Saved").size(12.0).color(SUCCESS));
+                ui.ctx().request_repaint_after(SAVED_SHOWN_FOR - at.elapsed());
+            } else {
+                self.saved_at = None;
+            }
+        }
     }
 
     /// The tabs; the Options tab's search sits on the right.
@@ -781,16 +865,9 @@ impl CoreBotsWindow {
             .id_salt("cbo_loadout")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let reload = "Reads your classes again and keeps each role's pick (VibeSkua: Reload Classes)";
-                if action_bar(
-                    ui,
-                    "Combat Class & Skill Configurations",
-                    "Refresh classes",
-                    reload,
-                    self.busy,
-                ) {
-                    self.fetch(Purpose::ReloadClasses);
-                }
+                // The lists come from the game with Refresh from game (VibeSkua's Reload Classes and
+                // Refresh Inventory did a part of it each, here).
+                section_title(ui, "Classes");
                 // 2x2 cards; `columns` splits the width, so the window never grows to fit them.
                 for pair in [0, 2] {
                     ui.columns(2, |columns| {
@@ -801,21 +878,10 @@ impl CoreBotsWindow {
                 }
 
                 let header =
-                    egui::CollapsingHeader::new(RichText::new("Detailed Equipment Slots").strong().color(TEXT))
+                    egui::CollapsingHeader::new(RichText::new("Gear per role").size(13.0).strong().color(TEXT))
                         .id_salt("cbo_equipment")
                         .open(Some(self.equipment_open))
                         .show_unindented(ui, |ui| {
-                            let refresh =
-                                "Reads your gear again and keeps each slot's pick (VibeSkua: Refresh Inventory)";
-                            if action_bar(
-                                ui,
-                                "Equipment Slots Per Combat Mode",
-                                "Refresh gear",
-                                refresh,
-                                self.busy,
-                            ) {
-                                self.fetch(Purpose::RefreshInventory);
-                            }
                             for pair in [0, 2] {
                                 ui.columns(2, |columns| {
                                     for (column, i) in columns.iter_mut().zip(pair..) {
@@ -827,14 +893,16 @@ impl CoreBotsWindow {
                 if header.header_response.clicked() {
                     self.equipment_open = !self.equipment_open;
                 }
-                header.header_response.on_hover_text("Optional per-mode gear overrides");
+                header
+                    .header_response
+                    .on_hover_text("Optional: what each role wears when its \"Use Dedicated Equipment Loadout\" is on");
             });
     }
 
     fn class_card(&mut self, ui: &mut Ui, i: usize) {
         let (sets, current_class, classes) = (&self.sets, self.current_class.as_deref(), &self.owned.classes);
         let role = &mut self.roles[i];
-        role_card(ui, role, "Class", |ui, role| {
+        role_card(ui, role, true, |ui, role| {
             caption(ui, "Selected Class");
             let mut picked = None;
             ComboBox::from_id_salt(("cbo_class", i))
@@ -873,15 +941,15 @@ impl CoreBotsWindow {
     fn gear_card(&mut self, ui: &mut Ui, i: usize) {
         let lists = &self.owned.gear;
         let role = &mut self.roles[i];
-        role_card(ui, role, "Equipment", |ui, role| {
+        role_card(ui, role, false, |ui, role| {
             for (slot, (label, _)) in SLOTS.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(48.0, 20.0), egui::Sense::hover());
+                    let (rect, _) = ui.allocate_exact_size(vec2(52.0, 20.0), egui::Sense::hover());
                     ui.painter().text(
                         rect.left_center(),
                         egui::Align2::LEFT_CENTER,
                         *label,
-                        egui::FontId::proportional(10.0),
+                        egui::FontId::proportional(11.0),
                         MUTED,
                     );
                     let current = &mut role.gear[slot];
@@ -1036,6 +1104,11 @@ impl CoreBotsWindow {
     }
 }
 
+/// The header's buttons with "Saved" beside them: Save, Refresh from game, Revert to saved.
+const HEADER_BUTTONS_WIDTH: f32 = 84.0 + 140.0 + 120.0 + 3.0 * 8.0 + 44.0;
+/// Below this much room left for the name and state, the buttons go on their own row.
+const HEADER_TEXT_MIN_WIDTH: f32 = 300.0;
+
 /// How long "Saved" shows next to Save.
 const SAVED_SHOWN_FOR: Duration = Duration::from_secs(3);
 
@@ -1049,49 +1122,25 @@ fn sort_classes(classes: &mut Vec<String>) {
 }
 
 fn caption(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(10.0).color(MUTED));
+    ui.label(RichText::new(text).size(11.0).color(MUTED));
 }
 
-/// The bar above the class and gear cards: a title and a refresh button (true when clicked).
-fn action_bar(ui: &mut Ui, title: &str, button: &str, tooltip: &str, busy: bool) -> bool {
-    widgets::card(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(title).strong().size(12.0).color(TEXT));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                widgets::button(ui, button, Kind::Normal, !busy, vec2(0.0, 26.0), "")
-                    .on_hover_text(tooltip)
-                    .clicked()
-            })
-            .inner
-        })
-        .inner
-    })
+/// A heading over the role cards.
+fn section_title(ui: &mut Ui, text: &str) {
+    ui.label(RichText::new(text).size(13.0).strong().color(TEXT));
 }
 
-/// A role's card: its name and badge, then `add_contents`.
-fn role_card(ui: &mut Ui, role: &mut Role, kind: &str, add_contents: impl FnOnce(&mut Ui, &mut Role)) {
+/// A role's card: its dot and name (with what the role is for on the class card), then
+/// `add_contents`.
+fn role_card(ui: &mut Ui, role: &mut Role, with_purpose: bool, add_contents: impl FnOnce(&mut Ui, &mut Role)) {
     widgets::card(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 6.0;
         ui.horizontal(|ui| {
-            widgets::dot(ui, role.colors[2], 4.0);
-            ui.label(
-                RichText::new(format!("{} {kind}", role.name))
-                    .strong()
-                    .size(13.0)
-                    .color(TEXT),
-            );
-            if kind == "Class" {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    Frame::new()
-                        .fill(role.colors[0])
-                        .stroke(Stroke::new(1.0, role.colors[1]))
-                        .corner_radius(CornerRadius::same(10))
-                        .inner_margin(Margin::symmetric(6, 2))
-                        .show(ui, |ui| {
-                            ui.label(RichText::new(role.badge).size(9.0).strong().color(role.colors[2]));
-                        });
-                });
+            widgets::dot(ui, role.color, 4.0);
+            ui.label(RichText::new(role.name).strong().size(13.0).color(TEXT));
+            if with_purpose {
+                ui.label(RichText::new(role.purpose).size(11.0).color(MUTED));
             }
         });
         add_contents(ui, role);
@@ -1112,7 +1161,8 @@ const TILE_GAP: f32 = 10.0;
 
 /// One option as a tile `width` wide: its label (and description) on the left, its control on
 /// the right. The tile lights up under the pointer, and a click anywhere on a switch's tile
-/// flips it, so each control plainly belongs to the label in its own tile.
+/// flips it, so each control plainly belongs to the label in its own tile. A number or text
+/// that isn't the default gets a Reset beside it (a switch's other value is one click away).
 fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
     let height = if opt.description.is_empty() { 34.0 } else { 46.0 };
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
@@ -1133,6 +1183,12 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
     if is_switch && tile.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
+    // The description is cut to the tile's width: the whole of it under the pointer.
+    let tile = if opt.description.is_empty() {
+        tile
+    } else {
+        tile.on_hover_text(opt.description)
+    };
     let inner = UiBuilder::new()
         .id_salt(opt.tag)
         .max_rect(rect.shrink2(vec2(12.0, 0.0)))
@@ -1147,7 +1203,11 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
         }
         Value::Int(n) => {
             let speed = (n.unsigned_abs() as f64 / 200.0).max(1.0);
-            ui.add(egui::DragValue::new(n).range(0..=i32::MAX).speed(speed));
+            let mut value = egui::DragValue::new(n).range(0..=i32::MAX).speed(speed);
+            if !opt.unit.is_empty() {
+                value = value.suffix(format!(" {}", opt.unit));
+            }
+            ui.add(value);
         }
         Value::Text(text) => {
             ui.add(
@@ -1155,6 +1215,18 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
                     .desired_width(140.0)
                     .margin(Margin::symmetric(8, 4)),
             );
+        }
+    }
+    if !is_switch && opt.value != opt.default {
+        let default = match &opt.default {
+            Value::Int(n) if !opt.unit.is_empty() => format!("{n} {}", opt.unit),
+            other => other.to_file(),
+        };
+        if widgets::small_button(ui, "Reset", true)
+            .on_hover_text(format!("Back to the default, {default}"))
+            .clicked()
+        {
+            opt.value = opt.default.clone();
         }
     }
     ui.add_space(10.0);
@@ -1170,7 +1242,7 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
         );
         if !opt.description.is_empty() {
             ui.add(
-                Label::new(RichText::new(opt.description).size(10.0).color(MUTED))
+                Label::new(RichText::new(opt.description).size(11.0).color(MUTED))
                     .truncate()
                     .selectable(false),
             );
@@ -1198,6 +1270,22 @@ mod tests {
         assert!(window.save_state().0.starts_with("Unsaved changes"));
     }
 
+    /// Every option says what it does, and the delays say they're milliseconds.
+    #[test]
+    fn every_option_is_described() {
+        let window = CoreBotsWindow::default();
+        let all = window
+            .options
+            .iter()
+            .chain(window.other.iter().flat_map(|(_, opts)| opts));
+        for opt in all {
+            assert!(!opt.description.is_empty(), "{} has no description", opt.label);
+            if opt.tag.ends_with("DelayNr") || opt.tag == "ExitCombatNr" {
+                assert_eq!(opt.unit, "ms", "{}", opt.label);
+            }
+        }
+    }
+
     /// Refreshing the class and gear lists keeps each role's picks (VibeSkua's Reload Classes
     /// cleared them), so it changes nothing to save.
     #[test]
@@ -1213,6 +1301,40 @@ mod tests {
         assert_eq!(window.roles[1].mode.as_deref(), Some("Farm"));
         assert_eq!(window.roles[1].gear[3], "Necrotic Sword of Doom");
         assert!(!window.has_changes());
+    }
+
+    /// A long name and state are cut, and in a narrow window (a phone's) the buttons go on a row
+    /// of their own: the text never runs under the buttons, and keeps room to be read.
+    #[test]
+    fn header_fits_narrow_windows() {
+        for width in [800.0, 440.0] {
+            let ctx = egui::Context::default();
+            let mut window = CoreBotsWindow::default();
+            window.username = "AVeryLongCharacterNameThatGoesOnAndOnForeverAndEver".into();
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 1000.0))),
+                ..Default::default()
+            };
+            let mut placed = None;
+            let mut output = ctx.run_ui(input, |ui| {
+                ui.allocate_ui(vec2(width, 200.0), |ui| {
+                    ui.set_width(width);
+                    placed = Some((window.header(ui), ui.max_rect()));
+                });
+            });
+            output.textures_delta.clear();
+            let ((text, buttons), area) = placed.unwrap();
+            assert!(
+                !text.intersects(buttons),
+                "at {width}: text {text:?} under buttons {buttons:?}"
+            );
+            assert!(
+                text.width() >= 200.0,
+                "at {width}: the text has only {} px",
+                text.width()
+            );
+            assert!(buttons.right() <= area.right() + 1.0 && text.right() <= area.right() + 1.0);
+        }
     }
 
     /// The window keeps its width with long class and item names (egui windows grow to fit

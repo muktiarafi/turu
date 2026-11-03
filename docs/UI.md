@@ -343,22 +343,33 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   without a file, "Not logged in · log in, then press Refresh from game"); buttons named by what they do,
   VibeSkua's names in their tooltips: Revert to saved (VibeSkua's Load; enabled with unsaved
   changes, and asks first), Refresh from game (Load character: reads the classes and gear
-  again and keeps the picks; for a character the window hasn't loaded, as after logging in or
+  again and keeps the picks, which also stands in for VibeSkua's Reload Classes, which cleared
+  every role's pick, and Refresh Inventory; for a character the window hasn't loaded, as after logging in or
   switching, it loads that character's file, saving the last one's changes first) and Save (it
   shows "Saved" next to the buttons for 3 s; VibeSkua's "Save Successful!" box is gone, errors
   keep theirs; after a switch of character it loads the new one's options rather than writing
-  the last one's values over them); tabs Loadout / Options / Other, read-only while logged out (no character
-  to save to, so changes would be lost on close). Loadout: Solo,
-  Farm, Dodge and Boss cards (class from the enhanced classes you own plus `[Current]`, skill set
-  mode, "Use Dedicated Equipment Loadout"; Refresh classes, VibeSkua's Reload Classes, keeps
-  each role's pick where VibeSkua cleared them all) and a collapsible "Detailed Equipment Slots" with six
-  gear drop-downs per role and Refresh gear (VibeSkua's Refresh Inventory, keeping the picks) (with a "(none)" entry to clear a slot, which VibeSkua lacks); the
+  the last one's values over them). The name and state get the width the buttons leave, cut
+  with "…" past it (the whole state on hover); with less than 300 px left for them (a small
+  screen, a phone) the buttons go on a row of their own under them. Tabs Loadout / Options / Other, read-only while logged out (no character
+  to save to, so changes would be lost on close). Loadout: under "Classes", Solo, Farm, Dodge and
+  Boss cards, each with its coloured dot, its name and, muted, what it's for (Single target, AoE
+  farming, Survivability, Heavy bosses: VibeSkua's coloured badges, as plain text) (class from
+  the enhanced classes you own plus `[Current]`, skill set mode, "Use Dedicated Equipment
+  Loadout"), and a collapsible "Gear per role" (VibeSkua's "Detailed Equipment Slots") with six
+  gear drop-downs per role (with a "(none)" entry to clear a slot, which VibeSkua lacks);
+  captions and slot labels are 11 px. The card bars' own refresh buttons are gone: Refresh from
+  game in the header reads both lists. The
   cards split the window width in two, so long names are cut off rather than widening it.
   Options: the 17 CoreBots settings, searchable, as tiles in two columns under SWITCHES and
   VALUES (numbers, text). Each tile holds one label and its control, lights up under the pointer,
-  and a click anywhere on a switch's tile flips it. Other: Boosters (read by
+  and a click anywhere on a switch's tile flips it. Every option has a one-line description
+  (VibeSkua shows none: Turu's come from CoreBots' own comments on the options in `CoreBots.cs`,
+  or from what CoreBots and its farms do with them; the whole line shows on hover where the tile
+  cuts it), the delays end in "ms", and a number or text that isn't the default gets a Reset
+  beside it ("Back to the default, 700 ms"). Other: Boosters (read by
   CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot Creators switches, as
-  full-width tiles with their descriptions shown under the label. Opening the window
+  full-width tiles with their descriptions shown under the label (the PvP and Story Test Mode
+  ones reworded: VibeSkua's have typos). Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
   before saving public rooms (a save without the answer keeps private rooms, and the window
   shows them on again). Game reads
