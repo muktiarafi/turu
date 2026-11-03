@@ -7034,7 +7034,7 @@ dependencies = [
 
 [[package]]
 name = "turu"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7100,7 +7100,7 @@ dependencies = [
 
 [[package]]
 name = "turu_android"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "android-activity",
  "android_logger",
@@ -7129,7 +7129,7 @@ dependencies = [
 
 [[package]]
 name = "turu_bot"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -7157,7 +7157,7 @@ dependencies = [
 
 [[package]]
 name = "turu_frontend"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-channel",

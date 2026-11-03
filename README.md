@@ -9,7 +9,7 @@
 
 *Turu* is Javanese for "sleep": let the bot play while you do.
 
-A cross-platform (macOS, Windows, Linux) bot client for AdventureQuest Worlds.
+A cross-platform (macOS, Windows, Linux, Android) bot client for AdventureQuest Worlds.
 
 Turu works like [VibeSkua](https://github.com/NinjaXz/VibeSkua) (same windows, same flow, same
 game-side `skua.swf`), but runs anywhere:
@@ -28,9 +28,11 @@ Mugetsu's patches), the `ruffle/` submodule. Turu builds on its crates and keeps
 ## Download
 
 [Releases](https://github.com/muktiarafi/turu/releases) has packages for Windows (x86-64),
-macOS (one app for Apple silicon and Intel) and Linux (x86-64). They're alpha builds. macOS
-doesn't know the app (it isn't notarized): if it won't open the first time, allow it in
-System Settings > Privacy & Security, or run `xattr -dr com.apple.quarantine Turu.app`.
+macOS (one app for Apple silicon and Intel), Linux (x86-64) and Android (arm64 phones, Android 8
+or newer; an APK to install). They're alpha builds. macOS doesn't know the app (it isn't
+notarized): if it won't open the first time, allow it in System Settings > Privacy & Security, or
+run `xattr -dr com.apple.quarantine Turu.app`. Android is newer than the others and has been
+tried on an emulator only so far: see [docs/ANDROID.md](docs/ANDROID.md).
 
 To build it yourself, read on.
 
@@ -108,7 +110,8 @@ Binaries land in `target/debug/turu` and `target/dist/turu` (`.exe` on Windows).
 
 Releases are built by `.github/workflows/release.yml`: pushing a tag such as `v0.1.0-alpha.2`
 tests the engine and scripts, builds the `dist` profile for each platform, makes the macOS
-`.app` and publishes a GitHub release (a tag with a `-` makes a pre-release). Mugetsu's speed
+`.app`, builds the signed Android APK (see [docs/ANDROID.md](docs/ANDROID.md#releases)) and
+publishes a GitHub release (a tag with a `-` makes a pre-release). Mugetsu's speed
 profile (PGO) isn't used yet.
 
 ## Test

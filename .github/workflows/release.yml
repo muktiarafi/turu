@@ -1,7 +1,7 @@
 name: Release
 
-# Pushing a tag such as `v0.1.0-alpha.1` builds Turu for every platform and publishes a GitHub
-# release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
+# Pushing a tag such as `v0.1.0-alpha.1` builds Turu for every platform (Linux, Windows, macOS and
+# Android) and publishes a GitHub release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
 # Running it by hand (Actions > Release > Run workflow) only builds; the packages are kept as
 # workflow artifacts.
 on:
@@ -241,10 +241,89 @@ jobs:
           path: turu-${{ needs.version.outputs.version }}-macos-universal.zip
           if-no-files-found: error
 
+  android:
+    name: Build android-arm64
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      NDK_VERSION: 27.3.13750724
+    steps:
+      - uses: actions/checkout@v7
+
+      # rustls-platform-verifier's Kotlin half (HTTPS checks against Android's trust store).
+      - run: git submodule update --init --depth 1 ruffle android/vendor/rustls-platform-verifier
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      # Ruffle's playerglobal and Gradle (AGP 9 wants JDK 17 or newer).
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android-arm64
+
+      - name: Install the Android SDK parts, cargo-ndk and libclang
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
+          cargo install cargo-ndk --version 4.1.2 --locked
+          # rquickjs makes its QuickJS bindings with bindgen, which loads libclang.
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+          libclang=$(find /usr/lib/llvm-* -name 'libclang.so*' | sort -V | tail -1)
+          echo "LIBCLANG_PATH=$(dirname "$libclang")" | tee -a "$GITHUB_ENV"
+          printf 'sdk.dir=%s\nndkAbis=arm64-v8a\n' "$ANDROID_HOME" > android/local.properties
+
+      # The release keystore, from the repository's secrets (docs/ANDROID.md). A tag needs it, so
+      # every release has the same signature and updates in place; a run by hand without it is
+      # signed with a debug key.
+      - name: Set up signing
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [[ -z "$KEYSTORE" ]]; then
+            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+              echo "::error::The ANDROID_KEYSTORE secret is missing; a release APK must be signed with it"
+              exit 1
+            fi
+            echo "::warning::No ANDROID_KEYSTORE secret: the APK is signed with a debug key"
+            exit 0
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/turu.jks"
+          echo "TURU_KEYSTORE=$RUNNER_TEMP/turu.jks" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease "-PturuVersion=$VERSION"
+        env:
+          TURU_VERSION: ${{ needs.version.outputs.version }}
+          CFG_RELEASE_CHANNEL: stable
+          TURU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TURU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TURU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Package
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk "turu-$VERSION-android-arm64.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "turu-$VERSION-android-arm64.apk"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: turu-android-arm64
+          path: turu-${{ needs.version.outputs.version }}-android-arm64.apk
+          if-no-files-found: error
+
   release:
     name: Publish release
     if: github.ref_type == 'tag'
-    needs: [version, test, build, macos-app]
+    needs: [version, test, build, macos-app, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

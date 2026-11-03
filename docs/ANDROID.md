@@ -65,6 +65,47 @@ The APK is `android/app/build/outputs/apk/debug/app-debug.apk`. It builds arm64-
 by default; `ndkAbis=arm64-v8a` in `android/local.properties` builds one (faster). The Rust
 library is always a release build: a debug engine is too slow to play.
 
+## Releases
+
+The release workflow (`.github/workflows/release.yml`, on a `v*` tag) builds
+`turu-<version>-android-arm64.apk` with `./gradlew assembleRelease -PturuVersion=<version>`.
+`turuVersion` sets the APK's version name, and its version code comes from it (0.2.0-alpha.1 is
+200101: see `versionCode` in `app/build.gradle.kts`), so each release updates the one before.
+
+Every release must be signed with the same key, or a phone refuses the update. The key lives in
+the repository's Actions secrets: `ANDROID_KEYSTORE` (the keystore, base64),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. A tag build fails
+without them; a run by hand signs with a debug key. Make the keystore once and keep a copy
+somewhere safe (losing it means users uninstall to update):
+
+```bash
+keytool -genkeypair -keystore turu-release.jks -alias turu -keyalg RSA -keysize 4096 -validity 10000
+```
+
+```bash
+base64 -i turu-release.jks | gh secret set ANDROID_KEYSTORE --repo muktiarafi/turu
+```
+
+```bash
+gh secret set ANDROID_KEYSTORE_PASSWORD --repo muktiarafi/turu
+```
+
+```bash
+gh secret set ANDROID_KEY_ALIAS --repo muktiarafi/turu --body turu
+```
+
+```bash
+gh secret set ANDROID_KEY_PASSWORD --repo muktiarafi/turu
+```
+
+keytool makes a PKCS12 keystore, whose key password is the keystore's: give both secrets the
+same one. `gh secret set` without `--body` asks for the value, so it stays out of the shell
+history.
+
+Locally, the same environment variables the workflow sets (`TURU_KEYSTORE` with the file's
+path, `TURU_KEYSTORE_PASSWORD`, `TURU_KEY_ALIAS`, `TURU_KEY_PASSWORD`) sign `assembleRelease`
+with it; without them it's signed with the debug key.
+
 ## Run on an emulator
 
 ```bash

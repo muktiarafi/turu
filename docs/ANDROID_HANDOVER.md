@@ -26,7 +26,11 @@ tab row, the category chips become a drop-down. egui also gets Android's fonts f
 `/system/fonts` (Roboto, symbols) after its own, as the desktop adds the system's: arrows like
 the sort's "↓" were boxes before.
 
-Also uncommitted: **typing in the game's text fields.** While the soft keyboard is up for one,
+**Releases** build the APK too (from v0.2.0-alpha.1): the `android` job of
+`.github/workflows/release.yml`, signed with the keystore in the repository's secrets (see
+`docs/ANDROID.md`, Releases).
+
+Since `b08c1f176`: **typing in the game's text fields.** While the soft keyboard is up for one,
 a strip just above it shows the field's text with its caret and selection (a password as dots),
 scrolled to the caret, and a count to 150 (the game's longest message; typing stops there).
 `TuruActivity` passes the keyboard's height from the window's IME insets (`ui.rs`), with
