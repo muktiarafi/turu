@@ -183,6 +183,20 @@ impl Accounts {
         }
     }
 
+    /// Removes the group (its accounts stay).
+    pub fn remove_group(&mut self, group: &str) {
+        self.groups.retain(|g| g.name != group);
+    }
+
+    /// The names of the groups the account is in, in the groups' order.
+    pub fn groups_of(&self, username: &str) -> Vec<&str> {
+        self.groups
+            .iter()
+            .filter(|g| g.accounts.iter().any(|a| a.eq_ignore_ascii_case(username)))
+            .map(|g| g.name.as_str())
+            .collect()
+    }
+
     /// Checks the accounts of the group, and only those.
     pub fn select_group(&mut self, group: &str) {
         let Some(group) = self.groups.iter().find(|g| g.name == group) else {
@@ -335,6 +349,22 @@ mod tests {
         accounts.save(&path).unwrap();
         assert_eq!(Accounts::load(&path), accounts);
         assert!(!fs::read_to_string(&path).unwrap().contains("password"));
+    }
+
+    #[test]
+    fn lists_and_removes_groups() {
+        let mut accounts = Accounts::default();
+        accounts.upsert(account("Alpha"));
+        accounts.add_to_group("Farm", "Alpha");
+        accounts.add_to_group("Boss", "alpha");
+        accounts.add_to_group("Boss", "Beta");
+        assert_eq!(accounts.groups_of("ALPHA"), ["Farm", "Boss"]);
+        accounts.remove_group("Farm");
+        assert_eq!(accounts.groups_of("Alpha"), ["Boss"]);
+        assert_eq!(
+            accounts.find("Alpha").map(|a| a.username.as_str()),
+            Some("Alpha")
+        );
     }
 
     #[test]

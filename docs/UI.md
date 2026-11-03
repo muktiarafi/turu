@@ -191,9 +191,15 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   (empty: the computer's name) and Accept Commands, with the reporter's state and a warning for
   plain `http://` across the internet.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
-  the password goes to the system keychain off the UI thread), the list (check box, a green dot
-  while it runs, tags, Start, Edit, up / down, Remove asking twice), a tag filter, Select /
-  Unselect All, Add Selected to Group and Select group, and Launch: Server (the same drop-down
+  the password goes to the system keychain off the UI thread) behind "+ Add account" (open while
+  editing, or with no accounts yet; it closes on Add or Cancel), the list (each row: Start and a ⋯
+  menu, on the right and placed first, with Edit, ↑ Move up, ↓ Move down and Remove…, which
+  asks in a box and says the saved password goes too; then, in the width left and cut there, the
+  check box, a green dot while it runs, the name (the username on hover when it has a display
+  name), the launch note, then its groups (in the accent colour) and tags (grey) as pills, as
+  many as fit with "+N" for the rest), a tag filter, Select / Unselect All, Add Selected to
+  Group and "Select a group's accounts" (checks that group's accounts and only those; each group
+  has Remove, which keeps its accounts), and Launch: Server (the same drop-down
   as Relogin Server, `widgets::server_combo`), where (In a tab, In its own window, Without a
   window), the script (Browse / Clear) with Auto-start, Start Selected, Start All. Saved on every change.
   A launch reports on the rows (not only in the bottom line, which each account overwrote): a
@@ -201,11 +207,11 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   when it started without a saved password, until it's logged in in a tab (Army can't tell when
   a client of its own logs in, so there it stays until the next launch); "Failed: reason" (red)
   until the account is launched again. Passwords aren't read only to mark the rows: the
-  keychain may ask to be unlocked. Next to the Start buttons, the last Start in a line
-  ("Starting 3 of 10…", then "Started 8 of 10 · 2 need a login · 1 failed"). Start All asks
-  first ("Start 12 accounts?") when more than 3 would start. Select All and Unselect All act on
+  keychain may ask to be unlocked. Under the Start buttons, on a line of its own, the last
+  Start ("Starting 3 of 10…", then "Started 8 of 10 · 2 need a login · 1 failed"). Start
+  Selected and Start All ask first ("Start 12 accounts?") when more than 3 would start. Select All and Unselect All act on
   the rows the tag filter shows, and while selected accounts
-  are hidden by the filter the line next to the Start buttons says so in amber ("5 selected · 2
+  are hidden by the filter a line next to the Start buttons says so in amber ("5 selected · 2
   hidden by the filter"), as Start Selected starts them too.
 * **Army Control** (`army.rs`, 560x620): one list, CLIENTS, of this window's tabs and the
   clients Accounts launched (from the web monitor's hub, which the Army poll feeds). Each row: a

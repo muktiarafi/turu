@@ -3,7 +3,7 @@
 //! system keychain; reading and writing them happens off the UI thread.
 
 use super::files::{self, Pending};
-use super::theme::{DANGER, MUTED, SUCCESS, WARNING};
+use super::theme::{ACCENT, DANGER, MUTED, SUCCESS, WARNING};
 use super::widgets::{self, Kind};
 use crate::platform::FileDialog;
 use crate::turu::TabRequest;
@@ -73,14 +73,16 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Start All asks first when it would start more accounts than this.
-const START_ALL_ASKS_ABOVE: usize = 3;
+/// Start Selected and Start All ask first when they would start more accounts than this.
+const START_ASKS_ABOVE: usize = 3;
 
 /// The add / edit form.
 #[derive(Default)]
 struct Form {
     /// The username being edited (`None`: adding).
     editing: Option<String>,
+    /// Open to add an account ("+ Add account"); editing opens it too.
+    open: bool,
     username: String,
     password: String,
     show_password: bool,
@@ -93,13 +95,13 @@ pub struct AccountsWindow {
     form: Form,
     group_name: String,
     tag_filter: Option<String>,
-    /// The username whose Remove asks for a second click.
+    /// The username whose Remove is waiting for its question's answer.
     confirm_remove: Option<String>,
     pending_script: Pending,
     /// What the last action did, shown at the bottom (set by other threads too).
     status: Arc<Mutex<String>>,
     launches: Arc<Mutex<Launches>>,
-    /// Start All is waiting for its question's answer: these would start.
+    /// Start Selected or Start All is waiting for its question's answer: these would start.
     confirm_start: Option<Vec<Account>>,
 }
 
@@ -135,7 +137,8 @@ impl AccountsWindow {
         super::window(ctx, "Accounts", [520.0, 560.0], 4)
             .open(open)
             .show(ctx, |ui| self.ui(ui));
-        self.confirm_start_all(ctx);
+        self.start_question(ctx);
+        self.confirm_remove(ctx);
         // Launches finish on their own thread.
         ctx.request_repaint_after(Duration::from_millis(500));
     }
@@ -157,7 +160,16 @@ impl AccountsWindow {
         }
     }
 
+    /// The add / edit form, behind "+ Add account": you add an account once and launch it every
+    /// day. Open while editing, or while there are no accounts yet.
     fn form_card(&mut self, ui: &mut Ui) {
+        let shown = self.form.open || self.form.editing.is_some() || self.list.accounts.is_empty();
+        if !shown {
+            if widgets::button(ui, "+ Add account", Kind::Outline, true, vec2(0.0, 26.0), "").clicked() {
+                self.form.open = true;
+            }
+            return;
+        }
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             let editing = self.form.editing.is_some();
@@ -204,7 +216,7 @@ impl AccountsWindow {
                 {
                     self.submit_form();
                 }
-                if (editing || !self.form.username.is_empty())
+                if !self.list.accounts.is_empty()
                     && widgets::button(ui, "Cancel", Kind::Normal, true, vec2(80.0, 28.0), "").clicked()
                 {
                     self.form = Form::default();
@@ -252,6 +264,7 @@ impl AccountsWindow {
     fn edit(&mut self, account: &Account) {
         self.form = Form {
             editing: Some(account.username.clone()),
+            open: true,
             username: account.username.clone(),
             password: String::new(),
             show_password: false,
@@ -304,46 +317,60 @@ impl AccountsWindow {
                     if self.list.accounts.is_empty() {
                         ui.label(RichText::new("No accounts yet: add one above.").color(MUTED));
                     }
-                    for account in &mut self.list.accounts {
+                    let count = self.list.accounts.len();
+                    let groups: Vec<Vec<String>> = self
+                        .list
+                        .accounts
+                        .iter()
+                        .map(|a| {
+                            self.list
+                                .groups_of(&a.username)
+                                .into_iter()
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .collect();
+                    for (index, account) in self.list.accounts.iter_mut().enumerate() {
                         if !shows(account, self.tag_filter.as_deref()) {
                             continue;
                         }
+                        let running = is_running(&account.username);
+                        let launched = launches.rows.get(&account.username);
+                        // The buttons first, on the right; the rest gets the width left and is
+                        // cut there, so a long failure can't push Start out of the window.
                         ui.horizontal(|ui| {
-                            changed |= ui.checkbox(&mut account.selected, "").changed();
-                            let running = is_running(&account.username);
-                            let launched = launches.rows.get(&account.username);
-                            if running {
-                                widgets::dot(ui, SUCCESS, 4.0);
-                            } else if launched == Some(&Launched::Starting) {
-                                ui.spinner();
-                            }
-                            ui.label(RichText::new(account.label()).strong());
-                            if !account.display_name.trim().is_empty() {
-                                ui.label(RichText::new(&account.username).small().color(MUTED));
-                            }
-                            for tag in &account.tags {
-                                widgets::pill(ui, |ui| ui.label(RichText::new(tag).size(10.0).color(MUTED)));
-                            }
-                            launch_note(ui, launched, running, logged_in_tab(&account.username));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                let confirming = self.confirm_remove.as_deref() == Some(account.username.as_str());
-                                let remove = if confirming { "Sure?" } else { "Remove" };
-                                if widgets::small_button(ui, remove, true).clicked() {
-                                    action = Some((Row::Remove(confirming), account.username.clone()));
-                                }
-                                if widgets::small_button(ui, "↓", true).clicked() {
-                                    action = Some((Row::Shift(1), account.username.clone()));
-                                }
-                                if widgets::small_button(ui, "↑", true).clicked() {
-                                    action = Some((Row::Shift(-1), account.username.clone()));
-                                }
-                                if widgets::small_button(ui, "Edit", true).clicked() {
-                                    action = Some((Row::Edit, account.username.clone()));
-                                }
-                                let running = is_running(&account.username);
+                                ui.menu_button("⋯", |ui| {
+                                    if let Some(row) = row_menu(ui, index, count) {
+                                        action = Some((row, account.username.clone()));
+                                    }
+                                })
+                                .response
+                                .on_hover_text("Edit, move, remove");
                                 if widgets::small_button(ui, "Start", !running).clicked() {
                                     action = Some((Row::Start, account.username.clone()));
                                 }
+                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                                    changed |= ui.checkbox(&mut account.selected, "").changed();
+                                    if running {
+                                        widgets::dot(ui, SUCCESS, 4.0);
+                                    } else if launched == Some(&Launched::Starting) {
+                                        ui.spinner();
+                                    }
+                                    let name = ui.add(Label::new(RichText::new(account.label()).strong()).truncate());
+                                    if !account.display_name.trim().is_empty() {
+                                        name.on_hover_text(&account.username);
+                                    }
+                                    // How the launch went comes before the tags: it's what a
+                                    // narrow row keeps.
+                                    launch_note(ui, launched, running, logged_in_tab(&account.username));
+                                    let pills = groups[index]
+                                        .iter()
+                                        .map(|g| (g.as_str(), ACCENT))
+                                        .chain(account.tags.iter().map(|t| (t.as_str(), MUTED)));
+                                    tag_pills(ui, &pills.collect::<Vec<_>>());
+                                });
                             });
                         });
                     }
@@ -383,19 +410,41 @@ impl AccountsWindow {
                 }
                 if !self.list.groups.is_empty() {
                     let mut pick: Option<String> = None;
+                    let mut remove: Option<String> = None;
                     ComboBox::from_id_salt("turu_accounts_group")
-                        .selected_text("Select group")
+                        .selected_text("Select a group's accounts")
+                        .width(170.0)
                         .show_ui(ui, |ui| {
+                            ui.set_min_width(220.0);
                             for group in &self.list.groups {
-                                let label = format!("{} ({})", group.name, group.accounts.len());
-                                if ui.selectable_label(false, label).clicked() {
-                                    pick = Some(group.name.clone());
-                                }
+                                ui.horizontal(|ui| {
+                                    let label = format!("{} ({})", group.name, group.accounts.len());
+                                    if ui
+                                        .selectable_label(false, label)
+                                        .on_hover_text("Checks this group's accounts, and only those")
+                                        .clicked()
+                                    {
+                                        pick = Some(group.name.clone());
+                                    }
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        if widgets::small_button(ui, "Remove", true)
+                                            .on_hover_text("Removes the group; its accounts stay")
+                                            .clicked()
+                                        {
+                                            remove = Some(group.name.clone());
+                                        }
+                                    });
+                                });
                             }
                         });
                     if let Some(group) = pick {
                         self.list.select_group(&group);
                         self.save();
+                    }
+                    if let Some(group) = remove {
+                        self.list.remove_group(&group);
+                        self.save();
+                        set_status(&self.status, format!("Removed the group {group}; its accounts stay."));
                     }
                 }
             });
@@ -516,26 +565,34 @@ impl AccountsWindow {
                     "Check some accounts",
                 );
                 if start.clicked() {
-                    self.launch(selected);
+                    self.start_or_ask(selected);
                 }
                 let all = self.list.accounts.clone();
                 if widgets::button(ui, "Start All", Kind::Normal, !all.is_empty(), vec2(100.0, 30.0), "").clicked() {
-                    let starting = all.iter().filter(|a| !is_running(&a.username)).count();
-                    if starting > START_ALL_ASKS_ABOVE {
-                        self.confirm_start = Some(all);
-                    } else {
-                        self.launch(all);
-                    }
+                    self.start_or_ask(all);
                 }
+                // Beside the buttons: it's about what Start Selected would start.
                 if hidden > 0 {
                     let text = format!("{selected_count} selected · {hidden} hidden by the filter");
                     ui.add(Label::new(RichText::new(text).size(12.0).color(WARNING)).truncate())
                         .on_hover_text("Start Selected starts them too; set the filter to All tags to see them");
-                } else if let Some(summary) = lock(&self.launches).summary() {
-                    ui.add(Label::new(RichText::new(summary).size(12.0).color(MUTED)).truncate());
                 }
             });
+            // Under the buttons, on a line of its own, so the warning above never hides it.
+            if let Some(summary) = lock(&self.launches).summary() {
+                ui.add(Label::new(RichText::new(summary).size(12.0).color(MUTED)).truncate());
+            }
         });
+    }
+
+    /// Start Selected and Start All: asks first when more than a few accounts would start.
+    fn start_or_ask(&mut self, accounts: Vec<Account>) {
+        let starting = accounts.iter().filter(|a| !is_running(&a.username)).count();
+        if starting > START_ASKS_ABOVE {
+            self.confirm_start = Some(accounts);
+        } else {
+            self.launch(accounts);
+        }
     }
 
     /// Launches the accounts that aren't running, staggered, with their saved passwords.
@@ -625,8 +682,38 @@ fn launch_note(ui: &mut Ui, launched: Option<&Launched>, running: bool, logged_i
 }
 
 impl AccountsWindow {
-    /// Start All's question, when it would start more than a few accounts.
-    fn confirm_start_all(&mut self, ctx: &Context) {
+    /// Remove's question: the account goes, and its password with it.
+    fn confirm_remove(&mut self, ctx: &Context) {
+        let Some(username) = self.confirm_remove.clone() else {
+            return;
+        };
+        let label = self
+            .list
+            .find(&username)
+            .map_or_else(|| username.clone(), |a| a.label().to_owned());
+        let mut answer = None;
+        Modal::new(egui::Id::new("turu_accounts_remove")).show(ctx, |ui| {
+            ui.set_max_width(360.0);
+            ui.heading(format!("Remove {label}?"));
+            ui.label("Its saved password is deleted from the system keychain too.");
+            ui.horizontal(|ui| {
+                if widgets::button(ui, "Remove", Kind::Danger, true, vec2(84.0, 28.0), "").clicked() {
+                    answer = Some(true);
+                }
+                if widgets::button(ui, "Cancel", Kind::Normal, true, vec2(84.0, 28.0), "").clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+        match answer {
+            Some(true) => self.row_action(Row::Remove(true), &username),
+            Some(false) => self.confirm_remove = None,
+            None => {}
+        }
+    }
+
+    /// Start Selected's and Start All's question, when they would start more than a few accounts.
+    fn start_question(&mut self, ctx: &Context) {
         let Some(accounts) = &self.confirm_start else {
             return;
         };
@@ -708,6 +795,56 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<String>, states: &Mutex<Launc
     }
 }
 
+/// An account's groups (in the accent colour) and tags (grey) as pills, as many as fit; "+2"
+/// for the rest (all of them on hover).
+fn tag_pills(ui: &mut Ui, pills: &[(&str, egui::Color32)]) {
+    let font = egui::FontId::proportional(10.0);
+    let gap = ui.spacing().item_spacing.x;
+    for (i, &(text, color)) in pills.iter().enumerate() {
+        let text_width = ui
+            .painter()
+            .layout_no_wrap(text.to_owned(), font.clone(), color)
+            .size()
+            .x;
+        // The pill's margins (`widgets::pill`), and room for a "+N" after it.
+        let more = if i + 1 < pills.len() { 28.0 } else { 0.0 };
+        if text_width + 18.0 + gap + more > ui.available_width() {
+            let rest = pills.len() - i;
+            let all: Vec<&str> = pills.iter().map(|(text, _)| *text).collect();
+            ui.label(RichText::new(format!("+{rest}")).size(10.0).color(MUTED))
+                .on_hover_text(all.join(", "));
+            return;
+        }
+        widgets::pill(ui, |ui| ui.label(RichText::new(text).size(10.0).color(color)));
+    }
+}
+
+/// An account row's ⋯ menu: Edit, Move up / down (in the whole list, `index` of `count`) and
+/// Remove (which asks first).
+fn row_menu(ui: &mut Ui, index: usize, count: usize) -> Option<Row> {
+    let mut row = None;
+    if ui.button("Edit").clicked() {
+        row = Some(Row::Edit);
+    }
+    if ui.add_enabled(index > 0, egui::Button::new("↑  Move up")).clicked() {
+        row = Some(Row::Shift(-1));
+    }
+    if ui
+        .add_enabled(index + 1 < count, egui::Button::new("↓  Move down"))
+        .clicked()
+    {
+        row = Some(Row::Shift(1));
+    }
+    ui.separator();
+    if ui.button(RichText::new("Remove…").color(DANGER)).clicked() {
+        row = Some(Row::Remove(false));
+    }
+    if row.is_some() {
+        ui.close();
+    }
+    row
+}
+
 #[derive(Clone, Copy)]
 enum Row {
     Start,
@@ -719,8 +856,44 @@ enum Row {
 
 #[cfg(test)]
 mod tests {
-    use super::{Launched, Launches, shows};
+    use super::{Launched, Launches, lock, shows};
     use turu_bot::accounts::Account;
+
+    /// A row with a long name, tags and a long failure stays inside the window's width: the
+    /// buttons keep their place and the rest is cut.
+    #[test]
+    fn rows_fit_with_a_long_failure() {
+        let mut window = super::AccountsWindow {
+            list: Default::default(),
+            ..Default::default()
+        };
+        let name = "AnAccountWithAVeryLongNameIndeedThatGoesOn";
+        window.list.accounts.push(Account {
+            username: name.into(),
+            tags: vec!["farm".into(), "nulgath".into(), "overnight".into()],
+            ..Default::default()
+        });
+        lock(&window.launches).set(
+            name,
+            Launched::Failed("couldn't start turu: No such file or directory (os error 2) at /a/long/path".into()),
+        );
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 1000.0))),
+            ..Default::default()
+        };
+        let width = 496.0;
+        let mut used = 0.0;
+        let mut output = ctx.run_ui(input, |ui| {
+            ui.allocate_ui(egui::vec2(width, 600.0), |ui| {
+                ui.set_width(width);
+                window.list_card(ui);
+                used = ui.min_rect().width();
+            });
+        });
+        output.textures_delta.clear();
+        assert!(used <= width + 1.0, "the rows took {used} px of {width}");
+    }
 
     /// The tag filter shows an account with the tag (ignoring case), and every account without
     /// a filter: what Select All and the hidden count go by.
