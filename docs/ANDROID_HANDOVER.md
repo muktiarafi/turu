@@ -148,6 +148,12 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   assets-path change right after boot; `configChanges` can't opt out of it). Its `android_main`
   runs again: `lib.rs`'s `APP` is replaced each time, or the keyboard and the browser go through
   the destroyed one ("Can't show soft input after NativeActivity has been destroyed").
+* **egui must get touches as touches:** `input.rs` sends each touch as an `egui::Event::Touch`
+  as well as the mouse events it stands for (as egui-winit does). With mouse events only, egui
+  takes the screen for a mouse's, and `ScrollArea`'s drag-to-scroll (on touch screens only)
+  never ran: no window scrolled with a finger. A drag that starts on a DragValue changes the
+  number instead of scrolling, so number boxes use `widgets::number` (tap to type on a touch
+  screen); CoreBots Options does so far, the other windows still use DragValue.
 * **Text fields need `TextControl`:** Ruffle edits a field from `PlayerEvent::TextControl`
   (Backspace, arrows, Ctrl+V), not from `KeyDown`. With Ctrl, Android's key character map types
   nothing, so `input.rs` takes the key's unmodified letter for Ctrl+A/C/V/X.

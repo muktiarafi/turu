@@ -1397,11 +1397,13 @@ fn option_row(ui: &mut Ui, opt: &mut Opt) {
         }
         Value::Int(n) => {
             let speed = (n.unsigned_abs() as f64 / 200.0).max(1.0);
-            let mut value = egui::DragValue::new(n).range(0..=i32::MAX).speed(speed);
-            if !opt.unit.is_empty() {
-                value = value.suffix(format!(" {}", opt.unit));
-            }
-            ui.add_sized(vec2(NUMBER_WIDTH, widgets::target(26.0, 40.0)), value);
+            let suffix = if opt.unit.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", opt.unit)
+            };
+            let size = vec2(NUMBER_WIDTH, widgets::target(26.0, 40.0));
+            widgets::number(ui, opt.tag, n, 0..=i32::MAX, speed, &suffix, size);
         }
         Value::Text(text) => {
             ui.add(

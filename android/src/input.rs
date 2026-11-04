@@ -1,5 +1,6 @@
 //! Touch and keys, for the game (Ruffle's player events) or Turu's UI (egui's). Touch is the
-//! mouse: a finger down is a left click, dragging moves the mouse. Keys (a hardware keyboard, or
+//! mouse: a finger down is a left click, dragging moves the mouse; egui also gets it as a touch,
+//! so that it knows it's on a touch screen (a drag on a list scrolls it). Keys (a hardware keyboard, or
 //! the soft keyboard, which NativeActivity gets as key events) are named from Android's key code,
 //! and their character comes from the device's key character map, so Shift and other layouts
 //! type what they show. `screen.rs` decides who gets which.
@@ -53,7 +54,9 @@ impl Touch {
         }
     }
 
-    /// For egui, at `pixels_per_point`.
+    /// For egui, at `pixels_per_point`: the touch, then the mouse events it stands for (as
+    /// egui-winit sends them). Without the touch, egui takes the screen for a mouse's and
+    /// scrolls nothing on a drag (`ScrollArea`'s drag-to-scroll is on touch screens only).
     pub fn egui_events(self, pixels_per_point: f32) -> Vec<egui::Event> {
         let at = |x: f64, y: f64| egui::pos2(x as f32 / pixels_per_point, y as f32 / pixels_per_point);
         let button = |pos, pressed| egui::Event::PointerButton {
@@ -62,10 +65,29 @@ impl Touch {
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
+        // Every finger is the same touch, as they are the same mouse.
+        let touch = |phase, pos| egui::Event::Touch {
+            device_id: egui::TouchDeviceId(0),
+            id: egui::TouchId(0),
+            phase,
+            pos,
+            force: None,
+        };
         match self {
-            Touch::Down(x, y) => vec![egui::Event::PointerMoved(at(x, y)), button(at(x, y), true)],
-            Touch::Move(x, y) => vec![egui::Event::PointerMoved(at(x, y))],
-            Touch::Up(x, y) => vec![button(at(x, y), false), egui::Event::PointerGone],
+            Touch::Down(x, y) => vec![
+                touch(egui::TouchPhase::Start, at(x, y)),
+                egui::Event::PointerMoved(at(x, y)),
+                button(at(x, y), true),
+            ],
+            Touch::Move(x, y) => vec![
+                touch(egui::TouchPhase::Move, at(x, y)),
+                egui::Event::PointerMoved(at(x, y)),
+            ],
+            Touch::Up(x, y) => vec![
+                touch(egui::TouchPhase::End, at(x, y)),
+                button(at(x, y), false),
+                egui::Event::PointerGone,
+            ],
         }
     }
 }

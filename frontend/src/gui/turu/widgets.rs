@@ -161,6 +161,93 @@ fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
+/// A number box `size` big that keeps `value` in `range`, with `suffix` after it (" ms"). With a
+/// pointer it is egui's DragValue (drag it, or click and type); on a touch screen it is
+/// [`touch_number`], as a drag there is the finger scrolling the window.
+pub fn number<N: egui::emath::Numeric>(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    value: &mut N,
+    range: std::ops::RangeInclusive<N>,
+    speed: f64,
+    suffix: &str,
+    size: Vec2,
+) -> Response {
+    if touch() {
+        touch_number(ui, id_salt, value, range, suffix, size)
+    } else {
+        ui.add_sized(
+            size,
+            egui::DragValue::new(value).range(range).speed(speed).suffix(suffix),
+        )
+    }
+}
+
+/// A number box for a finger: it shows the number, a tap opens it for typing (with the soft
+/// keyboard), and a drag that starts on it scrolls what it sits in instead of changing the
+/// number, which a DragValue does. What's typed is kept in `range`; leaving the box with nothing
+/// typed keeps the last number.
+pub fn touch_number<N: egui::emath::Numeric>(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    value: &mut N,
+    range: std::ops::RangeInclusive<N>,
+    suffix: &str,
+    size: Vec2,
+) -> Response {
+    let id = ui.make_persistent_id(("turu_number", id_salt));
+    let edit_id = id.with("edit");
+    let shown = |v: N| {
+        if N::INTEGRAL {
+            format!("{}", v.to_f64().round() as i64)
+        } else {
+            format!("{}", v.to_f64())
+        }
+    };
+    // While typing, the text as typed (it may be empty, or "1" on the way to "100").
+    let Some(mut text) = ui.data(|d| d.get_temp::<String>(id)) else {
+        let response = ui.add_sized(size, Button::new(format!("{}{suffix}", shown(*value))));
+        if response.clicked() {
+            ui.data_mut(|d| d.insert_temp(id, shown(*value)));
+            ui.memory_mut(|m| m.request_focus(edit_id));
+            ui.ctx().request_repaint();
+        }
+        return response;
+    };
+    let mut response = ui.add_sized(
+        size,
+        egui::TextEdit::singleline(&mut text)
+            .id(edit_id)
+            .horizontal_align(Align::Center)
+            .vertical_align(Align::Center)
+            .background_color(INSET),
+    );
+    if response.changed() {
+        text.retain(|c| c.is_ascii_digit() || c == '-' || (!N::INTEGRAL && c == '.'));
+        if let Ok(typed) = text.parse::<f64>() {
+            let (low, high) = (range.start().to_f64(), range.end().to_f64());
+            let typed = N::from_f64(typed.clamp(low, high));
+            if typed != *value {
+                *value = typed;
+                response.mark_changed();
+            }
+        }
+    }
+    // A number kept in range, or changed from outside (a Reset), shows as it is now.
+    if !response.changed()
+        && let Ok(typed) = text.parse::<f64>()
+        && typed != value.to_f64()
+    {
+        text = shown(*value);
+    }
+    if response.lost_focus() {
+        ui.data_mut(|d| d.remove::<String>(id));
+    } else {
+        ui.data_mut(|d| d.insert_temp(id, text));
+    }
+    response
+}
+
 /// A one-line text box with a hint, in Turu's inset style; on a touch screen as tall as the
 /// small buttons (40 points).
 pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
@@ -580,7 +667,136 @@ impl Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::{LogView, wrap_row};
+    use super::{LogView, touch_number, wrap_row};
+    use egui::{Event, PointerButton, Pos2, pos2, vec2};
+
+    /// Runs frames of a scrolling list of 20 number boxes 40 points high (`touch_number`), the
+    /// sixth holding `value` (at about 215 to 255 before scrolling), with `events` in the frames
+    /// they're given for; returns where that box was drawn last.
+    fn number_list(value: &mut i32, frames: &[Vec<Event>]) -> f32 {
+        let ctx = egui::Context::default();
+        let mut top = 0.0;
+        for events in frames {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0))),
+                events: events.clone(),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                egui::ScrollArea::vertical()
+                    .scroll_source(egui::scroll_area::ScrollSource::ALL)
+                    .show(ui, |ui| {
+                        let mut other = 0;
+                        for n in 0..20 {
+                            if n == 5 {
+                                top = touch_number(ui, n, value, 0..=1000, " ms", vec2(120.0, 40.0))
+                                    .rect
+                                    .top();
+                            } else {
+                                touch_number(ui, n, &mut other, 0..=1000, "", vec2(120.0, 40.0));
+                            }
+                        }
+                    });
+            });
+            output.textures_delta.clear();
+        }
+        top
+    }
+
+    fn press(pos: Pos2, pressed: bool) -> Event {
+        Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }
+    }
+
+    /// A finger dragged from a touch number box scrolls the list and leaves the number alone.
+    #[test]
+    fn a_drag_on_a_touch_number_scrolls() {
+        let mut value = 700;
+        let (x, y) = (60.0, 235.0);
+        // Two frames first: the list knows it's too long to fit only after one, and a press finds
+        // what to drag among the last frame's widgets.
+        let mut frames = vec![
+            vec![],
+            vec![],
+            vec![Event::PointerMoved(pos2(x, y)), press(pos2(x, y), true)],
+        ];
+        for step in 1..=10 {
+            frames.push(vec![Event::PointerMoved(pos2(x, y - step as f32 * 15.0))]);
+        }
+        frames.push(vec![press(pos2(x, y - 150.0), false), Event::PointerGone]);
+        let top = number_list(&mut value, &frames);
+        assert_eq!(value, 700);
+        assert!(top < 150.0, "the list didn't scroll: the box is at {top}");
+    }
+
+    /// A tap opens a touch number box for typing; what's typed is kept in its range.
+    #[test]
+    fn a_tap_on_a_touch_number_types() {
+        let mut value = 700;
+        let at = pos2(60.0, 235.0);
+        let frames = vec![
+            vec![],
+            vec![],
+            vec![Event::PointerMoved(at), press(at, true)],
+            vec![press(at, false)],
+            vec![],
+            vec![Event::Key {
+                key: egui::Key::A,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            }],
+            vec![Event::Text("12".into())],
+            vec![Event::Text("x5000".into())],
+            vec![],
+        ];
+        number_list(&mut value, &frames);
+        assert_eq!(value, 1000, "12 then 5000 typed, kept under 1000");
+    }
+
+    /// While typing, a number past the range shows as the number kept.
+    #[test]
+    fn a_touch_number_shows_what_it_keeps() {
+        let ctx = egui::Context::default();
+        let mut value = 700;
+        let at = pos2(60.0, 20.0);
+        let frames = [
+            vec![],
+            vec![Event::PointerMoved(at), press(at, true)],
+            vec![press(at, false)],
+            vec![],
+            vec![Event::Text("9".into())],
+            vec![],
+            vec![],
+        ];
+        let mut shown = String::new();
+        for events in frames {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0))),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                touch_number(ui, "n", &mut value, 0..=1000, "", vec2(120.0, 40.0));
+            });
+            output.textures_delta.clear();
+            shown = output
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+        }
+        assert_eq!(value, 1000);
+        assert_eq!(shown, "1000");
+    }
 
     fn view(lines: &[&str]) -> LogView {
         let mut view = LogView::default();
