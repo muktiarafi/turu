@@ -115,6 +115,13 @@ impl<'a> ToolWindow<'a> {
         Self(self.0.resizable(resizable))
     }
 
+    /// On a phone: the window fills [`window_area`] (less a small margin), as a full-screen
+    /// sheet, and follows it when the screen turns. It can't be moved or resized then.
+    fn sheet(self, ctx: &Context) -> Self {
+        let rect = window_area(ctx).shrink(4.0);
+        Self(self.0.fixed_rect(rect).movable(false).resizable(false))
+    }
+
     fn show<R>(self, ctx: &Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
         let response = self.0.show(ctx, |ui| {
             let inner = add_contents(ui);

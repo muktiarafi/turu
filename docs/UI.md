@@ -145,10 +145,17 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Diagnostics > Logs).
   The "Report Issues" footer is omitted.
 * **Search Scripts** (`script_repo.rs`, 969x500; VibeSkua's Script Repo; also Scripts > Search
-  Scripts; on Android the only way to get a script): the search box across the window with
-  Clear; under it, wrapping on a narrow screen, "Search in" (All fields, Name, Tag, Description,
-  File), the folder (All folders and the top folders), Pinned and Local chips, sort (Name or Date
-  added) with its order in words ("A to Z", "Newest first"), and "N shown"; Enter in the search
+  Scripts; on Android the only way to get a script): the search box ("Search N scripts", a ✕
+  inside clears it), then the filters: what the search looks in (All fields, Name, Tag,
+  Description, File), the folder (All folders and the top folders), Pinned and Local chips, sort
+  (Name or Date added) with its order in words ("A to Z", "Newest first"), "N shown" and, with a
+  filter on, Clear. The header follows the room the window has (`Header`): 900 points across or
+  more, search and filters share a line; narrower, the filters wrap on the next line; narrower
+  than 640 or shorter than 420 (a phone either way up), the filters fold behind a "Filters · N"
+  chip (N filters on) with "N found" beside it, the rows drop to two lines (name; badge and
+  description; the path heads the row's menu) and, under 520 across, the bottom bar's status
+  takes a line above its buttons. On a phone the window fills the screen (`ToolWindow::sheet`,
+  touch and under 1000x600) and follows it when the screen turns; Enter in the search
   box loads the top hit, Cmd/Ctrl+Enter starts it (the top hit's Load and Start say so); the list (without the libraries such as CoreBots: files with no
   `export default`, which VibeSkua lists), pinned first, then the sort, then the search rank
   (VibeSkua's `SearchRank`). Each row: star when pinned, name, badges (Downloaded, Update,

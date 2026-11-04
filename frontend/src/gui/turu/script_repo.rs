@@ -1,14 +1,16 @@
 //! Search Scripts (VibeSkua's 969x500 Script Repo, `ScriptRepoControl`): the repository's
 //! scripts and your own, searchable, with Start, Load, Queue, Pin, Download/Update and Delete, and
 //! Update all / Download all / Reset Scripts. The work runs in `turu_bot::repo` on a thread of
-//! its own; this window shows its snapshot. On Android it is the only way to get a script, so
-//! on a narrow or touch screen the rows keep Start and a menu, and every target is finger-sized.
+//! its own; this window shows its snapshot. On Android it is the only way to get a script: on a
+//! phone it fills the screen, the filters fold behind a chip ([`Header`]), the rows are two
+//! lines with Start and a menu, and every target is finger-sized.
 
 use super::files;
 use super::theme::{DANGER, MUTED, SUCCESS, TRACK, WARNING};
 use super::widgets::{self, Kind};
 use egui::{
-    Align, Button, ComboBox, Context, CornerRadius, FontId, Key, Layout, Modal, RichText, ScrollArea, Sense, Ui, vec2,
+    Align, Button, ComboBox, Context, CornerRadius, FontId, Key, Layout, Modal, Rect, RichText, ScrollArea, Sense, Ui,
+    pos2, vec2,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -26,6 +28,44 @@ const CHIP_GAP: f32 = 4.0;
 
 /// Narrower than this, the rows keep Start and the menu (Load and Queue move into it).
 const NARROW: f32 = 640.0;
+
+/// The header's layouts, by the room the window has: at least [`WIDE`] across, the search
+/// box and the filters share one line; at least [`NARROW`] across and [`SHORT`] high, the
+/// filters take a line of their own; smaller (a phone, either way up), the filters fold behind
+/// a Filters chip and the rows drop their path and tags ([`Header::Compact`]).
+const WIDE: f32 = 900.0;
+const SHORT: f32 = 420.0;
+/// What the filters take on the search box's line in [`Header::Wide`].
+const FILTERS_WIDTH: f32 = 660.0;
+/// Narrower than this, the bottom bar's status takes a line above its buttons.
+const STACKED_BAR: f32 = 520.0;
+
+/// How the header and rows are laid out ([`Header::pick`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Header {
+    /// Search and filters on one line.
+    Wide,
+    /// Search on a line, the filters (wrapping) on the next.
+    Stacked,
+    /// Search and a Filters chip; the filters open below it. Rows are two lines.
+    Compact,
+}
+
+impl Header {
+    fn pick(width: f32, height: f32) -> Self {
+        if width < NARROW || height < SHORT {
+            Header::Compact
+        } else if width >= WIDE {
+            Header::Wide
+        } else {
+            Header::Stacked
+        }
+    }
+}
+
+/// A [`Header::Compact`] row at least: name, then badge and description (51 px with Turu's
+/// theme), plus the margins; it fits a 48-point touch button too.
+const COMPACT_ROW_HEIGHT: f32 = 60.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum Sort {
@@ -74,8 +114,14 @@ pub struct ScriptRepoWindow {
     working: Option<(String, bool)>,
     /// A Start finished well: the Script Loader should come up ([`Self::take_open_loader`]).
     open_loader: bool,
-    /// The rows' height: [`ROW_HEIGHT`], or more once a row's text needed it.
+    /// The rows' height: [`ROW_HEIGHT`] (or [`COMPACT_ROW_HEIGHT`]), or more once a row's text
+    /// needed it; worked out again when [`Self::row_compact`] changes.
     row_height: f32,
+    row_compact: bool,
+    /// The Filters chip of [`Header::Compact`] is open.
+    filters_open: bool,
+    /// The scripts there are to search (libraries left out), for the search box's hint.
+    total: usize,
     vscode: Option<Option<PathBuf>>,
 }
 
@@ -122,6 +168,18 @@ impl Rules {
     }
 }
 
+/// How [`ScriptRepoWindow::row`] lays a row out.
+#[derive(Clone, Copy)]
+struct RowStyle {
+    /// Start and the menu only (Load and Queue are in it).
+    narrow: bool,
+    /// Two lines of text, no path or tags ([`Header::Compact`]).
+    compact: bool,
+    /// The top search hit: Start has the accent.
+    top_hit: bool,
+    min_height: f32,
+}
+
 /// How a row's work went at once.
 enum Ran {
     /// It runs as the repo's task.
@@ -150,9 +208,14 @@ impl ScriptRepoWindow {
         if !*open {
             return;
         }
-        super::window(ctx, "Search Scripts", [969.0, 500.0], 2)
-            .open(open)
-            .show(ctx, |ui| self.ui(ui, &snapshot));
+        // On a phone it's the only way to get a script, and a floating window there leaves
+        // half the list off screen: it fills the screen instead.
+        let mut window = super::window(ctx, "Search Scripts", [969.0, 500.0], 2).open(open);
+        let area = super::window_area(ctx);
+        if widgets::touch() && (area.width() < 1000.0 || area.height() < 600.0) {
+            window = window.sheet(ctx);
+        }
+        window.show(ctx, |ui| self.ui(ui, &snapshot));
         if self.confirm_reset {
             self.reset_modal(ctx);
         }
@@ -176,102 +239,66 @@ impl ScriptRepoWindow {
         self.refilter(snapshot);
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
         let touch = widgets::touch();
+        let header = Header::pick(ui.available_width(), ui.available_height());
+        // The rows keep Start and the menu on a touch screen too (no hover for the rest).
         let narrow = touch || ui.available_width() < NARROW;
         let entries = &snapshot.entries;
 
-        // The search box across the window, then what it looks in and the filters, which wrap
-        // on a narrow screen. On a touch screen they're 48 points high, their rows about 44.
-        let control = widgets::target(26.0, 40.0);
+        // Enter in the search box loads the top hit, Cmd/Ctrl+Enter starts it.
         let mut enter = None;
-        ui.horizontal(|ui| {
-            // The box's width leaves out its margins (8 each side).
-            let width = (ui.available_width() - 56.0 - 6.0 - 16.0).max(120.0);
-            let search = widgets::text_box(ui, &mut self.search, "Search scripts", width);
-            // Enter loads the top hit, Cmd/Ctrl+Enter starts it.
+        let mut search_box = |this: &mut Self, ui: &mut Ui, width: f32| {
+            let search = this.search_box(ui, width);
             if search.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 enter = Some(ui.input(|i| i.modifiers.command));
             }
-            if widgets::button(
-                ui,
-                "Clear",
-                Kind::Normal,
-                !self.search.is_empty(),
-                vec2(56.0, control),
-                "",
-            )
-            .on_hover_text("Clear the search")
-            .clicked()
-            {
-                self.search.clear();
+        };
+        match header {
+            Header::Wide => {
+                ui.horizontal(|ui| {
+                    let width = (ui.available_width() - FILTERS_WIDTH).max(200.0);
+                    search_box(self, ui, width);
+                    self.filters(ui, header);
+                });
             }
-        });
-        ui.horizontal_wrapped(|ui| {
-            if touch {
-                ui.spacing_mut().interact_size.y = 40.0;
+            Header::Stacked => {
+                let width = ui.available_width();
+                search_box(self, ui, width);
+                ui.horizontal_wrapped(|ui| self.filters(ui, header));
             }
-            ui.label(RichText::new("Search in").color(MUTED));
-            ComboBox::from_id_salt("turu_repo_scope")
-                .width(100.0)
-                .selected_text(scope_label(self.scope))
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    for scope in Scope::ALL {
-                        ui.selectable_value(&mut self.scope, scope, scope_label(scope));
+            Header::Compact => {
+                let active = self.active_filters();
+                let label = if active > 0 {
+                    format!("Filters · {active}")
+                } else {
+                    "Filters".to_owned()
+                };
+                let found =
+                    (active > 0 || !self.search.trim().is_empty()).then(|| format!("{} found", self.filtered.len()));
+                ui.horizontal(|ui| {
+                    let text_width = |ui: &Ui, text: &str, size: f32| {
+                        let font = FontId::proportional(size);
+                        ui.painter().layout_no_wrap(text.to_owned(), font, MUTED).size().x
+                    };
+                    // The chip is its text plus 22 (`widgets::chip`).
+                    let gap = ui.spacing().item_spacing.x;
+                    let mut right = text_width(ui, &label, 12.0) + 22.0 + gap;
+                    if let Some(found) = &found {
+                        right += text_width(ui, found, 12.0) + gap;
+                    }
+                    let width = (ui.available_width() - right).max(80.0);
+                    search_box(self, ui, width);
+                    if let Some(found) = &found {
+                        ui.label(RichText::new(found).size(12.0).color(MUTED));
+                    }
+                    if widgets::chip(ui, &label, self.filters_open) {
+                        self.filters_open = !self.filters_open;
                     }
                 });
-            ComboBox::from_id_salt("turu_repo_category")
-                .width(120.0)
-                .selected_text(if self.category == "All" {
-                    "All folders"
-                } else {
-                    self.category.as_str()
-                })
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    for category in &self.categories {
-                        let label = if category == "All" { "All folders" } else { category };
-                        ui.selectable_value(&mut self.category, category.clone(), label);
-                    }
-                })
-                .response
-                .on_hover_text("The folder the scripts are in");
-            if widgets::chip(ui, "Pinned", self.pinned_only) {
-                self.pinned_only = !self.pinned_only;
+                if self.filters_open {
+                    ui.horizontal_wrapped(|ui| self.filters(ui, header));
+                }
             }
-            if widgets::chip(ui, "Local", self.local_only) {
-                self.local_only = !self.local_only;
-            }
-            ComboBox::from_id_salt("turu_repo_sort")
-                .width(100.0)
-                .selected_text(match self.sort {
-                    Sort::Name => "Name",
-                    Sort::Added => "Date added",
-                })
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    ui.selectable_value(&mut self.sort, Sort::Name, "Name");
-                    ui.selectable_value(&mut self.sort, Sort::Added, "Date added");
-                })
-                .response
-                .on_hover_text("Sort by");
-            let order = match (self.sort, self.descending) {
-                (Sort::Name, false) => "A to Z",
-                (Sort::Name, true) => "Z to A",
-                (Sort::Added, false) => "Oldest first",
-                (Sort::Added, true) => "Newest first",
-            };
-            if widgets::button(ui, order, Kind::Normal, true, vec2(96.0, control), "")
-                .on_hover_text("Reverse the order")
-                .clicked()
-            {
-                self.descending = !self.descending;
-            }
-            ui.label(
-                RichText::new(format!("{} shown", self.filtered.len()))
-                    .size(12.0)
-                    .color(MUTED),
-            );
-        });
+        }
 
         let rules = rules(snapshot);
         if let Some(start) = enter
@@ -287,11 +314,16 @@ impl ScriptRepoWindow {
             }
         }
 
-        // The list, above the bottom bar (on a narrow screen two lines: the status, then the
-        // buttons).
-        let bar_line = widgets::target(30.0, 48.0);
-        let bar = if narrow { 2.0 * bar_line + 22.0 } else { bar_line + 14.0 };
-        let list_height = (ui.available_height() - bar).max(80.0);
+        // The list, above the bottom bar (narrower than STACKED_BAR, two lines: the status,
+        // then the buttons).
+        let stacked = ui.available_width() < STACKED_BAR;
+        let list_height = (ui.available_height() - bar_height(snapshot, stacked)).max(80.0);
+        let compact = header == Header::Compact;
+        if self.row_compact != compact {
+            self.row_compact = compact;
+            self.row_height = 0.0;
+        }
+        let min_row = if compact { COMPACT_ROW_HEIGHT } else { ROW_HEIGHT };
         ui.allocate_ui(vec2(ui.available_width(), list_height), |ui| {
             let busy = snapshot.busy.is_some();
             if entries.iter().all(|e| e.info.library) {
@@ -318,10 +350,7 @@ impl ScriptRepoWindow {
                     let size = vec2(130.0, widgets::target(28.0, 48.0));
                     if widgets::button(ui, "Clear the filters", Kind::Normal, true, size, "").clicked() {
                         self.search.clear();
-                        self.scope = Scope::All;
-                        self.category = "All".into();
-                        self.pinned_only = false;
-                        self.local_only = false;
+                        self.clear_filters();
                     }
                 });
             } else {
@@ -330,12 +359,18 @@ impl ScriptRepoWindow {
                 let filtered = std::mem::take(&mut self.filtered);
                 ScrollArea::vertical().auto_shrink([false, false]).show_rows(
                     ui,
-                    self.row_height.max(ROW_HEIGHT),
+                    self.row_height.max(min_row),
                     filtered.len(),
                     |ui, rows| {
                         for i in rows {
                             let index = filtered[i];
-                            self.row(ui, &entries[index], &rules, narrow, top_hit == Some(index));
+                            let style = RowStyle {
+                                narrow,
+                                compact,
+                                top_hit: top_hit == Some(index),
+                                min_height: min_row,
+                            };
+                            self.row(ui, &entries[index], &rules, style);
                         }
                     },
                 );
@@ -343,7 +378,161 @@ impl ScriptRepoWindow {
             }
         });
 
-        self.bottom_bar(ui, snapshot, narrow);
+        self.bottom_bar(ui, snapshot, narrow, stacked);
+    }
+
+    /// The search box, `width` wide, with the scripts' count as its hint and a ✕ that clears
+    /// it inside its right end.
+    fn search_box(&mut self, ui: &mut Ui, width: f32) -> egui::Response {
+        let height = widgets::target(26.0, 40.0);
+        let hint = if self.total > 0 {
+            format!("Search {} scripts", self.total)
+        } else {
+            "Search scripts".to_owned()
+        };
+        // The text stops short of the ✕ (a square as high as the box). The width is the box's,
+        // margins included.
+        let margin = egui::Margin {
+            left: 8,
+            right: height as i8,
+            top: 5,
+            bottom: 5,
+        };
+        let response = ui.add(
+            egui::TextEdit::singleline(&mut self.search)
+                .hint_text(hint)
+                .desired_width(width.max(80.0))
+                .min_size(vec2(0.0, height))
+                .vertical_align(Align::Center)
+                .margin(margin)
+                .background_color(super::theme::INSET),
+        );
+        if !self.search.is_empty() {
+            let rect = Rect::from_min_size(
+                pos2(response.rect.right() - height, response.rect.top()),
+                vec2(height, response.rect.height()),
+            );
+            let clear = ui
+                .put(rect, Button::new(RichText::new("✕").color(MUTED)).frame(false))
+                .on_hover_text("Clear the search");
+            if clear.clicked() {
+                self.search.clear();
+            }
+        }
+        response
+    }
+
+    /// What the search looks in, the folder, Pinned and Local, and the order, then (but in
+    /// [`Header::Compact`]) the count of what they leave and (but in [`Header::Wide`]) Clear.
+    fn filters(&mut self, ui: &mut Ui, header: Header) {
+        if widgets::touch() {
+            ui.spacing_mut().interact_size.y = 40.0;
+        }
+        let control = widgets::target(26.0, 40.0);
+        // A drop-down doesn't wrap in a wrapping line by itself: it moves down when it wouldn't fit.
+        let fit = |ui: &mut Ui, width: f32| {
+            if ui.available_size_before_wrap().x < width {
+                ui.end_row();
+            }
+        };
+        fit(ui, 100.0);
+        ComboBox::from_id_salt("turu_repo_scope")
+            .width(100.0)
+            .selected_text(scope_label(self.scope))
+            .show_ui(ui, |ui| {
+                touch_rows(ui);
+                for scope in Scope::ALL {
+                    ui.selectable_value(&mut self.scope, scope, scope_label(scope));
+                }
+            })
+            .response
+            .on_hover_text("What the search looks in");
+        fit(ui, 120.0);
+        ComboBox::from_id_salt("turu_repo_category")
+            .width(120.0)
+            .selected_text(if self.category == "All" {
+                "All folders"
+            } else {
+                self.category.as_str()
+            })
+            .show_ui(ui, |ui| {
+                touch_rows(ui);
+                for category in &self.categories {
+                    let label = if category == "All" { "All folders" } else { category };
+                    ui.selectable_value(&mut self.category, category.clone(), label);
+                }
+            })
+            .response
+            .on_hover_text("The folder the scripts are in");
+        if widgets::chip(ui, "Pinned", self.pinned_only) {
+            self.pinned_only = !self.pinned_only;
+        }
+        if widgets::chip(ui, "Local", self.local_only) {
+            self.local_only = !self.local_only;
+        }
+        fit(ui, 100.0);
+        ComboBox::from_id_salt("turu_repo_sort")
+            .width(100.0)
+            .selected_text(match self.sort {
+                Sort::Name => "Name",
+                Sort::Added => "Date added",
+            })
+            .show_ui(ui, |ui| {
+                touch_rows(ui);
+                ui.selectable_value(&mut self.sort, Sort::Name, "Name");
+                ui.selectable_value(&mut self.sort, Sort::Added, "Date added");
+            })
+            .response
+            .on_hover_text("Sort by");
+        let order = match (self.sort, self.descending) {
+            (Sort::Name, false) => "A to Z",
+            (Sort::Name, true) => "Z to A",
+            (Sort::Added, false) => "Oldest first",
+            (Sort::Added, true) => "Newest first",
+        };
+        if widgets::button(ui, order, Kind::Normal, true, vec2(96.0, control), "")
+            .on_hover_text("Reverse the order")
+            .clicked()
+        {
+            self.descending = !self.descending;
+        }
+        // Compact, the search box's line has the count.
+        if header != Header::Compact {
+            ui.label(
+                RichText::new(format!("{} shown", self.filtered.len()))
+                    .size(12.0)
+                    .color(MUTED),
+            );
+        }
+        // Wide, the line has no room for it (the empty list's Clear the filters is there).
+        if header != Header::Wide
+            && self.active_filters() > 0
+            && widgets::button(ui, "Clear", Kind::Outline, true, vec2(56.0, control), "")
+                .on_hover_text("Search in all fields, all folders, Pinned and Local off")
+                .clicked()
+        {
+            self.clear_filters();
+        }
+    }
+
+    /// The filters that leave scripts out (the order doesn't).
+    fn active_filters(&self) -> usize {
+        [
+            self.scope != Scope::All,
+            self.category != "All",
+            self.pinned_only,
+            self.local_only,
+        ]
+        .into_iter()
+        .filter(|&on| on)
+        .count()
+    }
+
+    fn clear_filters(&mut self) {
+        self.scope = Scope::All;
+        self.category = "All".into();
+        self.pinned_only = false;
+        self.local_only = false;
     }
 
     fn refilter(&mut self, snapshot: &Snapshot) {
@@ -369,6 +558,7 @@ impl ScriptRepoWindow {
             .collect();
         folders.sort();
         folders.dedup();
+        self.total = entries.iter().filter(|e| !e.info.library).count();
         self.categories = vec!["All".into()];
         self.categories.extend(folders);
 
@@ -402,17 +592,25 @@ impl ScriptRepoWindow {
 
     /// One script: its text, then Start, Load, Queue and the menu (on a narrow screen Start and
     /// the menu, which holds Load and Queue). Start is a plain button but on the row under the
-    /// pointer and the top search hit, so a long list doesn't shout.
-    fn row(&mut self, ui: &mut Ui, entry: &Entry, rules: &Rules, narrow: bool, top_hit: bool) {
+    /// pointer and the top search hit, so a long list doesn't shout. Compact, the text is two
+    /// lines ([`row_text_compact`]).
+    fn row(&mut self, ui: &mut Ui, entry: &Entry, rules: &Rules, style: RowStyle) {
+        let RowStyle {
+            narrow,
+            compact,
+            top_hit,
+            min_height,
+        } = style;
         let info = &entry.info;
         let allowed = &rules.for_row(&info.path);
-        let height = self.row_height.max(ROW_HEIGHT);
+        let height = self.row_height.max(min_height);
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), egui::Sense::hover());
         let lead = top_hit || ui.rect_contains_pointer(rect);
         let working = self.working.as_ref().is_some_and(|(path, _)| *path == info.path);
         let button_height = widgets::target(28.0, 48.0);
         let menu_width = widgets::target(30.0, 48.0);
-        let buttons = if narrow { 64.0 } else { 64.0 + 56.0 + 64.0 } + menu_width + 30.0 + 24.0;
+        let spinner = if working { 24.0 } else { 0.0 };
+        let buttons = if narrow { 64.0 } else { 64.0 + 56.0 + 64.0 } + menu_width + spinner + 24.0;
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(4.0, ROW_MARGIN))));
         let ui = &mut child;
         ui.horizontal(|ui| {
@@ -422,7 +620,12 @@ impl ScriptRepoWindow {
                     // Long names and paths stop at the buttons.
                     ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
                     // The list needs one height for every row: grow them all if this one needs more.
-                    let needed = row_text(ui, entry) + 2.0 * ROW_MARGIN;
+                    let text = if compact {
+                        row_text_compact(ui, entry)
+                    } else {
+                        row_text(ui, entry)
+                    };
+                    let needed = text + 2.0 * ROW_MARGIN;
                     if needed > height + 0.5 {
                         self.row_height = needed.ceil();
                         ui.ctx().request_repaint();
@@ -430,7 +633,7 @@ impl ScriptRepoWindow {
                 },
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                self.row_menu(ui, entry, allowed, narrow, vec2(menu_width, button_height));
+                self.row_menu(ui, entry, allowed, narrow, compact, vec2(menu_width, button_height));
                 if !narrow {
                     if widgets::button(
                         ui,
@@ -500,7 +703,15 @@ impl ScriptRepoWindow {
         }
     }
 
-    fn row_menu(&mut self, ui: &mut Ui, entry: &Entry, allowed: &Allowed, narrow: bool, size: egui::Vec2) {
+    fn row_menu(
+        &mut self,
+        ui: &mut Ui,
+        entry: &Entry,
+        allowed: &Allowed,
+        narrow: bool,
+        compact: bool,
+        size: egui::Vec2,
+    ) {
         let info = &entry.info;
         let repo = crate::turu::script_repo();
         let busy = repo.is_busy();
@@ -509,10 +720,16 @@ impl ScriptRepoWindow {
             ui.set_min_width(190.0);
             touch_rows(ui);
             let touch = widgets::touch();
+            // A compact row has no room for its path: the menu starts with it.
+            if compact {
+                ui.add(egui::Label::new(RichText::new(&info.path).monospace().size(11.0).color(MUTED)).wrap());
+            }
             // A touch screen shows no tooltips: what the badge means, and why an item rests,
             // are lines in the menu.
             if touch && let Some((label, _, meaning)) = badge(entry.status) {
                 reason_line(ui, &format!("{label}: {meaning}"));
+            }
+            if compact || (touch && badge(entry.status).is_some()) {
                 ui.separator();
             }
             if narrow {
@@ -581,9 +798,9 @@ impl ScriptRepoWindow {
     }
 
     /// Update all, Refresh, Download all and the menu, with the running task or the last
-    /// result on the right; on a narrow screen the status takes a line above the buttons and
-    /// Download all moves into the menu.
-    fn bottom_bar(&mut self, ui: &mut Ui, snapshot: &Snapshot, narrow: bool) {
+    /// result on the right. With `narrow` rows Download all moves into the menu; `stacked`
+    /// (a phone held upright), the status takes a line above the buttons ([`bar_height`]).
+    fn bottom_bar(&mut self, ui: &mut Ui, snapshot: &Snapshot, narrow: bool, stacked: bool) {
         let repo = crate::turu::script_repo();
         let busy = snapshot.busy.is_some();
         let height = widgets::target(30.0, 48.0);
@@ -594,12 +811,13 @@ impl ScriptRepoWindow {
             .count();
         let wait = wait_tip(snapshot);
         ui.add_space(2.0);
-        if narrow {
-            ui.horizontal(|ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    status_line(ui, snapshot, height)
-                });
-            });
+        if stacked {
+            let line = status_height(snapshot, height);
+            ui.allocate_ui_with_layout(
+                vec2(ui.available_width(), line),
+                Layout::right_to_left(Align::Center),
+                |ui| status_line(ui, snapshot, height),
+            );
         }
         ui.horizontal(|ui| {
             let update_tip = if busy {
@@ -665,7 +883,7 @@ impl ScriptRepoWindow {
                     ui.close();
                 }
             });
-            if !narrow {
+            if !stacked {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     status_line(ui, snapshot, height)
                 });
@@ -731,6 +949,22 @@ impl ScriptRepoWindow {
             self.confirm_delete = None;
         }
     }
+}
+
+/// What [`ScriptRepoWindow::bottom_bar`] takes under the list, its spacing included.
+fn bar_height(snapshot: &Snapshot, stacked: bool) -> f32 {
+    let line = widgets::target(30.0, 48.0);
+    if stacked {
+        line + status_height(snapshot, line) + 22.0
+    } else {
+        line + 14.0
+    }
+}
+
+/// The status's line above a stacked bar: as high as its Cancel while a task runs, else one
+/// line of small text.
+fn status_height(snapshot: &Snapshot, line: f32) -> f32 {
+    if snapshot.busy.is_some() { line } else { 18.0 }
 }
 
 /// The running task with its progress and Cancel, or the last result (red when it failed, a
@@ -947,6 +1181,29 @@ fn row_text(ui: &mut Ui, entry: &Entry) -> f32 {
     .height()
 }
 
+/// A compact row's text: the name, then the badge and the description. Returns its height.
+fn row_text_compact(ui: &mut Ui, entry: &Entry) -> f32 {
+    let info = &entry.info;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 3.0;
+        ui.horizontal(|ui| {
+            if entry.pinned {
+                ui.label(RichText::new("★").color(WARNING)).on_hover_text("Pinned");
+            }
+            ui.add(egui::Label::new(RichText::new(&info.name).strong()).truncate());
+        });
+        ui.horizontal(|ui| {
+            badges(ui, entry.status);
+            let description = info.description.as_str();
+            ui.add(egui::Label::new(RichText::new(description).color(MUTED)).truncate())
+                .on_hover_text(description);
+        });
+    })
+    .response
+    .rect
+    .height()
+}
+
 /// The tags as chips on one line: as many as fit in the width left, then "+N", whose hover
 /// lists the others. One line keeps the rows the same height (the list only lays out the rows
 /// in view).
@@ -1079,6 +1336,36 @@ mod tests {
             assert!(
                 height + 2.0 * ROW_MARGIN <= ROW_HEIGHT,
                 "the row's text is {height} px: raise ROW_HEIGHT"
+            );
+        }
+    }
+
+    /// A phone either way up gets the compact layout, a desktop window the wide one; a
+    /// mid-sized one stacks the filters under the search box.
+    #[test]
+    fn the_header_follows_the_room() {
+        assert_eq!(Header::pick(945.0, 450.0), Header::Wide);
+        assert_eq!(Header::pick(720.0, 500.0), Header::Stacked);
+        // A phone held upright, and sideways (wide but short).
+        assert_eq!(Header::pick(380.0, 800.0), Header::Compact);
+        assert_eq!(Header::pick(880.0, 300.0), Header::Compact);
+    }
+
+    /// A compact row's text fits the compact row height, so rows don't grow on the first frame.
+    #[test]
+    fn compact_row_text_fits_the_row() {
+        let ctx = egui::Context::default();
+        super::super::theme::install(&ctx);
+        let e = entry("farm/GoldFarm.ts", "Gold Farm", "", Status::Outdated, true);
+        for _ in 0..2 {
+            let mut height = 0.0;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                height = ui.allocate_ui(vec2(300.0, 200.0), |ui| row_text_compact(ui, &e)).inner;
+            });
+            output.textures_delta.clear();
+            assert!(
+                height + 2.0 * ROW_MARGIN <= COMPACT_ROW_HEIGHT,
+                "the compact row's text is {height} px: raise COMPACT_ROW_HEIGHT"
             );
         }
     }
