@@ -4,11 +4,11 @@
 //! file; closing it saves. The header says whether the window holds unsaved changes.
 
 use super::skills::SkillSets;
-use super::theme::{ACCENT, CARD, EDGE, HOVER, INSET, MUTED, SUCCESS, TEXT, WARNING};
+use super::theme::{CARD, EDGE, HOVER, INSET, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use egui::{
     Align, Color32, ComboBox, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
-    StrokeKind, Ui, UiBuilder, vec2,
+    Ui, UiBuilder, vec2,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -323,7 +323,6 @@ pub struct CoreBotsWindow {
     was_open: bool,
     tab: Tab,
     search: String,
-    equipment_open: bool,
     username: String,
     current_class: Option<String>,
     /// The last inventory read, for the dropdown lists.
@@ -357,7 +356,6 @@ impl Default for CoreBotsWindow {
             was_open: false,
             tab: Tab::Loadout,
             search: String::new(),
-            equipment_open: false,
             username: String::new(),
             current_class: None,
             items: Vec::new(),
@@ -758,7 +756,8 @@ impl CoreBotsWindow {
         };
         if narrow {
             let text = self.header_text(ui, ui.available_width());
-            (text, buttons(self, ui))
+            // In a row, or right-to-left would take all the height a scrolling window offers.
+            (text, ui.horizontal(|ui| buttons(self, ui)).inner)
         } else {
             ui.horizontal(|ui| {
                 let width = ui.available_width() - HEADER_BUTTONS_WIDTH;
@@ -840,7 +839,7 @@ impl CoreBotsWindow {
         }
     }
 
-    /// The tabs; the Options tab's search sits on the right.
+    /// The tabs; on Options and Other, the search on the right.
     fn tab_row(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             for (tab, label) in [
@@ -852,190 +851,127 @@ impl CoreBotsWindow {
                     self.tab = tab;
                 }
             }
-            if self.tab == Tab::Options {
+            if self.tab != Tab::Loadout {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    widgets::text_box(ui, &mut self.search, "Search options", 220.0);
+                    let width = ui.available_width().min(220.0);
+                    if width >= 100.0 {
+                        widgets::text_box(ui, &mut self.search, "Search options", width);
+                    }
                 });
             }
         });
     }
 
+    /// One row per role: its class, skill preset and dedicated gear switch, with the role's gear
+    /// under it while the switch is on. Wide, the rows line up as a table under column names;
+    /// narrow (a phone), each row stacks its name, then its class and preset.
     fn loadout_tab(&mut self, ui: &mut Ui) {
         ScrollArea::vertical()
             .id_salt("cbo_loadout")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                // The lists come from the game with Refresh from game (VibeSkua's Reload Classes and
-                // Refresh Inventory did a part of it each, here).
-                section_title(ui, "Classes");
-                // 2x2 cards; `columns` splits the width, so the window never grows to fit them.
-                for pair in [0, 2] {
-                    ui.columns(2, |columns| {
-                        for (column, i) in columns.iter_mut().zip(pair..) {
-                            self.class_card(column, i);
+                ui.spacing_mut().item_spacing.y = 6.0;
+                let width = ui.available_width();
+                let columns = (width >= LOADOUT_WIDE).then(|| RoleColumns::new(width - 2.0 * ROW_PAD.x));
+                if let Some(columns) = &columns {
+                    column_names(ui, columns);
+                }
+                surface(ui, |ui| {
+                    for i in 0..self.roles.len() {
+                        if i > 0 {
+                            hairline(ui);
                         }
-                    });
-                }
-
-                let header =
-                    egui::CollapsingHeader::new(RichText::new("Gear per role").size(13.0).strong().color(TEXT))
-                        .id_salt("cbo_equipment")
-                        .open(Some(self.equipment_open))
-                        .show_unindented(ui, |ui| {
-                            for pair in [0, 2] {
-                                ui.columns(2, |columns| {
-                                    for (column, i) in columns.iter_mut().zip(pair..) {
-                                        self.gear_card(column, i);
-                                    }
-                                });
-                            }
-                        });
-                if header.header_response.clicked() {
-                    self.equipment_open = !self.equipment_open;
-                }
-                header
-                    .header_response
-                    .on_hover_text("Optional: what each role wears when its \"Use Dedicated Equipment Loadout\" is on");
+                        self.role_row(ui, i, columns.as_ref());
+                    }
+                });
             });
     }
 
-    fn class_card(&mut self, ui: &mut Ui, i: usize) {
-        let (sets, current_class, classes) = (&self.sets, self.current_class.as_deref(), &self.owned.classes);
+    fn role_row(&mut self, ui: &mut Ui, i: usize, columns: Option<&RoleColumns>) {
+        let (sets, current_class, owned) = (&self.sets, self.current_class.as_deref(), &self.owned);
         let role = &mut self.roles[i];
-        role_card(ui, role, true, |ui, role| {
-            caption(ui, "Selected Class");
-            let mut picked = None;
-            ComboBox::from_id_salt(("cbo_class", i))
-                .selected_text(role.class.as_deref().unwrap_or_default())
-                .width(ui.available_width())
-                .truncate()
-                .show_ui(ui, |ui| {
-                    for class in classes {
-                        if ui.selectable_label(role.class.as_ref() == Some(class), class).clicked() {
-                            picked = Some(class.clone());
-                        }
-                    }
-                });
-            if let Some(class) = picked {
-                role.select_class(class, sets, current_class);
-            }
-            caption(ui, "Skill Rule / Preset");
-            ComboBox::from_id_salt(("cbo_mode", i))
-                .selected_text(role.mode.as_deref().unwrap_or_default())
-                .width(ui.available_width())
-                .truncate()
-                .show_ui(ui, |ui| {
-                    for mode in &role.modes {
-                        if ui.selectable_label(role.mode.as_ref() == Some(mode), mode).clicked() {
-                            role.mode = Some(mode.clone());
-                        }
-                    }
-                });
-            ui.checkbox(
-                &mut role.use_equipment,
-                RichText::new("Use Dedicated Equipment Loadout").size(11.0),
-            );
-        });
-    }
-
-    fn gear_card(&mut self, ui: &mut Ui, i: usize) {
-        let lists = &self.owned.gear;
-        let role = &mut self.roles[i];
-        role_card(ui, role, false, |ui, role| {
-            for (slot, (label, _)) in SLOTS.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(52.0, 20.0), egui::Sense::hover());
-                    ui.painter().text(
-                        rect.left_center(),
-                        egui::Align2::LEFT_CENTER,
-                        *label,
-                        egui::FontId::proportional(11.0),
-                        MUTED,
-                    );
-                    let current = &mut role.gear[slot];
-                    ComboBox::from_id_salt(("cbo_gear", i, slot))
-                        .selected_text(current.as_str())
-                        .width(ui.available_width())
-                        .truncate()
-                        .show_ui(ui, |ui| {
-                            // An empty entry clears the slot (VibeSkua leaves it blank).
-                            if ui.selectable_label(current.is_empty(), "(none)").clicked() {
-                                current.clear();
-                            }
-                            for name in &lists[slot] {
-                                if ui.selectable_label(current == name, name).clicked() {
-                                    *current = name.clone();
-                                }
-                            }
+        Frame::new()
+            .inner_margin(Margin::symmetric(ROW_PAD.x as i8, 8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 8.0;
+                match columns {
+                    Some(c) => {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = COLUMN_GAP;
+                            role_name(ui, role, c.name);
+                            class_combo(ui, i, role, &owned.classes, sets, current_class, c.class);
+                            mode_combo(ui, i, role, c.mode);
+                            gear_switch(ui, role);
                         });
-                });
-            }
-        });
+                        role_gear(ui, i, role, &owned.gear, c.name + COLUMN_GAP, 3);
+                    }
+                    None => {
+                        ui.horizontal(|ui| {
+                            role_name(ui, role, 160.0);
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                gear_switch(ui, role);
+                                ui.label(
+                                    RichText::new("Dedicated gear")
+                                        .size(widgets::small_label_size())
+                                        .color(MUTED),
+                                );
+                            });
+                        });
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = COLUMN_GAP;
+                            let mode = 104.0;
+                            let class = (ui.available_width() - mode - COLUMN_GAP).max(80.0);
+                            class_combo(ui, i, role, &owned.classes, sets, current_class, class);
+                            mode_combo(ui, i, role, mode);
+                        });
+                        role_gear(ui, i, role, &owned.gear, 0.0, 2);
+                    }
+                }
+            });
     }
 
-    /// Two columns of option tiles: the switches, then the numbers and text, each by label.
+    /// The Options tab: its options by what they're about, in [`OPTION_GROUPS`]' order.
     fn options_tab(&mut self, ui: &mut Ui) {
         let needle = self.search.trim().to_lowercase();
-        let mut shown: Vec<&mut Opt> = self
-            .options
-            .iter_mut()
-            .filter(|o| {
-                needle.is_empty()
-                    || o.label.to_lowercase().contains(&needle)
-                    || o.description.to_lowercase().contains(&needle)
-            })
-            .collect();
-        let rank = |o: &Opt| match o.value {
-            Value::Bool(_) => 0,
-            Value::Int(_) => 1,
-            Value::Text(_) => 2,
-        };
-        shown.sort_by_key(|o| (rank(o), o.label.to_lowercase()));
-        let (switches, values): (Vec<_>, Vec<_>) = shown.into_iter().partition(|o| matches!(o.value, Value::Bool(_)));
-        list_frame(ui, |ui| {
-            ScrollArea::vertical()
-                .id_salt("cbo_options")
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    if switches.is_empty() && values.is_empty() {
-                        caption(ui, "No options match the search.");
-                    }
-                    for (title, mut group) in [("SWITCHES", switches), ("VALUES", values)] {
-                        if group.is_empty() {
-                            continue;
-                        }
-                        widgets::section_label(ui, title);
-                        let column = (ui.available_width() - TILE_GAP) / 2.0;
-                        for pair in group.chunks_mut(2) {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = TILE_GAP;
-                                for opt in pair {
-                                    option_tile(ui, opt, column);
-                                }
-                            });
-                        }
-                        ui.add_space(6.0);
-                    }
-                });
-        });
+        let options = &mut self.options;
+        ScrollArea::vertical()
+            .id_salt("cbo_options")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let mut shown = 0;
+                for (title, tags) in OPTION_GROUPS {
+                    let mut group: Vec<&mut Opt> = options
+                        .iter_mut()
+                        .filter(|o| tags.contains(&o.tag) && matches(o, &needle))
+                        .collect();
+                    group.sort_by_key(|o| tags.iter().position(|t| *t == o.tag));
+                    shown += group.len();
+                    option_group(ui, title, group);
+                }
+                if shown == 0 {
+                    no_matches(ui, &self.search);
+                }
+            });
     }
 
     fn other_tab(&mut self, ui: &mut Ui) {
-        list_frame(ui, |ui| {
-            ScrollArea::vertical()
-                .id_salt("cbo_other")
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    for (category, opts) in &mut self.other {
-                        widgets::section_label(ui, &category.to_uppercase());
-                        for opt in opts {
-                            let width = ui.available_width();
-                            option_tile(ui, opt, width);
-                        }
-                        ui.add_space(6.0);
-                    }
-                });
-        });
+        let needle = self.search.trim().to_lowercase();
+        let other = &mut self.other;
+        ScrollArea::vertical()
+            .id_salt("cbo_other")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let mut shown = 0;
+                for (category, opts) in other.iter_mut() {
+                    let group: Vec<&mut Opt> = opts.iter_mut().filter(|o| matches(o, &needle)).collect();
+                    shown += group.len();
+                    option_group(ui, category, group);
+                }
+                if shown == 0 {
+                    no_matches(ui, &self.search);
+                }
+            });
     }
 
     /// VibeSkua's message boxes: the public room warning and the Load/Save messages.
@@ -1121,82 +1057,340 @@ fn sort_classes(classes: &mut Vec<String>) {
     classes.insert(0, CURRENT_CLASS.to_owned());
 }
 
-fn caption(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(11.0).color(MUTED));
+/// The Options tab's groups: a heading and its options' tags, in the order shown (the file keeps
+/// VibeSkua's order).
+const OPTION_GROUPS: [(&str, &[&str]); 6] = [
+    ("Rooms", &["PrivateRooms", "PrivateRoomNr", "PublicDifficult"]),
+    ("Timing", &["ActionDelayNr", "ExitCombatNr", "HuntDelayNr"]),
+    ("Quests", &["QuestTriesNr", "QuestMaxNr"]),
+    (
+        "Gear and inventory",
+        &["DisableAutoEnhance", "DisableBestGear", "BankMiscAC"],
+    ),
+    (
+        "While the bot runs",
+        &[
+            "AntiLag",
+            "IncognitoMode",
+            "LoggerInChat",
+            "MessageBoxCheck",
+            "RestCheck",
+        ],
+    ),
+    ("When the bot stops", &["StopLocationSelect"]),
+];
+
+/// A row's padding inside its surface.
+const ROW_PAD: egui::Vec2 = vec2(12.0, 10.0);
+/// The space between the Loadout's columns.
+const COLUMN_GAP: f32 = 12.0;
+/// From this width the Loadout is a table; below it, each role stacks.
+const LOADOUT_WIDE: f32 = 600.0;
+/// The width of a number's box and of a text option's box.
+const NUMBER_WIDTH: f32 = 96.0;
+const TEXT_WIDTH: f32 = 150.0;
+/// About the width of a Reset button.
+const RESET_WIDTH: f32 = 50.0;
+
+/// The Loadout table's column widths; the class gets what the others leave.
+struct RoleColumns {
+    name: f32,
+    class: f32,
+    mode: f32,
+    gear: f32,
 }
 
-/// A heading over the role cards.
-fn section_title(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(13.0).strong().color(TEXT));
+impl RoleColumns {
+    fn new(width: f32) -> Self {
+        let (name, mode, gear) = (128.0, 120.0, 100.0);
+        let class = (width - name - mode - gear - 3.0 * COLUMN_GAP).max(120.0);
+        Self {
+            name,
+            class,
+            mode,
+            gear,
+        }
+    }
 }
 
-/// A role's card: its dot and name (with what the role is for on the class card), then
-/// `add_contents`.
-fn role_card(ui: &mut Ui, role: &mut Role, with_purpose: bool, add_contents: impl FnOnce(&mut Ui, &mut Role)) {
-    widgets::card(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.spacing_mut().item_spacing.y = 6.0;
-        ui.horizontal(|ui| {
-            widgets::dot(ui, role.color, 4.0);
-            ui.label(RichText::new(role.name).strong().size(13.0).color(TEXT));
-            if with_purpose {
-                ui.label(RichText::new(role.purpose).size(11.0).color(MUTED));
+/// The names over the Loadout's columns, lined up with the rows' cells.
+fn column_names(ui: &mut Ui, c: &RoleColumns) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+    let mut x = rect.left() + ROW_PAD.x;
+    for (text, width) in [
+        ("Role", c.name),
+        ("Class", c.class),
+        ("Skill preset", c.mode),
+        ("Dedicated gear", c.gear),
+    ] {
+        ui.painter().text(
+            egui::pos2(x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            text,
+            egui::FontId::proportional(widgets::small_label_size()),
+            MUTED,
+        );
+        x += width + COLUMN_GAP;
+    }
+}
+
+/// The role's dot and name with what it is for under it, `width` wide.
+fn role_name(ui: &mut Ui, role: &Role, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 32.0), Sense::hover());
+    let painter = ui.painter();
+    painter.circle_filled(egui::pos2(rect.left() + 4.0, rect.top() + 8.0), 4.0, role.color);
+    painter.text(
+        egui::pos2(rect.left() + 14.0, rect.top() + 8.0),
+        egui::Align2::LEFT_CENTER,
+        role.name,
+        egui::FontId::proportional(13.0),
+        TEXT,
+    );
+    painter.text(
+        egui::pos2(rect.left() + 14.0, rect.top() + 24.0),
+        egui::Align2::LEFT_CENTER,
+        role.purpose,
+        egui::FontId::proportional(widgets::small_label_size()),
+        MUTED,
+    );
+}
+
+fn class_combo(
+    ui: &mut Ui,
+    i: usize,
+    role: &mut Role,
+    classes: &[String],
+    sets: &SkillSets,
+    current_class: Option<&str>,
+    width: f32,
+) {
+    let mut picked = None;
+    let selected = match role.class.as_deref() {
+        Some(class) if !class.is_empty() => RichText::new(class),
+        _ => RichText::new("Not set").color(MUTED),
+    };
+    ComboBox::from_id_salt(("cbo_class", i))
+        .selected_text(selected)
+        .width(width)
+        .truncate()
+        .show_ui(ui, |ui| {
+            for class in classes {
+                if ui.selectable_label(role.class.as_ref() == Some(class), class).clicked() {
+                    picked = Some(class.clone());
+                }
+            }
+        })
+        .response
+        .on_hover_text(format!(
+            "The class CoreBots equips for {} ({})",
+            role.name,
+            role.purpose.to_lowercase()
+        ));
+    if let Some(class) = picked {
+        role.select_class(class, sets, current_class);
+    }
+}
+
+fn mode_combo(ui: &mut Ui, i: usize, role: &mut Role, width: f32) {
+    ComboBox::from_id_salt(("cbo_mode", i))
+        .selected_text(role.mode.as_deref().unwrap_or_default())
+        .width(width)
+        .truncate()
+        .show_ui(ui, |ui| {
+            for mode in &role.modes {
+                if ui.selectable_label(role.mode.as_ref() == Some(mode), mode).clicked() {
+                    role.mode = Some(mode.clone());
+                }
+            }
+        })
+        .response
+        .on_hover_text("The skill set the class uses (VibeSkua: Skill Rule / Preset)");
+}
+
+fn gear_switch(ui: &mut Ui, role: &mut Role) {
+    widgets::switch(ui, &mut role.use_equipment).on_hover_text(
+        "Wear this role's own gear with its class, picked under the row (VibeSkua: Use Dedicated \
+         Equipment Loadout)",
+    );
+}
+
+/// The role's six gear slots, `per_row` to a row and `indent` in, while its dedicated gear is
+/// on; while it's off, how many picks it keeps.
+fn role_gear(ui: &mut Ui, i: usize, role: &mut Role, lists: &[Vec<String>; 6], indent: f32, per_row: usize) {
+    if !role.use_equipment {
+        let kept = role.gear.iter().filter(|g| !g.is_empty()).count();
+        if kept > 0 {
+            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                ui.add_space(indent);
+                ui.label(
+                    RichText::new(format!(
+                        "{kept} gear pick{} kept, worn when Dedicated gear is on",
+                        if kept == 1 { "" } else { "s" }
+                    ))
+                    .size(widgets::small_label_size())
+                    .color(MUTED),
+                );
+            });
+        }
+        return;
+    }
+    ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+        ui.add_space(indent);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing = vec2(COLUMN_GAP, 8.0);
+            let cell = (ui.available_width() - COLUMN_GAP * (per_row - 1) as f32) / per_row as f32;
+            for row in (0..SLOTS.len()).collect::<Vec<_>>().chunks(per_row) {
+                ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                    for &slot in row {
+                        ui.allocate_ui_with_layout(vec2(cell, 0.0), Layout::top_down(Align::Min), |ui| {
+                            ui.set_width(cell);
+                            ui.spacing_mut().item_spacing.y = 3.0;
+                            ui.label(
+                                RichText::new(SLOTS[slot].0)
+                                    .size(widgets::small_label_size())
+                                    .color(MUTED),
+                            );
+                            gear_combo(ui, (i, slot), &mut role.gear[slot], &lists[slot], cell);
+                        });
+                    }
+                });
             }
         });
-        add_contents(ui, role);
     });
 }
 
-fn list_frame(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
-    Frame::new()
-        .fill(INSET)
-        .stroke(Stroke::new(1.0, EDGE))
-        .corner_radius(CornerRadius::same(super::theme::SMALL_RADIUS))
-        .inner_margin(Margin::symmetric(12, 6))
-        .show(ui, add_contents);
+fn gear_combo(ui: &mut Ui, id: (usize, usize), current: &mut String, list: &[String], width: f32) {
+    let selected = if current.is_empty() {
+        RichText::new("None").color(MUTED)
+    } else {
+        RichText::new(current.as_str())
+    };
+    ComboBox::from_id_salt(("cbo_gear", id))
+        .selected_text(selected)
+        .width(width)
+        .truncate()
+        .show_ui(ui, |ui| {
+            // An empty entry clears the slot (VibeSkua leaves it blank).
+            if ui.selectable_label(current.is_empty(), "None").clicked() {
+                current.clear();
+            }
+            for name in list {
+                if ui.selectable_label(current == name, name).clicked() {
+                    *current = name.clone();
+                }
+            }
+        });
 }
 
-/// The space between two option tiles side by side.
-const TILE_GAP: f32 = 10.0;
+/// Whether the option's label or description holds `needle` (lowercase).
+fn matches(opt: &Opt, needle: &str) -> bool {
+    needle.is_empty() || opt.label.to_lowercase().contains(needle) || opt.description.to_lowercase().contains(needle)
+}
 
-/// One option as a tile `width` wide: its label (and description) on the left, its control on
-/// the right. The tile lights up under the pointer, and a click anywhere on a switch's tile
-/// flips it, so each control plainly belongs to the label in its own tile. A number or text
-/// that isn't the default gets a Reset beside it (a switch's other value is one click away).
-fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
-    let height = if opt.description.is_empty() { 34.0 } else { 46.0 };
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+fn no_matches(ui: &mut Ui, search: &str) {
+    ui.add_space(8.0);
+    ui.label(RichText::new(format!("No options match \"{}\".", search.trim())).color(MUTED));
+}
+
+/// The rounded surface a group's rows sit on, edge to edge.
+fn surface<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    Frame::new()
+        .fill(CARD)
+        .stroke(Stroke::new(1.0, EDGE))
+        .corner_radius(CornerRadius::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            add_contents(ui)
+        })
+        .inner
+}
+
+/// The line between two rows of a surface.
+fn hairline(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter()
+        .hline(rect.x_range(), rect.center().y, Stroke::new(1.0, EDGE));
+}
+
+/// A heading and its options on one surface; nothing when no option is left.
+fn option_group(ui: &mut Ui, title: &str, opts: Vec<&mut Opt>) {
+    if opts.is_empty() {
+        return;
+    }
+    ui.add_space(6.0);
+    ui.label(RichText::new(title).size(13.0).strong().color(TEXT));
+    ui.add_space(-2.0);
+    surface(ui, |ui| {
+        for (n, opt) in opts.into_iter().enumerate() {
+            if n > 0 {
+                hairline(ui);
+            }
+            option_row(ui, opt);
+        }
+    });
+    ui.add_space(8.0);
+}
+
+/// One option: its label and the whole of its description on the left, its control on the
+/// right. A click anywhere on a switch's row flips it. A number or text that isn't the default
+/// gets a Reset beside it (a switch's other value is one click away).
+fn option_row(ui: &mut Ui, opt: &mut Opt) {
     let is_switch = matches!(opt.value, Value::Bool(_));
-    let tile = ui.interact(
+    let show_reset = !is_switch && opt.value != opt.default;
+    let control = match opt.value {
+        Value::Bool(_) => 34.0,
+        Value::Int(_) => NUMBER_WIDTH,
+        Value::Text(_) => TEXT_WIDTH,
+    } + if show_reset { RESET_WIDTH + 8.0 } else { 0.0 };
+    let width = ui.available_width();
+    let text_width = (width - 2.0 * ROW_PAD.x - control - 20.0).max(80.0);
+    let label = ui
+        .painter()
+        .layout(opt.label.to_owned(), egui::FontId::proportional(13.0), TEXT, text_width);
+    let description = (!opt.description.is_empty()).then(|| {
+        ui.painter().layout(
+            opt.description.to_owned(),
+            egui::FontId::proportional(widgets::small_label_size()),
+            MUTED,
+            text_width,
+        )
+    });
+    let text_height = label.size().y + description.as_ref().map_or(0.0, |d| 3.0 + d.size().y);
+    let height = (text_height.max(24.0) + 2.0 * ROW_PAD.y).max(widgets::target(0.0, 52.0));
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let row = ui.interact(
         rect,
-        ui.make_persistent_id(("cbo_tile", opt.tag)),
+        ui.make_persistent_id(("cbo_row", opt.tag)),
         if is_switch { Sense::click() } else { Sense::hover() },
     );
-    let hot = ui.rect_contains_pointer(rect);
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(super::theme::SMALL_RADIUS),
-        if hot { HOVER } else { CARD },
-        Stroke::new(1.0, if hot { ACCENT.gamma_multiply(0.6) } else { EDGE }),
-        StrokeKind::Inside,
-    );
-    if is_switch && tile.hovered() {
+    if is_switch && row.hovered() {
+        ui.painter()
+            .rect_filled(rect.shrink(3.0), CornerRadius::same(7), HOVER.gamma_multiply(0.7));
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    // The description is cut to the tile's width: the whole of it under the pointer.
-    let tile = if opt.description.is_empty() {
-        tile
-    } else {
-        tile.on_hover_text(opt.description)
-    };
-    let inner = UiBuilder::new()
-        .id_salt(opt.tag)
-        .max_rect(rect.shrink2(vec2(12.0, 0.0)))
-        .layout(Layout::right_to_left(Align::Center));
-    let ui = &mut ui.new_child(inner);
+    let mut top = rect.center().y - text_height / 2.0;
+    let left = rect.left() + ROW_PAD.x;
+    let label_height = label.size().y;
+    ui.painter().galley(egui::pos2(left, top), label, TEXT);
+    if let Some(description) = description {
+        top += label_height + 3.0;
+        ui.painter().galley(egui::pos2(left, top), description, MUTED);
+    }
+
+    let slot = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - ROW_PAD.x - control, rect.top()),
+        egui::pos2(rect.right() - ROW_PAD.x, rect.bottom()),
+    );
+    let ui = &mut ui.new_child(
+        UiBuilder::new()
+            .id_salt(opt.tag)
+            .max_rect(slot)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
     match &mut opt.value {
         Value::Bool(on) => {
-            if tile.clicked() {
+            if row.clicked() {
                 *on = !*on;
             }
             widgets::switch(ui, on);
@@ -1207,17 +1401,20 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
             if !opt.unit.is_empty() {
                 value = value.suffix(format!(" {}", opt.unit));
             }
-            ui.add(value);
+            ui.add_sized(vec2(NUMBER_WIDTH, widgets::target(26.0, 40.0)), value);
         }
         Value::Text(text) => {
             ui.add(
                 egui::TextEdit::singleline(text)
-                    .desired_width(140.0)
-                    .margin(Margin::symmetric(8, 4)),
+                    .desired_width(TEXT_WIDTH - 16.0)
+                    .min_size(vec2(0.0, widgets::target(26.0, 40.0)))
+                    .vertical_align(Align::Center)
+                    .margin(Margin::symmetric(8, 4))
+                    .background_color(INSET),
             );
         }
     }
-    if !is_switch && opt.value != opt.default {
+    if show_reset {
         let default = match &opt.default {
             Value::Int(n) if !opt.unit.is_empty() => format!("{n} {}", opt.unit),
             other => other.to_file(),
@@ -1229,25 +1426,6 @@ fn option_tile(ui: &mut Ui, opt: &mut Opt, width: f32) {
             opt.value = opt.default.clone();
         }
     }
-    ui.add_space(10.0);
-    ui.with_layout(Layout::top_down(Align::Min), |ui| {
-        ui.spacing_mut().item_spacing.y = 2.0;
-        // Centre the text block vertically (top-down layouts start at the top).
-        let lines = if opt.description.is_empty() { 1.0 } else { 2.0 };
-        ui.add_space(((ui.available_height() - lines * 16.0) / 2.0).max(0.0));
-        ui.add(
-            Label::new(RichText::new(opt.label).color(TEXT))
-                .truncate()
-                .selectable(false),
-        );
-        if !opt.description.is_empty() {
-            ui.add(
-                Label::new(RichText::new(opt.description).size(11.0).color(MUTED))
-                    .truncate()
-                    .selectable(false),
-            );
-        }
-    });
 }
 
 #[cfg(test)]
@@ -1284,6 +1462,22 @@ mod tests {
                 assert_eq!(opt.unit, "ms", "{}", opt.label);
             }
         }
+    }
+
+    /// The Options tab shows every option once, in its group.
+    #[test]
+    fn every_option_is_in_one_group() {
+        let window = CoreBotsWindow::default();
+        for opt in &window.options {
+            let groups = OPTION_GROUPS.iter().filter(|(_, tags)| tags.contains(&opt.tag)).count();
+            assert_eq!(groups, 1, "{} is in {groups} groups", opt.tag);
+        }
+        let grouped: usize = OPTION_GROUPS.iter().map(|(_, tags)| tags.len()).sum();
+        assert_eq!(
+            grouped,
+            window.options.len(),
+            "a group names an option that doesn't exist"
+        );
     }
 
     /// Refreshing the class and gear lists keeps each role's picks (VibeSkua's Reload Classes
@@ -1353,7 +1547,9 @@ mod tests {
             role.mode = Some("Base".into());
             role.gear = std::array::from_fn(|_| long.clone());
         }
-        window.equipment_open = true;
+        for role in &mut window.roles {
+            role.use_equipment = true;
+        }
         let input = || egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 1000.0))),
             ..Default::default()

@@ -454,25 +454,28 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   the last one's values over them). The name and state get the width the buttons leave, cut
   with "…" past it (the whole state on hover); with less than 300 px left for them (a small
   screen, a phone) the buttons go on a row of their own under them. Tabs Loadout / Options / Other, read-only while logged out (no character
-  to save to, so changes would be lost on close). Loadout: under "Classes", Solo, Farm, Dodge and
-  Boss cards, each with its coloured dot, its name and, muted, what it's for (Single target, AoE
-  farming, Survivability, Heavy bosses: VibeSkua's coloured badges, as plain text) (class from
-  the enhanced classes you own plus `[Current]`, skill set mode, "Use Dedicated Equipment
-  Loadout"), and a collapsible "Gear per role" (VibeSkua's "Detailed Equipment Slots") with six
-  gear drop-downs per role (with a "(none)" entry to clear a slot, which VibeSkua lacks);
-  captions and slot labels are 11 px. The card bars' own refresh buttons are gone: Refresh from
-  game in the header reads both lists. The
-  cards split the window width in two, so long names are cut off rather than widening it.
-  Options: the 17 CoreBots settings, searchable, as tiles in two columns under SWITCHES and
-  VALUES (numbers, text). Each tile holds one label and its control, lights up under the pointer,
-  and a click anywhere on a switch's tile flips it. Every option has a one-line description
-  (VibeSkua shows none: Turu's come from CoreBots' own comments on the options in `CoreBots.cs`,
-  or from what CoreBots and its farms do with them; the whole line shows on hover where the tile
-  cuts it), the delays end in "ms", and a number or text that isn't the default gets a Reset
-  beside it ("Back to the default, 700 ms"). Other: Boosters (read by
-  CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot Creators switches, as
-  full-width tiles with their descriptions shown under the label (the PvP and Story Test Mode
-  ones reworded: VibeSkua's have typos). Opening the window
+  to save to, so changes would be lost on close). Loadout: one table, a row per role (Solo, Farm,
+  Dodge, Boss), each with its coloured dot, its name and, muted under it, what it's for (Single
+  target, AoE farming, Survivability, Heavy bosses: VibeSkua's coloured badges, as plain text),
+  then its class (the enhanced classes you own plus `[Current]`; "Not set" when empty), its skill
+  preset (VibeSkua's Skill Rule / Preset) and a Dedicated gear switch (VibeSkua's "Use Dedicated
+  Equipment Loadout"), under column names. While the switch is on, the role's six gear slots
+  (VibeSkua's "Detailed Equipment Slots") open under its row, three to a line, each with a "None"
+  entry to clear it (VibeSkua lacks one); while it's off, a muted line says how many picks it
+  keeps. Below 600 px (a phone) each row stacks: name and switch, then class and preset, then the
+  gear two to a line. The class column gets the width the others leave, so long names are cut
+  off rather than widening the window. The card bars' own refresh buttons are gone: Refresh from
+  game in the header reads both lists. Options: the 17 CoreBots settings, searchable, grouped
+  by what they're about (Rooms, Timing, Quests, Gear and inventory, While the bot runs, When the
+  bot stops; the file keeps VibeSkua's order), each group one surface of rows split by hairlines.
+  A row holds the label, its whole description wrapped under it, and its control on the right;
+  a click anywhere on a switch's row flips it. Every option has a description (VibeSkua shows
+  none: Turu's come from CoreBots' own comments on the options in `CoreBots.cs`, or from what
+  CoreBots and its farms do with them), the delays end in "ms", and a number or text that isn't
+  the default gets a Reset beside it ("Back to the default, 700 ms"). Other: Boosters (read by
+  CoreFarms.toggleBoost, which runs `bot.boosts`), Nation Farms, PvP, Bot Creators, as the same
+  grouped rows, searchable too (the PvP and Story Test Mode ones reworded: VibeSkua's have
+  typos). Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
   before saving public rooms (a save without the answer keeps private rooms, and the window
   shows them on again). Game reads

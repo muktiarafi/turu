@@ -59,7 +59,7 @@ pub fn target(height: f32, touch_height: f32) -> f32 {
 }
 
 /// The size of the small labels: 11 points, 12 on a touch screen (a phone held at arm's length).
-fn small_label_size() -> f32 {
+pub fn small_label_size() -> f32 {
     if touch() { 12.0 } else { 11.0 }
 }
 
