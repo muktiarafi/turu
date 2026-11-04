@@ -6,7 +6,7 @@
 
 use super::theme::{DANGER, MUTED, TEXT};
 use super::widgets::{self, Kind as ButtonKind};
-use egui::{Align, ComboBox, Context, DragValue, Layout, RichText, ScrollArea, TextEdit, Ui, vec2};
+use egui::{Align, ComboBox, Context, Layout, RichText, ScrollArea, TextEdit, Ui, vec2};
 use serde_json::{Value, json};
 use turu_bot::script::ScriptOptionsState;
 use turu_bot::script::options::{Kind, MAIN, OptionDecl, ScriptOptions};
@@ -188,7 +188,18 @@ fn editor(ui: &mut Ui, category: &str, option: &OptionDecl, value: &Value) -> Op
         }
         Kind::Int => {
             let mut number = value.as_i64().unwrap_or(0);
-            ui.add(DragValue::new(&mut number)).changed().then(|| json!(number))
+            let size = vec2(100.0, widgets::target(24.0, 40.0));
+            widgets::number(
+                ui,
+                (category, &option.name),
+                &mut number,
+                i64::MIN..=i64::MAX,
+                1.0,
+                "",
+                size,
+            )
+            .changed()
+            .then(|| json!(number))
         }
         Kind::Text => {
             let mut text = value.as_str().unwrap_or_default().to_owned();

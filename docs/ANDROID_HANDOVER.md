@@ -152,8 +152,9 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   as well as the mouse events it stands for (as egui-winit does). With mouse events only, egui
   takes the screen for a mouse's, and `ScrollArea`'s drag-to-scroll (on touch screens only)
   never ran: no window scrolled with a finger. A drag that starts on a DragValue changes the
-  number instead of scrolling, so number boxes use `widgets::number` (tap to type on a touch
-  screen); CoreBots Options does so far, the other windows still use DragValue.
+  number instead of scrolling, so every number box in Turu's windows is a `widgets::number`
+  (a DragValue with a pointer, tap to type on a touch screen; `NumberFormat` for decimals or a
+  label for 0). Don't add a bare `egui::DragValue`.
 * **Text fields need `TextControl`:** Ruffle edits a field from `PlayerEvent::TextControl`
   (Backspace, arrows, Ctrl+V), not from `KeyDown`. With Ctrl, Android's key character map types
   nothing, so `input.rs` takes the key's unmodified letter for Ctrl+A/C/V/X.

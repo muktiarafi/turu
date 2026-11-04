@@ -5,7 +5,7 @@
 
 use super::theme::{DANGER, INSET, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
-use egui::{ComboBox, Context, CornerRadius, DragValue, Frame, Margin, Modal, RichText, ScrollArea, Ui, vec2};
+use egui::{ComboBox, Context, CornerRadius, Frame, Margin, Modal, RichText, ScrollArea, Ui, vec2};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 use turu_bot::skill_editor::{self, AuraRow, SkillItem, SkillRules};
@@ -259,7 +259,8 @@ impl SkillsWindow {
             ui.set_width(ui.available_width());
             widgets::section_label(ui, "SKILL TIMEOUT");
             ui.horizontal(|ui| {
-                ui.add(DragValue::new(&mut e.timeout).range(0..=5000).speed(10));
+                let size = vec2(64.0, widgets::target(24.0, 40.0));
+                widgets::number(ui, "skill_timeout", &mut e.timeout, 0..=5000, 10.0, "", size);
                 ui.label(RichText::new("Timeout (ms)").color(MUTED));
             });
         });
@@ -687,7 +688,15 @@ fn amount_row(ui: &mut Ui, label: &str, greater: &mut bool, value: &mut i64, per
     ui.horizontal(|ui| {
         compare_toggle(ui, greater);
         let max = if *percent { 100 } else { i64::from(i32::MAX) };
-        ui.add(DragValue::new(value).range(0..=max));
+        widgets::number(
+            ui,
+            label,
+            value,
+            0..=max,
+            1.0,
+            "",
+            vec2(80.0, widgets::target(24.0, 40.0)),
+        );
         ui.label(RichText::new(label).color(MUTED));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             value_type_toggle(ui, percent);
@@ -715,8 +724,12 @@ fn aura_row(
         let extra = if removable { 34.0 } else { 0.0 };
         let name_width = (ui.available_width() - 70.0 - 60.0 - extra - 3.0 * 8.0).max(80.0);
         widgets::text_box(ui, name, "Aura name", name_width);
-        ui.add(DragValue::new(stacks).range(0.0..=f32::MAX).speed(0.1).max_decimals(2))
-            .on_hover_text("Stacks");
+        let format = widgets::NumberFormat {
+            max_decimals: Some(2),
+            ..Default::default()
+        };
+        let size = vec2(60.0, widgets::target(24.0, 40.0));
+        widgets::number(ui, (id, "stacks"), stacks, 0.0..=f32::MAX, 0.1, format, size).on_hover_text("Stacks");
         target_combo(ui, (id, "target"), target);
         if removable {
             removed = widgets::button(ui, "✕", Kind::Normal, true, vec2(26.0, 22.0), "").clicked();
@@ -807,7 +820,8 @@ fn rules_form(ui: &mut Ui, rules: &mut SkillRules, id: &str) {
         ui.checkbox(&mut rules.skip, "Skip if not available");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(RichText::new("Wait (ms)").color(MUTED));
-            ui.add(DragValue::new(&mut rules.wait).range(0..=5000).speed(10));
+            let size = vec2(64.0, widgets::target(24.0, 40.0));
+            widgets::number(ui, "wait", &mut rules.wait, 0..=5000, 10.0, "", size);
         });
     });
 }

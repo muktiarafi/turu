@@ -6,7 +6,7 @@ use super::files::Pending;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::platform::FileDialog;
-use egui::{Align, Context, DragValue, Key, Label, Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{Align, Context, Key, Label, Layout, RichText, ScrollArea, Ui, vec2};
 use std::time::Duration;
 
 #[derive(Default)]
@@ -90,8 +90,8 @@ impl SpammerWindow {
             }
             ui.label("Every");
             let mut delay = spammer.delay_ms();
-            if ui
-                .add(DragValue::new(&mut delay).range(0..=600_000).speed(10).suffix(" ms"))
+            let size = vec2(90.0, widgets::target(24.0, 40.0));
+            if widgets::number(ui, "delay", &mut delay, 0..=600_000, 10.0, " ms", size)
                 .on_hover_text("Delay between packets")
                 .changed()
             {

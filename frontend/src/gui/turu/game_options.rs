@@ -4,7 +4,7 @@
 
 use super::theme::{MUTED, TEXT};
 use super::widgets::{self, Kind};
-use egui::{ComboBox, Context, DragValue, Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use turu_bot::options::{BotOptions, HuntPriority};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -242,7 +242,7 @@ impl GameOptionsWindow {
                                 ui.set_min_height(26.0);
                                 ui.label(RichText::new(entry.label).color(TEXT));
                                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                                    edit(ui, &entry.field, &mut snapshot, &bot);
+                                    edit(ui, entry.label, &entry.field, &mut snapshot, &bot);
                                 });
                             });
                         }
@@ -268,7 +268,7 @@ impl GameOptionsWindow {
 }
 
 /// One option's control. Writes to the live options as soon as it changes.
-fn edit(ui: &mut Ui, field: &Field, snapshot: &mut BotOptions, bot: &std::sync::Arc<turu_bot::Bot>) {
+fn edit(ui: &mut Ui, label: &str, field: &Field, snapshot: &mut BotOptions, bot: &std::sync::Arc<turu_bot::Bot>) {
     match field {
         Field::Bool(access) => {
             let mut value = *access(snapshot);
@@ -279,22 +279,21 @@ fn edit(ui: &mut Ui, field: &Field, snapshot: &mut BotOptions, bot: &std::sync::
         Field::Int(access, suffix) => {
             let mut value = *access(snapshot);
             let speed = (value.abs() as f64 / 200.0).max(1.0);
-            let mut drag = DragValue::new(&mut value).range(0..=i32::MAX).speed(speed);
-            if let Some(suffix) = suffix {
-                drag = drag.suffix(format!(" {suffix}"));
-            }
-            if ui.add(drag).changed() {
+            let suffix = suffix.map(|s| format!(" {s}")).unwrap_or_default();
+            let size = vec2(96.0, widgets::target(24.0, 40.0));
+            if widgets::number(ui, label, &mut value, 0..=i32::MAX, speed, &suffix, size).changed() {
                 *access(&mut bot.options.write()) = value;
             }
         }
         Field::Fps => {
             let mut value = snapshot.set_fps;
-            let drag = DragValue::new(&mut value)
-                .range(0..=i32::MAX)
-                .custom_formatter(|v, _| if v == 0.0 { "Game's".into() } else { format!("{v} FPS") })
-                .custom_parser(|s| s.trim().trim_end_matches("FPS").trim().parse().ok());
-            let response = ui
-                .add(drag)
+            let format = widgets::NumberFormat {
+                suffix: " FPS",
+                zero: Some("Game's"),
+                ..Default::default()
+            };
+            let size = vec2(96.0, widgets::target(24.0, 40.0));
+            let response = widgets::number(ui, label, &mut value, 0..=i32::MAX, 1.0, format, size)
                 .on_hover_text("0 (Game's) leaves the frame rate to the game's own FPS setting");
             if response.changed() {
                 bot.options.write().set_fps = value;

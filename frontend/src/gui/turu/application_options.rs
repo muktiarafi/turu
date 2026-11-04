@@ -5,7 +5,7 @@
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
-use egui::{DragValue, Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{Layout, RichText, ScrollArea, Ui, vec2};
 use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::options::BotOptions;
@@ -414,6 +414,7 @@ impl ApplicationOptionsWindow {
                                         ui.label(RichText::new(entry.description).small().color(MUTED));
                                     }
                                 });
+                                let size = vec2(96.0, widgets::target(24.0, 40.0));
                                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| match &entry.field {
                                     Field::Bool(access) => {
                                         settings_changed |= widgets::switch(ui, access(&mut settings)).changed();
@@ -424,10 +425,11 @@ impl ApplicationOptionsWindow {
                                             .on_disabled_hover_text("Coming soon: Turu doesn't update these yet");
                                     }
                                     Field::Int(access, suffix, min, max) => {
-                                        let drag = DragValue::new(access(&mut settings))
-                                            .range(*min..=*max)
-                                            .suffix(format!(" {suffix}"));
-                                        settings_changed |= ui.add(drag).changed();
+                                        let suffix = format!(" {suffix}");
+                                        let value = access(&mut settings);
+                                        settings_changed |=
+                                            widgets::number(ui, entry.label, value, *min..=*max, 1.0, &suffix, size)
+                                                .changed();
                                     }
                                     Field::Text(access) => {
                                         let edit = egui::TextEdit::singleline(access(&mut settings))
@@ -441,11 +443,10 @@ impl ApplicationOptionsWindow {
                                     Field::OptionInt(access, suffix) => {
                                         let value = access(&mut options);
                                         let speed = (value.abs() as f64 / 200.0).max(1.0);
-                                        let drag = DragValue::new(value)
-                                            .range(0..=i32::MAX)
-                                            .speed(speed)
-                                            .suffix(format!(" {suffix}"));
-                                        options_changed |= ui.add(drag).changed();
+                                        let suffix = format!(" {suffix}");
+                                        options_changed |=
+                                            widgets::number(ui, entry.label, value, 0..=i32::MAX, speed, &suffix, size)
+                                                .changed();
                                     }
                                     Field::Test => {
                                         let enabled = !settings.discord_webhook_url.trim().is_empty();

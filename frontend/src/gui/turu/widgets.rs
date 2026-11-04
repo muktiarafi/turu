@@ -161,54 +161,119 @@ fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
-/// A number box `size` big that keeps `value` in `range`, with `suffix` after it (" ms"). With a
-/// pointer it is egui's DragValue (drag it, or click and type); on a touch screen it is
-/// [`touch_number`], as a drag there is the finger scrolling the window.
-pub fn number<N: egui::emath::Numeric>(
+/// How a number box writes its number: what follows it, how many decimals, what 0 reads as. A
+/// suffix alone (`" ms"`) converts into one.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NumberFormat<'a> {
+    /// After the number (`" ms"`).
+    pub suffix: &'a str,
+    /// At most this many decimals for a fraction (`None`: as many as it has).
+    pub max_decimals: Option<usize>,
+    /// What 0 shows as instead of `0` and the suffix (`"Game's"`); typing a number replaces it.
+    pub zero: Option<&'a str>,
+}
+
+impl<'a> From<&'a str> for NumberFormat<'a> {
+    fn from(suffix: &'a str) -> Self {
+        Self {
+            suffix,
+            ..Self::default()
+        }
+    }
+}
+
+impl<'a> From<&'a String> for NumberFormat<'a> {
+    fn from(suffix: &'a String) -> Self {
+        suffix.as_str().into()
+    }
+}
+
+impl NumberFormat<'_> {
+    /// `value` as typed in the box: digits only.
+    fn plain<N: egui::emath::Numeric>(&self, value: N) -> String {
+        let value = value.to_f64();
+        if N::INTEGRAL {
+            format!("{}", value.round() as i64)
+        } else if let Some(decimals) = self.max_decimals {
+            let text = format!("{value:.decimals$}");
+            if text.contains('.') {
+                text.trim_end_matches('0').trim_end_matches('.').to_owned()
+            } else {
+                text
+            }
+        } else {
+            format!("{value}")
+        }
+    }
+
+    /// `value` as the box shows it.
+    fn label<N: egui::emath::Numeric>(&self, value: N) -> String {
+        match self.zero {
+            Some(zero) if value.to_f64() == 0.0 => zero.to_owned(),
+            _ => format!("{}{}", self.plain(value), self.suffix),
+        }
+    }
+}
+
+/// A number box `size` big that keeps `value` in `range`, written as `format` says (a suffix such
+/// as `" ms"`, or a [`NumberFormat`]). With a pointer it is egui's DragValue (drag it, or click
+/// and type); on a touch screen it is [`touch_number`], as a drag there is the finger scrolling
+/// the window.
+pub fn number<'a, N: egui::emath::Numeric>(
     ui: &mut Ui,
     id_salt: impl std::hash::Hash + std::fmt::Debug,
     value: &mut N,
     range: std::ops::RangeInclusive<N>,
     speed: f64,
-    suffix: &str,
+    format: impl Into<NumberFormat<'a>>,
     size: Vec2,
 ) -> Response {
+    let format = format.into();
     if touch() {
-        touch_number(ui, id_salt, value, range, suffix, size)
-    } else {
-        ui.add_sized(
-            size,
-            egui::DragValue::new(value).range(range).speed(speed).suffix(suffix),
-        )
+        return touch_number(ui, id_salt, value, range, format, size);
     }
+    let mut drag = egui::DragValue::new(value).range(range).speed(speed);
+    if let Some(decimals) = format.max_decimals {
+        drag = drag.max_decimals(decimals);
+    }
+    drag = match format.zero {
+        None => drag.suffix(format.suffix),
+        Some(zero) => {
+            let (zero, suffix) = (zero.to_owned(), format.suffix.to_owned());
+            let unit = suffix.trim().to_owned();
+            drag.custom_formatter(move |v, decimals| {
+                if v == 0.0 {
+                    zero.clone()
+                } else {
+                    format!("{}{suffix}", egui::emath::format_with_decimals_in_range(v, decimals))
+                }
+            })
+            .custom_parser(move |s| s.trim().trim_end_matches(unit.as_str()).trim().parse().ok())
+        }
+    };
+    ui.add_sized(size, drag)
 }
 
 /// A number box for a finger: it shows the number, a tap opens it for typing (with the soft
 /// keyboard), and a drag that starts on it scrolls what it sits in instead of changing the
 /// number, which a DragValue does. What's typed is kept in `range`; leaving the box with nothing
 /// typed keeps the last number.
-pub fn touch_number<N: egui::emath::Numeric>(
+pub fn touch_number<'a, N: egui::emath::Numeric>(
     ui: &mut Ui,
     id_salt: impl std::hash::Hash + std::fmt::Debug,
     value: &mut N,
     range: std::ops::RangeInclusive<N>,
-    suffix: &str,
+    format: impl Into<NumberFormat<'a>>,
     size: Vec2,
 ) -> Response {
+    let format = format.into();
     let id = ui.make_persistent_id(("turu_number", id_salt));
     let edit_id = id.with("edit");
-    let shown = |v: N| {
-        if N::INTEGRAL {
-            format!("{}", v.to_f64().round() as i64)
-        } else {
-            format!("{}", v.to_f64())
-        }
-    };
     // While typing, the text as typed (it may be empty, or "1" on the way to "100").
     let Some(mut text) = ui.data(|d| d.get_temp::<String>(id)) else {
-        let response = ui.add_sized(size, Button::new(format!("{}{suffix}", shown(*value))));
+        let response = ui.add_sized(size, Button::new(format.label(*value)));
         if response.clicked() {
-            ui.data_mut(|d| d.insert_temp(id, shown(*value)));
+            ui.data_mut(|d| d.insert_temp(id, format.plain(*value)));
             ui.memory_mut(|m| m.request_focus(edit_id));
             ui.ctx().request_repaint();
         }
@@ -222,10 +287,10 @@ pub fn touch_number<N: egui::emath::Numeric>(
             .vertical_align(Align::Center)
             .background_color(INSET),
     );
+    let (low, high) = (range.start().to_f64(), range.end().to_f64());
     if response.changed() {
         text.retain(|c| c.is_ascii_digit() || c == '-' || (!N::INTEGRAL && c == '.'));
         if let Ok(typed) = text.parse::<f64>() {
-            let (low, high) = (range.start().to_f64(), range.end().to_f64());
             let typed = N::from_f64(typed.clamp(low, high));
             if typed != *value {
                 *value = typed;
@@ -233,12 +298,13 @@ pub fn touch_number<N: egui::emath::Numeric>(
             }
         }
     }
-    // A number kept in range, or changed from outside (a Reset), shows as it is now.
+    // A number kept in range, or changed from outside (a Reset), shows as it is now. (Compared
+    // as `N`: a fraction typed into an f32 isn't the f64 it reads as.)
     if !response.changed()
         && let Ok(typed) = text.parse::<f64>()
-        && typed != value.to_f64()
+        && (typed.clamp(low, high) != typed || N::from_f64(typed) != *value)
     {
-        text = shown(*value);
+        text = format.plain(*value);
     }
     if response.lost_focus() {
         ui.data_mut(|d| d.remove::<String>(id));
@@ -667,7 +733,7 @@ impl Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::{LogView, touch_number, wrap_row};
+    use super::{LogView, NumberFormat, touch_number, wrap_row};
     use egui::{Event, PointerButton, Pos2, pos2, vec2};
 
     /// Runs frames of a scrolling list of 20 number boxes 40 points high (`touch_number`), the
@@ -759,30 +825,24 @@ mod tests {
         assert_eq!(value, 1000, "12 then 5000 typed, kept under 1000");
     }
 
-    /// While typing, a number past the range shows as the number kept.
-    #[test]
-    fn a_touch_number_shows_what_it_keeps() {
+    /// Runs `frames` of one touch number box 40 points high at the top, holding `value`; returns
+    /// the text it showed last.
+    fn one_number<N: egui::emath::Numeric>(
+        value: &mut N,
+        range: std::ops::RangeInclusive<N>,
+        format: NumberFormat<'_>,
+        frames: &[Vec<Event>],
+    ) -> String {
         let ctx = egui::Context::default();
-        let mut value = 700;
-        let at = pos2(60.0, 20.0);
-        let frames = [
-            vec![],
-            vec![Event::PointerMoved(at), press(at, true)],
-            vec![press(at, false)],
-            vec![],
-            vec![Event::Text("9".into())],
-            vec![],
-            vec![],
-        ];
         let mut shown = String::new();
         for events in frames {
             let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0))),
-                events,
+                events: events.clone(),
                 ..Default::default()
             };
             let mut output = ctx.run_ui(input, |ui| {
-                touch_number(ui, "n", &mut value, 0..=1000, "", vec2(120.0, 40.0));
+                touch_number(ui, "n", value, range.clone(), format, vec2(120.0, 40.0));
             });
             output.textures_delta.clear();
             shown = output
@@ -794,8 +854,71 @@ mod tests {
                 })
                 .unwrap_or_default();
         }
+        shown
+    }
+
+    /// Frames that tap the box at the top and type each of `typed` in a frame of its own.
+    fn tap_and_type(typed: &[&str]) -> Vec<Vec<Event>> {
+        let at = pos2(60.0, 20.0);
+        let mut frames = vec![
+            vec![],
+            vec![Event::PointerMoved(at), press(at, true)],
+            vec![press(at, false)],
+            vec![],
+        ];
+        frames.extend(typed.iter().map(|t| vec![Event::Text((*t).into())]));
+        frames.extend([vec![], vec![]]);
+        frames
+    }
+
+    /// While typing, a number past the range shows as the number kept.
+    #[test]
+    fn a_touch_number_shows_what_it_keeps() {
+        let mut value = 700;
+        let shown = one_number(&mut value, 0..=1000, NumberFormat::default(), &tap_and_type(&["9"]));
         assert_eq!(value, 1000);
         assert_eq!(shown, "1000");
+    }
+
+    /// A number box's format: 0 reads as its zero label, other numbers carry the suffix.
+    #[test]
+    fn a_touch_number_shows_its_format() {
+        let format = NumberFormat {
+            suffix: " FPS",
+            zero: Some("Game's"),
+            ..Default::default()
+        };
+        let mut value = 0;
+        assert_eq!(one_number(&mut value, 0..=i32::MAX, format, &[vec![]]), "Game's");
+        value = 60;
+        assert_eq!(one_number(&mut value, 0..=i32::MAX, format, &[vec![]]), "60 FPS");
+    }
+
+    /// A fraction shows at most its decimals and takes a typed fraction as it reads.
+    #[test]
+    fn a_touch_number_keeps_fractions() {
+        let format = NumberFormat {
+            max_decimals: Some(2),
+            ..Default::default()
+        };
+        let mut value = 0.1_f32;
+        assert_eq!(one_number(&mut value, 0.0..=f32::MAX, format, &[vec![]]), "0.1");
+        // Selects the 0.1 the box opens with, then types over it.
+        let mut frames = tap_and_type(&[]);
+        frames.insert(
+            4,
+            vec![Event::Key {
+                key: egui::Key::A,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            }],
+        );
+        frames.insert(5, vec![Event::Text("1.25".into())]);
+        let shown = one_number(&mut value, 0.0..=f32::MAX, format, &frames);
+        assert_eq!(value, 1.25);
+        assert_eq!(shown, "1.25");
     }
 
     fn view(lines: &[&str]) -> LogView {

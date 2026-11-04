@@ -8,8 +8,8 @@
 use super::theme::{DANGER, EDGE, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use egui::{
-    Align, Color32, ComboBox, Context, CornerRadius, DragValue, Frame, Label, Layout, Margin, Modal, RichText,
-    ScrollArea, Stroke, TextStyle, TextWrapMode, Ui, vec2,
+    Align, Color32, ComboBox, Context, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Stroke,
+    TextStyle, TextWrapMode, Ui, vec2,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -565,11 +565,15 @@ fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
             "Goto delay",
             "Time between gotos while chasing the master (250 ms is the loop's floor).",
             |ui| {
-                ui.add(
-                    DragValue::new(&mut settings.goto_delay)
-                        .range(250..=10_000)
-                        .speed(10)
-                        .suffix(" ms"),
+                let size = vec2(80.0, widgets::target(24.0, 40.0));
+                widgets::number(
+                    ui,
+                    "goto_delay",
+                    &mut settings.goto_delay,
+                    250..=10_000,
+                    10.0,
+                    " ms",
+                    size,
                 )
             },
         );
@@ -578,7 +582,18 @@ fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
             "Failed gotos before rescue",
             "Gotos that don't reach the master before joining its room from its file (how locked maps \
              are entered). Lower reacts faster but can trigger on map-change lag.",
-            |ui| ui.add(DragValue::new(&mut settings.rescue_threshold).range(1..=10)),
+            |ui| {
+                let size = vec2(48.0, widgets::target(24.0, 40.0));
+                widgets::number(
+                    ui,
+                    "rescue_threshold",
+                    &mut settings.rescue_threshold,
+                    1..=10,
+                    1.0,
+                    "",
+                    size,
+                )
+            },
         );
         row(
             ui,
