@@ -59,8 +59,9 @@ Right: the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** 
 (VibeSkua's direct action, moved here from between Combat and Diagnostics because it is one; a
 spinner in it while it runs, then for 4 s a note under it saying why nothing opened), a divider,
 and the **script status**: one capsule with the chip (status dot, a yellow "!" while the script
-waits for you, its name, how long it has run or how its last run ended; the state yellow while
-paused, red after an error; opens the Script Loader) and, joined to it, the Script Loader's run
+waits for you, its name, how long it has run or how its last run ended; the clock yellow while
+paused, without the word, so pausing doesn't change the chip's width and move the buttons left
+of it under a finger; red after an error; opens the Script Loader) and, joined to it, the Script Loader's run
 controls as icon cells: Start (accent; greyed, with the reason, while Auto or a Console snippet
 runs), Pause or Resume (accent: what you came back for) and Stop while it runs, Force Stop while
 it stops (offered after 1.5 s, as in the Script Loader). No script loaded, the chip stands alone.

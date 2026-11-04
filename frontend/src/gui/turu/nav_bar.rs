@@ -197,11 +197,12 @@ fn item(ui: &mut Ui, label: &str, enabled: bool) -> bool {
 
 impl NavBar {
     pub fn show(&mut self, ui: &mut Ui, windows: &mut Windows) {
+        // The controls are 8 points shorter than the bar: 4 above and below centre them.
         let frame = Frame::new().fill(PANEL).inner_margin(Margin {
             left: 8,
-            right: 6,
-            top: 0,
-            bottom: 0,
+            right: 8,
+            top: 4,
+            bottom: 4,
         });
         Panel::top("turu_nav")
             .exact_size(crate::gui::nav_bar_height() as f32)
@@ -1106,10 +1107,9 @@ fn run_cell(ui: &mut Ui, cell: RunCell, corners: CornerRadius) -> Response {
 }
 
 /// The chip: its status dot ("!" while the script waits for you), its name and how long it
-/// has run, or its state when it isn't running, the state coloured as it reads (paused yellow,
-/// an error red). Wording and clock are the Script Loader's status card's. Without
-/// [`MIN_NAME_WIDTH`] of room the name is left out (it stays in the tooltip). Returns the chip
-/// and how wide its name was drawn.
+/// has run (yellow while paused), or its state when it isn't running (an error red). Wording
+/// and clock are the Script Loader's status card's. Without [`MIN_NAME_WIDTH`] of room the name
+/// is left out (it stays in the tooltip). Returns the chip and how wide its name was drawn.
 fn script_chip(
     ui: &mut Ui,
     bot: &turu_bot::Bot,
@@ -1129,10 +1129,9 @@ fn script_chip(
         .map(|started| started.elapsed());
     let state = match status {
         ScriptStatus::Running => elapsed.map_or_else(|| "Running".to_owned(), script_loader::duration_text),
-        ScriptStatus::Paused => match elapsed {
-            Some(elapsed) => format!("Paused · {}", script_loader::duration_text(elapsed)),
-            None => "Paused".to_owned(),
-        },
+        // Paused, the clock alone, yellow (as its dot), beside Resume: the chip keeps its width,
+        // so pausing doesn't move the buttons left of it under a finger. The tooltip says so.
+        ScriptStatus::Paused => elapsed.map_or_else(|| "Paused".to_owned(), script_loader::duration_text),
         ScriptStatus::Error => "Error".to_owned(),
         // After a run: "Finished 6h 12m", "Stopped 3h 40m" (the Script Loader's last run).
         ScriptStatus::Loaded => match script_loader::last_run(bot) {
