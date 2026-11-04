@@ -45,21 +45,35 @@ next to it).
 
 ## Nav bar (`nav_bar.rs`)
 
-34 px high (48 on a touch screen, below), left to right as in VibeSkua: **Scripts** (Script Loader, Edit Script Options, Scheduler), **Options**
-(Game, Application, CoreBots, Application Themes, HotKeys), **Tools & Helpers** (Loader,
-Grabber, Current Drops, Junk Items, Loadouts Manager, Fast Travel), **Combat** (Skills, Stats,
-Runtime), **Bank** (direct action), **Diagnostics** (Logs, Console, Spammer, Packet Logger,
-Interceptor), **Plugins** (Butler, Cosmetics, View Plugins), **Army** (Accounts, Army Control, New Tab; Turu's:
-VibeSkua has them in its Manager app and its tabbed host). Right side: **Grid** (two tabs or more),
-**Auto**, **Jump**, a divider, the **script chip**.
+34 px high (48 on a touch screen, below). Left: the Turu symbol (`docs/logo/turu-symbol-small.svg`,
+drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scripts** (Script
+Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
+Application Themes, HotKeys), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
+Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
+Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics, View Plugins),
+**Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them in its Manager app and its
+tabbed host). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
+a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
-When the menus would run into the right side (its width is measured each frame), they fold:
-first to **Scripts** and **More** (the other menus as its submenus, Bank as a row), then, as on
-a phone held upright, to one **Menu** with everything, and the script chip's name gets 80 px
-instead of 150. Leaving the last fold counts the room the chip's name takes back, so the bar
-doesn't flip between two folds. On a touch screen (`Platform::is_touch`, Android) the bar is
+Right: the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
+(VibeSkua's direct action, moved here from between Combat and Diagnostics because it is one; a
+spinner in it while it runs, then for 4 s a note under it saying why nothing opened), a divider,
+and the **script status**: one capsule with the chip (status dot, a yellow "!" while the script
+waits for you, its name, how long it has run or how its last run ended; the state yellow while
+paused, red after an error; opens the Script Loader) and, joined to it, the Script Loader's run
+controls as icon cells: Start (accent; greyed, with the reason, while Auto or a Console snippet
+runs), Pause or Resume (accent: what you came back for) and Stop while it runs, Force Stop while
+it stops (offered after 1.5 s, as in the Script Loader). No script loaded, the chip stands alone.
+The clock keeps room for "59m", so the bar doesn't shift every second.
+
+When the menus would run into the right side (its width is measured each frame it is drawn in
+full), they fold: first to **Scripts** and **More** (the other menus as its submenus), then, as
+on a phone held upright, to one **Menu** with everything and Bank as its last row; the symbol is
+left out and the script's name gets what room is left, up to 72 px (150 otherwise), or is left
+out (it stays in the tooltip). On a touch screen (`Platform::is_touch`, Android) the bar is
 48 points high (`gui::nav_bar_height`, which `top_height` and so the game's offset follow;
-desktop stays 34), its buttons, toggles and chip 40, and menu rows about 44; in the Auto and
+desktop stays 34), its buttons, toggles, chip and run cells 40, the run icons 1.3 times larger,
+and menu rows about 44; in the Auto and
 Jump popups the buttons, drop-downs and text boxes are 48 and the drop-downs' rows about 44,
 and Auto's "RUNNING" is 11 px (9 before, on every platform).
 

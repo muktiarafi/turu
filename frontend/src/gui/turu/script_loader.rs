@@ -413,11 +413,11 @@ pub(super) fn last_run(bot: &turu_bot::Bot) -> Option<LastRun> {
 }
 
 /// Why Force Stop is disabled at first ([`turu_bot::script::FORCE_STOP_AFTER`]).
-const FORCE_STOP_WAIT: &str = "Force Stop is offered after 1.5 s of stopping";
+pub(super) const FORCE_STOP_WAIT: &str = "Force Stop is offered after 1.5 s of stopping";
 
 /// VibeSkua's default ToggleScript hotkey: starts the loaded script, or stops the running one.
 pub(super) const TOGGLE_KEY: egui::Key = egui::Key::F10;
-const TOGGLE_KEY_NAME: &str = "F10";
+pub(super) const TOGGLE_KEY_NAME: &str = "F10";
 /// VibeSkua's default LoadScript hotkey: Load Script's file dialog.
 pub(super) const LOAD_KEY: egui::Key = egui::Key::F9;
 const LOAD_KEY_NAME: &str = "F9";

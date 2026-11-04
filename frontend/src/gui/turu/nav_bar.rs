@@ -1,50 +1,53 @@
-//! VibeSkua's 34 px top nav bar: menus on the left, Grid / Auto / Jump and the script chip on
-//! the right. Entries for windows Turu doesn't have yet sit greyed at the end of their menus,
-//! marked "(soon)".
+//! The 34 px top nav bar. Left: the Turu symbol and VibeSkua's menus. Right: the game's quick
+//! actions (Grid, Auto, Jump, Bank), then the script's status with its run controls, the one
+//! place a check-in needs. Entries for windows Turu doesn't have yet sit greyed at the end of
+//! their menus, marked "(soon)".
 
 use super::skills::SkillSets;
-use super::theme::{ACCENT, DANGER, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
+use super::theme::{
+    ACCENT, ACCENT_HOVER, DANGER, DANGER_HOVER, EDGE, HOVER, MUTED, PANEL, SMALL_RADIUS, SUCCESS, TEXT, TRACK, WARNING,
+};
 use super::widgets::{self, Kind};
 use super::{Windows, auto, script_loader};
 use crate::map_pads::MapCells;
 use egui::containers::menu::{MenuBar, MenuConfig};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Label, Layout, Margin, Panel, Popup,
-    PopupCloseBehavior, RectAlign, Response, RichText, Sense, Style, Ui, vec2,
+    Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Id, Layout, Margin, Panel, Popup,
+    PopupCloseBehavior, Rect, RectAlign, Response, RichText, Sense, Spinner, Stroke, Style, Ui, pos2, vec2,
 };
 use serde_json::json;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use turu_bot::api::dispatch;
-use turu_bot::script::{ScriptOptionsState, ScriptStatus};
+use turu_bot::script::{self, ScriptOptionsState, ScriptStatus};
 
-/// The menus, in VibeSkua's order. Bank is a button, not a menu.
+/// The menus, in VibeSkua's order. Bank is an action, not a menu: it sits with the quick
+/// actions on the right, and in "Menu" once everything is folded.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Menu {
     Scripts,
     Options,
     Tools,
     Combat,
-    Bank,
     Diagnostics,
     Plugins,
     Army,
 }
 
-const MENUS: [(Menu, &str); 8] = [
+const MENUS: [(Menu, &str); 7] = [
     (Menu::Scripts, "Scripts"),
     (Menu::Options, "Options"),
     (Menu::Tools, "Tools & Helpers"),
     (Menu::Combat, "Combat"),
-    (Menu::Bank, "Bank"),
     (Menu::Diagnostics, "Diagnostics"),
     (Menu::Plugins, "Plugins"),
     (Menu::Army, "Army"),
 ];
 
 /// How the menus fit next to the right side: all of them; Scripts and a "More" menu with the
-/// rest; or one "Menu" with everything (a phone held upright).
+/// rest; or one "Menu" with everything, Bank included, without the symbol and with a shorter
+/// script name (a phone held upright).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Fold {
     None,
@@ -58,7 +61,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Bank's last press, shown after the menus: a spinner while it runs, then for a moment why
+/// Bank's last press: a spinner in its button while it runs, then for a moment, under it, why
 /// nothing opened (`bank.open` itself does nothing logged out or while a map loads).
 #[derive(Default)]
 struct BankState {
@@ -95,10 +98,13 @@ pub struct NavBar {
     jump: Arc<Mutex<JumpState>>,
     jump_open: bool,
     cells_dropdown_was_open: bool,
-    /// The right side's width on the last frame: the menus fold when they'd run into it.
+    /// The right side's width on the last frame it was drawn in full (not folded all the way):
+    /// the menus fold when they'd run into it.
     right_width: f32,
+    /// The right side's width on the last frame, without the script's name: folded all the
+    /// way, the name gets what's left, or nothing.
+    right_rest: f32,
     bank: Arc<Mutex<BankState>>,
-    last_fold: Fold,
 }
 
 impl Default for NavBar {
@@ -121,24 +127,36 @@ impl Default for NavBar {
             jump_open: false,
             cells_dropdown_was_open: false,
             right_width: 0.0,
+            right_rest: 0.0,
             bank: Arc::default(),
-            last_fold: Fold::None,
         }
     }
 }
 
-/// Flat, transparent buttons (the menu bar); 40 points high on a touch screen.
+/// The height of everything in the bar: 26 points, 40 on a touch screen.
+fn control_height() -> f32 {
+    widgets::target(26.0, 40.0)
+}
+
+/// Flat, transparent buttons (the menu bar), all [`control_height`] high so their labels share
+/// a baseline with the quick actions'. An open menu is tinted with the accent, as an open
+/// Auto or Jump is.
 fn bar_style(style: &mut Style) {
-    style.spacing.button_padding = vec2(10.0, if widgets::touch() { 12.0 } else { 4.0 });
+    style.spacing.button_padding = vec2(10.0, 0.0);
+    style.spacing.interact_size.y = control_height();
     style.spacing.item_spacing = vec2(2.0, 0.0);
     let w = &mut style.visuals.widgets;
     w.inactive.weak_bg_fill = Color32::TRANSPARENT;
-    w.inactive.bg_stroke = egui::Stroke::NONE;
+    w.inactive.bg_stroke = Stroke::NONE;
     w.hovered.weak_bg_fill = HOVER;
-    w.hovered.bg_stroke = egui::Stroke::NONE;
-    w.active.bg_stroke = egui::Stroke::NONE;
-    w.open.weak_bg_fill = HOVER;
+    w.hovered.bg_stroke = Stroke::NONE;
+    w.active.bg_stroke = Stroke::NONE;
+    w.open.weak_bg_fill = OPEN;
+    w.open.fg_stroke = Stroke::new(1.0, Color32::WHITE);
 }
+
+/// An open menu or popup's button.
+const OPEN: Color32 = Color32::from_rgb(52, 48, 92);
 
 /// Menu drop-downs: full-width rows, about 44 points high on a touch screen.
 fn menu_style(style: &mut Style) {
@@ -146,10 +164,10 @@ fn menu_style(style: &mut Style) {
     style.spacing.item_spacing = vec2(0.0, 1.0);
     let w = &mut style.visuals.widgets;
     w.inactive.weak_bg_fill = Color32::TRANSPARENT;
-    w.inactive.bg_stroke = egui::Stroke::NONE;
+    w.inactive.bg_stroke = Stroke::NONE;
     w.hovered.weak_bg_fill = HOVER;
-    w.hovered.bg_stroke = egui::Stroke::NONE;
-    w.active.bg_stroke = egui::Stroke::NONE;
+    w.hovered.bg_stroke = Stroke::NONE;
+    w.active.bg_stroke = Stroke::NONE;
     w.open.weak_bg_fill = HOVER;
 }
 
@@ -180,10 +198,10 @@ fn item(ui: &mut Ui, label: &str, enabled: bool) -> bool {
 impl NavBar {
     pub fn show(&mut self, ui: &mut Ui, windows: &mut Windows) {
         let frame = Frame::new().fill(PANEL).inner_margin(Margin {
-            left: 6,
+            left: 8,
             right: 6,
-            top: 3,
-            bottom: 3,
+            top: 0,
+            bottom: 0,
         });
         Panel::top("turu_nav")
             .exact_size(crate::gui::nav_bar_height() as f32)
@@ -195,18 +213,27 @@ impl NavBar {
                     .config(MenuConfig::new().style(menu_style))
                     .ui(ui, |ui| {
                         let fold = self.fold(ui);
-                        self.last_fold = fold;
-                        self.menus(ui, windows, fold);
+                        if fold != Fold::All {
+                            symbol(ui);
+                            ui.add_space(SYMBOL_GAP);
+                        }
+                        let menu = self.menus(ui, windows, fold);
                         let right = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            self.right_side(ui, windows, fold);
-                            ui.min_rect().width()
+                            let (bank, name) = self.right_side(ui, windows, fold);
+                            (ui.min_rect().width(), name, bank)
                         });
-                        self.right_width = right.inner;
+                        let (width, name, bank) = right.inner;
+                        if fold != Fold::All {
+                            self.right_width = width;
+                        }
+                        self.right_rest = width - name;
+                        self.bank_note(ui, bank.as_ref().or(menu.as_ref()));
                     });
             });
     }
 
-    /// The fold that leaves the menus clear of the right side (as wide as on the last frame).
+    /// The fold that leaves the menus clear of the right side (as wide as on the last frame it
+    /// was drawn in full; folded all the way it is narrower, which only leaves more room).
     fn fold(&self, ui: &Ui) -> Fold {
         let padding = ui.spacing().button_padding.x * 2.0 + ui.spacing().item_spacing.x;
         let title = |label: &str| {
@@ -215,104 +242,107 @@ impl NavBar {
                 .layout_no_wrap(label.to_owned(), FontId::proportional(13.0), TEXT);
             galley.size().x + padding
         };
-        // Folded all the way, the chip's name was narrower: count the room it would take back,
-        // so the bar doesn't flip between two folds.
-        let regrow = if self.last_fold == Fold::All {
-            CHIP_NAME_WIDTH - COMPACT_CHIP_NAME_WIDTH
-        } else {
-            0.0
-        };
-        let room = ui.available_width() - self.right_width - regrow - 12.0;
+        let room = ui.available_width() - self.right_width - 12.0;
+        let symbol = SYMBOL_SIZE + SYMBOL_GAP + ui.spacing().item_spacing.x;
         let all: f32 = MENUS.iter().map(|(_, label)| title(label)).sum();
-        if all <= room {
+        if symbol + all <= room {
             Fold::None
-        } else if title("Scripts") + title("More") <= room {
+        } else if symbol + title("Scripts") + title("More") <= room {
             Fold::More
         } else {
             Fold::All
         }
     }
 
-    /// The menus as `fold` puts them; a folded menu is a submenu of "More" or "Menu".
-    fn menus(&self, ui: &mut Ui, windows: &mut Windows, fold: Fold) {
+    /// The menus as `fold` puts them; a folded menu is a submenu of "More" or "Menu". Returns
+    /// "Menu" when Bank is in it, for Bank's note.
+    fn menus(&self, ui: &mut Ui, windows: &mut Windows, fold: Fold) -> Option<Response> {
         match fold {
             Fold::None => {
                 for (menu, label) in MENUS {
-                    if menu == Menu::Bank {
-                        // An action, not a menu: drawn like Auto and Jump.
-                        if toggle_button(ui, label, None, false)
-                            .on_hover_text("Opens the bank window")
-                            .clicked()
-                        {
-                            open_bank(&self.bank);
-                        }
-                    } else {
-                        ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
-                    }
+                    ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
                 }
+                None
             }
             Fold::More => {
                 ui.menu_button("Scripts", |ui| menu_contents(ui, windows, Menu::Scripts));
-                ui.menu_button("More", |ui| folded(ui, windows, &MENUS[1..], &self.bank));
+                ui.menu_button("More", |ui| folded(ui, windows, &MENUS[1..], None));
+                None
             }
             Fold::All => {
-                ui.menu_button("Menu", |ui| folded(ui, windows, &MENUS, &self.bank));
+                let menu = ui.menu_button("Menu", |ui| folded(ui, windows, &MENUS, Some(&self.bank)));
+                Some(menu.response)
             }
         }
-        self.bank_note(ui);
     }
 
-    /// After the menus: a spinner while Bank runs, or for a moment why it didn't open.
-    fn bank_note(&self, ui: &mut Ui) {
+    /// For a moment after Bank didn't open, why, in a note under its button (or under "Menu").
+    fn bank_note(&self, ui: &Ui, anchor: Option<&Response>) {
         let mut bank = lock(&self.bank);
-        if bank.busy {
-            ui.spinner();
-        } else if let Some((why, at)) = &bank.failed {
-            match BANK_NOTE_FOR.checked_sub(at.elapsed()) {
-                Some(left) => {
-                    // Only in the room the right side leaves, cut with "…".
-                    let room = (ui.available_width() - self.right_width - 12.0).max(0.0);
-                    let text = RichText::new(format!("Bank: {why}")).size(12.0).color(DANGER);
-                    ui.allocate_ui_with_layout(
-                        vec2(room, ui.available_height()),
-                        Layout::left_to_right(Align::Center),
-                        |ui| {
-                            ui.set_max_width(room);
-                            ui.add(Label::new(text).truncate());
-                        },
-                    );
-                    ui.ctx().request_repaint_after(left);
-                }
-                None => bank.failed = None,
-            }
+        let Some((why, at)) = &bank.failed else { return };
+        let Some(left) = BANK_NOTE_FOR.checked_sub(at.elapsed()) else {
+            bank.failed = None;
+            return;
+        };
+        if let Some(anchor) = anchor {
+            let text = RichText::new(format!("Bank: {why}")).size(12.0).color(DANGER);
+            Popup::from_response(anchor)
+                .id(Id::new("turu_bank_note"))
+                .open(true)
+                .close_behavior(PopupCloseBehavior::IgnoreClicks)
+                .align(RectAlign::BOTTOM_END)
+                .show(|ui| ui.label(text));
         }
+        ui.ctx().request_repaint_after(left);
     }
 
-    /// Right to left: the script chip, a divider, Jump, Auto, Grid. Folded all the way (a phone
-    /// held upright) the chip's name gets less room.
-    fn right_side(&mut self, ui: &mut Ui, windows: &mut Windows, fold: Fold) {
-        let name_width = if fold == Fold::All {
-            COMPACT_CHIP_NAME_WIDTH
+    /// Right to left: the script's status and run controls, a divider, then Bank, Jump, Auto
+    /// and Grid. Folded all the way (a phone held upright) Bank moves into "Menu" and the
+    /// script's name gets what room is left, up to [`COMPACT_CHIP_NAME_WIDTH`]. Returns Bank's
+    /// button, for its note, and how wide the name was drawn.
+    fn right_side(&mut self, ui: &mut Ui, windows: &mut Windows, fold: Fold) -> (Option<Response>, f32) {
+        let compact = fold == Fold::All;
+        let name_width = if compact {
+            // What "Menu" leaves, less a gap.
+            (ui.available_width() - self.right_rest - 12.0).min(COMPACT_CHIP_NAME_WIDTH)
         } else {
             CHIP_NAME_WIDTH
         };
-        if script_chip(ui, name_width).clicked() {
+        let (chip, name) = script_status(ui, name_width);
+        if chip.clicked() {
             windows.script_loader = true;
         }
 
-        ui.add_space(4.0);
-        let (rect, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+        ui.add_space(6.0);
+        let (rect, _) = ui.allocate_exact_size(vec2(1.0, 16.0), Sense::hover());
         ui.painter().rect_filled(rect, 0.0, EDGE);
-        ui.add_space(4.0);
+        ui.add_space(6.0);
 
+        let bank = (!compact).then(|| self.bank_toggle(ui));
         self.jump_toggle(ui);
         self.auto_toggle(ui);
         grid_toggle(ui);
+        (bank, name)
+    }
+
+    /// Bank: VibeSkua's direct action (no menu), with a spinner while it runs.
+    fn bank_toggle(&self, ui: &mut Ui) -> Response {
+        let lead = if lock(&self.bank).busy {
+            Lead::Spinner
+        } else {
+            Lead::None
+        };
+        let response = toggle_button(ui, "Bank", lead, false).on_hover_text("Opens the bank window");
+        if response.clicked() {
+            open_bank(&self.bank);
+        }
+        response
     }
 
     fn auto_toggle(&mut self, ui: &mut Ui) {
         let running = auto::running(&crate::turu::bot());
-        let response = toggle_button(ui, "Auto", running.then_some(SUCCESS), self.auto_open);
+        let lead = if running { Lead::Dot(SUCCESS) } else { Lead::None };
+        let response = toggle_button(ui, "Auto", lead, self.auto_open);
         if response.clicked() {
             self.auto_open = !self.auto_open;
             if self.auto_open {
@@ -493,7 +523,7 @@ impl NavBar {
     }
 
     fn jump_toggle(&mut self, ui: &mut Ui) {
-        let response = toggle_button(ui, "Jump", None, self.jump_open);
+        let response = toggle_button(ui, "Jump", Lead::None, self.jump_open);
         if response.clicked() {
             self.jump_open = !self.jump_open;
             if self.jump_open {
@@ -721,15 +751,15 @@ fn open_bank(state: &Arc<Mutex<BankState>>) {
     });
 }
 
-/// `menus` folded into one drop-down: a submenu each, and Bank as a row.
-fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], bank: &Arc<Mutex<BankState>>) {
+/// `menus` folded into one drop-down: a submenu each, then Bank as a row when it's given.
+fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], bank: Option<&Arc<Mutex<BankState>>>) {
     for &(menu, label) in menus {
-        if menu == Menu::Bank {
-            if item(ui, label, true) {
-                open_bank(bank);
-            }
-        } else {
-            ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
+        ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
+    }
+    if let Some(bank) = bank {
+        ui.separator();
+        if item(ui, "Bank", true) {
+            open_bank(bank);
         }
     }
 }
@@ -805,7 +835,6 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
                 windows.runtime = true;
             }
         }
-        Menu::Bank => {}
         Menu::Diagnostics => {
             if item(ui, "Logs", true) {
                 windows.logs = true;
@@ -906,7 +935,7 @@ fn grid_toggle(ui: &mut Ui) {
         return;
     }
     let on = crate::grid::on();
-    let response = toggle_button(ui, "Grid", None, on).on_hover_text(if on {
+    let response = toggle_button(ui, "Grid", Lead::None, on).on_hover_text(if on {
         "Back to one tab at a time"
     } else {
         "Show every tab at once; click a tile to make it the active tab"
@@ -916,12 +945,178 @@ fn grid_toggle(ui: &mut Ui) {
     }
 }
 
-/// The active tab's script at a glance, at the bar's right end: its status dot ("!" while it
-/// waits for you), its name and how long it has run, or its state when it isn't running. Opens
-/// the Script Loader. Wording and clock are the Script Loader's status card's.
-fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
+/// The active tab's script at a glance, at the bar's right end: one capsule with the chip
+/// (status dot, name, how long it has run or how its last run ended; opens the Script Loader)
+/// and, joined to it, what a check-in reaches for: Start; Pause or Resume and Stop while it
+/// runs; Force Stop while it stops. Returns the chip, and how wide its name was drawn.
+fn script_status(ui: &mut Ui, name_width: f32) -> (Response, f32) {
     let bot = crate::turu::bot();
     let status = bot.scripts.status();
+    let cells = run_cells(&bot, status);
+    ui.scope(|ui| {
+        // A 1 point gap of the bar's colour parts the capsule's cells.
+        ui.spacing_mut().item_spacing.x = 1.0;
+        let radius = CornerRadius::same(SMALL_RADIUS);
+        for (i, cell) in cells.iter().enumerate().rev() {
+            let mut corners = CornerRadius::ZERO;
+            if i == cells.len() - 1 {
+                corners.ne = radius.ne;
+                corners.se = radius.se;
+            }
+            if run_cell(ui, *cell, corners).clicked() {
+                cell.run(&bot);
+            }
+        }
+        let corners = if cells.is_empty() {
+            radius
+        } else {
+            CornerRadius {
+                nw: radius.nw,
+                sw: radius.sw,
+                ..CornerRadius::ZERO
+            }
+        };
+        script_chip(ui, &bot, status, name_width, corners)
+    })
+    .inner
+}
+
+/// A run control next to the script chip.
+#[derive(Clone, Copy)]
+enum RunCell {
+    /// `Some(why)` when it can't start now.
+    Start(Option<&'static str>),
+    Pause,
+    Resume,
+    Stop,
+    /// Offered once the stop has taken [`turu_bot::script::FORCE_STOP_AFTER`].
+    ForceStop(bool),
+}
+
+/// The Script Loader's run controls for `status`, left to right (none without a script).
+fn run_cells(bot: &turu_bot::Bot, status: ScriptStatus) -> Vec<RunCell> {
+    match status {
+        ScriptStatus::Empty => Vec::new(),
+        ScriptStatus::Loaded | ScriptStatus::Error => {
+            let why = if auto::running(bot) {
+                Some("Stop Auto Attack/Hunt first")
+            } else if bot.scripts.is_snippet_running() {
+                Some("Stop the Console snippet first")
+            } else {
+                None
+            };
+            vec![RunCell::Start(why)]
+        }
+        ScriptStatus::Compiling => vec![RunCell::Stop],
+        ScriptStatus::Running => vec![RunCell::Pause, RunCell::Stop],
+        ScriptStatus::Paused => vec![RunCell::Resume, RunCell::Stop],
+        ScriptStatus::Stopping => vec![RunCell::ForceStop(bot.scripts.can_force_stop())],
+    }
+}
+
+impl RunCell {
+    fn enabled(self) -> bool {
+        match self {
+            Self::Start(why) => why.is_none(),
+            Self::ForceStop(ready) => ready,
+            _ => true,
+        }
+    }
+
+    fn tip(self) -> String {
+        let key = script_loader::TOGGLE_KEY_NAME;
+        match self {
+            Self::Start(Some(why)) => why.to_owned(),
+            Self::Start(None) => format!("Start the script ({key})"),
+            Self::Pause => "Pause the script".to_owned(),
+            Self::Resume => "Resume the script".to_owned(),
+            Self::Stop => format!("Stop the script ({key})"),
+            Self::ForceStop(true) => format!("Force Stop: interrupts the script's stopping steps ({key})"),
+            Self::ForceStop(false) => script_loader::FORCE_STOP_WAIT.to_owned(),
+        }
+    }
+
+    /// What the Script Loader's button of the same name does.
+    fn run(self, bot: &Arc<turu_bot::Bot>) {
+        match self {
+            Self::Start(_) => {
+                if let Err(e) = script::start(bot) {
+                    bot.log(format!("Couldn't start the script: {e}"));
+                }
+            }
+            Self::Pause => script::set_paused(bot, true),
+            Self::Resume => script::set_paused(bot, false),
+            Self::Stop | Self::ForceStop(_) => script::stop(bot),
+        }
+    }
+}
+
+/// A square run control: Start and Resume in the accent (what you came back for), Pause plain,
+/// Stop with a red square that fills red on hover, Force Stop red once it's offered.
+fn run_cell(ui: &mut Ui, cell: RunCell, corners: CornerRadius) -> Response {
+    let size = control_height();
+    let enabled = cell.enabled();
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(vec2(size, size), sense);
+    let hovered = enabled && response.hovered();
+    let (fill, icon) = match cell {
+        _ if !enabled => (TRACK, MUTED.gamma_multiply(0.6)),
+        RunCell::Start(_) | RunCell::Resume => (if hovered { ACCENT_HOVER } else { ACCENT }, Color32::WHITE),
+        RunCell::Pause => (
+            if hovered { HOVER } else { TRACK },
+            if hovered { Color32::WHITE } else { TEXT },
+        ),
+        RunCell::Stop => {
+            if hovered {
+                (DANGER, Color32::WHITE)
+            } else {
+                (TRACK, DANGER)
+            }
+        }
+        RunCell::ForceStop(_) => (if hovered { DANGER_HOVER } else { DANGER }, Color32::WHITE),
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, corners, fill);
+    let c = rect.center();
+    let s = if widgets::touch() { 1.3 } else { 1.0 };
+    match cell {
+        RunCell::Start(_) | RunCell::Resume => {
+            // Optically centred: a triangle's weight sits left of its box's centre.
+            let points = vec![
+                pos2(c.x - 3.0 * s, c.y - 4.5 * s),
+                pos2(c.x + 4.5 * s, c.y),
+                pos2(c.x - 3.0 * s, c.y + 4.5 * s),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, icon, Stroke::NONE));
+        }
+        RunCell::Pause => {
+            for x in [-3.25, 0.75] {
+                let bar = Rect::from_min_size(pos2(c.x + x * s, c.y - 4.5 * s), vec2(2.5 * s, 9.0 * s));
+                painter.rect_filled(bar, 0.5, icon);
+            }
+        }
+        RunCell::Stop | RunCell::ForceStop(_) => {
+            painter.rect_filled(Rect::from_center_size(c, vec2(8.0 * s, 8.0 * s)), 1.5, icon);
+        }
+    }
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.on_hover_text(cell.tip())
+}
+
+/// The chip: its status dot ("!" while the script waits for you), its name and how long it
+/// has run, or its state when it isn't running, the state coloured as it reads (paused yellow,
+/// an error red). Wording and clock are the Script Loader's status card's. Without
+/// [`MIN_NAME_WIDTH`] of room the name is left out (it stays in the tooltip). Returns the chip
+/// and how wide its name was drawn.
+fn script_chip(
+    ui: &mut Ui,
+    bot: &turu_bot::Bot,
+    status: ScriptStatus,
+    name_width: f32,
+    corners: CornerRadius,
+) -> (Response, f32) {
     let waits = bot.scripts.waits_for();
     let name = bot
         .scripts
@@ -940,37 +1135,56 @@ fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
         },
         ScriptStatus::Error => "Error".to_owned(),
         // After a run: "Finished 6h 12m", "Stopped 3h 40m" (the Script Loader's last run).
-        ScriptStatus::Loaded => match script_loader::last_run(&bot) {
+        ScriptStatus::Loaded => match script_loader::last_run(bot) {
             Some(run) => format!("{} {}", run.how, run.ran),
             None => script_loader::state_text(status).to_owned(),
         },
         other => script_loader::state_text(other).to_owned(),
     };
+    let state_color = match status {
+        ScriptStatus::Running => TEXT,
+        ScriptStatus::Paused | ScriptStatus::Stopping | ScriptStatus::Compiling => WARNING,
+        ScriptStatus::Error => DANGER,
+        _ => MUTED,
+    };
     if status.is_active() {
         // The clock moves while nothing else redraws the bar.
-        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+        ui.ctx().request_repaint_after(Duration::from_secs(1));
     }
 
     let font = FontId::proportional(12.0);
-    let name_galley = name.as_ref().map(|name| {
+    let name_galley = name.as_ref().filter(|_| name_width >= MIN_NAME_WIDTH).map(|name| {
         let mut job = LayoutJob::simple_singleline(name.clone(), font.clone(), TEXT);
         job.wrap = TextWrapping::truncate_at_width(name_width);
         ui.painter().layout_job(job)
     });
-    let state_text = match &name_galley {
-        Some(_) => format!(" · {state}"),
-        None => state.clone(),
+    let state_galley = ui.painter().layout_no_wrap(state.clone(), font.clone(), state_color);
+    let sep_galley = ui.painter().layout_no_wrap("·".to_owned(), font, MUTED);
+    let name_w = name_galley.as_ref().map_or(0.0, |g| g.size().x);
+    let sep_w = if name_galley.is_some() {
+        sep_galley.size().x + 10.0
+    } else {
+        0.0
     };
-    let state_galley = ui.painter().layout_no_wrap(state_text, font, MUTED);
-    let name_width = name_galley.as_ref().map_or(0.0, |g| g.size().x);
-    let width = 28.0 + name_width + state_galley.size().x;
-    let (rect, response) = ui.allocate_exact_size(vec2(width, widgets::target(26.0, 40.0)), Sense::click());
+    let drawn = name_w + sep_w;
+    // The clock's room is kept from "59m" on, so the bar doesn't shift each time it ticks.
+    let clock = if status.is_active() {
+        ui.painter()
+            .layout_no_wrap("59m".to_owned(), FontId::proportional(12.0), TEXT)
+            .size()
+            .x
+    } else {
+        0.0
+    };
+    let width = 24.0 + name_w + sep_w + state_galley.size().x.max(clock) + 10.0;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, control_height()), Sense::click());
     let fill = if response.hovered() { HOVER } else { TRACK };
-    ui.painter().rect_filled(rect, CornerRadius::same(8), fill);
-    let dot = egui::pos2(rect.left() + 12.0, rect.center().y);
+    let painter = ui.painter();
+    painter.rect_filled(rect, corners, fill);
+    let dot = pos2(rect.left() + 12.0, rect.center().y);
     if waits.is_some() {
-        ui.painter().circle_filled(dot, 6.0, WARNING);
-        ui.painter().text(
+        painter.circle_filled(dot, 6.0, WARNING);
+        painter.text(
             dot,
             Align2::CENTER_CENTER,
             "!",
@@ -978,20 +1192,26 @@ fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
             Color32::BLACK,
         );
     } else {
-        ui.painter().circle_filled(dot, 3.5, widgets::status_color(status));
+        painter.circle_filled(dot, 3.5, widgets::status_color(status));
     }
-    let mut x = rect.left() + 22.0;
-    if let Some(galley) = name_galley {
+    let mut x = rect.left() + 24.0;
+    let place = |galley: Arc<egui::Galley>, x: &mut f32, color: Color32| {
         let y = rect.center().y - galley.size().y / 2.0;
-        ui.painter().galley(egui::pos2(x, y), galley, TEXT);
-        x += name_width;
+        let w = galley.size().x;
+        painter.galley(pos2(*x, y), galley, color);
+        *x += w;
+    };
+    if let Some(galley) = name_galley {
+        place(galley, &mut x, TEXT);
+        x += 5.0;
+        place(sep_galley, &mut x, MUTED);
+        x += 5.0;
     }
-    let y = rect.center().y - state_galley.size().y / 2.0;
-    ui.painter().galley(egui::pos2(x, y), state_galley, MUTED);
+    place(state_galley, &mut x, state_color);
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let mut tip = match script_loader::last_run(&bot) {
+    let mut tip = match script_loader::last_run(bot) {
         Some(run) => format!("{} after {}, at {}", run.how, run.ran, run.at),
         None => script_loader::state_text(status).to_owned(),
     };
@@ -1001,35 +1221,87 @@ fn script_chip(ui: &mut Ui, name_width: f32) -> Response {
     if let Some(what) = waits {
         tip.push_str(&format!(" (waits for you: {what})"));
     }
-    response.on_hover_text(format!("{tip}\nOpen the Script Loader"))
+    (response.on_hover_text(format!("{tip}\nOpen the Script Loader")), drawn)
 }
 
 /// The widest the script chip's name gets; longer names end in "…".
 const CHIP_NAME_WIDTH: f32 = 150.0;
 /// The chip's name with the menus folded all the way.
-const COMPACT_CHIP_NAME_WIDTH: f32 = 80.0;
+const COMPACT_CHIP_NAME_WIDTH: f32 = 72.0;
+/// Less room than this, and the chip leaves the name out.
+const MIN_NAME_WIDTH: f32 = 28.0;
 
-/// A flat toggle button for a popup ("Auto", "Jump") with an optional status dot, highlighted
-/// while its popup is `open`.
-fn toggle_button(ui: &mut Ui, label: &str, dot: Option<Color32>, open: bool) -> Response {
+/// The Turu symbol (`docs/logo/turu-symbol-small.svg`, the cut for small sizes): a violet
+/// tile with two closed eyes, drawn rather than loaded so it stays sharp at any scale.
+const SYMBOL_SIZE: f32 = 18.0;
+/// Between the symbol and the first menu.
+const SYMBOL_GAP: f32 = 6.0;
+
+fn symbol(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(vec2(SYMBOL_SIZE, SYMBOL_SIZE), Sense::hover());
+    let painter = ui.painter();
+    // The SVG's 256 grid: the tile spans 16..240, its corners round by about a quarter.
+    let unit = SYMBOL_SIZE / 224.0;
+    painter.rect_filled(rect, 5.0, ACCENT);
+    // Each eye is a crescent (the bottom half of a ring) centred at x 80 and 176, y 112; the
+    // ring runs from radius 18 to 46, so it is drawn as a stroke at radius 32, width 28.
+    for cx in [80.0, 176.0] {
+        let center = pos2(rect.left() + (cx - 16.0) * unit, rect.top() + (112.0 - 16.0) * unit);
+        let radius = 32.0 * unit;
+        let width = 26.0 * unit;
+        let points: Vec<_> = (0..=16)
+            .map(|i| {
+                let a = std::f32::consts::PI * i as f32 / 16.0;
+                pos2(center.x + radius * a.cos(), center.y + radius * a.sin())
+            })
+            .collect();
+        // Round ends, as the SVG's 14-radius caps.
+        painter.circle_filled(points[0], width / 2.0, Color32::WHITE);
+        painter.circle_filled(points[16], width / 2.0, Color32::WHITE);
+        painter.add(egui::Shape::line(points, Stroke::new(width, Color32::WHITE)));
+    }
+}
+
+/// What leads a quick action's label.
+#[derive(Clone, Copy)]
+enum Lead {
+    None,
+    /// A status dot (Auto running).
+    Dot(Color32),
+    /// Its action is running (Bank).
+    Spinner,
+}
+
+/// A flat quick-action button ("Grid", "Auto", "Jump", "Bank"), tinted while its popup is
+/// `open` as an open menu is.
+fn toggle_button(ui: &mut Ui, label: &str, lead: Lead, open: bool) -> Response {
     let font = FontId::proportional(13.0);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, TEXT);
-    let width = galley.size().x + 22.0 + if dot.is_some() { 12.0 } else { 0.0 };
-    let (rect, response) = ui.allocate_exact_size(vec2(width, widgets::target(26.0, 40.0)), Sense::click());
+    let led = !matches!(lead, Lead::None);
+    let width = galley.size().x + 20.0 + if led { 13.0 } else { 0.0 };
+    let (rect, response) = ui.allocate_exact_size(vec2(width, control_height()), Sense::click());
+    let radius = CornerRadius::same(SMALL_RADIUS);
     if open {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(8), ACCENT.gamma_multiply(0.35));
+        ui.painter().rect_filled(rect, radius, OPEN);
     } else if response.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(8), HOVER);
+        ui.painter().rect_filled(rect, radius, HOVER);
     }
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let mut x = rect.left() + 11.0;
-    if let Some(color) = dot {
-        ui.painter()
-            .circle_filled(egui::pos2(x + 3.0, rect.center().y), 3.0, color);
-        x += 12.0;
+    let mut x = rect.left() + 10.0;
+    match lead {
+        Lead::None => {}
+        Lead::Dot(color) => {
+            ui.painter().circle_filled(pos2(x + 3.5, rect.center().y), 3.5, color);
+        }
+        Lead::Spinner => {
+            let spin = Rect::from_center_size(pos2(x + 4.5, rect.center().y), vec2(10.0, 10.0));
+            Spinner::new().size(10.0).color(TEXT).paint_at(ui, spin);
+        }
+    }
+    if led {
+        x += 13.0;
     }
     let color = if open || response.hovered() {
         Color32::WHITE
@@ -1037,6 +1309,6 @@ fn toggle_button(ui: &mut Ui, label: &str, dot: Option<Color32>, open: bool) -> 
         TEXT
     };
     ui.painter()
-        .galley(egui::pos2(x, rect.center().y - galley.size().y / 2.0), galley, color);
+        .galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, color);
     response
 }
