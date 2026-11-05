@@ -1,6 +1,7 @@
 //! The player's UI backend: Ruffle's null one, except that a text field taking focus shows the
 //! soft keyboard and losing it hides the keyboard (while the activity is there to show it). Also
-//! the keyboard's height, which the activity reads from the window's insets.
+//! the keyboard's height and the display cutout's sides, which the activity reads from the
+//! window's insets.
 
 use jni::EnvUnowned;
 use jni::objects::JClass;
@@ -28,6 +29,28 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeKeyboardHeight<'lo
     pixels: jint,
 ) {
     KEYBOARD_HEIGHT.store(pixels.max(0) as u32, Ordering::Relaxed);
+}
+
+/// How far the display cutout reaches in from the window's left and right edges, in window
+/// pixels (0 without one): a punch-hole camera sits there while the phone is held sideways.
+static CUTOUT_LEFT: AtomicU32 = AtomicU32::new(0);
+static CUTOUT_RIGHT: AtomicU32 = AtomicU32::new(0);
+
+/// The display cutout's (left, right) insets in window pixels.
+pub fn cutout() -> (u32, u32) {
+    (CUTOUT_LEFT.load(Ordering::Relaxed), CUTOUT_RIGHT.load(Ordering::Relaxed))
+}
+
+/// `TuruActivity.nativeCutout(left, right)`: the window's insets changed (Android 9+).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeCutout<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    left: jint,
+    right: jint,
+) {
+    CUTOUT_LEFT.store(left.max(0) as u32, Ordering::Relaxed);
+    CUTOUT_RIGHT.store(right.max(0) as u32, Ordering::Relaxed);
 }
 
 pub struct AndroidUiBackend {

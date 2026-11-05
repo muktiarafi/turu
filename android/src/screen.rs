@@ -300,6 +300,8 @@ impl Screen {
         let top = self.top() / ppp;
         // The game's text field under the keyboard, while the keyboard is up for it.
         let keyboard = crate::ui::keyboard_height() as f32 / ppp;
+        let (cutout_left, cutout_right) = crate::ui::cutout();
+        let cutout = (cutout_left as f32 / ppp, cutout_right as f32 / ppp);
         let typing = (keyboard > 0.0 && !self.ui_typing)
             .then(|| Typing::read(player))
             .flatten();
@@ -311,7 +313,7 @@ impl Screen {
             }
             ui.show_windows(root.ctx());
             if let Some(typing) = &typing {
-                typing.show(root.ctx(), keyboard);
+                typing.show(root.ctx(), keyboard, cutout);
             }
         });
         self.ui_typing = output.platform_output.ime.is_some();
@@ -446,8 +448,10 @@ impl Typing {
         })
     }
 
-    /// The strip, as wide as the screen, its bottom `keyboard` points above the screen's.
-    fn show(&self, ctx: &egui::Context, keyboard: f32) {
+    /// The strip, as wide as the screen, its bottom `keyboard` points above the screen's. Its
+    /// text and count keep clear of `cutout`, the display cutout's (left, right) insets in points:
+    /// held sideways, a punch-hole camera sits at the side, about where the strip is.
+    fn show(&self, ctx: &egui::Context, keyboard: f32, cutout: (f32, f32)) {
         use turu_frontend::gui::turu::theme::{ACCENT, CARD, DANGER, EDGE, MUTED, TEXT};
         let screen = ctx.content_rect();
         let bottom = (screen.bottom() - keyboard).max(screen.top() + Self::HEIGHT);
@@ -465,6 +469,8 @@ impl Typing {
                 painter.rect_filled(rect, 0.0, CARD);
                 painter.hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0, EDGE));
                 let mut inner = rect.shrink2(egui::vec2(16.0, 8.0));
+                inner.min.x += cutout.0;
+                inner.max.x -= cutout.1;
                 // The count on the right, red at the limit.
                 let count = format!("{}/{}", self.length, Self::MAX_CHARS);
                 let color = if self.length >= Self::MAX_CHARS { DANGER } else { MUTED };

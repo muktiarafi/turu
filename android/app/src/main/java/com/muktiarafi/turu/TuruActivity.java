@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.DisplayCutout;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -27,6 +28,11 @@ import android.window.OnBackInvokedDispatcher;
 public class TuruActivity extends NativeActivity {
     /** The soft keyboard's height in window pixels, 0 when it's down (`ui.rs`). */
     private static native void nativeKeyboardHeight(int pixels);
+    /**
+     * How far the display cutout (a camera's notch or punch hole) reaches in from the window's
+     * left and right edges, in window pixels; 0 without one (`ui.rs`).
+     */
+    private static native void nativeCutout(int left, int right);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,6 +48,13 @@ public class TuruActivity extends NativeActivity {
         // text field holds above it instead.
         getWindow().getDecorView().setOnApplyWindowInsetsListener((view, insets) -> {
             nativeKeyboardHeight(keyboardHeight(insets));
+            // Held sideways, a punch-hole camera sits at the left or right edge, where the strip's
+            // text would be under it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                DisplayCutout cutout = insets.getDisplayCutout();
+                nativeCutout(cutout != null ? cutout.getSafeInsetLeft() : 0,
+                        cutout != null ? cutout.getSafeInsetRight() : 0);
+            }
             return view.onApplyWindowInsets(insets);
         });
         // What the soft keyboard types into (KeyInput: a tap on delete works).

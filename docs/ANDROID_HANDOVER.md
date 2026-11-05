@@ -34,7 +34,9 @@ Since `b08c1f176`: **typing in the game's text fields.** While the soft keyboard
 a strip just above it shows the field's text with its caret and selection (a password as dots),
 scrolled to the caret, and a count to 150 (the game's longest message; typing stops there).
 `TuruActivity` passes the keyboard's height from the window's IME insets (`ui.rs`), with
-`windowSoftInputMode="adjustNothing"`. Backspace, Delete, the arrows, Home/End and
+`windowSoftInputMode="adjustNothing"`. The strip's text and count keep clear of the display
+cutout's left and right insets (`nativeCutout`): held sideways, a punch-hole camera (Galaxy
+S24 FE) sits at the side, at about the strip's height. Backspace, Delete, the arrows, Home/End and
 Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it).
 
 ## Branches and workflow
