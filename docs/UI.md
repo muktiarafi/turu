@@ -355,7 +355,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Player, then Copy Target Look; on the right M / F / Swap gender. Below: a character name box
   and Copy Page, which copies from its character page (Enter works too); the last action's
   outcome; Reset to Real Gear on the right), then the tab chips with the catalog's state on the
-  right. Every control is 28 px high. The Catalog, Outfits and CC tabs split into a list that
+  right. Every control is 28 px high (40 on a touch screen). The Catalog, Outfits and CC tabs split into a list that
   fills and a 270 px column on the right, both as tall as the window. **Catalog**: search (an
   ID when it is a number, else the name; × clears it), sort, Check Updates, the category chips
   (Weapon adds the weapon kind), a paged list in an inset (rows: name, `#id · file`, the
@@ -367,6 +367,19 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   picker), name and hex box (outlined red when it isn't hex), Apply Palette, Read Avatar Colors,
   VibeSkua's eight presets on the right. **Manual SWF**: a form (file, link, slot, meta) whose
   Inject is enabled once the file and link are filled. Empty lists and cards say what to do.
+  The layout follows the room the window has (`Fit`): the quick bar sits on top only at 760 px
+  wide and 480 px high, else it is a **Copy** tab (its two cards side by side when there's
+  room: the copy rows, then Male / Female / Swap, Reset to Real Gear and the outcome), and Reset
+  and the outcome move to the tab row. Narrower than 600 px (a phone held upright) it is one
+  column with short tab labels (Copy, Catalog, Outfits, Colors, SWF) and a line under them with
+  the outcome or the catalog's state and Reset Gear: the catalog's search, then category and
+  sort side by side, rows with Equip, "‹ 1 / N ›" and Check Updates under the list; a tapped
+  item or outfit opens on a page of its own with a Back button (Escape too); CC puts the
+  presets under the rows; Manual SWF puts the labels above the fields. Lower than 480 px (a
+  phone held sideways) the tab labels are short, there's no separator, the category is a
+  drop-down and the page arrows join the search row (Check Updates goes to the tab row), and
+  the selected item's actions share one row. On a phone the window fills the screen and its
+  controls are 40 px high (the main buttons 44).
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. In every log's header
   (`logs::log_buttons`: Script Loader, Logs, Logger, client logs) Clear stands apart from Copy and
   Save at the end and turns into "Undo clear" for 8 s, which puts the lines back before those

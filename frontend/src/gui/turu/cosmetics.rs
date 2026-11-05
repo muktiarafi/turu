@@ -2,14 +2,20 @@
 //! look, reset to the real gear, gender), the item catalog, saved outfits, the color editor
 //! and the manual SWF loader. Everything it changes is client side.
 //!
+//! The layout follows the room the window has ([`Fit`]). Wide, the quick bar sits on top and
+//! the Catalog, Outfits and CC tabs are a list with a column beside it. Narrow (a phone held
+//! upright, a small window) it is one column: the quick bar is the Copy tab, the rows carry
+//! Equip, and a tapped item or outfit opens on a page of its own with a Back button. On a phone
+//! the window fills the screen and every target is finger-sized.
+//!
 //! The catalog, favorites and outfits are `turu_bot::cosmetics::Library`, shared by the tabs;
 //! the game calls run off the UI thread and report back through `Shared`.
 
 use super::theme::{ACCENT, ACCENT_HOVER, DANGER, EDGE, HOVER, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, TRACK};
 use super::widgets::{self, Kind};
 use egui::{
-    Align, Color32, ComboBox, Context, CornerRadius, Frame, Label, Layout, Margin, Rect, RichText, ScrollArea, Sense,
-    Stroke, Ui, UiBuilder, pos2, vec2,
+    Align, Color32, ComboBox, Context, CornerRadius, Frame, Key, Label, Layout, Margin, Rect, RichText, ScrollArea,
+    Sense, Stroke, Ui, UiBuilder, pos2, vec2,
 };
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -19,24 +25,83 @@ use turu_bot::cosmetics::{CosmeticItem, CosmeticSet, Library, Slot, WEAPON_KINDS
 
 /// How often the room's players are read for the copy list.
 const PLAYERS_REFRESH: Duration = Duration::from_secs(3);
-const ROW_HEIGHT: f32 = 42.0;
-/// The height of every button, drop-down and text box.
-const CONTROL_HEIGHT: f32 = 28.0;
 /// The right-hand column of the Catalog, Outfits and CC tabs.
 const SIDE_WIDTH: f32 = 270.0;
 /// The quick bar's player list and character name box, and the Copy buttons after them.
 const INPUT_WIDTH: f32 = 200.0;
 const COPY_WIDTH: f32 = 100.0;
 const SORT_WIDTH: f32 = 170.0;
-const MANUAL_WIDTH: f32 = 640.0;
+const UPDATES_WIDTH: f32 = 120.0;
 const CATEGORY_WIDTH: f32 = 130.0;
 const WEAPON_WIDTH: f32 = 120.0;
+/// The widest the Copy tab and the Manual SWF form get.
+const COPY_TAB_WIDTH: f32 = 560.0;
+const MANUAL_WIDTH: f32 = 640.0;
 const PAGE_SIZES: [usize; 4] = [50, 100, 250, 500];
-/// Below this content height (a phone held sideways) the window is compact: the quick bar is a
-/// tab of its own and the catalog's filters share the search row, so the lists keep their room.
-const COMPACT_HEIGHT: f32 = 480.0;
 
-/// The catalog's categories: the filter chips, or the drop-down of a compact window.
+/// Narrower than this (a phone held upright), the window is one column ([`Fit::columns`]).
+const COLUMNS_WIDTH: f32 = 600.0;
+/// At least this wide and [`TALL`] high, the quick bar sits on top of every tab.
+const QUICK_BAR_WIDTH: f32 = 760.0;
+/// Below this content height (a phone held sideways) the quick bar is a tab of its own and the
+/// catalog's filters share the search row, so the lists keep their room.
+const TALL: f32 = 480.0;
+/// Narrower than this, the pagination drops the item range and the "Per page" label.
+const FULL_PAGINATION: f32 = 500.0;
+
+/// The height of every button, drop-down and text box: 28 points, 40 on a touch screen.
+fn control() -> f32 {
+    widgets::target(28.0, 40.0)
+}
+
+/// The height of a card's main buttons (Equip Look, Apply Palette, ...).
+fn action() -> f32 {
+    widgets::target(32.0, 44.0)
+}
+
+/// A catalog row.
+fn row_height() -> f32 {
+    widgets::target(42.0, 52.0)
+}
+
+/// How the window is laid out, from the room its content has.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Fit {
+    /// The Catalog, Outfits and CC tabs are a list and a side column; else one column, where
+    /// the side column is a page of its own.
+    columns: bool,
+    /// The quick bar sits on top of every tab; else it is the Copy tab.
+    quick_bar: bool,
+    /// The catalog's categories are chips on a row of their own; else drop-downs.
+    chips: bool,
+    /// Short (a phone held sideways): the tabs have their short labels, and the catalog's page
+    /// arrows join its toolbar (Check Updates moves to the tab row), so the lists keep their room.
+    short: bool,
+}
+
+impl Fit {
+    fn pick(width: f32, height: f32) -> Self {
+        let columns = width >= COLUMNS_WIDTH;
+        let tall = height >= TALL;
+        Fit {
+            columns,
+            quick_bar: width >= QUICK_BAR_WIDTH && tall,
+            chips: columns && tall,
+            short: !tall,
+        }
+    }
+}
+
+/// The tabs: what they show, their label, and their label in one column.
+const TABS: [(Tab, &str, &str); 5] = [
+    (Tab::Copy, "Copy Look", "Copy"),
+    (Tab::Catalog, "Catalog", "Catalog"),
+    (Tab::Outfits, "Outfits & Inspector", "Outfits"),
+    (Tab::Colors, "Color Custom (CC)", "Colors"),
+    (Tab::Manual, "Manual SWF", "SWF"),
+];
+
+/// The catalog's categories: the filter chips, or a drop-down.
 const CATEGORIES: [(Category, &str); 8] = [
     (Category::All, "All"),
     (Category::Slot(Slot::Armor), "Armor"),
@@ -101,6 +166,16 @@ const PRESETS: [(&str, &str, [&str; 4]); 8] = [
         ["#E0F7FA", "#80DEEA", "#00BCD4", "#00E5FF"],
     ),
 ];
+/// A preset row.
+const PRESET_HEIGHT: f32 = 44.0;
+
+/// The Manual SWF tab's fields: label and the game's name for it.
+const MANUAL_FIELDS: [(&str, &str); 4] = [
+    ("SWF File Path", "sFile"),
+    ("Linkage Identifier", "sLink"),
+    ("Equipment Slot", "group"),
+    ("Meta Data", "sMeta, optional"),
+];
 
 /// The Manual SWF tab's slots: label and `eqp` key.
 const MANUAL_SLOTS: [(&str, &str); 6] = [
@@ -114,7 +189,7 @@ const MANUAL_SLOTS: [(&str, &str); 6] = [
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
-    /// The quick bar, in a compact window.
+    /// The quick bar, when it isn't on top ([`Fit::quick_bar`]).
     Copy,
     #[default]
     Catalog,
@@ -142,12 +217,24 @@ enum Sort {
 }
 
 impl Sort {
+    const ALL: [Sort; 4] = [Sort::Newest, Sort::Oldest, Sort::NameAsc, Sort::NameDesc];
+
     fn label(self) -> &'static str {
         match self {
             Sort::Newest => "Newest First (ID ↓)",
             Sort::Oldest => "Oldest First (ID ↑)",
             Sort::NameAsc => "Name (A → Z)",
             Sort::NameDesc => "Name (Z → A)",
+        }
+    }
+
+    /// The label in a narrow drop-down.
+    fn short(self) -> &'static str {
+        match self {
+            Sort::Newest => "Newest",
+            Sort::Oldest => "Oldest",
+            Sort::NameAsc => "A → Z",
+            Sort::NameDesc => "Z → A",
         }
     }
 }
@@ -197,8 +284,12 @@ pub struct CosmeticsWindow {
     source: Arc<Vec<CosmeticItem>>,
     filtered: Vec<u32>,
     selected: Option<CosmeticItem>,
+    /// In one column: the selected item fills the tab instead of the list.
+    item_open: bool,
     // Outfits.
     selected_set: Option<usize>,
+    /// In one column: the selected outfit's inspector fills the tab instead of the list.
+    set_open: bool,
     // Colors, as typed ("#RRGGBB").
     hex: [String; 6],
     // Manual SWF.
@@ -228,7 +319,9 @@ impl Default for CosmeticsWindow {
             source: Arc::default(),
             filtered: Vec::new(),
             selected: None,
+            item_open: false,
             selected_set: None,
+            set_open: false,
             hex: Default::default(),
             manual_file: String::new(),
             manual_link: String::new(),
@@ -254,6 +347,13 @@ fn act(what: &'static str, action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult
     });
 }
 
+/// What the quick bar shows: the room's players, the last action's outcome, and whether one runs.
+struct Quick {
+    players: Vec<String>,
+    status: String,
+    busy: bool,
+}
+
 impl CosmeticsWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         if !*open {
@@ -274,9 +374,13 @@ impl CosmeticsWindow {
         {
             self.hex = colors.to_array().map(|c| format!("#{c:06X}"));
         }
-        super::window(ctx, "Cosmetics & Outfits", [900.0, 620.0], 7)
-            .open(open)
-            .show(ctx, |ui| self.ui(ui, &library));
+        let mut window = super::window(ctx, "Cosmetics & Outfits", [900.0, 620.0], 7).open(open);
+        // On a phone a floating window leaves the list off screen: it fills the screen instead.
+        let area = super::window_area(ctx);
+        if widgets::touch() && (area.width() < 1000.0 || area.height() < 700.0) {
+            window = window.sheet(ctx);
+        }
+        window.show(ctx, |ui| self.ui(ui, &library));
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 
@@ -364,164 +468,279 @@ impl CosmeticsWindow {
 
     fn ui(&mut self, ui: &mut Ui, library: &Arc<Library>) {
         // One height for every button, drop-down and text box, so the rows line up.
-        ui.spacing_mut().interact_size.y = CONTROL_HEIGHT;
+        ui.spacing_mut().interact_size.y = control();
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
-        let compact = ui.available_height() < COMPACT_HEIGHT;
-        if !compact {
+        let fit = Fit::pick(ui.available_width(), ui.available_height());
+        if fit.quick_bar {
             if self.tab == Tab::Copy {
                 self.tab = Tab::Catalog;
             }
             self.quick_bar(ui, library);
         }
-        let (catalog_status, status, busy) = {
+        self.tab_row(ui, library, fit);
+        if fit.short {
+            ui.add_space(2.0);
+        } else {
+            ui.separator();
+        }
+        match self.tab {
+            Tab::Copy => self.copy_tab(ui, library),
+            Tab::Catalog => self.catalog_tab(ui, library, fit),
+            Tab::Outfits => self.outfits_tab(ui, library, fit),
+            Tab::Colors => self.colors_tab(ui, fit),
+            Tab::Manual => self.manual_tab(ui, fit),
+        }
+    }
+
+    /// The tab chips. With columns, the catalog's state on the right (or, without the quick bar,
+    /// Reset and the last action's outcome, so they stay in sight from every tab). In one
+    /// column the chips take the row, and that line goes under it.
+    fn tab_row(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
+        let (catalog_status, catalog_busy, status, busy) = {
             let shared = lock(&self.shared);
-            (shared.catalog_status.clone(), shared.status.clone(), shared.busy)
+            let status = shared.status.clone();
+            (shared.catalog_status.clone(), shared.catalog_busy, status, shared.busy)
         };
         ui.horizontal(|ui| {
-            let copy = compact.then_some((Tab::Copy, "Copy Look"));
-            for (tab, label) in copy.into_iter().chain([
-                (Tab::Catalog, "Catalog"),
-                (Tab::Outfits, "Outfits & Inspector"),
-                (Tab::Colors, "Color Custom (CC)"),
-                (Tab::Manual, "Manual SWF"),
-            ]) {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            for (tab, label, short) in TABS {
+                if tab == Tab::Copy && fit.quick_bar {
+                    continue;
+                }
+                let label = if fit.columns && !fit.short { label } else { short };
                 if widgets::chip(ui, label, self.tab == tab) {
                     self.tab = tab;
                 }
             }
+            if !fit.columns {
+                return;
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                // Compact: Reset and the quick bar's outcome stay in sight from every tab.
-                if compact && self.tab != Tab::Copy {
+                if !fit.quick_bar && self.tab != Tab::Copy {
                     if widgets::button(ui, "Reset to Real Gear", Kind::Outline, !busy, vec2(0.0, 0.0), "").clicked() {
                         self.reset_gear();
+                    }
+                    if fit.short && self.tab == Tab::Catalog {
+                        self.updates_button(ui, library, !catalog_busy, 0.0);
                     }
                     if busy {
                         ui.spinner();
                     }
                     if !status.is_empty() {
-                        ui.add(Label::new(RichText::new(status).small().color(ACCENT)).truncate());
+                        ui.add(Label::new(RichText::new(&status).small().color(ACCENT)).truncate());
                         return;
                     }
                 }
-                ui.add(Label::new(RichText::new(catalog_status).small().color(MUTED)).truncate());
+                ui.add(Label::new(RichText::new(&catalog_status).small().color(MUTED)).truncate());
             });
         });
-        ui.separator();
-        match self.tab {
-            Tab::Copy => self.quick_bar(ui, library),
-            Tab::Catalog => self.catalog_tab(ui, library, compact),
-            Tab::Outfits => self.outfits_tab(ui, library),
-            Tab::Colors => self.colors_tab(ui),
-            Tab::Manual => self.manual_tab(ui),
+        if fit.columns || self.tab == Tab::Copy {
+            return;
         }
+        ui.horizontal(|ui| {
+            let (text, color) = if !status.is_empty() {
+                (status.as_str(), ACCENT)
+            } else if self.tab == Tab::Catalog || catalog_busy {
+                (catalog_status.as_str(), MUTED)
+            } else {
+                ("Changes show on this client only.", MUTED)
+            };
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if widgets::button(ui, "Reset Gear", Kind::Outline, !busy, vec2(0.0, 0.0), "").clicked() {
+                    self.reset_gear();
+                }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    if busy || catalog_busy {
+                        ui.spinner();
+                    }
+                    ui.add(Label::new(RichText::new(text).small().color(color)).truncate());
+                });
+            });
+        });
+    }
+
+    /// The room's players, the outcome and whether an action runs; picks a player when the
+    /// picked one left.
+    fn quick_state(&mut self) -> Quick {
+        let quick = {
+            let shared = lock(&self.shared);
+            Quick {
+                players: shared.room_players.clone(),
+                status: shared.status.clone(),
+                busy: shared.busy,
+            }
+        };
+        if !self.room_player.is_empty() && !quick.players.contains(&self.room_player) {
+            self.room_player.clear();
+        }
+        if self.room_player.is_empty()
+            && let Some(first) = quick.players.first()
+        {
+            self.room_player = first.clone();
+        }
+        quick
     }
 
     /// Copy a room player's look, a character page's look or the target's; Reset to Real Gear;
     /// the gender buttons; the last action's outcome. Two rows whose columns line up.
     fn quick_bar(&mut self, ui: &mut Ui, library: &Arc<Library>) {
-        let (players, status, busy) = {
-            let shared = lock(&self.shared);
-            (shared.room_players.clone(), shared.status.clone(), shared.busy)
-        };
-        if !self.room_player.is_empty() && !players.contains(&self.room_player) {
-            self.room_player.clear();
-        }
-        if self.room_player.is_empty()
-            && let Some(first) = players.first()
-        {
-            self.room_player = first.clone();
-        }
+        let quick = self.quick_state();
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.add_enabled_ui(!players.is_empty(), |ui| {
-                    let shown = if self.room_player.is_empty() {
-                        "No players in the room"
-                    } else {
-                        &self.room_player
-                    };
-                    ComboBox::from_id_salt("turu_cosmetics_players")
-                        .selected_text(shown)
-                        .width(INPUT_WIDTH)
-                        .show_ui(ui, |ui| {
-                            for name in &players {
-                                ui.selectable_value(&mut self.room_player, name.clone(), name);
-                            }
-                        });
-                });
-                let can_copy = !busy && !self.room_player.is_empty();
-                if widgets::button(ui, "Copy Player", Kind::Normal, can_copy, vec2(COPY_WIDTH, 0.0), "")
-                    .on_hover_text("Copy the look of the selected room player")
-                    .clicked()
-                {
-                    let (library, name) = (library.clone(), self.room_player.clone());
-                    self.quick(&format!("Copying look from {name}..."), move |bot| {
-                        avatar::copy_player_look_by_name(bot, &library, &name)
-                    });
-                }
-                if widgets::button(ui, "Copy Target Look", Kind::Primary, !busy, vec2(0.0, 0.0), "")
-                    .on_hover_text("Copy the equipment and colors of the player you target")
-                    .clicked()
-                {
-                    let library = library.clone();
-                    self.quick("Reading target avatar...", move |bot| {
-                        avatar::copy_target_look(bot, &library)
-                    });
-                }
+                self.player_box(ui, &quick.players, INPUT_WIDTH);
+                self.copy_player(ui, library, quick.busy, COPY_WIDTH);
+                self.copy_target(ui, library, quick.busy, vec2(0.0, 0.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    for (label, tip, gender) in [
-                        ("Swap", "Swap Gender", None),
-                        ("F", "Morph Female", Some('F')),
-                        ("M", "Morph Male", Some('M')),
-                    ] {
-                        if widgets::button(ui, label, Kind::Normal, true, vec2(CONTROL_HEIGHT, 0.0), "")
-                            .on_hover_text(tip)
-                            .clicked()
-                        {
-                            act("Gender swap", move |bot| avatar::swap_gender(bot, gender, false));
-                        }
-                    }
+                    gender_buttons(ui, &[("Swap", None), ("F", Some('F')), ("M", Some('M'))]);
                     ui.label(RichText::new("Gender").small().color(MUTED));
                 });
             });
             // Turu: any character's look from its account.aq.com page.
             ui.horizontal(|ui| {
-                let typed = input(ui, &mut self.char_name, "Character name", INPUT_WIDTH);
-                let entered = typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let can_copy = !busy && !self.char_name.trim().is_empty();
-                let clicked = widgets::button(ui, "Copy Page", Kind::Normal, can_copy, vec2(COPY_WIDTH, 0.0), "")
-                    .on_hover_text("Copy the gear, gender and colors shown on the character's account.aq.com page")
-                    .clicked();
-                if (clicked || entered) && can_copy {
-                    let name = self.char_name.trim().to_owned();
-                    self.quick(&format!("Reading {name}'s character page..."), move |bot| {
-                        let page = charpage::fetch(&name)?;
-                        avatar::copy_char_page(bot, &page)
-                    });
-                }
+                self.char_page(ui, quick.busy, INPUT_WIDTH, COPY_WIDTH);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::button(ui, "Reset to Real Gear", Kind::Outline, !busy, vec2(0.0, 0.0), "")
-                        .on_hover_text("Put back your equipped inventory items, colors and gender")
-                        .clicked()
-                    {
-                        self.reset_gear();
-                    }
+                    self.reset_button(ui, quick.busy, 0.0);
                     // The outcome fills the gap between the copy buttons and Reset.
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        if busy {
-                            ui.spinner();
-                        }
-                        let text = if status.is_empty() {
-                            RichText::new("Everything here changes your look on this client only.").color(MUTED)
-                        } else {
-                            RichText::new(status).color(ACCENT)
-                        };
-                        ui.add(Label::new(text.small()).truncate());
+                        outcome(ui, &quick, false);
                     });
                 });
             });
         });
+    }
+
+    /// The quick bar as a tab of its own: a card of copy rows and a card for gender and Reset,
+    /// side by side when there's room for both, else one under the other.
+    fn copy_tab(&mut self, ui: &mut Ui, library: &Arc<Library>) {
+        let quick = self.quick_state();
+        if ui.available_width() >= 2.0 * COPY_TAB_WIDTH * 0.6 {
+            let width = ui.available_width().min(2.0 * COPY_TAB_WIDTH);
+            ui.scope(|ui| {
+                ui.set_max_width(width);
+                ui.columns(2, |columns| {
+                    self.copy_card(&mut columns[0], library, &quick);
+                    self.look_card(&mut columns[1], &quick);
+                });
+            });
+            return;
+        }
+        let width = ui.available_width().min(COPY_TAB_WIDTH);
+        ui.scope(|ui| {
+            ui.set_max_width(width);
+            self.copy_card(ui, library, &quick);
+            self.look_card(ui, &quick);
+        });
+    }
+
+    /// Copy a room player, the target or a character page, in full-width rows.
+    fn copy_card(&mut self, ui: &mut Ui, library: &Arc<Library>, quick: &Quick) {
+        let gap = ui.spacing().item_spacing.x;
+        widgets::card(ui, |ui| {
+            ui.set_width(ui.available_width());
+            widgets::section_label(ui, "PLAYER IN THE ROOM");
+            ui.horizontal(|ui| {
+                let width = ui.available_width() - COPY_WIDTH - gap;
+                self.player_box(ui, &quick.players, width);
+                self.copy_player(ui, library, quick.busy, COPY_WIDTH);
+            });
+            ui.horizontal(|ui| {
+                let size = vec2(ui.available_width(), action());
+                self.copy_target(ui, library, quick.busy, size);
+            });
+            ui.add_space(4.0);
+            widgets::section_label(ui, "CHARACTER PAGE");
+            ui.horizontal(|ui| {
+                let width = ui.available_width() - COPY_WIDTH - gap;
+                self.char_page(ui, quick.busy, width, COPY_WIDTH);
+            });
+        });
+    }
+
+    /// Gender, Reset to Real Gear and the last action's outcome.
+    fn look_card(&self, ui: &mut Ui, quick: &Quick) {
+        widgets::card(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                widgets::section_label(ui, "GENDER");
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    gender_buttons(ui, &[("Swap", None), ("Female", Some('F')), ("Male", Some('M'))]);
+                });
+            });
+            ui.horizontal(|ui| self.reset_button(ui, quick.busy, ui.available_width()));
+            ui.horizontal(|ui| outcome(ui, quick, true));
+        });
+    }
+
+    fn player_box(&mut self, ui: &mut Ui, players: &[String], width: f32) {
+        ui.add_enabled_ui(!players.is_empty(), |ui| {
+            let shown = if self.room_player.is_empty() {
+                "No players in the room"
+            } else {
+                &self.room_player
+            };
+            ComboBox::from_id_salt("turu_cosmetics_players")
+                .selected_text(shown)
+                .width(width)
+                .show_ui(ui, |ui| {
+                    for name in players {
+                        ui.selectable_value(&mut self.room_player, name.clone(), name);
+                    }
+                });
+        });
+    }
+
+    fn copy_player(&self, ui: &mut Ui, library: &Arc<Library>, busy: bool, width: f32) {
+        let can_copy = !busy && !self.room_player.is_empty();
+        if widgets::button(ui, "Copy Player", Kind::Normal, can_copy, vec2(width, 0.0), "")
+            .on_hover_text("Copy the look of the selected room player")
+            .clicked()
+        {
+            let (library, name) = (library.clone(), self.room_player.clone());
+            self.quick(&format!("Copying look from {name}..."), move |bot| {
+                avatar::copy_player_look_by_name(bot, &library, &name)
+            });
+        }
+    }
+
+    fn copy_target(&self, ui: &mut Ui, library: &Arc<Library>, busy: bool, size: egui::Vec2) {
+        if widgets::button(ui, "Copy Target Look", Kind::Primary, !busy, size, "")
+            .on_hover_text("Copy the equipment and colors of the player you target")
+            .clicked()
+        {
+            let library = library.clone();
+            self.quick("Reading target avatar...", move |bot| {
+                avatar::copy_target_look(bot, &library)
+            });
+        }
+    }
+
+    /// The character name box and Copy Page (Enter works too).
+    fn char_page(&mut self, ui: &mut Ui, busy: bool, width: f32, button_width: f32) {
+        let typed = input(ui, &mut self.char_name, "Character name", width);
+        let entered = typed.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        let can_copy = !busy && !self.char_name.trim().is_empty();
+        let clicked = widgets::button(ui, "Copy Page", Kind::Normal, can_copy, vec2(button_width, 0.0), "")
+            .on_hover_text("Copy the gear, gender and colors shown on the character's account.aq.com page")
+            .clicked();
+        if (clicked || entered) && can_copy {
+            let name = self.char_name.trim().to_owned();
+            self.quick(&format!("Reading {name}'s character page..."), move |bot| {
+                let page = charpage::fetch(&name)?;
+                avatar::copy_char_page(bot, &page)
+            });
+        }
+    }
+
+    fn reset_button(&self, ui: &mut Ui, busy: bool, width: f32) {
+        if widgets::button(ui, "Reset to Real Gear", Kind::Outline, !busy, vec2(width, 0.0), "")
+            .on_hover_text("Put back your equipped inventory items, colors and gender")
+            .clicked()
+        {
+            self.reset_gear();
+        }
     }
 
     /// Reset to Real Gear: the equipped inventory items, colors and gender again.
@@ -536,67 +755,102 @@ impl CosmeticsWindow {
     // -------------------------------------------------------------------------------------
     // Catalog
 
-    /// Search, sort and Check Updates over the category chips; `compact` puts the category in a
-    /// drop-down on the search row instead.
-    fn catalog_tab(&mut self, ui: &mut Ui, library: &Arc<Library>, compact: bool) {
+    /// The toolbar and the list with the selected item beside it; in one column the selected
+    /// item is a page of its own.
+    fn catalog_tab(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
+        if !fit.columns && self.item_open && self.selected.is_some() {
+            if back_bar(ui, "Catalog") {
+                self.item_open = false;
+            } else {
+                self.detail_card(ui, library, fit);
+                return;
+            }
+        }
+        self.catalog_toolbar(ui, library, fit);
+        self.filter(library);
+        let pagination = if fit.short {
+            0.0
+        } else {
+            control() + ui.spacing().item_spacing.y
+        };
+        if !fit.columns {
+            let list_height = (ui.available_height() - pagination).max(120.0);
+            inset(ui, list_height, |ui| self.item_list(ui, library, fit));
+            self.pagination(ui, library, fit);
+            return;
+        }
+        let [mut left, mut right] = split(ui, SIDE_WIDTH);
+        {
+            let ui = &mut left;
+            let list_height = (ui.available_height() - pagination).max(80.0);
+            inset(ui, list_height, |ui| self.item_list(ui, library, fit));
+            if !fit.short {
+                self.pagination(ui, library, fit);
+            }
+        }
+        self.detail_card(&mut right, library, fit);
+    }
+
+    /// Search, sort and Check Updates, then the category chips; short, the category is a
+    /// drop-down on the search row. In one column: search, then category and sort side by side
+    /// (Check Updates is on the pagination row).
+    fn catalog_toolbar(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
         let catalog_busy = lock(&self.shared).catalog_busy;
         let weapons = self.category == Category::Slot(Slot::Weapon);
+        let gap = ui.spacing().item_spacing.x;
+        if !fit.columns {
+            self.search_box(ui, ui.available_width());
+            ui.horizontal(|ui| {
+                let boxes = if weapons { 3.0 } else { 2.0 };
+                let width = (ui.available_width() - gap * (boxes - 1.0)) / boxes;
+                self.category_box(ui, width);
+                if weapons {
+                    self.weapon_kind_box(ui, width);
+                }
+                self.sort_box(ui, width, true);
+            });
+            return;
+        }
+        if fit.short {
+            // Search, category (and weapon kind), sort and the page arrows on one row.
+            ui.horizontal(|ui| {
+                let sort = 110.0;
+                let pager = 2.0 * control() + 90.0;
+                let boxes = if weapons { 2.0 } else { 1.0 };
+                let rest = ui.available_width() - sort - pager - (2.0 + boxes) * gap;
+                let box_width = (rest * 0.3).min(CATEGORY_WIDTH);
+                self.search_box(ui, (rest - boxes * box_width).max(100.0));
+                self.category_box(ui, box_width);
+                if weapons {
+                    self.weapon_kind_box(ui, box_width);
+                }
+                self.sort_box(ui, sort, true);
+                self.pager(ui, false, false);
+            });
+            return;
+        }
         ui.horizontal(|ui| {
-            let gap = ui.spacing().item_spacing.x;
-            let mut right = SORT_WIDTH + 120.0 + 2.0 * gap;
-            if compact {
+            let mut right = SORT_WIDTH + UPDATES_WIDTH + 2.0 * gap;
+            if !fit.chips {
                 right += CATEGORY_WIDTH + gap;
                 if weapons {
                     right += WEAPON_WIDTH + gap;
                 }
             }
-            let width = (ui.available_width() - right).max(160.0);
-            let search = input(ui, &mut self.query, "Search cosmetics by name or ID...", width);
-            if !self.query.is_empty() {
-                // A clear button inside the box's right end.
-                let rect = Rect::from_center_size(search.rect.right_center() - vec2(14.0, 0.0), vec2(20.0, 20.0));
-                if ui
-                    .put(rect, egui::Button::new(RichText::new("×").color(MUTED)).frame(false))
-                    .clicked()
-                {
-                    self.query.clear();
-                }
-            }
-            if compact {
-                let shown = CATEGORIES
-                    .iter()
-                    .find(|(c, _)| *c == self.category)
-                    .map_or("All", |(_, l)| *l);
-                ComboBox::from_id_salt("turu_cosmetics_category")
-                    .selected_text(shown)
-                    .width(CATEGORY_WIDTH)
-                    .show_ui(ui, |ui| {
-                        for (category, label) in CATEGORIES {
-                            ui.selectable_value(&mut self.category, category, label);
-                        }
-                    });
+            let width = (ui.available_width() - right).max(140.0);
+            self.search_box(ui, width);
+            if !fit.chips {
+                self.category_box(ui, CATEGORY_WIDTH);
                 if weapons {
-                    self.weapon_kind_box(ui);
+                    self.weapon_kind_box(ui, WEAPON_WIDTH);
                 }
             }
-            ComboBox::from_id_salt("turu_cosmetics_sort")
-                .selected_text(self.sort.label())
-                .width(SORT_WIDTH)
-                .show_ui(ui, |ui| {
-                    for sort in [Sort::Newest, Sort::Oldest, Sort::NameAsc, Sort::NameDesc] {
-                        ui.selectable_value(&mut self.sort, sort, sort.label());
-                    }
-                });
-            if widgets::button(ui, "Check Updates", Kind::Normal, !catalog_busy, vec2(120.0, 0.0), "")
-                .on_hover_text("Download the catalog again and keep it if it has new items")
-                .clicked()
-            {
-                self.check_updates(library);
-            }
+            self.sort_box(ui, SORT_WIDTH, false);
+            self.updates_button(ui, library, !catalog_busy, UPDATES_WIDTH);
         });
-        if !compact {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
+        if fit.chips {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
                 for (category, label) in CATEGORIES {
                     if widgets::chip(ui, label, self.category == category) {
                         self.category = category;
@@ -604,38 +858,84 @@ impl CosmeticsWindow {
                 }
                 if self.category == Category::Slot(Slot::Weapon) {
                     ui.scope(|ui| {
-                        ui.spacing_mut().interact_size.y = 24.0;
-                        self.weapon_kind_box(ui);
+                        ui.spacing_mut().interact_size.y = widgets::target(24.0, 40.0);
+                        self.weapon_kind_box(ui, WEAPON_WIDTH);
                     });
                 }
             });
         }
-        self.filter(library);
+    }
 
-        let [mut left, mut right] = split(ui, SIDE_WIDTH);
-        {
-            let ui = &mut left;
-            let list_height = (ui.available_height() - CONTROL_HEIGHT - ui.spacing().item_spacing.y).max(80.0);
-            inset(ui, list_height, |ui| self.item_list(ui, library));
-            self.pagination(ui);
-        }
-        {
-            let ui = &mut right;
-            self.detail_card(ui, library);
+    /// The search box, `width` wide, with a clear button inside its right end.
+    fn search_box(&mut self, ui: &mut Ui, width: f32) {
+        let hint = if width < 240.0 {
+            "Name or ID..."
+        } else {
+            "Search cosmetics by name or ID..."
+        };
+        let search = input(ui, &mut self.query, hint, width);
+        if !self.query.is_empty() {
+            let side = widgets::target(20.0, 32.0);
+            let rect = Rect::from_center_size(
+                search.rect.right_center() - vec2(side / 2.0 + 4.0, 0.0),
+                vec2(side, side),
+            );
+            if ui
+                .put(rect, egui::Button::new(RichText::new("×").color(MUTED)).frame(false))
+                .clicked()
+            {
+                self.query.clear();
+            }
         }
     }
 
+    fn category_box(&mut self, ui: &mut Ui, width: f32) {
+        let shown = CATEGORIES
+            .iter()
+            .find(|(c, _)| *c == self.category)
+            .map_or("All", |(_, l)| *l);
+        ComboBox::from_id_salt("turu_cosmetics_category")
+            .selected_text(shown)
+            .width(width)
+            .show_ui(ui, |ui| {
+                for (category, label) in CATEGORIES {
+                    ui.selectable_value(&mut self.category, category, label);
+                }
+            });
+    }
+
     /// The Weapon category's kind (Sword, Dagger, ...).
-    fn weapon_kind_box(&mut self, ui: &mut Ui) {
+    fn weapon_kind_box(&mut self, ui: &mut Ui, width: f32) {
         ComboBox::from_id_salt("turu_cosmetics_weapon")
             .selected_text(self.weapon_kind.unwrap_or("All Weapons"))
-            .width(WEAPON_WIDTH)
+            .width(width)
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.weapon_kind, None, "All Weapons");
                 for &kind in WEAPON_KINDS {
                     ui.selectable_value(&mut self.weapon_kind, Some(kind), kind);
                 }
             });
+    }
+
+    fn sort_box(&mut self, ui: &mut Ui, width: f32, short: bool) {
+        let label = |sort: Sort| if short { sort.short() } else { sort.label() };
+        ComboBox::from_id_salt("turu_cosmetics_sort")
+            .selected_text(label(self.sort))
+            .width(width)
+            .show_ui(ui, |ui| {
+                for sort in Sort::ALL {
+                    ui.selectable_value(&mut self.sort, sort, sort.label());
+                }
+            });
+    }
+
+    fn updates_button(&self, ui: &mut Ui, library: &Arc<Library>, enabled: bool, width: f32) {
+        if widgets::button(ui, "Check Updates", Kind::Normal, enabled, vec2(width, 0.0), "")
+            .on_hover_text("Download the catalog again and keep it if it has new items")
+            .clicked()
+        {
+            self.check_updates(library);
+        }
     }
 
     fn check_updates(&self, library: &Arc<Library>) {
@@ -723,7 +1023,9 @@ impl CosmeticsWindow {
         self.filtered.len().div_ceil(self.page_size).max(1)
     }
 
-    fn item_list(&mut self, ui: &mut Ui, library: &Library) {
+    /// The page's items. A click selects one (in one column it opens it too), a double-click
+    /// equips it; in one column the rows carry Equip.
+    fn item_list(&mut self, ui: &mut Ui, library: &Library, fit: Fit) {
         self.page = self.page.min(self.pages() - 1);
         let start = self.page * self.page_size;
         let rows: Vec<u32> = self.filtered.iter().skip(start).take(self.page_size).copied().collect();
@@ -744,16 +1046,18 @@ impl CosmeticsWindow {
                 self.filter_key.as_ref().map(|k| k.revision),
             ))
             .auto_shrink([false, false])
-            .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
+            .show_rows(ui, row_height(), rows.len(), |ui, range| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 for &index in &rows[range] {
                     let item = &source[index as usize];
                     let selected = self.selected.as_ref().is_some_and(|s| s.key() == item.key());
-                    let response = item_row(ui, item, selected, library.is_favorite(item));
+                    let favorite = library.is_favorite(item);
+                    let (response, equip) = item_row(ui, item, selected, favorite, !fit.columns);
                     if response.clicked() {
                         self.selected = Some(item.clone());
+                        self.item_open = !fit.columns;
                     }
-                    if response.double_clicked() {
+                    if equip || response.double_clicked() {
                         let item = item.clone();
                         act("Equip", move |bot| avatar::equip(bot, &item));
                     }
@@ -761,22 +1065,34 @@ impl CosmeticsWindow {
             });
     }
 
-    fn detail_card(&self, ui: &mut Ui, library: &Library) {
+    fn detail_card(&self, ui: &mut Ui, library: &Library, fit: Fit) {
         full_card(ui, |ui| {
-            widgets::section_label(ui, "SELECTED COSMETIC");
+            if !fit.short {
+                widgets::section_label(ui, "SELECTED COSMETIC");
+            }
             let Some(item) = self.selected.clone() else {
-                empty_state(
-                    ui,
-                    "No item selected",
-                    "Click an item to see it here; double-click equips it.",
-                );
+                let hint = if widgets::touch() {
+                    "Tap an item to see it here."
+                } else {
+                    "Click an item to see it here; double-click equips it."
+                };
+                empty_state(ui, "No item selected", hint);
                 return;
             };
-            // The details scroll when the window is short; the actions stay at the bottom.
-            let footer = 32.0 + 2.0 * CONTROL_HEIGHT + 3.0 * 6.0 + 8.0;
+            // The actions stay at the bottom and the details scroll above them. Tall and wide,
+            // they are three rows; in one column Favorite and the wiki share a row under Equip;
+            // short, all three share one row.
+            let spacing = 6.0;
+            let footer = if fit.short {
+                action() + 8.0
+            } else if fit.columns {
+                action() + 2.0 * control() + 3.0 * spacing + 8.0
+            } else {
+                action() + control() + 2.0 * spacing + 8.0
+            };
             ScrollArea::vertical()
                 .id_salt("turu_cosmetics_detail")
-                .max_height((ui.available_height() - footer).max(40.0))
+                .max_height((ui.available_height() - footer).max(24.0))
                 .show(ui, |ui| {
                     ui.add(Label::new(RichText::new(&item.name).size(15.0).strong().color(TEXT)).wrap());
                     tag(ui, &item.display_category());
@@ -792,66 +1108,102 @@ impl CosmeticsWindow {
                         ui.add_space(4.0);
                     }
                 });
-            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                let width = ui.available_width();
-                if widgets::button(ui, "Open on AQW Wiki", Kind::Outline, true, vec2(width, 0.0), "").clicked() {
+            let favorite = library.is_favorite(&item);
+            let heart = if favorite { "♥" } else { "♡" };
+            let equip = |ui: &mut Ui, width: f32| {
+                let size = vec2(width, action());
+                if widgets::button(ui, "Equip Look", Kind::Primary, true, size, "").clicked() {
+                    let item = item.clone();
+                    act("Equip", move |bot| avatar::equip(bot, &item));
+                }
+            };
+            let favorite_button = |ui: &mut Ui, label: &str, size: egui::Vec2| {
+                let tip = if favorite {
+                    "Remove from Favorites"
+                } else {
+                    "Add to Favorites"
+                };
+                if widgets::button(ui, label, Kind::Normal, true, size, "")
+                    .on_hover_text(tip)
+                    .clicked()
+                {
+                    library.toggle_favorite(&item);
+                }
+            };
+            let wiki = |ui: &mut Ui, label: &str, size: egui::Vec2| {
+                if widgets::button(ui, label, Kind::Outline, true, size, "").clicked() {
                     let url = format!(
                         "http://aqwwiki.wikidot.com/{}",
                         turu_bot::cosmetics::escape_data(&item.name)
                     );
                     crate::platform::platform().open_url(&url);
                 }
-                let label = if library.is_favorite(&item) {
-                    "♥ Remove Favorite"
+            };
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.y = spacing;
+                let width = ui.available_width();
+                let gap = ui.spacing().item_spacing.x;
+                if fit.short {
+                    ui.horizontal(|ui| {
+                        let side = action().max(48.0);
+                        let rest = width - 2.0 * gap - side;
+                        equip(ui, rest - (rest * 0.4).min(90.0));
+                        favorite_button(ui, heart, vec2(side, action()));
+                        wiki(ui, "Wiki", vec2(ui.available_width(), action()));
+                    });
+                    return;
+                }
+                if fit.columns {
+                    ui.horizontal(|ui| wiki(ui, "Open on AQW Wiki", vec2(width, 0.0)));
+                    let label = if favorite {
+                        "♥ Remove Favorite"
+                    } else {
+                        "♡ Add to Favorites"
+                    };
+                    ui.horizontal(|ui| favorite_button(ui, label, vec2(width, 0.0)));
                 } else {
-                    "♡ Add to Favorites"
-                };
-                if widgets::button(ui, label, Kind::Normal, true, vec2(width, 0.0), "").clicked() {
-                    library.toggle_favorite(&item);
+                    ui.horizontal(|ui| {
+                        let half = (width - gap) / 2.0;
+                        favorite_button(ui, &format!("{heart} Favorite"), vec2(half, 0.0));
+                        wiki(ui, "AQW Wiki", vec2(half, 0.0));
+                    });
                 }
-                if widgets::button(ui, "Equip Look", Kind::Primary, true, vec2(width, 32.0), "").clicked() {
-                    let item = item.clone();
-                    act("Equip", move |bot| avatar::equip(bot, &item));
-                }
+                ui.horizontal(|ui| equip(ui, width));
             });
         });
     }
 
-    fn pagination(&mut self, ui: &mut Ui) {
-        let pages = self.pages();
+    /// First, previous, the page, next, last; the range and the page size when there's room.
+    /// In one column Check Updates takes the page size's place.
+    fn pagination(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
+        let catalog_busy = lock(&self.shared).catalog_busy;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            let (first, last) = (self.page == 0, self.page + 1 >= pages);
-            let size = vec2(CONTROL_HEIGHT, 0.0);
-            if widgets::button(ui, "«", Kind::Normal, !first, size, "").clicked() {
-                self.page = 0;
+            let full = fit.columns && ui.available_width() >= FULL_PAGINATION;
+            let right = if fit.columns { 64.0 } else { UPDATES_WIDTH };
+            let ends = ui.available_width() >= right + 4.0 * control() + 110.0;
+            self.pager(ui, ends, full);
+            if full {
+                ui.add_space(6.0);
+                let total = self.filtered.len();
+                let shown = if total == 0 {
+                    "0 items".to_owned()
+                } else {
+                    let start = self.page * self.page_size;
+                    format!(
+                        "{}–{} of {} items",
+                        group_digits(start + 1),
+                        group_digits((start + self.page_size).min(total)),
+                        group_digits(total)
+                    )
+                };
+                ui.add(Label::new(RichText::new(shown).small().color(MUTED)).truncate());
             }
-            if widgets::button(ui, "‹", Kind::Normal, !first, size, "").clicked() {
-                self.page -= 1;
-            }
-            ui.label(RichText::new(format!("Page {} of {pages}", self.page + 1)).color(TEXT));
-            if widgets::button(ui, "›", Kind::Normal, !last, size, "").clicked() {
-                self.page += 1;
-            }
-            if widgets::button(ui, "»", Kind::Normal, !last, size, "").clicked() {
-                self.page = pages - 1;
-            }
-            ui.add_space(6.0);
-            let total = self.filtered.len();
-            let shown = if total == 0 {
-                "0 items".to_owned()
-            } else {
-                let start = self.page * self.page_size;
-                format!(
-                    "{}–{} of {} items",
-                    group_digits(start + 1),
-                    group_digits((start + self.page_size).min(total)),
-                    group_digits(total)
-                )
-            };
-            ui.label(RichText::new(shown).small().color(MUTED));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if !fit.columns {
+                    self.updates_button(ui, library, !catalog_busy, 0.0);
+                    return;
+                }
                 let before = self.page_size;
                 ComboBox::from_id_salt("turu_cosmetics_page_size")
                     .selected_text(self.page_size.to_string())
@@ -864,88 +1216,141 @@ impl CosmeticsWindow {
                 if self.page_size != before {
                     self.page = 0;
                 }
-                ui.label(RichText::new("Per page").small().color(MUTED));
+                if full {
+                    ui.label(RichText::new("Per page").small().color(MUTED));
+                }
             });
+        });
+    }
+
+    /// Previous and next around the page number; with `ends` first and last too, with `full`
+    /// "Page 1 of 9" for "1 / 9".
+    fn pager(&mut self, ui: &mut Ui, ends: bool, full: bool) {
+        let pages = self.pages();
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let (first, last) = (self.page == 0, self.page + 1 >= pages);
+            let size = vec2(control(), 0.0);
+            if ends && widgets::button(ui, "«", Kind::Normal, !first, size, "").clicked() {
+                self.page = 0;
+            }
+            if widgets::button(ui, "‹", Kind::Normal, !first, size, "").clicked() {
+                self.page -= 1;
+            }
+            let page = if full {
+                format!("Page {} of {}", group_digits(self.page + 1), group_digits(pages))
+            } else {
+                format!("{} / {}", group_digits(self.page + 1), group_digits(pages))
+            };
+            ui.label(RichText::new(page).color(TEXT));
+            if widgets::button(ui, "›", Kind::Normal, !last, size, "").clicked() {
+                self.page += 1;
+            }
+            if ends && widgets::button(ui, "»", Kind::Normal, !last, size, "").clicked() {
+                self.page = pages - 1;
+            }
         });
     }
 
     // -------------------------------------------------------------------------------------
     // Outfits & Inspector
 
-    fn outfits_tab(&mut self, ui: &mut Ui, library: &Arc<Library>) {
+    fn outfits_tab(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
         let sets = library.sets();
         if self.selected_set.is_some_and(|i| i >= sets.len()) {
             self.selected_set = None;
         }
-        let [mut left, mut right] = split(ui, SIDE_WIDTH);
-        {
-            let ui = &mut left;
-            ui.horizontal(|ui| {
-                if widgets::button(ui, "Save Current Look", Kind::Primary, true, vec2(0.0, 0.0), "")
-                    .on_hover_text("Save what your avatar wears now as a new outfit")
-                    .clicked()
-                {
-                    let library = library.clone();
-                    let name = format!("Outfit #{}", sets.len() + 1);
-                    act("Capture look", move |bot| {
-                        library.add_set(avatar::capture_current_look(bot, &library, &name)?);
-                        Ok(())
-                    });
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let noun = if sets.len() == 1 { "outfit" } else { "outfits" };
-                    ui.label(
-                        RichText::new(format!("{} {noun} saved", sets.len()))
-                            .small()
-                            .color(MUTED),
-                    );
-                });
-            });
-            inset(ui, ui.available_height(), |ui| {
-                if sets.is_empty() {
-                    empty_state(ui, "No outfits yet", "Save Current Look keeps what you wear now.");
+        let set = self.selected_set.and_then(|i| sets.get(i));
+        if !fit.columns {
+            if self.set_open && set.is_some() {
+                if back_bar(ui, "Outfits") {
+                    self.set_open = false;
+                } else {
+                    self.inspector(ui, library, set, fit.short);
                     return;
                 }
-                ScrollArea::vertical()
-                    .id_salt("turu_cosmetics_sets")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
-                        for (i, set) in sets.iter().enumerate() {
-                            let response = set_row(ui, set, self.selected_set == Some(i));
-                            if response.clicked() {
-                                self.selected_set = Some(i);
-                            }
-                            if response.double_clicked() {
-                                equip_set(set);
-                            }
-                        }
-                    });
-            });
+            }
+            self.outfit_list(ui, library, &sets, fit);
+            return;
         }
-        {
-            let ui = &mut right;
-            let set = self.selected_set.and_then(|i| sets.get(i));
-            self.inspector(ui, library, set);
-        }
+        let [mut left, mut right] = split(ui, SIDE_WIDTH);
+        self.outfit_list(&mut left, library, &sets, fit);
+        self.inspector(&mut right, library, set, fit.short);
     }
 
-    fn inspector(&mut self, ui: &mut Ui, library: &Library, set: Option<&CosmeticSet>) {
+    /// Save Current Look and the saved outfits; a click selects one (in one column it opens it
+    /// too), a double-click or the row's Equip equips it.
+    fn outfit_list(&mut self, ui: &mut Ui, library: &Arc<Library>, sets: &[CosmeticSet], fit: Fit) {
+        ui.horizontal(|ui| {
+            if widgets::button(ui, "Save Current Look", Kind::Primary, true, vec2(0.0, 0.0), "")
+                .on_hover_text("Save what your avatar wears now as a new outfit")
+                .clicked()
+            {
+                let library = library.clone();
+                let name = format!("Outfit #{}", sets.len() + 1);
+                act("Capture look", move |bot| {
+                    library.add_set(avatar::capture_current_look(bot, &library, &name)?);
+                    Ok(())
+                });
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let noun = if sets.len() == 1 { "outfit" } else { "outfits" };
+                ui.label(
+                    RichText::new(format!("{} {noun} saved", sets.len()))
+                        .small()
+                        .color(MUTED),
+                );
+            });
+        });
+        inset(ui, ui.available_height(), |ui| {
+            if sets.is_empty() {
+                empty_state(ui, "No outfits yet", "Save Current Look keeps what you wear now.");
+                return;
+            }
+            ScrollArea::vertical()
+                .id_salt("turu_cosmetics_sets")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for (i, set) in sets.iter().enumerate() {
+                        let response = set_row(ui, set, self.selected_set == Some(i));
+                        if response.clicked() {
+                            self.selected_set = Some(i);
+                            self.set_open = !fit.columns;
+                        }
+                        if response.double_clicked() {
+                            equip_set(set);
+                        }
+                    }
+                });
+        });
+    }
+
+    fn inspector(&mut self, ui: &mut Ui, library: &Library, set: Option<&CosmeticSet>, short: bool) {
         full_card(ui, |ui| {
-            widgets::section_label(ui, "OUTFIT INSPECTOR");
+            if !short {
+                widgets::section_label(ui, "OUTFIT INSPECTOR");
+            }
             let Some(set) = set else {
-                empty_state(ui, "No outfit selected", "Click an outfit to see its items.");
+                let hint = if widgets::touch() {
+                    "Tap an outfit to see its items."
+                } else {
+                    "Click an outfit to see its items."
+                };
+                empty_state(ui, "No outfit selected", hint);
                 return;
             };
             ui.add(Label::new(RichText::new(&set.name).size(15.0).strong().color(TEXT)).truncate());
-            ui.label(
-                RichText::new(format!("Saved {}", set.created_label()))
-                    .small()
-                    .color(MUTED),
-            );
-            ui.add_space(2.0);
+            if !short {
+                ui.label(
+                    RichText::new(format!("Saved {}", set.created_label()))
+                        .small()
+                        .color(MUTED),
+                );
+                ui.add_space(2.0);
+            }
             // The slots scroll when the window is short; the buttons stay at the bottom.
-            let footer = 32.0 + 8.0;
+            let footer = action() + 8.0;
             ScrollArea::vertical()
                 .id_salt("turu_cosmetics_inspector")
                 .max_height((ui.available_height() - footer).max(40.0))
@@ -958,13 +1363,14 @@ impl CosmeticsWindow {
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 ui.horizontal(|ui| {
                     let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-                    if widgets::button(ui, "Equip Full Set", Kind::Primary, true, vec2(width, 32.0), "").clicked() {
+                    if widgets::button(ui, "Equip Full Set", Kind::Primary, true, vec2(width, action()), "").clicked() {
                         equip_set(set);
                     }
-                    if widgets::button(ui, "Delete Set", Kind::Danger, true, vec2(width, 32.0), "").clicked()
+                    if widgets::button(ui, "Delete Set", Kind::Danger, true, vec2(width, action()), "").clicked()
                         && let Some(i) = self.selected_set.take()
                     {
                         library.remove_set(i);
+                        self.set_open = false;
                     }
                 });
             });
@@ -974,55 +1380,19 @@ impl CosmeticsWindow {
     // -------------------------------------------------------------------------------------
     // Color Custom (CC)
 
-    fn colors_tab(&mut self, ui: &mut Ui) {
-        let cc_status = lock(&self.shared).cc_status.clone();
-        let [mut left, mut right] = split(ui, SIDE_WIDTH);
-        {
-            let ui = &mut left;
-            full_card(ui, |ui| {
-                ui.label(
-                    RichText::new("Character Color Customizer")
-                        .size(15.0)
-                        .strong()
-                        .color(TEXT),
-                );
-                ui.label(
-                    RichText::new("Change your avatar's colors on this client. Click a swatch to pick a color.")
-                        .small()
-                        .color(MUTED),
-                );
-                ui.add_space(4.0);
-                // The rows scroll when the window is short; the buttons stay below them.
-                let footer = 32.0 + 12.0 + if cc_status.is_empty() { 0.0 } else { 20.0 };
-                ScrollArea::vertical()
-                    .id_salt("turu_cosmetics_cc")
-                    .max_height((ui.available_height() - footer).max(40.0))
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 4.0;
-                        for ((label, what), hex) in COLOR_ROWS.iter().zip(self.hex.iter_mut()) {
-                            color_row(ui, label, what, hex);
-                        }
-                    });
-                ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                    if !cc_status.is_empty() {
-                        ui.label(RichText::new(&cc_status).small().color(SUCCESS));
-                    }
-                    ui.horizontal(|ui| {
-                        if widgets::button(ui, "Apply Palette", Kind::Primary, true, vec2(130.0, 32.0), "").clicked() {
-                            let colors = ColorChange(self.hex.each_ref().map(|h| parse_hex(h)));
-                            act("SetColors", move |bot| avatar::set_colors(bot, colors, true));
-                            lock(&self.shared).cc_status = "Applied palette colors to character!".into();
-                        }
-                        if widgets::button(ui, "Read Avatar Colors", Kind::Normal, true, vec2(0.0, 32.0), "")
-                            .on_hover_text("Fill the boxes with the colors your avatar has now")
-                            .clicked()
-                        {
-                            self.read_colors(true);
-                        }
-                    });
-                });
-            });
+    /// The color rows beside the presets; in one column the presets go under the rows and the
+    /// tab scrolls as a whole.
+    fn colors_tab(&mut self, ui: &mut Ui, fit: Fit) {
+        if !fit.columns {
+            self.palette(ui, false);
+            ui.add_space(4.0);
+            widgets::section_label(ui, "THEMED PRESETS");
+            let height = PRESETS.len() as f32 * (PRESET_HEIGHT + 2.0) + 8.0;
+            inset(ui, height, |ui| self.presets(ui));
+            return;
         }
+        let [mut left, mut right] = split(ui, SIDE_WIDTH);
+        self.palette(&mut left, true);
         {
             let ui = &mut right;
             widgets::section_label(ui, "THEMED PRESETS");
@@ -1035,12 +1405,85 @@ impl CosmeticsWindow {
         }
     }
 
+    /// The color rows, Apply Palette and Read Avatar Colors. With `fill` the card fills the
+    /// column and its rows scroll, the buttons staying at the bottom.
+    fn palette(&mut self, ui: &mut Ui, fill: bool) {
+        let cc_status = lock(&self.shared).cc_status.clone();
+        let contents = |this: &mut Self, ui: &mut Ui| {
+            ui.label(
+                RichText::new("Character Color Customizer")
+                    .size(15.0)
+                    .strong()
+                    .color(TEXT),
+            );
+            ui.add(
+                Label::new(
+                    RichText::new("Change your avatar's colors on this client. Tap a swatch to pick a color.")
+                        .small()
+                        .color(MUTED),
+                )
+                .wrap(),
+            );
+            ui.add_space(4.0);
+            let rows = |ui: &mut Ui, hexes: &mut [String; 6]| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                for ((label, what), hex) in COLOR_ROWS.iter().zip(hexes.iter_mut()) {
+                    color_row(ui, label, what, hex);
+                }
+            };
+            let buttons = |this: &Self, ui: &mut Ui| {
+                ui.horizontal(|ui| {
+                    let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+                    if widgets::button(ui, "Apply Palette", Kind::Primary, true, vec2(width, action()), "").clicked() {
+                        let colors = ColorChange(this.hex.each_ref().map(|h| parse_hex(h)));
+                        act("SetColors", move |bot| avatar::set_colors(bot, colors, true));
+                        lock(&this.shared).cc_status = "Applied palette colors to character!".into();
+                    }
+                    if widgets::button(ui, "Read Avatar Colors", Kind::Normal, true, vec2(width, action()), "")
+                        .on_hover_text("Fill the boxes with the colors your avatar has now")
+                        .clicked()
+                    {
+                        this.read_colors(true);
+                    }
+                });
+            };
+            if !fill {
+                rows(ui, &mut this.hex);
+                ui.add_space(4.0);
+                buttons(this, ui);
+                if !cc_status.is_empty() {
+                    ui.label(RichText::new(&cc_status).small().color(SUCCESS));
+                }
+                return;
+            }
+            let footer = action() + 12.0 + if cc_status.is_empty() { 0.0 } else { 20.0 };
+            ScrollArea::vertical()
+                .id_salt("turu_cosmetics_cc")
+                .max_height((ui.available_height() - footer).max(40.0))
+                .show(ui, |ui| rows(ui, &mut this.hex));
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                if !cc_status.is_empty() {
+                    ui.label(RichText::new(&cc_status).small().color(SUCCESS));
+                }
+                buttons(this, ui);
+            });
+        };
+        if fill {
+            full_card(ui, |ui| contents(self, ui));
+        } else {
+            widgets::card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                contents(self, ui);
+            });
+        }
+    }
+
     /// VibeSkua's preset cards: set the first four colors and apply them with the skin and hair
     /// in the boxes.
     fn presets(&mut self, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.y = 2.0;
         for (name, description, colors) in PRESETS {
-            let response = row(ui, false, 44.0, |ui| {
+            let response = row(ui, false, PRESET_HEIGHT, |ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 3.0;
                     for hex in colors.iter().rev() {
@@ -1049,6 +1492,7 @@ impl CosmeticsWindow {
                     ui.add_space(6.0);
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {
                         ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.spacing_mut().interact_size.y = 0.0;
                         ui.add_space(5.0);
                         ui.add(
                             Label::new(RichText::new(name).strong().color(TEXT))
@@ -1081,100 +1525,169 @@ impl CosmeticsWindow {
     // -------------------------------------------------------------------------------------
     // Manual SWF
 
-    fn manual_tab(&mut self, ui: &mut Ui) {
+    /// The form: labels beside the fields, or above them in one column.
+    fn manual_tab(&mut self, ui: &mut Ui, fit: Fit) {
         let width = ui.available_width().min(MANUAL_WIDTH);
         ui.allocate_ui(vec2(width, ui.available_height()), |ui| {
             widgets::card(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(RichText::new("Direct SWF Injection").size(15.0).strong().color(TEXT));
-                ui.label(
-                    RichText::new(
-                        "Loads any SWF onto your avatar by its file path and linkage ID, on this client only.",
+                ui.add(
+                    Label::new(
+                        RichText::new(
+                            "Loads any SWF onto your avatar by its file path and linkage ID, on this client only.",
+                        )
+                        .small()
+                        .color(MUTED),
                     )
-                    .small()
-                    .color(MUTED),
+                    .wrap(),
                 );
                 ui.add_space(6.0);
                 let label_width = 150.0;
-                let field = (ui.available_width() - label_width - ui.spacing().item_spacing.x).max(120.0);
-                egui::Grid::new("turu_cosmetics_manual")
-                    .num_columns(2)
-                    .spacing(vec2(8.0, 10.0))
-                    .min_col_width(label_width)
-                    .show(ui, |ui| {
-                        form_label(ui, "SWF File Path", "sFile");
-                        input(
-                            ui,
-                            &mut self.manual_file,
-                            "e.g. classes/M/Warrior.swf or items/helms/MyHelm.swf",
-                            field,
-                        );
-                        ui.end_row();
-                        form_label(ui, "Linkage Identifier", "sLink");
-                        input(ui, &mut self.manual_link, "e.g. mWarrior or HelmLink", field);
-                        ui.end_row();
-                        form_label(ui, "Equipment Slot", "group");
-                        ComboBox::from_id_salt("turu_cosmetics_manual_slot")
-                            .selected_text(MANUAL_SLOTS[self.manual_slot].0)
-                            .width(field)
-                            .show_ui(ui, |ui| {
-                                for (i, (label, _)) in MANUAL_SLOTS.iter().enumerate() {
-                                    ui.selectable_value(&mut self.manual_slot, i, *label);
-                                }
-                            });
-                        ui.end_row();
-                        form_label(ui, "Meta Data", "sMeta, optional");
-                        input(
-                            ui,
-                            &mut self.manual_meta,
-                            "Optional metadata or buff identifiers",
-                            field,
-                        );
-                        ui.end_row();
-                        ui.label("");
-                        ui.horizontal(|ui| {
-                            let ready = !self.manual_file.trim().is_empty() && !self.manual_link.trim().is_empty();
-                            if widgets::button(
-                                ui,
-                                "Inject SWF Onto Character",
-                                Kind::Primary,
-                                ready,
-                                vec2(0.0, 32.0),
-                                "Fill in the file path and the linkage ID first",
-                            )
-                            .clicked()
-                            {
-                                let (file, link, meta) = (
-                                    self.manual_file.trim().to_owned(),
-                                    self.manual_link.trim().to_owned(),
-                                    self.manual_meta.trim().to_owned(),
-                                );
-                                let group = MANUAL_SLOTS[self.manual_slot].1;
-                                self.manual_status = format!("Injected '{link}' into slot '{group}'!");
-                                act("Equip", move |bot| avatar::inject(bot, group, &file, &link, &meta));
-                            }
-                            if !self.manual_status.is_empty() {
-                                ui.label(RichText::new(&self.manual_status).small().color(SUCCESS));
+                let gap = ui.spacing().item_spacing.x;
+                if fit.columns {
+                    let field = (ui.available_width() - label_width - gap).max(120.0);
+                    egui::Grid::new("turu_cosmetics_manual")
+                        .num_columns(2)
+                        .spacing(vec2(gap, 10.0))
+                        .min_col_width(label_width)
+                        .show(ui, |ui| {
+                            for (i, (label, name)) in MANUAL_FIELDS.into_iter().enumerate() {
+                                form_label(ui, label, name);
+                                self.manual_field(ui, i, field);
+                                ui.end_row();
                             }
                         });
-                        ui.end_row();
+                    ui.horizontal(|ui| {
+                        ui.add_space(label_width + gap);
+                        self.inject_button(ui, 0.0);
+                        if !self.manual_status.is_empty() {
+                            ui.label(RichText::new(&self.manual_status).small().color(SUCCESS));
+                        }
                     });
+                } else {
+                    let field = ui.available_width();
+                    for (i, (label, name)) in MANUAL_FIELDS.into_iter().enumerate() {
+                        form_label(ui, label, name);
+                        self.manual_field(ui, i, field);
+                        ui.add_space(4.0);
+                    }
+                    ui.horizontal(|ui| self.inject_button(ui, field));
+                    if !self.manual_status.is_empty() {
+                        ui.label(RichText::new(&self.manual_status).small().color(SUCCESS));
+                    }
+                }
             });
         });
         // Keep the window's size: the form is shorter than the other tabs.
         ui.allocate_space(ui.available_size());
     }
+
+    /// The form's field `index` ([`MANUAL_FIELDS`]), `width` wide.
+    fn manual_field(&mut self, ui: &mut Ui, index: usize, width: f32) {
+        match index {
+            0 => {
+                let hint = "e.g. classes/M/Warrior.swf or items/helms/MyHelm.swf";
+                input(ui, &mut self.manual_file, hint, width);
+            }
+            1 => {
+                input(ui, &mut self.manual_link, "e.g. mWarrior or HelmLink", width);
+            }
+            2 => {
+                ComboBox::from_id_salt("turu_cosmetics_manual_slot")
+                    .selected_text(MANUAL_SLOTS[self.manual_slot].0)
+                    .width(width)
+                    .show_ui(ui, |ui| {
+                        for (i, (label, _)) in MANUAL_SLOTS.iter().enumerate() {
+                            ui.selectable_value(&mut self.manual_slot, i, *label);
+                        }
+                    });
+            }
+            _ => {
+                let hint = "Optional metadata or buff identifiers";
+                input(ui, &mut self.manual_meta, hint, width);
+            }
+        }
+    }
+
+    fn inject_button(&mut self, ui: &mut Ui, width: f32) {
+        let ready = !self.manual_file.trim().is_empty() && !self.manual_link.trim().is_empty();
+        if widgets::button(
+            ui,
+            "Inject SWF Onto Character",
+            Kind::Primary,
+            ready,
+            vec2(width, action()),
+            "Fill in the file path and the linkage ID first",
+        )
+        .clicked()
+        {
+            let (file, link, meta) = (
+                self.manual_file.trim().to_owned(),
+                self.manual_link.trim().to_owned(),
+                self.manual_meta.trim().to_owned(),
+            );
+            let group = MANUAL_SLOTS[self.manual_slot].1;
+            self.manual_status = format!("Injected '{link}' into slot '{group}'!");
+            act("Equip", move |bot| avatar::inject(bot, group, &file, &link, &meta));
+        }
+    }
+}
+
+/// The gender buttons, right to left: label and gender (`None` swaps).
+fn gender_buttons(ui: &mut Ui, buttons: &[(&str, Option<char>)]) {
+    for &(label, gender) in buttons {
+        let tip = match gender {
+            Some('F') => "Morph Female",
+            Some(_) => "Morph Male",
+            None => "Swap Gender",
+        };
+        let width = if label.len() == 1 { control() } else { 0.0 };
+        if widgets::button(ui, label, Kind::Normal, true, vec2(width, 0.0), "")
+            .on_hover_text(tip)
+            .clicked()
+        {
+            act("Gender swap", move |bot| avatar::swap_gender(bot, gender, false));
+        }
+    }
+}
+
+/// The last quick action's outcome (a spinner while one runs), or what the bar is about.
+fn outcome(ui: &mut Ui, quick: &Quick, wrap: bool) {
+    if quick.busy {
+        ui.spinner();
+    }
+    let text = if quick.status.is_empty() {
+        RichText::new("Everything here changes your look on this client only.").color(MUTED)
+    } else {
+        RichText::new(&quick.status).color(ACCENT)
+    };
+    let label = Label::new(text.small());
+    ui.add(if wrap { label.wrap() } else { label.truncate() });
+}
+
+/// A one-column page's header: Back to `to`. True when it (or Escape) was pressed.
+fn back_bar(ui: &mut Ui, to: &str) -> bool {
+    let clicked = widgets::button(ui, &format!("‹  {to}"), Kind::Outline, true, vec2(0.0, 0.0), "").clicked();
+    let escape = ui.memory(|m| m.focused().is_none()) && ui.input(|i| i.key_pressed(Key::Escape));
+    clicked || escape
 }
 
 /// An inspector row: the slot, the item's name and its Equip button.
 fn slot_row(ui: &mut Ui, slot: Slot, item: Option<&CosmeticItem>) {
     ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), CONTROL_HEIGHT + 2.0),
+        vec2(ui.available_width(), control() + 2.0),
         Layout::left_to_right(Align::Center),
         |ui| {
-            fixed_label(ui, 54.0, RichText::new(slot.label()).size(10.0).strong().color(MUTED));
+            let label_width = if ui.available_width() > 320.0 { 84.0 } else { 54.0 };
+            fixed_label(
+                ui,
+                label_width,
+                RichText::new(slot.label()).size(10.0).strong().color(MUTED),
+            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if widgets::button(ui, "Equip", Kind::Normal, item.is_some(), vec2(56.0, 24.0), "").clicked()
+                let size = vec2(56.0, widgets::target(24.0, 36.0));
+                if widgets::button(ui, "Equip", Kind::Normal, item.is_some(), size, "").clicked()
                     && let Some(item) = item.cloned()
                 {
                     act("Equip", move |bot| avatar::equip(bot, &item));
@@ -1200,7 +1713,7 @@ fn input(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> egui::Respon
         egui::TextEdit::singleline(text)
             .hint_text(hint)
             .desired_width(width - 16.0)
-            .min_size(vec2(width, CONTROL_HEIGHT))
+            .min_size(vec2(width, control()))
             .vertical_align(Align::Center)
             .margin(Margin::symmetric(8, 4))
             .background_color(INSET),
@@ -1291,12 +1804,12 @@ fn form_label(ui: &mut Ui, label: &str, field: &str) {
 /// A CC row: the swatch (a color picker), the name and what it colors, and the hex box.
 fn color_row(ui: &mut Ui, label: &str, what: &str, hex: &mut String) {
     ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), 38.0),
+        vec2(ui.available_width(), widgets::target(38.0, 48.0)),
         Layout::left_to_right(Align::Center),
         |ui| {
             let mut rgb = parse_hex(hex).map_or([0, 0, 0], |c| [(c >> 16) as u8, (c >> 8) as u8, c as u8]);
             ui.scope(|ui| {
-                ui.spacing_mut().interact_size = vec2(CONTROL_HEIGHT + 8.0, CONTROL_HEIGHT);
+                ui.spacing_mut().interact_size = vec2(control() + 8.0, control());
                 if ui.color_edit_button_srgb(&mut rgb).changed() {
                     *hex = format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
                 }
@@ -1315,7 +1828,9 @@ fn color_row(ui: &mut Ui, label: &str, what: &str, hex: &mut String) {
                 }
                 ui.with_layout(Layout::top_down(Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.add_space(3.0);
+                    ui.spacing_mut().interact_size.y = 0.0;
+                    let room = ui.available_height() - 30.0;
+                    ui.add_space((room / 2.0).max(0.0));
                     ui.add(Label::new(RichText::new(label).strong().color(TEXT)).truncate());
                     ui.add(Label::new(RichText::new(what).size(10.0).color(MUTED)).truncate());
                 });
@@ -1347,14 +1862,26 @@ fn row(ui: &mut Ui, selected: bool, height: f32, add_contents: impl FnOnce(&mut 
     response
 }
 
-/// A catalog row: favorite mark and name over the ID and file; the category on the right.
-fn item_row(ui: &mut Ui, item: &CosmeticItem, selected: bool, favorite: bool) -> egui::Response {
-    row(ui, selected, ROW_HEIGHT, |ui| {
+/// A catalog row: favorite mark and name over the ID and file, the category on the right. With
+/// `equip` (one column) the category joins the ID and Equip takes its place; the second value
+/// says whether it was pressed.
+fn item_row(ui: &mut Ui, item: &CosmeticItem, selected: bool, favorite: bool, equip: bool) -> (egui::Response, bool) {
+    let mut pressed = false;
+    let response = row(ui, selected, row_height(), |ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            tag(ui, &item.display_category());
+            let meta = if equip {
+                let size = vec2(64.0, widgets::target(26.0, 36.0));
+                pressed = widgets::button(ui, "Equip", Kind::Normal, true, size, "").clicked();
+                format!("#{} · {}", item.id, item.display_category())
+            } else {
+                tag(ui, &item.display_category());
+                format!("#{} · {}", item.id, item.path)
+            };
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
-                ui.add_space(4.0);
+                ui.spacing_mut().interact_size.y = 0.0;
+                let room = ui.available_height() - 34.0;
+                ui.add_space((room / 2.0).max(0.0));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     if favorite {
@@ -1367,29 +1894,37 @@ fn item_row(ui: &mut Ui, item: &CosmeticItem, selected: bool, favorite: bool) ->
                     );
                 });
                 ui.add(
-                    Label::new(
-                        RichText::new(format!("#{} · {}", item.id, item.path))
-                            .size(10.0)
-                            .color(MUTED),
-                    )
-                    .truncate()
-                    .selectable(false),
+                    Label::new(RichText::new(meta).size(10.0).color(MUTED))
+                        .truncate()
+                        .selectable(false),
                 );
             });
         });
-    })
+    });
+    (response, pressed)
 }
 
 /// An outfit row: name, summary and date, with Equip on the right.
 fn set_row(ui: &mut Ui, set: &CosmeticSet, selected: bool) -> egui::Response {
-    row(ui, selected, 54.0, |ui| {
+    row(ui, selected, widgets::target(54.0, 60.0), |ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::button(ui, "Equip", Kind::Normal, true, vec2(64.0, 26.0), "").clicked() {
+            if widgets::button(
+                ui,
+                "Equip",
+                Kind::Normal,
+                true,
+                vec2(64.0, widgets::target(26.0, 36.0)),
+                "",
+            )
+            .clicked()
+            {
                 equip_set(set);
             }
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
-                ui.add_space(4.0);
+                ui.spacing_mut().interact_size.y = 0.0;
+                let room = ui.available_height() - 46.0;
+                ui.add_space((room / 2.0).max(0.0));
                 ui.add(
                     Label::new(RichText::new(&set.name).strong().color(TEXT))
                         .truncate()
@@ -1436,5 +1971,20 @@ mod tests {
         assert_eq!(parse_hex(" ff "), Some(0xFF));
         assert_eq!(parse_hex("#"), None);
         assert_eq!(parse_hex("nope"), None);
+    }
+
+    /// Wide and tall: the quick bar on top and two columns; narrower, the quick bar is a tab;
+    /// a phone held upright is one column, held sideways two short columns.
+    #[test]
+    fn fit_follows_the_room() {
+        let fit = |w, h| {
+            let f = Fit::pick(w, h);
+            (f.columns, f.quick_bar, f.chips, f.short)
+        };
+        assert_eq!(fit(880.0, 560.0), (true, true, true, false));
+        assert_eq!(fit(680.0, 560.0), (true, false, true, false));
+        assert_eq!(fit(840.0, 280.0), (true, false, false, true));
+        assert_eq!(fit(380.0, 700.0), (false, false, false, false));
+        assert_eq!(fit(380.0, 300.0), (false, false, false, true));
     }
 }
