@@ -149,6 +149,15 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   surface on (`ERROR_NATIVE_WINDOW_IN_USE_KHR` otherwise).
 * **egui's root UI is a full-screen background layer:** touch routing counts only the nav bar
   and layers above `Order::Background`, or the game never gets a tap.
+* **The game has one mouse, and AQW's touch controls use it:** the mobile joystick, skill
+  buttons and keys (`liteAssets.mobile` in the client) listen for `MOUSE_DOWN` on the control,
+  then `MOUSE_MOVE`/`MOUSE_UP` on the stage. Only the dash and the key pad also listen for
+  `TOUCH_BEGIN`, and Ruffle has no touch events anyway. So a second finger pressing a skill used to
+  move the mouse and release it, which ended the joystick's drag. `turu_frontend::touch::GameTouches`
+  routes each finger by its pointer ID: the first finger on the game holds the mouse, a later one
+  is a quick tap (release, tap, then press again where the holder came down and move to where it
+  is now, so the joystick keeps its centre and its direction). `Screen::touch` sends egui one
+  finger at a time.
 * **Android makes a new activity in the same process** for some configuration changes (an
   assets-path change right after boot; `configChanges` can't opt out of it). Its `android_main`
   runs again: `lib.rs`'s `APP` is replaced each time, or the keyboard and the browser go through

@@ -5,11 +5,11 @@
 //!
 //! The GPU is set up without a window ([`gpu`]), so the game can run before one exists (started
 //! by the service after Android killed the app). A window gets a screen and a surface; a new
-//! window only a new surface; the player's renderer and its texture stay. Touches go
-//! to the UI when they start on it (the nav bar, a window), else to the game; keys go to the UI
+//! window only a new surface; the player's renderer and its texture stay. Each finger goes
+//! to the UI when it comes down on it (the nav bar, a window), else to the game; keys go to the UI
 //! while one of its text boxes has the focus, which also brings up the soft keyboard.
 
-use crate::input::{Key, Touch};
+use crate::input::{self, Key, Touch};
 use ndk::native_window::NativeWindow;
 use ruffle_core::Player;
 use ruffle_render::backend::ViewportDimensions;
@@ -22,6 +22,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
 use turu_frontend::gui::turu::TuruUi;
+use turu_frontend::touch::GameTouches;
 use turu_frontend::turu;
 use wgpu::util::DeviceExt;
 
@@ -56,8 +57,12 @@ pub struct Screen {
     ui: TuruUi,
     events: Vec<egui::Event>,
     started: Instant,
-    /// Whether the touch going on started on the UI.
-    touch_on_ui: bool,
+    /// The fingers that came down on the UI (the others are the game's).
+    ui_fingers: Vec<i32>,
+    /// The fingers on the game, as its one mouse.
+    game_touches: GameTouches,
+    /// The finger egui follows.
+    egui_finger: Option<EguiFinger>,
     keyboard_shown: bool,
     /// Whether a text box of the UI had the focus in the last frame (egui asked for IME then).
     /// Not `egui_wants_keyboard_input`: that's true for any focused widget, such as a modal's
@@ -106,6 +111,18 @@ pub fn gpu(graphics: Graphics, size: (u32, u32)) -> Option<(Arc<Descriptors>, Ar
     }
 }
 
+/// How far a finger on the game moves, in points, before it's dragging ([`GameTouches`]).
+const TAP_SLOP: f32 = 6.0;
+
+/// The finger egui follows, in window pixels.
+#[derive(Clone, Copy)]
+struct EguiFinger {
+    id: i32,
+    /// Whether it came down on the UI.
+    on_ui: bool,
+    at: (f64, f64),
+}
+
 impl Screen {
     /// The screen in `window`, on the GPU [`gpu`] set up. None when the window can't be drawn in.
     pub fn new(descriptors: Arc<Descriptors>, blit: Arc<Blit>, window: &NativeWindow, pixels_per_point: f32) -> Option<Self> {
@@ -149,7 +166,9 @@ impl Screen {
             ui: TuruUi::new(),
             events: Vec::new(),
             started: Instant::now(),
-            touch_on_ui: false,
+            ui_fingers: Vec::new(),
+            game_touches: GameTouches::new(f64::from(TAP_SLOP * pixels_per_point)),
+            egui_finger: None,
             keyboard_shown: false,
             ui_typing: false,
             movie_size: (0, 0),
@@ -222,23 +241,74 @@ impl Screen {
         (self.size.0, self.size.1.saturating_sub(top).max(1))
     }
 
-    /// A touch: the UI's when it starts on the nav bar or on a window, menu or popup, else the
-    /// game's. The root UI covers the whole screen on egui's background layer, so that layer
-    /// doesn't count. egui sees every touch: one on the game closes an open menu, as a click
-    /// elsewhere does on the desktop.
+    /// A finger: the UI's when it comes down on the nav bar or on a window, menu or popup, else
+    /// the game's. The root UI covers the whole screen on egui's background layer, so that layer
+    /// doesn't count. The game's fingers share its one mouse ([`GameTouches`]: a finger tapping a
+    /// skill button while another drags the joystick). egui follows one finger, the first one
+    /// down, or one on the UI over one on the game (a tap on the nav bar while the joystick is
+    /// held); it sees the game's too: one on the game closes an open menu, as a click elsewhere
+    /// does on the desktop.
     pub fn touch(&mut self, player: &mut Player, touch: Touch) {
-        if let Touch::Down(x, y) = touch {
-            let pos = egui::pos2(x as f32 / self.pixels_per_point, y as f32 / self.pixels_per_point);
-            let on_layer = self
-                .egui
-                .layer_id_at(pos)
-                .is_some_and(|layer| layer.order != egui::Order::Background);
-            self.touch_on_ui = y < f64::from(self.top()) || on_layer;
+        let top = f64::from(self.top());
+        let mouse = match touch {
+            Touch::Down(id, x, y) => {
+                let pos = egui::pos2(x as f32 / self.pixels_per_point, y as f32 / self.pixels_per_point);
+                let on_layer = self
+                    .egui
+                    .layer_id_at(pos)
+                    .is_some_and(|layer| layer.order != egui::Order::Background);
+                let on_ui = y < top || on_layer;
+                match self.egui_finger {
+                    Some(finger) if finger.on_ui || !on_ui => {}
+                    other => {
+                        if let Some(finger) = other {
+                            self.egui_touch(egui::TouchPhase::End, finger.at);
+                        }
+                        self.egui_finger = Some(EguiFinger { id, on_ui, at: (x, y) });
+                        self.egui_touch(egui::TouchPhase::Start, (x, y));
+                    }
+                }
+                if on_ui {
+                    self.ui_fingers.push(id);
+                    Vec::new()
+                } else {
+                    self.game_touches.down(id, x, y)
+                }
+            }
+            Touch::Move(id, x, y) => {
+                if let Some(finger) = self.egui_finger.as_mut().filter(|finger| finger.id == id) {
+                    finger.at = (x, y);
+                    self.egui_touch(egui::TouchPhase::Move, (x, y));
+                }
+                if self.ui_fingers.contains(&id) { Vec::new() } else { self.game_touches.moved(id, x, y) }
+            }
+            Touch::Up(id, x, y) => {
+                if self.egui_finger.is_some_and(|finger| finger.id == id) {
+                    self.egui_finger = None;
+                    self.egui_touch(egui::TouchPhase::End, (x, y));
+                }
+                if let Some(i) = self.ui_fingers.iter().position(|&finger| finger == id) {
+                    self.ui_fingers.swap_remove(i);
+                    Vec::new()
+                } else {
+                    self.game_touches.up(id, x, y)
+                }
+            }
+            Touch::Cancel => {
+                if let Some(finger) = self.egui_finger.take() {
+                    self.egui_touch(egui::TouchPhase::Cancel, finger.at);
+                }
+                self.ui_fingers.clear();
+                self.game_touches.cancel()
+            }
+        };
+        for mouse in mouse {
+            player.handle_event(input::player_event(mouse, top));
         }
-        self.events.extend(touch.egui_events(self.pixels_per_point));
-        if !self.touch_on_ui {
-            player.handle_event(touch.player_event(f64::from(self.top())));
-        }
+    }
+
+    fn egui_touch(&mut self, phase: egui::TouchPhase, (x, y): (f64, f64)) {
+        self.events.extend(input::egui_events(phase, x, y, self.pixels_per_point));
     }
 
     /// A key: the UI's while a text box of it has the focus, else the game's. A game text field

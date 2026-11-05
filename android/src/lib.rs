@@ -191,13 +191,16 @@ fn forward_input(app: &AndroidApp) {
         return;
     };
     while inputs.next(|event| match event {
-        android_activity::input::InputEvent::MotionEvent(motion) => match input::motion(motion) {
-            Some(touch) => {
-                run_on_engine(move |player| with_screen(|screen| screen.touch(player, touch)));
-                InputStatus::Handled
+        android_activity::input::InputEvent::MotionEvent(motion) => {
+            let touches = input::motion(motion);
+            if touches.is_empty() {
+                return InputStatus::Unhandled;
             }
-            None => InputStatus::Unhandled,
-        },
+            run_on_engine(move |player| {
+                with_screen(|screen| touches.into_iter().for_each(|touch| screen.touch(player, touch)))
+            });
+            InputStatus::Handled
+        }
         android_activity::input::InputEvent::KeyEvent(key) => match input::key(app, key) {
             Some(key) => {
                 run_on_engine(move |player| with_screen(|screen| screen.key(player, &key)));

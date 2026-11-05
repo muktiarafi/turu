@@ -1,6 +1,7 @@
 //! Touch and keys, for the game (Ruffle's player events) or Turu's UI (egui's). Touch is the
-//! mouse: a finger down is a left click, dragging moves the mouse; egui also gets it as a touch,
-//! so that it knows it's on a touch screen (a drag on a list scrolls it). Keys (a hardware keyboard, or
+//! mouse: a finger down is a left click, dragging moves the mouse (several fingers share the
+//! game's one mouse: `turu_frontend::touch`); egui also gets it as a touch, so that it knows
+//! it's on a touch screen (a drag on a list scrolls it). Keys (a hardware keyboard, or
 //! the soft keyboard, which NativeActivity gets as key events) are named from Android's key code,
 //! and their character comes from the device's key character map, so Shift and other layouts
 //! type what they show. `screen.rs` decides who gets which.
@@ -13,82 +14,85 @@ use ruffle_core::PlayerEvent;
 use ruffle_core::events::{
     KeyDescriptor, KeyLocation, LogicalKey, MouseButton, NamedKey, PhysicalKey, TextControlCode,
 };
+use turu_frontend::touch::Mouse;
 
-/// A touch, in window pixels.
+/// A finger (Android's pointer ID) coming down, moving or lifting, in window pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Touch {
-    Down(f64, f64),
-    Move(f64, f64),
-    Up(f64, f64),
+    Down(i32, f64, f64),
+    Move(i32, f64, f64),
+    Up(i32, f64, f64),
+    /// Every finger lifted: Android took the gesture away.
+    Cancel,
 }
 
-pub fn motion(event: &MotionEvent) -> Option<Touch> {
-    let pointer = event.pointer_at_index(event.pointer_index());
-    let (x, y) = (f64::from(pointer.x()), f64::from(pointer.y()));
-    Some(match event.action() {
-        MotionAction::Down | MotionAction::PointerDown | MotionAction::ButtonPress => Touch::Down(x, y),
-        MotionAction::Up | MotionAction::PointerUp | MotionAction::ButtonRelease | MotionAction::Cancel => {
-            Touch::Up(x, y)
+/// What `event` says each finger did. A move carries every finger that's down; a mouse or stylus
+/// (with its button down or hovering) is a finger too.
+pub fn motion(event: &MotionEvent) -> Vec<Touch> {
+    let changed = || {
+        let pointer = event.pointer_at_index(event.pointer_index());
+        (pointer.pointer_id(), f64::from(pointer.x()), f64::from(pointer.y()))
+    };
+    match event.action() {
+        MotionAction::Down | MotionAction::PointerDown => {
+            let (id, x, y) = changed();
+            vec![Touch::Down(id, x, y)]
         }
-        MotionAction::Move | MotionAction::HoverMove => Touch::Move(x, y),
-        _ => return None,
-    })
-}
-
-impl Touch {
-    /// For the game, with `top` pixels of Turu's bar above it.
-    pub fn player_event(self, top: f64) -> PlayerEvent {
-        match self {
-            Touch::Down(x, y) => PlayerEvent::MouseDown {
-                x,
-                y: y - top,
-                button: MouseButton::Left,
-                index: None,
-            },
-            Touch::Move(x, y) => PlayerEvent::MouseMove { x, y: y - top },
-            Touch::Up(x, y) => PlayerEvent::MouseUp {
-                x,
-                y: y - top,
-                button: MouseButton::Left,
-            },
+        MotionAction::Up | MotionAction::PointerUp => {
+            let (id, x, y) = changed();
+            vec![Touch::Up(id, x, y)]
         }
+        MotionAction::Cancel => vec![Touch::Cancel],
+        MotionAction::Move | MotionAction::HoverMove => event
+            .pointers()
+            .map(|pointer| Touch::Move(pointer.pointer_id(), f64::from(pointer.x()), f64::from(pointer.y())))
+            .collect(),
+        // A mouse button comes with a Down or an Up too.
+        _ => Vec::new(),
     }
+}
 
-    /// For egui, at `pixels_per_point`: the touch, then the mouse events it stands for (as
-    /// egui-winit sends them). Without the touch, egui takes the screen for a mouse's and
-    /// scrolls nothing on a drag (`ScrollArea`'s drag-to-scroll is on touch screens only).
-    pub fn egui_events(self, pixels_per_point: f32) -> Vec<egui::Event> {
-        let at = |x: f64, y: f64| egui::pos2(x as f32 / pixels_per_point, y as f32 / pixels_per_point);
-        let button = |pos, pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::NONE,
-        };
-        // Every finger is the same touch, as they are the same mouse.
-        let touch = |phase, pos| egui::Event::Touch {
-            device_id: egui::TouchDeviceId(0),
-            id: egui::TouchId(0),
-            phase,
-            pos,
-            force: None,
-        };
-        match self {
-            Touch::Down(x, y) => vec![
-                touch(egui::TouchPhase::Start, at(x, y)),
-                egui::Event::PointerMoved(at(x, y)),
-                button(at(x, y), true),
-            ],
-            Touch::Move(x, y) => vec![
-                touch(egui::TouchPhase::Move, at(x, y)),
-                egui::Event::PointerMoved(at(x, y)),
-            ],
-            Touch::Up(x, y) => vec![
-                touch(egui::TouchPhase::End, at(x, y)),
-                button(at(x, y), false),
-                egui::Event::PointerGone,
-            ],
-        }
+/// The game's mouse doing `mouse`, with `top` pixels of Turu's bar above the game.
+pub fn player_event(mouse: Mouse, top: f64) -> PlayerEvent {
+    match mouse {
+        Mouse::Down(x, y) => PlayerEvent::MouseDown {
+            x,
+            y: y - top,
+            button: MouseButton::Left,
+            index: None,
+        },
+        Mouse::Move(x, y) => PlayerEvent::MouseMove { x, y: y - top },
+        Mouse::Up(x, y) => PlayerEvent::MouseUp {
+            x,
+            y: y - top,
+            button: MouseButton::Left,
+        },
+    }
+}
+
+/// For egui, at `pixels_per_point`: a touch at `x`, `y`, then the mouse events it stands for (as
+/// egui-winit sends them). Without the touch, egui takes the screen for a mouse's and scrolls
+/// nothing on a drag (`ScrollArea`'s drag-to-scroll is on touch screens only). egui follows one
+/// finger at a time (`Screen::touch`), so it's always touch 0, as it's the one mouse.
+pub fn egui_events(phase: egui::TouchPhase, x: f64, y: f64, pixels_per_point: f32) -> Vec<egui::Event> {
+    let pos = egui::pos2(x as f32 / pixels_per_point, y as f32 / pixels_per_point);
+    let button = |pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let touch = egui::Event::Touch {
+        device_id: egui::TouchDeviceId(0),
+        id: egui::TouchId(0),
+        phase,
+        pos,
+        force: None,
+    };
+    match phase {
+        egui::TouchPhase::Start => vec![touch, egui::Event::PointerMoved(pos), button(true)],
+        egui::TouchPhase::Move => vec![touch, egui::Event::PointerMoved(pos)],
+        egui::TouchPhase::End | egui::TouchPhase::Cancel => vec![touch, button(false), egui::Event::PointerGone],
     }
 }
 
