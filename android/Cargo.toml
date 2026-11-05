@@ -34,6 +34,8 @@ ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = 
 android-activity = { version = "0.6.1", features = ["native-activity"] }
 android_logger = "0.15.1"
 log = "0.4"
+# The panic reports' file names (`write_panic_report`).
+chrono = { workspace = true, features = ["clock"] }
 # Ruffle's and the bot's messages, as `log` records for logcat.
 tracing = { workspace = true, features = ["log", "log-always"] }
 jni = { version = "0.22.4", default-features = false }

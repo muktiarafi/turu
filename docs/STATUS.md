@@ -535,7 +535,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Crashes:** a panic is written to `crash-<date>.log` in the log folder (Ruffle's cache folder's
   `log/`, e.g. `~/Library/Caches/ruffle/log` on macOS; Mugetsu's "Open Log Folder"), at once, as
   the log itself is written on another thread that an abort may cut off. `ruffle.log` is made anew
-  at each start; the previous run's is kept as `ruffle.prev.log`.
+  at each start; the previous run's is kept as `ruffle.prev.log`. On Android, panics and the
+  system's record of each unexpected exit go to the data folder's `crash/` instead, shown in
+  Diagnostics > Logs > Crashes (docs/ANDROID.md, "Crash reports").
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies

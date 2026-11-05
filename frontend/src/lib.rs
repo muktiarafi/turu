@@ -5,6 +5,7 @@
 //! See docs/ARCHITECTURE.md.
 
 pub mod capture;
+pub mod crash_reports;
 pub mod engine;
 pub mod grid;
 pub mod gui;

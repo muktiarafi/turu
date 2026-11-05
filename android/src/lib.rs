@@ -114,6 +114,7 @@ pub(crate) fn start_engine(root: PathBuf) {
         // Before any reqwest client is built (Search Scripts, the navigator).
         let _ = rustls::crypto::ring::default_provider().install_default();
         turu_bot::paths::set_default_root(root.clone());
+        let _ = CRASH_DIR.set(turu_bot::paths::Paths::new().crash_dir());
         let (sender, events) = channel();
         let _ = ENGINE_TX.set(sender);
         let spawned = std::thread::Builder::new()
@@ -249,8 +250,33 @@ fn init_logging_now() {
     log::info!("Turu {} starting", turu::VERSION);
     std::panic::set_hook(Box::new(|info| {
         let thread = std::thread::current();
-        log::error!("Panic on {}: {info}", thread.name().unwrap_or("<unnamed>"));
+        let thread = thread.name().unwrap_or("<unnamed>");
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::error!("Panic on {thread}: {info}\n{backtrace}");
+        write_panic_report(thread, info, &backtrace);
     }));
+}
+
+/// The data folder's `crash/`, once the engine set the data folder (a panic before has only
+/// logcat).
+static CRASH_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// `crash/panic-<time>.txt`, written now: a release build aborts right after the hook, and
+/// logcat's buffer is gone by the time anyone looks (`turu_frontend::crash_reports`).
+fn write_panic_report(thread: &str, info: &std::panic::PanicHookInfo, backtrace: &std::backtrace::Backtrace) {
+    let Some(dir) = CRASH_DIR.get() else {
+        return;
+    };
+    let now = chrono::Local::now();
+    let message = info.payload_as_str().unwrap_or("panic");
+    let first_line = message.lines().next().unwrap_or_default();
+    let report = format!(
+        "Turu crashed (a panic on {thread}): {first_line}\n\nTuru {}\n{}\nthread '{thread}': {info}\n\n{backtrace}\n",
+        turu::VERSION,
+        now.to_rfc3339(),
+    );
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(dir.join(format!("panic-{}.txt", now.format("%F_%H-%M-%S"))), report);
 }
 
 /// Lets reqwest check server certificates against Android's trust store.

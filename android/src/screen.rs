@@ -59,6 +59,10 @@ pub struct Screen {
     /// Whether the touch going on started on the UI.
     touch_on_ui: bool,
     keyboard_shown: bool,
+    /// Whether a text box of the UI had the focus in the last frame (egui asked for IME then).
+    /// Not `egui_wants_keyboard_input`: that's true for any focused widget, such as a modal's
+    /// button, which would bring the keyboard up over the modal.
+    ui_typing: bool,
     /// The game's viewport, last set.
     movie_size: (u32, u32),
 }
@@ -147,6 +151,7 @@ impl Screen {
             started: Instant::now(),
             touch_on_ui: false,
             keyboard_shown: false,
+            ui_typing: false,
             movie_size: (0, 0),
         };
         screen.configure();
@@ -239,7 +244,7 @@ impl Screen {
     /// A key: the UI's while a text box of it has the focus, else the game's. A game text field
     /// takes no more characters once it's full ([`Typing::MAX_CHARS`]).
     pub fn key(&mut self, player: &mut Player, key: &Key) {
-        if self.egui.egui_wants_keyboard_input() {
+        if self.ui_typing {
             self.events.extend(key.egui_events());
             return;
         }
@@ -295,7 +300,7 @@ impl Screen {
         let top = self.top() / ppp;
         // The game's text field under the keyboard, while the keyboard is up for it.
         let keyboard = crate::ui::keyboard_height() as f32 / ppp;
-        let typing = (keyboard > 0.0 && !self.egui.egui_wants_keyboard_input())
+        let typing = (keyboard > 0.0 && !self.ui_typing)
             .then(|| Typing::read(player))
             .flatten();
         let ui = &mut self.ui;
@@ -309,7 +314,13 @@ impl Screen {
                 typing.show(root.ctx(), keyboard);
             }
         });
+        self.ui_typing = output.platform_output.ime.is_some();
         self.soft_keyboard();
+        for command in &output.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                crate::platform::copy_text(text);
+            }
+        }
 
         let primitives = self.egui.tessellate(output.shapes, output.pixels_per_point);
         let screen = egui_wgpu::ScreenDescriptor {
@@ -373,7 +384,7 @@ impl Screen {
 
     /// Brings the soft keyboard up while a text box of the UI has the focus.
     fn soft_keyboard(&mut self) {
-        let wanted = self.egui.egui_wants_keyboard_input();
+        let wanted = self.ui_typing;
         if wanted != self.keyboard_shown
             && let Some(app) = crate::app()
         {

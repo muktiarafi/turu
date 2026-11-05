@@ -85,6 +85,15 @@ pub trait Platform: Send + Sync {
     fn is_touch(&self) -> bool {
         false
     }
+
+    /// Whether [`Platform::share_text`] opens the system's share sheet (Android): the log and
+    /// crash report windows show Share then.
+    fn shares_text(&self) -> bool {
+        false
+    }
+
+    /// Hands a text to another app (mail, a chat, Drive) through the system's share sheet.
+    fn share_text(&self, _subject: &str, _text: &str) {}
 }
 
 static PLATFORM: OnceLock<Arc<dyn Platform>> = OnceLock::new();

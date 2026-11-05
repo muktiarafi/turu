@@ -108,6 +108,9 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 
 ## Testing on the emulator
 
+* **Crashes:** reports in the data folder's `crash/` and Diagnostics > Logs > Crashes
+  (docs/ANDROID.md, "Crash reports"). A native crash to test them: `adb shell run-as
+  com.muktiarafi.turu kill -11 <pid>`, then start the app.
 * **Log:** `adb logcat -s turu` (tag `turu`; the desktop's default filter). For AQW's script
   errors, change `ruffle_core::avm2=off` to `warn` in `init_logging_now` for one run (keep
   `avm_trace` off: it logs the login response with the account's details).

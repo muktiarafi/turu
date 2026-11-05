@@ -75,6 +75,7 @@ public class TuruService extends Service {
         getSystemService(NotificationManager.class).createNotificationChannel(
                 new NotificationChannel(CHANNEL, "Turu running", NotificationManager.IMPORTANCE_LOW));
         startForegroundWith(build());
+        CrashReports.collect(getApplicationContext());
         java.io.File files = getExternalFilesDir(null);
         nativeStart(getApplicationContext(), (files != null ? files : getFilesDir()).getAbsolutePath());
     }

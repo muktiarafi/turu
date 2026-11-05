@@ -25,6 +25,8 @@ egui = { workspace = true }
 qrcode = { version = "0.14.1", default-features = false }
 async-channel = { workspace = true }
 anyhow = { workspace = true }
+# The crash reports' times (Diagnostics > Logs > Crashes).
+chrono = { workspace = true, features = ["clock"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

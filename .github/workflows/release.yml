@@ -320,6 +320,16 @@ jobs:
           path: turu-${{ needs.version.outputs.version }}-android-arm64.apk
           if-no-files-found: error
 
+      # The library with its symbols (the APK's is stripped), to read a crash report's
+      # backtrace: `llvm-symbolizer --obj=libturu_android.so <pc>` (docs/ANDROID.md). Not
+      # published with the release (not `turu-*`).
+      - uses: actions/upload-artifact@v7
+        with:
+          name: symbols-android-arm64
+          path: android/app/src/main/jniLibs/arm64-v8a/libturu_android.so
+          if-no-files-found: error
+          retention-days: 90
+
   release:
     name: Publish release
     if: github.ref_type == 'tag'

@@ -2,6 +2,8 @@
 //! yet (the system picker answers through the activity, which needs Java of ours): the windows
 //! hide Load Script and Save, and scripts come from Search Scripts. Web pages open in the
 //! browser; folders and files only get logged, so Edit Script and Open VSCode are hidden too.
+//! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
+//! `OutputCommand::CopyText`, passed on by `screen.rs`) goes to Android's clipboard.
 
 use android_activity::AndroidApp;
 use jni::JavaVM;
@@ -59,10 +61,42 @@ impl Platform for AndroidPlatform {
     fn launches_processes(&self) -> bool {
         false
     }
+
+    fn shares_text(&self) -> bool {
+        true
+    }
+
+    fn share_text(&self, subject: &str, text: &str) {
+        match crate::app() {
+            Some(app) => {
+                if let Err(e) = share(&app, subject, text) {
+                    tracing::warn!("Couldn't open the share sheet: {e}");
+                }
+            }
+            None => tracing::info!("Not shared without the app on screen: {subject}"),
+        }
+    }
 }
 
-/// `activity.startActivity(new Intent(ACTION_VIEW, Uri.parse(url)))`.
-fn open_in_browser(app: &AndroidApp, url: &str) -> jni::errors::Result<()> {
+/// What a clip or a share holds at most (Android's binder limit is ~1 MB a transaction).
+const MAX_TEXT_BYTES: usize = 400_000;
+
+/// Puts `text` on Android's clipboard (egui's Copy).
+pub fn copy_text(text: &str) {
+    let Some(app) = crate::app() else {
+        return;
+    };
+    let text = turu_frontend::crash_reports::shareable(text, MAX_TEXT_BYTES);
+    if let Err(e) = copy(&app, &text) {
+        tracing::warn!("Couldn't copy to the clipboard: {e}");
+    }
+}
+
+/// Runs `work` with the activity, on a thread attached to the JavaVM.
+fn with_activity<T>(
+    app: &AndroidApp,
+    work: impl FnOnce(&mut jni::Env, &JObject) -> jni::errors::Result<T>,
+) -> jni::errors::Result<T> {
     // SAFETY: android-activity hands out the process's JavaVM.
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
     // A global reference: it can only be borrowed, not wrapped as a local one.
@@ -70,6 +104,93 @@ fn open_in_browser(app: &AndroidApp, url: &str) -> jni::errors::Result<()> {
     vm.attach_current_thread(|env| {
         // SAFETY: the activity outlives this call.
         let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw) }?;
+        work(env, &activity)
+    })
+}
+
+/// `startActivity(Intent.createChooser(new Intent(ACTION_SEND) with the subject and text, null))`.
+fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()> {
+    let text = turu_frontend::crash_reports::shareable(text, MAX_TEXT_BYTES);
+    with_activity(app, |env, activity| {
+        let action = env.new_string("android.intent.action.SEND")?;
+        let send = env.new_object(
+            jni_str!("android/content/Intent"),
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::Object(&action)],
+        )?;
+        let mime = env.new_string("text/plain")?;
+        env.call_method(
+            &send,
+            jni_str!("setType"),
+            jni_sig!("(Ljava/lang/String;)Landroid/content/Intent;"),
+            &[JValue::Object(&mime)],
+        )?;
+        for (key, value) in [
+            ("android.intent.extra.SUBJECT", subject),
+            ("android.intent.extra.TEXT", text.as_str()),
+        ] {
+            let key = env.new_string(key)?;
+            let value = env.new_string(value)?;
+            env.call_method(
+                &send,
+                jni_str!("putExtra"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;"),
+                &[JValue::Object(&key), JValue::Object(&value)],
+            )?;
+        }
+        let chooser = env
+            .call_static_method(
+                jni_str!("android/content/Intent"),
+                jni_str!("createChooser"),
+                jni_sig!("(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;"),
+                &[JValue::Object(&send), JValue::Object(&JObject::null())],
+            )?
+            .l()?;
+        env.call_method(
+            activity,
+            jni_str!("startActivity"),
+            jni_sig!("(Landroid/content/Intent;)V"),
+            &[JValue::Object(&chooser)],
+        )?;
+        Ok(())
+    })
+}
+
+/// `getSystemService("clipboard").setPrimaryClip(ClipData.newPlainText("Turu", text))`.
+fn copy(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
+    with_activity(app, |env, activity| {
+        let name = env.new_string("clipboard")?;
+        let clipboard = env
+            .call_method(
+                activity,
+                jni_str!("getSystemService"),
+                jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+                &[JValue::Object(&name)],
+            )?
+            .l()?;
+        let label = env.new_string("Turu")?;
+        let text = env.new_string(text)?;
+        let clip = env
+            .call_static_method(
+                jni_str!("android/content/ClipData"),
+                jni_str!("newPlainText"),
+                jni_sig!("(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"),
+                &[JValue::Object(&label), JValue::Object(&text)],
+            )?
+            .l()?;
+        env.call_method(
+            &clipboard,
+            jni_str!("setPrimaryClip"),
+            jni_sig!("(Landroid/content/ClipData;)V"),
+            &[JValue::Object(&clip)],
+        )?;
+        Ok(())
+    })
+}
+
+/// `activity.startActivity(new Intent(ACTION_VIEW, Uri.parse(url)))`.
+fn open_in_browser(app: &AndroidApp, url: &str) -> jni::errors::Result<()> {
+    with_activity(app, |env, activity| {
         let uri_text = env.new_string(url)?;
         let uri = env
             .call_static_method(
@@ -86,7 +207,7 @@ fn open_in_browser(app: &AndroidApp, url: &str) -> jni::errors::Result<()> {
             &[JValue::Object(&action), JValue::Object(&uri)],
         )?;
         env.call_method(
-            &*activity,
+            activity,
             jni_str!("startActivity"),
             jni_sig!("(Landroid/content/Intent;)V"),
             &[JValue::Object(&intent)],

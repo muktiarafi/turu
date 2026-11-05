@@ -161,6 +161,38 @@ The log is in logcat under the tag `turu`, with the desktop's default filter:
 adb logcat -s turu
 ```
 
+## Crash reports
+
+logcat's buffer is gone by the time someone says "it crashed", so Turu keeps its own record
+in the data folder's `crash/` (`/sdcard/Android/data/com.muktiarafi.turu/files/crash/`):
+
+* `exit-<time>-<reason>.txt`: at each start, `CrashReports.java` reads Android's record of how
+  the earlier processes ended (`ActivityManager.getHistoricalProcessExitReasons`, Android 11 and
+  later) and writes one for each exit nobody asked for: low memory, a native crash, a hang
+  (ANR, with its trace), a kill by the system or a battery saver (`SIGNALED`, `OTHER`), with the
+  memory at the end, the phone and whether battery optimisation is off. Force stop, an update and
+  a clean exit are left out. A native crash (Android 12 and later) comes with its tombstone,
+  read into text by `Tombstone.java` (signal, abort message, backtraces, the end of the log), and
+  the raw `-tombstone.pb` next to it. Android keeps these records across reboots and updates, but
+  not across an uninstall: a tester who saw a crash should install the new build over the old one.
+* `panic-<time>.txt`: a Rust panic's message and backtrace, written by the panic hook before the
+  abort (the abort then shows up as an `exit-...-crash_native` report too).
+
+The first start after a new report shows "Turu closed unexpectedly"; Diagnostics > Logs >
+Crashes lists them, with Share (Android's share sheet: mail, a chat, Drive), Copy and Delete. The
+Logs tabs have Share too. From a computer: `adb pull
+/sdcard/Android/data/com.muktiarafi.turu/files/crash`, or `adb shell dumpsys activity exit-info
+com.muktiarafi.turu` for Android's own list.
+
+The APK's library is stripped, so Turu's frames show only an address (`pc 0000000001e8d904
+.../base.apk`). Read them with the unstripped library of the same build: the release workflow
+keeps it as the `symbols-android-arm64` artifact (90 days), a local build has it in
+`android/app/src/main/jniLibs/arm64-v8a/`:
+
+```bash
+$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-symbolizer --obj=libturu_android.so 0x1e8d904 0x1e89568
+```
+
 The control API (`--api`) works as on a desktop. From the computer:
 
 ```bash

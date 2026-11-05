@@ -45,6 +45,12 @@ impl Paths {
         Ok(())
     }
 
+    /// Reports of how earlier runs ended badly (`turu_frontend::crash_reports`): a panic's, and
+    /// on Android the system's record of an exit Turu didn't ask for.
+    pub fn crash_dir(&self) -> PathBuf {
+        self.root.join("crash")
+    }
+
     /// The control API's token (`control_api::saved_token`), readable by you only.
     pub fn api_token_file(&self) -> PathBuf {
         self.root.join("api-token")
