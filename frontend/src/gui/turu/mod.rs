@@ -14,6 +14,7 @@ mod console;
 mod core_bots;
 mod cosmetics;
 mod current_drops;
+mod fast_travel;
 mod files;
 mod game_options;
 mod gear;
@@ -65,6 +66,7 @@ pub struct Windows {
     pub loader: bool,
     pub grabber: bool,
     pub junk_items: bool,
+    pub fast_travel: bool,
     pub accounts: bool,
     pub army: bool,
     pub butler: bool,
@@ -158,6 +160,7 @@ struct TabUi {
     loader: loader::LoaderWindow,
     grabber: grabber::GrabberWindow,
     junk_items: junk_items::JunkItemsWindow,
+    fast_travel: fast_travel::FastTravelWindow,
     butler: butler::ButlerWindow,
     cosmetics: cosmetics::CosmeticsWindow,
 }
@@ -256,6 +259,7 @@ impl TuruUi {
         tab.grabber.show(ctx, &mut w.grabber);
         tab.grabber.save_export(ctx);
         tab.junk_items.show(ctx, &mut w.junk_items);
+        tab.fast_travel.show(ctx, &mut w.fast_travel);
         tab.stats.show(ctx, &mut w.stats);
         tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
@@ -425,6 +429,10 @@ mod tests {
             (
                 "Junk Items",
                 boxed(junk_items::JunkItemsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Fast Travel",
+                boxed(fast_travel::FastTravelWindow::default(), |w, c, o| w.show(c, o)),
             ),
             ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
             (

@@ -155,6 +155,40 @@ pub fn jump(
     Ok(())
 }
 
+/// The map VibeSkua's Fast Travel reaches by jumping to `m22` first (its doors lead there).
+pub const TERCESSUINOTLIM: &str = "tercessuinotlim";
+
+/// VibeSkua `MapService.Travel` (Tools & Helpers > Fast Travel): joins `map` (`map-<room>`
+/// with a private `room`) at `cell`/`pad`; tercessuinotlim with a jump to `m22` (pad Left)
+/// before the join. In the destination's map already (any room), a jump to `cell`/`pad`
+/// instead. Does nothing when not playing.
+///
+/// Turu: VibeSkua jumps within the map only for tercessuinotlim; elsewhere its `Join` returns
+/// without moving you.
+pub fn fast_travel(
+    bot: &Bot,
+    map: &str,
+    cell: &str,
+    pad: &str,
+    room: Option<i64>,
+) -> BotResult<()> {
+    if !player::playing(bot)? {
+        return Ok(());
+    }
+    let with_room = |map: &str| match room {
+        Some(room) => format!("{map}-{room}"),
+        None => map.to_owned(),
+    };
+    if name(bot)?.eq_ignore_ascii_case(map) {
+        return jump(bot, cell, pad, true, false);
+    }
+    if map != TERCESSUINOTLIM {
+        return join(bot, &with_room(map), cell, pad, false, true);
+    }
+    jump(bot, "m22", "Left", true, false)?;
+    join(bot, &with_room(TERCESSUINOTLIM), cell, pad, false, true)
+}
+
 /// `world.reloadCurrentMap`.
 pub fn reload(bot: &Bot) -> BotResult<()> {
     bot.flash

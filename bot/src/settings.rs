@@ -85,3 +85,111 @@ impl Default for AppSettings {
         }
     }
 }
+
+/// A Tools & Helpers > Fast Travel destination (VibeSkua `FastTravelItemViewModel`, saved there
+/// as `"name,map,cell,pad"` in `FastTravels`). Turu keeps the list in `FastTravels.json`
+/// ([`crate::paths::Paths::fast_travels_file`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FastTravel {
+    pub name: String,
+    pub map: String,
+    pub cell: String,
+    pub pad: String,
+}
+
+impl FastTravel {
+    pub fn new(name: &str, map: &str, cell: &str, pad: &str) -> Self {
+        Self {
+            name: name.into(),
+            map: map.into(),
+            cell: cell.into(),
+            pad: pad.into(),
+        }
+    }
+
+    /// VibeSkua `Validate`: every field filled in.
+    pub fn is_valid(&self) -> bool {
+        [&self.name, &self.map, &self.cell, &self.pad]
+            .iter()
+            .all(|field| !field.trim().is_empty())
+    }
+
+    /// The fields without the spaces around them.
+    pub fn trimmed(&self) -> Self {
+        Self::new(
+            self.name.trim(),
+            self.map.trim(),
+            self.cell.trim(),
+            self.pad.trim(),
+        )
+    }
+
+    /// VibeSkua's search: the name, map or cell contains `filter` (trimmed), ignoring case.
+    pub fn matches(&self, filter: &str) -> bool {
+        let filter = filter.trim().to_lowercase();
+        filter.is_empty()
+            || [&self.name, &self.map, &self.cell]
+                .iter()
+                .any(|field| field.to_lowercase().contains(&filter))
+    }
+
+    /// The list a new client starts with (VibeSkua `ClientSettings.FastTravels`).
+    pub fn defaults() -> Vec<Self> {
+        vec![
+            Self::new("Tercessuinotlim", "tercessuinotlim", "Enter", "Spawn"),
+            Self::new("Nulgath", "tercessuinotlim", "Boss2", "Right"),
+            Self::new("VHL & Taro", "tercessuinotlim", "Taro", "Left"),
+        ]
+    }
+
+    /// The saved list; [`Self::defaults`] when there is no file yet. A file that can't be read
+    /// is an error (the caller decides whether to replace it).
+    pub fn load(path: &std::path::Path) -> std::io::Result<Vec<Self>> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => serde_json::from_str(&text).map_err(std::io::Error::other),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::defaults()),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn save(path: &std::path::Path, list: &[Self]) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let text = serde_json::to_string_pretty(list).map_err(std::io::Error::other)?;
+        std::fs::write(path, text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FastTravel;
+
+    #[test]
+    fn fast_travels_start_with_vibeskua_defaults_and_round_trip() {
+        let dir = std::env::temp_dir().join(format!("turu-fast-travel-{}", std::process::id()));
+        let path = dir.join("FastTravels.json");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(FastTravel::load(&path).unwrap(), FastTravel::defaults());
+        // A cleared list stays cleared (VibeSkua refills an empty one at launch).
+        FastTravel::save(&path, &[]).unwrap();
+        assert!(FastTravel::load(&path).unwrap().is_empty());
+        let list = vec![FastTravel::new("Ultra Alteon", "ultraalteon", "r2", "Left")];
+        FastTravel::save(&path, &list).unwrap();
+        assert_eq!(FastTravel::load(&path).unwrap(), list);
+        std::fs::write(&path, "not json").unwrap();
+        assert!(FastTravel::load(&path).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fast_travel_search_and_validation() {
+        let nulgath = FastTravel::new("Nulgath", "tercessuinotlim", "Boss2", "Right");
+        assert!(nulgath.matches("  boss "));
+        assert!(nulgath.matches("TERC"));
+        assert!(nulgath.matches(""));
+        assert!(!nulgath.matches("Right"), "VibeSkua doesn't search the pad");
+        assert!(nulgath.is_valid());
+        assert!(!FastTravel::new("Nulgath", " ", "Boss2", "Right").is_valid());
+    }
+}

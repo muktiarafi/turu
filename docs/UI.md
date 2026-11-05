@@ -49,7 +49,7 @@ next to it).
 drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scripts** (Script
 Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
 Application Themes, HotKeys), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
-Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
+Fast Travel, Loadouts Manager), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
 Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics, View Plugins),
 **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them in its Manager app and its
 tabbed host). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
@@ -92,7 +92,7 @@ top, and + at the end.
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error", after a run "Finished 6h 12m" or "Stopped 3h 40m" (the Script Loader's last run), or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
-| everything else (Application Themes, HotKeys, Loadouts Manager, Fast Travel, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager, Fast Travel and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
+| everything else (Application Themes, HotKeys, Loadouts Manager, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
 
 **Auto Attack / Auto Hunt** (`auto.rs`, loop in `turu_bot::auto`): a bot thread marked as a
 script thread, so `bot.control.request_stop()` (Stop Automation) makes the next call fail. It runs
@@ -568,9 +568,33 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Selling asks first (VibeSkua's texts) unless Skip sell warning is on, which asks once itself and
   is saved in `settings.json` (`junkSkipSellWarning`). Only unequipped, unfavourited inventory
   items are sold, the whole stack each.
+* **Fast Travel** (`fast_travel.rs`, 600x470, VibeSkua `FastTravelView`): VibeSkua's controls,
+  laid out for any window size. A search box (name, map or cell) with VibeSkua's private room
+  switch and room number (111111; its own row below 440 px); DESTINATIONS with the count of what
+  the search shows, how the last travel went (muted "Traveling to Nulgath...", green "At
+  Nulgath", amber "Didn't reach ...", red "Not logged in" or the
+  error; whole on hover) and Clear (VibeSkua's question first). The destinations are tiles: a
+  navigation arrow (a spinner while travelling), the name and, in monospace, map · cell · pad,
+  cut with "…" (whole on hover). As many columns as 190 px tiles fit, at most three (one on a
+  phone); a click, or Enter when focused, travels; each tile's ⋮ menu has Edit and Remove
+  (VibeSkua shows those buttons only on hover, which a touch screen lacks). Under them the form:
+  Name and Map, then Cell, a Pad drop-down (VibeSkua's pads), Get current (the map, cell and pad
+  you are in) and Add (enabled once every field is filled; Enter in a field adds too). Edit
+  fills the same form instead of VibeSkua's dialog: the heading says "EDITING NAME" in the
+  accent colour, the tile gets an accent edge, and Get current/Add become Cancel/Save. Below
+  440 px the form takes four rows. Every change is saved, so VibeSkua's Save button is gone.
+  The list is `FastTravels.json` in the data folder (VibeSkua's three tercessuinotlim
+  destinations when there's none; a cleared list stays empty, where VibeSkua refills it at the
+  next launch), read again when the window opens; a file that can't be read is kept as
+  `FastTravels.json.bad`. A travel (`turu_bot::api::map::fast_travel`, VibeSkua
+  `MapService.Travel`, through `spawn_action`) joins `map` (`map-<room>` with a private room)
+  at the cell and pad; tercessuinotlim is reached by jumping to `m22` (Left) first. A destination
+  in the map you are in (any room) is a jump to its cell and pad (Turu: VibeSkua does that only
+  in tercessuinotlim; elsewhere it stays where you are). On a touch screen with a window under
+  620x520 the window fills the screen; its controls, tile menus and rows are finger-sized.
 
 Not built at all (greyed in the menus): Application Themes,
-HotKeys, Loadouts Manager, Fast Travel, Plugins, Auto Hunt, Notify Drop.
+HotKeys, Loadouts Manager, Plugins, Auto Hunt, Notify Drop.
 
 Hotkeys (`hotkeys` in `mod.rs`): three of VibeSkua's defaults, for the active tab. F6 toggles
 Lag Killer (and logs it); F10 (`ToggleScript`) starts the loaded script or stops the running

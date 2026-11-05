@@ -128,6 +128,12 @@ impl Paths {
         self.script_options_dir().join(format!("{storage}.cfg"))
     }
 
+    /// Tools & Helpers > Fast Travel's destinations (VibeSkua keeps them in its settings,
+    /// `FastTravels`).
+    pub fn fast_travels_file(&self) -> PathBuf {
+        self.root.join("FastTravels.json")
+    }
+
     pub fn options_file(&self) -> PathBuf {
         self.root.join("options.json")
     }
