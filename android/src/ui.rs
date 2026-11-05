@@ -106,6 +106,12 @@ impl UiBackend for AndroidUiBackend {
         tracing::error!("skua.swf failed to load (invalid SWF: {invalid_swf}): {fetched_error}");
     }
 
+    /// AQW's dash button and keys listen for the fingers that aren't the mouse
+    /// (`Screen::touch`).
+    fn supports_touch_events(&self) -> bool {
+        true
+    }
+
     fn message(&self, message: &str) {
         tracing::info!("{message}");
     }

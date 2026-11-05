@@ -149,15 +149,21 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   surface on (`ERROR_NATIVE_WINDOW_IN_USE_KHR` otherwise).
 * **egui's root UI is a full-screen background layer:** touch routing counts only the nav bar
   and layers above `Order::Background`, or the game never gets a tap.
-* **The game has one mouse, and AQW's touch controls use it:** the mobile joystick, skill
-  buttons and keys (`liteAssets.mobile` in the client) listen for `MOUSE_DOWN` on the control,
-  then `MOUSE_MOVE`/`MOUSE_UP` on the stage. Only the dash and the key pad also listen for
-  `TOUCH_BEGIN`, and Ruffle has no touch events anyway. So a second finger pressing a skill used to
-  move the mouse and release it, which ended the joystick's drag. `turu_frontend::touch::GameTouches`
-  routes each finger by its pointer ID: the first finger on the game holds the mouse, a later one
-  is a quick tap (release, tap, then press again where the holder came down and move to where it
-  is now, so the joystick keeps its centre and its direction). `Screen::touch` sends egui one
-  finger at a time.
+* **The game has one mouse, and AQW's touch controls use it:** the mobile joystick and skill
+  buttons (`liteAssets.mobile` in the client) listen for `MOUSE_DOWN` on the control, then
+  `MOUSE_MOVE`/`MOUSE_UP` on the stage, so a second finger pressing a skill used to move the mouse
+  and release it, which ended the joystick's drag. `turu_frontend::touch::GameTouches` routes each
+  finger by its pointer ID: the first finger on the game holds the mouse, a later one is a quick
+  tap (release, tap, then press again where the holder came down and move to where it is now, so
+  the joystick keeps its centre and its direction).
+* **AQW's dash and keys need Flash touch events:** they dash in the joystick's direction, so the tap
+  above (which lets the joystick go) dashed nowhere and only spent the stamina. They also listen for
+  `TouchEvent.TOUCH_BEGIN` from a non-primary touch point when `Multitouch.supportsTouchEvents`.
+  ruffle-aqw has that for Turu (`// Turu:`): `UiBackend::supports_touch_events` (true on Android),
+  the native `Multitouch.supportsTouchEvents` getter, and `Player::handle_touch`, which sends a
+  bubbling `touchBegin`/`touchMove`/`touchEnd` to the object under the finger. `Screen::touch`
+  gives a finger that comes while another holds the mouse to `handle_touch` first, and taps with
+  the mouse only when no listener took it. egui follows one finger at a time.
 * **Android makes a new activity in the same process** for some configuration changes (an
   assets-path change right after boot; `configChanges` can't opt out of it). Its `android_main`
   runs again: `lib.rs`'s `APP` is replaced each time, or the keyboard and the browser go through

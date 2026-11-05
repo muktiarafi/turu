@@ -12,6 +12,7 @@
 use crate::input::{self, Key, Touch};
 use ndk::native_window::NativeWindow;
 use ruffle_core::Player;
+use ruffle_core::events::TouchPhase;
 use ruffle_render::backend::ViewportDimensions;
 use ruffle_render_wgpu::backend::{WgpuRenderBackend, create_wgpu_instance, request_adapter_and_device};
 use ruffle_render_wgpu::descriptors::Descriptors;
@@ -61,6 +62,9 @@ pub struct Screen {
     ui_fingers: Vec<i32>,
     /// The fingers on the game, as its one mouse.
     game_touches: GameTouches,
+    /// The fingers on the game that are Flash touch points instead (`Player::handle_touch`):
+    /// ones that came while another held the mouse, onto something listening for `touchBegin`.
+    touch_points: Vec<(i32, (f64, f64))>,
     /// The finger egui follows.
     egui_finger: Option<EguiFinger>,
     keyboard_shown: bool,
@@ -168,6 +172,7 @@ impl Screen {
             started: Instant::now(),
             ui_fingers: Vec::new(),
             game_touches: GameTouches::new(f64::from(TAP_SLOP * pixels_per_point)),
+            touch_points: Vec::new(),
             egui_finger: None,
             keyboard_shown: false,
             ui_typing: false,
@@ -244,7 +249,9 @@ impl Screen {
     /// A finger: the UI's when it comes down on the nav bar or on a window, menu or popup, else
     /// the game's. The root UI covers the whole screen on egui's background layer, so that layer
     /// doesn't count. The game's fingers share its one mouse ([`GameTouches`]: a finger tapping a
-    /// skill button while another drags the joystick). egui follows one finger, the first one
+    /// skill button while another drags the joystick); a finger that comes while another holds
+    /// the mouse is first a Flash touch point, and only a tap when nothing under it listens for
+    /// touches (AQW's dash button and keys do, and dash in the joystick's direction). egui follows one finger, the first one
     /// down, or one on the UI over one on the game (a tap on the nav bar while the joystick is
     /// held); it sees the game's too: one on the game closes an open menu, as a click elsewhere
     /// does on the desktop.
@@ -271,6 +278,9 @@ impl Screen {
                 if on_ui {
                     self.ui_fingers.push(id);
                     Vec::new()
+                } else if self.game_touches.holding() && player.handle_touch(TouchPhase::Begin, id, x, y - top) {
+                    self.touch_points.push((id, (x, y)));
+                    Vec::new()
                 } else {
                     self.game_touches.down(id, x, y)
                 }
@@ -280,14 +290,26 @@ impl Screen {
                     finger.at = (x, y);
                     self.egui_touch(egui::TouchPhase::Move, (x, y));
                 }
-                if self.ui_fingers.contains(&id) { Vec::new() } else { self.game_touches.moved(id, x, y) }
+                if let Some((_, at)) = self.touch_points.iter_mut().find(|(finger, _)| *finger == id) {
+                    *at = (x, y);
+                    player.handle_touch(TouchPhase::Move, id, x, y - top);
+                    Vec::new()
+                } else if self.ui_fingers.contains(&id) {
+                    Vec::new()
+                } else {
+                    self.game_touches.moved(id, x, y)
+                }
             }
             Touch::Up(id, x, y) => {
                 if self.egui_finger.is_some_and(|finger| finger.id == id) {
                     self.egui_finger = None;
                     self.egui_touch(egui::TouchPhase::End, (x, y));
                 }
-                if let Some(i) = self.ui_fingers.iter().position(|&finger| finger == id) {
+                if let Some(i) = self.touch_points.iter().position(|&(finger, _)| finger == id) {
+                    self.touch_points.swap_remove(i);
+                    player.handle_touch(TouchPhase::End, id, x, y - top);
+                    Vec::new()
+                } else if let Some(i) = self.ui_fingers.iter().position(|&finger| finger == id) {
                     self.ui_fingers.swap_remove(i);
                     Vec::new()
                 } else {
@@ -299,6 +321,9 @@ impl Screen {
                     self.egui_touch(egui::TouchPhase::Cancel, finger.at);
                 }
                 self.ui_fingers.clear();
+                for (id, (x, y)) in std::mem::take(&mut self.touch_points) {
+                    player.handle_touch(TouchPhase::End, id, x, y - top);
+                }
                 self.game_touches.cancel()
             }
         };
