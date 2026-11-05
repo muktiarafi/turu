@@ -319,7 +319,14 @@ fn check_stuck_loading(bot: &Arc<Bot>, load: &mut LoadWatch) {
         // and a message that stays on the login screen after it ("Authenticating Account
         // Info..." after a login that never finished) had it logging out every LoadTimeout,
         // getting in the way of logging in.
-        if !(load.recovered && !bot.state.lock().in_game) {
+        // Turu: nor from one a login from the server list left: the game shows its error there
+        // ("Server is full. Try another server") until the user goes back to the list, and a
+        // logout would throw them out of it.
+        let skip = {
+            let state = bot.state.lock();
+            !state.in_game && (load.recovered || state.hand_login)
+        };
+        if !skip {
             bot.log(format!(
                 "Stuck on the loading screen (\"{detail}\"). Recovering."
             ));

@@ -1011,6 +1011,8 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
             DEFAULT_PORT
         };
         load_policy_and_clear(bot, &target.ip, port);
+        // The last attempt's message may still be up for a moment: it isn't this server's.
+        let stale = conn_detail(bot);
         let clicked = bot
             .flash
             .call_bool("clickServer", vec![target.name.as_str().into()])
@@ -1048,9 +1050,11 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
                 );
                 break;
             }
-            // Turu: a full server says so (the login screen's "Server is Full!", or the server
-            // turning the login down): try another at once instead of waiting out the timeout.
-            if let Some(message) = full_message(bot, &detail) {
+            // Turu: a full server says so (the loading screen's "Server is full. Try another
+            // server" after the click, or the login screen's "Server is Full!" dialog): try
+            // another at once instead of waiting out the timeout.
+            let fresh = if detail == stale { "null" } else { &detail };
+            if let Some(message) = full_message(bot, fresh) {
                 relogin_log(
                     bot,
                     format!(

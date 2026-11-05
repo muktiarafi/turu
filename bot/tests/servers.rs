@@ -153,6 +153,7 @@ impl FakeGame {
         self.set("world.myAvatar", "{}");
         self.set("world.myAvatar.dataLeaf.intState", "1");
         self.set("mcLogin.visible", "false");
+        self.values.lock().remove("mcConnDetail.stage");
     }
 
     fn leave_world(&self) {
@@ -206,13 +207,18 @@ impl FlashHost for FakeGame {
                 self.values.lock().remove("modal");
                 "null".into()
             }
-            "isKicked" => "false".into(),
+            "isKicked" => (get("mcLogin.warning.visible") == "true").to_string(),
             "resetConnectionState" => {
                 self.leave_world();
                 "null".into()
             }
+            // The loading screen, then the server's answer on it (it stays until a login gets in).
             "clickServer" if self.full.lock().contains(&a0) => {
-                self.set("modal", "Server is Full!");
+                self.set("mcConnDetail.stage", "{}");
+                self.set(
+                    "mcConnDetail.txtDetail.text",
+                    "\"Server is full. Try another server\"",
+                );
                 "true".into()
             }
             "clickServer" | "connectToServer" => {
@@ -566,26 +572,44 @@ fn a_login_from_the_server_list_that_fails_isnt_relogged() {
         let mut o = bot.options.write();
         o.auto_relogin = true;
         o.relogin_watchdog = true;
+        o.load_timeout = 200;
     }
     bot.on_flash_call("loaded", vec![]);
 
+    // Server list, a pick, the loading screen, then the server's answer on it.
     bot.on_flash_call("userIntentionalAction", vec![json!("selectServer")]);
     assert!(bot.state.lock().hand_login);
     game.set("mcConnDetail.stage", "{}");
     game.set(
         "mcConnDetail.txtDetail.text",
-        "\"Connection has been lost\"",
+        "\"Server is full. Try another server\"",
     );
     bot.on_flash_call("connectionLost", vec![]);
-    std::thread::sleep(Duration::from_millis(500));
+    // Several LoadTimeouts: the message is the user's to read, not a stuck load.
+    std::thread::sleep(Duration::from_millis(1000));
     assert!(!bot.servers.is_relogging());
     assert!(!game.game_functions().contains(&"login".to_owned()));
+    assert!(
+        !game
+            .calls_to("callGameFunction0")
+            .iter()
+            .any(|a| arg(a, 0) == "logout"),
+        "not thrown out of the server list"
+    );
     let log = bot.logs.script.text();
     assert!(log.contains("Not relogging: pick another server."), "{log}");
     assert!(!log.contains("Auto re-login triggered"), "{log}");
+    assert!(!log.contains("Stuck on the loading screen"), "{log}");
+
+    // Back: the login screen, with its warning up (what the kick check reads as a kick).
+    game.values.lock().remove("mcConnDetail.stage");
+    game.set("mcLogin.warning.visible", "true");
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(!bot.servers.is_relogging());
+    assert!(!game.game_functions().contains(&"login".to_owned()));
+    game.set("mcLogin.warning.visible", "false");
 
     // The next pick gets in: from then on the watchdog relogs a lost connection.
-    game.values.lock().remove("mcConnDetail.stage");
     game.enter_world();
     assert!(wait_until(Duration::from_secs(2), || !bot
         .state
@@ -622,11 +646,41 @@ fn a_relogin_moves_on_from_a_full_server_at_once() {
         "the full server isn't tried again"
     );
     let log = bot.logs.script.text();
-    assert!(log.contains("Artix is full ('Server is Full!')"), "{log}");
+    assert!(
+        log.contains("Artix is full ('Server is full. Try another server')"),
+        "{log}"
+    );
     // Not the 15 s world timeout: only the 4 s backoff between attempts.
     assert!(
         started.elapsed() < Duration::from_secs(10),
         "{:?}",
         started.elapsed()
     );
+}
+
+/// The full server's message is still on the loading screen when the next server is tried:
+/// it isn't that server's.
+#[test]
+fn a_full_message_left_from_the_last_attempt_isnt_the_next_servers() {
+    let game = FakeGame::new();
+    game.leave_world();
+    game.full.lock().insert("Artix".into());
+    // Twilly's first connect doesn't get in, with Artix's message still up.
+    game.stuck_connects.store(1, Ordering::SeqCst);
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.login_timeout = 300;
+        o.relogin_try_delay = 0;
+    }
+    let ctx = turu_bot::api::servers::Ctx::new(&bot);
+    assert!(turu_bot::api::servers::ensure_relogin(&ctx, Some("Artix")).unwrap());
+    let clicks: Vec<String> = game
+        .calls_to("clickServer")
+        .iter()
+        .map(|a| arg(a, 0))
+        .collect();
+    assert_eq!(clicks, ["Artix", "Twilly", "Twilly"]);
+    let log = bot.logs.script.text();
+    assert!(!log.contains("Twilly is full"), "{log}");
 }
