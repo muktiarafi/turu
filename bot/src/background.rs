@@ -158,7 +158,7 @@ fn timer(weak: Weak<Bot>) {
         } else {
             true
         };
-        let (was_in_game, catching, intentional) = {
+        let (was_in_game, catching, intentional, hand_login) = {
             let mut state = bot.state.lock();
             let was = state.in_game;
             state.in_game = in_game;
@@ -171,14 +171,22 @@ fn timer(weak: Weak<Bot>) {
                 // but the world stays up for a moment after you click Logout: the lost
                 // connection that follows would then relog you.
                 state.intentional_logout = false;
+                // A login from the server list got in: the watchdog looks after it from now.
+                state.hand_login = false;
             } else if !in_game {
                 state.catching_packets = false;
             }
-            (was, state.catching_packets, state.intentional_logout)
+            (
+                was,
+                state.catching_packets,
+                state.intentional_logout,
+                state.hand_login,
+            )
         };
         if !in_game
             && (was_in_game || bot.scripts.is_running())
             && !intentional
+            && !hand_login
             && !bot.servers.is_relogging()
         {
             let (auto, watchdog) = {
@@ -298,7 +306,11 @@ fn check_stuck_loading(bot: &Arc<Bot>, load: &mut LoadWatch) {
     let timeout = Duration::from_millis(bot.opts().load_timeout.max(0) as u64);
     if detail.contains("has been lost") && !relogging {
         // Checked 10 times a second: without auto-relogin there's nothing to start (or log).
-        if bot.opts().auto_relogin && !bot.state.lock().intentional_logout {
+        let leave = {
+            let state = bot.state.lock();
+            state.intentional_logout || state.hand_login
+        };
+        if bot.opts().auto_relogin && !leave {
             bot.log("Connection lost detected. Triggering auto re-login.");
             servers::begin_logout(bot, false);
         }
@@ -342,7 +354,8 @@ fn recover_stuck_loading(bot: &Arc<Bot>, loading_map: bool) {
                     return;
                 }
             }
-            if bot.opts().auto_relogin {
+            // Turu: a login from the server list is the user's: back to the login screen.
+            if bot.opts().auto_relogin && !bot.state.lock().hand_login {
                 servers::begin_logout(&bot, false);
             } else if let Err(e) = servers::logout(&bot) {
                 bot.logs

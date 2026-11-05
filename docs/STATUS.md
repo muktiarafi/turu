@@ -421,7 +421,13 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `ReloginServer` or `AutoReloginAny` is set (VibeSkua: the first server of the list). A timed-out
   attempt logs what the world check saw, and script log lines in the app's log start with the
   account. Why seven simultaneous first logins missed the 15 s world check (three didn't) is
-  still open: the next such run logs it.
+  still open: the next such run logs it. A login you start from the server list yourself is
+  left to you until it reaches the world: when it fails ("Server is full. Try another server"
+  and the dropped connection) the watchdog logs it and doesn't relog (VibeSkua relogs, on a
+  server of its own choosing). The bot's own `clickServer` also reports `selectServer`, so only
+  a pick while no relogin runs counts. In the bot's relogins a full server ("full" on the
+  loading screen or in a login dialog) ends the attempt at once and isn't tried again during
+  that login unless every server was full (VibeSkua waits out the world timeout).
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and

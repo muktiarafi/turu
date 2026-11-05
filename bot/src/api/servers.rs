@@ -258,7 +258,12 @@ fn set_intentional(bot: &Bot, value: bool) {
 
 /// VibeSkua `Login(username, password)`: the game's `login`.
 pub fn login(bot: &Bot, username: &str, password: &str) -> BotResult<()> {
-    set_intentional(bot, false);
+    {
+        let mut state = bot.state.lock();
+        state.intentional_logout = false;
+        // The bot's login, not one from the server list by hand.
+        state.hand_login = false;
+    }
     bot.flash
         .call_game_function("login", vec![username.into(), password.into()])
 }
@@ -909,6 +914,8 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
     let max = bot.opts().relogin_tries;
     let mut tries = 0;
     let mut attempted = HashSet::new();
+    // Turu: servers that said they're full during this login (the list's counts lag behind).
+    let mut full: HashSet<String> = HashSet::new();
     let preferred = Some(server.name.clone());
     while !player::playing(bot).unwrap_or(false) && tries < max {
         ctx.check()?;
@@ -918,7 +925,15 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
             bot,
             format!("Attempt {tries}/{max}: refreshed server list ({n} servers)."),
         );
-        let candidates = candidates(bot);
+        let mut candidates = candidates(bot);
+        if candidates
+            .iter()
+            .all(|s| full.contains(&s.name.to_lowercase()))
+        {
+            // All of them were full: their counts may have dropped since.
+            full.clear();
+        }
+        candidates.retain(|s| !full.contains(&s.name.to_lowercase()));
         // Turu: the requested server is tried again while it's usable (VibeSkua drops it after
         // a failed attempt and takes the first server of the list, so a burst of logins that
         // timed out scattered the accounts over servers).
@@ -1033,6 +1048,20 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
                 );
                 break;
             }
+            // Turu: a full server says so (the login screen's "Server is Full!", or the server
+            // turning the login down): try another at once instead of waiting out the timeout.
+            if let Some(message) = full_message(bot, &detail) {
+                relogin_log(
+                    bot,
+                    format!(
+                        "{} is full ('{message}'). Trying another server.",
+                        target.name
+                    ),
+                );
+                let _ = bot.flash.call("killLoginModals", vec![]);
+                full.insert(target.name.to_lowercase());
+                break;
+            }
             ctx.sleep(250)?;
         }
         if in_world(bot) {
@@ -1065,6 +1094,20 @@ fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
         relogin_log(bot, "Unable to reconnect within configured retries.");
     }
     Ok(playing)
+}
+
+/// The loading screen's message or the login screen's dialog when it says the server is full.
+fn full_message(bot: &Bot, detail: &str) -> Option<String> {
+    let is_full = |text: &str| text.to_lowercase().contains("full");
+    if is_full(detail) {
+        return Some(detail.to_owned());
+    }
+    let modal = bot
+        .flash
+        .call_str("getActiveModalMessage", vec![])
+        .unwrap_or_default();
+    let modal = modal.trim();
+    (modal != "null" && is_full(modal)).then(|| modal.to_owned())
 }
 
 /// A read of the game for the log: its value, or why it failed.
@@ -1169,9 +1212,11 @@ pub fn cancel_relogin(bot: &Bot) {
 /// from `Bot::on_flash_call`).
 pub fn begin_logout(bot: &Arc<Bot>, logout_notified: bool) {
     // A script holding the options lock only delays the check to the relogin thread.
-    if bot.options.try_read().is_some_and(|o| !o.auto_relogin)
-        || bot.state.lock().intentional_logout
-    {
+    if bot.options.try_read().is_some_and(|o| !o.auto_relogin) || {
+        let state = bot.state.lock();
+        // Turu: a login from the server list that didn't get in is the user's to retry.
+        state.intentional_logout || (state.hand_login && !state.in_game)
+    } {
         return;
     }
     if bot.servers.waiting_for_login.swap(true, Ordering::AcqRel) {

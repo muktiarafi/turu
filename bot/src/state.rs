@@ -59,6 +59,10 @@ pub struct GameState {
     pub bank_loaded: bool,
     /// The user clicked Logout / Change server (don't auto-relogin).
     pub intentional_logout: bool,
+    /// Turu: the user picked a server on the login screen and that login hasn't reached the
+    /// world yet. The watchdog leaves a login that fails ("Server is full") to the user instead
+    /// of relogging on a server of its own choosing. Cleared in game and by the bot's logins.
+    pub hand_login: bool,
     /// `dataLeaf.afk` as the last `uotls` packet about us said.
     pub afk: bool,
     /// One-shot signals for `Wait.ForItemBuy`, `ForItemSell`, `ForBankLoad` (VibeSkua's

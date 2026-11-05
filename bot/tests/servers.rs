@@ -121,6 +121,8 @@ struct FakeGame {
     logged_in: AtomicBool,
     /// Server clicks that connect but never get into the world.
     stuck_connects: std::sync::atomic::AtomicUsize,
+    /// Servers whose click shows "Server is Full!" instead of connecting.
+    full: Mutex<HashSet<String>>,
 }
 
 const LIST: &str = r#"[{"sName":"Artix","sIP":"1.1.1.1","iPort":5588,"bOnline":1,"iCount":5,"iMax":1000},
@@ -199,11 +201,19 @@ impl FlashHost for FakeGame {
             "isLoggedIn" => self.logged_in.load(Ordering::SeqCst).to_string(),
             "isNull" => (!self.values.lock().contains_key(&a0)).to_string(),
             "getGameObject" | "getGameObjectS" => get(&a0),
-            "getActiveModalMessage" => "null".into(),
+            "getActiveModalMessage" => get("modal"),
+            "killLoginModals" => {
+                self.values.lock().remove("modal");
+                "null".into()
+            }
             "isKicked" => "false".into(),
             "resetConnectionState" => {
                 self.leave_world();
                 "null".into()
+            }
+            "clickServer" if self.full.lock().contains(&a0) => {
+                self.set("modal", "Server is Full!");
+                "true".into()
             }
             "clickServer" | "connectToServer" => {
                 let stuck = self
@@ -543,4 +553,80 @@ fn a_login_that_retries_keeps_its_server_and_isnt_raced_by_the_watchdog() {
         "{log}"
     );
     assert!(!bot.servers.is_relogging(), "the mark goes with the login");
+}
+
+/// Picking a full server by hand: the server turns the login down and the connection drops.
+/// That's the user's to retry, not the watchdog's.
+#[test]
+fn a_login_from_the_server_list_that_fails_isnt_relogged() {
+    let game = FakeGame::new();
+    game.leave_world();
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        o.relogin_watchdog = true;
+    }
+    bot.on_flash_call("loaded", vec![]);
+
+    bot.on_flash_call("userIntentionalAction", vec![json!("selectServer")]);
+    assert!(bot.state.lock().hand_login);
+    game.set("mcConnDetail.stage", "{}");
+    game.set(
+        "mcConnDetail.txtDetail.text",
+        "\"Connection has been lost\"",
+    );
+    bot.on_flash_call("connectionLost", vec![]);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(!bot.servers.is_relogging());
+    assert!(!game.game_functions().contains(&"login".to_owned()));
+    let log = bot.logs.script.text();
+    assert!(log.contains("Not relogging: pick another server."), "{log}");
+    assert!(!log.contains("Auto re-login triggered"), "{log}");
+
+    // The next pick gets in: from then on the watchdog relogs a lost connection.
+    game.values.lock().remove("mcConnDetail.stage");
+    game.enter_world();
+    assert!(wait_until(Duration::from_secs(2), || !bot
+        .state
+        .lock()
+        .hand_login));
+    game.leave_world();
+    bot.on_flash_call("connectionLost", vec![]);
+    assert!(bot.servers.is_relogging());
+    bot.on_flash_call("userIntentionalAction", vec![json!("logout")]);
+}
+
+#[test]
+fn a_relogin_moves_on_from_a_full_server_at_once() {
+    let game = FakeGame::new();
+    game.leave_world();
+    game.full.lock().insert("Artix".into());
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.login_timeout = 15000;
+        o.relogin_try_delay = 0;
+    }
+    let ctx = turu_bot::api::servers::Ctx::new(&bot);
+    let started = Instant::now();
+    assert!(turu_bot::api::servers::ensure_relogin(&ctx, Some("Artix")).unwrap());
+    let clicks: Vec<String> = game
+        .calls_to("clickServer")
+        .iter()
+        .map(|a| arg(a, 0))
+        .collect();
+    assert_eq!(
+        clicks,
+        ["Artix", "Twilly"],
+        "the full server isn't tried again"
+    );
+    let log = bot.logs.script.text();
+    assert!(log.contains("Artix is full ('Server is Full!')"), "{log}");
+    // Not the 15 s world timeout: only the 4 s backoff between attempts.
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
 }

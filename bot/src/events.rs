@@ -266,7 +266,15 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             // Never block here: a script may hold the options lock while it waits on Flash.
             let watchdog = bot.options.try_read().is_none_or(|o| o.relogin_watchdog);
             if watchdog && !bot.servers.is_relogging() {
-                crate::api::servers::begin_logout(bot, false);
+                if bot.state.lock().hand_login {
+                    bot.log(
+                        "The login from the server list lost its connection before reaching the \
+                         world (the game says why, e.g. the server is full). Not relogging: pick \
+                         another server.",
+                    );
+                } else {
+                    crate::api::servers::begin_logout(bot, false);
+                }
             }
         }
         "userIntentionalAction" => match arg_str(0) {
@@ -280,10 +288,17 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
                 crate::script::stop(bot);
             }
             "selectServer" => {
-                bot.logs
-                    .debug
-                    .push("Server chosen by user on server list. Watchdog armed.");
-                bot.state.lock().intentional_logout = false;
+                // The bot's own `clickServer` clicks the list too: only a click while no relogin
+                // runs is the user's.
+                let by_hand = !bot.servers.is_relogging();
+                bot.logs.debug.push(if by_hand {
+                    "Server chosen by user on server list. Watchdog armed once in game."
+                } else {
+                    "Server chosen on server list by the relogin."
+                });
+                let mut state = bot.state.lock();
+                state.intentional_logout = false;
+                state.hand_login = by_hand;
             }
             _ => {}
         },
