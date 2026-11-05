@@ -399,6 +399,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   Unlike C#, the watcher and the manager also keep `ActionDelay` between their quest packets
   (a turn-in right after an accept, or the reverse, was still dropped now and then); a quest
   whose turn is too soon waits for the next run.
+- **`ensureComplete` recovers a lost accept:** when none of its `questAcceptAndCompleteTries`
+  turn-ins gets a `ccqr` while the quest still shows in progress, it abandons the quest, loads
+  it, accepts it again (`ActionDelay * 2` apart) and tries one more round. A refused turn-in
+  (a `ccqr` without `bSuccess`) is left alone. 0MaxBags stood still for hours in CoreNation's
+  `deal` loop: the accept of The Refreshing Deal (4777) was dropped ("Please slow down", next
+  to the registered quests' packets), and every turn-in after it went unanswered. VibeSkua's
+  `EnsureComplete` has no such recovery. Tested with a fake game (`bot/tests/ensure_complete.rs`),
+  not yet in game.
 - **Combat stalls are logged:** when the skill timer goes 2 minutes without attacking, it notes
   the same way the player's state (dead or alive), HP, map, cell and pad, the living monsters in
   the cell and whether attacks are stopped; again every 10 minutes while that lasts, and once

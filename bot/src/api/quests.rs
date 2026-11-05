@@ -447,6 +447,12 @@ pub fn complete(bot: &Bot, id: i64, item_id: i64, special: bool) -> BotResult<bo
 }
 
 /// VibeSkua `EnsureComplete(id, itemId, special)`: up to `questAcceptAndCompleteTries`.
+///
+/// Turu: when none of those turn-ins got a reply, the quest is abandoned, accepted again and
+/// given one more round. The server drops an accept sent too soon after another quest packet
+/// ("Please slow down") while the client still shows the quest in progress; every turn-in is
+/// then ignored, and a script looping on `ensureComplete` (CoreNation's `deal`, quest 4777)
+/// never got out. VibeSkua has no such recovery.
 pub fn ensure_complete(bot: &Bot, id: i64, item_id: i64, special: bool) -> BotResult<bool> {
     if id != 0 {
         let (tries, delay) = {
@@ -456,15 +462,47 @@ pub fn ensure_complete(bot: &Bot, id: i64, item_id: i64, special: bool) -> BotRe
                 o.action_delay.max(0) as u64,
             )
         };
-        for _ in 0..tries {
-            complete(bot, id, item_id, special)?;
-            if !is_in_progress(bot, id)? {
-                break;
+        for round in 0..2 {
+            if round == 1 {
+                if !turn_in_unanswered(bot, id) {
+                    break;
+                }
+                reaccept(bot, id, tries, delay)?;
             }
-            bot.sleep(delay)?;
+            for _ in 0..tries {
+                complete(bot, id, item_id, special)?;
+                if !is_in_progress(bot, id)? {
+                    return Ok(true);
+                }
+                bot.sleep(delay)?;
+            }
         }
     }
     Ok(!is_in_progress(bot, id)?)
+}
+
+/// Whether the quest's last `tryQuestComplete` is still waiting for its `ccqr` (a refused
+/// turn-in has its reply, so it doesn't count).
+fn turn_in_unanswered(bot: &Bot, id: i64) -> bool {
+    bot.state.lock().unanswered_turn_ins.contains_key(&id)
+}
+
+/// Turu: abandons the quest, reloads it and accepts it again (the steps of CoreBots' stuck
+/// check for registered quests), `ActionDelay * 2` apart so none is dropped as too soon.
+fn reaccept(bot: &Bot, id: i64, tries: i32, delay: u64) -> BotResult<()> {
+    bot.note(format!(
+        "Quest {id}: no reply to {tries} turn-ins while it shows in progress; abandoning it and \
+         accepting it again."
+    ));
+    bot.sleep(delay * 2)?;
+    bot.flash
+        .call_game_function("world.abandonQuest", vec![id.into()])?;
+    bot.sleep(delay * 2)?;
+    load(bot, &[id])?;
+    bot.sleep(delay * 2)?;
+    accept(bot, id)?;
+    bot.sleep(delay)?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------
