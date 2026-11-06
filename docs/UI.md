@@ -223,8 +223,35 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   The script waits for the click; Escape or a click outside answers "closed", and Stop closes it.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
-  text boxes, Relogin Server and Hunt Priority combos, a Reload Map button). Edits are written to
-  `bot.options` at once; footer Defaults / Reset (reload `options.json`) / Save. Differences from
+  text boxes, Relogin Server and Hunt Priority combos, a Reload Map button), each with a one-line
+  description under its label (search matches it; VibeSkua's window has none). Search also
+  finds a section by the start of a word of its title (3 letters or more: "network" finds
+  Relogin; "&" finds nothing); the chips count what it finds per section; the section headings
+  (with a count) show only under All, as VibeSkua's `ShowSectionHeaders`; a search that finds
+  nothing says so, with Clear search (and Search all sections when another section has
+  matches). Reload Map is enabled only in game. The descriptions
+  say what Turu does: Hunt Buffer, Hunt Priority and Use Function Based Skills say Turu doesn't
+  use them yet (their controls are greyed, as Application Options' "coming soon" rows: `UNUSED`),
+  and Safe Timings and Retry Relogin that only scripts read them. Edits are written to
+  `bot.options` at once. Footer: a status line (unsaved changes, "Saved.", or Save's error), then
+  Defaults / Revert (VibeSkua's Reset: reload `options.json`) / Save. The window remembers which
+  options it changed since the last Save or Revert; what else differs from `options.json` was
+  changed elsewhere (a script's changes stay after it stops, but Auto Relogin). A row that
+  differs gets a dot after its label (accent: changed here; amber: elsewhere), and the status
+  line says whose ("You changed 2 options", "Aggro Monsters, Skip Cutscenes and 4 more were
+  changed outside this window, most likely by a script. … Save keeps them too; Revert puts the
+  saved options back"). Save still writes every live option, as VibeSkua's. Defaults asks once (the
+  button turns into a red Reset all, and Revert into Cancel) and keeps Relogin Try Delay and Relogin Watchdog, which
+  Application Options owns; Revert and Save are enabled only while the live options differ from
+  `options.json` (read again every 2 s). Number boxes have floors (1 for the tries and Walk Speed,
+  1000 ms for Login and Load Timeout), and the Drops card warns when Accept All and Reject All
+  Drops are both on. On a touch screen smaller than 700x760 it opens as a full-screen sheet,
+  and every control (switches, number boxes, text boxes, combos and their rows, buttons) is
+  40 points tall; a row too narrow for its text beside the control (under 160 points left)
+  puts the control under the text. In a window under 480 points tall (a phone, which Turu holds
+  sideways) the search box and chips scroll with the list instead of staying above it; the list
+  leaves room for the footer as tall as it was drawn last frame. Checked on the `turu_api36`
+  emulator (2026-11-06). Differences from
   VibeSkua: no Optimize Players, Upgrade/Staff Name Colour (not in `BotOptions`); the server combo
   uses VibeSkua's fallback list (plus the current value); Set FPS defaults to 0, shown as
   "Game's", which leaves the frame rate to the game's own FPS setting (VibeSkua: 30, forced at

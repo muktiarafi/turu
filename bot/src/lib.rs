@@ -212,10 +212,13 @@ impl Bot {
         self.options.read()
     }
 
-    pub fn save_options(&self) {
-        if let Err(e) = self.paths.save_options(&self.options.read()) {
+    /// Writes the live options to `options.json`; a failure is logged too.
+    pub fn save_options(&self) -> std::io::Result<()> {
+        let result = self.paths.save_options(&self.options.read());
+        if let Err(e) = &result {
             tracing::warn!("Couldn't save the bot options: {e}");
         }
+        result
     }
 
     pub fn save_settings(&self) {

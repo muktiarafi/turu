@@ -6,8 +6,8 @@ use super::theme::{
     RADIUS, SMALL_RADIUS, TEXT, TRACK,
 };
 use egui::{
-    Align, Button, Color32, CornerRadius, FontId, Frame, Label, Layout, Margin, Response, RichText, ScrollArea, Sense,
-    Stroke, TextStyle, TextWrapMode, Ui, Vec2, pos2, vec2,
+    Align, Button, Color32, CornerRadius, FontId, Frame, Label, Layout, Margin, Rect, Response, RichText, ScrollArea,
+    Sense, Stroke, TextStyle, TextWrapMode, Ui, Vec2, pos2, vec2,
 };
 
 /// VibeSkua's button classes: `skua-button`, `skua-primary`, `skua-danger`, `outline`.
@@ -138,7 +138,10 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
 
 /// Mugetsu's on/off switch. Returns the response; `changed()` is set when it was toggled.
 pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
-    let (rect, mut response) = ui.allocate_exact_size(vec2(34.0, 19.0), Sense::click());
+    // On a touch screen the switch takes a finger-sized 48x40 (drawn the same size, centred).
+    let size = if touch() { vec2(48.0, 40.0) } else { vec2(34.0, 19.0) };
+    let (hit, mut response) = ui.allocate_exact_size(size, Sense::click());
+    let rect = Rect::from_center_size(hit.center(), vec2(34.0, 19.0));
     if response.clicked() {
         *on = !*on;
         response.mark_changed();
@@ -604,6 +607,8 @@ pub fn server_combo(ui: &mut Ui, id: &str, bot: &std::sync::Arc<turu_bot::Bot>, 
         .selected_text(current)
         .width(150.0)
         .show_ui(ui, |ui| {
+            // Finger-sized rows on a touch screen.
+            ui.spacing_mut().interact_size.y = target(24.0, 40.0);
             turu_bot::api::servers::refresh_in_background(bot);
             if bot.servers.is_refreshing() {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
