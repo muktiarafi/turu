@@ -273,9 +273,12 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Mode Active", `show_headless_screen` in `mod.rs`) instead of the 2 FPS game: the movie isn't
   drawn and the overlay takes the game's clicks; the bar and tool windows work as usual.
   Streamer Mode (VibeSkua `ApplyStreamerMode`, `api/options.rs`) turns Hide Players on and, on
-  every options pass, draws "TuruUser" / "Hidden" over the name tag, guild and portraits (never
-  `objData`), hides gold, coins and chat, and writes the area title without the room number;
-  off, it gives back Hide Players, Custom Name/Guild and the chat, and writes the name and
+  every options pass, draws "TuruUser" / "Hidden" over the name tag, guild and target portrait (never
+  `objData`), hides the gold (`mcGold`, the interface's current one, as well as VibeSkua's old
+  spellings), coins, chat and the portrait's name (the game rewrites that text whenever the bars
+  change, which showed the real name for a frame in combat; it never touches its visibility),
+  writes a house's sign as "TuruUser's House", and writes the area title without the room number;
+  off, it gives back Hide Players, Custom Name/Guild, the chat and the house sign, and writes the name and
   guild back from `objData` (VibeSkua's `world.setUserData` alone leaves the name tag as it is). Beyond VibeSkua, whose tabs keep the character's name, it hides the
   name from Turu's own UI too: the tab is "Tab 2" in the tab strip, Grid View and Army
   Control, the window title drops the name, and an Army client with it on is "Client 3" in

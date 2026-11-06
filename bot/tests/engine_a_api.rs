@@ -301,6 +301,7 @@ fn options_send_toggles_once_and_repeat_ticks() {
 fn streamer_mode_hides_names_and_gives_custom_names_back() {
     let game = FakeGame::new();
     game.set("world.strMapName", "\"ULTRADAGE\"");
+    game.set("world.map.txtHouse.text", "\"Dod's House\"");
     let bot = new_bot(&game);
     let sets_of = |game: &FakeGame, path: &str| -> Vec<FlashArg> {
         game.calls_to("setGameObject")
@@ -335,6 +336,24 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
         sets_of(&game, "ui.mcInterface.areaList.title.t1.text").last(),
         Some(&FlashArg::String("Ultradage".into()))
     );
+    // The portrait's name and the gold are hidden (the game rewrites the name's text in combat).
+    for path in [
+        "world.rootClass.ui.mcPortrait.strName.visible",
+        "world.rootClass.ui.mcInterface.mcGold.visible",
+    ] {
+        assert_eq!(
+            sets_of(&game, path).last(),
+            Some(&FlashArg::Bool(false)),
+            "{path}"
+        );
+    }
+    // The house sign names its owner.
+    let house = FlashArg::String("TuruUser's House".into());
+    assert_eq!(
+        sets_of(&game, "world.map.txtHouse.text").last(),
+        Some(&house)
+    );
+    game.set("world.map.txtHouse.text", "\"TuruUser's House\"");
 
     // Off: chat back, names redrawn, Hide Players as it was, and the custom name again.
     bot.options.write().streamer_mode = false;
@@ -350,6 +369,20 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
     assert_eq!(
         sets_of(&game, "world.myAvatar.pMC.pname.ti.text").last(),
         Some(&FlashArg::String("Custom".into()))
+    );
+    for path in [
+        "world.rootClass.ui.mcPortrait.strName.visible",
+        "world.rootClass.ui.mcInterface.mcGold.visible",
+    ] {
+        assert_eq!(
+            sets_of(&game, path).last(),
+            Some(&FlashArg::Bool(true)),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        sets_of(&game, "world.map.txtHouse.text").last(),
+        Some(&FlashArg::String("Dod's House".into()))
     );
     let redraws = game
         .calls_to("callGameFunction")
