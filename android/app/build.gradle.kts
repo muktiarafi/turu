@@ -18,7 +18,7 @@ android {
         ndk {
             abiFilters.addAll(ndkAbis())
         }
-        // Crash reports to Sentry (`CrashUploads.java`), sent only once the user said yes.
+        // Crash reports to Sentry (`CrashUploads.kt`), sent only once the user said yes.
         // Without a DSN (a build from source) Turu has no uploads at all and never asks.
         buildConfigField("String", "SENTRY_DSN", "\"${sentryDsn()}\"")
     }
@@ -57,6 +57,13 @@ android {
             // cargo-ndk copies every cdylib the build made; oxc_sourcemap is one, unused.
             excludes += "**/liboxc_sourcemap-*.so"
         }
+    }
+}
+
+// The app's code is Kotlin (`src/main/kotlin`), compiled by AGP 9's built-in Kotlin.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 

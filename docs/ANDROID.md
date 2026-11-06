@@ -166,13 +166,13 @@ adb logcat -s turu
 logcat's buffer is gone by the time someone says "it crashed", so Turu keeps its own record
 in the data folder's `crash/` (`/sdcard/Android/data/com.muktiarafi.turu/files/crash/`):
 
-* `exit-<time>-<reason>.txt`: at each start, `CrashReports.java` reads Android's record of how
+* `exit-<time>-<reason>.txt`: at each start, `CrashReports.kt` reads Android's record of how
   the earlier processes ended (`ActivityManager.getHistoricalProcessExitReasons`, Android 11 and
   later) and writes one for each exit nobody asked for: low memory, a native crash, a hang
   (ANR, with its trace), a kill by the system or a battery saver (`SIGNALED`, `OTHER`), with the
   memory at the end, the phone and whether battery optimisation is off. Force stop, an update and
   a clean exit are left out. A native crash (Android 12 and later) comes with its tombstone,
-  read into text by `Tombstone.java` (signal, abort message, backtraces, the end of the log), and
+  read into text by `Tombstone.kt` (signal, abort message, backtraces, the end of the log), and
   the raw `-tombstone.pb` next to it. Android keeps these records across reboots and updates, but
   not across an uninstall: a tester who saw a crash should install the new build over the old one.
 * `panic-<time>.txt`: a Rust panic's message and backtrace, written by the panic hook before the
@@ -198,7 +198,7 @@ $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-symbolizer --o
 Builds made with a Sentry DSN also send crash reports to the developers, once the user agrees:
 the first start asks "Send crash reports?" (closing it asks again next time), and Options >
 Application > Send Crash Reports changes it (`sendCrashReports` in `settings.json`, applied at
-once). Nothing is sent before a yes; builds without a DSN never ask. `CrashUploads.java` starts
+once). Nothing is sent before a yes; builds without a DSN never ask. `CrashUploads.kt` starts
 Sentry (`io.sentry:sentry-android`, auto-init off in the manifest):
 
 * Native and Java crashes are caught as they happen (Sentry's NDK handler), so a phone that

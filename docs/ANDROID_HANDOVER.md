@@ -34,8 +34,8 @@ Since `b08c1f176`: **typing in the game's text fields.** While the soft keyboard
 a strip just above it shows the field's text with its caret and selection (a password as dots),
 scrolled to the caret, and a count to 150 (the game's longest message; typing stops there).
 `TuruActivity` passes the keyboard's height from the window's IME insets (`ui.rs`), with
-`windowSoftInputMode="adjustNothing"`. The strip's text and count keep clear of the display
-cutout's left and right insets (`nativeCutout`): held sideways, a punch-hole camera (Galaxy
+`SOFT_INPUT_ADJUST_NOTHING` (set in code, see "Things that bit us"). The strip's text and count
+keep clear of the display cutout's left and right insets (`nativeCutout`): held sideways, a punch-hole camera (Galaxy
 S24 FE) sits at the side, at about the strip's height. Backspace, Delete, the arrows, Home/End and
 Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it).
 
@@ -62,7 +62,7 @@ Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it
 | `android/src/screen.rs` | The GPU (`gpu`, set up without a window), `MovieTexture` the player draws into, `Screen` (surface, blit, egui painting `TuruUi`), who gets a touch or a key. |
 | `android/src/notify.rs` | `TuruService`'s native methods (`nativeStart`, `nativeAction`) and the status sent to the notification every 2 s. |
 | `android/src/input.rs`, `audio.rs`, `ui.rs`, `platform.rs` | Touch and keys; AAudio (from ruffle-android); the game's soft keyboard; the bot windows' `Platform` (browser via `Intent`, no file dialogs). |
-| `android/app/src/main/java/com/muktiarafi/turu/` | `TuruActivity` (NativeActivity: full screen, Back to background, one-time prompts, starts the service) and `TuruService` (foreground service: starts the engine, notification, wake lock, `START_STICKY`). |
+| `android/app/src/main/kotlin/com/muktiarafi/turu/` | `TuruActivity` (NativeActivity: full screen, Back to background, one-time prompts, starts the service) and `TuruService` (foreground service: starts the engine, notification, wake lock, `START_STICKY`). |
 | `android/rustls-platform-verifier/` + submodule `android/vendor/rustls-platform-verifier` | The Kotlin half of HTTPS certificate checks, pinned to `252e2516`. A Gradle check compares it with `Cargo.lock`. |
 | `android/app/build.gradle.kts` | The `cargoNdk` task (runs `cargo ndk` into `app/src/main/jniLibs/`, sets the bindgen env). |
 
@@ -180,10 +180,16 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   nothing, so `input.rs` takes the key's unmodified letter for Ctrl+A/C/V/X.
 * **A tap on the keyboard's delete did nothing until delete was held:** without a text view,
   Android gives the keyboard a stand-in connection that turns typed text into keys but drops
-  "delete before the cursor", which a keyboard sends while it thinks there's text. `KeyInput.java`
+  "delete before the cursor", which a keyboard sends while it thinks there's text. `KeyInput.kt`
   (an invisible focused view, `TYPE_NULL`: key events only) is the keyboard's connection now; it
   accepts NativeActivity's show/hide (`checkInputConnectionProxy`) and turns delete requests into
   keys. No suggestions or swipe typing, as in a terminal.
+* **The keyboard came up at every start and return from the background:** NativeActivity's
+  `onCreate` sets the window's soft input mode to "unspecified, resize", over the manifest's, and
+  with `KeyInput` focused as a text editor Android shows the keyboard whenever the window comes
+  to the front (`SHOW_AUTO_EDITOR_FORWARD_NAV` in `dumpsys input_method`). `TuruActivity` sets
+  "always hidden, nothing" after `super.onCreate`; check it with `dumpsys window windows`
+  (`sim={state=always_hidden adjust=nothing}`).
 * **The emulator's soft keyboard** stays hidden (an IME of zero height) while the Mac's keyboard
   counts as a hardware one: turn on "show on-screen keyboard" (`settings put secure
   show_ime_with_hard_keyboard 1`) and restart Gboard or the emulator.
@@ -191,6 +197,14 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   `TuruActivity` handles it (moves the task back).
 * **Edge to edge** (Android 15+): the status bar drew over the nav bar; the activity runs
   immersive full screen.
+* **The app's code is Kotlin, called from Rust over JNI** (package `com.muktiarafi.turu`, so the
+  native functions are `Java_com_muktiarafi_turu_<Class>_<method>`). What Rust calls or
+  implements must stay `@JvmStatic` in the class's `companion object` (`TuruService.status`,
+  `panicked`, `crashUploadsAvailable`, `setCrashUploads`, the `native*` externals), the methods
+  Rust calls not `internal` (their JVM names get mangled), and with the same parameter types, or
+  the call fails at run time (`NoSuchMethodError`, `UnsatisfiedLinkError`), not at build time.
+  Keep the app ID (`applicationId`) as it is: a new one is a separate app to Android, installed
+  next to the old one with its own empty data folder, and no update for people who have it.
 * **AGP 9's built-in Kotlin** compiles only `kotlin` source folders: the verifier module lists
   the upstream sources as both `java` and `kotlin`.
 * **rquickjs** has no pre-made Android bindings: its `bindgen` feature, libclang from the
@@ -215,7 +229,7 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
   made on Metal, Vulkan and DX12. Vulkan is the default.
 * No file dialogs (`platform.rs` refuses them): scripts come from Search Scripts or `adb push`.
-  SAF import needs Java in the activity (`ACTION_OPEN_DOCUMENT`, `onActivityResult`, a native
+  SAF import needs Kotlin in the activity (`ACTION_OPEN_DOCUMENT`, `onActivityResult`, a native
   callback).
 * The desktop windows at the phone's density work, but there is no drawer or full-screen sheet
   layout yet.
