@@ -52,18 +52,22 @@ pub fn motion(event: &MotionEvent) -> Vec<Touch> {
     }
 }
 
-/// The game's mouse doing `mouse`, with `top` pixels of Turu's bar above the game.
-pub fn player_event(mouse: Mouse, top: f64) -> PlayerEvent {
+/// The game's mouse doing `mouse`, with `left` pixels of Turu's rail beside the game and `top`
+/// pixels of its tab strip above it.
+pub fn player_event(mouse: Mouse, left: f64, top: f64) -> PlayerEvent {
     match mouse {
         Mouse::Down(x, y) => PlayerEvent::MouseDown {
-            x,
+            x: x - left,
             y: y - top,
             button: MouseButton::Left,
             index: None,
         },
-        Mouse::Move(x, y) => PlayerEvent::MouseMove { x, y: y - top },
+        Mouse::Move(x, y) => PlayerEvent::MouseMove {
+            x: x - left,
+            y: y - top,
+        },
         Mouse::Up(x, y) => PlayerEvent::MouseUp {
-            x,
+            x: x - left,
             y: y - top,
             button: MouseButton::Left,
         },

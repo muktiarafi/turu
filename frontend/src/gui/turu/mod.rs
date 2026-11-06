@@ -84,11 +84,13 @@ pub struct Windows {
     pub client_update: bool,
 }
 
-/// Where tool windows live: the app window below the nav bar (and the tab strip).
+/// Where tool windows live: the app window below the nav bar (and the tab strip), or right of
+/// the rail.
 fn window_area(ctx: &Context) -> Rect {
     let screen = ctx.content_rect();
     let top = (screen.top() + top_height() as f32).min(screen.bottom());
-    Rect::from_min_max(pos2(screen.left(), top), screen.max)
+    let left = (screen.left() + crate::gui::left_width() as f32).min(screen.right());
+    Rect::from_min_max(pos2(left, top), screen.max)
 }
 
 /// A tool window below the nav bar; `slot` staggers the default positions.
@@ -222,7 +224,8 @@ impl TuruUi {
         self.tabs.entry(crate::turu::active_tab()).or_default()
     }
 
-    /// The tab strip (with two tabs or more) and the top nav bar (replaces Ruffle's menu bar).
+    /// The tab strip (with two tabs or more) and the nav bar (replaces Ruffle's menu bar): across
+    /// the top, or a rail down the left on a touch screen.
     pub fn show_bar(&mut self, ui: &mut egui::Ui) {
         self.ensure_theme(ui.ctx());
         if crate::turu::tabs().len() > 1 {
@@ -309,11 +312,12 @@ impl TuruUi {
 }
 
 /// VibeSkua's headless overlay (`HeadlessOverlay`), shown in Headless Mode over the game area
-/// (below the bar, `top` points down): a dark page, a "monitor off" icon and two lines of text.
+/// (below the bar, `top` points down, and right of the rail): a dark page, a "monitor off" icon and two lines of text.
 /// It takes the game's clicks, as VibeSkua's hidden host gets none; the tool windows stay over it.
 pub fn show_headless_screen(ctx: &Context, top: f32) {
     let screen = ctx.content_rect();
-    let rect = Rect::from_min_max(pos2(screen.left(), screen.top() + top), screen.max);
+    let left = screen.left() + crate::gui::left_width() as f32;
+    let rect = Rect::from_min_max(pos2(left, screen.top() + top), screen.max);
     egui::Area::new(egui::Id::new("turu_headless_screen"))
         .order(egui::Order::Background)
         .fixed_pos(rect.min)

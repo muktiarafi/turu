@@ -1,4 +1,4 @@
-//! The 34 px top nav bar. Left: the Turu symbol and VibeSkua's menus. Right: the game's quick
+//! The nav bar: 34 px across the top, or on a touch screen a rail down the left (below). Left: the Turu symbol and VibeSkua's menus. Right: the game's quick
 //! actions (Grid, Auto, Jump, Bank), then the script's status with its run controls, the one
 //! place a check-in needs.
 
@@ -221,7 +221,13 @@ impl NavBar {
         }
     }
 
+    /// The bar across the top, or on a touch screen the rail down the left
+    /// ([`crate::gui::nav_rail`]).
     pub fn show(&mut self, ui: &mut Ui, windows: &mut Windows) {
+        if crate::gui::nav_rail() {
+            self.show_rail(ui, windows);
+            return;
+        }
         // The controls are 8 points shorter than the bar: 4 above and below centre them.
         let frame = Frame::new().fill(PANEL).inner_margin(Margin {
             left: 8,
@@ -240,7 +246,7 @@ impl NavBar {
                     .ui(ui, |ui| {
                         let fold = self.fold(ui);
                         if fold != Fold::All {
-                            symbol(ui);
+                            symbol(ui, SYMBOL_SIZE);
                             ui.add_space(SYMBOL_GAP);
                         }
                         let menu = self.menus(ui, windows, fold);
@@ -253,7 +259,7 @@ impl NavBar {
                             self.right_width = width;
                         }
                         self.right_rest = width - name;
-                        self.bank_note(ui, bank.as_ref().or(menu.as_ref()));
+                        self.bank_note(ui, bank.as_ref().or(menu.as_ref()), RectAlign::BOTTOM_END);
                     });
             });
     }
@@ -302,8 +308,9 @@ impl NavBar {
         }
     }
 
-    /// For a moment after Bank didn't open, why, in a note under its button (or under "Menu").
-    fn bank_note(&self, ui: &Ui, anchor: Option<&Response>) {
+    /// For a moment after Bank didn't open, why, in a note under its button (or under "Menu"),
+    /// or beside it on the rail.
+    fn bank_note(&self, ui: &Ui, anchor: Option<&Response>, align: RectAlign) {
         let mut bank = lock(&self.bank);
         let Some((why, at)) = &bank.failed else { return };
         let Some(left) = BANK_NOTE_FOR.checked_sub(at.elapsed()) else {
@@ -316,7 +323,7 @@ impl NavBar {
                 .id(Id::new("turu_bank_note"))
                 .open(true)
                 .close_behavior(PopupCloseBehavior::IgnoreClicks)
-                .align(RectAlign::BOTTOM_END)
+                .align(align)
                 .show(|ui| ui.label(text));
         }
         ui.ctx().request_repaint_after(left);
@@ -371,15 +378,20 @@ impl NavBar {
         let running = auto::running(&crate::turu::bot());
         let lead = if running { Lead::Dot(SUCCESS) } else { Lead::None };
         let response = toggle_button(ui, "Auto", lead, self.auto_open);
-        if response.clicked() {
+        self.auto_popup(ui, &response, RectAlign::BOTTOM_END);
+    }
+
+    /// The Auto popup at `button` (Auto on the bar or the rail), which opens and closes it.
+    fn auto_popup(&mut self, ui: &Ui, button: &Response, align: RectAlign) {
+        if button.clicked() {
             self.auto_open = !self.auto_open;
             if self.auto_open {
                 self.sets = SkillSets::load();
             }
         }
         let mut open = self.auto_open;
-        let shown = nav_popup(&response, &mut open, 280.0).show(|ui| self.auto_panel(ui));
-        close_on_click_outside(ui.ctx(), &mut open, shown.map(|s| s.response.rect), response.rect);
+        let shown = nav_popup(button, &mut open, 280.0, align).show(|ui| self.auto_panel(ui));
+        close_on_click_outside(ui.ctx(), &mut open, shown.map(|s| s.response.rect), button.rect);
         self.auto_open = open;
     }
 
@@ -546,15 +558,20 @@ impl NavBar {
 
     fn jump_toggle(&mut self, ui: &mut Ui) {
         let response = toggle_button(ui, "Jump", Lead::None, self.jump_open);
-        if response.clicked() {
+        self.jump_popup(ui, &response, RectAlign::BOTTOM_END);
+    }
+
+    /// The Jump popup at `button` (Jump on the bar or the rail), which opens and closes it.
+    fn jump_popup(&mut self, ui: &Ui, button: &Response, align: RectAlign) {
+        if button.clicked() {
             self.jump_open = !self.jump_open;
             if self.jump_open {
                 self.refresh_cells();
             }
         }
         let mut open = self.jump_open;
-        let shown = nav_popup(&response, &mut open, 260.0).show(|ui| self.jump_panel(ui));
-        close_on_click_outside(ui.ctx(), &mut open, shown.map(|s| s.response.rect), response.rect);
+        let shown = nav_popup(button, &mut open, 260.0, align).show(|ui| self.jump_panel(ui));
+        close_on_click_outside(ui.ctx(), &mut open, shown.map(|s| s.response.rect), button.rect);
         self.jump_open = open;
     }
 
@@ -929,14 +946,15 @@ fn touch_rows(ui: &mut Ui) {
     }
 }
 
-/// A nav-bar popup under `button`, open while `open` is true. Clicks are handled by
-/// [`close_on_click_outside`]: egui's own "close on click outside" also fires when an item of
-/// one of its drop-downs is picked (those are separate layers).
-fn nav_popup<'a>(button: &Response, open: &'a mut bool, width: f32) -> Popup<'a> {
+/// A nav-bar popup at `button` (under it on the bar, beside it on the rail), open while `open`
+/// is true. Clicks are handled by [`close_on_click_outside`]: egui's own "close on click
+/// outside" also fires when an item of one of its drop-downs is picked (those are separate
+/// layers).
+fn nav_popup<'a>(button: &Response, open: &'a mut bool, width: f32, align: RectAlign) -> Popup<'a> {
     Popup::from_response(button)
         .open_bool(open)
         .close_behavior(PopupCloseBehavior::IgnoreClicks)
-        .align(RectAlign::BOTTOM_END)
+        .align(align)
         .width(width)
 }
 
@@ -964,12 +982,7 @@ fn close_on_click_outside(ctx: &egui::Context, open: &mut bool, popup: Option<eg
 fn update_notice(ui: &mut Ui, windows: &mut Windows, compact: bool) {
     let state = turu_bot::updates::state();
     let Some(release) = &state.available else { return };
-    let lead = match state.install {
-        turu_bot::updates::Install::Busy(_) => Lead::Spinner,
-        turu_bot::updates::Install::OnQuit(_) => Lead::Dot(SUCCESS),
-        turu_bot::updates::Install::Failed(_) => Lead::Dot(DANGER),
-        turu_bot::updates::Install::Idle => Lead::Dot(ACCENT),
-    };
+    let lead = update_lead(&state.install);
     let label = if compact {
         "Update".to_owned()
     } else {
@@ -1022,7 +1035,8 @@ fn script_status(ui: &mut Ui, name_width: f32) -> (Response, f32) {
                 corners.ne = radius.ne;
                 corners.se = radius.se;
             }
-            if run_cell(ui, *cell, corners).clicked() {
+            let size = control_height();
+            if run_cell(ui, *cell, vec2(size, size), corners).clicked() {
                 cell.run(&bot);
             }
         }
@@ -1112,11 +1126,10 @@ impl RunCell {
 
 /// A square run control: Start and Resume in the accent (what you came back for), Pause plain,
 /// Stop with a red square that fills red on hover, Force Stop red once it's offered.
-fn run_cell(ui: &mut Ui, cell: RunCell, corners: CornerRadius) -> Response {
-    let size = control_height();
+fn run_cell(ui: &mut Ui, cell: RunCell, size: egui::Vec2, corners: CornerRadius) -> Response {
     let enabled = cell.enabled();
     let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let (rect, response) = ui.allocate_exact_size(vec2(size, size), sense);
+    let (rect, response) = ui.allocate_exact_size(size, sense);
     let hovered = enabled && response.hovered();
     let (fill, icon) = match cell {
         _ if !enabled => (TRACK, MUTED.gamma_multiply(0.6)),
@@ -1180,30 +1193,7 @@ fn script_chip(
         .scripts
         .loaded()
         .and_then(|path| path.file_stem().map(|n| n.to_string_lossy().into_owned()));
-    let elapsed = status
-        .is_active()
-        .then(|| bot.state.lock().stats.started)
-        .flatten()
-        .map(|started| started.elapsed());
-    let state = match status {
-        ScriptStatus::Running => elapsed.map_or_else(|| "Running".to_owned(), script_loader::duration_text),
-        // Paused, the clock alone, yellow (as its dot), beside Resume: the chip keeps its width,
-        // so pausing doesn't move the buttons left of it under a finger. The tooltip says so.
-        ScriptStatus::Paused => elapsed.map_or_else(|| "Paused".to_owned(), script_loader::duration_text),
-        ScriptStatus::Error => "Error".to_owned(),
-        // After a run: "Finished 6h 12m", "Stopped 3h 40m" (the Script Loader's last run).
-        ScriptStatus::Loaded => match script_loader::last_run(bot) {
-            Some(run) => format!("{} {}", run.how, run.ran),
-            None => script_loader::state_text(status).to_owned(),
-        },
-        other => script_loader::state_text(other).to_owned(),
-    };
-    let state_color = match status {
-        ScriptStatus::Running => TEXT,
-        ScriptStatus::Paused | ScriptStatus::Stopping | ScriptStatus::Compiling => WARNING,
-        ScriptStatus::Error => DANGER,
-        _ => MUTED,
-    };
+    let (state, state_color) = chip_state(bot, status);
     if status.is_active() {
         // The clock moves while nothing else redraws the bar.
         ui.ctx().request_repaint_after(Duration::from_secs(1));
@@ -1281,6 +1271,36 @@ fn script_chip(
     (response.on_hover_text(format!("{tip}\nOpen the Script Loader")), drawn)
 }
 
+/// The script chip's state and its colour: how long the script has run (yellow while paused),
+/// how its last run ended, or the Script Loader's word for it (an error red).
+fn chip_state(bot: &turu_bot::Bot, status: ScriptStatus) -> (String, Color32) {
+    let elapsed = status
+        .is_active()
+        .then(|| bot.state.lock().stats.started)
+        .flatten()
+        .map(|started| started.elapsed());
+    let state = match status {
+        ScriptStatus::Running => elapsed.map_or_else(|| "Running".to_owned(), script_loader::duration_text),
+        // Paused, the clock alone, yellow (as its dot), beside Resume: the chip keeps its width,
+        // so pausing doesn't move the buttons left of it under a finger. The tooltip says so.
+        ScriptStatus::Paused => elapsed.map_or_else(|| "Paused".to_owned(), script_loader::duration_text),
+        ScriptStatus::Error => "Error".to_owned(),
+        // After a run: "Finished 6h 12m", "Stopped 3h 40m" (the Script Loader's last run).
+        ScriptStatus::Loaded => match script_loader::last_run(bot) {
+            Some(run) => format!("{} {}", run.how, run.ran),
+            None => script_loader::state_text(status).to_owned(),
+        },
+        other => script_loader::state_text(other).to_owned(),
+    };
+    let state_color = match status {
+        ScriptStatus::Running => TEXT,
+        ScriptStatus::Paused | ScriptStatus::Stopping | ScriptStatus::Compiling => WARNING,
+        ScriptStatus::Error => DANGER,
+        _ => MUTED,
+    };
+    (state, state_color)
+}
+
 /// The widest the script chip's name gets; longer names end in "…".
 const CHIP_NAME_WIDTH: f32 = 150.0;
 /// The chip's name with the menus folded all the way.
@@ -1294,12 +1314,12 @@ const SYMBOL_SIZE: f32 = 18.0;
 /// Between the symbol and the first menu.
 const SYMBOL_GAP: f32 = 6.0;
 
-fn symbol(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(SYMBOL_SIZE, SYMBOL_SIZE), Sense::hover());
+fn symbol(ui: &mut Ui, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
     let painter = ui.painter();
     // The SVG's 256 grid: the tile spans 16..240, its corners round by about a quarter.
-    let unit = SYMBOL_SIZE / 224.0;
-    painter.rect_filled(rect, 5.0, ACCENT);
+    let unit = size / 224.0;
+    painter.rect_filled(rect, size * 5.0 / 18.0, ACCENT);
     // Each eye is a crescent (the bottom half of a ring) centred at x 80 and 176, y 112; the
     // ring runs from radius 18 to 46, so it is drawn as a stroke at radius 32, width 28.
     for cx in [80.0, 176.0] {
@@ -1367,5 +1387,360 @@ fn toggle_button(ui: &mut Ui, label: &str, lead: Lead, open: bool) -> Response {
     };
     ui.painter()
         .galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, color);
+    response
+}
+
+// The rail: the nav bar on a touch screen (`crate::gui::nav_rail`), down the left side so the
+// game keeps the screen's whole height. Top: the symbol, Menu (every menu), Auto, Jump, Bank and
+// Grid as icon-over-label items. Bottom: the script's status and its run controls, stacked into
+// one column. Popups and menus open beside it, over the game.
+
+/// The rail's content width: the rail less 4 points each side.
+const RAIL_INNER: f32 = 56.0;
+/// A rail item: its indicator (an icon in a pill), its label and room below it.
+const RAIL_ITEM_HEIGHT: f32 = 52.0;
+/// An item's indicator pill, Material's 56 x 32 narrowed to the rail.
+const RAIL_PILL: egui::Vec2 = egui::Vec2::new(48.0, 30.0);
+/// The script chip on the rail: its status dot over its state.
+const RAIL_CHIP_HEIGHT: f32 = 48.0;
+/// A run control under the chip, as tall as the bar's on a touch screen.
+const RAIL_CELL_HEIGHT: f32 = 44.0;
+/// Above the first item and below the last run control.
+const RAIL_PAD: f32 = 8.0;
+/// The symbol's row at the top.
+const RAIL_SYMBOL_ROW: f32 = 36.0;
+/// The symbol on the rail.
+const RAIL_SYMBOL_SIZE: f32 = 22.0;
+/// The least room between the items and the status.
+const RAIL_GAP: f32 = 12.0;
+
+/// What has a place of its own on the rail. A short screen folds the least needed first: the
+/// symbol, then Update and Bank, which move into Menu as on the folded bar.
+#[derive(Clone, Copy)]
+struct RailFit {
+    symbol: bool,
+    update: bool,
+    bank: bool,
+}
+
+/// The most run controls the chip has under it (Pause or Resume, and Stop).
+const MOST_RUN_CELLS: f32 = 2.0;
+
+/// What fits in `height` points with an update `update` and Grid `grid`. It always counts the
+/// most run controls, so starting or stopping the script never moves the items under a finger.
+fn rail_fit(height: f32, update: bool, grid: bool) -> RailFit {
+    let status = RAIL_CHIP_HEIGHT + MOST_RUN_CELLS * (RAIL_CELL_HEIGHT + 1.0);
+    let items = 3.0 + if grid { 1.0 } else { 0.0 };
+    let mut room = height - status - RAIL_GAP - items * RAIL_ITEM_HEIGHT;
+    let mut take = |want: bool, needs: f32| {
+        let fits = want && room >= needs;
+        if fits {
+            room -= needs;
+        }
+        fits
+    };
+    // Most needed first: what's left over goes to the next.
+    let bank = take(true, RAIL_ITEM_HEIGHT);
+    let update = take(update, RAIL_ITEM_HEIGHT);
+    let symbol = take(true, RAIL_SYMBOL_ROW);
+    RailFit { symbol, update, bank }
+}
+
+/// The icons a rail item draws, in one 1.6-point stroke.
+#[derive(Clone, Copy)]
+enum RailIcon {
+    Menu,
+    /// A crosshair: combat automation.
+    Auto,
+    /// A map pin: to a cell of this map.
+    Jump,
+    /// A chest.
+    Bank,
+    Grid,
+    /// An arrow into a tray.
+    Update,
+}
+
+impl NavBar {
+    fn show_rail(&mut self, ui: &mut Ui, windows: &mut Windows) {
+        let inset = crate::gui::rail_inset();
+        Panel::left("turu_rail")
+            .exact_size(crate::gui::left_width() as f32)
+            .resizable(false)
+            .frame(Frame::new().fill(PANEL))
+            .show_separator_line(true)
+            .show(ui, |ui| {
+                // Clear of a cutout on this side, 4 points in from each edge.
+                let full = ui.max_rect();
+                let inner = Rect::from_min_max(
+                    pos2(full.left() + inset + 4.0, full.top() + RAIL_PAD),
+                    pos2(full.right() - 4.0, full.bottom() - RAIL_PAD),
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(inner)
+                        .layout(Layout::top_down(Align::Center)),
+                    |ui| self.rail(ui, windows),
+                );
+            });
+    }
+
+    fn rail(&mut self, ui: &mut Ui, windows: &mut Windows) {
+        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+        let bot = crate::turu::bot();
+        let status = bot.scripts.status();
+        let cells = run_cells(&bot, status);
+        let update = turu_bot::updates::state();
+        let grid = crate::turu::tabs().len() > 1;
+        let fit = rail_fit(ui.available_height(), update.available.is_some(), grid);
+
+        if fit.symbol {
+            ui.add_space((RAIL_SYMBOL_ROW - RAIL_SYMBOL_SIZE) / 2.0 - 2.0);
+            symbol(ui, RAIL_SYMBOL_SIZE);
+            ui.add_space((RAIL_SYMBOL_ROW - RAIL_SYMBOL_SIZE) / 2.0 + 2.0);
+        }
+
+        // Menu: every menu, then what didn't get a place of its own. Its badge says an update
+        // waits in it.
+        let menu_lead = match (&update.available, fit.update) {
+            (Some(_), false) => update_lead(&update.install),
+            _ => Lead::None,
+        };
+        let menu = rail_item(ui, RailIcon::Menu, "Menu", menu_lead, |response| {
+            Popup::is_id_open(&response.ctx, Popup::default_response_id(response))
+        });
+        let folded_bank = (!fit.bank).then_some(&self.bank);
+        let config = MenuConfig::new().style(menu_style);
+        Popup::menu(&menu)
+            .align(RectAlign::RIGHT_START)
+            .style(menu_style)
+            .info(egui::UiStackInfo::new(egui::UiKind::Menu).with_tag_value(MenuConfig::MENU_CONFIG_TAG, config))
+            .show(|ui| {
+                if let (Some(release), false) = (&update.available, fit.update)
+                    && item(ui, &format!("Update to {}", release.version))
+                {
+                    windows.client_update = true;
+                }
+                folded(ui, windows, menus(), folded_bank);
+            });
+
+        let running = auto::running(&bot);
+        let lead = if running { Lead::Dot(SUCCESS) } else { Lead::None };
+        let auto_open = self.auto_open;
+        let auto = rail_item(ui, RailIcon::Auto, "Auto", lead, |_| auto_open);
+        self.auto_popup(ui, &auto, RectAlign::RIGHT_START);
+
+        let jump_open = self.jump_open;
+        let jump = rail_item(ui, RailIcon::Jump, "Jump", Lead::None, |_| jump_open);
+        self.jump_popup(ui, &jump, RectAlign::RIGHT_START);
+
+        let bank = fit.bank.then(|| {
+            let lead = if lock(&self.bank).busy {
+                Lead::Spinner
+            } else {
+                Lead::None
+            };
+            let response = rail_item(ui, RailIcon::Bank, "Bank", lead, |_| false);
+            if response.clicked() {
+                open_bank(&self.bank);
+            }
+            response
+        });
+        self.bank_note(ui, Some(bank.as_ref().unwrap_or(&menu)), RectAlign::RIGHT_START);
+
+        if grid {
+            let on = crate::grid::on();
+            if rail_item(ui, RailIcon::Grid, "Grid", Lead::None, |_| on).clicked() {
+                crate::turu::request_tab(crate::turu::TabRequest::Grid(!on));
+            }
+        }
+
+        if let (Some(_), true) = (&update.available, fit.update) {
+            let shown = windows.client_update;
+            if rail_item(ui, RailIcon::Update, "Update", update_lead(&update.install), |_| shown).clicked() {
+                windows.client_update = !windows.client_update;
+            }
+        }
+        if matches!(update.install, turu_bot::updates::Install::Busy(_)) {
+            ui.ctx().request_repaint_after(Duration::from_millis(100));
+        }
+
+        // The status at the bottom, drawn upwards: the run controls, then the chip.
+        ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
+            let radius = SMALL_RADIUS;
+            for (i, cell) in cells.iter().enumerate().rev() {
+                let mut corners = CornerRadius::ZERO;
+                if i == cells.len() - 1 {
+                    corners.sw = radius;
+                    corners.se = radius;
+                }
+                if run_cell(ui, *cell, vec2(RAIL_INNER, RAIL_CELL_HEIGHT), corners).clicked() {
+                    cell.run(&bot);
+                }
+            }
+            let mut corners = CornerRadius {
+                nw: radius,
+                ne: radius,
+                ..CornerRadius::ZERO
+            };
+            if cells.is_empty() {
+                corners = CornerRadius::same(radius);
+            }
+            if rail_chip(ui, &bot, status, corners).clicked() {
+                windows.script_loader = true;
+            }
+        });
+    }
+}
+
+/// What leads Update: how its install goes.
+fn update_lead(install: &turu_bot::updates::Install) -> Lead {
+    match install {
+        turu_bot::updates::Install::Busy(_) => Lead::Spinner,
+        turu_bot::updates::Install::OnQuit(_) => Lead::Dot(SUCCESS),
+        turu_bot::updates::Install::Failed(_) => Lead::Dot(DANGER),
+        turu_bot::updates::Install::Idle => Lead::Dot(ACCENT),
+    }
+}
+
+/// A rail item: `icon` in a pill over `label`, the pill tinted while what it opens is `open`
+/// (asked once the item has its response) and while a finger is on it. A [`Lead::Dot`] is a
+/// badge on the icon; a [`Lead::Spinner`] takes the icon's place.
+fn rail_item(ui: &mut Ui, icon: RailIcon, label: &str, lead: Lead, open: impl FnOnce(&Response) -> bool) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(RAIL_INNER, RAIL_ITEM_HEIGHT), Sense::click());
+    let open = open(&response);
+    let pressed = response.is_pointer_button_down_on() || response.hovered();
+    let painter = ui.painter();
+    let pill = Rect::from_center_size(pos2(rect.center().x, rect.top() + 2.0 + RAIL_PILL.y / 2.0), RAIL_PILL);
+    if open {
+        painter.rect_filled(pill, RAIL_PILL.y / 2.0, OPEN);
+    } else if pressed {
+        painter.rect_filled(pill, RAIL_PILL.y / 2.0, HOVER);
+    }
+    let ink = if open { Color32::WHITE } else { TEXT };
+    match lead {
+        Lead::Spinner => {
+            let spin = Rect::from_center_size(pill.center(), vec2(16.0, 16.0));
+            Spinner::new().size(16.0).color(ink).paint_at(ui, spin);
+        }
+        Lead::None | Lead::Dot(_) => rail_icon(painter, icon, pill.center(), ink),
+    }
+    if let Lead::Dot(color) = lead {
+        let at = pill.center() + vec2(10.0, -8.0);
+        painter.circle_filled(at, 5.5, if open { OPEN } else { PANEL });
+        painter.circle_filled(at, 4.0, color);
+    }
+    painter.text(
+        pos2(rect.center().x, pill.bottom() + 3.0),
+        Align2::CENTER_TOP,
+        label,
+        FontId::proportional(11.0),
+        ink,
+    );
+    response
+}
+
+/// Draws `icon` centred on `c`, about 18 points across.
+fn rail_icon(painter: &egui::Painter, icon: RailIcon, c: egui::Pos2, ink: Color32) {
+    let stroke = Stroke::new(1.6, ink);
+    let line = |a: egui::Vec2, b: egui::Vec2| painter.line_segment([c + a, c + b], stroke);
+    match icon {
+        RailIcon::Menu => {
+            for y in [-5.0, 0.0, 5.0] {
+                line(vec2(-8.0, y), vec2(8.0, y));
+            }
+        }
+        RailIcon::Auto => {
+            painter.circle_stroke(c, 6.0, stroke);
+            line(vec2(0.0, -9.0), vec2(0.0, -3.5));
+            line(vec2(0.0, 3.5), vec2(0.0, 9.0));
+            line(vec2(-9.0, 0.0), vec2(-3.5, 0.0));
+            line(vec2(3.5, 0.0), vec2(9.0, 0.0));
+            painter.circle_filled(c, 1.3, ink);
+        }
+        RailIcon::Jump => {
+            // A teardrop: the head's arc over the top, then down its two tangents to the point.
+            let head = c + vec2(0.0, -2.5);
+            let r = 5.5;
+            let point = c + vec2(0.0, 8.5);
+            let beta = (r / (point.y - head.y)).acos();
+            let start = std::f32::consts::FRAC_PI_2 + beta;
+            let sweep = std::f32::consts::TAU - 2.0 * beta;
+            let mut points: Vec<_> = (0..=20)
+                .map(|i| {
+                    let a = start + sweep * i as f32 / 20.0;
+                    head + vec2(a.cos(), a.sin()) * r
+                })
+                .collect();
+            points.push(point);
+            painter.add(egui::Shape::closed_line(points, stroke));
+            painter.circle_filled(head, 1.8, ink);
+        }
+        RailIcon::Bank => {
+            let chest = Rect::from_center_size(c + vec2(0.0, 0.5), vec2(17.0, 13.0));
+            painter.rect_stroke(chest, 2.5, stroke, egui::StrokeKind::Middle);
+            let lid = chest.top() + 4.5;
+            painter.line_segment([pos2(chest.left(), lid), pos2(chest.right(), lid)], stroke);
+            painter.rect_filled(Rect::from_center_size(pos2(c.x, lid + 1.0), vec2(3.5, 5.0)), 1.0, ink);
+        }
+        RailIcon::Grid => {
+            for (x, y) in [(-4.0, -4.0), (4.0, -4.0), (-4.0, 4.0), (4.0, 4.0)] {
+                let tile = Rect::from_center_size(c + vec2(x, y), vec2(6.0, 6.0));
+                painter.rect_stroke(tile, 1.5, stroke, egui::StrokeKind::Middle);
+            }
+        }
+        RailIcon::Update => {
+            line(vec2(0.0, -8.0), vec2(0.0, 2.0));
+            line(vec2(-4.0, -2.0), vec2(0.0, 2.0));
+            line(vec2(4.0, -2.0), vec2(0.0, 2.0));
+            painter.add(egui::Shape::line(
+                vec![
+                    c + vec2(-7.5, 3.0),
+                    c + vec2(-7.5, 7.5),
+                    c + vec2(7.5, 7.5),
+                    c + vec2(7.5, 3.0),
+                ],
+                stroke,
+            ));
+        }
+    }
+}
+
+/// The script chip on the rail: the status dot ("!" while the script waits for you) over a
+/// short state: the clock while it runs (yellow while paused), how its last run ended, or the
+/// Script Loader's word for it. The name and the rest are in the Script Loader it opens.
+fn rail_chip(ui: &mut Ui, bot: &turu_bot::Bot, status: ScriptStatus, corners: CornerRadius) -> Response {
+    let (text, color) = chip_state(bot, status);
+    if status.is_active() {
+        ui.ctx().request_repaint_after(Duration::from_secs(1));
+    }
+    let text = match status {
+        ScriptStatus::Loaded => script_loader::last_run(bot).map_or(text, |run| run.how.to_owned()),
+        ScriptStatus::Empty => "No script".to_owned(),
+        _ => text,
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(RAIL_INNER, RAIL_CHIP_HEIGHT), Sense::click());
+    let pressed = response.is_pointer_button_down_on() || response.hovered();
+    let painter = ui.painter();
+    painter.rect_filled(rect, corners, if pressed { HOVER } else { TRACK });
+    let dot = pos2(rect.center().x, rect.top() + 16.0);
+    if bot.scripts.waits_for().is_some() {
+        painter.circle_filled(dot, 6.0, WARNING);
+        painter.text(
+            dot,
+            Align2::CENTER_CENTER,
+            "!",
+            FontId::proportional(10.0),
+            Color32::BLACK,
+        );
+    } else {
+        painter.circle_filled(dot, 4.0, widgets::status_color(status));
+    }
+    let mut job = LayoutJob::simple_singleline(text, FontId::proportional(11.0), color);
+    job.wrap = TextWrapping::truncate_at_width(RAIL_INNER - 6.0);
+    let galley = painter.layout_job(job);
+    let at = pos2(rect.center().x - galley.size().x / 2.0, rect.top() + 28.0);
+    painter.galley(at, galley, color);
     response
 }

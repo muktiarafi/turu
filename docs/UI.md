@@ -45,7 +45,7 @@ next to it).
 
 ## Nav bar (`nav_bar.rs`)
 
-34 px high (48 on a touch screen, below). Left: the Turu symbol (`docs/logo/turu-symbol-small.svg`,
+34 px high on the desktop; a rail down the left on a touch screen (below). Left: the Turu symbol (`docs/logo/turu-symbol-small.svg`,
 drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scripts** (Script
 Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
 HotKeys; no Application Themes: Turu keeps Mugetsu's palette), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
@@ -72,10 +72,22 @@ When the menus would run into the right side (its width is measured each frame i
 full), they fold: first to **Scripts** and **More** (the other menus as its submenus), then, as
 on a phone held upright, to one **Menu** with everything and Bank as its last row; the symbol is
 left out and the script's name gets what room is left, up to 72 px (150 otherwise), or is left
-out (it stays in the tooltip). On a touch screen (`Platform::is_touch`, Android) the bar is
-48 points high (`gui::nav_bar_height`, which `top_height` and so the game's offset follow;
-desktop stays 34), its buttons, toggles, chip and run cells 40, the run icons 1.3 times larger,
-and menu rows about 44; in the Auto and
+out (it stays in the tooltip). On a touch screen (`Platform::is_touch`, Android) the nav bar is a **rail** down the left side
+instead (`gui::nav_rail`): Android is held sideways, where the game is as tall as the screen
+allows, so a bar above it took its height; the rail sits in the room beside the game, which now
+gets the whole height. It is 64 points wide (`gui::RAIL_WIDTH`), plus a display cutout on its side
+(`gui::set_rail_inset`, from the activity's insets), and `gui::left_width` is the game's and the
+tool windows' left offset as `top_height` is their top (0 on the rail without tabs). Top down:
+the Turu symbol, then icon-over-label items (a pill behind the icon, tinted while open or
+pressed; a dot badge for Auto running or an update; a spinner in place of Bank's icon):
+**Menu** (every menu as a submenu, opening beside the rail), **Auto**, **Jump**, **Bank**, **Grid**
+(two tabs or more) and **Update** (while one is out). At the bottom, the script's status in one
+column: a 56x48 chip (status dot over the clock, or "Finished", "Stopped", "Error", "No
+script"; opens the Script Loader) with the run controls under it, 44 high. Popups open beside
+their item. A short screen folds the symbol, then Update, then Bank into Menu; the fit always
+counts two run controls, so starting or stopping a script doesn't move the items. In the bar
+(desktop) its buttons, toggles, chip and run cells are 26 high; menu rows on a touch screen
+are about 44; in the Auto and
 Jump popups the buttons, drop-downs and text boxes are 48 and the drop-downs' rows about 44,
 and Auto's "RUNNING" is 11 px (9 before, on every platform).
 

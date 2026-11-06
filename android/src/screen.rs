@@ -250,18 +250,27 @@ impl Screen {
         self.configure();
     }
 
-    /// Turu's bar above the game, in pixels.
+    /// What of Turu is above the game (the tab strip, with tabs), in pixels.
     fn top(&self) -> f32 {
         turu_frontend::gui::top_height() as f32 * self.pixels_per_point
+    }
+
+    /// Turu's nav rail left of the game, in pixels: the game keeps the screen's height.
+    fn left(&self) -> f32 {
+        turu_frontend::gui::left_width() as f32 * self.pixels_per_point
     }
 
     /// The game's part of the window, in pixels.
     fn movie_area(&self) -> (u32, u32) {
         let top = self.top().round() as u32;
-        (self.size.0, self.size.1.saturating_sub(top).max(1))
+        let left = self.left().round() as u32;
+        (
+            self.size.0.saturating_sub(left).max(1),
+            self.size.1.saturating_sub(top).max(1),
+        )
     }
 
-    /// A finger: the UI's when it comes down on the nav bar or on a window, menu or popup, else
+    /// A finger: the UI's when it comes down on the nav rail or on a window, menu or popup, else
     /// the game's. The root UI covers the whole screen on egui's background layer, so that layer
     /// doesn't count. The game's fingers share its one mouse ([`GameTouches`]: a finger tapping a
     /// skill button while another drags the joystick); a finger that comes while another holds
@@ -272,6 +281,7 @@ impl Screen {
     /// does on the desktop.
     pub fn touch(&mut self, player: &mut Player, touch: Touch) {
         let top = f64::from(self.top());
+        let left = f64::from(self.left());
         let mouse = match touch {
             Touch::Down(id, x, y) => {
                 let pos = egui::pos2(x as f32 / self.pixels_per_point, y as f32 / self.pixels_per_point);
@@ -279,7 +289,7 @@ impl Screen {
                     .egui
                     .layer_id_at(pos)
                     .is_some_and(|layer| layer.order != egui::Order::Background);
-                let on_ui = y < top || on_layer;
+                let on_ui = y < top || x < left || on_layer;
                 match self.egui_finger {
                     Some(finger) if finger.on_ui || !on_ui => {}
                     other => {
@@ -293,7 +303,7 @@ impl Screen {
                 if on_ui {
                     self.ui_fingers.push(id);
                     Vec::new()
-                } else if self.game_touches.holding() && player.handle_touch(TouchPhase::Begin, id, x, y - top) {
+                } else if self.game_touches.holding() && player.handle_touch(TouchPhase::Begin, id, x - left, y - top) {
                     self.touch_points.push((id, (x, y)));
                     Vec::new()
                 } else {
@@ -307,7 +317,7 @@ impl Screen {
                 }
                 if let Some((_, at)) = self.touch_points.iter_mut().find(|(finger, _)| *finger == id) {
                     *at = (x, y);
-                    player.handle_touch(TouchPhase::Move, id, x, y - top);
+                    player.handle_touch(TouchPhase::Move, id, x - left, y - top);
                     Vec::new()
                 } else if self.ui_fingers.contains(&id) {
                     Vec::new()
@@ -322,7 +332,7 @@ impl Screen {
                 }
                 if let Some(i) = self.touch_points.iter().position(|&(finger, _)| finger == id) {
                     self.touch_points.swap_remove(i);
-                    player.handle_touch(TouchPhase::End, id, x, y - top);
+                    player.handle_touch(TouchPhase::End, id, x - left, y - top);
                     Vec::new()
                 } else if let Some(i) = self.ui_fingers.iter().position(|&finger| finger == id) {
                     self.ui_fingers.swap_remove(i);
@@ -337,13 +347,13 @@ impl Screen {
                 }
                 self.ui_fingers.clear();
                 for (id, (x, y)) in std::mem::take(&mut self.touch_points) {
-                    player.handle_touch(TouchPhase::End, id, x, y - top);
+                    player.handle_touch(TouchPhase::End, id, x - left, y - top);
                 }
                 self.game_touches.cancel()
             }
         };
         for mouse in mouse {
-            player.handle_event(input::player_event(mouse, top));
+            player.handle_event(input::player_event(mouse, left, top));
         }
     }
 
@@ -424,6 +434,8 @@ impl Screen {
         let Some(surface) = &self.surface else {
             return;
         };
+        // The rail grows by a cutout on its side (a punch-hole camera, held sideways).
+        turu_frontend::gui::set_rail_inset(crate::ui::cutout().0 as f32 / self.pixels_per_point);
         let movie_size = self.movie_area();
         if movie_size != self.movie_size {
             self.movie_size = movie_size;
@@ -527,7 +539,7 @@ impl Screen {
             {
                 let top = self.top();
                 pass.set_viewport(
-                    0.0,
+                    self.left().round(),
                     top,
                     movie_size.0 as f32,
                     movie_size.1 as f32,
