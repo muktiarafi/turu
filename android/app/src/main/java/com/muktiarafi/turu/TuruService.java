@@ -43,6 +43,8 @@ public class TuruService extends Service {
 
     private static native void nativeAction(String action);
 
+    private static native void nativeTrimMemory(int level);
+
     /** For the Rust side, which can only reach this class: see {@link CrashUploads}. */
     static boolean crashUploadsAvailable() {
         return CrashUploads.available();
@@ -114,6 +116,15 @@ public class TuruService extends Service {
             wakeLock.release();
         }
         super.onDestroy();
+    }
+
+    /** The phone is low on memory, or the UI went away: Turu frees what it can spare (`memory.rs`). */
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_RUNNING_LOW) {
+            nativeTrimMemory(level);
+        }
     }
 
     @Override

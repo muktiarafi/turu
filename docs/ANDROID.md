@@ -218,6 +218,26 @@ organization auth token) with the `SENTRY_ORG` and `SENTRY_PROJECT` variables: t
 workflow then uploads `libturu_android.so`'s symbols with `sentry-cli`. A local build takes the
 DSN from `-PsentryDsn=...`, `SENTRY_DSN` or `sentryDsn` in `android/local.properties`.
 
+## GPU memory
+
+A phone's GPU shares its RAM, and running out of GPU memory aborts Turu: a Redmi 10 (Mali-G52,
+4 GB) crashed logging in, wgpu panicking on a 64-byte buffer that came back invalid
+(`Globals::new`, from `Player::render`). Mugetsu's desktop memory watch reads the GPU's own
+budget, which Android doesn't give, so `android/src/memory.rs` works from the phone's memory:
+
+* Idle pooled textures are capped at Mugetsu's low-memory budget, 64 MB, for the whole run
+  (`set_memory_pressure(true)`; the "idle texture budget" log line still prints the normal one).
+* Every minute, the geometry of shapes not drawn for 5 minutes is freed (AQW keeps every SWF it
+  loaded; on a desktop this grew ~500 MB an hour).
+* Spare textures and the shapes not drawn for 2 minutes are freed when the window goes away,
+  when Android calls `onTrimMemory` at `RUNNING_LOW` or above (the service passes it on), and
+  every 30 s while `/proc/meminfo`'s `MemAvailable` is under 15% of the phone's memory.
+
+Multisampling is already off: Flash-style edge smoothing (`set_flash_aa`, on for Android) draws
+with one sample at every stage quality. To test a trim: `adb shell am send-trim-memory
+com.muktiarafi.turu RUNNING_LOW` (with the app in the background); the log says "freed spare
+textures".
+
 The control API (`--api`) works as on a desktop. From the computer:
 
 ```bash

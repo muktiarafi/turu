@@ -17,6 +17,7 @@
 
 mod audio;
 mod input;
+mod memory;
 mod notify;
 mod platform;
 mod screen;
@@ -140,11 +141,13 @@ fn run_on_engine(work: impl FnOnce(&mut Player) + Send + 'static) {
 /// (or not at all while it has no player yet, which draws nothing anyway).
 fn detach_surface() {
     let (done, wait) = sync_channel(1);
-    run_on_engine(move |_| {
+    run_on_engine(move |player| {
         with_screen(Screen::detach);
         // The game slows down like a hidden tab's (`api::options`).
         turu::bot().state.lock().hidden_tab = true;
         let _ = done.send(());
+        // Nothing is drawn until a window comes back. After the answer: it waits for the GPU.
+        memory::trim(player, "the window went away");
     });
     let _ = wait.recv_timeout(Duration::from_secs(2));
     *lock_window() = None;
@@ -382,7 +385,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     attach_surface();
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Engine running");
+    memory::init();
     engine::run_loop_with(&player, events, |player| {
+        memory::tick(player);
         if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
             audio.recreate_stream_if_needed();
         }
