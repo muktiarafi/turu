@@ -32,6 +32,12 @@ sha2 = { workspace = true }
 zip = { workspace = true, features = ["deflate"] }
 # The Interceptor (`capture.rs`): the server's compressed packets.
 flate2 = "1.1.9"
+# Client updates (`updates.rs`): comparing release versions.
+semver = "1.0.28"
+
+# Client updates (`updates.rs`): swapping the running program on Windows and Linux.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+self-replace = "1.5"
 
 # Account passwords (`accounts.rs`), in the system's keychain: Keychain, Credential Manager,
 # the Secret Service (pure Rust on Linux: no libdbus to build against). Android has none: the

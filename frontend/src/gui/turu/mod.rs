@@ -10,6 +10,7 @@ mod army;
 mod auto;
 mod butler;
 mod client_logs;
+mod client_update;
 mod console;
 mod core_bots;
 mod cosmetics;
@@ -76,6 +77,8 @@ pub struct Windows {
     pub army: bool,
     pub butler: bool,
     pub cosmetics: bool,
+    /// The nav bar's "Update" notice: a newer Turu (`client_update`).
+    pub client_update: bool,
 }
 
 /// Where tool windows live: the app window below the nav bar (and the tab strip).
@@ -280,6 +283,7 @@ impl TuruUi {
         tab.interceptor.files(ctx);
         tab.butler.show(ctx, &mut w.butler);
         tab.cosmetics.show(ctx, &mut w.cosmetics);
+        client_update::show(ctx, &mut w.client_update);
         stop_auto_while_following();
         let (accounts, army) = (std::mem::take(&mut w.accounts), std::mem::take(&mut w.army));
         self.accounts_open |= accounts;
@@ -482,6 +486,46 @@ mod tests {
             .expect("shown");
         let overflow = OVERFLOW.with(|o| *o.borrow().last().expect("recorded"));
         (rect, area, overflow)
+    }
+
+    /// The update window, in each install state, stays on screen and needs no scrolling.
+    #[test]
+    fn client_update_window_renders() {
+        use turu_bot::updates::{Asset, Install, Release};
+        let asset = |name: &str| Asset {
+            name: name.into(),
+            url: format!("https://example.invalid/{name}"),
+            size: 1,
+        };
+        let release = Release {
+            version: "0.2.0-alpha.10".into(),
+            tag: "v0.2.0-alpha.10".into(),
+            html_url: "https://example.invalid/notes".into(),
+            prerelease: true,
+            asset: Some(asset("turu-0.2.0-alpha.10-macos-universal.zip")),
+            sums: Some(asset(turu_bot::updates::SUMS_NAME)),
+        };
+        let states = [
+            Install::Idle,
+            Install::Busy("Downloading Turu 0.2.0-alpha.10…".into()),
+            Install::OnQuit("0.2.0-alpha.10".into()),
+            Install::Failed("https://example.invalid/turu.zip: error sending request for url: connection refused".into()),
+        ];
+        for install in states {
+            turu_bot::updates::update_state(|s| {
+                s.available = Some(release.clone());
+                s.install = install.clone();
+            });
+            let mut show: Show = Box::new(client_update::show);
+            for screen in [vec2(1400.0, 1000.0), vec2(640.0, 420.0)] {
+                let (rect, area, overflow) = run(screen, client_update::TITLE, &mut show);
+                assert!(area.expand(1.0).contains_rect(rect), "{install:?} {screen:?}: {rect:?} outside {area:?}");
+                if screen.y >= 1000.0 {
+                    assert!(overflow <= 0.5, "{install:?}: scrolls by {overflow}");
+                }
+            }
+        }
+        turu_bot::updates::update_state(|s| *s = Default::default());
     }
 
     /// Butler with its settings and debug log open (it scrolls then) stays on screen.

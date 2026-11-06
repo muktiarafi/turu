@@ -56,6 +56,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     scheduler.rs         Scripts > Scheduler: a playlist of scripts run one after another
     paths.rs, log.rs     data directory, skill set files; log buffers
     repo.rs              Search Scripts: the script repository's index, downloads, update, reset
+    updates.rs           client updates: newer Turu releases on GitHub, the package's SHA-256
+                         check, swapping the program (self_replace; ditto on macOS)
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
                          monsters, quests, reputation, auras (self and target), drops, boosts,
                          inventory (also bank, tempInv, house, invHelper), shops, skills, wait,

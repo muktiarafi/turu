@@ -22,6 +22,12 @@ pub struct AppSettings {
     pub auto_update_advance_skill_sets_updates: bool,
     pub check_junk_items_updates: bool,
     pub auto_update_junk_items: bool,
+    /// Check Turu's GitHub releases at launch and every 6 hours (`crate::updates`; VibeSkua's
+    /// Manager `CheckClientUpdates`).
+    pub check_client_updates: bool,
+    /// Offer pre-releases too (VibeSkua's Manager `CheckClientPrereleases`). A pre-release build
+    /// gets them anyway: `updates::wants_prereleases`.
+    pub check_client_prereleases: bool,
     /// Tools > Junk Items' "Skip sell warning" (VibeSkua `JunkSkipSellWarning`).
     pub junk_skip_sell_warning: bool,
     // Webhooks & Alerts (`crate::webhooks`)
@@ -67,6 +73,8 @@ impl Default for AppSettings {
             auto_update_advance_skill_sets_updates: true,
             check_junk_items_updates: true,
             auto_update_junk_items: true,
+            check_client_updates: true,
+            check_client_prereleases: false,
             junk_skip_sell_warning: false,
             discord_webhook_url: String::new(),
             webhook_notify_started: true,

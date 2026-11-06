@@ -30,6 +30,28 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   before the game starts (`configure_startup`), so an empty data folder works. Checked: a
   windowless client with an empty data folder downloaded a playlist's script and loaded it.
   `bot/src/startup.rs`, flags in `frontend/src/turu.rs`.
+- **Client updates** (`bot/src/updates.rs`, gap #33; VibeSkua's Manager uses Velopack, which
+  only updates installed apps): at launch and every 6 hours a thread reads Turu's GitHub releases
+  (`TURU_RELEASES_URL` overrides the URL), skips drafts and, unless Include Pre-releases is on or
+  this build is itself a pre-release, pre-releases, and compares versions with semver against
+  `TURU_VERSION` (the tag the release workflow builds from; local builds: the crate's 0.2.0,
+  which is above every 0.2.0 alpha, so they're offered nothing). A newer one is logged once and
+  shown in the nav bar ("Update <version>"), the control API's `/status` and the web monitor's
+  summary. Download & restart (desktops) downloads this platform's package, checks its SHA-256
+  against the release's `SHA256SUMS.txt`, then on Windows and Linux swaps the running program
+  with `self_replace` and starts it with the same arguments, and on macOS copies `Turu.app` next
+  to the running bundle with `ditto`, swaps them by renames and starts it with `open -n`. Update
+  when I quit installs it as the window closes; `--headless` exits with status 75 for its service
+  to restart it (`POST /update`). Army-launched clients don't check. Android only opens the APK.
+  Checked (macOS, debug build, a local release feed): a windowless client found the release,
+  `/status` showed it, `POST /update` installed it into a copy of `Turu.app` and exited 75; the
+  nav bar showed "Update 9.9.9" in the window. Windows and Linux installs are unit-tested
+  (unpacking) but haven't run on those systems; Download & restart in the window wasn't clicked.
+  **Trust:** `SHA256SUMS.txt` only proves the package arrived intact, not who made it: whoever
+  can publish a release on `muktiarafi/turu` (or take over the account) can publish matching
+  sums. The next step is to sign `SHA256SUMS.txt` with minisign in `release.yml` and check it
+  with a public key built into Turu. Turu replacing itself also needs write access to its own
+  folder: a copy in `/opt` owned by root, run by another user, fails with the reason shown.
 - **Windowless mode** (`--headless`, `app/src/headless.rs` on `turu_frontend::engine`): no
   window, GPU or sound; the player draws nothing (Ruffle's null renderer) and a loop on the main
   thread runs it, its

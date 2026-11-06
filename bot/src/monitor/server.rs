@@ -3,7 +3,7 @@
 //! | Route | What |
 //! |---|---|
 //! | `GET /` | The page (`bot/assets/monitor/index.html`). |
-//! | `GET /api/state` | Every entry (latest snapshot, recent events), Turu's version and uptime, and whether control is allowed. |
+//! | `GET /api/state` | Every entry (latest snapshot, recent events), Turu's version and uptime, a newer Turu (`update`, or null), and whether control is allowed. |
 //! | `GET /api/events` | Server-Sent Events: the same state as an `event: state` every second. |
 //! | `GET /api/bots/<id>` | One entry with all its events and its history. |
 //! | `GET /api/bots/<id>/log?type=script\|debug[&since=]` | Its log lines from number `since` (the control API's `/log`). |
@@ -76,6 +76,8 @@ struct State {
     /// The server's clock, for the page's "seconds ago".
     now: u64,
     allow_control: bool,
+    /// A newer Turu (`crate::updates::status_json`), or null.
+    update: serde_json::Value,
     bots: Vec<super::hub::View>,
 }
 
@@ -95,6 +97,7 @@ impl Shared {
             uptime_seconds: self.hub.uptime().as_secs(),
             now: super::snapshot::now_ms(),
             allow_control: self.allow_control.load(Ordering::Relaxed),
+            update: crate::updates::status_json(),
             bots: self.hub.views(),
         };
         serde_json::to_string(&state).unwrap_or_else(|_| "{}".into())

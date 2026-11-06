@@ -182,6 +182,21 @@ curl -H "$T" -X POST "localhost:8791/butler/summon?user=MyAlt"   # also release,
                                                                  # release-all, follow, stop
 ```
 
+**Updates:** it checks Turu's releases at launch and every 6 hours (Options > Application >
+Check for Client Updates in the shared `settings.json`) and only tells you: a log line
+(`Update available: Turu X (you have Y): <release page>`), `update` in `/status` (version,
+current, url, download, prerelease; `null` when up to date) and in the web monitor's summary.
+To install it, `POST /update` (409 while a script runs, unless `?stop=1`): it downloads the
+package, checks it against the release's `SHA256SUMS.txt`, replaces the program and exits with
+status 75, which `Restart=on-failure` restarts on the new binary. The service's user must be
+able to write the program's folder (`/opt/turu` above is root's: `chown` it to that user, or
+update by hand). `SHA256SUMS.txt` proves the download is intact, not who published it.
+
+```bash
+curl -H "$T" localhost:8791/status | jq .update
+curl -H "$T" -X POST localhost:8791/update            # ?stop=1 while a script runs
+```
+
 A refused command answers 409 with the reason (a playlist that runs can't be edited, Butler
 won't summon a busy account, ...).
 
@@ -222,6 +237,7 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | `TURU_API_TOKEN` | The control API token (16+ characters); else the data folder's `api-token`. |
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |
 | `TURU_SCRIPTS_REPO` | Another scripts repository (`owner/name`). |
+| `TURU_RELEASES_URL` | Where to check for new Turu releases (GitHub's releases API format; default Turu's). |
 | `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks (and memory, without a window). |
 | `TURU_SYSTEM_ALLOC` | Set: the system allocator instead of mimalloc, for heap profilers. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
@@ -239,4 +255,5 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | Army clients wait in different rooms | They don't share the data folder. |
 | `Web monitor: ...` address in use | Enable Web Monitor is on in the shared `settings.json`. |
 | `Control API: ...` | The port is taken, or the token is under 16 characters. |
+| `Couldn't install Turu ...: couldn't replace ...` | The service's user can't write the program's folder. |
 | Clients overwrite each other's Ruffle log | It's one file per user (`~/.cache/ruffle/log`): use journald. |

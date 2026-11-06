@@ -50,7 +50,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 | 30 | Army Queue | Manager tab | Squads, per-squad default scripts, per-role scripts, presets, Start/Pause/Resume/Stop. | |
 | 31 | Account tag editing from scripts | `Bot.Accounts` (C# uses: 3) | Get/Add/Remove/Set/Clear tags, `GetAllAccounts`. Turu has `bot.army.accounts()` (usernames only). | |
 | 32 | Per-account Edit Options / Save Setup, `--script-options-storage` | Manager Accounts tab, CLI | Share script options across accounts via a storage override. | |
-| 33 | Updater (client self-update) | Manager tab (Velopack) | Turu ships from `release.yml`; no in-app update. | |
+| 33 | Updater (client self-update) | Manager tab (Velopack) | **Ported** without Velopack, which only updates installed apps (Turu ships portable archives from `release.yml`): `bot/src/updates.rs` reads the GitHub releases at launch and every 6 hours (Options > Application > Updates: Check for Client Updates, Include Pre-releases; VibeSkua's Manager `CheckClientUpdates`/`CheckClientPrereleases`), and the nav bar shows "Update <version>" (never a modal) opening the Update Turu window (`frontend/src/gui/turu/client_update.rs`). Desktops: Download & restart (greyed while a script runs) or Update when I quit; the package is checked against `SHA256SUMS.txt`, then `self_replace` swaps the exe (Windows, Linux) or `ditto` the `Turu.app` (macOS). Android opens the APK. Headless: logged, `update` in `/status` and the monitor, `POST /update`. | port (done) |
 | 34 | Manager Themes / Options / About / change log | Manager tabs | | |
 | 35 | `--use-theme`, `--gh-token` | CLI | Theme flag depends on #2; token is for GitHub API rate limits. | |
 

@@ -471,10 +471,12 @@ fn main() -> Result<(), Error> {
     });
 
     // Turu: the startup flags (downloading the scripts they name), the control API (`--api`), the
-    // web monitor and `TURU_PERF_LOG`, now that their messages can be logged.
+    // web monitor, the client update checks and `TURU_PERF_LOG`, now that their messages can be
+    // logged.
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
+    turu::start_client_updates();
     turu::start_perf_log((!turu::headless()).then(|| {
         // With a window, the event loop thread as a whole (see `thread_perf`).
         let mut last = thread_perf::snapshot();

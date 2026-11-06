@@ -51,6 +51,11 @@ impl Paths {
         self.root.join("crash")
     }
 
+    /// Where client updates are downloaded and unpacked (`crate::updates`), emptied before each.
+    pub fn updates_dir(&self) -> PathBuf {
+        self.root.join("updates")
+    }
+
     /// The control API's token (`control_api::saved_token`), readable by you only.
     pub fn api_token_file(&self) -> PathBuf {
         self.root.join("api-token")

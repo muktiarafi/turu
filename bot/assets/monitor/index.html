@@ -410,7 +410,7 @@ function render() {
   const running = live.filter(b => b.snapshot?.script.running).length;
   const kills = live.reduce((n, b) => n + (b.snapshot?.stats.kills ?? 0), 0);
   const gph = live.reduce((n, b) => { const s = b.snapshot?.session; return n + ((s && perHour(s.gold, s.seconds)) ?? 0); }, 0);
-  $("#summary").innerHTML = `<span><b>${playing}</b>/${live.length} playing</span><span><b>${running}</b> running</span><span><b>${fmt(kills)}</b> kills</span><span><b>${fmt(gph)}</b> gold/h</span><span>Turu ${esc(state.version)} · up ${clock(state.uptimeSeconds)}</span>`;
+  $("#summary").innerHTML = `<span><b>${playing}</b>/${live.length} playing</span><span><b>${running}</b> running</span><span><b>${fmt(kills)}</b> kills</span><span><b>${fmt(gph)}</b> gold/h</span><span>Turu ${esc(state.version)} · up ${clock(state.uptimeSeconds)}</span>${state.update ? `<span><a href="${esc(state.update.url)}" target="_blank" rel="noopener">Update available: ${esc(state.update.version)}</a></span>` : ""}`;
   const main = $("#main");
   if (!list.length) {
     main.innerHTML = `<p class="empty">${state.bots.length ? "No bot matches the filter." : "No bots."}</p>`;

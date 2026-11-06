@@ -250,6 +250,167 @@ pub fn start_script_updates() {
     });
 }
 
+/// Client updates (`turu_bot::updates`): checks Turu's GitHub releases at launch and every 6
+/// hours, on a thread of its own, while Options > Application > Check for Client Updates is on.
+/// Started once, by the window (`TuruUi::new`), `--headless` or Android's engine; clients
+/// launched by Army > Accounts skip it (their launcher checks).
+pub fn start_client_updates() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+        return;
+    }
+    STARTED.call_once(|| {
+        turu_bot::updates::set_installer(Box::new(|| install_update(false)));
+        let spawned = std::thread::Builder::new().name("Turu Client Updates".into()).spawn(|| {
+            loop {
+                if bot().settings.read().check_client_updates {
+                    check_client_updates_now_blocking();
+                }
+                std::thread::sleep(turu_bot::updates::CHECK_EVERY);
+            }
+        });
+        if let Err(e) = spawned {
+            tracing::error!("Couldn't start the client update checks: {e}");
+        }
+    });
+}
+
+/// Options > Application's Check Now: one check, on a thread.
+pub fn check_client_updates_now() {
+    let _ = std::thread::Builder::new()
+        .name("Turu Client Update Check".into())
+        .spawn(check_client_updates_now_blocking);
+}
+
+fn check_client_updates_now_blocking() {
+    use turu_bot::updates;
+    let started = updates::update_state(|s| !std::mem::replace(&mut s.checking, true));
+    if !started {
+        return;
+    }
+    let prereleases = updates::wants_prereleases(bot().settings.read().check_client_prereleases, VERSION);
+    let result = updates::check(&updates::Http::for_checks(), &updates::releases_url(), VERSION, prereleases);
+    if let Err(e) = &result {
+        tracing::warn!("Couldn't check for Turu updates: {e}");
+    }
+    if let Some(release) = updates::record_check(result) {
+        let message = format!("Update available: Turu {} (you have {VERSION}): {}", release.version, release.html_url);
+        tracing::info!("{message}");
+        bot().log(format!("[Updates] {message}"));
+    }
+}
+
+/// Whether Army > Accounts launched this client (it leaves updates and the monitor to its
+/// launcher).
+pub fn launched_by_army() -> bool {
+    LAUNCHED_BY_ARMY.load(Ordering::Relaxed)
+}
+
+/// Whether a tab runs a script: Download & restart waits (Update when I quit doesn't).
+pub fn any_script_running() -> bool {
+    tabs().iter().any(|(_, bot)| bot.scripts.status().is_active())
+}
+
+/// An update unpacked by Update when I quit, put in place by [`apply_pending_update`].
+#[cfg(not(target_os = "android"))]
+static PENDING_UPDATE: Mutex<Option<turu_bot::updates::install::Staged>> = Mutex::new(None);
+
+/// Download & restart (`on_quit` false) or Update when I quit (true), on a thread: downloads
+/// the available release's package, checks it against `SHA256SUMS.txt` and unpacks it. Then
+/// either puts it in place and restarts with the same arguments (`--headless` exits with
+/// status 75 instead, for its service manager to restart it), or keeps it for
+/// [`apply_pending_update`]. `turu_bot::updates::state().install` shows the progress.
+pub fn install_update(on_quit: bool) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = on_quit;
+        Err("Android installs the APK itself".into())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use turu_bot::updates::{self, Install};
+        let release = updates::available().ok_or("no update available")?;
+        let target = updates::Target::current()
+            .filter(|t| t.updates_in_place())
+            .ok_or("Turu can't update itself on this platform")?;
+        if !release.installable() {
+            return Err(format!("Turu {} has no package for this platform", release.version));
+        }
+        let busy = updates::update_state(|s| {
+            let busy = matches!(s.install, Install::Busy(_));
+            if !busy {
+                s.install = Install::Busy(format!("Downloading Turu {}…", release.version));
+            }
+            busy
+        });
+        if busy {
+            return Err("an update is being installed already".into());
+        }
+        let version = release.version.clone();
+        let spawned = std::thread::Builder::new().name("Turu Client Update".into()).spawn(move || {
+            let set = |install: Install| updates::update_state(|s| s.install = install);
+            let dir = bot().paths.updates_dir();
+            let staged = updates::download(&updates::Http::for_downloads(), &release, &dir).and_then(|archive| {
+                set(Install::Busy(format!("Unpacking Turu {}…", release.version)));
+                updates::install::stage(&archive, &dir.join("staged"), target)
+            });
+            let staged = match staged {
+                Ok(staged) => staged,
+                Err(e) => {
+                    tracing::error!("Couldn't update Turu: {e}");
+                    set(Install::Failed(e));
+                    return;
+                }
+            };
+            if on_quit {
+                tracing::info!("Turu {} will be installed when Turu quits", release.version);
+                *PENDING_UPDATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(staged);
+                set(Install::OnQuit(release.version));
+                return;
+            }
+            set(Install::Busy(format!("Installing Turu {}…", release.version)));
+            match updates::install::apply(&staged) {
+                Ok(relaunch) => {
+                    tracing::info!("Installed Turu {}; restarting", release.version);
+                    close_butlers();
+                    if headless() {
+                        // `Restart=on-failure` restarts it (docs/HEADLESS.md).
+                        std::process::exit(75);
+                    }
+                    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+                    match relaunch.spawn(&args) {
+                        Ok(()) => std::process::exit(0),
+                        Err(e) => {
+                            tracing::error!("{e}");
+                            set(Install::Failed(format!("Installed, but {e}: start Turu again")));
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Couldn't install Turu {}: {e}", release.version);
+                    set(Install::Failed(e));
+                }
+            }
+        });
+        if let Err(e) = spawned {
+            updates::update_state(|s| s.install = Install::Failed(e.to_string()));
+            return Err(e.to_string());
+        }
+        Ok(format!("installing Turu {version}"))
+    }
+}
+
+/// Puts an update kept by Update when I quit in place; the app calls it once its window closed.
+pub fn apply_pending_update() {
+    #[cfg(not(target_os = "android"))]
+    if let Some(staged) = PENDING_UPDATE.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        match turu_bot::updates::install::apply(&staged) {
+            Ok(_) => tracing::info!("Installed the update: it starts next time"),
+            Err(e) => tracing::error!("Couldn't install the update: {e}"),
+        }
+    }
+}
+
 /// The accounts this client launched (Army > Accounts), each in its own `turu` process.
 pub fn army() -> &'static Arc<turu_bot::army::Army> {
     ARMY.get_or_init(|| {

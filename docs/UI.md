@@ -55,7 +55,7 @@ Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics, V
 tabbed host). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
-Right: the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
+Right: **Update** (only while a newer Turu is out: below), the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
 (VibeSkua's direct action, moved here from between Combat and Diagnostics because it is one; a
 spinner in it while it runs, then for 4 s a note under it saying why nothing opened), a divider,
 and the **script status**: one capsule with the chip (status dot, a yellow "!" while the script
@@ -91,6 +91,7 @@ top, and + at the end.
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error", after a run "Finished 6h 12m" or "Stopped 3h 40m" (the Script Loader's last run), or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
+| Update | Turu's (VibeSkua's Manager asks in a message box at launch): only while `turu_bot::updates` found a newer Turu, a quick-action item left of Grid, "Update 0.2.0-alpha.7" ("Update" folded all the way), led by an accent dot (a spinner while it downloads, green once it waits for Turu to quit, red after a failure); the tooltip says "Update available: Turu X (you have Y)". It opens the Update Turu window. Never a modal: a script may be running |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
 | everything else (Application Themes, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
 
@@ -274,8 +275,11 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
   stores it and never reads it), Relogin Try Delay and Relogin Watchdog (bot options: applied
   and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
-  folder after a second click, then restart). Updates: the six switches are stored but greyed
-  ("Coming soon"): Turu downloads no updates. Webhooks: the Discord URL with Test, the notify
+  folder after a second click, then restart). Updates: Check for Client Updates (on: at launch
+  and every 6 hours), Include Pre-releases (a pre-release build gets them anyway: every release
+  so far is an alpha), Check Now, and under the section the last check (when, the newest
+  version, or why it failed); Check for Script Updates and Auto Update Scripts; the skill-set and
+  junk-item switches are stored but greyed ("Coming soon"). Webhooks: the Discord URL with Test, the notify
   switches, Drop List, Health Pings and their interval, sent by `bot/src/webhooks.rs` (VibeSkua
   `DiscordWebhookService`): one thread posting embeds, two a second, retrying on 429; the health
   pings' snapshot is read on that thread. The drop alert has no screenshot (VibeSkua attaches
@@ -288,6 +292,17 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   below. Report (to another machine's monitor): Report To, Push Key (hidden), Machine Name
   (empty: the computer's name) and Accept Commands, with the reporter's state and a warning for
   plain `http://` across the internet.
+* **Update Turu** (`client_update.rs`, 400x250, from the nav bar's Update): a card with "Turu
+  <version>", "You have <version> · pre-release" and a Release notes link (the GitHub release
+  page), then the state: a spinner and what it does (Downloading, Unpacking, Installing), "Turu X
+  is downloaded and installs when you quit Turu." in green, or the failure in red; while a script
+  runs, "A script is running. Stop it to restart now, or update when you quit Turu.". Buttons:
+  **Download & restart** (primary; greyed while any tab runs a script or a download runs, the
+  tooltip says why) downloads the package, checks it against `SHA256SUMS.txt`, replaces Turu and
+  starts it again with the same arguments; **Update when I quit** downloads and unpacks it now
+  and puts it in place when the window closes. On Android one button, **Download APK**, opens the
+  APK's URL (Android installs it over the app); a release without this platform's package says
+  to download it from the release page.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread; no title when adding, "Editing
   Hero" when editing, whose greyed username says on hover it's the account's key; Enter in any

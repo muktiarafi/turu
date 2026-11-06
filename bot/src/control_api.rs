@@ -5,7 +5,7 @@
 //!
 //! | Route | What |
 //! |---|---|
-//! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats. |
+//! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats, and `update`: a newer Turu (`version`, `current`, `url` of its notes, `download`, `prerelease`) or `null`. |
 //! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, and `next`. Army polls it. |
 //! | `POST /script/load?path=` | Load a script (relative to the scripts folder, or absolute). |
 //! | `POST /script/start[?path=][&configure=1]` | Start the loaded script, or load and start `path`; with `configure=1` it shows the Script Options window first, as Start does in the window (Army Control sends it). |
@@ -34,6 +34,7 @@
 //! | `POST /butler/summon?user=`, `/butler/release?user=` | Summon or release one account (`user` must be online with Butler to summon). |
 //! | `POST /butler/summon-all`, `/butler/release-all` | Summon every available account; release them all. |
 //! | `POST /butler/follow?master=`, `/butler/stop` | Follow an account from this client; stop following (declining a summon). |
+//! | `POST /update[?stop=1]` | Download the newer Turu, check it against `SHA256SUMS.txt`, put it in place and exit with status 75, so a service manager restarts the new one (`--headless`; with a window it starts the new one itself). 409 while a script runs unless `stop=1`, or when there's no update. |
 //! | `GET /debug/perf` | The Flash calls this client made and its player's ticks, since it started (`crate::perf::PerfSnapshot`). |
 //!
 //! `/equip` and `/bank/load` answer 409 while a script runs, unless `stop=1`: then the script
@@ -237,6 +238,24 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             let snapshot = crate::monitor::sample(bot, query("slow").as_deref() == Some("1"));
             let (events, next) = bot.monitor.events_since(since);
             ok(json!({ "snapshot": snapshot, "events": events, "next": next }))
+        }
+        ("/update", true) => {
+            if crate::updates::available().is_none() {
+                return error(409, "no update available");
+            }
+            if bot.scripts.is_running() && query("stop").as_deref() != Some("1") {
+                return error(409, "a script is running (stop=1 to update anyway)");
+            }
+            match crate::updates::installer() {
+                None => error(501, "this client can't update itself"),
+                Some(install) => match install() {
+                    Ok(message) => Reply {
+                        status: 202,
+                        body: json!({ "updating": message }),
+                    },
+                    Err(e) => error(409, e),
+                },
+            }
         }
         ("/debug/perf", false) => {
             ok(serde_json::to_value(bot.flash.perf().snapshot()).unwrap_or(Value::Null))
@@ -575,6 +594,8 @@ fn status(bot: &Bot) -> Value {
         "script": script,
         "auto": bot.auto.mode().map(AutoMode::label),
         "stats": stats,
+        // A newer Turu (`crate::updates`), or null.
+        "update": crate::updates::status_json(),
     });
     if !(connected && loaded) {
         return status;

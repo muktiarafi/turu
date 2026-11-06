@@ -1634,6 +1634,8 @@ impl ApplicationHandler<RuffleEvent> for App {
             "closing: player and renderer dropped after {} ms",
             started.elapsed().as_millis()
         );
+        // Turu: an update kept by "Update when I quit" goes in place now.
+        crate::turu::apply_pending_update();
 
         // Manually stop the tokio runtime: this makes sure that any pending Player-bound futures
         // are properly cancelled and put back on the winit event loop before it closes, preventing

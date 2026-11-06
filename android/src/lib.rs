@@ -360,6 +360,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
+    turu::start_client_updates();
     turu::start_perf_log(None);
 
     let movie_url = match turu::skua_swf_url().map(|url| Url::parse(&url)) {

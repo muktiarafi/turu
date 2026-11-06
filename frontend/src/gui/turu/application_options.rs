@@ -73,6 +73,8 @@ enum Field {
     PushKey,
     /// `send_crash_reports` (Android builds with Sentry only), applied at once.
     CrashReports,
+    /// Check Now, for client updates.
+    CheckClientUpdates,
 }
 
 struct Entry {
@@ -148,6 +150,19 @@ fn vibeskua_entries() -> Vec<Entry> {
             "Deletes the game's saved data (SharedObjects), such as the remembered login. Restart Turu afterwards",
             Field::ClearFlashCache
         ),
+        entry!(
+            Updates,
+            "Check for Client Updates",
+            "Whether to check for new Turu versions when launching Turu, and every 6 hours",
+            Field::Bool(|s| &mut s.check_client_updates)
+        ),
+        entry!(
+            Updates,
+            "Include Pre-releases",
+            "Whether to offer alpha, beta and release-candidate versions too. A pre-release of Turu always offers them",
+            Field::Bool(|s| &mut s.check_client_prereleases)
+        ),
+        entry!(Updates, "Check for Client Updates Now", "", Field::CheckClientUpdates),
         entry!(
             Updates,
             "Check for Script Updates",
@@ -502,6 +517,27 @@ impl ApplicationOptionsWindow {
                                     }
                                     Field::RegenerateMonitorKey => self.regenerate_key(ui),
                                     Field::PushKey => self.push_key(ui, &settings),
+                                    Field::CheckClientUpdates => {
+                                        let checking = turu_bot::updates::state().checking;
+                                        let why = if crate::turu::launched_by_army() {
+                                            "The client that launched this one checks"
+                                        } else {
+                                            "Checking…"
+                                        };
+                                        let enabled = !checking && !crate::turu::launched_by_army();
+                                        if widgets::button(
+                                            ui,
+                                            "Check Now",
+                                            Kind::Normal,
+                                            enabled,
+                                            vec2(96.0, 24.0),
+                                            why,
+                                        )
+                                        .clicked()
+                                        {
+                                            crate::turu::check_client_updates_now();
+                                        }
+                                    }
                                     Field::CrashReports => {
                                         let mut on = settings.send_crash_reports == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
@@ -518,6 +554,9 @@ impl ApplicationOptionsWindow {
                         }
                         if section == Section::Report {
                             report_status(ui, &settings);
+                        }
+                        if section == Section::Updates {
+                            client_update_status(ui);
                         }
                         if section == Section::Monitor {
                             monitor_status(ui);
@@ -790,6 +829,33 @@ fn report_status(ui: &mut Ui, settings: &AppSettings) {
             (None, Some(_)) => (format!("Reporting as \"{machine}\"."), SUCCESS),
             (None, None) => (format!("Reporting as \"{machine}\": connecting…"), MUTED),
         },
+    };
+    ui.label(RichText::new(text).small().color(color));
+}
+
+/// The last client update check: when, and what it found.
+fn client_update_status(ui: &mut Ui) {
+    let state = turu_bot::updates::state();
+    let (text, color) = if state.checking {
+        ("Checking for a new Turu…".to_owned(), MUTED)
+    } else if let Some(error) = &state.error {
+        (format!("Couldn't check for a new Turu: {error}"), DANGER)
+    } else if let Some(release) = &state.available {
+        (
+            format!("Turu {} is available: open Update in the bar", release.version),
+            SUCCESS,
+        )
+    } else if let Some(at) = state.checked_at {
+        (
+            format!(
+                "Turu {} is the newest (checked at {})",
+                crate::turu::VERSION,
+                at.format("%H:%M")
+            ),
+            MUTED,
+        )
+    } else {
+        return;
     };
     ui.label(RichText::new(text).small().color(color));
 }

@@ -354,6 +354,7 @@ impl NavBar {
         self.jump_toggle(ui);
         self.auto_toggle(ui);
         grid_toggle(ui);
+        update_notice(ui, windows, compact);
         (bank, name)
     }
 
@@ -962,6 +963,36 @@ fn close_on_click_outside(ctx: &egui::Context, open: &mut bool, popup: Option<eg
         .is_some_and(|layer| matches!(layer.order, egui::Order::Foreground | egui::Order::Tooltip));
     if !on_popup {
         *open = false;
+    }
+}
+
+/// A newer Turu (`turu_bot::updates`): a quiet item at the left of the quick actions that opens
+/// the update window. Never a modal: a script may be running. Shows how an install goes: a
+/// spinner while it downloads, a green dot once it waits for Turu to quit.
+fn update_notice(ui: &mut Ui, windows: &mut Windows, compact: bool) {
+    let state = turu_bot::updates::state();
+    let Some(release) = &state.available else { return };
+    let lead = match state.install {
+        turu_bot::updates::Install::Busy(_) => Lead::Spinner,
+        turu_bot::updates::Install::OnQuit(_) => Lead::Dot(SUCCESS),
+        turu_bot::updates::Install::Failed(_) => Lead::Dot(DANGER),
+        turu_bot::updates::Install::Idle => Lead::Dot(ACCENT),
+    };
+    let label = if compact {
+        "Update".to_owned()
+    } else {
+        format!("Update {}", release.version)
+    };
+    let response = toggle_button(ui, &label, lead, windows.client_update).on_hover_text(format!(
+        "Update available: Turu {} (you have {})",
+        release.version,
+        crate::turu::VERSION
+    ));
+    if response.clicked() {
+        windows.client_update = !windows.client_update;
+    }
+    if matches!(state.install, turu_bot::updates::Install::Busy(_)) {
+        ui.ctx().request_repaint_after(Duration::from_millis(100));
     }
 }
 
