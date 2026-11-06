@@ -531,12 +531,8 @@ impl GameOptionsWindow {
                 .filter(|e| e.section == section && self.shown(e, &needle, &differs))
                 .count()
         });
-        // A short window (a phone held sideways) scrolls the search and chips away with the
-        // list; fixed above it, they'd leave room for one option or two.
-        let short = ui.available_height() < SHORT_HEIGHT;
-        if !short {
-            self.search_bar(ui, counts, differs.len());
-        }
+        // Fixed above the list at every height, as in the other options windows.
+        self.search_bar(ui, counts, differs.len());
 
         let footer = self.footer_height.unwrap_or(widgets::target(64.0, 76.0)) + ui.spacing().item_spacing.y;
         let list_height = (ui.available_height() - footer).max(80.0);
@@ -545,9 +541,6 @@ impl GameOptionsWindow {
             .max_height(list_height)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                if short {
-                    self.search_bar(ui, counts, differs.len());
-                }
                 let shown: usize = Section::ALL
                     .into_iter()
                     .zip(counts)
@@ -999,9 +992,6 @@ fn matches(entry: &Entry, needle: &str) -> bool {
                 .split(|c: char| !c.is_alphanumeric())
                 .any(|word| word.starts_with(needle)))
 }
-
-/// Below this height the search and chips scroll with the list.
-const SHORT_HEIGHT: f32 = 480.0;
 
 /// The narrowest a row's label and description get beside its control; narrower, the control
 /// goes under them.
