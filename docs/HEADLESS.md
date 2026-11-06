@@ -149,7 +149,7 @@ Summons off in `butler.json` for the account you play by hand.
 shows more. Text layout's "Fallback font not found" errors are left out (no device fonts are
 loaded without a window, and nobody sees the text); a `RUST_LOG` of your own brings them back.
 
-**Web monitor** (`--monitor=127.0.0.1:8790`): each bot's card, logs, history and commands.
+**Web monitor** (`--monitor=127.0.0.1:8790`): each bot's state, last-hour trace, logs, history and commands.
 Keep it on loopback and use a tunnel, which needs no key:
 
 ```bash

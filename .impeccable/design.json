@@ -1,0 +1,624 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-06T11:54:37+00:00",
+  "title": "Design System: Turu Monitor",
+  "extensions": {
+    "scope": "Nila covers the Turu Monitor web surface only (bot/assets/monitor/index.html). The egui desktop/Android UI (frontend/src/gui/turu/theme.rs) keeps its Mugetsu palette and must not use these tokens.",
+    "colorMeta": {
+      "nila-ground": {
+        "role": "neutral",
+        "displayName": "Nila Ground",
+        "canonical": "#0e1226",
+        "oklch": "oklch(19.0% 0.041 273.4)",
+        "cssVar": "--ground",
+        "purpose": "The page behind everything.",
+        "light": "#e4e7f2",
+        "tonalRamp": [
+          "#090b12",
+          "#212431",
+          "#3c4153",
+          "#5a6077",
+          "#7b8199",
+          "#9ea4b9",
+          "#c4c8d9",
+          "#eaeefa"
+        ]
+      },
+      "nila-field": {
+        "role": "neutral",
+        "displayName": "Nila Field",
+        "canonical": "#141936",
+        "oklch": "oklch(22.6% 0.056 273.7)",
+        "cssVar": "--field",
+        "purpose": "Top bar, roster sheets, side panel, dialogs.",
+        "light": "#f6f7fb",
+        "tonalRamp": [
+          "#080a15",
+          "#202435",
+          "#3b4159",
+          "#585f7f",
+          "#7881a2",
+          "#9ca4c0",
+          "#c2c8df",
+          "#e9eeff"
+        ]
+      },
+      "nila-raise": {
+        "role": "neutral",
+        "displayName": "Nila Raise",
+        "canonical": "#1c2248",
+        "oklch": "oklch(26.9% 0.070 274.0)",
+        "cssVar": "--raise",
+        "purpose": "Hover, current row, selected segment, floating bars, toasts.",
+        "light": "#eaecf5",
+        "tonalRamp": [
+          "#080a17",
+          "#1f2339",
+          "#39405e",
+          "#565f86",
+          "#7680aa",
+          "#9aa3c7",
+          "#c0c8e5",
+          "#e8eeff"
+        ]
+      },
+      "nila-sunk": {
+        "role": "neutral",
+        "displayName": "Nila Well",
+        "canonical": "#0a0d1e",
+        "oklch": "oklch(16.6% 0.036 274.3)",
+        "cssVar": "--sunk",
+        "purpose": "Inputs, segmented troughs, meters, the log.",
+        "light": "#ffffff",
+        "tonalRamp": [
+          "#090b12",
+          "#22242f",
+          "#3d4151",
+          "#5b6074",
+          "#7c8197",
+          "#a0a4b6",
+          "#c5c8d7",
+          "#ebeef9"
+        ]
+      },
+      "indigo-rule": {
+        "role": "neutral",
+        "displayName": "Indigo Rule",
+        "canonical": "#2a3266",
+        "oklch": "oklch(33.9% 0.091 274.0)",
+        "cssVar": "--rule",
+        "purpose": "1px borders on controls, sheets and the top bar.",
+        "light": "#cdd2e5",
+        "tonalRamp": [
+          "#07091b",
+          "#1d233f",
+          "#373f66",
+          "#525d91",
+          "#737fb5",
+          "#97a2d0",
+          "#bec7ed",
+          "#e6edff"
+        ]
+      },
+      "indigo-rule-soft": {
+        "role": "neutral",
+        "displayName": "Soft Rule",
+        "canonical": "#1f2651",
+        "oklch": "oklch(28.8% 0.078 273.5)",
+        "cssVar": "--rule-soft",
+        "purpose": "Row dividers, list dividers, track backgrounds.",
+        "light": "#dee1ee",
+        "tonalRamp": [
+          "#070a19",
+          "#1e233b",
+          "#384061",
+          "#545e8a",
+          "#7480ae",
+          "#99a3cb",
+          "#bfc8e8",
+          "#e7eeff"
+        ]
+      },
+      "mori-ink": {
+        "role": "neutral",
+        "displayName": "Mori Ink",
+        "canonical": "#eee6d3",
+        "oklch": "oklch(92.6% 0.027 87.9)",
+        "cssVar": "--ink",
+        "purpose": "Primary text and figures.",
+        "light": "#161b3d",
+        "tonalRamp": [
+          "#0d0b06",
+          "#28251c",
+          "#464236",
+          "#676152",
+          "#888272",
+          "#aaa597",
+          "#cdc9be",
+          "#f1eee6"
+        ]
+      },
+      "mori-ink-2": {
+        "role": "neutral",
+        "displayName": "Mori Ink 2",
+        "canonical": "#b5b4cc",
+        "oklch": "oklch(77.8% 0.034 287.5)",
+        "cssVar": "--ink-2",
+        "purpose": "Secondary text, night summary, inactive tabs.",
+        "light": "#474b70",
+        "tonalRamp": [
+          "#0b0a11",
+          "#24242e",
+          "#41404f",
+          "#605f72",
+          "#818094",
+          "#a4a3b5",
+          "#c8c7d6",
+          "#eeedf8"
+        ]
+      },
+      "mori-ink-3": {
+        "role": "neutral",
+        "displayName": "Mori Ink 3",
+        "canonical": "#8d91b5",
+        "oklch": "oklch(66.6% 0.053 279.9)",
+        "cssVar": "--ink-3",
+        "purpose": "Captions, column heads, placeholders, offline marks.",
+        "light": "#575c80",
+        "tonalRamp": [
+          "#090a14",
+          "#222334",
+          "#3d4057",
+          "#5b5e7d",
+          "#7c80a0",
+          "#9fa3be",
+          "#c5c7de",
+          "#ebedfe"
+        ]
+      },
+      "soga": {
+        "role": "primary",
+        "displayName": "Soga Brown",
+        "canonical": "#d8995e",
+        "oklch": "oklch(73.2% 0.107 63.0)",
+        "cssVar": "--soga",
+        "purpose": "The only accent: primary actions, selection, focus, links.",
+        "light": "#985321",
+        "tonalRamp": [
+          "#180600",
+          "#3a1d00",
+          "#5f3709",
+          "#88531b",
+          "#ac7540",
+          "#c99a70",
+          "#e7c1a0",
+          "#ffe9d0"
+        ]
+      },
+      "soga-hover": {
+        "role": "primary",
+        "displayName": "Soga Glow",
+        "canonical": "#e4aa72",
+        "oklch": "oklch(78.0% 0.099 64.5)",
+        "cssVar": "--soga-hover",
+        "purpose": "Hover for soga-filled controls.",
+        "light": "#84461a",
+        "tonalRamp": [
+          "#170700",
+          "#381e01",
+          "#5d380f",
+          "#855522",
+          "#a87645",
+          "#c69c73",
+          "#e5c2a2",
+          "#ffe9d2"
+        ]
+      },
+      "soga-ink": {
+        "role": "primary",
+        "displayName": "Soga Ink",
+        "canonical": "#1d1307",
+        "oklch": "oklch(19.6% 0.027 70.8)",
+        "cssVar": "--soga-ink",
+        "purpose": "Text and ticks on soga fills.",
+        "light": "#fff8ee",
+        "tonalRamp": [
+          "#0e0a06",
+          "#2a241d",
+          "#494036",
+          "#6b5f52",
+          "#8c8072",
+          "#aea397",
+          "#d0c8be",
+          "#f4ede6"
+        ]
+      },
+      "soga-soft": {
+        "role": "primary",
+        "displayName": "Soga Wash",
+        "canonical": "rgb(216 153 94 / .14)",
+        "cssVar": "--soga-soft",
+        "purpose": "Picked rows, pressed toggles, update chip, focus halo.",
+        "light": "rgb(152 83 33 / .11)"
+      },
+      "jade": {
+        "role": "tertiary",
+        "displayName": "Jade",
+        "canonical": "#7fd3a7",
+        "oklch": "oklch(80.1% 0.104 160.0)",
+        "cssVar": "--jade",
+        "purpose": "State dye: playing / healthy; HP; kills chart.",
+        "light": "#1b7449",
+        "tonalRamp": [
+          "#001005",
+          "#002e1a",
+          "#0e4e33",
+          "#23724e",
+          "#49946e",
+          "#79b594",
+          "#a7d6bc",
+          "#d7f8e5"
+        ]
+      },
+      "kunyit": {
+        "role": "tertiary",
+        "displayName": "Kunyit Yellow",
+        "canonical": "#ebc55c",
+        "oklch": "oklch(83.6% 0.130 89.4)",
+        "cssVar": "--kunyit",
+        "purpose": "State dye: degraded (paused, relogging, reconnecting); drops chart.",
+        "light": "#855e00",
+        "tonalRamp": [
+          "#140900",
+          "#342200",
+          "#573e00",
+          "#7c5c00",
+          "#9f7e12",
+          "#bda259",
+          "#ddc790",
+          "#fdeec6"
+        ]
+      },
+      "mengkudu": {
+        "role": "tertiary",
+        "displayName": "Mengkudu Red",
+        "canonical": "#ef6f63",
+        "oklch": "oklch(69.3% 0.160 27.4)",
+        "cssVar": "--mengkudu",
+        "purpose": "State dye: trouble; danger buttons; target HP.",
+        "light": "#b3302a",
+        "tonalRamp": [
+          "#200000",
+          "#490908",
+          "#751f1b",
+          "#a4362f",
+          "#cb5a4f",
+          "#e7867b",
+          "#ffb2a8",
+          "#ffded6"
+        ]
+      },
+      "mana-blue": {
+        "role": "tertiary",
+        "displayName": "Mana Blue",
+        "canonical": "#93a6ff",
+        "oklch": "oklch(74.7% 0.130 273.7)",
+        "cssVar": "--mp",
+        "purpose": "Data only: MP bars and the XP chart. Never an interface accent.",
+        "light": "#3346b0",
+        "tonalRamp": [
+          "#060822",
+          "#1a2049",
+          "#323c75",
+          "#4d5aa4",
+          "#6c7cc9",
+          "#91a1e3",
+          "#b9c6fc",
+          "#e2edff"
+        ]
+      },
+      "wax": {
+        "role": "neutral",
+        "displayName": "Wax",
+        "canonical": "#eee6d3",
+        "oklch": "oklch(92.6% 0.027 87.9)",
+        "cssVar": "--wax",
+        "purpose": "Lit trace dots (the script ran).",
+        "light": "#1d2350",
+        "tonalRamp": [
+          "#0d0b06",
+          "#28251c",
+          "#464236",
+          "#676152",
+          "#888272",
+          "#aaa597",
+          "#cdc9be",
+          "#f1eee6"
+        ]
+      },
+      "wax-dim": {
+        "role": "neutral",
+        "displayName": "Wax Dim",
+        "canonical": "#343d78",
+        "oklch": "oklch(38.4% 0.100 274.2)",
+        "cssVar": "--wax-dim",
+        "purpose": "Unlit trace dots (idle).",
+        "light": "#c6cbe0",
+        "tonalRamp": [
+          "#07091c",
+          "#1d2241",
+          "#363e6a",
+          "#515c95",
+          "#717eb9",
+          "#96a2d5",
+          "#bdc7f0",
+          "#e5edff"
+        ]
+      }
+    },
+    "themes": {
+      "light": {
+        "selector": "@media (prefers-color-scheme: light) :root:not([data-theme=dark]), :root[data-theme=light]",
+        "colors": {
+          "nila-ground": "#e4e7f2",
+          "nila-field": "#f6f7fb",
+          "nila-raise": "#eaecf5",
+          "nila-sunk": "#ffffff",
+          "indigo-rule": "#cdd2e5",
+          "indigo-rule-soft": "#dee1ee",
+          "mori-ink": "#161b3d",
+          "mori-ink-2": "#474b70",
+          "mori-ink-3": "#575c80",
+          "soga": "#985321",
+          "soga-hover": "#84461a",
+          "soga-ink": "#fff8ee",
+          "soga-soft": "rgb(152 83 33 / .11)",
+          "jade": "#1b7449",
+          "kunyit": "#855e00",
+          "mengkudu": "#b3302a",
+          "mana-blue": "#3346b0",
+          "wax": "#1d2350",
+          "wax-dim": "#c6cbe0"
+        },
+        "shadow": "0 10px 30px rgb(22 27 61 / .16)"
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "The open bot's name in the side panel; the largest type."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Dialog titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base text; names at 600, inline figures at 600."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Row state, band and group heads (650), totals, captions of charts, toasts."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Column heads, cell sub-lines, timestamps, meter text, panel section heads (600). Axis drops to 11px."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Script and debug log only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 10px 30px rgb(3 5 15 / .5)",
+        "purpose": "Selection bar, toasts, dialogs, drawer-mode side panel only. Light theme: rgb(22 27 61 / .16)."
+      },
+      {
+        "name": "segment-lift",
+        "value": "0 1px 2px rgb(0 0 0 / .25)",
+        "purpose": "Selected segmented option; the only in-flow shadow."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px var(--soga-soft)",
+        "purpose": "Text input focus, with a soga border."
+      },
+      {
+        "name": "scrim",
+        "value": "rgb(5 7 18 / .5)",
+        "purpose": "Drawer scrim; dialog backdrop at .55."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-state",
+        "value": "150ms ease-out",
+        "purpose": "Background, border and colour changes on controls and rows."
+      },
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Bar and meter width (400ms), state ping (900ms), toast rise (250ms)."
+      },
+      {
+        "name": "breathe",
+        "value": "3.2s ease-in-out infinite",
+        "purpose": "The trace's now dot while a script runs."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "Disables breathe, ping and bar transitions."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "640px",
+        "purpose": "Night summary moves into the page; 12px page padding; band rows wrap."
+      },
+      {
+        "name": "meta",
+        "value": "860px",
+        "purpose": "Version meta hides."
+      },
+      {
+        "name": "dock",
+        "value": "1100px",
+        "purpose": "Side panel docks at 440px above; fixed drawer with scrim below."
+      },
+      {
+        "name": "roster-stack (container)",
+        "value": "760px",
+        "purpose": "Rows become three-line stacks."
+      },
+      {
+        "name": "roster-compact (container)",
+        "value": "1180px",
+        "purpose": "Map and gold/h columns fold away."
+      },
+      {
+        "name": "coarse-pointer",
+        "value": "pointer: coarse",
+        "purpose": "Controls grow to 40px targets."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one fixing action in a band row, empty-state calls, dialog confirmations.",
+      "html": "<button class=\"ds-btn ds-btn-primary\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7.5 5.5v13l10.5-6.5z\"/></svg>Restart</button>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border-radius:6px;background:transparent;border:1px solid var(--rule);color:var(--ink);cursor:pointer;white-space:nowrap;font:inherit;font-weight:500;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out} .ds-btn:hover{background:var(--raise);border-color:color-mix(in srgb,var(--ink) 22%,var(--rule))} .ds-btn:active{transform:translateY(1px)} .ds-btn:focus-visible{outline:2px solid var(--soga);outline-offset:2px} .ds-btn-primary{background:var(--soga);border-color:var(--soga);color:var(--soga-ink)} .ds-btn-primary:hover{background:var(--soga-hover);border-color:var(--soga-hover)}"
+    },
+    {
+      "name": "Outlined Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default control: secondary actions such as Details or Cancel.",
+      "html": "<button class=\"ds-btn\">Details</button>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border-radius:6px;background:transparent;border:1px solid var(--rule);color:var(--ink);cursor:pointer;white-space:nowrap;font:inherit;font-weight:500;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out} .ds-btn:hover{background:var(--raise);border-color:color-mix(in srgb,var(--ink) 22%,var(--rule))} .ds-btn:active{transform:translateY(1px)} .ds-btn:focus-visible{outline:2px solid var(--soga);outline-offset:2px} "
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Stop, log out, remove.",
+      "html": "<button class=\"ds-btn ds-btn-danger\">Stop</button>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border-radius:6px;background:transparent;border:1px solid var(--rule);color:var(--ink);cursor:pointer;white-space:nowrap;font:inherit;font-weight:500;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out} .ds-btn:hover{background:var(--raise);border-color:color-mix(in srgb,var(--ink) 22%,var(--rule))} .ds-btn:active{transform:translateY(1px)} .ds-btn:focus-visible{outline:2px solid var(--soga);outline-offset:2px} .ds-btn-danger{color:var(--mengkudu);border-color:color-mix(in srgb,var(--mengkudu) 40%,var(--rule))} .ds-btn-danger:hover{background:color-mix(in srgb,var(--mengkudu) 12%,transparent)}"
+    },
+    {
+      "name": "Filter Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Sunk well with soga focus border and halo.",
+      "html": "<input class=\"ds-input\" type=\"search\" placeholder=\"Filter by name, script, map or machine\">",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-input{height:34px;padding:0 10px;width:280px;font:inherit;color:var(--ink);background:var(--sunk);border:1px solid var(--rule);border-radius:6px;transition:border-color .15s ease-out} .ds-input::placeholder{color:var(--ink-3)} .ds-input:hover{border-color:color-mix(in srgb,var(--ink) 22%,var(--rule))} .ds-input:focus-visible{outline:none;border-color:var(--soga);box-shadow:0 0 0 3px var(--soga-soft)}"
+    },
+    {
+      "name": "Segmented Tabs",
+      "kind": "nav",
+      "refersTo": "segmented",
+      "description": "View tabs, panel tabs and the log switch.",
+      "html": "<div class=\"ds-seg\" role=\"tablist\"><button aria-selected=\"true\">Bots</button><button aria-selected=\"false\">Scripts</button><button aria-selected=\"false\">Accounts</button></div>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-seg{display:inline-flex;padding:3px;gap:2px;background:var(--sunk);border:1px solid var(--rule-soft);border-radius:9px} .ds-seg button{min-height:28px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--ink-2);cursor:pointer;font:inherit;font-weight:500} .ds-seg button:hover{color:var(--ink)} .ds-seg button:focus-visible{outline:2px solid var(--soga);outline-offset:2px} .ds-seg button[aria-selected=true]{background:var(--raise);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .25)}"
+    },
+    {
+      "name": "State Mark",
+      "kind": "chip",
+      "refersTo": "",
+      "description": "Dye dot plus dye-coloured word: playing, degraded, trouble, offline ring.",
+      "html": "<span class=\"ds-state ok\"><i></i>Running</span> <span class=\"ds-state warn\"><i></i>Paused</span> <span class=\"ds-state bad\"><i></i>Script error</span> <span class=\"ds-state off\"><i></i>Logged out</span>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-state{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:550;margin-right:14px} .ds-state i{width:8px;height:8px;border-radius:50%} .ds-state.ok{color:var(--jade)} .ds-state.ok i{background:var(--jade)} .ds-state.warn{color:var(--kunyit)} .ds-state.warn i{background:var(--kunyit)} .ds-state.bad{color:var(--mengkudu)} .ds-state.bad i{background:var(--mengkudu)} .ds-state.off{color:var(--ink-2)} .ds-state.off i{box-shadow:inset 0 0 0 1.5px var(--ink-3)}"
+    },
+    {
+      "name": "Cecek Trace",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Signature: the last hour as 30 wax dots, event marks, a breathing now dot.",
+      "html": "<div class=\"ds-trace\"><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"m d\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"p\"></i><i class=\"p\"></i><i class=\"p\"></i><i class=\"y\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"m r\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w\"></i><i class=\"w now\"></i></div>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-trace{display:flex;justify-content:space-between;align-items:center;height:14px;width:168px;padding:8px;background:var(--field)} .ds-trace i{width:3px;height:3px;border-radius:50%;background:var(--wax-dim);flex:none;position:relative} .ds-trace i.w{background:var(--wax)} .ds-trace i.p{background:color-mix(in srgb,var(--wax) 45%,var(--wax-dim))} .ds-trace i.y{background:var(--kunyit)} .ds-trace i.r{background:var(--mengkudu)} .ds-trace i.m{width:7px;height:7px} .ds-trace i.m.d{background:var(--soga)} .ds-trace i.now::after{content:'';position:absolute;inset:-3px;border-radius:50%;background:var(--wax);opacity:0;animation:ds-breathe 3.2s ease-in-out infinite} @keyframes ds-breathe{0%,100%{opacity:0;transform:scale(.4)}50%{opacity:.35;transform:scale(1)}} @media (prefers-reduced-motion:reduce){.ds-trace i.now::after{animation:none}}"
+    },
+    {
+      "name": "Needs-you Band",
+      "kind": "card",
+      "refersTo": "",
+      "description": "Trouble ranked first, each row with its one fixing action.",
+      "html": "<section class=\"ds-band\"><h2>Needs you</h2><ul><li><i></i><b>Kirana</b><span>CoreDailies stopped with an error.</span><button>Restart</button></li></ul></section>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-band{border-radius:8px;border:1px solid color-mix(in srgb,var(--mengkudu) 38%,var(--rule));background:color-mix(in srgb,var(--mengkudu) 7%,var(--field));width:460px} .ds-band h2{margin:0;padding:10px 14px 4px;font-size:13px;font-weight:650;color:var(--mengkudu)} .ds-band ul{list-style:none;margin:0;padding:0 0 4px} .ds-band li{display:flex;align-items:center;gap:12px;padding:7px 14px} .ds-band li i{width:8px;height:8px;border-radius:50%;background:var(--mengkudu)} .ds-band b{font-weight:600} .ds-band span{flex:1;color:var(--ink-2)} .ds-band button{min-height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--soga);background:var(--soga);color:var(--soga-ink);font:inherit;font-weight:500;cursor:pointer} .ds-band button:hover{background:var(--soga-hover)} .ds-band button:focus-visible{outline:2px solid var(--soga);outline-offset:2px}"
+    },
+    {
+      "name": "Roster Row",
+      "kind": "custom",
+      "refersTo": "roster-row",
+      "description": "Whole-row bot in a field sheet: state, name, script, actions.",
+      "html": "<div class=\"ds-sheet\"><div class=\"ds-row\"><span class=\"ds-st\"><i></i>Running</span><span><b>Seraphiel</b><small>Tab 1</small></span><span><b>UltraBossesFarm</b><small>1:30:00 · Running</small></span></div><div class=\"ds-row cur\"><span class=\"ds-st\"><i></i>Running</span><span><b>Surya</b><small>Tab 2</small></span><span><b>UltraBossesFarm</b><small>3:03:20 · Running</small></span></div></div>",
+      "css": ":host{--ground:#0e1226;--field:#141936;--raise:#1c2248;--sunk:#0a0d1e;--rule:#2a3266;--rule-soft:#1f2651;--ink:#eee6d3;--ink-2:#b5b4cc;--ink-3:#8d91b5;--soga:#d8995e;--soga-hover:#e4aa72;--soga-ink:#1d1307;--soga-soft:rgb(216 153 94 / .14);--jade:#7fd3a7;--kunyit:#ebc55c;--mengkudu:#ef6f63;--wax:#eee6d3;--wax-dim:#343d78;--shadow:0 10px 30px rgb(3 5 15 / .5);font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)} .ds-sheet{background:var(--field);border:1px solid var(--rule);border-radius:8px;overflow:hidden;width:520px} .ds-row{display:grid;grid-template-columns:112px 1fr 1fr;column-gap:14px;align-items:center;padding:9px 14px;min-height:56px;cursor:pointer;transition:background-color .15s ease-out} .ds-row+.ds-row{border-top:1px solid var(--rule-soft)} .ds-row:hover{background:color-mix(in srgb,var(--raise) 70%,var(--field))} .ds-row.cur{background:var(--raise)} .ds-row.cur span:nth-child(2) b{color:var(--soga)} .ds-row span{display:grid;min-width:0} .ds-row b{font-weight:600} .ds-row span:nth-child(3) b{font-weight:500} .ds-row small{color:var(--ink-3);font-size:12px} .ds-st{display:flex!important;align-items:center;gap:8px;color:var(--jade);font-size:13px;font-weight:550} .ds-st i{width:8px;height:8px;border-radius:50%;background:var(--jade)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Reading the Cloth",
+    "overview": "Checking on a sleeping bot is reading a length of indigo-dyed batik. The page is one deep nila field in three layers, written on in unbleached mori cream. Soga brown is the only accent, and it marks only what you act on or have selected. Three natural dyes carry state: jade for playing, kunyit yellow for degraded, mengkudu red for trouble. Each bot is a single row, and its last hour is drawn as a line of wax dots (the cecek trace).\n\nThe page is dense and calm. Rows show the whole bot at once, columns stay fixed so values change in place without reflowing, and trouble is ranked first in its own band. Depth comes from tonal layers and hairline indigo rules. Shadows are kept for things that float over the page. Type is the platform's own sans with tabular figures, so changing numbers stay steady.\n\nThe page is built for a short check-in on a phone or another PC, often at night. Everything has to read at a glance at 360px wide. A default dark card grid with a purple accent and a stat-tile header is the thing this world refuses.",
+    "keyCharacteristics": [
+      "One indigo field in three tonal layers (ground, field, raise) plus a sunk well for inputs and logs.",
+      "Cream ink in three strengths; soga brown as the single accent, for actions and selection only.",
+      "State is told by dye colour plus a word, never colour alone.",
+      "Hairline 1px indigo rules divide everything; radii stay small (4 to 10px).",
+      "Fixed-column whole-row roster; the cecek trace is the signature.",
+      "Light theme remaps every role (follows the OS, or a stored choice), keeping the same structure."
+    ],
+    "rules": [
+      {
+        "name": "The One Mordant Rule",
+        "body": "Soga is the only accent, and it marks action or selection. It never colours state, decoration or headings.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dye Means State Rule",
+        "body": "Jade, kunyit and mengkudu always mean playing, degraded and trouble. Never use them for decoration, and always pair them with a word or icon.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mixed, Not Invented Rule",
+        "body": "Tints come from `color-mix()` over existing roles (danger border = mengkudu 40% into rule; hover border = ink 22% into rule; band fill = mengkudu 7% into field). Do not add new hex values for a tint.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight Before Size Rule",
+        "body": "The scale runs only from 11 to 18px. New emphasis comes from weight (500 / 550 / 600 / 650) and ink strength, not from a larger size.",
+        "section": "typography"
+      },
+      {
+        "name": "The Steady Figures Rule",
+        "body": "Numbers that update live (gold/h, kills, HP, run time) stay tabular and right-aligned in fixed-width columns.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Cloth Rule",
+        "body": "Surfaces in the flow of the page have no shadow. If it scrolls with the roster, it gets depth from tone and a rule, not a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep Soga to action and selection: one filled primary per row or dialog, and everything else outlined or ghost.",
+      "**Do** pair every dye with a word: \"Running\" in jade with a jade dot, \"Script error\" in mengkudu with a mengkudu dot.",
+      "**Do** derive tints with `color-mix()` from the existing roles, and add each new token to both the dark and the light theme.",
+      "**Do** keep roster columns on fixed grid tracks so live values change in place.",
+      "**Do** use inline 16px stroke SVG icons (1.75 stroke, round caps) from the page's own symbol sprite.",
+      "**Do** honour `prefers-reduced-motion`, keep touch targets at 40px on coarse pointers, and keep the page working at 360px wide with no external fetches.",
+      "**Do** blur private fields (names, gold, room numbers) under streamer mode with the `priv` hook."
+    ],
+    "donts": [
+      "**Don't** apply Nila to the egui desktop/Android UI. It keeps its Mugetsu palette.",
+      "**Don't** introduce a purple or violet interface accent. The `#7C6CF0` in the Turu logo symbol is a brand asset and stays inside the logo; Mana Blue is for data only.",
+      "**Don't** build a stat-tile header or a grid of bot cards. Totals stay inline text, and bots stay whole rows.",
+      "**Don't** put shadows on in-flow surfaces (see The Flat Cloth Rule).",
+      "**Don't** use dye colours to decorate, or soga to signal state.",
+      "**Don't** add type above 18px or introduce a webfont for the dashboard."
+    ]
+  }
+}

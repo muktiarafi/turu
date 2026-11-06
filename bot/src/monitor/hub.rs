@@ -34,8 +34,8 @@ pub const HISTORY_KEPT: usize = 360;
 const POINT_EVERY_MS: u64 = 60_000;
 const SAVED_FOR_MS: u64 = 24 * 60 * 60 * 1000;
 const SAVE_EVERY: Duration = Duration::from_secs(60);
-/// Events a card shows.
-const RECENT: usize = 3;
+/// Events each entry carries in the state: the page marks the last hour's on its trace.
+const RECENT: usize = 12;
 /// The control API routes a command may name: the page's buttons, and the log.
 pub const COMMANDS: [&str; 11] = [
     "/script/start",

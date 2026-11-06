@@ -310,11 +310,14 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 - **Web monitor** (`docs/WEB_MONITOR_PROPOSAL.md`, replacing the Skua
   Nexus webhook): Options > Application > Monitor serves a page (`bot/assets/monitor/index.html`)
   on `127.0.0.1:8790`, or on every interface with Allow Other Devices, showing this window's tabs
-  and the clients Army > Accounts launched, live: Skua Nexus's cards (state, map, level and class,
-  gold, AC, bag slots, script and run time, HP / MP / target bars, quests, equipment, the Combat >
-  Stats counters) plus gold and XP per hour and the last events, its Scripts / Accounts /
-  Resources tables, a filter and streamer mode. A bot's detail view has its events, its script and
-  debug log, and an hour-by-hour history (gold, XP, kills, drops; a point a minute, 6 h).
+  and the clients Army > Accounts launched, live: a "Needs you" list first (script errors, frozen
+  tabs, logged-out bots, each with its fix), then one row per bot grouped by machine (state, script
+  and run time, map, HP / MP, gold per hour, and a trace of the last hour: a dot per two minutes,
+  marked at drops, deaths and relogins), its Scripts / Accounts / Resources tables, a filter, bulk
+  actions on selected bots and streamer mode. A bot's side panel has its overview (map, level and
+  class, gold, AC, bag slots, HP / MP / target, quests, equipment, the Combat > Stats counters,
+  gold and XP per hour), its events, its script and debug log, and an hour-by-hour history (gold,
+  XP, kills, drops; a point a minute, 6 h).
   **Control** (Allow Control, on by default): Start / Pause / Resume / Stop the loaded script, Log
   in, Relogin, Log out, House and Join map, on one bot or the selected ones (asking first for the
   ones that interrupt), and Forget for offline entries. The hub (`monitor/hub.rs`) keeps every
