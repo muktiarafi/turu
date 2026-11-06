@@ -45,6 +45,22 @@ pub fn configure(bot: &Bot, mut startup: Startup) {
         match crate::script::resolve(&scripts, &script) {
             Some(found) => {
                 bot.scripts.load(&found);
+                // Without a window (`--headless`) nobody sets the options before the run.
+                if startup.run_script
+                    && !bot.scripts.is_interactive()
+                    && bot.scripts.options_source() == crate::script::OptionsSource::Defaults
+                    && let crate::script::ScriptOptionsState::Loaded(o) = bot.scripts.options()
+                {
+                    bot.log(format!(
+                        "{} has Script Options and no {} was saved: it will run with the \
+                         defaults. Set them with the control API's /script/options or the web \
+                         monitor, or copy the file from a desktop.",
+                        found
+                            .file_name()
+                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                        o.path().display()
+                    ));
+                }
                 startup.script = Some(found);
             }
             None => bot.log(format!("No script at {}.", script.display())),

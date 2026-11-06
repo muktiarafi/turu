@@ -36,9 +36,10 @@ const SAVED_FOR_MS: u64 = 24 * 60 * 60 * 1000;
 const SAVE_EVERY: Duration = Duration::from_secs(60);
 /// Events each entry carries in the state: the page marks the last hour's on its trace.
 const RECENT: usize = 12;
-/// The control API routes a command may name: the page's buttons, and the log.
-pub const COMMANDS: [&str; 11] = [
+/// The control API routes a command may name: the page's buttons and its Script Options form.
+pub const COMMANDS: [&str; 12] = [
     "/script/start",
+    "/script/options",
     "/script/stop",
     "/script/pause",
     "/script/resume",
@@ -51,13 +52,14 @@ pub const COMMANDS: [&str; 11] = [
     "/auto/stop",
 ];
 
-/// A command or log request the monitor may pass on: a listed POST, or `GET /log`.
+/// A command or a read the monitor may pass on: a listed POST, or `GET /log` and
+/// `GET /script/options`.
 pub fn allowed_route(post: bool, route: &str) -> bool {
     let path = route.split('?').next().unwrap_or_default();
     if post {
         COMMANDS.contains(&path) && (path != "/script/start" || !route.contains("path="))
     } else {
-        path == "/log"
+        matches!(path, "/log" | "/script/options")
     }
 }
 
@@ -281,6 +283,9 @@ pub struct RemoteCommand {
     pub post: bool,
     /// A control API route ([`allowed_route`]).
     pub route: String,
+    /// The request's body (`/script/options`' values), if any.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -492,16 +497,18 @@ impl Hub {
     /// Runs a control API route (checked with [`allowed_route`]) for an entry and waits for its
     /// answer: in this process for a tab, over HTTP for an Army client, through the queue for a
     /// remote one. Blocks up to a couple of minutes (a login).
-    pub fn run(&self, control: Control, post: bool, route: &str) -> (u16, Value) {
+    pub fn run(&self, control: Control, post: bool, route: &str, body: &[u8]) -> (u16, Value) {
         if !allowed_route(post, route) {
             return (403, json!({ "error": "the monitor doesn't pass that on" }));
         }
         match control {
-            Control::Tab(bot) => crate::control_api::local(&bot, post, route, b""),
-            Control::Army(army, client) => match army.forward(&client, post, route, Vec::new()) {
-                Ok(value) => (200, value),
-                Err(e) => (502, json!({ "error": e })),
-            },
+            Control::Tab(bot) => crate::control_api::local(&bot, post, route, body),
+            Control::Army(army, client) => {
+                match army.forward(&client, post, route, body.to_vec()) {
+                    Ok(value) => (200, value),
+                    Err(e) => (502, json!({ "error": e })),
+                }
+            }
             Control::Remote { machine, bot } => {
                 let (tx, rx) = bounded(1);
                 let seq = {
@@ -514,6 +521,7 @@ impl Hub {
                         bot,
                         post,
                         route: route.to_owned(),
+                        body: String::from_utf8_lossy(body).into_owned(),
                     };
                     queue
                         .pending
@@ -871,7 +879,7 @@ mod tests {
         let control = hub.control("remote:vps:tab:0").expect("online");
         let waiting = {
             let hub = hub.clone();
-            std::thread::spawn(move || hub.run(control, true, "/script/stop"))
+            std::thread::spawn(move || hub.run(control, true, "/script/stop", b""))
         };
         let commands = loop {
             let commands = hub.take_commands("VPS");
@@ -892,7 +900,7 @@ mod tests {
         assert_eq!(waiting.join().unwrap(), (200, json!({ "stopping": true })));
         // Routes the page can't send aren't queued.
         let control = hub.control("remote:vps:tab:0").unwrap();
-        assert_eq!(hub.run(control, true, "/options").0, 403);
+        assert_eq!(hub.run(control, true, "/options", b"").0, 403);
         assert!(hub.take_commands("vps").is_empty());
     }
 
@@ -904,6 +912,9 @@ mod tests {
         assert!(!allowed_route(true, "/options"));
         assert!(allowed_route(false, "/log?type=script&since=0"));
         assert!(!allowed_route(false, "/script/stop"));
+        assert!(allowed_route(false, "/script/options"));
+        assert!(allowed_route(true, "/script/options?reset=1"));
+        assert!(!allowed_route(false, "/scheduler/options?id=1"));
     }
 
     #[test]

@@ -33,7 +33,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(bot.scripts.has_option(category, name))
         }
         "configure" => {
-            bot.scripts.configure(&bot.control)?;
+            bot.scripts.configure(bot)?;
             ok(())
         }
         _ => Err(BotError::UnknownMethod(format!("config.{name}"))),

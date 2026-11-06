@@ -7,6 +7,8 @@
 //! | `GET /api/events` | Server-Sent Events: the same state as an `event: state` every second. |
 //! | `GET /api/bots/<id>` | One entry with all its events and its history. |
 //! | `GET /api/bots/<id>/log?type=script\|debug[&since=]` | Its log lines from number `since` (the control API's `/log`). |
+//! | `GET /api/bots/<id>/script/options` | Its loaded script's Script Options (the control API's `/script/options`). |
+//! | `POST /api/bots/<id>/script/options[?reset=1]` | Control: set and save them (body as the control API's). |
 //! | `POST /api/bots/<id>/script/start\|stop\|pause\|resume`, `/login`, `/logout`, `/relogin[?server=]`, `/map/join?map=[&cell=][&pad=]`, `/house` | Control: the control API's route of that name, for a tab or an Army client. |
 //! | `POST /api/bots/<id>/forget` | Control: drops an offline entry. |
 //! | `POST /api/ingest` | Another machine's [`Report`] (needs the push key, nothing else does). The reply carries the commands waiting for it, held up to 4 s for one to come. |
@@ -49,6 +51,8 @@ const STOP_CHECK: Duration = Duration::from_millis(250);
 const INGEST_HOLD: Duration = Duration::from_secs(4);
 /// Reports larger than this are refused.
 const MAX_REPORT: usize = 4 * 1024 * 1024;
+/// Command bodies (Script Options values) larger than this are refused.
+const MAX_COMMAND: usize = 64 * 1024;
 
 /// The key other devices need; it can change while the server runs.
 #[derive(Default)]
@@ -318,7 +322,25 @@ async fn handle(
         (false, "/api/state") => reply(StatusCode::OK, "application/json", full(shared.state())),
         (false, "/api/events") => events(shared),
         (_, path) => match path.strip_prefix("/api/bots/") {
-            Some(rest) => bot_route(&shared, post, rest, &query).await,
+            Some(rest) => {
+                let body = if post {
+                    match Limited::new(request.into_body(), MAX_COMMAND)
+                        .collect()
+                        .await
+                    {
+                        Ok(body) => body.to_bytes(),
+                        Err(_) => {
+                            return error(
+                                StatusCode::PAYLOAD_TOO_LARGE,
+                                "the body is too large or was cut off",
+                            );
+                        }
+                    }
+                } else {
+                    Bytes::new()
+                };
+                bot_route(&shared, post, rest, &query, body).await
+            }
             None => error(StatusCode::NOT_FOUND, "no such route"),
         },
     }
@@ -354,7 +376,13 @@ fn events(shared: Arc<Shared>) -> Response<Body> {
 }
 
 /// `/api/bots/<id>[/...]`.
-async fn bot_route(shared: &Arc<Shared>, post: bool, rest: &str, query: &str) -> Response<Body> {
+async fn bot_route(
+    shared: &Arc<Shared>,
+    post: bool,
+    rest: &str,
+    query: &str,
+    body: Bytes,
+) -> Response<Body> {
     let (id, tail) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, ""),
@@ -382,7 +410,10 @@ async fn bot_route(shared: &Arc<Shared>, post: bool, rest: &str, query: &str) ->
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(0);
             let route = format!("/log?type={kind}&since={since}");
-            forward(hub, &id, false, route).await
+            forward(hub, &id, false, route, Bytes::new()).await
+        }
+        (false, "/script/options") => {
+            forward(hub, &id, false, "/script/options".into(), body).await
         }
         (true, command) if allowed_route(true, command) => {
             let route = if query.is_empty() {
@@ -390,7 +421,7 @@ async fn bot_route(shared: &Arc<Shared>, post: bool, rest: &str, query: &str) ->
             } else {
                 format!("{command}?{query}")
             };
-            forward(hub, &id, true, route).await
+            forward(hub, &id, true, route, body).await
         }
         _ => error(StatusCode::NOT_FOUND, "no such route"),
     }
@@ -398,12 +429,18 @@ async fn bot_route(shared: &Arc<Shared>, post: bool, rest: &str, query: &str) ->
 
 /// Runs a control API route for the entry ([`Hub::run`]), off the runtime's thread: a login can
 /// take a minute, and a remote machine answers at its next report.
-async fn forward(hub: &Arc<Hub>, id: &str, post: bool, route: String) -> Response<Body> {
+async fn forward(
+    hub: &Arc<Hub>,
+    id: &str,
+    post: bool,
+    route: String,
+    body: Bytes,
+) -> Response<Body> {
     let Some(control) = hub.control(id) else {
         return error(StatusCode::NOT_FOUND, "that bot isn't running");
     };
     let hub = hub.clone();
-    let result = tokio::task::spawn_blocking(move || hub.run(control, post, &route)).await;
+    let result = tokio::task::spawn_blocking(move || hub.run(control, post, &route, &body)).await;
     match result {
         Ok((status, value)) => json_reply(
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),

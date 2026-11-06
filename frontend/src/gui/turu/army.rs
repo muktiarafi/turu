@@ -863,12 +863,18 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
 /// "Alt1: Equip Legion Revenant: done".
 fn outcome_line(name: &str, label: &str, result: Result<Value, String>) -> String {
     match result {
-        Ok(reply) => match serde_json::from_value::<turu_bot::gear::EquipReport>(reply) {
-            Ok(report) if label.starts_with("Equip ") => {
-                format!("{name}: {label}: {}", report.summary())
+        Ok(reply) => {
+            // A client without a window started without its Script Options, and none were saved.
+            let defaults = reply.get("options").and_then(Value::as_str) == Some("defaults")
+                && reply.get("optionsWindow").and_then(Value::as_bool) == Some(false);
+            match serde_json::from_value::<turu_bot::gear::EquipReport>(reply) {
+                Ok(report) if label.starts_with("Equip ") => {
+                    format!("{name}: {label}: {}", report.summary())
+                }
+                _ if defaults => format!("{name}: {label}: done, with the default Script Options (none saved)"),
+                _ => format!("{name}: {label}: done"),
             }
-            _ => format!("{name}: {label}: done"),
-        },
+        }
         // The client said no (a script runs, not logged in, ...): nothing started there.
         Err(e) if label == Command::StartAutoAttack.label() => {
             format!("{name}: {label}: skipped ({e})")

@@ -518,8 +518,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `bot.reputation` (`world.myAvatar.factions`), which CoreBots' `factionRank` now uses.
 - **Script options:** the window never opens by itself with `--headless`, or for runs started from the HTTP API
   (unless it passes `configure=1`), auto-relogin or the Scheduler (VibeSkua's `SilentConfig` covers only
-  `--script-options-storage` runs and the scheduler; its relogin restart can show it). As in VibeSkua it does
-  open for `--run-script` (so Accounts' auto-start) and Army Control's Start, in each client.
+  `--script-options-storage` runs and the scheduler; its relogin restart shows it again, and CoreBots'
+  `SetOptions` shows it even on silent runs, which Turu doesn't, so an unattended client never waits on it).
+  As in VibeSkua it does open for `--run-script` (so Accounts' auto-start) and Army Control's Start, in each
+  client. A run that skips it logs which values it uses, saved or defaults (`ScriptManager::note_unshown`; with
+  the defaults also a monitor `scriptOptions` event, and `/script/start` answers `options`/`optionsWindow`, which
+  Army Control and the monitor show); the control API's `/script/options` and `/scheduler/options` and the web
+  monitor's Script Options tab read and set them (`docs/SCRIPT_OPTIONS_PROPOSAL.md`). The monitor tab was
+  checked against a mock server only, not a live client.
 - **CoreStory is unverified in game:** its test only checks that `preLoad` finds the quests of a
   story function. `killQuest`, `mapItemQuest` and the unlock-recovery loop of `questProgression`
   need a story run.

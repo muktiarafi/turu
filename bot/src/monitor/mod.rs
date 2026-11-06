@@ -112,6 +112,11 @@ pub enum EventKind {
     ConnectionLost,
     Login,
     Logout,
+    /// A run without its Script Options window used the defaults: no options were saved.
+    ScriptOptions,
+    /// A kind from a newer Turu (a machine reporting to this one).
+    #[serde(other)]
+    Other,
 }
 
 /// Events kept per bot.

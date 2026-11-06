@@ -817,3 +817,46 @@ bot.army.barrier("bar-{pid}", 2, 10000, "{member}")"#
     let lines = turu_bot::api::army::read_log(&bot, &format!("rmw-{pid}")).unwrap();
     assert_eq!(lines.len(), 60, "no update lost");
 }
+
+#[test]
+fn a_run_without_the_window_says_which_options_it_uses() {
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    let name = format!("Unshown{}", std::process::id());
+    let file = bot.paths.script_options_file(&format!("Runtime{name}"));
+    let _ = std::fs::remove_file(&file);
+    // CoreBots' `setOptions` asks again inside the run: one note for both.
+    bot.scripts
+        .load(&options_script(&name, false, "bot.config.configure();"));
+    script::start(&bot).unwrap();
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert_eq!(
+        log.matches("Script Options not shown (no window): there is no options/")
+            .count(),
+        1,
+        "{log}"
+    );
+    let (events, _) = bot.monitor.events_since(0);
+    assert!(
+        events
+            .iter()
+            .any(|e| e.kind == turu_bot::monitor::EventKind::ScriptOptions),
+        "{events:?}"
+    );
+
+    bot.scripts
+        .set_option_value("Options", "On", serde_json::json!(true))
+        .unwrap();
+    bot.scripts.set_interactive(true);
+    script::start_silent(&bot).unwrap();
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(
+        log.contains(&format!(
+            "Script Options not shown (this start doesn't show it): using the options saved in options/Runtime{name}.cfg."
+        )),
+        "{log}"
+    );
+    let _ = std::fs::remove_file(&file);
+}

@@ -81,7 +81,7 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .btn.ghost:hover { border-color: var(--rule); }
 .btn[aria-pressed="true"] { background: var(--soga-soft); border-color: color-mix(in srgb, var(--soga) 55%, var(--rule)); color: var(--soga); }
 .btn.busy { pointer-events: none; opacity: .6; }
-input[type=text], input[type=password], input[type=search] {
+input[type=text], input[type=password], input[type=search], input[type=number], select {
   height: 34px; padding: 0 10px; min-width: 0;
   background: var(--sunk); border: 1px solid var(--rule); border-radius: var(--r-sm);
   transition: border-color .15s ease-out;
@@ -109,7 +109,7 @@ input[type=checkbox]:focus-visible { outline: 2px solid var(--soga); outline-off
   .btn { min-height: 40px; }
   .btn.icon { width: 40px; }
   .seg button { min-height: 36px; }
-  input[type=text], input[type=password], input[type=search] { height: 40px; }
+  input[type=text], input[type=password], input[type=search], input[type=number], select { height: 40px; }
   input[type=checkbox] { width: 20px; height: 20px; }
 }
 
@@ -360,6 +360,24 @@ dl.facts dd { margin: 0; text-align: right; overflow: hidden; text-overflow: ell
 .chart figcaption b { color: var(--ink); font-weight: 600; }
 .chart svg { display: block; width: 100%; height: 64px; overflow: visible; }
 
+/* Script Options tab: the control API's /script/options as a form. */
+.opts-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 16px; }
+.opts-head b { font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opts-head p { flex-basis: 100%; margin: 0; color: var(--ink-2); font-size: 13px; }
+.opt-list { border: 1px solid var(--rule-soft); border-radius: var(--r-sm); overflow: hidden; }
+.opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 170px); align-items: center; gap: 6px 14px; padding: 10px 12px; transition: background-color .15s ease-out; }
+.opt + .opt { border-top: 1px solid var(--rule-soft); }
+.opt.changed { background: var(--soga-soft); }
+.opt label { font-weight: 550; }
+.opt small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+.opt input[type=text], .opt input[type=number], .opt select { width: 100%; }
+.opt input[type=checkbox] { justify-self: end; }
+.opt input:invalid { border-color: var(--mengkudu); }
+.opt.bool { grid-template-columns: minmax(0, 1fr) auto; }
+.opts-foot { position: sticky; bottom: -24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; padding: 12px 0 14px; background: var(--field); border-top: 1px solid var(--rule-soft); }
+.opts-foot .when { margin-left: auto; }
+@media (max-width: 420px) { .opt:not(.bool) { grid-template-columns: 1fr; } }
+
 /* Dialogs and toasts --------------------------------------------------------------------- */
 dialog {
   background: var(--field); color: var(--ink); border: 1px solid var(--rule); border-radius: 10px;
@@ -587,7 +605,7 @@ function sample() {
   }
   for (const id of seen.keys()) if (!byId(id)) seen.delete(id);
 }
-const MARK = { drop: "d", death: "r", scriptError: "r", connectionLost: "r", relogin: "y", logout: "y", scriptStarted: "s", login: "s" };
+const MARK = { drop: "d", death: "r", scriptError: "r", connectionLost: "r", relogin: "y", logout: "y", scriptOptions: "y", scriptStarted: "s", login: "s" };
 const RANK = { r: 3, d: 2, y: 1, s: 0 };
 function traceData(b) {
   const s = b.snapshot, now = state.now, end = Math.floor(now / SLOT_MS);
@@ -912,16 +930,19 @@ function confirmBox(title, text, ok = "OK", danger = false) {
 }
 $("#confirmDialog").addEventListener("close", () => { confirmResolve?.($("#confirmDialog").returnValue === "ok"); confirmResolve = null; });
 
-async function send(id, route) {
+// Answers the reply's body (truthy), or false after a toast saying why.
+async function send(id, route, payload) {
   const b = byId(id);
   const who = b ? name(b) : id;
   try {
-    const r = await fetch(`/api/bots/${encodeURIComponent(id)}${route}`, { method: "POST", headers: headers() });
+    const init = { method: "POST", headers: headers() };
+    if (payload !== undefined) init.body = JSON.stringify(payload);
+    const r = await fetch(`/api/bots/${encodeURIComponent(id)}${route}`, init);
     const body = await r.json().catch(() => ({}));
     if (r.status === 401) { unauthorized(); return false; }
     if (!r.ok) { toast(`${who}: ${body.error ?? `HTTP ${r.status}`}`, true); return false; }
     if (route === "/forget") { picked.delete(id); if (detailId === id) closePanel(); }
-    return true;
+    return body;
   } catch (e) {
     toast(`${who}: ${e.message}`, true);
     return false;
@@ -935,9 +956,9 @@ async function act(id, route, el) {
   const label = entry?.[0] ?? (fix && fix[1] === route ? fix[0] : route.startsWith("/map/join") ? "Join" : route);
   if (entry?.[2] && !await confirmBox(`${label}?`, entry[2], label, entry[3] === "danger")) return;
   el?.classList.add("busy");
-  const ok = await send(id, route);
+  const reply = await send(id, route);
   el?.classList.remove("busy");
-  if (ok) toast(`${name(b)}: ${label}`);
+  if (reply) toast(`${name(b)}: ${label}${defaultsNote(reply)}`);
   if (detailId === id) refreshDetail();
 }
 async function bulk(route) {
@@ -948,13 +969,17 @@ async function bulk(route) {
   const results = await Promise.all(ids.map(id => send(id, route)));
   const done = results.filter(Boolean).length;
   toast(`${label}: ${done} of ${ids.length} done`, done < ids.length);
+  const defaults = ids.filter((id, i) => results[i] && defaultsNote(results[i]));
+  if (defaults.length) toast(`Started with the default Script Options (none saved): ${defaults.map(id => { const b = byId(id); return b ? name(b) : id; }).join(", ")}`);
 }
+// A start that showed no Script Options window and had none saved.
+const defaultsNote = reply => reply?.options === "defaults" && reply.optionsWindow === false ? ", with the default Script Options (none saved)" : "";
 
 // Details panel ------------------------------------------------------------------------------
 let detailId = null, detailTab = "overview", detail = null, logKind = "script", logNext = 0, detailTimer = null, returnFocus = null;
-const TABS = [["overview", "Overview"], ["events", "Events"], ["log", "Log"], ["history", "History"]];
+const TABS = [["overview", "Overview"], ["events", "Events"], ["log", "Log"], ["history", "History"], ["options", "Options"]];
 function openDetail(id) {
-  if (detailId !== id) { detail = null; logNext = 0; logKind = "script"; $("#pPane").dataset.html = ""; $("#pPane").innerHTML = ""; }
+  if (detailId !== id) { detail = null; logNext = 0; logKind = "script"; resetOptions(); $("#pPane").dataset.html = ""; $("#pPane").innerHTML = ""; }
   returnFocus = document.activeElement;
   detailId = id;
   $("#panel").hidden = false;
@@ -1036,6 +1061,7 @@ function recentList(b) {
 async function refreshDetail() {
   const id = detailId;
   if (!id || detailTab === "overview") return;
+  if (detailTab === "options") { syncOptions(); return; }
   try {
     const r = await fetch(`/api/bots/${encodeURIComponent(id)}`, { headers: headers(), cache: "no-store" });
     if (!r.ok) { if (r.status === 404) setHtml($("#pPane"), `<div class="empty"><p class="lead">This bot is gone.</p></div>`); return; }
@@ -1091,6 +1117,111 @@ function renderHistory() {
   setHtml($("#pPane"), `<div class="chart">${fig("Gold", "gold", "var(--soga)", true)}${fig("XP", "xp", "var(--mp)")}${fig("Kills", "kills", "var(--jade)")}${fig("Drops", "drops", "var(--kunyit)")}</div><p class="when" style="margin:14px 0 0">${short(pts[0].at)} to ${short(pts.at(-1).at)}, ${pts.length} points</p>`);
 }
 
+// Script Options: GET/POST /api/bots/<id>/script/options (the control API's /script/options).
+// Read once when the tab opens, after a save, and when another script is loaded while nothing
+// is edited, so the 2 s refresh never throws away what's typed.
+let opts = null, optsFor, optsBusy = false;
+const edits = new Map(), optIds = new Map();
+const optKey = (cat, n) => `${cat}\u0000${n}`;
+const spaced = c => String(c).replaceAll("_", " ");
+const fileName = p => String(p ?? "").split(/[\\/]/).pop();
+function resetOptions() { opts = null; optsFor = undefined; edits.clear(); }
+function syncOptions() {
+  const b = byId(detailId);
+  if (!b?.online) { resetOptions(); setHtml($("#pPane"), `<div class="empty"><p class="lead">No Script Options while it's offline</p><p>They're read from the bot while it runs.</p></div>`); return; }
+  const script = b.snapshot?.script.name ?? null;
+  if (!optsBusy && (optsFor === undefined || (optsFor !== script && !edits.size))) loadOptions(script);
+  else if (opts) renderOptionsFoot();
+}
+async function loadOptions(script) {
+  const id = detailId;
+  optsBusy = true;
+  try {
+    const r = await fetch(`/api/bots/${encodeURIComponent(id)}/script/options`, { headers: headers(), cache: "no-store" });
+    const body = await r.json().catch(() => ({}));
+    if (id !== detailId || detailTab !== "options") return;
+    if (r.status === 401) { unauthorized(); return; }
+    optsFor = script;
+    edits.clear();
+    if (!r.ok) { opts = null; setHtml($("#pPane"), `<div class="empty"><p class="lead">Couldn't read the Script Options</p><p>${esc(body.error ?? `HTTP ${r.status}`)}</p></div>`); return; }
+    opts = body;
+    renderOptions();
+  } catch (e) {
+    if (id === detailId) setHtml($("#pPane"), `<div class="empty"><p class="lead">Couldn't read the Script Options</p><p>${esc(e.message)}</p></div>`);
+  } finally { optsBusy = false; }
+}
+function optControl(cat, o, locked) {
+  const k = optKey(cat, o.name);
+  if (!optIds.has(k)) optIds.set(k, optIds.size);
+  const id = `opt-${optIds.get(k)}`, v = edits.has(k) ? edits.get(k) : o.value;
+  const attrs = `id="${id}" data-cat="${esc(cat)}" data-name="${esc(o.name)}"${locked ? " disabled" : ""}`;
+  let input;
+  if (o.kind === "bool") input = `<input type="checkbox" ${attrs}${v ? " checked" : ""}>`;
+  else if (o.kind === "int") input = `<input type="number" step="1" inputmode="numeric" required ${attrs} value="${esc(v)}">`;
+  else if (o.kind === "choice") input = `<select ${attrs}>${o.choices.map(c => `<option value="${esc(c)}"${c === v ? " selected" : ""}>${esc(spaced(c))}</option>`).join("")}</select>`;
+  else input = `<input type="text" ${attrs} value="${esc(v)}" autocomplete="off">`;
+  const desc = o.description ? `<small>${esc(o.description)}</small>` : "";
+  return `<div class="opt${o.kind === "bool" ? " bool" : ""}${edits.has(k) ? " changed" : ""}"><div><label for="${id}">${esc(o.displayName || o.name)}</label>${desc}</div>${input}</div>`;
+}
+function renderOptions() {
+  const pane = $("#pPane");
+  pane.dataset.html = "";
+  if (opts.options === "none") {
+    pane.innerHTML = `<div class="empty"><p class="lead">${opts.script ? `${esc(fileName(opts.script))} has no Script Options` : "No script is loaded"}</p><p>${opts.script ? "Nothing to set for this one." : "Load a script in Turu to see its options here."}</p></div>`;
+    return;
+  }
+  const locked = !control(), saved = opts.options === "saved";
+  const where = saved
+    ? `Saved in ${esc(opts.file)}.`
+    : `Nothing is saved in ${esc(opts.file)} yet, so a run without the Script Options window uses these defaults.`;
+  const many = opts.categories.length > 1;
+  const groups = opts.categories.map(c => `<section>${many ? `<h3>${esc(c.name === "Options" ? "Options" : spaced(c.name))}</h3>` : ""}<div class="opt-list">${c.options.map(o => optControl(c.name, o, locked)).join("")}</div></section>`).join("");
+  pane.innerHTML = `<form id="optsForm" novalidate><div class="opts-head"><b>${esc(fileName(opts.script))}</b><span class="state ${saved ? "ok" : "warn"}"><span class="mark"></span><span>${saved ? "Saved" : "Defaults"}</span></span><p>${where}${locked ? " Control is off, so they can't be changed here: turn on Allow Control in Turu, Options › Application › Monitor." : ""}</p></div>${groups}<div class="opts-foot" id="optsFoot"></div></form>`;
+  renderOptionsFoot();
+}
+function renderOptionsFoot() {
+  const foot = document.getElementById("optsFoot");
+  if (!foot || !opts) return;
+  const locked = !control();
+  const invalid = !!document.querySelector("#optsForm input:invalid");
+  const n = edits.size;
+  const running = byId(detailId)?.snapshot?.script.running;
+  const note = invalid ? "A number is missing or not whole" : n ? `${n} change${n > 1 ? "s" : ""} not saved` : running ? "Most scripts read these when they start." : "";
+  setHtml(foot, `<button type="button" class="btn" data-opts="reset"${locked ? " disabled" : ""}>Reset to defaults</button>${n ? `<button type="button" class="btn ghost" data-opts="discard">Discard</button>` : ""}<span class="when">${esc(note)}</span><button type="button" class="btn primary" data-opts="save"${locked || !n || invalid ? " disabled" : ""}>Save</button>`);
+}
+function editOption(el) {
+  const { cat, name: n } = el.dataset;
+  const o = opts?.categories.find(c => c.name === cat)?.options.find(o => o.name === n);
+  if (!o) return;
+  const raw = el.value.trim();
+  const v = o.kind === "bool" ? el.checked : o.kind === "int" ? (/^-?\d+$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null) : el.value;
+  if (o.kind === "int") el.setCustomValidity(v == null ? "A whole number" : "");
+  const k = optKey(cat, n);
+  if (v == null) edits.set(k, el.value); else if (v === o.value) edits.delete(k); else edits.set(k, v);
+  el.closest(".opt")?.classList.toggle("changed", edits.has(k));
+  renderOptionsFoot();
+}
+async function saveOptions(reset) {
+  const id = detailId, b = byId(id), who = b ? name(b) : id;
+  let payload, route = "/script/options";
+  if (reset) {
+    if (!await confirmBox("Reset to defaults?", `Put every Script Option of ${fileName(opts.script)} on ${who} back to its default, and save.`, "Reset", true)) return;
+    route += "?reset=1";
+  } else {
+    payload = {};
+    for (const [k, v] of edits) {
+      const [cat, n] = k.split("\u0000");
+      if (cat === "Options") payload[n] = v; else (payload[cat] ??= {})[n] = v;
+    }
+  }
+  const reply = await send(id, route, payload);
+  if (!reply || id !== detailId) return;
+  edits.clear();
+  opts = reply;
+  toast(`${who}: Script Options ${reset ? "reset to the defaults" : "saved"}`);
+  if (detailTab === "options") renderOptions();
+}
+
 // Wiring --------------------------------------------------------------------------------------
 $("#filter").addEventListener("input", render);
 $("#views").addEventListener("click", e => {
@@ -1111,15 +1242,20 @@ document.addEventListener("click", e => {
   else if (t.dataset.bulk === "clear") { picked.clear(); render(); }
   else if (t.dataset.bulk) bulk(t.dataset.bulk);
   else if (t.dataset.dtab) {
-    detailTab = t.dataset.dtab; logNext = 0;
+    if (detailTab === "options" && t.dataset.dtab !== "options" && edits.size) toast("Unsaved Script Options changes were dropped.", true);
+    detailTab = t.dataset.dtab; logNext = 0; resetOptions();
     $("#pPane").dataset.html = ""; $("#pPane").innerHTML = detailTab === "overview" ? "" : `<div class="empty"><p>Loading…</p></div>`;
     renderPanel(); refreshDetail();
   }
+  else if (t.dataset.opts === "save") saveOptions(false);
+  else if (t.dataset.opts === "reset") saveOptions(true);
+  else if (t.dataset.opts === "discard") { edits.clear(); renderOptions(); }
   else if (t.dataset.log) { logKind = t.dataset.log; logNext = 0; renderLogFrame(); pollLog(); }
   else if (t.dataset.key != null) openKey();
   else if (t.dataset.clearFilter != null) { $("#filter").value = ""; render(); $("#filter").focus(); }
 });
 document.addEventListener("submit", e => {
+  if (e.target.matches("#optsForm")) { e.preventDefault(); return; }
   if (!e.target.matches("[data-join]")) return;
   e.preventDefault();
   const map = $("#dMap").value.trim(), cell = $("#dCell").value.trim();
@@ -1132,6 +1268,8 @@ $("#main").addEventListener("change", e => {
   e.target.checked ? picked.add(id) : picked.delete(id);
   render();
 });
+$("#pPane").addEventListener("input", e => { if (e.target.dataset?.cat != null) editOption(e.target); });
+$("#pPane").addEventListener("change", e => { if (e.target.dataset?.cat != null) editOption(e.target); });
 $("#pClose").addEventListener("click", closePanel);
 $("#scrim").addEventListener("click", closePanel);
 document.addEventListener("keydown", e => {

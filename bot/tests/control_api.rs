@@ -207,3 +207,139 @@ fn gear_routes_need_a_login() {
         405
     );
 }
+
+#[test]
+fn reads_and_sets_script_options() {
+    let (bot, base) = start();
+    let dir = std::env::temp_dir().join(format!("turu-test-api-options-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let storage = format!("ApiOptions{}", std::process::id());
+    let script = dir.join("opts.ts");
+    std::fs::write(
+        &script,
+        format!(
+            r#"import {{ bot, defineScriptOptions, option }} from "turu";
+export const scriptOptions = defineScriptOptions("{storage}", [
+    option.bool("Buy", "Buy potions", "Buys them first"),
+    option.int("Count", "How many", "", 3),
+    option.choice("Pet", "Pet", "", ["None", "Dragon_Pet"], "None"),
+], false, {{ Extra: [option.text("Label", "Label", "", "x")] }});
+export default function main(): void {{ bot.log(`buy=${{bot.config.get("Buy")}}`); }}
+"#
+        ),
+    )
+    .unwrap();
+    let file = bot.paths.script_options_file(&storage);
+    let _ = std::fs::remove_file(&file);
+
+    // Nothing loaded yet.
+    let (status, body) = call("GET", &format!("{base}/script/options"), Some(TOKEN), None);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["options"], "none");
+    assert_eq!(body["script"], Value::Null);
+
+    let path = script.display().to_string();
+    assert_eq!(
+        call(
+            "POST",
+            &format!("{base}/script/load?path={path}"),
+            Some(TOKEN),
+            None
+        )
+        .0,
+        200
+    );
+    let (status, body) = call("GET", &format!("{base}/script/options"), Some(TOKEN), None);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["options"], "defaults");
+    assert_eq!(body["saved"], false);
+    assert_eq!(body["file"], format!("options/{storage}.cfg"));
+    assert_eq!(body["categories"][0]["name"], "Options");
+    let count = &body["categories"][0]["options"][1];
+    assert_eq!(
+        (
+            &count["name"],
+            &count["kind"],
+            &count["value"],
+            &count["default"]
+        ),
+        (&json!("Count"), &json!("int"), &json!(3), &json!(3))
+    );
+    assert_eq!(
+        body["categories"][0]["options"][2]["choices"],
+        json!(["None", "Dragon_Pet"])
+    );
+    assert_eq!(body["categories"][1]["name"], "Extra");
+
+    // A wrong value changes nothing, not even the right ones next to it.
+    let (status, body) = call(
+        "POST",
+        &format!("{base}/script/options"),
+        Some(TOKEN),
+        Some(json!({ "Buy": true, "Count": "many" })),
+    );
+    assert_eq!(status, 400, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("Count"), "{body}");
+    assert!(!file.exists());
+
+    let (status, body) = call(
+        "POST",
+        &format!("{base}/script/options"),
+        Some(TOKEN),
+        Some(json!({ "Buy": true, "Pet": "Dragon_Pet", "Extra": { "Label": "farm" } })),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["options"], "saved");
+    assert_eq!(body["categories"][0]["options"][0]["value"], true);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "Options:Buy=True\nOptions:Count=3\nOptions:Pet=Dragon_Pet\nExtra:Label=farm\n"
+    );
+    assert_eq!(
+        bot.scripts.option_value("Extra", "Label").unwrap(),
+        json!("farm")
+    );
+
+    // The start says where the values came from, and that no window shows (no UI here).
+    let (status, body) = call("POST", &format!("{base}/script/start"), Some(TOKEN), None);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        (&body["options"], &body["optionsWindow"]),
+        (&json!("saved"), &json!(false))
+    );
+    let start = Instant::now();
+    while bot.scripts.is_running() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the script didn't finish"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let log = bot.logs.script.text();
+    assert!(log.contains("buy=true"), "{log}");
+
+    let (status, body) = call(
+        "POST",
+        &format!("{base}/script/options?reset=1"),
+        Some(TOKEN),
+        None,
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["categories"][0]["options"][0]["value"], false);
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .contains("Options:Buy=False")
+    );
+    assert_eq!(
+        call(
+            "POST",
+            &format!("{base}/script/options"),
+            Some(TOKEN),
+            Some(json!([1]))
+        )
+        .0,
+        400
+    );
+    let _ = std::fs::remove_file(&file);
+}

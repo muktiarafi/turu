@@ -8,8 +8,11 @@
 //! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats, and `update`: a newer Turu (`version`, `current`, `url` of its notes, `download`, `prerelease`) or `null`. |
 //! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, and `next`. Army polls it. |
 //! | `POST /script/load?path=` | Load a script (relative to the scripts folder, or absolute). |
-//! | `POST /script/start[?path=][&configure=1]` | Start the loaded script, or load and start `path`; with `configure=1` it shows the Script Options window first, as Start does in the window (Army Control sends it). |
+//! | `POST /script/start[?path=][&configure=1]` | Start the loaded script, or load and start `path`; with `configure=1` it shows the Script Options window first, as Start does in the window (Army Control sends it). Answers `started`, `options` (as `GET /script/options`) and `optionsWindow`: whether this run may show the window (not with `--headless` or without `configure=1`); without it the script uses `options` and its log says so. |
 //! | `POST /script/stop`, `/script/pause`, `/script/resume` | |
+//! | `GET /script/options` | The loaded script's Script Options: `options` (`none`, `saved` in `file`, or `defaults` when nothing was saved), `storage`, `file`, `dontPreconfigure`, and `categories` (`Options` first, then the groups), each with its `options`: `name`, `displayName`, `description`, `kind` (`bool`, `int`, `text`, `choice`), `default`, `choices`, `value`. |
+//! | `POST /script/options[?reset=1]` | Body `{"name": value, "Group": {"name": value}}`: set the loaded script's options and save them (all or none), after the defaults with `reset=1`. Answers as `GET`. |
+//! | `GET /scheduler/options?id=`, `POST /scheduler/options?id=[&reset=1]` | The same for a playlist entry's options (`options/Queue_<script>_<id>.cfg`). |
 //! | `GET /log?type=script\|debug\|packet[&since=]` | Log lines from number `since`, and `next`. |
 //! | `GET /options` | The bot options (Options > Game). |
 //! | `POST /options` | Body `{"name": value, ...}`: set options (until the script stops, as scripts do). |
@@ -54,6 +57,8 @@
 use crate::api::{map, player, send, servers};
 use crate::auto::{self, AutoMode};
 use crate::log::LogKind;
+use crate::script::options::ScriptOptions;
+use crate::script::{OptionsSource, ScriptOptionsState};
 use crate::{Bot, butler, gear};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
@@ -276,7 +281,27 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
                 crate::script::start_silent(bot)
             };
             match started {
-                Ok(()) => ok(json!({ "started": bot.scripts.loaded() })),
+                Ok(()) => ok(json!({
+                    "started": bot.scripts.loaded(),
+                    "options": bot.scripts.options_source().label(),
+                    "optionsWindow": bot.scripts.has_options() && bot.scripts.may_show_options(),
+                })),
+                Err(e) => error(409, e),
+            }
+        }
+        ("/script/options", false) => {
+            script_options(bot.scripts.loaded().as_deref(), bot.scripts.options())
+        }
+        ("/script/options", true) => {
+            let ScriptOptionsState::Loaded(options) = bot.scripts.options() else {
+                return script_options(bot.scripts.loaded().as_deref(), bot.scripts.options());
+            };
+            let edited = match edit_options(options, query("reset").as_deref() == Some("1"), body) {
+                Ok(edited) => edited,
+                Err(e) => return error(400, e),
+            };
+            match bot.scripts.save_options(edited) {
+                Ok(()) => script_options(bot.scripts.loaded().as_deref(), bot.scripts.options()),
                 Err(e) => error(409, e),
             }
         }
@@ -434,6 +459,31 @@ fn route(bot: &Arc<Bot>, post: bool, path_and_query: &str, body: &[u8]) -> Reply
             },
             None => error(400, "path is missing"),
         },
+        ("/scheduler/options", _) => {
+            let Some(id) = query("id") else {
+                return error(400, "id is missing");
+            };
+            let Some(entry) = bot.scheduler.entries().into_iter().find(|e| e.id == id) else {
+                return error(404, format!("no playlist entry {id}"));
+            };
+            let state = bot
+                .scripts
+                .read_options(&entry.path, Some(&entry.storage()));
+            if !post {
+                return script_options(Some(&entry.path), state);
+            }
+            let ScriptOptionsState::Loaded(options) = state else {
+                return script_options(Some(&entry.path), state);
+            };
+            let edited = match edit_options(options, query("reset").as_deref() == Some("1"), body) {
+                Ok(edited) => edited,
+                Err(e) => return error(400, e),
+            };
+            match edited.save() {
+                Ok(()) => script_options(Some(&entry.path), ScriptOptionsState::Loaded(edited)),
+                Err(e) => error(500, format!("couldn't save the options: {e}")),
+            }
+        }
         ("/scheduler/start", true) => match bot.scheduler.start(bot) {
             Ok(()) => ok(scheduler(bot)),
             Err(e) => error(409, e),
@@ -700,6 +750,52 @@ fn butler_reply(bot: &Bot, result: Result<String, String>) -> Reply {
 }
 
 /// The playlist after an edit, or 409 (it runs).
+/// `/script/options`' answer: the script, where its values come from (`options`: `none`,
+/// `saved`, `defaults`) and, when it declares options, `ScriptOptions::to_json`'s fields.
+/// 409 when they couldn't be read.
+fn script_options(script: Option<&Path>, state: ScriptOptionsState) -> Reply {
+    let script = script.map(|p| p.to_string_lossy().into_owned());
+    match state {
+        ScriptOptionsState::NoOptions => ok(json!({
+            "script": script,
+            "options": OptionsSource::None.label(),
+            "categories": [],
+        })),
+        ScriptOptionsState::Failed(e) => {
+            error(409, format!("the script's options couldn't be read: {e}"))
+        }
+        ScriptOptionsState::Loaded(options) => {
+            let source = if options.saved() {
+                OptionsSource::Saved
+            } else {
+                OptionsSource::Defaults
+            };
+            let mut body = options.to_json();
+            body["script"] = json!(script);
+            body["options"] = json!(source.label());
+            ok(body)
+        }
+    }
+}
+
+/// The options with `body`'s values (`ScriptOptions::apply_json`), after the defaults with
+/// `reset`. An empty body sets nothing.
+fn edit_options(
+    mut options: ScriptOptions,
+    reset: bool,
+    body: &[u8],
+) -> Result<ScriptOptions, String> {
+    if reset {
+        options.reset();
+    }
+    if body.iter().any(|b| !b.is_ascii_whitespace()) {
+        let values: Value =
+            serde_json::from_slice(body).map_err(|e| format!("the body isn't JSON: {e}"))?;
+        options.apply_json(&values)?;
+    }
+    Ok(options)
+}
+
 fn edited(bot: &Bot, result: Result<(), String>) -> Reply {
     match result {
         Ok(()) => ok(scheduler(bot)),

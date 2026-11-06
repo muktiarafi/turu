@@ -6,7 +6,7 @@ mod runtime;
 pub mod transpile;
 
 use crate::Bot;
-use crate::control::{ScriptControl, mark_script_thread};
+use crate::control::mark_script_thread;
 use crate::error::{BotError, BotResult};
 use crate::paths::Paths;
 use crate::webhooks::Notice;
@@ -113,6 +113,31 @@ impl ScriptInfo {
     }
 }
 
+/// Where a script's option values come from (`/script/start`'s and `/script/options`' `options`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OptionsSource {
+    /// The script declares no options.
+    None,
+    /// Its options file (`options/<storage>.cfg`).
+    Saved,
+    /// The declared defaults: there is no options file yet.
+    Defaults,
+    /// The options couldn't be read.
+    Failed,
+}
+
+impl OptionsSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Saved => "saved",
+            Self::Defaults => "defaults",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 /// The loaded script's options, as the Script Options window and `bot.config` see them.
 #[derive(Debug, Clone, Default)]
 pub enum ScriptOptionsState {
@@ -138,6 +163,8 @@ pub struct ScriptManager {
     interactive: AtomicBool,
     /// This run shows no Script Options window (VibeSkua `SilentConfig`).
     silent: AtomicBool,
+    /// This run already said that its Script Options window wasn't shown.
+    unshown_noted: AtomicBool,
     /// The open request for the Script Options window, until the UI closes it.
     configure: Mutex<Option<u64>>,
     configured: Condvar,
@@ -205,6 +232,7 @@ impl ScriptManager {
             options: Mutex::new(ScriptOptionsState::NoOptions),
             interactive: AtomicBool::new(false),
             silent: AtomicBool::new(false),
+            unshown_noted: AtomicBool::new(false),
             configure: Mutex::new(None),
             configured: Condvar::new(),
             next_configure: AtomicU64::new(1),
@@ -302,6 +330,28 @@ impl ScriptManager {
         matches!(*self.options.lock(), ScriptOptionsState::Loaded(_))
     }
 
+    /// Where the loaded script's option values come from: its options file, or the defaults
+    /// when there is none yet.
+    pub fn options_source(&self) -> OptionsSource {
+        match &*self.options.lock() {
+            ScriptOptionsState::NoOptions => OptionsSource::None,
+            ScriptOptionsState::Loaded(o) if o.saved() => OptionsSource::Saved,
+            ScriptOptionsState::Loaded(_) => OptionsSource::Defaults,
+            ScriptOptionsState::Failed(_) => OptionsSource::Failed,
+        }
+    }
+
+    /// Whether a UI is there to show the Script Options window ([`Self::set_interactive`]).
+    pub fn is_interactive(&self) -> bool {
+        self.interactive.load(Ordering::Acquire)
+    }
+
+    /// Whether the current (or last) run may show the Script Options window: there is a UI and
+    /// it wasn't a silent start.
+    pub fn may_show_options(&self) -> bool {
+        self.is_interactive() && !self.silent.load(Ordering::Acquire)
+    }
+
     /// `bot.config.has`: whether the loaded script declares the option. `category` is
     /// [`options::MAIN`] or a group's name.
     pub fn has_option(&self, category: &str, name: &str) -> bool {
@@ -381,14 +431,17 @@ impl ScriptManager {
 
     /// `bot.config.configure` (VibeSkua `Config.Configure()`): shows the Script Options window
     /// and waits until it closes. Returns at once when the script declares no options, the run
-    /// is silent or there is no UI; Stop ends the wait.
-    pub fn configure(&self, control: &ScriptControl) -> BotResult<()> {
-        if !self.has_options()
-            || self.silent.load(Ordering::Acquire)
-            || !self.interactive.load(Ordering::Acquire)
-        {
+    /// is silent or there is no UI (saying, once a run, which values it uses); Stop ends the
+    /// wait.
+    pub fn configure(&self, bot: &Bot) -> BotResult<()> {
+        if !self.has_options() {
             return Ok(());
         }
+        if !self.may_show_options() {
+            self.note_unshown(bot);
+            return Ok(());
+        }
+        let control = &bot.control;
         let request = self.next_configure.fetch_add(1, Ordering::Relaxed);
         let mut pending = self.configure.lock();
         *pending = Some(request);
@@ -401,6 +454,40 @@ impl ScriptManager {
                 .wait_for(&mut pending, Duration::from_millis(100));
         }
         Ok(())
+    }
+
+    /// Says, once a run, that the Script Options window wasn't shown and which values the
+    /// script uses: the log, and a monitor event when they're the defaults.
+    fn note_unshown(&self, bot: &Bot) {
+        if self.unshown_noted.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let file = match &*self.options.lock() {
+            ScriptOptionsState::Loaded(o) => o.path().to_owned(),
+            _ => return,
+        };
+        let why = if self.is_interactive() {
+            "this start doesn't show it"
+        } else {
+            "no window"
+        };
+        let shown = file
+            .file_name()
+            .map_or_else(String::new, |n| format!("options/{}", n.to_string_lossy()));
+        if file.is_file() {
+            bot.log(format!(
+                "Script Options not shown ({why}): using the options saved in {shown}."
+            ));
+        } else {
+            bot.log(format!(
+                "Script Options not shown ({why}): there is no {shown}, so the defaults are used."
+            ));
+            let name = self.loaded().map_or_else(String::new, |p| script_stem(&p));
+            bot.monitor.event(
+                crate::monitor::EventKind::ScriptOptions,
+                format!("{name}: default Script Options (no {shown})"),
+            );
+        }
     }
 
     /// The message box the UI should show for the script, if any.
@@ -467,13 +554,13 @@ impl ScriptManager {
 
     /// Before the run (VibeSkua `StartScript`): shows the window unless the script set
     /// `dontPreconfigure`.
-    fn preconfigure(&self, control: &ScriptControl) -> BotResult<()> {
+    fn preconfigure(&self, bot: &Bot) -> BotResult<()> {
         let needs_config = matches!(
             &*self.options.lock(),
             ScriptOptionsState::Loaded(o) if !o.declaration().dont_preconfigure
         );
         if needs_config {
-            self.configure(control)?;
+            self.configure(bot)?;
         }
         Ok(())
     }
@@ -516,6 +603,7 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
         return Err("A Console snippet is running".into());
     }
     bot.scripts.silent.store(silent, Ordering::Release);
+    bot.scripts.unshown_noted.store(false, Ordering::Release);
     bot.scripts.reached_main.store(false, Ordering::Release);
     bot.control.reset();
     // VibeSkua's `Handlers.Clear()` before the script thread starts.
@@ -541,7 +629,7 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
             });
             let run_started = std::time::Instant::now();
             bot.state.lock().stats.started = Some(run_started);
-            let result = match bot.scripts.preconfigure(&bot.control) {
+            let result = match bot.scripts.preconfigure(&bot) {
                 Ok(()) => runtime::run(&bot, &path),
                 Err(_) => Err(runtime::RunError::Stopped),
             };

@@ -603,6 +603,9 @@ pub fn configure_startup() {
             }
         }
     }
+    // As `add_tab` does: the window shows the Script Options (and `startup::configure` warns
+    // when nothing will).
+    bot.scripts.set_interactive(!headless());
     turu_bot::startup::configure(&bot, startup);
 }
 

@@ -9,7 +9,7 @@
 
 use super::loader::{ScriptLoader, ScriptResolver, normalize};
 use rquickjs::{CatchResultExt, Context, Function, Module, Object, Runtime};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -26,7 +26,7 @@ pub const MAIN: &str = "Options";
 
 /// The kinds of option: a checkbox, a whole number, text, or one of a list of names (VibeSkua's
 /// `bool`, `int`, `string` and enum options).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Bool,
@@ -254,6 +254,11 @@ impl ScriptOptions {
         &self.path
     }
 
+    /// Whether the options file exists (else the values are the defaults).
+    pub fn saved(&self) -> bool {
+        self.path.is_file()
+    }
+
     /// The value of an option outside the groups, or `None` when the script doesn't declare it.
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.get_in(MAIN, name)
@@ -291,6 +296,68 @@ impl ScriptOptions {
         }
         self.values
             .insert((category.to_owned(), name.to_owned()), value);
+        Ok(())
+    }
+
+    /// The options and their values as JSON, for the control API and the web monitor:
+    /// `storage`, `file` (`options/<storage>.cfg`), `saved` (whether that file exists),
+    /// `dontPreconfigure`, and `categories`, [`MAIN`] first, each with its `options` (`name`,
+    /// `displayName`, `description`, `kind`, `default`, `choices`, `value`).
+    pub fn to_json(&self) -> Value {
+        let categories: Vec<Value> = self
+            .decl
+            .categories()
+            .filter(|(category, options)| *category != MAIN || !options.is_empty())
+            .map(|(category, options)| {
+                let options: Vec<Value> = options
+                    .iter()
+                    .map(|o| {
+                        json!({
+                            "name": o.name,
+                            "displayName": o.display_name,
+                            "description": o.description,
+                            "kind": o.kind,
+                            "default": o.default_value,
+                            "choices": o.choices,
+                            "value": self.get_in(category, &o.name),
+                        })
+                    })
+                    .collect();
+                json!({ "name": category, "options": options })
+            })
+            .collect();
+        let file = self
+            .path
+            .file_name()
+            .map(|n| format!("options/{}", n.to_string_lossy()));
+        json!({
+            "storage": self.path.file_stem().map(|s| s.to_string_lossy()),
+            "file": file,
+            "saved": self.saved(),
+            "dontPreconfigure": self.decl.dont_preconfigure,
+            "categories": categories,
+        })
+    }
+
+    /// Sets the values in `body`, a JSON object: `{"name": value}` for an option outside the
+    /// groups, `{"Group": {"name": value}}` for a group's (an object is always a category, since
+    /// no value is one). Nothing changes when one of them is refused.
+    pub fn apply_json(&mut self, body: &Value) -> Result<(), String> {
+        let Value::Object(entries) = body else {
+            return Err("the body must be a JSON object of option names and values".into());
+        };
+        let mut edited = self.clone();
+        for (key, value) in entries {
+            match value {
+                Value::Object(values) => {
+                    for (name, value) in values {
+                        edited.set_in(key, name, value.clone())?;
+                    }
+                }
+                value => edited.set_in(MAIN, key, value.clone())?,
+            }
+        }
+        *self = edited;
         Ok(())
     }
 
@@ -559,5 +626,25 @@ mod tests {
         assert!(decl.check().unwrap_err().contains("Pet"));
         decl.options[0].choices.clear();
         assert!(decl.check().unwrap_err().contains("no choices"));
+    }
+
+    #[test]
+    fn json_sets_all_or_nothing() {
+        let mut options = ScriptOptions::load(declaration_of(SAMPLE), temp_file("json")).unwrap();
+        let refused = options.apply_json(&json!({ "BuyReagents": true, "PotionQuant": 1.5 }));
+        assert!(refused.unwrap_err().contains("PotionQuant"));
+        assert_eq!(options.get("BuyReagents"), Some(&Value::Bool(false)));
+        assert!(options.apply_json(&json!({ "Nope": 1 })).is_err());
+        assert!(options.apply_json(&json!(["BuyReagents"])).is_err());
+        options
+            .apply_json(&json!({ "BuyReagents": true, "Options": { "Label": "y" } }))
+            .unwrap();
+        assert_eq!(options.get("BuyReagents"), Some(&Value::Bool(true)));
+        assert_eq!(options.get("Label"), Some(&json!("y")));
+        let view = options.to_json();
+        assert_eq!(view["saved"], false);
+        assert_eq!(view["storage"], "Sample");
+        assert_eq!(view["categories"][0]["options"][2]["value"], "y");
+        assert_eq!(view["categories"][0]["options"][1]["kind"], "int");
     }
 }

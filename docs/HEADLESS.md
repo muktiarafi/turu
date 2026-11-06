@@ -39,7 +39,18 @@ starts; scripts you edited are kept. Offline, clone
 [turu-scripts](https://github.com/muktiarafi/turu-scripts) and pass absolute paths.
 
 **Options:** there's no Script Options window, so a script runs with its saved options or its
-defaults. Set them on a desktop and copy these from its data folder to the server's:
+defaults, and its log says which (`Script Options not shown (no window): ...`); with the defaults
+the web monitor shows an event too, and `--run-script` warns at startup. Set them without a
+desktop in the web monitor (a bot's Details > Script Options) or with the control API:
+
+```bash
+curl -H "$T" localhost:8791/script/options        # the loaded script's options and values
+curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:8791/script/options
+curl -H "$T" -X POST "localhost:8791/script/options?reset=1"     # back to the defaults
+curl -H "$T" "localhost:8791/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
+```
+
+Or copy these from a desktop's data folder to the server's:
 
 | File | What |
 |---|---|

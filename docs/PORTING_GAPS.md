@@ -75,7 +75,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 |---|---|---|---|
 | 46 | Butler (ButlerV5) | AntiLag while following, quest bypass table, quest cloning, level fake, debug log viewer, suspend message box, offline write on close. **Ported** (`bot/src/butler/`: `quest_bypass.rs`, `antilag.rs`, `debug_log.rs`) with Unlock All Quests, except quest cloning. | port (done, but quest cloning) |
 | 47 | Cosmetics | `world.CHARS[id]` fallbacks; Copy Page doesn't apply hair. | |
-| 48 | Script Options | Never opens by itself for headless, HTTP API or relogin runs (it does for `--run-script` and Army Control's Start, as in VibeSkua). | |
+| 48 | Script Options | Never opens by itself for headless, HTTP API or relogin runs (it does for `--run-script` and Army Control's Start, as in VibeSkua). **Done** as `docs/SCRIPT_OPTIONS_PROPOSAL.md` recommends: those runs say which values they use (log, monitor event, `/script/start`'s `options`), and `/script/options`, `/scheduler/options` and the web monitor set them without a window. | port (done) |
 | 49 | Ultras | All of `Ultrasv3` ported but `TestZone` (old `Ultras/` engine). Boss scripts are type-checked drafts, none run in game. | |
 | 50 | Scripts skipped on purpose | `Templates`, unused `Prototypes`, the generator, some Tools (`scripts/README.md`). | |
 | 51 | Release builds | No PGO speed profile; macOS app not notarized. | |

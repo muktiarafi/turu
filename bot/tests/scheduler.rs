@@ -336,6 +336,30 @@ export default function main(): void {
     }
     assert_eq!(lines(&bot, "count="), ["count=7", "count=1"]);
     assert_eq!(statuses(&bot), [EntryStatus::Completed; 2]);
+
+    // The control API reads and sets an entry's options, not the script's own.
+    let call = |post: bool, path: &str, body: &str| {
+        turu_bot::control_api::local(&bot, post, path, body.as_bytes())
+    };
+    let second = format!("/scheduler/options?id={}", entries[1].id);
+    let (status, body) = call(false, &second, "");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["options"], "defaults");
+    assert_eq!(body["storage"], entries[1].storage());
+    assert_eq!(body["categories"][0]["options"][0]["value"], 1);
+    let (status, body) = call(true, &second, r#"{"Count": 9}"#);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["options"], "saved");
+    assert_eq!(
+        std::fs::read_to_string(options.join(format!("{}.cfg", entries[1].storage()))).unwrap(),
+        "Options:Count=9\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(options.join("SchedulerOpts.cfg")).unwrap(),
+        "Options:Count=3\n"
+    );
+    assert_eq!(call(false, "/scheduler/options?id=nope", "").0, 404);
+    assert_eq!(call(false, "/scheduler/options", "").0, 400);
 }
 
 #[test]

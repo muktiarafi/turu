@@ -205,7 +205,12 @@ fn execute(hub: &Arc<Hub>, accept: bool, command: RemoteCommand, done: Sender<Co
     let spawned = std::thread::Builder::new()
         .name("Turu Monitor Command".into())
         .spawn(move || {
-            let (status, body) = hub.run(control, command.post, &command.route);
+            let (status, body) = hub.run(
+                control,
+                command.post,
+                &command.route,
+                command.body.as_bytes(),
+            );
             let _ = done.send(CommandResult {
                 seq: command.seq,
                 status,
