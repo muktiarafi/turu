@@ -2,6 +2,7 @@
 //! controls, the setup buttons, and the script log.
 
 use super::files::{self, Pending, SaveText};
+use super::hotkeys;
 use super::theme::{DANGER, MUTED, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::platform::FileDialog;
@@ -265,7 +266,7 @@ impl ScriptLoader {
                     vec2(main_width, run_height),
                     "Stopping: the script is running its stopping steps",
                 )
-                .on_hover_text(format!("Stops the script ({TOGGLE_KEY_NAME})"));
+                .on_hover_text(format!("Stops the script{}", hotkeys::hint("ToggleScript")));
                 if stop.clicked() {
                     script::stop(&bot);
                 }
@@ -289,7 +290,7 @@ impl ScriptLoader {
                     vec2(main_width, run_height),
                     tip,
                 )
-                .on_hover_text(format!("Starts the loaded script ({TOGGLE_KEY_NAME})"))
+                .on_hover_text(format!("Starts the loaded script{}", hotkeys::hint("ToggleScript")))
                 .clicked()
                     && let Err(e) = script::start(&bot)
                 {
@@ -301,7 +302,7 @@ impl ScriptLoader {
                 let ready = bot.scripts.can_force_stop();
                 run_hint = Some(if ready { force_tip } else { FORCE_STOP_WAIT });
                 if widgets::button(ui, "Force Stop", Kind::Danger, ready, size, FORCE_STOP_WAIT)
-                    .on_hover_text(format!("{force_tip} ({TOGGLE_KEY_NAME})"))
+                    .on_hover_text(format!("{force_tip}{}", hotkeys::hint("ToggleScript")))
                     .clicked()
                 {
                     script::stop(&bot);
@@ -338,7 +339,7 @@ impl ScriptLoader {
                 let enabled = !active && !self.pending_load.is_open();
                 let size = vec2(width, setup_height);
                 if widgets::button(ui, "Load Script", Kind::Outline, enabled, size, "Stop the script first")
-                    .on_hover_text(format!("Opens a script file ({LOAD_KEY_NAME})"))
+                    .on_hover_text(format!("Opens a script file{}", hotkeys::hint("LoadScript")))
                     .clicked()
                 {
                     self.pick_script(ui.ctx());
@@ -414,13 +415,6 @@ pub(super) fn last_run(bot: &turu_bot::Bot) -> Option<LastRun> {
 
 /// Why Force Stop is disabled at first ([`turu_bot::script::FORCE_STOP_AFTER`]).
 pub(super) const FORCE_STOP_WAIT: &str = "Force Stop is offered after 1.5 s of stopping";
-
-/// VibeSkua's default ToggleScript hotkey: starts the loaded script, or stops the running one.
-pub(super) const TOGGLE_KEY: egui::Key = egui::Key::F10;
-pub(super) const TOGGLE_KEY_NAME: &str = "F10";
-/// VibeSkua's default LoadScript hotkey: Load Script's file dialog.
-pub(super) const LOAD_KEY: egui::Key = egui::Key::F9;
-const LOAD_KEY_NAME: &str = "F9";
 
 /// VibeSkua's ToggleScript hotkey: what Start Script / Stop Script do, under the same rules (no
 /// start while Auto or a Console snippet runs). A stop while stopping is Force Stop, once it is

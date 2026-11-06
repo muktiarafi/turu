@@ -535,8 +535,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   codeload downloads and the ETag 304 against it aren't covered by a test. Scripts made for a
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
-- Not built in the UI: Themes, HotKeys (only F6 for Lag Killer, F10 to start or stop the script and F9 to load one, fixed),
-  Notify Drop, Plugins
+- Not built in the UI: Themes, Notify Drop, Plugins. HotKeys work only while Turu's window has
+  focus (no global hook) and not on Android
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.

@@ -139,6 +139,12 @@ impl Paths {
         self.root.join("FastTravels.json")
     }
 
+    /// Options > HotKeys' bindings (VibeSkua keeps them in its settings, `HotKeys`, as
+    /// `"Action|Gesture"` strings; so does this file, as a JSON array).
+    pub fn hotkeys_file(&self) -> PathBuf {
+        self.root.join("HotKeys.json")
+    }
+
     pub fn options_file(&self) -> PathBuf {
         self.root.join("options.json")
     }

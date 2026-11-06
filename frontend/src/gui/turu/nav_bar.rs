@@ -196,6 +196,37 @@ fn item(ui: &mut Ui, label: &str, enabled: bool) -> bool {
 }
 
 impl NavBar {
+    /// Bank, as the bar's button does it (the OpenBank hotkey): the bar shows how it went.
+    pub(super) fn open_bank(&self) {
+        open_bank(&self.bank);
+    }
+
+    /// Auto Attack or Auto Hunt with the Auto popup's class and mode, as its buttons; stops it
+    /// when one runs (VibeSkua's ToggleAutoAttack/ToggleAutoHunt hotkeys). Like the buttons,
+    /// it doesn't start while a script or a Console snippet runs: the log says why.
+    pub(super) fn toggle_auto(&self, mode: auto::AutoMode) {
+        let bot = crate::turu::bot();
+        if auto::running(&bot) {
+            auto::stop();
+        } else if bot.scripts.status().is_active() {
+            bot.log("[HotKeys] Auto doesn't start while a script runs");
+        } else if bot.scripts.is_snippet_running() {
+            bot.log("[HotKeys] Auto doesn't start while a Console snippet runs");
+        } else {
+            self.start_auto(mode);
+        }
+    }
+
+    /// VibeSkua: the picked class and mode only when both are set, else the equipped class in
+    /// Base.
+    fn start_auto(&self, mode: auto::AutoMode) {
+        let map_ids = auto::parse_map_ids(&self.map_ids);
+        match (self.auto_class.clone(), self.auto_mode.clone()) {
+            (Some(class), Some(class_mode)) => auto::start(mode, Some(class), class_mode, map_ids),
+            _ => auto::start(mode, None, "Base".into(), map_ids),
+        }
+    }
+
     pub fn show(&mut self, ui: &mut Ui, windows: &mut Windows) {
         // The controls are 8 points shorter than the bar: 4 above and below centre them.
         let frame = Frame::new().fill(PANEL).inner_margin(Margin {
@@ -333,7 +364,8 @@ impl NavBar {
         } else {
             Lead::None
         };
-        let response = toggle_button(ui, "Bank", lead, false).on_hover_text("Opens the bank window");
+        let response = toggle_button(ui, "Bank", lead, false)
+            .on_hover_text(format!("Opens the bank window{}", super::hotkeys::hint("OpenBank")));
         if response.clicked() {
             open_bank(&self.bank);
         }
@@ -407,13 +439,7 @@ impl NavBar {
                 None
             };
             if let Some(mode) = mode {
-                // VibeSkua: the picked class and mode only when both are set, else the
-                // equipped class in Base.
-                let map_ids = auto::parse_map_ids(&self.map_ids);
-                match (self.auto_class.clone(), self.auto_mode.clone()) {
-                    (Some(class), Some(class_mode)) => auto::start(mode, Some(class), class_mode, map_ids),
-                    _ => auto::start(mode, None, "Base".into(), map_ids),
-                }
+                self.start_auto(mode);
             }
         });
         if widgets::button(
@@ -808,7 +834,11 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "CoreBots", true) {
                 windows.core_bots = true;
             }
-            soon(ui, &["Application Themes", "HotKeys"]);
+            // Not where there's no keyboard to bind (Android).
+            if crate::platform::platform().has_hotkeys() && item(ui, "HotKeys", true) {
+                windows.hotkeys = true;
+            }
+            soon(ui, &["Application Themes"]);
         }
         Menu::Tools => {
             if item(ui, "Loader", true) {
@@ -1030,14 +1060,14 @@ impl RunCell {
     }
 
     fn tip(self) -> String {
-        let key = script_loader::TOGGLE_KEY_NAME;
+        let key = super::hotkeys::hint("ToggleScript");
         match self {
             Self::Start(Some(why)) => why.to_owned(),
-            Self::Start(None) => format!("Start the script ({key})"),
+            Self::Start(None) => format!("Start the script{key}"),
             Self::Pause => "Pause the script".to_owned(),
             Self::Resume => "Resume the script".to_owned(),
-            Self::Stop => format!("Stop the script ({key})"),
-            Self::ForceStop(true) => format!("Force Stop: interrupts the script's stopping steps ({key})"),
+            Self::Stop => format!("Stop the script{key}"),
+            Self::ForceStop(true) => format!("Force Stop: interrupts the script's stopping steps{key}"),
             Self::ForceStop(false) => script_loader::FORCE_STOP_WAIT.to_owned(),
         }
     }

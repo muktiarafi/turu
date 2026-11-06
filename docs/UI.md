@@ -92,7 +92,7 @@ top, and + at the end.
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
 | Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error", after a run "Finished 6h 12m" or "Stopped 3h 40m" (the Script Loader's last run), or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
-| everything else (Application Themes, HotKeys, Loadouts Manager, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
+| everything else (Application Themes, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
 
 **Auto Attack / Auto Hunt** (`auto.rs`, loop in `turu_bot::auto`): a bot thread marked as a
 script thread, so `bot.control.request_stop()` (Stop Automation) makes the next call fail. It runs
@@ -653,16 +653,48 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   in tercessuinotlim; elsewhere it stays where you are). On a touch screen with a window under
   620x520 the window fills the screen; its controls, tile menus and rows are finger-sized.
 
-Not built at all (greyed in the menus): Application Themes,
-HotKeys, Loadouts Manager, Plugins, Auto Hunt, Notify Drop.
+Not built at all (greyed in the menus): Application Themes, Plugins, Notify Drop.
 
-Hotkeys (`hotkeys` in `mod.rs`): three of VibeSkua's defaults, for the active tab. F6 toggles
-Lag Killer (and logs it); F10 (`ToggleScript`) starts the loaded script or stops the running
-one, under Start Script's rules (not while Auto or a Console snippet runs; a second press while
-stopping is Force Stop); F9 (`LoadScript`) opens the Script Loader and its Load Script dialog
-(where there are file dialogs, and not while a script runs). Start / Stop and Load Script show
-their key in the tooltip. VibeSkua has no default for pausing, so Turu has none. They can't be
-rebound: the HotKeys window isn't built.
+* **HotKeys** (Options > HotKeys; `hotkeys_window.rs`, model and dispatch in `hotkeys.rs`,
+  VibeSkua `HotKeysView`): VibeSkua's whole catalog of bindable actions (its `_actionList`, 76:
+  script and windows, Auto, the Game options it toggles, Rest, Jump To Home, Logout, Reject All
+  Drops, 37 AQW Lite settings, Army broadcasts), with its titles and descriptions. Wide (600 px
+  or more): YOUR HOTKEYS (about 58%) beside ADD AN ACTION. Narrow: two pages, the catalog
+  behind "+ Add an action" with ← (or Escape) back. YOUR HOTKEYS: a Filter box (title,
+  description or key), each row's title and description (cut, whole on hover), its key as a
+  keycap ("Set key" when it has none) and ✕ to remove it (a note says what went, with Undo).
+  Clicking a keycap waits for a key: the keycap reads "Press a key…" with a slow accent pulse,
+  and the next press (with Ctrl, Shift or Alt held) is the key; Escape cancels, Backspace or
+  Delete leaves it without a key. Escape, the clipboard keys and modifiers alone can't be bound.
+  A key another action holds moves to this one, and the note says from which (VibeSkua's
+  dialog refused it instead). A key that types (a letter, digit, punctuation or Space without
+  Ctrl or Alt) gets an amber dot and a line saying it fires in the game's chat too. Restore
+  defaults (asks for a second click) brings back VibeSkua's seven. ADD AN ACTION: a search box
+  (every word in the title, description or VibeSkua name), group chips (All, Script, Combat,
+  Display, Player, Game UI, Army) and the actions without a key, under group headings when
+  neither narrows them; clicking one adds it and waits for its key. Every change is saved to
+  `HotKeys.json` in the data folder (VibeSkua's `"Action|Gesture"` strings, e.g.
+  `"ToggleScript|Ctrl+Shift+F10"`, as a JSON array; VibeSkua's key names such as `D1` and
+  `OemMinus` are read too). With no file, VibeSkua's defaults: F10 Start Script, F9 Load Script,
+  F2 Open Bank, F3 Open Console, F4 Auto Attack, F5 Auto Hunt, F6 Lag Killer. Ctrl is Cmd on
+  macOS (shown as "Cmd"). Checked by eye from offscreen renders (1100x720 wide, 520x760 both
+  pages, 640x420); not yet in the running app.
+
+Hotkeys run (`hotkeys::run_pressed`, before the windows each frame) for the active tab while
+Turu's window has focus (VibeSkua's Windows-only global keyboard hook isn't ported). The
+modifiers must match exactly; a key that types is ignored while a Turu text box has focus;
+the press is taken from egui, and the game gets it too, as it does Ruffle's own shortcuts.
+What an action did, or why it did nothing, goes to the script log as `[HotKeys] ...`.
+Start Script follows Start Script's rules (a second press while stopping is Force Stop); Load
+Script opens the Script Loader and its dialog; Open Bank is the bar's Bank (its note under
+the bar); Auto Attack/Hunt use the Auto popup's class and mode, or stop the running one, and
+don't start while a script or snippet runs; Game options are flipped in memory (not saved, as
+VibeSkua); Lite settings are read and flipped in the game on a bot thread; Army actions go to
+every tab and every account Army started (`army::broadcast`), Army toggles flip here and send
+the new value; Load Script to All opens Army Control. Tooltips show the current key (Start,
+Stop, Force Stop, Load Script, Bank). VibeSkua has no action for pausing, so Turu has none.
+Android (`Platform::has_hotkeys` false: its key events carry no function keys or modifiers to
+the UI, and phones rarely have a keyboard) hides the menu entry and runs no hotkeys.
 
 ## Adding a window
 

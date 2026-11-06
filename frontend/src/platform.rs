@@ -86,6 +86,13 @@ pub trait Platform: Send + Sync {
         false
     }
 
+    /// Whether keyboard shortcuts work: Options > HotKeys and its bindings (VibeSkua's F10, F9,
+    /// ...). False on Android: its key events carry no function keys or modifiers to the UI,
+    /// and most phones have no keyboard, so the window is hidden there.
+    fn has_hotkeys(&self) -> bool {
+        true
+    }
+
     /// Whether [`Platform::share_text`] opens the system's share sheet (Android): the log and
     /// crash report windows show Share then.
     fn shares_text(&self) -> bool {

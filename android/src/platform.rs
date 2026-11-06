@@ -57,6 +57,11 @@ impl Platform for AndroidPlatform {
         true
     }
 
+    // `input::key` maps no function keys and sends egui no modifiers: no hotkeys to bind.
+    fn has_hotkeys(&self) -> bool {
+        false
+    }
+
     // The app's executable is Android's app_process, not a `turu` Army could start.
     fn launches_processes(&self) -> bool {
         false

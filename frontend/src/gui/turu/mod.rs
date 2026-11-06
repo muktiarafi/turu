@@ -19,6 +19,8 @@ mod files;
 mod game_options;
 mod gear;
 mod grabber;
+mod hotkeys;
+mod hotkeys_window;
 mod interceptor;
 mod junk_items;
 mod loadouts;
@@ -55,6 +57,7 @@ pub struct Windows {
     pub game_options: bool,
     pub application_options: bool,
     pub core_bots: bool,
+    pub hotkeys: bool,
     pub skills: bool,
     pub stats: bool,
     pub runtime: bool,
@@ -150,6 +153,7 @@ struct TabUi {
     game_options: game_options::GameOptionsWindow,
     application_options: application_options::ApplicationOptionsWindow,
     core_bots: core_bots::CoreBotsWindow,
+    hotkeys: hotkeys_window::HotKeysWindow,
     skills: skills::SkillsWindow,
     stats: stats::StatsWindow,
     runtime: runtime::RuntimeWindow,
@@ -224,14 +228,10 @@ impl TuruUi {
     /// The tool windows that are open.
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
-        let load_script = hotkeys(ctx);
         grid_overlay::show(ctx);
         let tab = self.active();
+        hotkeys::run_pressed(ctx, tab);
         let w = &mut tab.windows;
-        if load_script && crate::platform::platform().has_file_dialogs() {
-            w.script_loader = true;
-            tab.script_loader.pick_script(ctx);
-        }
         tab.script_loader.show(
             ctx,
             &mut w.script_loader,
@@ -257,6 +257,7 @@ impl TuruUi {
         tab.game_options.show(ctx, &mut w.game_options);
         tab.application_options.show(ctx, &mut w.application_options);
         tab.core_bots.show(ctx, &mut w.core_bots);
+        tab.hotkeys.show(ctx, &mut w.hotkeys);
         tab.current_drops.show(ctx, &mut w.current_drops);
         tab.loader.show(ctx, &mut w.loader);
         tab.grabber.show(ctx, &mut w.grabber);
@@ -295,26 +296,6 @@ impl TuruUi {
     pub fn is_busy(&self) -> bool {
         crate::turu::tabs().iter().any(|(_, bot)| busy(bot))
     }
-}
-
-/// VibeSkua's default hotkeys that Turu has, fixed for now (VibeSkua lets you rebind them): F6
-/// toggles the active tab's Lag Killer (`ToggleLagKiller`), F10 starts or stops its script
-/// (`ToggleScript`), and F9 (`LoadScript`) is returned as true for the caller to open Load
-/// Script's dialog. The game gets the key too, as it does Ruffle's own shortcuts.
-fn hotkeys(ctx: &Context) -> bool {
-    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, script_loader::TOGGLE_KEY)) {
-        script_loader::toggle_script();
-    }
-    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F6)) {
-        let bot = crate::turu::bot();
-        let on = {
-            let mut o = bot.options.write();
-            o.lag_killer = !o.lag_killer;
-            o.lag_killer
-        };
-        bot.log(format!("Lag Killer {}", if on { "on" } else { "off" }));
-    }
-    ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, script_loader::LOAD_KEY))
 }
 
 /// VibeSkua's headless overlay (`HeadlessOverlay`), shown in Headless Mode over the game area
@@ -414,6 +395,10 @@ mod tests {
             (
                 "Game Options",
                 boxed(game_options::GameOptionsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "HotKeys",
+                boxed(hotkeys_window::HotKeysWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Application Options",
