@@ -11,8 +11,9 @@ How to build, run and check the Android app. The design and the plan are in
 > `turu-args.txt`'s script). On an Android 16 arm64 emulator (2026-11-03): scripts found,
 > loaded, configured, started and stopped by touch; farming went on with the screen off in deep
 > Doze; Pause and Resume from the notification worked; after the process was killed the engine
-> came back alone, logged in and farmed, and the app showed it when opened. Not yet run on a
-> phone.
+> came back alone, logged in and farmed, and the app showed it when opened. On a phone: a Redmi
+> 10 (Mali-G52, 4 GB) ran out of GPU memory logging in, which led to the limits in "GPU memory"
+> below; a full farming run on a phone isn't recorded yet.
 >
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
 > text; Turu's text boxes near the top stay visible); no file dialogs (Load Script and the

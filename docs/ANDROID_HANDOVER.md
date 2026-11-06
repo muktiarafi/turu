@@ -17,7 +17,9 @@ Phases 0 to 4 of the proposal are built and committed, and checked on an emulato
 | 3 | Turu's nav bar and bot windows (egui) over the game; scripts found, loaded, configured, started, stopped by touch | `2442a71db`, `9c99a2256` |
 | 4 | Background: notification with Pause/Resume/Stop, wake lock, battery prompt, restart without a window after a kill | `d755a7339` |
 
-**Nothing has run on a real phone yet.** That is the most useful next step (see "Next").
+**Real phones:** a Redmi 10 (Mali-G52, 4 GB) has run it since; it crashed logging in on GPU
+memory, fixed by `22d14f3f0` (docs/ANDROID.md, "GPU memory"). A full farming run on a phone
+isn't recorded yet, which is the most useful next step (see "Next").
 
 Since phase 4 (`6a35ed1e4`): **Cosmetics** works on the emulator (catalog download, equip,
 outfits, colors, reset). A short window (under 480 points of content, as a phone held sideways)
