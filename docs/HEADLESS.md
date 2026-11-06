@@ -146,7 +146,8 @@ Summons off in `butler.json` for the account you play by hand.
 ## Watching and steering it
 
 **Log:** stdout, so `journalctl -u turu@main -f` under systemd. `RUST_LOG=warn,turu=debug`
-shows more.
+shows more. Text layout's "Fallback font not found" errors are left out (no device fonts are
+loaded without a window, and nobody sees the text); a `RUST_LOG` of your own brings them back.
 
 **Web monitor** (`--monitor=127.0.0.1:8790`): each bot's card, logs, history and commands.
 Keep it on loopback and use a tunnel, which needs no key:
@@ -189,7 +190,14 @@ since it started (by thread and callback, with the path for `getGameObject` and 
 many, how long they waited, how long the player took to run them, reply bytes) and its player's
 ticks. `TURU_PERF_LOG=<seconds>` logs the same for each tab every `seconds`, over that window
 (`turu_perf` lines: the player thread's milliseconds per second, then the busiest calls, 12
-unless `TURU_PERF_LOG_ROWS` says how many). With a
+unless `TURU_PERF_LOG_ROWS` says how many). Without a window it also logs a `memory:` line:
+the process's resident and committed memory (with peaks), the Rust heap that's live, the SWFs
+the game loaded (their data in MB) and the Flash objects it holds, to tell a leak from the
+allocator keeping freed memory. To see what holds the heap, run with `TURU_SYSTEM_ALLOC=1`: the
+system allocator instead of mimalloc (the memory line's commit then reads ~0), which heap
+profilers see: on macOS `MallocStackLogging=1`, then `malloc_history <pid> -allBySize` (live
+memory by call stack) or `-callTree -invert`; on Linux `heaptrack`. Use a debug build, which has
+the symbols. With a
 window it covers every tab, plus a total line and a `main thread` line: where the event loop's
 time goes (idle, drawing and its parts, the games and bot calls, the rest).
 
@@ -214,7 +222,8 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | `TURU_API_TOKEN` | The control API token (16+ characters); else the data folder's `api-token`. |
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |
 | `TURU_SCRIPTS_REPO` | Another scripts repository (`owner/name`). |
-| `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks. |
+| `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks (and memory, without a window). |
+| `TURU_SYSTEM_ALLOC` | Set: the system allocator instead of mimalloc, for heap profilers. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
 | `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |
 | `RUST_LOG` | What the log shows. |

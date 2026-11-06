@@ -18,7 +18,7 @@ use ruffle_render::quality::StageQuality;
 use std::rc::Rc;
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs, STAGE};
 use url::Url;
 
@@ -30,9 +30,36 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     let player = build_player(&preferences, movie_url, sender.clone());
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Running without a window (--headless); stop with Ctrl+C");
-    engine::run_loop(&player, &events);
+    let mut memory_log = turu::perf_log_every().map(|every| (every, Instant::now()));
+    engine::run_loop_with(&player, &events, |player| {
+        if let Some((every, last)) = &mut memory_log
+            && last.elapsed() >= *every
+        {
+            *last = Instant::now();
+            log_memory(player);
+        }
+    });
     turu::bot().set_host(None);
     Ok(())
+}
+
+/// With `TURU_PERF_LOG`: the windowed build's `memory:` line without its GPU parts, to see where
+/// the process's memory goes (the allocator's resident and committed memory, the Rust heap that's
+/// live, the SWFs the game loaded and the Flash objects it holds).
+fn log_memory(player: &mut Player) {
+    let mut info = [0usize; 8];
+    // SAFETY: plain out-pointers.
+    unsafe {
+        let [elapsed, user, system, rss, peak_rss, commit, peak_commit, faults] = &mut info;
+        libmimalloc_sys::mi_process_info(elapsed, user, system, rss, peak_rss, commit, peak_commit, faults);
+    }
+    let [_, _, _, rss, peak_rss, commit, peak_commit, _] = info.map(|bytes| bytes >> 20);
+    tracing::info!(
+        target: "turu_perf",
+        "memory: process resident {rss} MB (peak {peak_rss}), commit {commit} MB (peak {peak_commit}), rust heap {} MB; {}",
+        crate::HEAP_BYTES.load(std::sync::atomic::Ordering::Relaxed) >> 20,
+        player.aqw_memory_report(),
+    );
 }
 
 fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<EngineEvent>) -> Arc<Mutex<Player>> {

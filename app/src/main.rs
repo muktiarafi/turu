@@ -86,6 +86,30 @@ pub static HEAP_BYTES: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI
 
 #[cfg(not(feature = "tracy"))]
 impl CountingAlloc {
+    /// Turu: with `TURU_SYSTEM_ALLOC` set, the system allocator instead of mimalloc, so heap
+    /// profilers that only see the system's (macOS's `malloc_history` and Instruments, Linux's
+    /// heaptrack) cover the whole heap. Decided at the first allocation, before any other, and
+    /// never changed after, so a block is always freed by the allocator that gave it. (`getenv`
+    /// from the C runtime: it doesn't allocate, unlike `std::env`.)
+    #[inline]
+    fn system() -> bool {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        static CHOICE: AtomicU8 = AtomicU8::new(0); // 0: not decided yet, 1: mimalloc, 2: system
+        match CHOICE.load(Ordering::Relaxed) {
+            1 => false,
+            2 => true,
+            _ => {
+                unsafe extern "C" {
+                    fn getenv(name: *const std::ffi::c_char) -> *mut std::ffi::c_char;
+                }
+                // SAFETY: a NUL-terminated name; nothing sets variables this early.
+                let system = !unsafe { getenv(c"TURU_SYSTEM_ALLOC".as_ptr()) }.is_null();
+                CHOICE.store(if system { 2 } else { 1 }, Ordering::Relaxed);
+                system
+            }
+        }
+    }
+
     #[inline]
     fn record(delta: i64) {
         thread_local! {
@@ -107,7 +131,11 @@ impl CountingAlloc {
 unsafe impl std::alloc::GlobalAlloc for CountingAlloc {
     #[inline]
     unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
-        let ptr = unsafe { mimalloc::MiMalloc.alloc(layout) };
+        let ptr = if Self::system() {
+            unsafe { std::alloc::System.alloc(layout) }
+        } else {
+            unsafe { mimalloc::MiMalloc.alloc(layout) }
+        };
         if !ptr.is_null() {
             Self::record(layout.size() as i64);
         }
@@ -117,7 +145,11 @@ unsafe impl std::alloc::GlobalAlloc for CountingAlloc {
 
     #[inline]
     unsafe fn alloc_zeroed(&self, layout: std::alloc::Layout) -> *mut u8 {
-        let ptr = unsafe { mimalloc::MiMalloc.alloc_zeroed(layout) };
+        let ptr = if Self::system() {
+            unsafe { std::alloc::System.alloc_zeroed(layout) }
+        } else {
+            unsafe { mimalloc::MiMalloc.alloc_zeroed(layout) }
+        };
         if !ptr.is_null() {
             Self::record(layout.size() as i64);
         }
@@ -130,14 +162,22 @@ unsafe impl std::alloc::GlobalAlloc for CountingAlloc {
         // (Before freeing: once freed, another thread can be given the same address and
         // record it, and the census would then forget that allocation instead.)
         heap_census::on_dealloc(ptr, layout.size());
-        unsafe { mimalloc::MiMalloc.dealloc(ptr, layout) };
+        if Self::system() {
+            unsafe { std::alloc::System.dealloc(ptr, layout) }
+        } else {
+            unsafe { mimalloc::MiMalloc.dealloc(ptr, layout) }
+        }
         Self::record(-(layout.size() as i64));
     }
 
     #[inline]
     unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, new_size: usize) -> *mut u8 {
         let stack = heap_census::before_realloc(ptr, layout.size(), new_size);
-        let new = unsafe { mimalloc::MiMalloc.realloc(ptr, layout, new_size) };
+        let new = if Self::system() {
+            unsafe { std::alloc::System.realloc(ptr, layout, new_size) }
+        } else {
+            unsafe { mimalloc::MiMalloc.realloc(ptr, layout, new_size) }
+        };
         if !new.is_null() {
             Self::record(new_size as i64 - layout.size() as i64);
         }
@@ -386,8 +426,15 @@ fn main() -> Result<(), Error> {
         // Turu: the desktop crate is `turu` (the binary's name); that also shows the bot's log.
         "warn,turu=info,ruffle_aqw_perf=info,ruffle_core=warn,ruffle_core::avm2=off,ruffle_core::stub=off,avm_trace=off"
     };
+    // Turu: without a window no device fonts are loaded, so every text field in one ("Times New
+    // Roman", ...) logs "Fallback font not found" each time it's laid out; nobody sees the text.
+    let default_filter = if turu::headless() {
+        format!("{default_filter},ruffle_core::html::layout=off")
+    } else {
+        default_filter.to_owned()
+    };
     let env_filter = tracing_subscriber::EnvFilter::builder()
-        .parse_lossy(env::var("RUST_LOG").as_deref().unwrap_or(default_filter));
+        .parse_lossy(env::var("RUST_LOG").as_deref().unwrap_or(&default_filter));
 
     let subscriber = tracing_subscriber::registry()
         .with(env_filter)

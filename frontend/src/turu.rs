@@ -475,14 +475,19 @@ pub fn start_api() {
 /// over the last period ([`start_perf_log`]).
 pub type ThreadReport = Box<dyn FnMut(f64) -> String + Send>;
 
+/// `TURU_PERF_LOG`'s period (1 s at least), when it's set.
+pub fn perf_log_every() -> Option<Duration> {
+    let seconds = std::env::var("TURU_PERF_LOG").ok()?.trim().parse::<f64>().ok()?;
+    Some(Duration::from_secs_f64(seconds.max(1.0)))
+}
+
 /// With `TURU_PERF_LOG=<seconds>`, logs each tab's Flash calls and player ticks over the last
 /// `seconds` (`turu_bot::perf`), with several tabs the player thread's time for all of them, and
 /// `main_thread`'s report (the window's event loop).
 pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
-    let Some(every) = std::env::var("TURU_PERF_LOG").ok().and_then(|s| s.trim().parse::<f64>().ok()) else {
+    let Some(every) = perf_log_every() else {
         return;
     };
-    let every = Duration::from_secs_f64(every.max(1.0));
     // Turu: the 12 busiest calls hid half a stuck script's calls.
     let rows = std::env::var("TURU_PERF_LOG_ROWS").ok().and_then(|s| s.trim().parse::<usize>().ok()).unwrap_or(12);
     tracing::info!("Logging Flash calls and ticks every {} s (TURU_PERF_LOG)", every.as_secs_f64());
