@@ -411,8 +411,12 @@ fn main() -> Result<(), Error> {
 
     // [NA] `_guard` cannot be `_` or it'll immediately drop
     // https://docs.rs/tracing-appender/latest/tracing_appender/non_blocking/index.html
-    let (non_blocking_file, _file_guard) = tracing_appender::non_blocking(File::create(log_path)?);
-    let (non_blocking_stdout, _stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+    // Turu: each writer's queue is allocated whole up front: 128 000 lines by default, ~4 MB
+    // each. Lines past the limit are dropped (as before, only later), and 8192 lines waiting
+    // to be written is already a flood.
+    let non_blocking = || tracing_appender::non_blocking::NonBlockingBuilder::default().buffered_lines_limit(8192);
+    let (non_blocking_file, _file_guard) = non_blocking().finish(File::create(log_path)?);
+    let (non_blocking_stdout, _stdout_guard) = non_blocking().finish(std::io::stdout());
 
     // AQW build (Mugetsu): by default the log keeps warnings, crash details and Mugetsu's
     // performance/memory summaries, but not AQW's own trace output (it includes the login
