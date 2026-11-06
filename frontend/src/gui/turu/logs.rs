@@ -6,7 +6,7 @@ use super::files::SaveText;
 use super::theme::{MUTED, WARNING};
 use super::widgets::{self, Kind, LogView};
 use crate::crash_reports::{self, Report};
-use egui::{Align, Context, Layout, Modal, RichText, ScrollArea, Ui, vec2};
+use egui::{Align, Color32, Context, Frame, Layout, Margin, Modal, RichText, ScrollArea, TextStyle, Ui, vec2};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Once};
 use turu_bot::log::{LogBuffer, LogLine};
@@ -288,37 +288,30 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
     if crate::turu::bot().scripts.message_box().is_some() {
         return;
     }
-    let mut show = None;
-    let size = vec2(0.0, widgets::target(28.0, 44.0));
-    let response = Modal::new(egui::Id::new("turu_crash_notice")).show(ctx, |ui| {
-        ui.set_min_width(300.0);
-        ui.set_max_width(420.0);
-        ui.heading("Turu closed unexpectedly");
-        ui.label(RichText::new(&newest.summary).color(WARNING));
-        if unseen.len() > 1 {
-            ui.label(RichText::new(format!("And {} more since the last notice.", unseen.len() - 1)).color(MUTED));
-        }
-        ui.label(
-            RichText::new("Diagnostics > Logs > Crashes has the report. Share it with whoever helps you with Turu.")
-                .small()
+    let more = unseen.len() - 1;
+    let (clicked, close) = dialog(
+        ctx,
+        "turu_crash_notice",
+        "Turu closed unexpectedly",
+        |ui| {
+            ui.label(RichText::new(&newest.summary).color(WARNING));
+            if more > 0 {
+                ui.label(RichText::new(format!("And {more} more since the last notice.")).color(MUTED));
+            }
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(
+                    "Diagnostics > Logs > Crashes has the report. Share it with whoever helps you with Turu.",
+                )
+                .size(widgets::small_label_size() + 1.0)
                 .color(MUTED),
-        );
-        ui.add_space(4.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::button(ui, "Show report", Kind::Primary, true, size, "").clicked() {
-                show = Some(true);
-            }
-            if widgets::button(ui, "Close", Kind::Normal, true, size, "").clicked() {
-                show = Some(false);
-            }
-        });
-    });
-    if show.is_none() && response.should_close() {
-        show = Some(false);
-    }
-    if let Some(show) = show {
+            );
+        },
+        ["Close", "Show report"],
+    );
+    if clicked.is_some() || close {
         unseen.clear();
-        if show {
+        if clicked == Some(1) {
             *logs_open = true;
             logs.show_report(&newest);
         }
@@ -342,40 +335,106 @@ pub fn show_crash_upload_question(ctx: &Context) {
     {
         return;
     }
-    let mut answer = None;
-    let size = vec2(0.0, widgets::target(28.0, 44.0));
-    let response = Modal::new(egui::Id::new("turu_crash_upload_question")).show(ctx, |ui| {
-        ui.set_min_width(300.0);
-        ui.set_max_width(420.0);
-        ui.heading("Send crash reports?");
-        ui.label(
-            "When Turu crashes, it can send a report to its developers so they can fix it: what crashed, \
-             the phone's model and Android version, and Turu's version.",
-        );
-        ui.label(
-            RichText::new("No account names, passwords or game data. You can change this in Options > Application.")
-                .small()
+    let (clicked, close) = dialog(
+        ctx,
+        "turu_crash_upload_question",
+        "Send crash reports?",
+        |ui| {
+            ui.label(
+                "When Turu crashes, it can send a report to its developers so they can fix it: what crashed, \
+                 the device and system version, and Turu's version.",
+            );
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(
+                    "No account names, passwords or game data. You can change this in Options > Application.",
+                )
+                .size(widgets::small_label_size() + 1.0)
                 .color(MUTED),
-        );
-        ui.add_space(4.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::button(ui, "Send reports", Kind::Primary, true, size, "").clicked() {
-                answer = Some(true);
-            }
-            if widgets::button(ui, "Don't send", Kind::Normal, true, size, "").clicked() {
-                answer = Some(false);
-            }
-        });
-    });
-    match answer {
-        Some(on) => {
+            );
+        },
+        ["Don't send", "Send reports"],
+    );
+    match clicked {
+        Some(i) => {
+            let on = i == 1;
             let mut settings = bot.settings.read().clone();
             settings.send_crash_reports = Some(on);
             *bot.settings.write() = settings;
             bot.save_settings();
             crate::platform::platform().set_crash_uploads(on);
         }
-        None if response.should_close() => DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed),
+        None if close => DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed),
         None => {}
     }
+}
+
+/// The crash dialogs' layout, for a desktop window and a phone alike: as wide as the text reads
+/// well (400 points) but never wider than the screen less a margin, room around the text, the
+/// text scrolling when the screen is short (a phone held sideways), and `buttons` (the second
+/// is the main one) side by side on the right, or stacked full width with the main one on top
+/// when they don't fit. Returns the button clicked, and whether the dialog was closed without
+/// one (Escape, Back, a click outside).
+fn dialog(
+    ctx: &Context,
+    id: &str,
+    heading: &str,
+    body: impl FnOnce(&mut Ui),
+    buttons: [&str; 2],
+) -> (Option<usize>, bool) {
+    let screen = ctx.content_rect();
+    let touch = widgets::touch();
+    let margin: f32 = if touch { 24.0 } else { 20.0 };
+    // Off the screen's edges by at least this much.
+    let edge = 16.0;
+    let width = (screen.width() - 2.0 * (edge + margin)).clamp(200.0, 400.0);
+    let button_height = widgets::target(28.0, 44.0);
+    let frame = Frame::popup(&ctx.global_style()).inner_margin(Margin::same(margin as i8));
+    let mut clicked = None;
+    let response = Modal::new(egui::Id::new(id)).frame(frame).show(ctx, |ui| {
+        ui.set_width(width);
+        ui.label(RichText::new(heading).heading().strong());
+        ui.add_space(10.0);
+        // What the screen leaves for the text once the heading and the buttons (stacked, at
+        // worst) have their room.
+        let chrome = 2.0 * (edge + margin) + 40.0 + 2.0 * button_height + 32.0;
+        ScrollArea::vertical()
+            .max_height((screen.height() - chrome).max(64.0))
+            .show(ui, |ui| {
+                ui.set_width(width);
+                body(ui);
+            });
+        ui.add_space(if touch { 20.0 } else { 16.0 });
+        let spacing = ui.spacing().item_spacing.x;
+        let font = TextStyle::Button.resolve(ui.style());
+        let padding = 2.0 * ui.spacing().button_padding.x.max(if touch { 16.0 } else { 12.0 });
+        let min_width = if touch { 96.0 } else { 80.0 };
+        let widths = buttons.map(|label| {
+            let text = ctx.fonts_mut(|f| {
+                f.layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE)
+                    .size()
+                    .x
+            });
+            (text + padding).max(min_width)
+        });
+        if widths[0] + widths[1] + spacing <= width {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                for i in [1, 0] {
+                    let kind = if i == 1 { Kind::Primary } else { Kind::Normal };
+                    if widgets::button(ui, buttons[i], kind, true, vec2(widths[i], button_height), "").clicked() {
+                        clicked = Some(i);
+                    }
+                }
+            });
+        } else {
+            ui.spacing_mut().item_spacing.y = 8.0;
+            for i in [1, 0] {
+                let kind = if i == 1 { Kind::Primary } else { Kind::Normal };
+                if widgets::button(ui, buttons[i], kind, true, vec2(width, button_height), "").clicked() {
+                    clicked = Some(i);
+                }
+            }
+        }
+    });
+    (clicked, clicked.is_none() && response.should_close())
 }

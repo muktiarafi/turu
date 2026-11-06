@@ -57,6 +57,9 @@ chrono = { workspace = true }
 fluent-templates = { workspace = true }
 toml_edit = { workspace = true, features = ["parse"] }
 gilrs = "0.11"
+# Turu: crash reports to Turu's developers, once the user agreed (`crash_uploads`). Turu's own
+# reqwest and TLS; no logs, metrics or sessions.
+sentry = { version = "0.49.5", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "reqwest", "native-tls"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs"] }
 
 tracing-tracy = { version = "0.11.3", optional = true, features = ["demangle"] }

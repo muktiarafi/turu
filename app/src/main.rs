@@ -9,6 +9,7 @@
 mod app;
 mod backends;
 mod cli;
+mod crash_uploads; // Turu: crash reports to Sentry, once the user agreed
 mod custom_event;
 mod dbus;
 mod desktop_platform; // Turu: file dialogs and links for the bot windows
@@ -470,10 +471,11 @@ fn main() -> Result<(), Error> {
         }
     });
 
-    // Turu: the startup flags (downloading the scripts they name), the control API (`--api`), the
-    // web monitor, the client update checks and `TURU_PERF_LOG`, now that their messages can be
-    // logged.
+    // Turu: the startup flags (downloading the scripts they name), crash reports (after the panic
+    // hook above, so Sentry's runs first), the control API (`--api`), the web monitor, the client
+    // update checks and `TURU_PERF_LOG`, now that their messages can be logged.
     turu::configure_startup();
+    crash_uploads::start();
     turu::start_api();
     turu::start_monitor();
     turu::start_client_updates();

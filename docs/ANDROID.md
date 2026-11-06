@@ -218,6 +218,8 @@ organization auth token) with the `SENTRY_ORG` and `SENTRY_PROJECT` variables: t
 workflow then uploads `libturu_android.so`'s symbols with `sentry-cli`. A local build takes the
 DSN from `-PsentryDsn=...`, `SENTRY_DSN` or `sentryDsn` in `android/local.properties`.
 
+The desktop app sends its own to a separate project (docs/STATUS.md, "Crash reports to Sentry").
+
 ## GPU memory
 
 A phone's GPU shares its RAM, and running out of GPU memory aborts Turu: a Redmi 10 (Mali-G52,

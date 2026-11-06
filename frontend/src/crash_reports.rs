@@ -1,7 +1,8 @@
 //! Turu: reports of how earlier runs ended badly, in the data folder's `crash/`
 //! (`Paths::crash_dir`). The Android app writes them: its panic hook a panic's, and
-//! `CrashReports.java` the system's record of each exit Turu didn't ask for (low memory, a native
-//! crash with its tombstone, a hang, a kill). Each is a text file whose first line says what
+//! `CrashReports.kt` the system's record of each exit Turu didn't ask for (low memory, a native
+//! crash with its tombstone, a hang, a kill). On Windows, the desktop's crash handler writes a
+//! native crash's (`crash_uploads::write_native_report`). Each is a text file whose first line says what
 //! happened. Diagnostics > Logs lists them, and the first frame after a new one shows a notice.
 
 use std::path::{Path, PathBuf};

@@ -149,14 +149,24 @@ unsafe extern "system" fn crash_filter(
         },
     );
     let vulkan_starting = crate::mugetsu::vulkan_starting();
+    let module_path = module.as_ref().map_or_else(
+        || "an unknown module".to_string(),
+        |m| m.path.display().to_string(),
+    );
+    let offset = module.as_ref().map_or(0, |m| m.offset);
+    let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!(
-        "fatal native crash: exception 0x{code:08X} in {} at offset 0x{:X} (Vulkan starting: \
-        {vulkan_starting})\n{}",
-        module
-            .as_ref()
-            .map_or_else(|| "an unknown module".to_string(), |m| m.path.display().to_string()),
-        module.as_ref().map_or(0, |m| m.offset),
-        std::backtrace::Backtrace::force_capture()
+        "fatal native crash: exception 0x{code:08X} in {module_path} at offset 0x{offset:X} \
+        (Vulkan starting: {vulkan_starting})\n{backtrace}"
+    );
+    // Turu: and a report in the crash folder, before any message box: the crash notice shows it
+    // at the next start, which also sends it if the user agreed to crash reports.
+    crate::crash_uploads::write_native_report(
+        &format!("Turu crashed: exception 0x{code:08X} in {file_name}"),
+        &format!(
+            "Exception 0x{code:08X} in {module_path} at offset 0x{offset:X}\n\
+            Vulkan starting: {vulkan_starting}\n\n{backtrace}"
+        ),
     );
 
     if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {

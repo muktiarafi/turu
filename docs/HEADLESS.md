@@ -241,6 +241,7 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks (and memory, without a window). |
 | `TURU_SYSTEM_ALLOC` | Set: the system allocator instead of mimalloc, for heap profilers. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
+| `TURU_TEST_PANIC` | Set: panic 10 s after the start, to test crash reports (`sendCrashReports: true` in `settings.json` sends them; there is no question without a window). |
 | `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |
 | `RUST_LOG` | What the log shows. |
 

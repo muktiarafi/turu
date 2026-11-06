@@ -118,9 +118,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y $(cat .github/linux-dependencies.txt)
 
+      # Line tables only (file and line, for Sentry to read crash reports' frames), kept out of
+      # the shipped binary: a PDB on Windows, a dSYM on macOS, stripped on Linux after the upload.
       - name: Build
         shell: bash
         run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            export CARGO_PROFILE_DIST_SPLIT_DEBUGINFO=packed
+          fi
           cargo build --locked --package turu --profile dist --target ${{ matrix.target }} \
             --no-default-features --features "$FEATURES"
         env:
@@ -128,6 +133,33 @@ jobs:
           CFG_RELEASE_CHANNEL: stable
           RUSTFLAGS: ${{ matrix.rustflags }}
           MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CARGO_PROFILE_DIST_DEBUG: line-tables-only
+          # Crash reports (`app/src/crash_uploads.rs`): without it the build has none.
+          TURU_SENTRY_DSN: ${{ secrets.SENTRY_DESKTOP_DSN }}
+
+      # Sentry reads Turu's frames in crash reports with these. Skipped without SENTRY_AUTH_TOKEN;
+      # SENTRY_ORG and SENTRY_DESKTOP_PROJECT are repository variables.
+      - name: Upload symbols to Sentry
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_DESKTOP_PROJECT }}
+        run: |
+          bin=target/${{ matrix.target }}/dist
+          case "$RUNNER_OS" in
+            Windows) files=("$bin/turu.exe" "$bin/turu.pdb") ;;
+            macOS) files=("$bin/turu" "$bin/turu.dSYM") ;;
+            *) files=("$bin/turu") ;;
+          esac
+          if [[ -z "$SENTRY_AUTH_TOKEN" || -z "$SENTRY_PROJECT" ]]; then
+            echo "No SENTRY_AUTH_TOKEN secret or SENTRY_DESKTOP_PROJECT variable: symbols not uploaded"
+          else
+            npx -y @sentry/cli@3.8.1 debug-files upload "${files[@]}"
+          fi
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            strip --strip-debug "$bin/turu"
+          fi
 
       - name: Package
         if: runner.os != 'macOS'

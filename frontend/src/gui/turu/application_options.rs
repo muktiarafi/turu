@@ -71,7 +71,7 @@ enum Field {
     RegenerateMonitorKey,
     /// Copy Report Settings and Regenerate, for the push key.
     PushKey,
-    /// `send_crash_reports` (Android builds with Sentry only), applied at once.
+    /// `send_crash_reports` (builds with Sentry only), applied at once.
     CrashReports,
     /// Check Now, for client updates.
     CheckClientUpdates,
@@ -107,7 +107,7 @@ fn entries() -> Vec<Entry> {
             entry!(
                 General,
                 "Send Crash Reports",
-                "When Turu crashes, send a report to its developers so they can fix it: what crashed, the phone's model and Android version, Turu's version. No account, password or game data",
+                "When Turu crashes, send a report to its developers so they can fix it: what crashed, the device and system version, Turu's version. No account, password or game data",
                 Field::CrashReports
             ),
         );

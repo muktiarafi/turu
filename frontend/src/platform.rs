@@ -102,8 +102,8 @@ pub trait Platform: Send + Sync {
     /// Hands a text to another app (mail, a chat, Drive) through the system's share sheet.
     fn share_text(&self, _subject: &str, _text: &str) {}
 
-    /// Whether crash reports can be sent to Turu's developers automatically (Android builds
-    /// with Sentry): Turu then asks once, and Options > Application has a switch.
+    /// Whether crash reports can be sent to Turu's developers automatically (builds with a Sentry
+    /// DSN, Android and desktop): Turu then asks once, and Options > Application has a switch.
     fn uploads_crash_reports(&self) -> bool {
         false
     }

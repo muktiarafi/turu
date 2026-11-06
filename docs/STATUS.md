@@ -589,6 +589,17 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   at each start; the previous run's is kept as `ruffle.prev.log`. On Android, panics and the
   system's record of each unexpected exit go to the data folder's `crash/` instead, shown in
   Diagnostics > Logs > Crashes (docs/ANDROID.md, "Crash reports").
+- **Crash reports to Sentry (desktop):** builds made with `TURU_SENTRY_DSN` set (the release
+  workflow passes the `SENTRY_DESKTOP_DSN` secret) send crash reports to the `turu-desktop`
+  project once the user agrees: the same "Send crash reports?" question and Options >
+  Application switch as Android (`sendCrashReports` in `settings.json`; set it there for
+  `--headless`). `app/src/crash_uploads.rs`: a panic is sent as it happens (Sentry's panic hook
+  runs before Turu's); a native crash on Windows is written to the data folder's `crash/` by the
+  crash handler (`native-<date>.txt`, so the crash notice shows it too) and sent at the next start.
+  No IP address, no computer name, the home folder's path replaced with `~`, no logs. The release
+  workflow builds with line tables (`CARGO_PROFILE_DIST_DEBUG`) and uploads the PDB / dSYM /
+  Linux binary with `sentry-cli` (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_DESKTOP_PROJECT`),
+  then strips the Linux binary. `TURU_TEST_PANIC=1` panics 10 s after the start, to test it.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies

@@ -1,5 +1,5 @@
 //! Turu: the desktop's [`Platform`]: rfd's file dialogs (parented to the window), the browser,
-//! the file manager.
+//! the file manager, crash reports (`crash_uploads`).
 
 use crate::gui::FilePicker;
 use crate::platform::{Answer, FileDialog, Platform};
@@ -75,5 +75,12 @@ impl Platform for DesktopPlatform {
         if let Err(e) = result {
             tracing::warn!("Couldn't open {}: {e}", path.display());
         }
+    }
+    fn uploads_crash_reports(&self) -> bool {
+        crate::crash_uploads::available()
+    }
+
+    fn set_crash_uploads(&self, on: bool) {
+        crate::crash_uploads::set_enabled(on);
     }
 }
