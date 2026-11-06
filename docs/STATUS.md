@@ -37,6 +37,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   own, logging to the terminal; it needs no display (a Linux server). At the login screen
   (debug build, macOS): ~6% CPU and ~96 MB against ~21% and ~420 MB with the window. Device
   fonts aren't loaded, so text in them isn't laid out (reading a text field still works).
+  Memory in game (2026-11-06, debug build, macOS, `malloc_history`): ~290 MB of Rust heap, a
+  third of it vector shapes parsed as each SWF loaded, drawn or not. ruffle-aqw now reads only
+  a DefineShape's header then and parses the shape when it's first drawn or hit-tested
+  (`GraphicShared::shape`), and trims parsed shapes' record vectors (login screen: 1331 shapes
+  parsed -> 5, heap 77 -> 66 MB). Next biggest: SWF data (~20 MB), font glyphs (~15 MB, still
+  parsed at load), AS3 objects (~60-70 MB).
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
