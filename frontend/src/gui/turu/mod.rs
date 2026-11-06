@@ -187,12 +187,12 @@ pub struct TuruUi {
 }
 
 impl TuruUi {
-    #[allow(clippy::new_without_default)] // It starts the script updates: not a default value.
+    #[allow(clippy::new_without_default)] // It starts the launch updates: not a default value.
     pub fn new() -> Self {
         // Scripts may now ask for the Script Options window (`bot.config.configure`) and show
         // message boxes (`bot.showMessageBox`). New tabs' bots are set up by `turu::add_tab`.
         crate::turu::bot().scripts.set_interactive(true);
-        crate::turu::start_script_updates();
+        crate::turu::start_updates();
         Self {
             themed: false,
             tabs: HashMap::new(),

@@ -178,14 +178,14 @@ fn vibeskua_entries() -> Vec<Entry> {
         entry!(
             Updates,
             "Check for AdvanceSkill Sets Updates",
-            "Whether to check for scripts updates when launching the Manager",
-            Field::Unused(|s| &mut s.check_advance_skill_sets_updates)
+            "Whether to check for scripts updates when launching Turu",
+            Field::Bool(|s| &mut s.check_advance_skill_sets_updates)
         ),
         entry!(
             Updates,
             "Auto Update AdvanceSkill Sets",
-            "Whether to auto update advance skill sets when launching the Manager, needs \"Check for AdvanceSkill Sets updates\" to be true",
-            Field::Unused(|s| &mut s.auto_update_advance_skill_sets_updates)
+            "Whether to auto update advance skill sets when launching Turu, needs \"Check for AdvanceSkill Sets updates\" to be true",
+            Field::Bool(|s| &mut s.auto_update_advance_skill_sets_updates)
         ),
         entry!(
             Updates,

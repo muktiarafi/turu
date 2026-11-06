@@ -275,11 +275,19 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
   stores it and never reads it), Relogin Try Delay and Relogin Watchdog (bot options: applied
   and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
-  folder after a second click, then restart). Updates: Check for Client Updates (on: at launch
-  and every 6 hours), Include Pre-releases (a pre-release build gets them anyway: every release
-  so far is an alpha), Check Now, and under the section the last check (when, the newest
-  version, or why it failed); Check for Script Updates and Auto Update Scripts; the skill-set and
-  junk-item switches are stored but greyed ("Coming soon"). Webhooks: the Discord URL with Test, the notify
+  folder after a second click, then restart). Updates: the switches act at launch, off the UI
+  thread (`turu::start_updates`; skipped by Army-launched clients, which share their launcher's
+  data folder). Check for Client Updates (on: at launch and every 6 hours), Include Pre-releases
+  (a pre-release build gets them anyway: every release so far is an alpha), Check Now, and under
+  the section the last check (when, the newest version, or why it failed). Check for Script
+  Updates fetches Search Scripts' index, and with Auto Update Scripts downloads what's missing or
+  outdated (`ScriptRepo::startup`; VibeSkua stores these two and never reads them, its client
+  always loads the script list); `--headless` skips them, since the script it runs is updated
+  before the game starts. With both AdvanceSkill Sets switches on, `auqw/Scripts`'
+  `AdvancedSkills.json` becomes the default sets and its new classes and modes are added to
+  `UserAdvancedSkills.json`, keeping yours (VibeSkua `RefreshDefaultSkillsAsync`;
+  `turu_bot::skills::startup_skill_sets`, also with `--headless`); an open Skills window reads
+  them again. The two junk-item switches stay greyed ("Coming soon"): VibeSkua never reads them. Webhooks: the Discord URL with Test, the notify
   switches, Drop List, Health Pings and their interval, sent by `bot/src/webhooks.rs` (VibeSkua
   `DiscordWebhookService`): one thread posting embeds, two a second, retrying on 429; the health
   pings' snapshot is read on that thread. The drop alert has no screenshot (VibeSkua attaches

@@ -176,17 +176,46 @@ impl Paths {
         if fs::read_to_string(&default_file).ok().as_deref() != Some(shipped) {
             fs::write(&default_file, shipped)?;
         }
+        self.merge_advanced_skills(shipped).map(drop)
+    }
+
+    /// VibeSkua `RefreshDefaultSkillsAsync` after `UpdateSkillSetsFile`: `published` (the
+    /// community `AdvancedSkills.json`) becomes the default file and its new classes and modes
+    /// are added to the user's. Returns how many sets were added. Nothing changes when
+    /// `published` isn't a JSON object.
+    pub fn update_advanced_skills(&self, published: &str) -> io::Result<usize> {
+        if !matches!(
+            serde_json::from_str::<Value>(published),
+            Ok(Value::Object(_))
+        ) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "AdvancedSkills.json did not contain a JSON object",
+            ));
+        }
+        // Seeds the user's file first, so this run's lazy sync doesn't run after it.
+        self.load_advanced_skills();
+        self.ensure()?;
+        write_atomically(&self.default_advanced_skills_file(), published)?;
+        self.merge_advanced_skills(published)
+    }
+
+    /// Adds the classes and modes of `defaults` that the user's file lacks, keeping the ones it
+    /// has; writes `defaults` when there is no user file. Returns how many sets were added
+    /// (0 for an unreadable user file, which is left alone).
+    fn merge_advanced_skills(&self, defaults: &str) -> io::Result<usize> {
         let user_file = self.user_advanced_skills_file();
         let Ok(user_text) = fs::read_to_string(&user_file) else {
-            return fs::write(&user_file, shipped);
+            write_atomically(&user_file, defaults)?;
+            return Ok(count_sets(defaults));
         };
         let (Ok(Value::Object(defaults)), Ok(Value::Object(mut user))) = (
-            serde_json::from_str::<Value>(shipped),
+            serde_json::from_str::<Value>(defaults),
             serde_json::from_str::<Value>(&user_text),
         ) else {
-            return Ok(());
+            return Ok(0);
         };
-        let mut changed = false;
+        let (mut added, mut changed) = (0, false);
         for (class, modes) in defaults {
             let Value::Object(modes) = modes else {
                 continue;
@@ -196,22 +225,24 @@ impl Paths {
                     for (mode, set) in modes {
                         if !user_modes.contains_key(&mode) {
                             user_modes.insert(mode, set);
+                            added += 1;
                             changed = true;
                         }
                     }
                 }
                 _ => {
-                    user.insert(class, Value::Object(modes));
+                    added += modes.len();
                     changed = true;
+                    user.insert(class, Value::Object(modes));
                 }
             }
         }
         if changed {
             let text =
                 serde_json::to_string_pretty(&Value::Object(user)).map_err(io::Error::other)?;
-            fs::write(&user_file, text)?;
+            write_atomically(&user_file, &text)?;
         }
-        Ok(())
+        Ok(added)
     }
 
     /// VibeSkua `ResetSkillsSets`: replaces the user's sets with the shipped ones.
@@ -308,5 +339,28 @@ impl Paths {
         self.ensure()?;
         let text = serde_json::to_string_pretty(options).map_err(io::Error::other)?;
         fs::write(self.options_file(), text)
+    }
+}
+
+/// Writes `text` to a temporary file next to `path`, then renames it over `path`, so a reader
+/// (or another Turu on the same data folder) never sees half a file.
+fn write_atomically(path: &std::path::Path, text: &str) -> io::Result<()> {
+    let mut temp = path.as_os_str().to_owned();
+    temp.push(format!(".{}.tmp", std::process::id()));
+    let temp = PathBuf::from(temp);
+    fs::write(&temp, text)?;
+    fs::rename(&temp, path).inspect_err(|_| {
+        let _ = fs::remove_file(&temp);
+    })
+}
+
+/// The skill sets in an `AdvancedSkills.json` (classes times modes).
+fn count_sets(json: &str) -> usize {
+    match serde_json::from_str::<Value>(json) {
+        Ok(Value::Object(classes)) => classes
+            .values()
+            .map(|modes| modes.as_object().map_or(0, |m| m.len()))
+            .sum(),
+        _ => 0,
     }
 }

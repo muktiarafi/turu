@@ -232,11 +232,14 @@ pub fn script_repo() -> &'static Arc<turu_bot::repo::ScriptRepo> {
     })
 }
 
-/// At launch, Options > Application's Check for Script Updates / Auto Update Scripts (VibeSkua's
-/// Manager does them). Clients launched by Army > Accounts skip it: their launcher has the same
-/// scripts folder.
-pub fn start_script_updates() {
-    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+/// At launch, Options > Application's "Auto Updates & Sync" switches: script updates (VibeSkua's
+/// Manager does them) with a window, skill sets always ([`start_skill_set_updates`]). Without a
+/// window (`--headless`) scripts aren't updated at launch: the script it runs is downloaded or
+/// updated before the game starts. Clients launched by Army > Accounts skip both: their
+/// launcher has the same data folder.
+pub fn start_updates() {
+    start_skill_set_updates();
+    if headless() || LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
         return;
     }
     let settings = bot().settings.read().clone();
@@ -408,6 +411,31 @@ pub fn apply_pending_update() {
             Ok(_) => tracing::info!("Installed the update: it starts next time"),
             Err(e) => tracing::error!("Couldn't install the update: {e}"),
         }
+    }
+}
+
+/// VibeSkua `AdvancedSkillContainer`'s launch refresh, on its own thread: with Check for
+/// AdvanceSkill Sets Updates and Auto Update AdvanceSkill Sets on, adds the community's new skill
+/// sets to the user's (`turu_bot::skills::startup_skill_sets`).
+fn start_skill_set_updates() {
+    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+        return;
+    }
+    let settings = bot().settings.read().clone();
+    if !settings.check_advance_skill_sets_updates || !settings.auto_update_advance_skill_sets_updates {
+        return;
+    }
+    let spawned = std::thread::Builder::new().name("turu-skill-sets".into()).spawn(move || {
+        let paths = &bot().paths;
+        match turu_bot::skills::startup_skill_sets(paths, &settings, turu_bot::skills::download_skill_sets) {
+            Ok(Some(0)) => tracing::info!("Skill sets: up to date"),
+            Ok(Some(added)) => tracing::info!("Skill sets: added {added} from the community sets"),
+            Ok(None) => {}
+            Err(e) => tracing::warn!("Skill sets: couldn't update them, keeping the local ones: {e}"),
+        }
+    });
+    if let Err(e) = spawned {
+        tracing::warn!("Skill sets: couldn't start the update: {e}");
     }
 }
 

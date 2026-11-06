@@ -159,6 +159,8 @@ enum Tab {
 pub struct SkillsWindow {
     tab: Tab,
     loaded: bool,
+    /// `skill_sets_generation` when the sets were read: the launch update may add sets later.
+    generation: u64,
     /// The saved sets in file order (VibeSkua `LoadedSkills`).
     sets: Vec<AdvancedSkill>,
     /// "Load Classes": the class drop-down's list (VibeSkua `AvailableClasses`).
@@ -188,6 +190,8 @@ impl SkillsWindow {
                 self.load_classes();
             }
             self.loaded = true;
+        } else if self.generation != bot_skills::skill_sets_generation() && self.editing.is_none() {
+            self.reload();
         }
         if self.reset_armed.is_some_and(|at| at.elapsed() >= CONFIRM_FOR) {
             self.reset_armed = None;
@@ -203,6 +207,7 @@ impl SkillsWindow {
 
     /// Reads the saved sets again (VibeSkua `LoadSkills`).
     fn reload(&mut self) {
+        self.generation = bot_skills::skill_sets_generation();
         self.sets = bot_skills::load_advanced_skills(&crate::turu::bot().paths);
         self.selected = None;
     }

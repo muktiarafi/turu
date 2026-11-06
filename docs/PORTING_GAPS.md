@@ -34,7 +34,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 | 19 | Jump arrow-key cell stepping | Jump popup | | |
 | 20 | Script Repo extras | Search Scripts | Queue (needs #1), Update dates from Git, custom scripts folder. Queue **ported** with the Scheduler; the other two not built. | |
 | 21 | Game options: Optimize Players, Upgrade/Staff Name Colour | Options > Game | Not in `BotOptions`. | |
-| 22 | Application > Updates switches | Options > Application | Stored but greyed: auto/check updates for scripts (Search Scripts does this on its own), skill sets, junk items. The junk-item ones stay greyed: VibeSkua stores them but nothing reads them (`GetScriptsService.UpdateJunkItemsFile` is never called), and the client starts with an empty list. | |
+| 22 | Application > Updates switches | Options > Application | Stored but greyed: auto/check updates for scripts (Search Scripts does this on its own), skill sets, junk items. The junk-item ones stay greyed: VibeSkua stores them but nothing reads them (`GetScriptsService.UpdateJunkItemsFile` is never called), and the client starts with an empty list. **Ported**: the script switches fetch the index / update scripts at launch (`ScriptRepo::startup`; VibeSkua never reads them), the AdvanceSkill Sets ones merge `auqw/Scripts`' `AdvancedSkills.json` into the user's sets at launch, also headless (`turu_bot::skills::startup_skill_sets`). | port (done) |
 | 23 | Webhook drop screenshot | Discord webhook | Turu's drop alert has no image. | |
 | 24 | CoreBots `[Current]` class skill entry | Options > CoreBots | `EnsureSkillEntryExists` not ported. | |
 | 25 | Light theme | Everywhere | VibeSkua has light and dark dictionaries. | |

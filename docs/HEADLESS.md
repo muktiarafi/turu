@@ -47,7 +47,7 @@ defaults. Set them on a desktop and copy these from its data folder to the serve
 | `options/Queue_<script>_<id>.cfg` | A playlist entry's options. |
 | `options/CBO_Storage(<username>).txt` | Options > CoreBots for that character. |
 | `options.json` | Options > Game. CoreBots scripts turn Auto Relogin on themselves; for others set `autoRelogin`. |
-| `UserAdvancedSkills.json` | Your skill sets. |
+| `UserAdvancedSkills.json` | Your skill sets. At launch the community's new classes and modes are added unless Options > Application turns off an AdvanceSkill Sets switch. |
 | `settings.json` | Options > Application: webhooks (they work without a window), relogin delay. |
 | `butler.json` | Butler's options. |
 

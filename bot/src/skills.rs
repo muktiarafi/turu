@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -783,6 +783,61 @@ pub fn parse_advanced_skills(json: &str) -> Vec<AdvancedSkill> {
 /// The user's skill sets (`UserAdvancedSkills.json`, seeded from the shipped ones).
 pub fn load_advanced_skills(paths: &crate::paths::Paths) -> Vec<AdvancedSkill> {
     parse_advanced_skills(&paths.load_advanced_skills())
+}
+
+/// The community skill sets VibeSkua downloads (`auqw/Scripts`, Skua branch).
+pub const SKILL_SETS_URL: &str =
+    "https://raw.githubusercontent.com/auqw/Scripts/refs/heads/Skua/Skills/AdvancedSkills.json";
+
+static SKILL_SETS_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Changes whenever the launch update adds sets to the user's file, so an open Skills window
+/// reads them again (VibeSkua's container reloads itself).
+pub fn skill_sets_generation() -> u64 {
+    SKILL_SETS_GENERATION.load(Ordering::Relaxed)
+}
+
+/// VibeSkua `UpdateSkillSetsFile`'s download: [`SKILL_SETS_URL`], or the URL in
+/// `TURU_SKILL_SETS_URL`.
+pub fn download_skill_sets() -> Result<String, String> {
+    let url = std::env::var("TURU_SKILL_SETS_URL")
+        .ok()
+        .filter(|u| u.trim().starts_with("http"))
+        .unwrap_or_else(|| SKILL_SETS_URL.to_owned());
+    let url = url.trim();
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .user_agent(concat!("Turu/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .and_then(|client| client.get(url).send())
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.text())
+        .map_err(|e| format!("{url}: {e}"))
+}
+
+/// VibeSkua `AdvancedSkillContainer.RefreshDefaultSkillsAsync`, at launch: with Options >
+/// Application's Check for AdvanceSkill Sets Updates and Auto Update AdvanceSkill Sets both on,
+/// downloads the community sets (`download`) and adds their new classes and modes to the
+/// user's, keeping the user's own. Returns how many sets were added, `None` with a switch off.
+/// On failure the local sets stay as they were.
+pub fn startup_skill_sets(
+    paths: &crate::paths::Paths,
+    settings: &crate::settings::AppSettings,
+    download: impl FnOnce() -> Result<String, String>,
+) -> Result<Option<usize>, String> {
+    if !settings.check_advance_skill_sets_updates
+        || !settings.auto_update_advance_skill_sets_updates
+    {
+        return Ok(None);
+    }
+    let published = download()?;
+    let added = paths
+        .update_advanced_skills(&published)
+        .map_err(|e| format!("Couldn't update the skill sets: {e}"))?;
+    if added > 0 {
+        SKILL_SETS_GENERATION.fetch_add(1, Ordering::Relaxed);
+    }
+    Ok(Some(added))
 }
 
 /// VibeSkua `LoadAdvanced(className, autoEquip, mode)`'s choice: the class's set in `mode`,
@@ -1732,6 +1787,58 @@ fn wait_for_cooldown(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launch_update_adds_published_sets_and_keeps_the_users() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::Paths {
+            root: dir.path().to_owned(),
+        };
+        paths.sync_advanced_skills().unwrap();
+        let user_file = paths.user_advanced_skills_file();
+        let mut user: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&user_file).unwrap()).unwrap();
+        user["ArchMage"]["Base"]["skillTimeout"] = 777.into();
+        std::fs::write(&user_file, user.to_string()).unwrap();
+        let set = r#"{ "skillUseMode": "UseIfAvailable", "skillTimeout": 250, "skills": [] }"#;
+        let published = format!(
+            r#"{{ "ArchMage": {{ "Base": {set}, "TuruTest": {set} }}, "TuruTestClass": {{ "Base": {set} }} }}"#
+        );
+        let mut settings = crate::settings::AppSettings::default();
+
+        settings.auto_update_advance_skill_sets_updates = false;
+        let added = startup_skill_sets(&paths, &settings, || panic!("not downloaded")).unwrap();
+        assert_eq!(added, None, "needs both switches");
+
+        settings.auto_update_advance_skill_sets_updates = true;
+        let before = skill_sets_generation();
+        let added = startup_skill_sets(&paths, &settings, || Ok(published.clone())).unwrap();
+        assert_eq!(added, Some(2));
+        assert!(skill_sets_generation() > before);
+        let sets = load_advanced_skills(&paths);
+        let base = find_skill_set(&sets, "ArchMage", "Base").unwrap();
+        assert_eq!(base.skill_timeout, 777, "the user's set is kept");
+        assert!(
+            find_skill_set(&sets, "ArchMage", "TuruTest").is_some_and(|s| s.mode == "TuruTest")
+        );
+        assert!(find_skill_set(&sets, "TuruTestClass", "Base").is_some());
+        assert_eq!(
+            std::fs::read_to_string(paths.default_advanced_skills_file()).unwrap(),
+            published
+        );
+
+        let again = startup_skill_sets(&paths, &settings, || Ok(published.clone())).unwrap();
+        assert_eq!(again, Some(0));
+        let bad = startup_skill_sets(&paths, &settings, || Ok("<html>".into()));
+        assert!(bad.is_err());
+        let failed = startup_skill_sets(&paths, &settings, || Err("offline".into()));
+        assert_eq!(failed, Err("offline".into()));
+        assert_eq!(
+            load_advanced_skills(&paths).len(),
+            sets.len(),
+            "failures change nothing"
+        );
+    }
 
     #[test]
     fn idle_stretches_are_logged_once_then_every_interval_and_when_they_end() {

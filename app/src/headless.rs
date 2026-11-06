@@ -30,6 +30,8 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     let player = build_player(&preferences, movie_url, sender.clone());
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Running without a window (--headless); stop with Ctrl+C");
+    // Turu: Options > Application's launch updates (skill sets; the script it runs is updated on its own).
+    turu::start_updates();
     let mut memory_log = turu::perf_log_every().map(|every| (every, Instant::now()));
     engine::run_loop_with(&player, &events, |player| {
         if let Some((every, last)) = &mut memory_log

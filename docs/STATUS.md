@@ -295,8 +295,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   0, leaving the game's own FPS setting alone),
   relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
-  Unverified against a real webhook; the skill-set and junk-item update switches are stored only
-  (VibeSkua never reads the junk-item ones either).
+  Unverified against a real webhook. The update switches act at launch: script updates
+  (Search Scripts) and, with both AdvanceSkill Sets switches on, the community skill sets
+  (`auqw/Scripts`' `AdvancedSkills.json`) merged into the user's, new classes and modes only
+  (`turu_bot::skills::startup_skill_sets`, also with `--headless`; tested with a fake download).
+  The junk-item switches are stored only (VibeSkua never reads them either).
 - **Junk Items:** Tools & Helpers > Junk Items (`frontend/src/gui/turu/junk_items.rs`) lists the
   inventory and bank items, marks the selected ones as junk and sells the junk in the inventory;
   scripts call `bot.sellJunk()`. The list is `JunkItems.json` in the data folder, in VibeSkua's
