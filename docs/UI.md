@@ -529,7 +529,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   target, AoE farming, Survivability, Heavy bosses: VibeSkua's coloured badges, as plain text),
   then its class (the enhanced classes you own plus `[Current]`; "Not set" when empty), its skill
   preset (VibeSkua's Skill Rule / Preset) and a Dedicated gear switch (VibeSkua's "Use Dedicated
-  Equipment Loadout"), under column names. While the switch is on, the role's six gear slots
+  Equipment Loadout"), under column names. Picking `[Current]` while the equipped class has no
+  skill set offers only `Base` and gives the class VibeSkua's default set (`1 | 2 | 3 | 4`, Base,
+  use if available, 100 ms) in `UserAdvancedSkills.json` at once (`EnsureSkillEntryExists`; a
+  saved `[Current]` pick does the same when the window reads it). While the switch is on, the role's six gear slots
   (VibeSkua's "Detailed Equipment Slots") open under its row, three to a line, each with a "None"
   entry to clear it (VibeSkua lacks one); while it's off, a muted line says how many picks it
   keeps. Below 600 px (a phone) each row stacks: name and switch, then class and preset, then the

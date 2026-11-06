@@ -892,6 +892,46 @@ pub fn override_skill_set(sets: &mut Vec<AdvancedSkill>, set: AdvancedSkill) {
     }
 }
 
+/// VibeSkua `CBOClassSelectViewModel.EnsureSkillEntryExists`'s set: `1 | 2 | 3 | 4` in
+/// `Base`, used if available, 100 ms timeout.
+pub fn default_skill_set(class_name: &str) -> AdvancedSkill {
+    AdvancedSkill {
+        class_name: class_name.to_owned(),
+        mode: "Base".into(),
+        skills: "1 | 2 | 3 | 4".into(),
+        skill_timeout: 100,
+        skill_use_mode: SkillUseMode::UseIfAvailable,
+        reset_on_target: false,
+    }
+}
+
+/// VibeSkua `EnsureSkillEntryExists`: when no set has `class_name` (exact name), adds
+/// [`default_skill_set`] and saves the user's file at once (`AdvancedSkillContainer.Add`).
+/// Returns whether it added one. An unreadable or non-object user file is left alone.
+pub fn ensure_skill_set(paths: &crate::paths::Paths, class_name: &str) -> std::io::Result<bool> {
+    if class_name.is_empty() {
+        return Ok(false);
+    }
+    let text = paths.load_advanced_skills();
+    if !matches!(
+        serde_json::from_str::<serde_json::Value>(&text),
+        Ok(serde_json::Value::Object(_))
+    ) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "UserAdvancedSkills.json is not a JSON object",
+        ));
+    }
+    let mut sets = parse_advanced_skills(&text);
+    if sets.iter().any(|s| s.class_name == class_name) {
+        return Ok(false);
+    }
+    sets.push(default_skill_set(class_name));
+    save_advanced_skills(paths, &sets)?;
+    SKILL_SETS_GENERATION.fetch_add(1, Ordering::Relaxed);
+    Ok(true)
+}
+
 /// A JSON object written in the order given.
 struct OrderedOut<'a, T>(&'a [(String, T)]);
 
@@ -1837,6 +1877,41 @@ mod tests {
             load_advanced_skills(&paths).len(),
             sets.len(),
             "failures change nothing"
+        );
+    }
+
+    #[test]
+    fn ensure_skill_set_adds_a_base_set_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::paths::Paths {
+            root: dir.path().to_owned(),
+        };
+        paths.sync_advanced_skills().unwrap();
+        let before = load_advanced_skills(&paths);
+        let generation = skill_sets_generation();
+
+        assert!(!ensure_skill_set(&paths, "").unwrap());
+        assert!(!ensure_skill_set(&paths, &before[0].class_name.clone()).unwrap());
+        assert_eq!(
+            load_advanced_skills(&paths),
+            before,
+            "existing classes are left alone"
+        );
+
+        assert!(ensure_skill_set(&paths, "Turu Test Class").unwrap());
+        assert!(skill_sets_generation() > generation);
+        let after = load_advanced_skills(&paths);
+        assert_eq!(after.len(), before.len() + 1);
+        assert_eq!(after[..before.len()], before[..], "the other sets are kept");
+        assert_eq!(after.last(), Some(&default_skill_set("Turu Test Class")));
+        assert!(!ensure_skill_set(&paths, "Turu Test Class").unwrap());
+        assert_eq!(load_advanced_skills(&paths).len(), after.len());
+
+        std::fs::write(paths.user_advanced_skills_file(), "not json").unwrap();
+        assert!(ensure_skill_set(&paths, "Other").is_err());
+        assert_eq!(
+            std::fs::read_to_string(paths.user_advanced_skills_file()).unwrap(),
+            "not json"
         );
     }
 

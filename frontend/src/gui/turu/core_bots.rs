@@ -256,8 +256,9 @@ fn roles() -> [Role; 4] {
 
 impl Role {
     /// VibeSkua `SelectedSoloClass` setter: lists the class's modes and picks the first when
-    /// none is picked.
-    fn select_class(&mut self, class: String, sets: &SkillSets, current_class: Option<&str>) {
+    /// none is picked. `[Current]` with an equipped class that has no skill set offers `Base`
+    /// and gives the class the default set (`EnsureSkillEntryExists`).
+    fn select_class(&mut self, class: String, sets: &mut SkillSets, current_class: Option<&str>) {
         let resolved = if class == CURRENT_CLASS {
             current_class.unwrap_or_default()
         } else {
@@ -267,6 +268,9 @@ impl Role {
         modes.sort();
         if modes.is_empty() && class == CURRENT_CLASS {
             modes.push("Base".into());
+            if !resolved.is_empty() {
+                sets.ensure(resolved);
+            }
         }
         if self.mode.is_none() {
             self.mode = modes.first().cloned();
@@ -637,7 +641,7 @@ impl CoreBotsWindow {
                         sort_classes(&mut self.owned.classes);
                     }
                     let role = &mut self.roles[i];
-                    role.select_class(class.to_owned(), &self.sets, self.current_class.as_deref());
+                    role.select_class(class.to_owned(), &mut self.sets, self.current_class.as_deref());
                     role.use_equipment =
                         get(&format!("{name}EquipCheck")).is_some_and(|v| v.eq_ignore_ascii_case("true"));
                     let mode = get(&format!("{name}ModeSelect"))
@@ -888,7 +892,7 @@ impl CoreBotsWindow {
     }
 
     fn role_row(&mut self, ui: &mut Ui, i: usize, columns: Option<&RoleColumns>) {
-        let (sets, current_class, owned) = (&self.sets, self.current_class.as_deref(), &self.owned);
+        let (sets, current_class, owned) = (&mut self.sets, self.current_class.as_deref(), &self.owned);
         let role = &mut self.roles[i];
         Frame::new()
             .inner_margin(Margin::symmetric(ROW_PAD.x as i8, 8))
@@ -1160,7 +1164,7 @@ fn class_combo(
     i: usize,
     role: &mut Role,
     classes: &[String],
-    sets: &SkillSets,
+    sets: &mut SkillSets,
     current_class: Option<&str>,
     width: f32,
 ) {
@@ -1488,7 +1492,7 @@ mod tests {
     fn refresh_keeps_the_picks() {
         let mut window = CoreBotsWindow::default();
         window.username = "Hero".into();
-        window.roles[1].select_class("Legion Revenant".into(), &SkillSets::default(), None);
+        window.roles[1].select_class("Legion Revenant".into(), &mut SkillSets::default(), None);
         window.roles[1].mode = Some("Farm".into());
         window.roles[1].gear[3] = "Necrotic Sword of Doom".into();
         window.baseline = Some(window.lines());

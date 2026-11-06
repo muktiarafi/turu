@@ -58,6 +58,19 @@ impl SkillSets {
             .map(|(_, modes)| modes.clone())
             .unwrap_or_default()
     }
+
+    /// VibeSkua `EnsureSkillEntryExists`: gives `class` the default `Base` set in the user's
+    /// file when it has none (saved at once), and lists it here.
+    pub fn ensure(&mut self, class: &str) {
+        match bot_skills::ensure_skill_set(&crate::turu::bot().paths, class) {
+            Ok(true) => {
+                tracing::info!("Added a Base skill set for {class}");
+                self.classes.entry(class.to_owned()).or_default().push("Base".into());
+            }
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Couldn't add a skill set for {class}: {e}"),
+        }
+    }
 }
 
 /// The "Create / Edit Skill" tab (VibeSkua `AdvancedSkillEditorViewModel`).

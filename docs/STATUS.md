@@ -266,7 +266,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   aren't ported (DoAll never calls them) and the spots that differ from C#.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
   `setOptions()`, starts from your house when you are in battleon, goes to the CBO stop map
-  when the script is stopped, and uses boosts from the CBO Boosters switches.
+  when the script is stopped, and uses boosts from the CBO Boosters switches. Picking
+  `[Current]` in Options > CoreBots gives an equipped class with no skill set a default `Base`
+  set, saved at once, as VibeSkua's `EnsureSkillEntryExists` does (`turu_bot::skills::ensure_skill_set`).
 - **Script options:** a script exports `scriptOptions` (`defineScriptOptions`); Scripts > Edit
   Script Options edits them, saved in `options/<Storage>.cfg` like VibeSkua, and `bot.config.get`
   reads them (`docs/SCRIPTING.md`, "Options"). Start opens the window and waits for it
