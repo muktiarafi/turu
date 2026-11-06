@@ -30,6 +30,7 @@ mod logs;
 mod message_box;
 mod nav_bar;
 mod packet_logger;
+mod notify_drop;
 mod runtime;
 mod scheduler;
 mod script_loader;
@@ -62,6 +63,8 @@ pub struct Windows {
     pub skills: bool,
     pub stats: bool,
     pub runtime: bool,
+    /// Runtime's Notifications: VibeSkua's Notify Drop.
+    pub notify_drop: bool,
     pub logs: bool,
     pub console: bool,
     pub packet_logger: bool,
@@ -160,6 +163,7 @@ struct TabUi {
     skills: skills::SkillsWindow,
     stats: stats::StatsWindow,
     runtime: runtime::RuntimeWindow,
+    notify_drop: notify_drop::NotifyDropWindow,
     logs: logs::LogsWindow,
     console: console::ConsoleWindow,
     packet_logger: packet_logger::PacketLogger,
@@ -270,6 +274,8 @@ impl TuruUi {
         tab.loadouts.show(ctx, &mut w.loadouts);
         tab.stats.show(ctx, &mut w.stats);
         tab.runtime.show(ctx, &mut w.runtime);
+        w.notify_drop |= std::mem::take(&mut tab.runtime.open_notify_drop);
+        tab.notify_drop.show(ctx, &mut w.notify_drop);
         tab.skills.show(ctx, &mut w.skills);
         tab.logs.show(ctx, &mut w.logs);
         // A modal: over the windows whatever the order.
@@ -436,6 +442,10 @@ mod tests {
             (
                 "Runtime",
                 boxed(runtime::RuntimeWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                notify_drop::TITLE,
+                boxed(notify_drop::NotifyDropWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Advanced Skills",

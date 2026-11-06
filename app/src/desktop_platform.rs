@@ -1,5 +1,5 @@
 //! Turu: the desktop's [`Platform`]: rfd's file dialogs (parented to the window), the browser,
-//! the file manager, crash reports (`crash_uploads`).
+//! the file manager, crash reports (`crash_uploads`), Notify Drop's beep (`beep`).
 
 use crate::gui::FilePicker;
 use crate::platform::{Answer, FileDialog, Platform};
@@ -82,5 +82,9 @@ impl Platform for DesktopPlatform {
 
     fn set_crash_uploads(&self, on: bool) {
         crate::crash_uploads::set_enabled(on);
+    }
+
+    fn beep(&self) {
+        crate::beep::beep();
     }
 }

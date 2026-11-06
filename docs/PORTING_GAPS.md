@@ -28,7 +28,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 | # | Feature | Where | Notes | Decision |
 |---|---|---|---|---|
 | 15 | Auto Hunt | Auto popup | Disabled in Turu; Auto Attack works. **Ported** (`bot/src/auto.rs`, shared with Auto Attack; the popup in `frontend/src/gui/turu/auto.rs`). | port (done) |
-| 16 | Notify Drop | Runtime > Drops helper | Beeps when a listed item drops. | |
+| 16 | Notify Drop | Runtime > Drops helper | Beeps when a listed item drops. **Ported** (`frontend/src/gui/turu/notify_drop.rs`), laid out for phones too: `|`-separated names, remove / Clear all, beep count and delay, Test; not saved, as VibeSkua. The beep is `Console.Beep()`'s 800 Hz for 200 ms on a sound stream of its own (cpal on the desktop, AAudio on Android), heard while the game is muted. | port (done) |
 | 17 | Stats STORAGE section | Combat > Stats | Inventory/bank use and Get space. | |
 | 18 | Logger filter | Diagnostics > Logger | Packet filters (select all, clear, invert). | |
 | 19 | Jump arrow-key cell stepping | Jump popup | | |

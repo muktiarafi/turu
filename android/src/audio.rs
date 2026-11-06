@@ -81,3 +81,48 @@ impl AudioBackend for AAudioAudioBackend {
         self.paused = true;
     }
 }
+
+/// Notify Drop's beep (`Platform::beep`): an AAudio stream of its own, apart from the game's, so
+/// it sounds while the game is muted. Returns once it has played (or failed, logged).
+pub fn beep() {
+    if let Err(e) = play_beep() {
+        tracing::warn!("Couldn't play the beep: {e}");
+    }
+}
+
+fn play_beep() -> Result<(), Error> {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
+    use turu_frontend::platform::{BEEP_MS, beep_sample};
+
+    const RATE: u32 = 44100;
+    let played = Arc::new(AtomicU64::new(0));
+    let counter = played.clone();
+    let stream = AudioStreamBuilder::new()?
+        .direction(AudioDirection::Output)
+        .format(AudioFormat::PCM_Float)
+        .channel_count(1)
+        .sample_rate(RATE as i32)
+        .data_callback(Box::new(move |_stream, data, frames| {
+            // SAFETY: AAudio hands a buffer of `frames` mono f32 frames.
+            let samples = unsafe { std::slice::from_raw_parts_mut(data.cast::<f32>(), frames as usize) };
+            let mut frame = counter.load(Ordering::Relaxed);
+            for sample in samples {
+                *sample = beep_sample(frame, RATE);
+                frame += 1;
+            }
+            counter.store(frame, Ordering::Relaxed);
+            ndk::audio::AudioCallbackResult::Continue
+        }))
+        .open_stream()?;
+    stream.request_start()?;
+    let length = u64::from(RATE) * BEEP_MS / 1000;
+    let deadline = Instant::now() + Duration::from_millis(BEEP_MS + 500);
+    while played.load(Ordering::Relaxed) < length && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::thread::sleep(Duration::from_millis(30));
+    let _ = stream.request_stop();
+    Ok(())
+}

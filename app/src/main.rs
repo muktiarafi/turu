@@ -8,6 +8,7 @@
 
 mod app;
 mod backends;
+mod beep; // Turu: Notify Drop's beep
 mod cli;
 mod crash_uploads; // Turu: crash reports to Sentry, once the user agreed
 mod custom_event;

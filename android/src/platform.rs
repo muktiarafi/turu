@@ -4,6 +4,7 @@
 //! browser; folders and files only get logged, so Edit Script and Open VSCode are hidden too.
 //! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
 //! `OutputCommand::CopyText`, passed on by `screen.rs`) goes to Android's clipboard.
+//! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`).
 
 use android_activity::AndroidApp;
 use jni::JavaVM;
@@ -96,6 +97,10 @@ impl Platform for AndroidPlatform {
             )?;
             Ok(())
         });
+    }
+
+    fn beep(&self) {
+        crate::audio::beep();
     }
 
     fn share_text(&self, subject: &str, text: &str) {

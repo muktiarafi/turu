@@ -369,8 +369,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Both readers take the map SWF the game already loaded from Ruffle's library
   (`FlashHost::loaded_swf`, ruffle-aqw's `Player::loaded_movie`) and download it only when it
   isn't loaded.
-  Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; its
-  Notifications button (Notify Drop) isn't built. Combat > Skills' editor is unverified on
+  Combat > Runtime (VibeSkua's drops, quests and boosts helpers) is unverified in game; so is its
+  Notifications window (Notify Drop: the list and its subscription are tested, the beep only
+  built, not heard on Windows, Linux or Android). Combat > Skills' editor is unverified on
   screen: its model and file writing are tested, the window only built.
 - **Perf counters** (`bot/src/perf.rs`): every Flash call is counted by the thread that made it
   and its callback (and path, for `getGameObject` and its kin), with how long the caller waited
@@ -570,7 +571,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   codeload downloads and the ETag 304 against it aren't covered by a test. Scripts made for a
   newer `turu.ts` than the client's aren't flagged (the index has no client version yet).
 - Quest rewards and shop items lack some fields; CoreBots reads them from the game objects.
-- Not built in the UI: Themes, Notify Drop, Plugins. HotKeys work only while Turu's window has
+- Not built in the UI: Themes, Plugins. HotKeys work only while Turu's window has
   focus (no global hook) and not on Android
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's

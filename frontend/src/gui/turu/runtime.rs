@@ -24,6 +24,8 @@ pub struct RuntimeWindow {
     selected_quests: HashSet<i64>,
     /// A Search Inventory / Search Bank runs.
     searching: Arc<AtomicBool>,
+    /// Notifications was clicked: the tab opens Notify Drop.
+    pub open_notify_drop: bool,
 }
 
 impl RuntimeWindow {
@@ -144,15 +146,13 @@ impl RuntimeWindow {
                         bot.drops.start(&bot);
                     }
                 }
-                // VibeSkua's Notify Drop window (beeps on a listed drop) isn't ported.
-                widgets::button(
-                    ui,
-                    "Notifications",
-                    Kind::Normal,
-                    false,
-                    vec2(102.0, 28.0),
-                    "Coming soon",
-                );
+                // VibeSkua `OpenNotifyDrop`.
+                if widgets::button(ui, "Notifications", Kind::Normal, true, vec2(102.0, 28.0), "")
+                    .on_hover_text("Beep when a listed item drops")
+                    .clicked()
+                {
+                    self.open_notify_drop = true;
+                }
             });
         });
     }

@@ -111,6 +111,30 @@ pub trait Platform: Send + Sync {
     /// Turns the automatic crash reports on or off now (the choice is kept in `settings.json`,
     /// `send_crash_reports`, which the app reads at start).
     fn set_crash_uploads(&self, _on: bool) {}
+
+    /// Plays VibeSkua's `Console.Beep()` ([`beep_sample`]: 800 Hz for 200 ms) on the system's
+    /// default sound output, apart from the game's sound (heard while the game is muted), and
+    /// returns once it has played. Called on a thread of its own (Notify Drop); nothing plays
+    /// without a sound device or a window.
+    fn beep(&self) {}
+}
+
+/// The beep's pitch and length: .NET's `Console.Beep()` (800 Hz, 200 ms).
+pub const BEEP_HZ: f32 = 800.0;
+pub const BEEP_MS: u64 = 200;
+
+/// The beep's sample `frame` at `sample_rate`, in -1..=1: a sine at [`BEEP_HZ`] for [`BEEP_MS`],
+/// faded in and out over 5 ms so it doesn't click, then silence.
+pub fn beep_sample(frame: u64, sample_rate: u32) -> f32 {
+    let rate = sample_rate.max(1) as f32;
+    let length = rate * BEEP_MS as f32 / 1000.0;
+    let t = frame as f32;
+    if t >= length {
+        return 0.0;
+    }
+    let fade = rate * 0.005;
+    let envelope = (t / fade).min((length - t) / fade).min(1.0);
+    0.4 * envelope * (std::f32::consts::TAU * BEEP_HZ * t / rate).sin()
 }
 
 static PLATFORM: OnceLock<Arc<dyn Platform>> = OnceLock::new();

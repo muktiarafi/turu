@@ -86,7 +86,7 @@ top, and + at the end.
 
 | Item | State |
 |---|---|
-| Script Loader, Scheduler, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Logs, Console, Spammer, Packet Logger (VibeSkua's "Logger" entry), Interceptor | implemented; Edit Script Options, when disabled, gives the Script Loader's reasons (Load a script first, This script declares no options, The script's options couldn't be read) |
+| Script Loader, Scheduler, Game, Application, CoreBots, Loader, Grabber, Current Drops, Skills, Stats, Runtime, Notify Drop, Logs, Console, Spammer, Packet Logger (VibeSkua's "Logger" entry), Interceptor | implemented; Edit Script Options, when disabled, gives the Script Loader's reasons (Load a script first, This script declares no options, The script's options couldn't be read) |
 | Bank | implemented: `bank.open` through `spawn_action`. An action, not a menu: drawn like Auto and Jump (a row of More or Menu when folded). A spinner after the menus while it runs; since `bank.open` does nothing logged out or while a map loads, the bar checks first and then says why for 4 s in red ("Bank: Not logged in", "Bank: The map is still loading", or the error), cut to the room the right side leaves |
 | Auto popup | implemented, as VibeSkua's `AutoViewModel`/`ScriptAuto`: the class drop-down lists the Class items you own (re-read whenever it opens, which also clears the selection); picking one equips it and lists its saved modes (first one selected); Auto Attack and Auto Hunt use that class and mode, or the equipped class in Base when either is unset. Both start the drop pickup when it has items and the boosts when any is on, turn Infinite Range on, and turn all of that (and the skills) off when stopped. Auto Attack sets the spawn point and attacks the Manual MapIDs in priority order, else your current target, else any living monster, without leaving your cell. Auto Hunt jumps (pad Left, at most once per HuntDelay) to the earliest living Manual MapID's cell and attacks it until it dies; else hunts your current target's monster type through the map's cells; else every monster type of your cell ("A|B": cells walked from the last, one kill each, empty cells dropped, the list re-read once empty). During a counter attack (`StopAttacking`) Auto Hunt reuses the previous run's target. Turu differences: VibeSkua's several-names hunt idled (it looked for a monster named "A|B") and stopped looking once its cell list emptied. |
 | Jump popup | implemented, as VibeSkua's `JumpViewModel`: picking a cell jumps at once ("Enter" uses pad Spawn, otherwise the chosen pad or Left); the cell list is refreshed when the popup or the cell drop-down opens; pads are VibeSkua's list (Spawn, Center, Left, Right, Up, Down, Top, Bottom); Current selects your cell and pad without jumping; Jump re-jumps to the selection. Jumps need a login and don't auto-correct the pad (`map.jump(cell, pad, false)`); the result shows under the buttons. Arrow-key cell stepping isn't ported. |
@@ -483,7 +483,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   (e.g. Unidentified 13)" with Add Drop (`|`-separated, a number is an item ID; Enter adds too);
   Interval (ms) (`drops.interval`, waited on top of the loop's 1 s tick), Reject Else, Accept AC
   Drops (the game option); Pick Drops starts or stops the pickup loop (accent while it runs).
-  Notifications (VibeSkua's Notify Drop beeper) is greyed. QUESTS HELPER: the registered quests
+  Notifications opens Notify Drop (below). QUESTS HELPER: the registered quests
   ("1234 (Reward: 99)"), Remove Selected, "Quest ID" (several with `,` `|` or spaces) and "Reward
   ID (opt)" with Add Quest (`bot.quests.register`, which also starts the pickup loop). BOOSTS
   HELPER: Search Inventory / Search Bank (`boosts.setAllIds` through `spawn_action`), the four
@@ -491,6 +491,21 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   and switches are the bot's own state, so a script's changes show at once; what you set here
   lasts until the script ends (its end stops the loops, turns the boosts off and unregisters the
   quests, as before).
+* **Notify Drop** (`notify_drop.rs`, 534x337, VibeSkua `NotifyDropView`, from Runtime's
+  Notifications): "Item name (separate several with |)" with Add (Enter adds too; names already
+  listed are skipped); WATCHING with its count and Clear all; the list (click picks several rows,
+  Shift+click a range; each row's ✕, shown on hover or when picked and always on a touch screen,
+  Delete, or the right-click Remove Selected / Clear All removes; empty, it says what the window
+  does); "Beep [1-25] times every [10-2000 ms]" (5 and 200 to start) and Test beep, under the
+  list (from 720 px wide, in the WATCHING row, so a phone on its side keeps three rows of list;
+  under 440 px, Test beep takes a row of its own). A listed item that drops (`itemDropped`, and again
+  `itemAdded` when it reaches the inventory, as VibeSkua's `ItemDroppedMessage`; exact,
+  case-sensitive names) plays the beeps on a thread of their own: `Platform::beep`, .NET's
+  `Console.Beep()` (800 Hz, 200 ms) on a sound stream apart from the game's (cpal's default output
+  on the desktop, AAudio on Android), so it sounds while the game is muted. The list is the tab's
+  and isn't saved (VibeSkua's neither): closing the window keeps it, closing the tab or Turu
+  drops it. On a touch screen it opens at 560x480 (its controls and rows are finger-sized), and
+  with a window under 560x400 it fills the screen.
 * **Skills** (`skills.rs`, "Advanced Skills", 700x530, VibeSkua `AdvancedSkillsView`), two tabs.
   Create / Edit Skill: SKILL TIMEOUT (0-5000 ms); SKILLS SEQUENCE, each skill as VibeSkua's line
   ("4 - [Health > 50%] - [Skip if not available]"), with ↑ ↓, Edit (the Edit Rules modal:
@@ -679,7 +694,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   in tercessuinotlim; elsewhere it stays where you are). On a touch screen with a window under
   620x520 the window fills the screen; its controls, tile menus and rows are finger-sized.
 
-Not built at all (greyed in the menus): Application Themes, Plugins, Notify Drop.
+Not built at all (greyed in the menus): Application Themes, Plugins.
 
 * **HotKeys** (Options > HotKeys; `hotkeys_window.rs`, model and dispatch in `hotkeys.rs`,
   VibeSkua `HotKeysView`): VibeSkua's whole catalog of bindable actions (its `_actionList`, 76:
