@@ -1,7 +1,6 @@
 //! The 34 px top nav bar. Left: the Turu symbol and VibeSkua's menus. Right: the game's quick
 //! actions (Grid, Auto, Jump, Bank), then the script's status with its run controls, the one
-//! place a check-in needs. Entries for windows Turu doesn't have yet sit greyed at the end of
-//! their menus, marked "(soon)".
+//! place a check-in needs.
 
 use super::skills::SkillSets;
 use super::theme::{
@@ -180,23 +179,9 @@ fn menu_style(style: &mut Style) {
     w.open.weak_bg_fill = HOVER;
 }
 
-/// VibeSkua's entries for windows Turu doesn't have yet, after a separator at the end of their
-/// menu: greyed, and "(soon)" in the label so a touch screen (no tooltips) says so too.
-fn soon(ui: &mut Ui, names: &[&str]) {
-    ui.separator();
-    for name in names {
-        item(ui, &format!("{name} (soon)"), false);
-    }
-}
-
-/// A menu entry; greyed with "Coming soon" when disabled. Closes the menu when clicked.
-fn item(ui: &mut Ui, label: &str, enabled: bool) -> bool {
-    let response = ui.add_enabled(enabled, Button::new(label).min_size(vec2(190.0, 0.0)));
-    let response = if enabled {
-        response
-    } else {
-        response.on_disabled_hover_text("Coming soon")
-    };
+/// A menu entry. Closes the menu when clicked.
+fn item(ui: &mut Ui, label: &str) -> bool {
+    let response = ui.add(Button::new(label).min_size(vec2(190.0, 0.0)));
     let clicked = response.clicked();
     if clicked {
         ui.close();
@@ -795,7 +780,7 @@ fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], bank: Opti
     }
     if let Some(bank) = bank {
         ui.separator();
-        if item(ui, "Bank", true) {
+        if item(ui, "Bank") {
             open_bank(bank);
         }
     }
@@ -805,10 +790,10 @@ fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], bank: Opti
 fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
     match menu {
         Menu::Scripts => {
-            if item(ui, "Script Loader", true) {
+            if item(ui, "Script Loader") {
                 windows.script_loader = true;
             }
-            if item(ui, "Search Scripts", true) {
+            if item(ui, "Search Scripts") {
                 windows.script_repo = true;
             }
             // The Script Loader's reasons.
@@ -830,93 +815,92 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
                 windows.script_options = true;
                 ui.close();
             }
-            if item(ui, "Scheduler", true) {
+            if item(ui, "Scheduler") {
                 windows.scheduler = true;
             }
         }
         Menu::Options => {
-            if item(ui, "Game", true) {
+            if item(ui, "Game") {
                 windows.game_options = true;
             }
-            if item(ui, "Application", true) {
+            if item(ui, "Application") {
                 windows.application_options = true;
             }
-            if item(ui, "CoreBots", true) {
+            if item(ui, "CoreBots") {
                 windows.core_bots = true;
             }
             // Not where there's no keyboard to bind (Android).
-            if crate::platform::platform().has_hotkeys() && item(ui, "HotKeys", true) {
+            if crate::platform::platform().has_hotkeys() && item(ui, "HotKeys") {
                 windows.hotkeys = true;
             }
-            soon(ui, &["Application Themes"]);
         }
         Menu::Tools => {
-            if item(ui, "Loader", true) {
+            if item(ui, "Loader") {
                 windows.loader = true;
             }
-            if item(ui, "Grabber", true) {
+            if item(ui, "Grabber") {
                 windows.grabber = true;
             }
-            if item(ui, "Current Drops", true) {
+            if item(ui, "Current Drops") {
                 windows.current_drops = true;
             }
-            if item(ui, "Junk Items", true) {
+            if item(ui, "Junk Items") {
                 windows.junk_items = true;
             }
-            if item(ui, "Loadouts Manager", true) {
+            if item(ui, "Loadouts Manager") {
                 windows.loadouts = true;
             }
-            if item(ui, "Fast Travel", true) {
+            if item(ui, "Fast Travel") {
                 windows.fast_travel = true;
             }
         }
         Menu::Combat => {
-            if item(ui, "Skills", true) {
+            if item(ui, "Skills") {
                 windows.skills = true;
             }
-            if item(ui, "Stats", true) {
+            if item(ui, "Stats") {
                 windows.stats = true;
             }
-            if item(ui, "Runtime", true) {
+            if item(ui, "Runtime") {
                 windows.runtime = true;
             }
         }
         Menu::Diagnostics => {
-            if item(ui, "Logs", true) {
+            if item(ui, "Logs") {
                 windows.logs = true;
             }
-            if item(ui, "Console", true) {
+            if item(ui, "Console") {
                 windows.console = true;
             }
-            if item(ui, "Spammer", true) {
+            if item(ui, "Spammer") {
                 windows.spammer = true;
             }
-            if item(ui, "Packet Logger", true) {
+            if item(ui, "Packet Logger") {
                 windows.packet_logger = true;
             }
-            if item(ui, "Interceptor", true) {
+            if item(ui, "Interceptor") {
                 windows.interceptor = true;
             }
         }
         Menu::Plugins => {
             // Turu: VibeSkua's ButlerV5 plugin, built in. Not without several clients (Android).
-            if crate::platform::platform().has_army() && item(ui, "Butler", true) {
+            if crate::platform::platform().has_army() && item(ui, "Butler") {
                 windows.butler = true;
             }
             // Turu: VibeSkua's Cosmetics plugin, built in.
-            if item(ui, "Cosmetics", true) {
+            if item(ui, "Cosmetics") {
                 windows.cosmetics = true;
             }
         }
         Menu::Army => {
-            if item(ui, "Accounts", true) {
+            if item(ui, "Accounts") {
                 windows.accounts = true;
             }
-            if item(ui, "Army Control", true) {
+            if item(ui, "Army Control") {
                 windows.army = true;
             }
             // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
-            if item(ui, "New Tab", true) {
+            if item(ui, "New Tab") {
                 crate::turu::request_tab(crate::turu::TabRequest::Open(Box::default()));
             }
         }
