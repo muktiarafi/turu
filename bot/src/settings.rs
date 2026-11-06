@@ -51,6 +51,9 @@ pub struct AppSettings {
     pub monitor_machine_name: String,
     /// Run the commands that monitor sends.
     pub monitor_accept_commands: bool,
+    /// Send crash reports to Turu's developers (Android builds with Sentry, `CrashUploads.java`,
+    /// which reads this at start). `None` until the user answered the question Turu asks once.
+    pub send_crash_reports: Option<bool>,
 }
 
 impl Default for AppSettings {
@@ -82,6 +85,7 @@ impl Default for AppSettings {
             monitor_report_key: String::new(),
             monitor_machine_name: String::new(),
             monitor_accept_commands: true,
+            send_crash_reports: None,
         }
     }
 }

@@ -66,6 +66,33 @@ impl Platform for AndroidPlatform {
         true
     }
 
+    fn uploads_crash_reports(&self) -> bool {
+        // The build's DSN doesn't change; asked once the service has started the engine.
+        static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if let Some(available) = AVAILABLE.get() {
+            return *available;
+        }
+        let Some(available) = crate::notify::with_service(|env, class| {
+            env.call_static_method(class, jni_str!("crashUploadsAvailable"), jni_sig!("()Z"), &[])?
+                .z()
+        }) else {
+            return false;
+        };
+        *AVAILABLE.get_or_init(|| available)
+    }
+
+    fn set_crash_uploads(&self, on: bool) {
+        crate::notify::with_service(|env, class| {
+            env.call_static_method(
+                class,
+                jni_str!("setCrashUploads"),
+                jni_sig!("(Z)V"),
+                &[JValue::Bool(on)],
+            )?;
+            Ok(())
+        });
+    }
+
     fn share_text(&self, subject: &str, text: &str) {
         match crate::app() {
             Some(app) => {

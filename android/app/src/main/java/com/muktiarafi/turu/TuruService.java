@@ -43,6 +43,19 @@ public class TuruService extends Service {
 
     private static native void nativeAction(String action);
 
+    /** For the Rust side, which can only reach this class: see {@link CrashUploads}. */
+    static boolean crashUploadsAvailable() {
+        return CrashUploads.available();
+    }
+
+    static void setCrashUploads(boolean on) {
+        CrashUploads.setEnabled(on);
+    }
+
+    static void panicked(String message) {
+        CrashUploads.panicked(message);
+    }
+
     static void start(Context context) {
         context.startForegroundService(new Intent(context, TuruService.class));
     }
@@ -75,6 +88,7 @@ public class TuruService extends Service {
         getSystemService(NotificationManager.class).createNotificationChannel(
                 new NotificationChannel(CHANNEL, "Turu running", NotificationManager.IMPORTANCE_LOW));
         startForegroundWith(build());
+        CrashUploads.start(getApplicationContext());
         CrashReports.collect(getApplicationContext());
         java.io.File files = getExternalFilesDir(null);
         nativeStart(getApplicationContext(), (files != null ? files : getFilesDir()).getAbsolutePath());

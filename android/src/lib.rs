@@ -257,6 +257,7 @@ fn init_logging_now() {
         let backtrace = std::backtrace::Backtrace::force_capture();
         log::error!("Panic on {thread}: {info}\n{backtrace}");
         write_panic_report(thread, info, &backtrace);
+        notify::panicked(&format!("Panic on {thread}: {info}"));
     }));
 }
 

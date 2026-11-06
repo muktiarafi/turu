@@ -37,6 +37,7 @@ public class TuruActivity extends NativeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Before super.onCreate starts the Rust side, which shows a notice for new reports.
+        CrashUploads.start(getApplicationContext());
         CrashReports.collect(getApplicationContext());
         super.onCreate(savedInstanceState);
         TuruService.start(this);

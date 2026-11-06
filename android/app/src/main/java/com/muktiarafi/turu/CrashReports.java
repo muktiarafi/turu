@@ -149,6 +149,12 @@ final class CrashReports {
         }
         // The list sorts by this: the exit's time, not the report's.
         file.setLastModified(when);
+        // Sentry reports crashes and ANRs itself (with more detail); the rest goes from here.
+        int reason = exit.getReason();
+        if (reason != ApplicationExitInfo.REASON_CRASH && reason != ApplicationExitInfo.REASON_CRASH_NATIVE
+                && reason != ApplicationExitInfo.REASON_ANR) {
+            CrashUploads.exit(reasonName(reason), summary(exit), file);
+        }
         Log.w(TAG, "The last run ended: " + summary(exit) + " (" + file + ")");
     }
 

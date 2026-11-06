@@ -193,6 +193,31 @@ keeps it as the `symbols-android-arm64` artifact (90 days), a local build has it
 $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-symbolizer --obj=libturu_android.so 0x1e8d904 0x1e89568
 ```
 
+### Sent to Sentry
+
+Builds made with a Sentry DSN also send crash reports to the developers, once the user agrees:
+the first start asks "Send crash reports?" (closing it asks again next time), and Options >
+Application > Send Crash Reports changes it (`sendCrashReports` in `settings.json`, applied at
+once). Nothing is sent before a yes; builds without a DSN never ask. `CrashUploads.java` starts
+Sentry (`io.sentry:sentry-android`, auto-init off in the manifest):
+
+* Native and Java crashes are caught as they happen (Sentry's NDK handler), so a phone that
+  keeps its tombstones to itself (the Redmi 10's MIUI) still reports, and merged with the
+  tombstone where Android gives one (Android 12+, raw tombstone attached). ANRs come from
+  Android's exit records. Reports are sent at the next start.
+* A Rust panic's message goes with the native crash (`TuruService.panicked`, from the panic
+  hook: a breadcrumb and the `panic` extra).
+* Exits Sentry doesn't catch (low memory, a kill by the system or a battery saver) are sent as
+  `CrashReports`' report, a warning tagged `exit_reason`.
+* No personal data: `sendDefaultPii` off (no IP address), no screenshots, no logs. Sessions are
+  counted (crash-free rate) under an anonymous install ID.
+
+Setup, in the GitHub repository: the `SENTRY_DSN` secret (the project's DSN; the release build
+passes it to Gradle), and for readable native frames the `SENTRY_AUTH_TOKEN` secret (an
+organization auth token) with the `SENTRY_ORG` and `SENTRY_PROJECT` variables: the release
+workflow then uploads `libturu_android.so`'s symbols with `sentry-cli`. A local build takes the
+DSN from `-PsentryDsn=...`, `SENTRY_DSN` or `sentryDsn` in `android/local.properties`.
+
 The control API (`--api`) works as on a desktop. From the computer:
 
 ```bash

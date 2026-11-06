@@ -324,3 +324,58 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
         }
     }
 }
+
+/// "Send crash reports automatically?", once: where the build can send them
+/// (`Platform::uploads_crash_reports`) and the user hasn't answered (`send_crash_reports`). After
+/// the crash notice, and never over a script's message box. Closing it without an answer asks
+/// again at the next start; Options > Application has the switch.
+pub fn show_crash_upload_question(ctx: &Context) {
+    static DISMISSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if DISMISSED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let bot = crate::turu::bot();
+    if bot.settings.read().send_crash_reports.is_some()
+        || !UNSEEN.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        || bot.scripts.message_box().is_some()
+        || !crate::platform::platform().uploads_crash_reports()
+    {
+        return;
+    }
+    let mut answer = None;
+    let size = vec2(0.0, widgets::target(28.0, 44.0));
+    let response = Modal::new(egui::Id::new("turu_crash_upload_question")).show(ctx, |ui| {
+        ui.set_min_width(300.0);
+        ui.set_max_width(420.0);
+        ui.heading("Send crash reports?");
+        ui.label(
+            "When Turu crashes, it can send a report to its developers so they can fix it: what crashed, \
+             the phone's model and Android version, and Turu's version.",
+        );
+        ui.label(
+            RichText::new("No account names, passwords or game data. You can change this in Options > Application.")
+                .small()
+                .color(MUTED),
+        );
+        ui.add_space(4.0);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if widgets::button(ui, "Send reports", Kind::Primary, true, size, "").clicked() {
+                answer = Some(true);
+            }
+            if widgets::button(ui, "Don't send", Kind::Normal, true, size, "").clicked() {
+                answer = Some(false);
+            }
+        });
+    });
+    match answer {
+        Some(on) => {
+            let mut settings = bot.settings.read().clone();
+            settings.send_crash_reports = Some(on);
+            *bot.settings.write() = settings;
+            bot.save_settings();
+            crate::platform::platform().set_crash_uploads(on);
+        }
+        None if response.should_close() => DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed),
+        None => {}
+    }
+}

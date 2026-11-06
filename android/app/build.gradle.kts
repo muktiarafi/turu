@@ -18,6 +18,13 @@ android {
         ndk {
             abiFilters.addAll(ndkAbis())
         }
+        // Crash reports to Sentry (`CrashUploads.java`), sent only once the user said yes.
+        // Without a DSN (a build from source) Turu has no uploads at all and never asks.
+        buildConfigField("String", "SENTRY_DSN", "\"${sentryDsn()}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     // Release signing: the keystore CI decodes from its secrets (`TURU_KEYSTORE` and the rest,
@@ -55,6 +62,8 @@ android {
 
 dependencies {
     implementation(project(":rustls-platform-verifier"))
+    // Crash reports: Java and native crashes (its NDK part), ANRs and tombstones.
+    implementation(libs.sentryAndroid)
 }
 
 /// The version: `-PturuVersion=0.2.0-alpha.1` (the release tag without its `v`), else the
@@ -78,6 +87,18 @@ fun versionCode(version: String): Int {
     }
     val pre = if (stage.isEmpty()) 0 else number.ifEmpty { "0" }.toInt()
     return ((major.toInt() * 100 + minor.toInt()) * 100 + patch.toInt()) * 1000 + stageCode * 100 + pre
+}
+
+/// Sentry's DSN for crash reports: `-PsentryDsn=...`, the `SENTRY_DSN` environment variable (CI
+/// passes its secret), or `sentryDsn` in local.properties; empty for none.
+fun sentryDsn(): String {
+    val file = rootProject.file("local.properties")
+    val local = Properties()
+    if (file.exists()) file.inputStream().use { local.load(it) }
+    return (findProperty("sentryDsn") as String?
+        ?: System.getenv("SENTRY_DSN")
+        ?: local.getProperty("sentryDsn")
+        ?: "").trim()
 }
 
 /// The ABIs to build: `ndkAbis` in local.properties (space-separated), else the phone's and the

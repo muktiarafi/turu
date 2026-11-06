@@ -2,6 +2,10 @@
 [versions]
 agp = "9.5.0"
 kotlin = "2.4.21"
+sentry = "8.61.1"
+
+[libraries]
+sentryAndroid = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

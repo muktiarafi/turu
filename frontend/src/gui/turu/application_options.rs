@@ -71,6 +71,8 @@ enum Field {
     RegenerateMonitorKey,
     /// Copy Report Settings and Regenerate, for the push key.
     PushKey,
+    /// `send_crash_reports` (Android builds with Sentry only), applied at once.
+    CrashReports,
 }
 
 struct Entry {
@@ -94,8 +96,24 @@ macro_rules! entry {
     };
 }
 
-/// Every setting, in VibeSkua's order.
+/// Every setting, in VibeSkua's order, then Turu's own.
 fn entries() -> Vec<Entry> {
+    let mut entries = vibeskua_entries();
+    if crate::platform::platform().uploads_crash_reports() {
+        entries.insert(
+            1,
+            entry!(
+                General,
+                "Send Crash Reports",
+                "When Turu crashes, send a report to its developers so they can fix it: what crashed, the phone's model and Android version, Turu's version. No account, password or game data",
+                Field::CrashReports
+            ),
+        );
+    }
+    entries
+}
+
+fn vibeskua_entries() -> Vec<Entry> {
     vec![
         entry!(
             General,
@@ -484,6 +502,14 @@ impl ApplicationOptionsWindow {
                                     }
                                     Field::RegenerateMonitorKey => self.regenerate_key(ui),
                                     Field::PushKey => self.push_key(ui, &settings),
+                                    Field::CrashReports => {
+                                        let mut on = settings.send_crash_reports == Some(true);
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            settings.send_crash_reports = Some(on);
+                                            crate::platform::platform().set_crash_uploads(on);
+                                            settings_changed = true;
+                                        }
+                                    }
                                 });
                             });
                         }

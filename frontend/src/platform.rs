@@ -94,6 +94,16 @@ pub trait Platform: Send + Sync {
 
     /// Hands a text to another app (mail, a chat, Drive) through the system's share sheet.
     fn share_text(&self, _subject: &str, _text: &str) {}
+
+    /// Whether crash reports can be sent to Turu's developers automatically (Android builds
+    /// with Sentry): Turu then asks once, and Options > Application has a switch.
+    fn uploads_crash_reports(&self) -> bool {
+        false
+    }
+
+    /// Turns the automatic crash reports on or off now (the choice is kept in `settings.json`,
+    /// `send_crash_reports`, which the app reads at start).
+    fn set_crash_uploads(&self, _on: bool) {}
 }
 
 static PLATFORM: OnceLock<Arc<dyn Platform>> = OnceLock::new();

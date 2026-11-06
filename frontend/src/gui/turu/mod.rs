@@ -266,6 +266,7 @@ impl TuruUi {
         tab.logs.show(ctx, &mut w.logs);
         // A modal: over the windows whatever the order.
         logs::show_crash_notice(ctx, &mut w.logs, &mut tab.logs);
+        logs::show_crash_upload_question(ctx);
         tab.console.show(ctx, &mut w.console);
         tab.packet_logger.show(ctx, &mut w.packet_logger);
         tab.spammer.show(ctx, &mut w.spammer);

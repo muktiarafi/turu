@@ -308,6 +308,8 @@ jobs:
           TURU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           TURU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           TURU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Crash reports (docs/ANDROID.md, "Crash reports"): without it the APK has none.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
       - name: Package
         run: |
@@ -319,6 +321,21 @@ jobs:
           name: turu-android-arm64
           path: turu-${{ needs.version.outputs.version }}-android-arm64.apk
           if-no-files-found: error
+
+      # Sentry reads Turu's frames in native crash reports with the library's symbols. Skipped
+      # without SENTRY_AUTH_TOKEN (an organization auth token); SENTRY_ORG and
+      # SENTRY_PROJECT are repository variables.
+      - name: Upload symbols to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          if [[ -z "$SENTRY_AUTH_TOKEN" ]]; then
+            echo "No SENTRY_AUTH_TOKEN secret: symbols not uploaded"
+            exit 0
+          fi
+          npx -y @sentry/cli@3.8.1 debug-files upload android/app/src/main/jniLibs/arm64-v8a/libturu_android.so
 
       # The library with its symbols (the APK's is stripped), to read a crash report's
       # backtrace: `llvm-symbolizer --obj=libturu_android.so <pc>` (docs/ANDROID.md). Not

@@ -125,6 +125,29 @@ fn start_updates() {
     }
 }
 
+/// Runs `work` with `TuruService`'s class on this thread (attached to the JVM); `None` before the
+/// service started the engine or when the call failed.
+pub(crate) fn with_service<T>(work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>) -> Option<T> {
+    let (vm, class) = SERVICE.get()?;
+    vm.attach_current_thread(|env: &mut Env| work(env, class))
+        .inspect_err(|e| tracing::warn!("A call to TuruService failed: {e}"))
+        .ok()
+}
+
+/// `TuruService.panicked(message)`: the panic's message goes with the crash report Sentry sends.
+pub(crate) fn panicked(message: &str) {
+    with_service(|env, class| {
+        let message = env.new_string(message)?;
+        env.call_static_method(
+            class,
+            jni_str!("panicked"),
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::Object(&message)],
+        )?;
+        Ok(())
+    });
+}
+
 /// `TuruService.status(title, text, running, paused)`.
 fn send(status: &Status) -> jni::errors::Result<()> {
     let Some((vm, class)) = SERVICE.get() else {
