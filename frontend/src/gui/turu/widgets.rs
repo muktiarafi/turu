@@ -115,9 +115,11 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
     // 40 points high on a touch screen, as the nav bar's chip.
     let size = vec2(galley.size().x + 22.0, target(24.0, 40.0));
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let hovered = response.hovered() && ui.is_enabled();
+    // The pressed accent: white 12-point text on ACCENT is about 4.0:1, on this 5.2:1.
     let fill = if selected {
-        ACCENT
-    } else if response.hovered() {
+        ACCENT_PRESSED
+    } else if hovered {
         HOVER
     } else {
         TRACK
@@ -130,7 +132,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
         FontId::proportional(12.0),
         if selected { Color32::WHITE } else { TEXT },
     );
-    if response.hovered() {
+    if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     response.clicked()

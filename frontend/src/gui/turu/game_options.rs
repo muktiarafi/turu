@@ -2,9 +2,9 @@
 //! are written to `bot.options` at once (the engine re-applies them every 250 ms); Save keeps
 //! them in `options.json`.
 
-use super::theme::{ACCENT, DANGER, MUTED, SUCCESS, TEXT, WARNING};
+use super::theme::{ACCENT_HOVER, DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use egui::{Color32, ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use turu_bot::options::{BotOptions, HuntPriority};
@@ -74,6 +74,11 @@ struct Entry {
     /// What the option does, in a line or two under its label.
     description: &'static str,
     field: Field,
+    /// The small heading this option sits under inside its section ("" for none).
+    group: &'static str,
+    /// The option this one only matters with (Private Number: Private Rooms): when that is off,
+    /// the row is indented and dimmed, but stays editable.
+    requires: Option<fn(&BotOptions) -> bool>,
 }
 
 macro_rules! b {
@@ -83,6 +88,8 @@ macro_rules! b {
             label: $label,
             description: $description,
             field: Field::Bool(|o| &mut o.$f),
+            group: "",
+            requires: None,
         }
     };
 }
@@ -93,6 +100,8 @@ macro_rules! n {
             label: $label,
             description: $description,
             field: Field::Int(|o| &mut o.$f, $min, None),
+            group: "",
+            requires: None,
         }
     };
     ($section:ident, $label:expr, $f:ident, $min:expr, $suffix:expr, $description:expr) => {
@@ -101,12 +110,35 @@ macro_rules! n {
             label: $label,
             description: $description,
             field: Field::Int(|o| &mut o.$f, $min, Some($suffix)),
+            group: "",
+            requires: None,
         }
     };
 }
 
-/// Every field, in VibeSkua's order; the Gameplay section is sorted by label. The descriptions
-/// say what Turu does with each option (some are only read by scripts, or not used yet).
+/// An entry that isn't a plain switch or number box.
+fn entry(section: Section, label: &'static str, field: Field, description: &'static str) -> Entry {
+    Entry {
+        section,
+        label,
+        description,
+        field,
+        group: "",
+        requires: None,
+    }
+}
+
+/// `entries` under the small heading `group`.
+fn grouped(group: &'static str, entries: Vec<Entry>) -> Vec<Entry> {
+    entries.into_iter().map(|e| Entry { group, ..e }).collect()
+}
+
+/// The heading the [`UNUSED`] options sit under, at the end of their section.
+const UNUSED_GROUP: &str = "Not used by Turu yet";
+
+/// Every field, in VibeSkua's order and with its names, but for Gameplay, which is grouped under
+/// small headings, and the options Turu doesn't read yet, which go last in their section. The
+/// descriptions say what Turu does with each option (some are only read by scripts).
 fn entries() -> Vec<Entry> {
     let mut list = vec![
         b!(
@@ -129,18 +161,18 @@ fn entries() -> Vec<Entry> {
             "Turns off the map's walls and barriers"
         ),
         b!(Visuals, "Show FPS", show_fps, "Shows the game's frame-rate counter"),
-        Entry {
-            section: Section::Visuals,
-            label: "Set FPS",
-            description: "Frame rate to force in game. Game's (0) leaves it to the game's own FPS setting",
-            field: Field::Fps,
-        },
-        Entry {
-            section: Section::Visuals,
-            label: "Reload Map",
-            description: "Loads the current map again, for when it's stuck or drawn wrong",
-            field: Field::ReloadMap,
-        },
+        entry(
+            Section::Visuals,
+            "Set FPS",
+            Field::Fps,
+            "Frame rate to force in game. Off (0) leaves it to the game's own FPS setting",
+        ),
+        entry(
+            Section::Visuals,
+            "Reload Map",
+            Field::ReloadMap,
+            "Loads the current map again, for when it's stuck or drawn wrong",
+        ),
         b!(
             Combat,
             "Aggro Monsters",
@@ -179,7 +211,7 @@ fn entries() -> Vec<Entry> {
             "Hunt Buffer",
             hunt_buffer,
             0,
-            "Kills to wait for before picking up drops while hunting (VibeSkua). Turu doesn't use it yet"
+            "In VibeSkua, kills to wait for before picking up drops while hunting"
         ),
         b!(
             Combat,
@@ -192,6 +224,12 @@ fn entries() -> Vec<Entry> {
             "Safe Timings",
             safe_timings,
             "Scripts that read it (CoreBots) wait for actions such as pickups to finish before going on. Keep it on"
+        ),
+        entry(
+            Section::Combat,
+            "Hunt Priority",
+            Field::Priority,
+            "In VibeSkua, which monster a hunt attacks first",
         ),
         b!(
             Drops,
@@ -211,12 +249,12 @@ fn entries() -> Vec<Entry> {
             reject_all_drops,
             "Rejects every drop, wanted ones too. Accept AC Drops still picks up AC items first"
         ),
-        Entry {
-            section: Section::Relogin,
-            label: "Relogin Server",
-            description: "The server auto-relogin logs into",
-            field: Field::Server,
-        },
+        entry(
+            Section::Relogin,
+            "Relogin Server",
+            Field::Server,
+            "The server auto-relogin logs into",
+        ),
         b!(
             Relogin,
             "Auto Relogin",
@@ -257,115 +295,131 @@ fn entries() -> Vec<Entry> {
             "How long to wait for the world to load after logging in"
         ),
     ];
-    let mut gameplay = vec![
-        b!(
-            Gameplay,
-            "Private Rooms",
-            private_rooms,
-            "Joins maps in a numbered private room (Private Number) instead of a public one"
-        ),
-        n!(
-            Gameplay,
-            "Private Number",
-            private_number,
-            0,
-            "The room number private joins use (Private Rooms); 0 uses 100000"
-        ),
-        b!(
-            Gameplay,
-            "Skip Cutscenes",
-            skip_cutscenes,
-            "Skips cutscenes as they start"
-        ),
-        b!(
-            Gameplay,
-            "Headless Mode",
-            headless_mode,
-            "Covers the game and stops drawing it (2 FPS, low quality, muted) to save CPU; the bot keeps playing. Not the same as --headless, which runs Turu with no window"
-        ),
-        b!(
-            Gameplay,
-            "Streamer Mode",
-            streamer_mode,
-            "Hides other players, your name and guild, gold and chat, in game and in Turu's tabs and title, for streaming"
-        ),
-        Entry {
-            section: Section::Gameplay,
-            label: "Custom Name",
-            description: "A name shown on your character, on your screen only",
-            field: Field::Text(|o| &mut o.custom_name, "Your real name"),
-        },
-        Entry {
-            section: Section::Gameplay,
-            label: "Custom Guild",
-            description: "A guild name shown on your character, on your screen only",
-            field: Field::Text(|o| &mut o.custom_guild, "Your real guild"),
-        },
-        n!(
-            Gameplay,
-            "Walk Speed",
-            walk_speed,
-            1,
-            "Your character's walk speed; the game's normal speed is 8"
-        ),
-        n!(
-            Gameplay,
-            "Action Delay",
-            action_delay,
-            0,
-            "ms",
-            "The pause between the bot's actions, such as accepting quests or moving items"
-        ),
-        n!(
-            Gameplay,
-            "Maximum Tries",
-            maximum_tries,
-            1,
-            "Attempts to move an item between bank and inventory before giving up"
-        ),
-        n!(
-            Gameplay,
-            "Join Map Tries",
-            join_map_tries,
-            1,
-            "Attempts to join a map before giving up"
-        ),
-        n!(
-            Gameplay,
-            "Quest Accept And Complete Tries",
-            quest_accept_and_complete_tries,
-            1,
-            "Attempts to accept or turn in a quest before giving up"
-        ),
-        n!(
-            Gameplay,
-            "Load Timeout",
-            load_timeout,
-            1000,
-            "ms",
-            "How long a loading screen may stay up before Turu logs out (and relogs, with Auto Relogin)"
-        ),
-        b!(
-            Gameplay,
-            "Disable Death Ads",
-            disable_death_ads,
-            "Hides the ad shown when you die"
-        ),
-        Entry {
-            section: Section::Gameplay,
-            label: "Hunt Priority",
-            description: "Which monster a hunt attacks first (VibeSkua). Turu doesn't use it yet",
-            field: Field::Priority,
-        },
-        b!(
-            Gameplay,
-            "Use Function Based Skills",
-            use_function_based_skills,
-            "VibeSkua's choice between skill files and function-based skills. Turu doesn't use it yet"
-        ),
-    ];
-    gameplay.sort_by_key(|e| e.label);
-    list.extend(gameplay);
+    list.extend(grouped(
+        "World",
+        vec![
+            b!(
+                Gameplay,
+                "Private Rooms",
+                private_rooms,
+                "Joins maps in a numbered private room (Private Number) instead of a public one"
+            ),
+            Entry {
+                requires: Some(|o| o.private_rooms),
+                ..n!(
+                    Gameplay,
+                    "Private Number",
+                    private_number,
+                    0,
+                    "The room number private joins use; 0 uses 100000. Used only while Private Rooms is on"
+                )
+            },
+            n!(
+                Gameplay,
+                "Walk Speed",
+                walk_speed,
+                1,
+                "Your character's walk speed; the game's normal speed is 8"
+            ),
+            b!(
+                Gameplay,
+                "Skip Cutscenes",
+                skip_cutscenes,
+                "Skips cutscenes as they start"
+            ),
+            b!(
+                Gameplay,
+                "Disable Death Ads",
+                disable_death_ads,
+                "Hides the ad shown when you die"
+            ),
+            b!(
+                Gameplay,
+                "Headless Mode",
+                headless_mode,
+                "Covers the game and stops drawing it (2 FPS, low quality, muted) to save CPU; the bot keeps playing. Not the same as --headless, which runs Turu with no window"
+            ),
+        ],
+    ));
+    list.extend(grouped(
+        "Privacy & appearance",
+        vec![
+            b!(
+                Gameplay,
+                "Streamer Mode",
+                streamer_mode,
+                "Hides other players, your name and guild, gold and chat, in game and in Turu's tabs and title, for streaming"
+            ),
+            entry(
+                Section::Gameplay,
+                "Custom Name",
+                Field::Text(|o| &mut o.custom_name, "Empty: your real name"),
+                "A name shown on your character, on your screen only",
+            ),
+            entry(
+                Section::Gameplay,
+                "Custom Guild",
+                Field::Text(|o| &mut o.custom_guild, "Empty: your real guild"),
+                "A guild name shown on your character, on your screen only",
+            ),
+        ],
+    ));
+    list.extend(grouped(
+        "Timing & tries",
+        vec![
+            n!(
+                Gameplay,
+                "Action Delay",
+                action_delay,
+                0,
+                "ms",
+                "The pause between the bot's actions, such as accepting quests or moving items"
+            ),
+            n!(
+                Gameplay,
+                "Join Map Tries",
+                join_map_tries,
+                1,
+                "Attempts to join a map before giving up"
+            ),
+            n!(
+                Gameplay,
+                "Load Timeout",
+                load_timeout,
+                1000,
+                "ms",
+                "How long a loading screen may stay up before Turu logs out (and relogs, with Auto Relogin)"
+            ),
+            n!(
+                Gameplay,
+                "Maximum Tries",
+                maximum_tries,
+                1,
+                "Attempts to move an item between bank and inventory before giving up"
+            ),
+            n!(
+                Gameplay,
+                "Quest Accept And Complete Tries",
+                quest_accept_and_complete_tries,
+                1,
+                "Attempts to accept or turn in a quest before giving up"
+            ),
+        ],
+    ));
+    list.push(b!(
+        Gameplay,
+        "Use Function Based Skills",
+        use_function_based_skills,
+        "In VibeSkua, the choice between skill files and function-based skills"
+    ));
+    // The unused options last in their section (a stable sort keeps the rest in order), under
+    // their own heading.
+    list.sort_by_key(|e| (e.section as usize, UNUSED.contains(&e.label)));
+    for e in &mut list {
+        if UNUSED.contains(&e.label) {
+            e.group = UNUSED_GROUP;
+        }
+    }
     list
 }
 
@@ -379,17 +433,35 @@ fn priority_label(priority: HuntPriority) -> &'static str {
     }
 }
 
+/// A footer action that asks once before it changes many options at once.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Confirm {
+    /// Defaults: puts every option back to its default.
+    Defaults,
+    /// Revert while a script runs and changed options: it would undo the script's options too.
+    Revert,
+}
+
+/// A confirming click this soon after the one that asked is ignored: the confirm button takes the
+/// asking button's place, so a double-click would otherwise confirm at once.
+const CONFIRM_GUARD: Duration = Duration::from_millis(400);
+
+/// How long "Saved to options.json." stays in the status line.
+const SAVED_FOR: Duration = Duration::from_secs(4);
+
 pub struct GameOptionsWindow {
     entries: Vec<Entry>,
     search: String,
     filter: Option<Section>,
+    /// The Changed chip: only the options that differ from `options.json`.
+    changed_only: bool,
     /// `options.json` and when it was read: read again every few seconds, as Application
     /// Options saves two of its options too.
     saved: Option<(BotOptions, Instant)>,
-    /// Defaults was clicked once; the next click resets the options.
-    confirm_defaults: bool,
-    /// What the last Save did, until the options change again.
-    save_result: Option<Result<(), String>>,
+    /// The footer action waiting for its confirming click, and when it asked.
+    confirm: Option<(Confirm, Instant)>,
+    /// What the last Save did and when, until the options change again ("Saved" fades).
+    save_result: Option<(Result<(), String>, Instant)>,
     /// How tall the footer was last frame: the list leaves exactly that much room.
     footer_height: Option<f32>,
     /// The options changed here since the last Save or Revert (by label): what differs from
@@ -403,8 +475,9 @@ impl Default for GameOptionsWindow {
             entries: entries(),
             search: String::new(),
             filter: None,
+            changed_only: false,
             saved: None,
-            confirm_defaults: false,
+            confirm: None,
             save_result: None,
             footer_height: None,
             edited: HashSet::new(),
@@ -416,7 +489,7 @@ impl GameOptionsWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         if !*open {
             self.saved = None;
-            self.confirm_defaults = false;
+            self.confirm = None;
             self.save_result = None;
             return;
         }
@@ -430,39 +503,50 @@ impl GameOptionsWindow {
         window.show(ctx, |ui| self.ui(ui));
     }
 
+    /// Whether the list shows `entry`: the search finds it, and it differs from the saved
+    /// options when the Changed chip is on (the section chip is checked apart).
+    fn shown(&self, entry: &Entry, needle: &str, differs: &[&str]) -> bool {
+        matches(entry, needle) && (!self.changed_only || differs.contains(&entry.label))
+    }
+
     fn ui(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
 
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
+        let mut snapshot = bot.options.read().clone();
+        let saved = self.saved_options(&bot);
+        let differs = differing(&self.entries, &snapshot, &saved);
+        // Changed here, then back (or saved elsewhere): no longer an edit of ours.
+        self.edited.retain(|label| differs.contains(label));
+        // Nothing differs any more (saved, reverted): the Changed chip has nothing to show.
+        if differs.is_empty() {
+            self.changed_only = false;
+        }
+
         let needle = self.search.trim().to_lowercase();
-        // The chips count what the search finds in each section.
+        // The chips count what the search (and the Changed chip) find in each section.
         let counts = Section::ALL.map(|section| {
             self.entries
                 .iter()
-                .filter(|e| e.section == section && matches(e, &needle))
+                .filter(|e| e.section == section && self.shown(e, &needle, &differs))
                 .count()
         });
         // A short window (a phone held sideways) scrolls the search and chips away with the
         // list; fixed above it, they'd leave room for one option or two.
         let short = ui.available_height() < SHORT_HEIGHT;
         if !short {
-            self.search_bar(ui, counts);
+            self.search_bar(ui, counts, differs.len());
         }
 
         let footer = self.footer_height.unwrap_or(widgets::target(64.0, 76.0)) + ui.spacing().item_spacing.y;
         let list_height = (ui.available_height() - footer).max(80.0);
-        let mut snapshot = bot.options.read().clone();
-        let saved = self.saved_options(&bot);
-        let differs = differing(&self.entries, &snapshot, &saved);
-        // Changed here, then back (or saved elsewhere): no longer an edit of ours.
-        self.edited.retain(|label| differs.contains(label));
         ScrollArea::vertical()
             .id_salt("game_options_list")
             .max_height(list_height)
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 if short {
-                    self.search_bar(ui, counts);
+                    self.search_bar(ui, counts, differs.len());
                 }
                 let shown: usize = Section::ALL
                     .into_iter()
@@ -471,7 +555,7 @@ impl GameOptionsWindow {
                     .map(|(_, count)| count)
                     .sum();
                 if shown == 0 {
-                    self.empty_state(ui);
+                    self.empty_state(ui, &differs);
                 }
                 for section in Section::ALL {
                     if self.filter.is_some_and(|f| f != section) {
@@ -480,7 +564,7 @@ impl GameOptionsWindow {
                     let rows: Vec<&Entry> = self
                         .entries
                         .iter()
-                        .filter(|e| e.section == section && matches(e, &needle))
+                        .filter(|e| e.section == section && self.shown(e, &needle, &differs))
                         .collect();
                     if rows.is_empty() {
                         continue;
@@ -506,39 +590,26 @@ impl GameOptionsWindow {
                                 .color(WARNING),
                             );
                         }
-                        for entry in rows {
-                            // The label and description beside the control, or above it when
-                            // the row is too narrow for both (a phone).
-                            let text_width = ui.available_width() - entry.field.width() - 8.0;
+                        let mut group = "";
+                        for (i, entry) in rows.into_iter().enumerate() {
+                            if entry.group != group {
+                                group = entry.group;
+                                if !group.is_empty() {
+                                    if i > 0 {
+                                        ui.add_space(6.0);
+                                    }
+                                    ui.label(RichText::new(group).small().strong().color(MUTED));
+                                }
+                            }
                             // Differs from options.json: changed here, or by something else.
                             let mark = differs.contains(&entry.label).then(|| {
                                 if self.edited.contains(entry.label) {
-                                    ACCENT
+                                    Mark::Edited
                                 } else {
-                                    WARNING
+                                    Mark::Outside
                                 }
                             });
-                            let mut changed = false;
-                            if text_width >= MIN_TEXT_WIDTH {
-                                ui.horizontal(|ui| {
-                                    ui.set_min_height(28.0);
-                                    ui.vertical(|ui| {
-                                        ui.set_width(text_width);
-                                        label(ui, entry, mark);
-                                    });
-                                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                                        changed = control(ui, entry, &mut snapshot, &bot);
-                                    });
-                                });
-                            } else {
-                                ui.vertical(|ui| {
-                                    label(ui, entry, mark);
-                                    ui.horizontal(|ui| {
-                                        changed = control(ui, entry, &mut snapshot, &bot);
-                                    });
-                                });
-                            }
-                            if changed {
+                            if row(ui, entry, mark, &mut snapshot, &bot) {
                                 self.edited.insert(entry.label);
                             }
                         }
@@ -548,51 +619,82 @@ impl GameOptionsWindow {
 
         let live = bot.options.read().clone();
         if live != snapshot {
-            // An option changed (here or by a script): a pending Defaults no longer means what it said.
-            self.confirm_defaults = false;
+            // An option changed (here or by a script): a pending confirm no longer means what it said.
+            self.confirm = None;
         }
         let top = ui.cursor().top();
         self.footer(ui, &bot, live, saved);
         self.footer_height = Some(ui.min_rect().bottom() - top);
     }
 
-    /// The search box and the section chips, which count what the search finds.
-    fn search_bar(&mut self, ui: &mut Ui, counts: [usize; 5]) {
+    /// The search box and the chips: the sections, which count what the search finds, and
+    /// Changed (`changed` options differ from `options.json`) while anything differs.
+    fn search_bar(&mut self, ui: &mut Ui, counts: [usize; 5], changed: usize) {
         let width = ui.available_width();
         widgets::text_box(ui, &mut self.search, "Search game options", width);
         let mut filter = self.filter;
+        let mut changed_only = self.changed_only;
         ui.horizontal_wrapped(|ui| {
             let all = counts.iter().sum::<usize>();
             if widgets::chip(ui, &format!("All  {all}"), filter.is_none()) {
                 filter = None;
             }
             for (section, count) in Section::ALL.into_iter().zip(counts) {
-                if widgets::chip(ui, &format!("{}  {count}", section.chip()), filter == Some(section)) {
+                let selected = filter == Some(section);
+                // A section with nothing to show stays dimmed (unless it's the one shown).
+                let clicked = ui
+                    .add_enabled_ui(count > 0 || selected, |ui| {
+                        widgets::chip(ui, &format!("{}  {count}", section.chip()), selected)
+                    })
+                    .inner;
+                if clicked {
                     filter = Some(section);
+                }
+            }
+            if changed > 0 {
+                ui.add_space(6.0);
+                if widgets::chip(ui, &format!("Changed  {changed}"), changed_only) {
+                    changed_only = !changed_only;
                 }
             }
         });
         self.filter = filter;
+        self.changed_only = changed_only;
     }
 
-    /// What the list shows when the search finds nothing: says so, and offers a way out.
-    fn empty_state(&mut self, ui: &mut Ui) {
+    /// What the list shows when nothing matches: says so, and offers a way out.
+    fn empty_state(&mut self, ui: &mut Ui, differs: &[&str]) {
         let search = self.search.trim().to_owned();
+        let needle = search.to_lowercase();
+        let changed = if self.changed_only { "changed " } else { "" };
         let scope = match self.filter {
-            Some(section) => format!("{} options", section.chip()),
-            None => "game options".to_owned(),
+            Some(section) => format!("{changed}{} options", section.chip()),
+            None => format!("{changed}game options"),
         };
-        // Another section has matches: offer to search them all.
-        let elsewhere = self.filter.is_some() && self.entries.iter().any(|e| matches(e, &search.to_lowercase()));
+        let text = if search.is_empty() {
+            format!("No {scope}.")
+        } else {
+            format!("No {scope} match \"{search}\".")
+        };
+        // Another section has matches: offer to look in them all.
+        let elsewhere = self.filter.is_some() && self.entries.iter().any(|e| self.shown(e, &needle, differs));
         ui.add_space(24.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new(format!("No {scope} match \"{search}\".")).color(TEXT));
+            ui.label(RichText::new(text).color(TEXT));
             ui.add_space(4.0);
             let size = vec2(0.0, widgets::target(28.0, 40.0));
-            if elsewhere && widgets::button(ui, "Search all sections", Kind::Normal, true, size, "").clicked() {
+            let all_sections = if search.is_empty() {
+                "Show all sections"
+            } else {
+                "Search all sections"
+            };
+            if elsewhere && widgets::button(ui, all_sections, Kind::Normal, true, size, "").clicked() {
                 self.filter = None;
             }
-            if widgets::button(ui, "Clear search", Kind::Normal, true, size, "").clicked() {
+            if self.changed_only && widgets::button(ui, "Show all options", Kind::Normal, true, size, "").clicked() {
+                self.changed_only = false;
+            }
+            if !search.is_empty() && widgets::button(ui, "Clear search", Kind::Normal, true, size, "").clicked() {
                 self.search.clear();
             }
         });
@@ -610,81 +712,168 @@ impl GameOptionsWindow {
         self.saved.as_ref().map(|(o, _)| o.clone()).unwrap_or_default()
     }
 
-    /// The status line, then Defaults (asks once), Revert and Save; Revert and Save only when the
-    /// live options differ from the saved ones.
+    /// Whether a confirming click on `what` counts: it was asked for, not just now.
+    fn confirmed(&self, what: Confirm) -> bool {
+        self.confirm
+            .is_some_and(|(asked, at)| asked == what && at.elapsed() >= CONFIRM_GUARD)
+    }
+
+    /// The status line, then Defaults (asks once), Revert (asks once while a script runs and
+    /// changed options) and Save; Revert and Save only when the live options differ from the
+    /// saved ones.
     fn footer(&mut self, ui: &mut Ui, bot: &std::sync::Arc<turu_bot::Bot>, live: BotOptions, saved: BotOptions) {
         let unsaved = live != saved;
-        if unsaved && matches!(self.save_result, Some(Ok(()))) {
-            self.save_result = None;
+        if let Some((Ok(()), at)) = &self.save_result {
+            if unsaved || at.elapsed() >= SAVED_FOR {
+                self.save_result = None;
+            } else {
+                ui.ctx().request_repaint_after(SAVED_FOR - at.elapsed());
+            }
         }
-        let at_defaults = live == defaults(&live);
-        if at_defaults {
-            self.confirm_defaults = false;
+        let reset = defaults(&live);
+        let to_reset = differing(&self.entries, &live, &reset).len();
+        let running = bot.scripts.is_running();
+        let differs = differing(&self.entries, &live, &saved);
+        let mine = differs.iter().filter(|l| self.edited.contains(*l)).count();
+        let outside = differs.len() - mine;
+        // What a pending confirm was about is gone: nothing to reset, the script stopped, or
+        // nothing it changed is left.
+        match self.confirm {
+            Some((Confirm::Defaults, _)) if to_reset == 0 => self.confirm = None,
+            Some((Confirm::Revert, _)) if !running || outside == 0 => self.confirm = None,
+            _ => {}
         }
+        let asking = self.confirm.map(|(what, _)| what);
 
-        let (text, color) = if self.confirm_defaults {
-            (
-                "Reset all puts every game option back to its default now, also under a running script.".to_owned(),
+        let (text, color) = match asking {
+            Some(Confirm::Defaults) => (
+                format!(
+                    "Reset puts {} back to {} default now, also under a running script.",
+                    options(to_reset),
+                    if to_reset == 1 { "its" } else { "their" }
+                ),
                 DANGER,
-            )
-        } else if let Some(Err(e)) = &self.save_result {
-            (format!("Couldn't save options.json: {e}"), DANGER)
-        } else if unsaved {
-            (self.unsaved_status(&live, &saved), WARNING)
-        } else if matches!(self.save_result, Some(Ok(()))) {
-            ("Saved.".to_owned(), SUCCESS)
-        } else {
-            ("Changes apply now; Save keeps them for next time.".to_owned(), MUTED)
+            ),
+            Some(Confirm::Revert) => {
+                let yours = match mine {
+                    0 => String::new(),
+                    _ => format!(" Revert mine puts back only the {} you changed.", options(mine)),
+                };
+                (
+                    format!(
+                        "A script is running: Revert all also undoes the {} changed outside this window, most \
+                         likely by it.{yours}",
+                        options(outside)
+                    ),
+                    DANGER,
+                )
+            }
+            None => match &self.save_result {
+                Some((Err(e), _)) => (format!("Couldn't save options.json: {e}"), DANGER),
+                _ if unsaved => (self.unsaved_status(&live, &saved, running), WARNING),
+                Some((Ok(()), _)) => ("Saved to options.json.".to_owned(), SUCCESS),
+                None => ("Changes apply now; Save keeps them for next time.".to_owned(), MUTED),
+            },
         };
         ui.label(RichText::new(text).small().color(color));
 
         let size = vec2(80.0, widgets::target(28.0, 40.0));
-        ui.horizontal(|ui| {
-            // Defaults asks once: it turns into a red Reset all, with Cancel in Revert's place.
-            let (label, kind) = if self.confirm_defaults {
-                ("Reset all", Kind::Danger)
-            } else {
-                ("Defaults", Kind::Normal)
-            };
-            if widgets::button(ui, label, kind, !at_defaults, size, "Every option is at its default").clicked() {
-                if self.confirm_defaults {
-                    let reset = defaults(&live);
-                    // Defaults is an edit made here, of every option it changes.
-                    self.edited.extend(differing(&self.entries, &live, &reset));
-                    *bot.options.write() = reset;
+        ui.horizontal(|ui| match asking {
+            Some(Confirm::Revert) => {
+                if widgets::button(ui, "Revert all", Kind::Danger, true, size, "").clicked()
+                    && self.confirmed(Confirm::Revert)
+                {
+                    *bot.options.write() = saved.clone();
+                    self.edited.clear();
+                    self.confirm = None;
                     self.save_result = None;
                 }
-                self.confirm_defaults = !self.confirm_defaults;
-            }
-            if self.confirm_defaults {
+                if mine > 0
+                    && widgets::button(ui, "Revert mine", Kind::Normal, true, size, "").clicked()
+                    && self.confirmed(Confirm::Revert)
+                {
+                    let mut options = bot.options.write();
+                    *options = revert_mine(&self.entries, &self.edited, &options, &saved);
+                    self.edited.clear();
+                    self.confirm = None;
+                    self.save_result = None;
+                }
                 if widgets::button(ui, "Cancel", Kind::Normal, true, size, "").clicked() {
-                    self.confirm_defaults = false;
+                    self.confirm = None;
                 }
-            } else if widgets::button(
-                ui,
-                "Revert",
-                Kind::Normal,
-                unsaved,
-                size,
-                "Nothing differs from the saved options",
-            )
-            .clicked()
-            {
-                *bot.options.write() = saved;
-                self.edited.clear();
-                self.confirm_defaults = false;
-                self.save_result = None;
             }
-            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::button(ui, "Save", Kind::Primary, unsaved, size, "Nothing to save").clicked() {
-                    self.confirm_defaults = false;
-                    self.save_result = Some(bot.save_options().map_err(|e| e.to_string()));
-                    if matches!(self.save_result, Some(Ok(()))) {
-                        self.edited.clear();
-                    }
-                    self.saved = None;
+            Some(Confirm::Defaults) => {
+                if widgets::button(
+                    ui,
+                    &format!("Reset {}", options(to_reset)),
+                    Kind::Danger,
+                    true,
+                    size,
+                    "",
+                )
+                .clicked()
+                    && self.confirmed(Confirm::Defaults)
+                {
+                    // Defaults is an edit made here, of every option it changes.
+                    self.edited.extend(differing(&self.entries, &live, &reset));
+                    *bot.options.write() = reset.clone();
+                    self.confirm = None;
+                    self.save_result = None;
                 }
-            });
+                if widgets::button(ui, "Cancel", Kind::Normal, true, size, "").clicked() {
+                    self.confirm = None;
+                }
+                self.save_button(ui, bot, unsaved, size);
+            }
+            None => {
+                if widgets::button(
+                    ui,
+                    "Defaults",
+                    Kind::Normal,
+                    to_reset > 0,
+                    size,
+                    "Every option is at its default",
+                )
+                .clicked()
+                {
+                    self.confirm = Some((Confirm::Defaults, Instant::now()));
+                }
+                if widgets::button(
+                    ui,
+                    "Revert",
+                    Kind::Normal,
+                    unsaved,
+                    size,
+                    "Nothing differs from the saved options",
+                )
+                .clicked()
+                {
+                    if running && outside > 0 {
+                        // It would undo what the running script set: ask first.
+                        self.confirm = Some((Confirm::Revert, Instant::now()));
+                    } else {
+                        *bot.options.write() = saved.clone();
+                        self.edited.clear();
+                        self.save_result = None;
+                    }
+                }
+                self.save_button(ui, bot, unsaved, size);
+            }
+        });
+    }
+
+    /// Save, at the footer's right.
+    fn save_button(&mut self, ui: &mut Ui, bot: &turu_bot::Bot, unsaved: bool, size: egui::Vec2) {
+        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+            if widgets::button(ui, "Save", Kind::Primary, unsaved, size, "Nothing to save").clicked() {
+                self.confirm = None;
+                let result = bot.save_options().map_err(|e| e.to_string());
+                if result.is_ok() {
+                    self.edited.clear();
+                }
+                self.save_result = Some((result, Instant::now()));
+                self.saved = None;
+            }
         });
     }
 }
@@ -692,8 +881,9 @@ impl GameOptionsWindow {
 impl GameOptionsWindow {
     /// The status line while the live options differ from `options.json`: who changed what. A
     /// script's changes stay after it stops (but Auto Relogin, which stopping turns off), so
-    /// Save would keep them too; Revert puts the saved options back.
-    fn unsaved_status(&self, live: &BotOptions, saved: &BotOptions) -> String {
+    /// Save would keep them too; Revert puts the saved options back (and asks first while the
+    /// script still runs).
+    fn unsaved_status(&self, live: &BotOptions, saved: &BotOptions, running: bool) -> String {
         let differs = differing(&self.entries, live, saved);
         let mine = differs.iter().filter(|l| self.edited.contains(*l)).count();
         let outside: Vec<&str> = differs.iter().copied().filter(|l| !self.edited.contains(l)).collect();
@@ -715,10 +905,12 @@ impl GameOptionsWindow {
         } else {
             String::new()
         };
-        format!(
-            "{names} changed outside this window, most likely by a script.{yours} Save keeps them too; \
-             Revert puts the saved options back."
-        )
+        let revert = if running {
+            "Revert asks first while the script runs"
+        } else {
+            "Revert puts the saved options back"
+        };
+        format!("{names} changed outside this window, most likely by a script.{yours} Save keeps them too; {revert}.")
     }
 }
 
@@ -756,6 +948,32 @@ fn differing(entries: &[Entry], a: &BotOptions, b: &BotOptions) -> Vec<&'static 
         .collect()
 }
 
+impl Field {
+    /// Sets this option in `to` to its value in `from`.
+    fn copy(&self, from: &BotOptions, to: &mut BotOptions) {
+        let mut from = from.clone();
+        match self {
+            Field::Bool(access) => *access(to) = *access(&mut from),
+            Field::Int(access, ..) => *access(to) = *access(&mut from),
+            Field::Text(access, _) => *access(to) = std::mem::take(access(&mut from)),
+            Field::Fps => to.set_fps = from.set_fps,
+            Field::Server => to.relogin_server = from.relogin_server,
+            Field::Priority => to.hunt_priority = from.hunt_priority,
+            Field::ReloadMap => {}
+        }
+    }
+}
+
+/// Revert mine: `live` with the options changed here (`edited`) put back to `saved`, and
+/// everything else (what a script set) left as it is.
+fn revert_mine(entries: &[Entry], edited: &HashSet<&'static str>, live: &BotOptions, saved: &BotOptions) -> BotOptions {
+    let mut result = live.clone();
+    for entry in entries.iter().filter(|e| edited.contains(e.label)) {
+        entry.field.copy(saved, &mut result);
+    }
+    result
+}
+
 /// What Defaults sets: the default options, but Relogin Try Delay and Relogin Watchdog, which
 /// Application Options shows (and saves), stay as they are.
 fn defaults(current: &BotOptions) -> BotOptions {
@@ -789,13 +1007,86 @@ const SHORT_HEIGHT: f32 = 480.0;
 /// goes under them.
 const MIN_TEXT_WIDTH: f32 = 160.0;
 
-/// An option's label and its description under it; `mark`, a dot after the label in that colour:
-/// it differs from options.json (accent: changed here; amber: changed by something else).
-fn label(ui: &mut Ui, entry: &Entry, mark: Option<Color32>) {
+/// Why a row differs from `options.json`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mark {
+    /// Changed in this window.
+    Edited,
+    /// Changed by something else, most often a script.
+    Outside,
+}
+
+/// One option's row: its label and description beside its control, or above it when the row is
+/// too narrow for both (a phone). An option that [requires](Entry::requires) another is indented,
+/// and dimmed while that one is off. Returns whether the control changed the option.
+fn row(
+    ui: &mut Ui,
+    entry: &Entry,
+    mark: Option<Mark>,
+    snapshot: &mut BotOptions,
+    bot: &std::sync::Arc<turu_bot::Bot>,
+) -> bool {
+    let mut changed = false;
     ui.horizontal(|ui| {
+        if let Some(requires) = entry.requires {
+            ui.add_space(14.0);
+            if !requires(snapshot) {
+                ui.multiply_opacity(0.55);
+            }
+        }
+        ui.vertical(|ui| {
+            let text_width = ui.available_width() - entry.field.width() - 8.0;
+            if text_width >= MIN_TEXT_WIDTH {
+                ui.horizontal(|ui| {
+                    ui.set_min_height(28.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(text_width);
+                        label(ui, entry, mark);
+                    });
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        changed = control(ui, entry, snapshot, bot);
+                    });
+                });
+            } else {
+                label(ui, entry, mark);
+                ui.horizontal(|ui| {
+                    changed = control(ui, entry, snapshot, bot);
+                });
+            }
+        });
+    });
+    changed
+}
+
+/// An option's label and its description under it; `mark`, a tag after the label saying why it
+/// differs from options.json ("Edited" here, or "Changed outside" by something else).
+fn label(ui: &mut Ui, entry: &Entry, mark: Option<Mark>) {
+    ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(entry.label).color(TEXT));
-        if let Some(color) = mark {
-            widgets::dot(ui, color, 3.5);
+        if let Some(mark) = mark {
+            let (text, color, why) = match mark {
+                Mark::Edited => (
+                    "Edited",
+                    ACCENT_HOVER,
+                    "You changed this here: it applies now, Save keeps it, Revert puts it back.",
+                ),
+                Mark::Outside => (
+                    "Changed outside",
+                    WARNING,
+                    "Changed outside this window, most likely by a script: it differs from options.json.",
+                ),
+            };
+            // Outlined on the card, not filled: on the grey pill the accent text would be
+            // under 4:1.
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.6)))
+                .corner_radius(egui::CornerRadius::same(8))
+                .inner_margin(egui::Margin::symmetric(6, 1))
+                .show(ui, |ui| {
+                    ui.label(RichText::new(text).size(widgets::small_label_size()).color(color))
+                })
+                .inner
+                .on_hover_text(why);
         }
     });
     ui.label(RichText::new(entry.description).small().color(MUTED));
@@ -850,7 +1141,7 @@ fn edit(
             let mut value = snapshot.set_fps;
             let format = widgets::NumberFormat {
                 suffix: " FPS",
-                zero: Some("Game's"),
+                zero: Some("Off"),
                 ..Default::default()
             };
             let size = vec2(96.0, widgets::target(24.0, 40.0));
@@ -957,17 +1248,59 @@ mod tests {
         live.hide_players = true;
         window.edited.insert("Hide Players");
         assert_eq!(
-            window.unsaved_status(&live, &saved),
+            window.unsaved_status(&live, &saved, false),
             "You changed 1 option: it applies now; Save keeps it for next time."
         );
         live.aggro_monsters = true;
         live.skip_cutscenes = true;
         live.accept_all_drops = true;
         assert_eq!(
-            window.unsaved_status(&live, &saved),
+            window.unsaved_status(&live, &saved, false),
             "Aggro Monsters, Accept All Drops and 1 more were changed outside this window, most likely by a \
              script. You changed 1 option. Save keeps them too; Revert puts the saved options back."
         );
+        assert!(
+            window
+                .unsaved_status(&live, &saved, true)
+                .ends_with("Revert asks first while the script runs.")
+        );
+    }
+
+    /// Revert mine puts back only the options changed here; a script's stay.
+    #[test]
+    fn revert_mine_keeps_outside_changes() {
+        let entries = entries();
+        let saved = BotOptions::default();
+        let mut live = saved.clone();
+        live.hide_players = true; // ours
+        live.custom_name = "Me".into(); // ours
+        live.aggro_monsters = true; // the script's
+        let edited = HashSet::from(["Hide Players", "Custom Name"]);
+        let reverted = revert_mine(&entries, &edited, &live, &saved);
+        assert_eq!(differing(&entries, &reverted, &saved), ["Aggro Monsters"]);
+    }
+
+    /// Unused options come last in their section, under their own heading; Private Number
+    /// follows Private Rooms, which it requires.
+    #[test]
+    fn entries_order() {
+        let list = entries();
+        for section in Section::ALL {
+            let rows: Vec<&Entry> = list.iter().filter(|e| e.section == section).collect();
+            let first_unused = rows
+                .iter()
+                .position(|e| UNUSED.contains(&e.label))
+                .unwrap_or(rows.len());
+            assert!(rows[first_unused..].iter().all(|e| e.group == UNUSED_GROUP));
+            assert!(rows[..first_unused].iter().all(|e| e.group != UNUSED_GROUP));
+        }
+        // Sections stay together, in the chips' order.
+        let order: Vec<usize> = list.iter().map(|e| e.section as usize).collect();
+        assert!(order.is_sorted());
+        let at = |label| list.iter().position(|e| e.label == label).unwrap();
+        assert_eq!(at("Private Number"), at("Private Rooms") + 1);
+        assert!(list[at("Private Number")].requires.is_some());
+        assert_eq!(list[at("Hunt Priority")].section as usize, Section::Combat as usize);
     }
 
     /// Every option the window greys out is one it has (a renamed label would leave it live).
