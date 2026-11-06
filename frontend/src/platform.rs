@@ -124,6 +124,13 @@ pub trait Platform: Send + Sync {
     /// returns once it has played. Called on a thread of its own (Notify Drop); nothing plays
     /// without a sound device or a window.
     fn beep(&self) {}
+
+    /// Turns Mugetsu's frame interpolation (`ruffle_core::frame_interpolation`) on or off from
+    /// Options > Application, and saves the choice where the frontend reads it at start (the
+    /// desktop: Mugetsu's `mugetsu-interpolation.txt`, also set by the game's right-click menu).
+    fn set_frame_interpolation(&self, on: bool) {
+        ruffle_core::frame_interpolation::set_enabled(on);
+    }
 }
 
 /// The beep's pitch and length: .NET's `Console.Beep()` (800 Hz, 200 ms).

@@ -26,7 +26,7 @@ mod tracy;
 mod thread_perf;
 mod util;
 // Turu: the bridge to the bot, the bot windows and what they share, from `turu_frontend`.
-use turu_frontend::{capture, grid, platform, turu};
+use turu_frontend::{capture, grid, pacing, platform, turu};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]

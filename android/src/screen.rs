@@ -8,6 +8,10 @@
 //! window only a new surface; the player's renderer and its texture stay. Each finger goes
 //! to the UI when it comes down on it (the nav bar, a window), else to the game; keys go to the UI
 //! while one of its text boxes has the focus, which also brings up the soft keyboard.
+//!
+//! The screen is drawn after each tick. With frame interpolation on (Options > Application) it's
+//! presented on every refresh of the display instead, with a new in-between picture on every n-th
+//! refresh, paced as on the desktop (`turu_frontend::pacing`, [`Screen::step`]).
 
 use crate::input::{self, Key, Touch};
 use ndk::native_window::NativeWindow;
@@ -22,7 +26,9 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
+use turu_frontend::engine::Step;
 use turu_frontend::gui::turu::TuruUi;
+use turu_frontend::pacing::Pacing;
 use turu_frontend::touch::GameTouches;
 use turu_frontend::turu;
 use wgpu::util::DeviceExt;
@@ -74,6 +80,12 @@ pub struct Screen {
     ui_typing: bool,
     /// The game's viewport, last set.
     movie_size: (u32, u32),
+    /// Frame interpolation's pacing, with the display's refresh rate.
+    pacing: Pacing,
+    /// The display's refresh rate the pacing has (mHz), 0 before the first.
+    refresh_millihertz: u32,
+    /// When the last draw started.
+    draw_started: Instant,
 }
 
 /// The GPU, set up without a window (the API `graphics` asks for), the blit the screen draws the
@@ -177,6 +189,9 @@ impl Screen {
             keyboard_shown: false,
             ui_typing: false,
             movie_size: (0, 0),
+            pacing: Pacing::new(),
+            refresh_millihertz: 0,
+            draw_started: Instant::now(),
         };
         screen.configure();
         Some(screen)
@@ -351,9 +366,61 @@ impl Screen {
         }
     }
 
-    /// Draws a frame, when there's a window: the game (rendered again when it changed) below the
-    /// bar, the UI over it.
-    pub fn draw(&mut self, player: &mut Player) {
+    /// After a tick, or at the time it asked for: draws, and with frame interpolation on says
+    /// when to draw next. Without interpolation the screen is drawn after each tick (the game
+    /// rendered again when it changed). With it, it's presented on every refresh of the display
+    /// (presenting waits for vsync), with a new in-between picture when [`Pacing`] says one is
+    /// due; ticks only plan (as the desktop's `pace_interpolation`).
+    pub fn step(&mut self, player: &mut Player, step: Step) -> Option<Instant> {
+        if let Step::Ticked { frame_ms: Some(frame_ms) } = step {
+            self.pacing.record_frame(frame_ms);
+        }
+        if self.surface.is_none() {
+            return None;
+        }
+        // Headless Mode's screen hides the game: nothing to interpolate.
+        let interpolating = ruffle_core::frame_interpolation::enabled()
+            && player.is_playing()
+            && !turu::headless_mode()
+            && {
+            self.update_refresh_rate();
+            self.pacing.plan(Instant::now(), player.frame_rate())
+        };
+        match (step, interpolating) {
+            (Step::Ticked { .. }, false) => {
+                let new_picture = player.needs_render();
+                self.draw(player, new_picture);
+                None
+            }
+            // Turned off, or the movie stopped, since the last draw was asked for.
+            (Step::Due, false) => None,
+            (Step::Ticked { .. }, true) => Some(self.draw_started + self.pacing.refresh_interval() / 2),
+            (Step::Due, true) => {
+                let started = Instant::now();
+                let new_picture = self.pacing.new_picture_due(started);
+                self.draw(player, new_picture);
+                // Asked for right away, keeping the display's queue of pictures full so a busy
+                // moment doesn't miss a refresh: the next present waits for its refresh.
+                Some(self.draw_started + self.pacing.refresh_interval() / 2)
+            }
+        }
+    }
+
+    /// The display's refresh rate, from the activity (`ui::refresh_millihertz`).
+    fn update_refresh_rate(&mut self) {
+        let millihertz = crate::ui::refresh_millihertz();
+        if millihertz != self.refresh_millihertz {
+            self.refresh_millihertz = millihertz;
+            self.pacing.set_refresh_rate(millihertz);
+            tracing::info!(target: "ruffle_aqw_perf", "display refreshes at {:.1} Hz", millihertz as f64 / 1000.0);
+        }
+    }
+
+    /// Draws a frame, when there's a window: the game (rendered again with `new_picture`) below
+    /// the bar, the UI over it.
+    fn draw(&mut self, player: &mut Player, new_picture: bool) {
+        let started = Instant::now();
+        self.draw_started = started;
         let Some(surface) = &self.surface else {
             return;
         };
@@ -366,8 +433,9 @@ impl Screen {
                 scale_factor: f64::from(self.pixels_per_point),
             });
         }
-        if player.needs_render() {
+        if new_picture {
             player.render();
+            self.pacing.record_draw(started.elapsed().as_secs_f64() * 1000.0);
         }
         let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,

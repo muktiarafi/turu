@@ -4,7 +4,8 @@
 //! browser; folders and files only get logged, so Edit Script and Open VSCode are hidden too.
 //! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
 //! `OutputCommand::CopyText`, passed on by `screen.rs`) goes to Android's clipboard.
-//! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`).
+//! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`). Frame interpolation
+//! (Options > Application) is saved in the data folder.
 
 use android_activity::AndroidApp;
 use jni::JavaVM;
@@ -56,6 +57,12 @@ impl Platform for AndroidPlatform {
 
     fn is_touch(&self) -> bool {
         true
+    }
+
+    fn set_frame_interpolation(&self, on: bool) {
+        ruffle_core::frame_interpolation::set_enabled(on);
+        crate::save_interpolation(on);
+        tracing::info!("Frame interpolation turned {}", if on { "on" } else { "off" });
     }
 
     // `input::key` maps no function keys and sends egui no modifiers: no hotkeys to bind.

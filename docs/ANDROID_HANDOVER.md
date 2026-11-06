@@ -57,7 +57,7 @@ Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it
 
 | Path | What |
 |---|---|
-| `frontend/` | crate `turu_frontend`: what desktop and Android share (no winit, rfd or window). `engine.rs` is the windowless player loop (`EngineEvent`, `Executor`, `NoDialogs`, `run_loop`, `run_loop_with`, `flash_host`), used by desktop `--headless` and Android. |
+| `frontend/` | crate `turu_frontend`: what desktop and Android share (no winit, rfd or window). `engine.rs` is the windowless player loop (`EngineEvent`, `Executor`, `NoDialogs`, `run_loop`, `run_loop_with`, `run_loop_paced` (Android: draws between ticks for frame interpolation), `flash_host`), used by desktop `--headless` and Android. `pacing.rs` is frame interpolation's pacing, shared by the desktop window and Android's screen. |
 | `android/src/lib.rs` | `android_main` (forwards window and input events to the engine), `start_engine` (once per process, from the activity or the service), the engine thread, `turu-args.txt`, `--graphics`. |
 | `android/src/screen.rs` | The GPU (`gpu`, set up without a window), `MovieTexture` the player draws into, `Screen` (surface, blit, egui painting `TuruUi`), who gets a touch or a key. |
 | `android/src/notify.rs` | `TuruService`'s native methods (`nativeStart`, `nativeAction`) and the status sent to the notification every 2 s. |

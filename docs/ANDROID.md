@@ -235,6 +235,14 @@ budget, which Android doesn't give, so `android/src/memory.rs` works from the ph
   when Android calls `onTrimMemory` at `RUNNING_LOW` or above (the service passes it on), and
   every 30 s while `/proc/meminfo`'s `MemAvailable` is under 15% of the phone's memory.
 
+Frame interpolation (Options > Application > Frame Interpolation, off by default; saved as
+`mugetsu-interpolation.txt` in the data folder) is paced as on a desktop (`turu_frontend::pacing`):
+the engine loop (`engine::run_loop_paced`) calls `Screen::step` after each tick and at the times it
+asks for, and the screen is presented on every refresh of the display (FIFO present waits for
+vsync), with a new in-between picture on every n-th refresh, as many as the engine thread can
+afford. The activity sends the display's refresh rate (`nativeRefreshRate`, again when the display
+changes mode). Without interpolation the screen is drawn once after each tick, as before.
+
 Multisampling is already off: Flash-style edge smoothing (`set_flash_aa`, on for Android) draws
 with one sample at every stage quality. To test a trim: `adb shell am send-trim-memory
 com.muktiarafi.turu RUNNING_LOW` (with the app in the background); the log says "freed spare

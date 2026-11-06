@@ -1,5 +1,6 @@
 //! Turu: the desktop's [`Platform`]: rfd's file dialogs (parented to the window), the browser,
-//! the file manager, crash reports (`crash_uploads`), Notify Drop's beep (`beep`).
+//! the file manager, crash reports (`crash_uploads`), Notify Drop's beep (`beep`), frame
+//! interpolation saved as Mugetsu saves it.
 
 use crate::gui::FilePicker;
 use crate::platform::{Answer, FileDialog, Platform};
@@ -76,6 +77,12 @@ impl Platform for DesktopPlatform {
             tracing::warn!("Couldn't open {}: {e}", path.display());
         }
     }
+    fn set_frame_interpolation(&self, on: bool) {
+        ruffle_core::frame_interpolation::set_enabled(on);
+        crate::mugetsu::save_interpolation(on);
+        tracing::info!("Frame interpolation turned {}", if on { "on" } else { "off" });
+    }
+
     fn uploads_crash_reports(&self) -> bool {
         crate::crash_uploads::available()
     }

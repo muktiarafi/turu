@@ -65,18 +65,10 @@ struct MainWindow {
     next_draw_time: Option<Instant>,
     /// When the last draw started.
     draw_started: Instant,
-    /// Recent averages of a draw's and a SWF frame's time on the main thread (ms).
-    draw_cost_ms: f64,
-    frame_cost_ms: f64,
-    /// Draw a new picture on every n-th refresh of the monitor.
-    draw_divisor: u32,
-    /// While interpolating: when the last new picture was due (see `pace_interpolation`).
-    picture_due: Instant,
-    /// Since when `draw_divisor` would have gone up / down (it changes only if that lasts).
-    divisor_up_since: Option<Instant>,
-    divisor_down_since: Option<Instant>,
-    /// The monitor's refresh interval, and when it was last looked up.
-    refresh_interval: Duration,
+    /// Turu: frame interpolation's pacing (shared with Android: `turu_frontend::pacing`), with
+    /// the monitor's refresh interval.
+    pacing: crate::pacing::Pacing,
+    /// When the monitor's refresh interval was last looked up.
     refresh_checked: Option<Instant>,
     /// Turu: when a UI repaint held back by `check_redraw`'s cap is due.
     ui_redraw_at: std::cell::Cell<Option<Instant>>,
@@ -460,15 +452,7 @@ impl MainWindow {
                     // counted: a long draw (e.g. 11 ms in Yulgar) makes presents miss refreshes.
                     let interpolating = self.next_draw_time.is_some();
                     let new_picture_due = if interpolating {
-                        let interval = self.refresh_interval * self.draw_divisor;
-                        let due = self.picture_due + interval;
-                        if started + self.refresh_interval / 2 >= due {
-                            // Keep the rhythm, unless it fell more than a picture behind.
-                            self.picture_due = if started < due + interval { due } else { started };
-                            true
-                        } else {
-                            false
-                        }
+                        self.pacing.new_picture_due(started)
                     } else {
                         self.frame_since_render
                     };
@@ -492,10 +476,7 @@ impl MainWindow {
                 self.draw_started = started;
                 if rendered_movie {
                     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
-                    // Drawing the movie only (presenting can include waiting for the refresh);
-                    // one-off slow draws, e.g. of new shapes, count at most 3x the average.
-                    let cost = movie_ms.min(self.draw_cost_ms * 3.0);
-                    self.draw_cost_ms = self.draw_cost_ms * 0.9 + cost * 0.1;
+                    self.pacing.record_draw(movie_ms);
                     self.perf.render(total_ms);
                     // AQW build: say what a slow render (longer than 1.2 frames) spent its
                     // time on.
@@ -1037,7 +1018,7 @@ impl MainWindow {
                 self.time = new_time;
                 let perf = &mut self.perf;
                 let frame_since_render = &mut self.frame_since_render;
-                let frame_cost_ms = &mut self.frame_cost_ms;
+                let pacing = &mut self.pacing;
                 // Turu: the other tabs' players run too (not drawn, muted), when due.
                 let (background_next, tile_drew) = self.player.tick_hidden(new_time);
                 if tile_drew {
@@ -1054,11 +1035,7 @@ impl MainWindow {
                     if player.frames_run() != frames_before {
                         *frame_since_render = true;
                         let frame_ms = new_time.elapsed().as_secs_f64() * 1000.0;
-                        // One-off slow frames, e.g. a room loading, count at most 3x the
-                        // average (as draws do): one 300 ms frame made interpolation think every
-                        // frame cost 30 ms and drop to once per frame for seconds.
-                        let cost = frame_ms.min(*frame_cost_ms * 3.0);
-                        *frame_cost_ms = *frame_cost_ms * 0.9 + cost * 0.1;
+                        pacing.record_frame(frame_ms);
                         // AQW build: say what a slow frame (scripts etc., longer than 1.2
                         // frames) spent its time on, e.g. when a crowded room loads.
                         if frame_ms > 1.2 * 1000.0 / player.frame_rate() {
@@ -1099,11 +1076,8 @@ impl MainWindow {
     }
 
     /// AQW build: with frame interpolation on (title-bar menu), sends a picture on every refresh
-    /// of the monitor: vsync makes each one wait for its refresh, which paces this exactly (a
-    /// timer is ~1-2 ms late, a lot at 360 Hz). A new in-between picture is drawn on every n-th
-    /// of them, the most the main thread can afford, so each stays up the same time; the others
-    /// show the last one again, which costs little. Needs at least 1.5 new pictures per SWF
-    /// frame, else it draws once per frame as without interpolation.
+    /// of the monitor, a new in-between one on every n-th of them (Turu: `crate::pacing`, shared
+    /// with Android).
     fn pace_interpolation(&mut self) {
         self.next_draw_time = None;
         // Turu: looked up with interpolation off too, for `check_redraw`'s cap on UI repaints.
@@ -1116,50 +1090,15 @@ impl MainWindow {
             Some(player) if player.is_playing() => player.frame_rate(),
             _ => return,
         };
-        // Draw on every refresh if the main thread can afford it (keeping a third of its time
-        // spare), else on every 2nd, 3rd, ... refresh: an even rate looks smoother than an
-        // uneven higher one. Each change of rate is a visible change of rhythm, so it only steps
-        // to fewer pictures after needing to for half a second, and back to more after 3 seconds
-        // of clearly affording it; 1 second for a big step back (at least twice the pictures,
-        // or out of drawing once per frame), as after a room has loaded.
-        let refresh_hz = 1.0 / self.refresh_interval.as_secs_f64();
-        let spare_ms = (650.0 - self.frame_cost_ms * frame_rate).max(100.0);
-        let divisor_for = |cost_ms: f64| {
-            (refresh_hz * cost_ms.max(0.5) / spare_ms).ceil().clamp(1.0, 16.0) as u32
-        };
-        let needed = divisor_for(self.draw_cost_ms);
-        let lasted = |since: &mut Option<Instant>, wanted: bool, secs: f64| {
-            if !wanted {
-                *since = None;
-                return false;
-            }
-            now.duration_since(*since.get_or_insert(now)).as_secs_f64() >= secs
-        };
-        let affordable = divisor_for(self.draw_cost_ms * 1.3);
-        let once_per_frame =
-            (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
-        let big_step = once_per_frame || affordable * 2 <= self.draw_divisor;
-        if lasted(&mut self.divisor_up_since, needed > self.draw_divisor, 0.5)
-            || lasted(
-                &mut self.divisor_down_since,
-                affordable < self.draw_divisor,
-                if big_step { 1.0 } else { 3.0 },
-            )
-        {
-            self.draw_divisor = needed;
-            self.divisor_up_since = None;
-            self.divisor_down_since = None;
-        }
-        let interval = self.refresh_interval * self.draw_divisor;
-        self.perf.interpolation_rate = refresh_hz / self.draw_divisor as f64;
-        if interval.as_secs_f64() * 1.5 > 1.0 / frame_rate {
-            // Not even 1.5 draws per SWF frame: draw once per frame, as without interpolation.
+        let interpolating = self.pacing.plan(now, frame_rate);
+        self.perf.interpolation_rate = self.pacing.rate();
+        if !interpolating {
             return;
         }
         // Requested right away, keeping the screen's queue of pictures full so a busy moment on
         // the main thread doesn't miss a refresh; presenting waits for vsync. The timer only
         // limits this if presenting doesn't wait.
-        let early = self.refresh_interval / 2;
+        let early = self.pacing.refresh_interval() / 2;
         let mut due = self.draw_started + early;
         if now >= due {
             self.gui.window().request_redraw();
@@ -1177,7 +1116,7 @@ impl MainWindow {
         self.check_redraw();
     }
 
-    /// The monitor's refresh interval (`refresh_interval`), looked up at most every 2 seconds.
+    /// The monitor's refresh interval (for `pacing`), looked up at most every 2 seconds.
     fn update_refresh_interval(&mut self) {
         let now = Instant::now();
         if self
@@ -1195,15 +1134,13 @@ impl MainWindow {
             .and_then(|monitor| monitor.refresh_rate_millihertz())
             .unwrap_or(60_000)
             .clamp(24_000, 360_000);
-        let interval = Duration::from_secs_f64(1000.0 / millihertz as f64);
-        if interval != self.refresh_interval || first {
+        if self.pacing.set_refresh_rate(millihertz) || first {
             tracing::info!(
                 target: "ruffle_aqw_perf",
                 "monitor refreshes at {:.1} Hz",
                 millihertz as f64 / 1000.0
             );
         }
-        self.refresh_interval = interval;
     }
 
     /// Turu: the shortest time between redraws for the UI alone: 1.5 refreshes, at least 16 ms
@@ -1211,7 +1148,7 @@ impl MainWindow {
     /// refreshes makes each present wait for the next refresh, and the main thread, which runs
     /// every tab's game and answers every bot call, waits with it.
     fn ui_redraw_interval(&self) -> Duration {
-        (self.refresh_interval * 3 / 2).max(Duration::from_millis(16))
+        (self.pacing.refresh_interval() * 3 / 2).max(Duration::from_millis(16))
     }
 
     fn check_redraw(&self) {
@@ -1442,13 +1379,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                 last_redraw: Instant::now(),
                 next_draw_time: None,
                 draw_started: Instant::now(),
-                draw_cost_ms: 2.0,
-                frame_cost_ms: 3.0,
-                draw_divisor: 1,
-                picture_due: Instant::now(),
-                divisor_up_since: None,
-                divisor_down_since: None,
-                refresh_interval: Duration::from_secs_f64(1.0 / 60.0),
+                pacing: crate::pacing::Pacing::new(),
                 refresh_checked: None,
                 ui_redraw_at: std::cell::Cell::new(None),
             });

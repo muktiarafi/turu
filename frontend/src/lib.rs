@@ -11,6 +11,7 @@ pub mod grid;
 pub mod gui;
 pub mod map_items;
 pub mod map_pads;
+pub mod pacing;
 pub mod platform;
 pub mod touch;
 pub mod turu;

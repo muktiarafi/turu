@@ -1,7 +1,8 @@
 //! Options > Application (VibeSkua's 580x650 `ApplicationOptionsView`): a searchable list of
 //! Turu's own settings in five sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
-//! just those two fields of `options.json`. Web Monitor replaces VibeSkua's Skua Nexus webhook.
+//! just those two fields of `options.json`. Frame Interpolation is Mugetsu's, saved by the
+//! frontend (`Platform::set_frame_interpolation`). Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
@@ -75,6 +76,8 @@ enum Field {
     CrashReports,
     /// Check Now, for client updates.
     CheckClientUpdates,
+    /// Mugetsu's frame interpolation, applied and saved by the frontend (`Platform`).
+    FrameInterpolation,
 }
 
 struct Entry {
@@ -132,6 +135,12 @@ fn vibeskua_entries() -> Vec<Entry> {
                 Field::Int(|s| &mut s.animation_frame_rate, "FPS", 1, i32::MAX)
             )
         },
+        entry!(
+            General,
+            "Frame Interpolation",
+            "Draws in-between pictures at the display's refresh rate, so movement looks smoother. Costs more CPU and GPU time (and battery on a phone), and the game shows up to one frame later. Also in the game's right-click menu on a computer",
+            Field::FrameInterpolation
+        ),
         entry!(
             General,
             "Relogin Try Delay",
@@ -536,6 +545,12 @@ impl ApplicationOptionsWindow {
                                         .clicked()
                                         {
                                             crate::turu::check_client_updates_now();
+                                        }
+                                    }
+                                    Field::FrameInterpolation => {
+                                        let mut on = ruffle_core::frame_interpolation::enabled();
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            crate::platform::platform().set_frame_interpolation(on);
                                         }
                                     }
                                     Field::CrashReports => {

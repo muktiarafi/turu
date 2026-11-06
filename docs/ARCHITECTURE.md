@@ -77,6 +77,7 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
   src/grid.rs            Grid View's tiles
   src/engine.rs          the windowless player loop (`--headless`, Android): executor, no-dialog
                          navigator, tick loop
+  src/pacing.rs          frame interpolation's pacing (desktop window and Android's screen)
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 android/                 crate `turu_android` (cdylib, empty off Android) and the Gradle app that
                          loads it: `docs/ANDROID.md`

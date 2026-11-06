@@ -273,7 +273,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title
   (the window title gets " – <character>" while you play), Client Animation Frame-rate (the
   `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
-  stores it and never reads it), Relogin Try Delay and Relogin Watchdog (bot options: applied
+  stores it and never reads it), Frame Interpolation (Turu's: Mugetsu's switch, also in the game's
+  right-click menu on a computer, which a phone can't open; `Platform::set_frame_interpolation`
+  applies it and saves it as `mugetsu-interpolation.txt`, in Mugetsu's folder on a computer and
+  the data folder on Android; both pace it with `turu_frontend::pacing`), Relogin Try Delay and Relogin Watchdog (bot options: applied
   and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
   folder after a second click, then restart). Updates: the switches act at launch, off the UI
   thread (`turu::start_updates`; skipped by Army-launched clients, which share their launcher's

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NativeActivity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -45,6 +46,10 @@ class TuruActivity : NativeActivity() {
                 moveTaskToBack(true)
             }
         }
+        // The display's refresh rate, for frame interpolation's pacing (`ui.rs`): now and whenever
+        // the display changes mode (phones with adaptive rates switch between 60 and 120 Hz).
+        sendRefreshRate()
+        displays().registerDisplayListener(displayListener, null)
         // The keyboard's height, for the strip above it that shows what the game's text field holds.
         window.decorView.setOnApplyWindowInsetsListener { view, insets ->
             nativeKeyboardHeight(keyboardHeight(insets))
@@ -80,6 +85,31 @@ class TuruActivity : NativeActivity() {
                 Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")),
             )
         }
+    }
+
+    override fun onDestroy() {
+        displays().unregisterDisplayListener(displayListener)
+        super.onDestroy()
+    }
+
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+
+        override fun onDisplayRemoved(displayId: Int) {}
+
+        override fun onDisplayChanged(displayId: Int) = sendRefreshRate()
+    }
+
+    private fun displays() = getSystemService(DISPLAY_SERVICE) as DisplayManager
+
+    private fun sendRefreshRate() {
+        val current = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            this.display
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay
+        }
+        current?.let { nativeRefreshRate(it.refreshRate) }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, results: IntArray) {
@@ -132,6 +162,10 @@ class TuruActivity : NativeActivity() {
          */
         @JvmStatic
         private external fun nativeCutout(left: Int, right: Int)
+
+        /** The display's refresh rate in Hz, for frame interpolation's pacing (`ui.rs`). */
+        @JvmStatic
+        private external fun nativeRefreshRate(hz: Float)
 
         private fun keyboardHeight(insets: WindowInsets): Int {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

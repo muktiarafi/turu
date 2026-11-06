@@ -357,6 +357,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // waits for its new shapes, and Flash-style edge smoothing.
     ruffle_core::set_shape_wait(Some(Duration::from_millis(12)));
     ruffle_render::tessellator::set_flash_aa(true);
+    ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
@@ -387,14 +388,36 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Engine running");
     memory::init();
-    engine::run_loop_with(&player, events, |player| {
-        memory::tick(player);
-        if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
-            audio.recreate_stream_if_needed();
+    engine::run_loop_paced(&player, events, |player, step| {
+        if let engine::Step::Ticked { .. } = step {
+            memory::tick(player);
+            if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
+                audio.recreate_stream_if_needed();
+            }
         }
-        with_screen(|screen| screen.draw(player));
+        SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)))
     });
     turu::bot().set_host(None);
+}
+
+/// Frame interpolation (Options > Application; off by default) is on while this file is in the
+/// data folder, as Mugetsu's on a desktop.
+const INTERPOLATION_FILE: &str = "mugetsu-interpolation.txt";
+
+/// Saves frame interpolation's switch (`platform.rs`).
+pub(crate) fn save_interpolation(on: bool) {
+    let path = turu_bot::paths::Paths::new().root.join(INTERPOLATION_FILE);
+    let result = if on {
+        std::fs::write(&path, "on\n")
+    } else {
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
+    };
+    if let Err(e) = result {
+        tracing::warn!("Couldn't save frame interpolation in {}: {e}", path.display());
+    }
 }
 
 /// `turu-args.txt`'s arguments: one per line, without blank lines and `#` comments. None when

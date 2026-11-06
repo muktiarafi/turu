@@ -1,11 +1,11 @@
 //! The player's UI backend: Ruffle's null one, except that a text field taking focus shows the
 //! soft keyboard and losing it hides the keyboard (while the activity is there to show it). Also
 //! the keyboard's height and the display cutout's sides, which the activity reads from the
-//! window's insets.
+//! window's insets, and the display's refresh rate.
 
 use jni::EnvUnowned;
 use jni::objects::JClass;
-use jni::sys::jint;
+use jni::sys::{jfloat, jint};
 use ruffle_core::backend::ui::{
     DialogResultFuture, FileFilter, FontDefinition, FullscreenError, LanguageIdentifier, MouseCursor,
     MultiDialogResultFuture, NullUiBackend, UiBackend,
@@ -51,6 +51,26 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeCutout<'local>(
 ) {
     CUTOUT_LEFT.store(left.max(0) as u32, Ordering::Relaxed);
     CUTOUT_RIGHT.store(right.max(0) as u32, Ordering::Relaxed);
+}
+
+/// The display's refresh rate in millihertz (60 Hz until the activity says).
+static REFRESH_MILLIHERTZ: AtomicU32 = AtomicU32::new(60_000);
+
+/// The display's refresh rate in millihertz, for frame interpolation's pacing (`screen.rs`).
+pub fn refresh_millihertz() -> u32 {
+    REFRESH_MILLIHERTZ.load(Ordering::Relaxed)
+}
+
+/// `TuruActivity.nativeRefreshRate(hz)`: the activity started, or its display changed mode.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeRefreshRate<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    hz: jfloat,
+) {
+    if hz.is_finite() && hz > 0.0 {
+        REFRESH_MILLIHERTZ.store((hz * 1000.0).round() as u32, Ordering::Relaxed);
+    }
 }
 
 pub struct AndroidUiBackend {

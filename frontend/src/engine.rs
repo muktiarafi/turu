@@ -48,20 +48,49 @@ pub fn run_loop_with(
     events: &Receiver<EngineEvent>,
     mut after_tick: impl FnMut(&mut Player),
 ) {
+    run_loop_paced(player, events, |player, step| {
+        if let Step::Ticked { .. } = step {
+            after_tick(player);
+        }
+        None
+    });
+}
+
+/// What [`run_loop_paced`]'s loop just did.
+#[derive(Clone, Copy, Debug)]
+pub enum Step {
+    /// The player ticked; `frame_ms` is how long that took when it ran SWF frames.
+    Ticked { frame_ms: Option<f64> },
+    /// The time the callback asked for came, before the next frame.
+    Due,
+}
+
+/// [`run_loop`], calling `step` with the player after each tick and at the time it returns (if
+/// that comes before the next frame): the screen's in-between pictures with frame interpolation
+/// (`crate::pacing`).
+pub fn run_loop_paced(
+    player: &Arc<Mutex<Player>>,
+    events: &Receiver<EngineEvent>,
+    mut step: impl FnMut(&mut Player, Step) -> Option<Instant>,
+) {
     let perf = turu::bot().flash.perf().clone();
     let mut time = Instant::now();
     loop {
-        let next_frame = {
+        let (next_frame, mut next_step) = {
             let mut player = player.lock().expect("the player isn't poisoned");
             let now = Instant::now();
+            let frames_before = player.frames_run();
             player.tick(FloatDuration::from_std(now.duration_since(time)));
-            perf.record_tick(now.elapsed());
+            let took = now.elapsed();
+            perf.record_tick(took);
             time = now;
-            after_tick(&mut player);
-            now + player.time_til_next_frame()
+            let frame_ms = (player.frames_run() != frames_before).then_some(took.as_secs_f64() * 1000.0);
+            let next_step = step(&mut player, Step::Ticked { frame_ms });
+            (now + player.time_til_next_frame(), next_step)
         };
         loop {
-            let wait = next_frame.saturating_duration_since(Instant::now());
+            let wake = next_step.map_or(next_frame, |at| at.min(next_frame));
+            let wait = wake.saturating_duration_since(Instant::now());
             match events.recv_timeout(wait) {
                 Ok(EngineEvent::TaskPoll(task)) => {
                     task.run();
@@ -73,7 +102,14 @@ pub fn run_loop_with(
                 Ok(EngineEvent::Run(work)) => {
                     work(&mut player.lock().expect("the player isn't poisoned"));
                 }
-                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Timeout) => {
+                    if next_step.is_some_and(|at| at < next_frame) {
+                        let mut player = player.lock().expect("the player isn't poisoned");
+                        next_step = step(&mut player, Step::Due);
+                    } else {
+                        break;
+                    }
+                }
                 // Senders live as long as the player and the bot.
                 Err(RecvTimeoutError::Disconnected) => return,
             }
