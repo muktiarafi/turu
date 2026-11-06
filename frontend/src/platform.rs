@@ -80,6 +80,13 @@ pub trait Platform: Send + Sync {
         true
     }
 
+    /// Whether several clients work together: the Army menu (Accounts, Army Control, New Tab)
+    /// and Plugins > Butler. False on Android, which has no tabs yet (`docs/ANDROID_PROPOSAL.md`,
+    /// "Plan: tabs, Army and Butler"), so they're hidden there.
+    fn has_army(&self) -> bool {
+        true
+    }
+
     /// Whether the screen is touched rather than pointed at: no hover, so tooltips never show,
     /// and controls need finger-sized targets (48 points, Android's minimum).
     fn is_touch(&self) -> bool {

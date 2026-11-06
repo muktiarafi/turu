@@ -68,6 +68,11 @@ impl Platform for AndroidPlatform {
         false
     }
 
+    // No tabs yet: Army and Butler need several clients.
+    fn has_army(&self) -> bool {
+        false
+    }
+
     fn shares_text(&self) -> bool {
         true
     }

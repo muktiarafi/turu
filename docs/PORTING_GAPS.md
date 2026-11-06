@@ -1,6 +1,6 @@
 # VibeSkua features not in Turu
 
-What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `docs/UI.md`,
+What VibeSkua has that Turu doesn't (as of 2026-11-06), from `docs/STATUS.md`, `docs/UI.md`,
 `docs/VIBESKUA_SPEC.md` and VibeSkua's source. Mark each row's **Decision** column: `port`,
 `skip` (won't port) or `later`. "C# uses" counts the files in `../Scripts` that call it.
 
@@ -19,8 +19,8 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 | 9 | Console | Diagnostics | C# snippet runner. **Ported** as a TS snippet runner (`frontend/src/gui/turu/console.rs`, `script::run_snippet`): result, `bot.log` lines and errors shown, Stop works. | port (done) |
 | 10 | Spammer | Diagnostics | Repeat packets to server or client on an interval, queue. **Ported** (`frontend/src/gui/turu/spammer.rs`, `bot/src/spammer.rs`): same queue file (one packet per line); the loop runs on its own thread and also stops when a send fails. | port (done) |
 | 11 | Interceptor | Diagnostics | Local TCP MITM proxy (`CaptureProxy`) logging/editing/blocking packets both ways. **Ported** (`frontend/src/gui/turu/interceptor.rs`, `bot/src/capture.rs`, `frontend/src/capture.rs`) in process instead of a proxy: the app wraps Ruffle's navigator and filters the game socket's packets, so Connect needs no relog (picking a server still relogs there) and Disconnect leaves the game connected. Not built: the category filter button. | port (done) |
-| 12 | View Plugins / plugin system | Plugins | Loads `ISkuaPlugin` DLLs. Turu builds Butler and Cosmetics in; no plugin loading. | |
-| 13 | Daily & Weekly Tracker plugin | Plugins (`Skua.Plugin.DailyTracker`) | Shows which dailies/weeklies are done. | |
+| 12 | View Plugins / plugin system | Plugins | Loads `ISkuaPlugin` DLLs. Turu builds Butler and Cosmetics in; no plugin loading, and the greyed View Plugins entry is gone. | skip (for now) |
+| 13 | Daily & Weekly Tracker plugin | Plugins (`Skua.Plugin.DailyTracker`) | Shows which dailies/weeklies are done. | skip (for now) |
 | 14 | BotWindow (the "+" tool host) | Nav bar "+" | Tabbed host of every tool window with a search sidebar. Turu's "+" opens the Script Loader. | |
 
 ## Smaller UI pieces
@@ -29,13 +29,13 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 |---|---|---|---|---|
 | 15 | Auto Hunt | Auto popup | Disabled in Turu; Auto Attack works. **Ported** (`bot/src/auto.rs`, shared with Auto Attack; the popup in `frontend/src/gui/turu/auto.rs`). | port (done) |
 | 16 | Notify Drop | Runtime > Drops helper | Beeps when a listed item drops. **Ported** (`frontend/src/gui/turu/notify_drop.rs`), laid out for phones too: `|`-separated names, remove / Clear all, beep count and delay, Test; not saved, as VibeSkua. The beep is `Console.Beep()`'s 800 Hz for 200 ms on a sound stream of its own (cpal on the desktop, AAudio on Android), heard while the game is muted. | port (done) |
-| 17 | Stats STORAGE section | Combat > Stats | Inventory/bank use and Get space. | |
+| 17 | Stats STORAGE section | Combat > Stats | Inventory/bank use and Get space. | skip (for now) |
 | 18 | Logger filter | Diagnostics > Logger | Packet filters (select all, clear, invert). | |
-| 19 | Jump arrow-key cell stepping | Jump popup | | |
+| 19 | Jump arrow-key cell stepping | Jump popup | | skip (for now) |
 | 20 | Script Repo extras | Search Scripts | Queue (needs #1), Update dates from Git, custom scripts folder. Queue **ported** with the Scheduler; the other two not built. | |
 | 21 | Game options: Optimize Players, Upgrade/Staff Name Colour | Options > Game | Not in `BotOptions`. | |
 | 22 | Application > Updates switches | Options > Application | Stored but greyed: auto/check updates for scripts (Search Scripts does this on its own), skill sets, junk items. The junk-item ones stay greyed: VibeSkua stores them but nothing reads them (`GetScriptsService.UpdateJunkItemsFile` is never called), and the client starts with an empty list. **Ported**: the script switches fetch the index / update scripts at launch (`ScriptRepo::startup`; VibeSkua never reads them), the AdvanceSkill Sets ones merge `auqw/Scripts`' `AdvancedSkills.json` into the user's sets at launch, also headless (`turu_bot::skills::startup_skill_sets`). | port (done) |
-| 23 | Webhook drop screenshot | Discord webhook | Turu's drop alert has no image. | |
+| 23 | Webhook drop screenshot | Discord webhook | Turu's drop alert has no image. | skip |
 | 24 | CoreBots `[Current]` class skill entry | Options > CoreBots | `EnsureSkillEntryExists` not ported. **Ported**: picking (or reading a saved) `[Current]` while the equipped class has no skill set offers `Base` and adds VibeSkua's default set (`1 \| 2 \| 3 \| 4`, Base, use if available, 100 ms) to `UserAdvancedSkills.json` at once, like `AdvancedSkillContainer.Add` (`turu_bot::skills::ensure_skill_set`). Only `[Current]` does this in VibeSkua; named classes and scripts are unchanged. | port (done) |
 | 25 | Light theme | Everywhere | VibeSkua has light and dark dictionaries. | |
 | 26 | Script Loader "Report Issues" footer | Script Loader | VibeSkua's Discord link. | |
@@ -44,7 +44,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-01), from `docs/STATUS.md`, `
 
 | # | Feature | VibeSkua | Notes | Decision |
 |---|---|---|---|---|
-| 27 | Grid View | Tabbed host | See every client at once. Turu draws only the active tab. | |
+| 27 | Grid View | Tabbed host | See every client at once. **Ported** (`frontend/src/grid.rs`, nav bar Grid with two tabs or more): every tab in a tile, the active one at full rate and the rest at 8 FPS; clicking a tile makes it the active tab. Unchecked with real accounts; tiles keep no hover state and the nav bar stays. | port (done) |
 | 28 | Start/Stop Auto-Attack for All | Tabbed host Army menu |  **Ported** to Army Control (tabs directly, launched clients through new control API routes). | port (done) |
 | 29 | Army Scheduler | Tabbed host Army menu | | |
 | 30 | Army Queue | Manager tab | Squads, per-squad default scripts, per-role scripts, presets, Start/Pause/Resume/Stop. | |

@@ -237,8 +237,9 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * Passwords for Accounts: `SecretStore` has no Android implementation (Keystore via JNI). Its
   `NoStore` says `keeps_passwords() == false`, so Accounts shows no password field there; a
   Keystore store brings the field back by keeping the trait's default.
-* Army > Accounts starts accounts only in tabs on Android (`launches_processes`: the
-  executable is app_process, not a `turu`), and its script is the loaded one (no file dialogs).
+* The Army menu and Plugins > Butler are hidden on Android (`Platform::has_army`) until tabs
+  work there (phase 5). Accounts would start accounts only in tabs (`launches_processes`: the
+  executable is app_process, not a `turu`), with the loaded script (no file dialogs).
 * The data folder is on shared storage (for `adb`); private files (tokens, passwords) belong in
   internal storage.
 * No device fonts from `/system/fonts` (Ruffle's `default_font` covers `_sans`).

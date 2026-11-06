@@ -45,6 +45,15 @@ const MENUS: [(Menu, &str); 7] = [
     (Menu::Army, "Army"),
 ];
 
+/// The menus this platform has: all but Army where several clients don't work (Android).
+fn menus() -> &'static [(Menu, &'static str)] {
+    if crate::platform::platform().has_army() {
+        &MENUS
+    } else {
+        &MENUS[..MENUS.len() - 1]
+    }
+}
+
 /// How the menus fit next to the right side: all of them; Scripts and a "More" menu with the
 /// rest; or one "Menu" with everything, Bank included, without the symbol and with a shorter
 /// script name (a phone held upright).
@@ -276,7 +285,7 @@ impl NavBar {
         };
         let room = ui.available_width() - self.right_width - 12.0;
         let symbol = SYMBOL_SIZE + SYMBOL_GAP + ui.spacing().item_spacing.x;
-        let all: f32 = MENUS.iter().map(|(_, label)| title(label)).sum();
+        let all: f32 = menus().iter().map(|(_, label)| title(label)).sum();
         if symbol + all <= room {
             Fold::None
         } else if symbol + title("Scripts") + title("More") <= room {
@@ -291,18 +300,18 @@ impl NavBar {
     fn menus(&self, ui: &mut Ui, windows: &mut Windows, fold: Fold) -> Option<Response> {
         match fold {
             Fold::None => {
-                for (menu, label) in MENUS {
+                for &(menu, label) in menus() {
                     ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
                 }
                 None
             }
             Fold::More => {
                 ui.menu_button("Scripts", |ui| menu_contents(ui, windows, Menu::Scripts));
-                ui.menu_button("More", |ui| folded(ui, windows, &MENUS[1..], None));
+                ui.menu_button("More", |ui| folded(ui, windows, &menus()[1..], None));
                 None
             }
             Fold::All => {
-                let menu = ui.menu_button("Menu", |ui| folded(ui, windows, &MENUS, Some(&self.bank)));
+                let menu = ui.menu_button("Menu", |ui| folded(ui, windows, menus(), Some(&self.bank)));
                 Some(menu.response)
             }
         }
@@ -890,15 +899,14 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
         }
         Menu::Plugins => {
-            // Turu: VibeSkua's ButlerV5 plugin, built in.
-            if item(ui, "Butler", true) {
+            // Turu: VibeSkua's ButlerV5 plugin, built in. Not without several clients (Android).
+            if crate::platform::platform().has_army() && item(ui, "Butler", true) {
                 windows.butler = true;
             }
             // Turu: VibeSkua's Cosmetics plugin, built in.
             if item(ui, "Cosmetics", true) {
                 windows.cosmetics = true;
             }
-            soon(ui, &["View Plugins"]);
         }
         Menu::Army => {
             if item(ui, "Accounts", true) {

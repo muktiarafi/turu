@@ -50,9 +50,10 @@ drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scrip
 Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
 Application Themes, HotKeys), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
 Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
-Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics, View Plugins),
-**Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them in its Manager app and its
-tabbed host). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
+Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; no View Plugins:
+Turu builds its plugins in), **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them
+in its Manager app and its tabbed host). Android has no Army menu and no Butler yet (no tabs:
+`Platform::has_army`), and no HotKeys (`has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
 Right: **Update** (only while a newer Turu is out: below), the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
@@ -93,7 +94,7 @@ top, and + at the end.
 | Script chip | Turu's, in place of VibeSkua's "+" (which opens its tabbed tool host): the active tab's script at a glance on a rounded chip, its status dot (the yellow "!" badge while it waits for you), the file name without extension (cut with "…" past 150 px) and, muted, how long it has run ("3h 05m", the Stats clock), "Paused · 12m", "Starting...", "Stopping...", "Error", after a run "Finished 6h 12m" or "Stopped 3h 40m" (the Script Loader's last run), or "Ready"; "No script loaded" without one. Its wording and clock are the Script Loader's status card's; it redraws every second while a script runs. Clicking it opens the Script Loader |
 | Update | Turu's (VibeSkua's Manager asks in a message box at launch): only while `turu_bot::updates` found a newer Turu, a quick-action item left of Grid, "Update 0.2.0-alpha.7" ("Update" folded all the way), led by an accent dot (a spinner while it downloads, green once it waits for Turu to quit, red after a failure); the tooltip says "Update available: Turu X (you have Y)". It opens the Update Turu window. Never a modal: a script may be running |
 | Grid | with two tabs or more: Grid View, every tab at once in tiles (VibeSkua's tabbed host's Grid View; `frontend/src/grid.rs`); clicking a tile makes its tab the active one |
-| everything else (Application Themes, View Plugins) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager and View Plugins first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
+| everything else (Application Themes) | greyed after a separator at the end of their menu (VibeSkua has Loadouts Manager first), "(soon)" in the label so touch screens say so too, and the tooltip "Coming soon" |
 
 **Auto Attack / Auto Hunt** (`auto.rs`, loop in `turu_bot::auto`): a bot thread marked as a
 script thread, so `bot.control.request_stop()` (Stop Automation) makes the next call fail. It runs
