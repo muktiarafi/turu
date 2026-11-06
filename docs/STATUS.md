@@ -41,8 +41,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   third of it vector shapes parsed as each SWF loaded, drawn or not. ruffle-aqw now reads only
   a DefineShape's header then and parses the shape when it's first drawn or hit-tested
   (`GraphicShared::shape`), and trims parsed shapes' record vectors (login screen: 1331 shapes
-  parsed -> 5, heap 77 -> 66 MB). Next biggest: SWF data (~20 MB), font glyphs (~15 MB, still
-  parsed at load), AS3 objects (~60-70 MB).
+  parsed -> 5, heap 77 -> 66 MB; in game 290 -> ~180 MB). Then, from a second profile: font
+  glyphs are parsed when first used too (`Glyph::from_swf_data`, ~15 MB), a shape's
+  tessellation cache is made on its first draw (~8 MB), the log writers queue 8192 lines, not
+  128 000 (~8 MB), and Search Scripts' rows share the index's `ScriptInfo`s (login screen: heap
+  66 -> 48 MB). What's left is mostly the game's own: AS3 and display objects, classes and
+  methods (~80 MB), SWF data (~20 MB), images it loaded (~10 MB). In `malloc_history`, thread
+  stacks and macOS's ICU data file (~80 MB) are reserved or shared, not heap.
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
