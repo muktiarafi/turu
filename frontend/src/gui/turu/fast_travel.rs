@@ -11,7 +11,7 @@ use super::widgets::{self, Kind};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, Button, Color32, ComboBox, Context, CornerRadius, FontId, Key, Layout, Modal, Rect, Response, RichText,
-    ScrollArea, Sense, Spinner, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
+    ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -352,11 +352,10 @@ impl FastTravelWindow {
         painter.rect_stroke(rect, CornerRadius::same(SMALL_RADIUS), stroke, StrokeKind::Inside);
 
         let icon = pos2(rect.left() + 18.0, rect.center().y);
+        // Painted, not added: a widget here would move the row's cursor back into this tile and
+        // shift the tiles after it.
         if busy {
-            ui.put(
-                Rect::from_center_size(icon, Vec2::splat(16.0)),
-                Spinner::new().size(14.0).color(ACCENT),
-            );
+            travel_spinner(ui, icon, ACCENT);
         } else {
             travel_icon(ui.painter(), icon, ACCENT);
         }
@@ -667,6 +666,20 @@ fn travel_icon(painter: &egui::Painter, center: egui::Pos2, color: Color32) {
         .map(|p| center + p)
         .to_vec();
     painter.add(egui::epaint::PathShape::closed_line(points, Stroke::new(1.5, color)));
+}
+
+/// The travel icon's stand-in while travelling: a turning arc in the icon's place, size and stroke.
+fn travel_spinner(ui: &Ui, center: egui::Pos2, color: Color32) {
+    ui.ctx().request_repaint();
+    let start = (ui.input(|i| i.time) * std::f64::consts::TAU) as f32;
+    let points = (0..=24)
+        .map(|i| {
+            let angle = start + i as f32 / 24.0 * 1.5 * std::f32::consts::PI;
+            center + 6.0 * vec2(angle.cos(), angle.sin())
+        })
+        .collect();
+    ui.painter()
+        .add(egui::epaint::PathShape::line(points, Stroke::new(1.5, color)));
 }
 
 /// On a touch screen, a menu's or drop-down's rows are about 44 points high.
