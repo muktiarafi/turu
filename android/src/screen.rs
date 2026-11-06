@@ -623,16 +623,16 @@ impl Typing {
         })
     }
 
-    /// The strip, as wide as the screen, its bottom `keyboard` points above the screen's. Its
-    /// text and count keep clear of `cutout`, the display cutout's (left, right) insets in points:
-    /// held sideways, a punch-hole camera sits at the side, about where the strip is.
+    /// The strip, its bottom `keyboard` points above the screen's, as wide as the screen less
+    /// `cutout`, the display cutout's (left, right) insets in points: held sideways, a punch-hole
+    /// camera sits at the side, about where the strip is, and the keyboard below keeps clear of it too.
     fn show(&self, ctx: &egui::Context, keyboard: f32, cutout: (f32, f32)) {
         use turu_frontend::gui::turu::theme::{ACCENT, CARD, DANGER, EDGE, MUTED, TEXT};
         let screen = ctx.content_rect();
         let bottom = (screen.bottom() - keyboard).max(screen.top() + Self::HEIGHT);
         let rect = egui::Rect::from_min_max(
-            egui::pos2(screen.left(), bottom - Self::HEIGHT),
-            egui::pos2(screen.right(), bottom),
+            egui::pos2(screen.left() + cutout.0, bottom - Self::HEIGHT),
+            egui::pos2((screen.right() - cutout.1).max(screen.left() + cutout.0), bottom),
         );
         // An area of its own, above the windows: a touch on it stays off the game, so the field keeps the focus.
         egui::Area::new(egui::Id::new("turu_typing"))
@@ -644,8 +644,6 @@ impl Typing {
                 painter.rect_filled(rect, 0.0, CARD);
                 painter.hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0, EDGE));
                 let mut inner = rect.shrink2(egui::vec2(16.0, 8.0));
-                inner.min.x += cutout.0;
-                inner.max.x -= cutout.1;
                 // The count on the right, red at the limit.
                 let count = format!("{}/{}", self.length, Self::MAX_CHARS);
                 let color = if self.length >= Self::MAX_CHARS { DANGER } else { MUTED };
