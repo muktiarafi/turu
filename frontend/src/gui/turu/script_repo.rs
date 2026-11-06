@@ -1297,13 +1297,13 @@ mod tests {
 
     fn entry(path: &str, name: &str, added: &str, status: Status, pinned: bool) -> Entry {
         Entry {
-            info: ScriptInfo {
+            info: std::sync::Arc::new(ScriptInfo {
                 path: path.into(),
                 name: name.into(),
                 description: format!("farms {name}"),
                 added: added.into(),
                 ..Default::default()
-            },
+            }),
             status,
             pinned,
         }
@@ -1326,7 +1326,7 @@ mod tests {
         let ctx = egui::Context::default();
         super::super::theme::install(&ctx);
         let mut e = entry("farm/GoldFarm.ts", "Gold Farm", "", Status::Outdated, true);
-        e.info.tags = vec!["gold".into(), "farm".into()];
+        std::sync::Arc::make_mut(&mut e.info).tags = vec!["gold".into(), "farm".into()];
         for _ in 0..2 {
             let mut height = 0.0;
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -1462,10 +1462,10 @@ mod tests {
                 ),
                 entry("mine/Gold.ts", "My Gold", "", Status::Local, false),
                 Entry {
-                    info: ScriptInfo {
+                    info: std::sync::Arc::new(ScriptInfo {
                         library: true,
-                        ..entry("core/CoreBots.ts", "CoreBots", "", Status::UpToDate, true).info
-                    },
+                        ..(*entry("core/CoreBots.ts", "CoreBots", "", Status::UpToDate, true).info).clone()
+                    }),
                     status: Status::UpToDate,
                     pinned: true,
                 },

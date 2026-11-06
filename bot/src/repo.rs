@@ -53,7 +53,9 @@ pub struct Index {
     pub commit: String,
     /// When the index was made (RFC 3339).
     pub generated: String,
-    pub scripts: Vec<ScriptInfo>,
+    /// Shared with the Search Scripts rows (`Entry::info`), so the ~1000 scripts aren't kept
+    /// twice.
+    pub scripts: Vec<Arc<ScriptInfo>>,
 }
 
 /// VibeSkua `ScriptInfo`: one script of the index (or a local script).
@@ -118,7 +120,7 @@ impl Status {
 /// A row of the Search Scripts list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
-    pub info: ScriptInfo,
+    pub info: Arc<ScriptInfo>,
     pub status: Status,
     pub pinned: bool,
 }
@@ -676,8 +678,11 @@ impl ScriptRepo {
             let data = self.data.lock();
             (data.cache.index.clone(), data.entries.clone())
         };
-        let infos: HashMap<&str, &ScriptInfo> =
-            index.scripts.iter().map(|s| (s.path.as_str(), s)).collect();
+        let infos: HashMap<&str, &ScriptInfo> = index
+            .scripts
+            .iter()
+            .map(|s| (s.path.as_str(), &**s))
+            .collect();
         let status: HashMap<&str, Status> = entries
             .iter()
             .map(|e| (e.info.path.as_str(), e.status))
@@ -1095,7 +1100,7 @@ impl ScriptRepo {
             };
             entries.push(Entry {
                 pinned: pinned.contains(&relative),
-                info: ScriptInfo {
+                info: Arc::new(ScriptInfo {
                     name: if header.name.is_empty() {
                         stem
                     } else {
@@ -1107,7 +1112,7 @@ impl ScriptRepo {
                     library: is_library(&source),
                     path: relative,
                     ..Default::default()
-                },
+                }),
                 status,
             });
         }
@@ -1129,6 +1134,7 @@ fn sanitize(index: &mut Index) {
     });
     for script in &mut index.scripts {
         if script.name.trim().is_empty() {
+            let script = Arc::make_mut(script);
             script.name = script
                 .file_name()
                 .trim_end_matches(".ts")

@@ -33,7 +33,7 @@ impl Fake {
         stored.clear();
         for (path, source, deps) in files {
             let header = parse_header(source);
-            index.scripts.push(ScriptInfo {
+            index.scripts.push(std::sync::Arc::new(ScriptInfo {
                 path: (*path).into(),
                 name: header.name,
                 description: header.description,
@@ -42,7 +42,7 @@ impl Fake {
                 sha256: sha256(source.as_bytes()),
                 deps: deps.iter().map(|d| (*d).into()).collect(),
                 ..Default::default()
-            });
+            }));
             stored.insert((*path).into(), source.as_bytes().to_vec());
         }
         // Not a script: not in the index, downloaded for editors.
@@ -320,9 +320,9 @@ fn bad_paths_and_bad_downloads_are_refused() {
     let (dir, fake, repo) = setup();
     {
         let mut index = fake.index.lock();
-        let mut evil = index.scripts[0].clone();
+        let mut evil = (*index.scripts[0]).clone();
         evil.path = "../evil.ts".into();
-        index.scripts.push(evil);
+        index.scripts.push(std::sync::Arc::new(evil));
     }
     repo.refresh().unwrap();
     assert_eq!(repo.snapshot().entries.len(), 2);
