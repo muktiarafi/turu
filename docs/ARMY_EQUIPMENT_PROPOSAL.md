@@ -1,6 +1,7 @@
 # Proposal: equipment and per-client control for Army and Butler
 
-Status: phase 1 built (see "As built"); phases 2 and 3 not. The open questions are settled
+Status: phase 1 built (see "As built"); phases 2 and 3 not, except the per-account loadouts
+of a tab's own Loadouts Manager (`bot/src/loadouts.rs`, `docs/UI.md`). The open questions are settled
 (see "Decisions"). Covers Army clients launched "Without a window" (and "In its
 own window" or in a tab, which take the same path), and Butler followers. Reference:
 VibeSkua's Loadouts Manager (`Skua.Core/Services/LoadoutService.cs`,

@@ -81,6 +81,11 @@ impl Paths {
         self.root.join("gear")
     }
 
+    /// Each account's loadouts (`loadouts::Loadout`), VibeSkua's `Loadouts/<username>.json`.
+    pub fn loadouts_dir(&self) -> PathBuf {
+        self.root.join("loadouts")
+    }
+
     pub fn skua_swf(&self) -> PathBuf {
         self.root.join("skua.swf")
     }

@@ -40,6 +40,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
                          outfits (`Library`, shared by the tabs), and the client-side avatar changes
     gear.rs              each account's gear file, equipping and loading the bank from outside a
                          script (`/equip`, `/bank/load`), refused while a script runs
+    loadouts.rs          Loadouts Manager: VibeSkua's `LoadoutProfile` files, equip (through gear.rs),
+                         and the enhancer (CoreAdvanced's `enhanceItem`, run as a script)
     events.rs            inbound Flash calls (`pext`, `packet`, `loaded`, ...) -> state + event bus
     state.rs             game state derived from packets (drops, map, counters, ...)
     options.rs           bot options (VibeSkua `IScriptOption`) + persistence
@@ -203,6 +205,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `butler_logs/` | Butler's saved debug logs (`export_<account>_<time>.log`) and, with Auto-save logs on, `debug_<account>.log` |
 | `cosmetics/` | Cosmetics' `catalog.json` (VibeSkua's community item sheet, downloaded on first open and by Check Updates), `favorites.json` and `outfits.json`, shared by every client |
 | `gear/<username>.json` | each account's wearable items (inventory, and the bank as last loaded, dated `bankAsOf`), written by its client within 5 s of a change (`bot/src/gear.rs`); the Army Control Gear window reads it |
+| `loadouts/<username>.json` | the character's Loadouts Manager sets, VibeSkua's `Loadouts/<username>.json` format (`bot/src/loadouts.rs`), and `LoadoutEnhancerTemp.ts`, the enhancer it writes before running it |
 | `army/<name>.log`, `.barrier`, `.<name>.lock` | `bot.army`'s logs shared by the army scripts of every client (`bot/src/api/army.rs`); each operation holds the log's lock file, a barrier keeps its round and waiting members in `.barrier` |
 | `butler/<username>.state` | each logged-in account's Butler state (`key=value` lines, `bot/src/butler/sync.rs`): where it is, whom it summons and follows, a `beat` every 5 s; older than 15 s counts as offline |
 | `scripts/` | the scripts folder: Search Scripts downloads here (the repo's `scripts/` can be used directly) |

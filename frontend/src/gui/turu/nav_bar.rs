@@ -823,10 +823,12 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Junk Items", true) {
                 windows.junk_items = true;
             }
+            if item(ui, "Loadouts Manager", true) {
+                windows.loadouts = true;
+            }
             if item(ui, "Fast Travel", true) {
                 windows.fast_travel = true;
             }
-            soon(ui, &["Loadouts Manager"]);
         }
         Menu::Combat => {
             if item(ui, "Skills", true) {

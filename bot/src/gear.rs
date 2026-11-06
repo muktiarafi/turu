@@ -275,6 +275,12 @@ impl GearCache {
         self.dirty.store(true, Ordering::Relaxed);
     }
 
+    /// The file as last read from the game this session (no game call); `None` before the
+    /// first read after a login, and for another account than the one logged in now.
+    pub fn last(&self) -> Option<GearFile> {
+        self.logged_in().then(|| self.inner.lock().last.clone()).flatten()
+    }
+
     /// Logged in, as the login and logout events said (no game call).
     pub fn logged_in(&self) -> bool {
         self.logged_in.load(Ordering::Relaxed)

@@ -21,6 +21,7 @@ mod gear;
 mod grabber;
 mod interceptor;
 mod junk_items;
+mod loadouts;
 mod loader;
 mod logs;
 mod message_box;
@@ -67,6 +68,7 @@ pub struct Windows {
     pub grabber: bool,
     pub junk_items: bool,
     pub fast_travel: bool,
+    pub loadouts: bool,
     pub accounts: bool,
     pub army: bool,
     pub butler: bool,
@@ -161,6 +163,7 @@ struct TabUi {
     grabber: grabber::GrabberWindow,
     junk_items: junk_items::JunkItemsWindow,
     fast_travel: fast_travel::FastTravelWindow,
+    loadouts: loadouts::LoadoutsWindow,
     butler: butler::ButlerWindow,
     cosmetics: cosmetics::CosmeticsWindow,
 }
@@ -260,6 +263,7 @@ impl TuruUi {
         tab.grabber.save_export(ctx);
         tab.junk_items.show(ctx, &mut w.junk_items);
         tab.fast_travel.show(ctx, &mut w.fast_travel);
+        tab.loadouts.show(ctx, &mut w.loadouts);
         tab.stats.show(ctx, &mut w.stats);
         tab.runtime.show(ctx, &mut w.runtime);
         tab.skills.show(ctx, &mut w.skills);
@@ -434,6 +438,10 @@ mod tests {
             (
                 "Fast Travel",
                 boxed(fast_travel::FastTravelWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Loadouts Manager",
+                boxed(loadouts::LoadoutsWindow::default(), |w, c, o| w.show(c, o)),
             ),
             ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
             (

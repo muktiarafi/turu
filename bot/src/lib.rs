@@ -20,6 +20,7 @@ pub mod gear;
 pub mod grabber;
 pub mod host;
 pub mod junk;
+pub mod loadouts;
 pub mod log;
 pub mod map_items;
 pub mod models;

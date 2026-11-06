@@ -49,7 +49,7 @@ next to it).
 drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scripts** (Script
 Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
 Application Themes, HotKeys), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
-Fast Travel, Loadouts Manager), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
+Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
 Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics, View Plugins),
 **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them in its Manager app and its
 tabbed host). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
@@ -595,6 +595,39 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Selling asks first (VibeSkua's texts) unless Skip sell warning is on, which asks once itself and
   is saved in `settings.json` (`junkSkipSellWarning`). Only unequipped, unfavourited inventory
   items are sold, the whole stack each.
+* **Loadouts Manager** (`loadouts.rs`, 600x500, VibeSkua `LoadoutsView`; engine
+  `turu_bot::loadouts`): the logged-in character's gear sets, in VibeSkua's
+  `Loadouts/<username>.json` format (Turu's `loadouts/<username>.json`). Wide (520 px or more):
+  VibeSkua's two panes. Left, SAVED LOADOUTS with the count and ⟳ (reads the file and the worn gear
+  again), the list and "+ Save current gear". The list's first row is "Currently equipped"
+  (VibeSkua's Show current gear, always there and live from the gear cache, `turu_bot::gear`);
+  each saved row shows its name and class, and "Worn" (green) when every item of it is worn.
+  Right, the picked loadout: its name field beside Replace with worn (renames on Enter or when the
+  field loses focus; a blank name, "Currently Equipped" or another loadout's name is refused and
+  the old one kept), then the seven slots (Class, Armor, Weapon, Helm, Cape, Pet, Amulet): the
+  item ("—" for none), the saved enhancement as a chip (amber when the worn item has another one,
+  which the tooltip names) and where the item is from the cache: Worn (green), In bag, In bank (with
+  the bank's age on hover), Not found (amber: in neither, as last read) or Not in bag (amber: the
+  bank wasn't read yet). The actions sit at the bottom: Delete (asks first) on the left, Equip
+  (primary) on the right, and Enhance beside it when enhancements differ, under a line that says
+  how many. Narrow (a phone held upright): the list and the loadout are two pages, the loadout's
+  with ‹ (or Escape) back to the list; on a touch screen smaller than 620x520 the window is a
+  full-screen sheet. In a short window (a phone held sideways) the slots scroll so the actions
+  stay in view. Save current gear (and Save as loadout on the live row) reads the worn gear on a
+  bot thread, names the loadout after its class ("Legion Revenant 2" when taken), picks it and
+  selects its name for typing over, instead of VibeSkua's name dialog. Equip runs
+  `loadouts::equip` (`gear::equip`: from the bank when needed) and says how it went in the window
+  (green "Equipped Farm", amber "Farm partly equipped. Not put on: ..."), not in a message box.
+  While a script runs, an amber line says equipping stops it and Equip reads "Stop script &
+  equip": the script is stopped first and stays stopped (VibeSkua equips under it; CoreBots would
+  put its gear back). Enhance is VibeSkua's `LoadoutEnhancerTemp`, its own action rather than part
+  of Equip: CoreAdvanced's `enhanceItem` for each worn item of the loadout whose enhancement
+  differs, then back to the map it started on, run as a script (`loadouts/LoadoutEnhancerTemp.ts`,
+  importing the scripts folder's `core/`; the Script Loader shows it and Stop stops it; the script
+  loaded before is loaded again after). Disabled while a script runs, as VibeSkua refuses it then.
+  Not logged in, the list says to log in and the actions are disabled. Checked by eye from
+  offscreen renders with made-up gear (pointer and touch: 1100x700, 390x800 both pages, 800x390);
+  not yet in game or on the emulator.
 * **Fast Travel** (`fast_travel.rs`, 600x470, VibeSkua `FastTravelView`): VibeSkua's controls,
   laid out for any window size. A search box (name, map or cell) with VibeSkua's private room
   switch and room number (111111; its own row below 440 px); DESTINATIONS with the count of what
