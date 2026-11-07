@@ -283,6 +283,18 @@ impl Screen {
         }
     }
 
+    /// Whether there's a window to draw in.
+    pub fn shown(&self) -> bool {
+        self.surface.is_some()
+    }
+
+    /// Another tab's player takes the screen: `player`'s fingers are let go (the game's and
+    /// egui's), and the next player drawn gets the game's size.
+    pub fn leave(&mut self, player: &mut Player) {
+        self.touch(player, Touch::Cancel);
+        self.movie_size = (0, 0);
+    }
+
     /// The window is going away: no more drawing in it.
     pub fn detach(&mut self) {
         self.surface = None;
@@ -931,7 +943,7 @@ impl std::fmt::Debug for Blit {
 }
 
 impl MovieTexture {
-    fn new(blit: Arc<Blit>, device: &wgpu::Device, width: u32, height: u32) -> Self {
+    pub fn new(blit: Arc<Blit>, device: &wgpu::Device, width: u32, height: u32) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Turu game"),
             size: wgpu::Extent3d {

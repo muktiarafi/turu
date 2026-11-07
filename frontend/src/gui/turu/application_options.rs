@@ -135,6 +135,14 @@ fn entries() -> Vec<Entry> {
             ),
         );
     }
+    if crate::platform::platform().limits_tabs() {
+        entries.push(entry!(
+            General,
+            "Tab Limit",
+            "How many tabs (game clients) can be open at once. Each one takes about 400 MB of memory: a phone holds 2, maybe 3, before Android stops Turu",
+            Field::Int(|s| &mut s.tab_limit, "tabs", 1, 4)
+        ));
+    }
     entries
 }
 

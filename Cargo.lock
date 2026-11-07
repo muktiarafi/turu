@@ -7340,6 +7340,7 @@ dependencies = [
  "ruffle_render_wgpu",
  "rustls",
  "rustls-platform-verifier",
+ "serde_json",
  "tokio",
  "tracing",
  "turu_bot",

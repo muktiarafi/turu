@@ -28,6 +28,7 @@ class TuruService : Service() {
     private var title = "Turu"
     private var text = "Starting"
     private var running = false
+    private var awake = false
     private var paused = false
 
     override fun onCreate() {
@@ -82,15 +83,16 @@ class TuruService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun show(title: String, text: String, running: Boolean, paused: Boolean) {
+    private fun show(title: String, text: String, running: Boolean, paused: Boolean, awake: Boolean) {
         this.title = title
         this.text = text
         this.running = running
         this.paused = paused
-        // The CPU stays awake while a script runs (the screen may go off).
-        if (running && !wakeLock.isHeld) {
+        this.awake = awake
+        // The CPU stays awake while any tab's script runs (the screen may go off).
+        if (awake && !wakeLock.isHeld) {
             wakeLock.acquire()
-        } else if (!running && wakeLock.isHeld) {
+        } else if (!awake && wakeLock.isHeld) {
             wakeLock.release()
         }
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION, build())
@@ -117,6 +119,8 @@ class TuruService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
+            // With several tabs, a line per tab.
+            .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -176,15 +180,19 @@ class TuruService : Service() {
             context.startForegroundService(Intent(context, TuruService::class.java))
         }
 
-        /** Called by the Rust side (any thread) when the bot's state changes. */
+        /**
+         * Called by the Rust side (any thread) when the bots' state changes: [running] and
+         * [paused] are the active tab's script's (Pause and Stop act on it), [awake] says whether
+         * any tab's script runs (the wake lock).
+         */
         @JvmStatic
-        fun status(title: String, text: String, running: Boolean, paused: Boolean) {
-            main.post { instance?.show(title, text, running, paused) }
+        fun status(title: String, text: String, running: Boolean, paused: Boolean, awake: Boolean) {
+            main.post { instance?.show(title, text, running, paused, awake) }
         }
 
         /** Posts the notification again: it's dropped while the permission isn't granted yet. */
         fun refresh() {
-            main.post { instance?.let { it.show(it.title, it.text, it.running, it.paused) } }
+            main.post { instance?.let { it.show(it.title, it.text, it.running, it.paused, it.awake) } }
         }
     }
 }
