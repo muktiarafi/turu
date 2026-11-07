@@ -614,6 +614,12 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   workflow builds with line tables (`CARGO_PROFILE_DIST_DEBUG`) and uploads the PDB / dSYM /
   Linux binary with `sentry-cli` (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_DESKTOP_PROJECT`),
   then strips the Linux binary. `TURU_TEST_PANIC=1` panics 10 s after the start, to test it.
+- **egui out of GPU memory:** egui-wgpu panicked when the GPU had no staging buffer for the
+  overlay's vertices or indices (Sentry TURU-DESKTOP-3, beta.5, Windows). ruffle-aqw patches it
+  (`ruffle/patches/egui-wgpu`, wired up in both workspaces' `[patch.crates-io]`): that frame draws
+  no egui meshes and logs a warning, and a buffer that failed is made anew next frame. It's the
+  overlay on the desktop and the whole UI on Android. Tested with a device whose buffers are too
+  small; not seen on a real out-of-memory GPU.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies

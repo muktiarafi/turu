@@ -19,7 +19,9 @@ Turu is its own workspace on top of **ruffle-aqw** (Ruffle with Mugetsu's patche
 ```
 ruffle/                  submodule: muktiarafi/ruffle-aqw (branch `aqw`), Ruffle `fda41800` + Mugetsu
                          1.6.0. The app uses its crates by path; its patched crates (ruffle/patches/:
-                         wgpu-core, wgpu-hal, gc-arena, lyon_*) are wired up in the root Cargo.toml
+                         wgpu-core, wgpu-hal, gc-arena, lyon_*, and egui-wgpu, whose renderer skips
+                         a frame's meshes when the GPU has no staging buffer instead of panicking)
+                         are wired up in the root Cargo.toml
 bot/                     crate `turu_bot`: the bot engine (no dependency on the app or ruffle_core)
   assets/skua.swf        VibeSkua's AS3 host SWF (Skua.AS3/skua/bin/skua.swf), embedded with include_bytes!
   js/                    TypeScript runtime that ships inside the binary (module "turu")

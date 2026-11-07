@@ -77,6 +77,7 @@ wgpu-hal = { path = "ruffle/patches/wgpu-hal" }
 gc-arena = { path = "ruffle/patches/gc-arena" }
 lyon_path = { path = "ruffle/patches/lyon_path" }
 lyon_algorithms = { path = "ruffle/patches/lyon_algorithms" }
+egui-wgpu = { path = "ruffle/patches/egui-wgpu" }
 
 # Don't optimize build scripts and macros.
 [profile.release.build-override]
