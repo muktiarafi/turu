@@ -754,7 +754,7 @@ mod tests {
         let hub = Hub::new(None);
         let bot = Bot::new();
         bot.monitor.event(EventKind::Death, "Died");
-        let tabs = Arc::new(Mutex::new(vec![bot.clone()]));
+        let tabs = Arc::new(Mutex::new(vec![bot]));
         let list = tabs.clone();
         hub.set_tabs(Arc::new(move || {
             list.lock()

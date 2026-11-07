@@ -617,9 +617,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies
-  outside the workspace). It reports two existing errors in `app/`: `redundant_clone` in `app/src/headless.rs`
-  (`opt.player.parameters.clone()`) and `unused_async` in Ruffle's `app/src/gui/theme.rs`
-  (`get_system_theme`).
+  outside the workspace). It passes with `--all-targets` and `-A clippy::redundant_clone` (that
+  lint, denied by Ruffle's workspace lints, still flags a few clones in tests and UI windows); CI
+  runs exactly that (`.github/workflows/ci.yml`).
 - **HTTPS in `turu_bot`:** the bot crate asks for reqwest's TLS itself, through its default
   `native-tls` feature (`rustls-tls` instead where there's no system TLS: Android); without one a
   `cargo test -p turu_bot` build could only fetch `http://` (the app got TLS from Ruffle's crates).

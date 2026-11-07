@@ -107,7 +107,7 @@ fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<
         .build();
     player.lock().expect("the player was just built").fetch_root_movie(
         movie_url.to_string(),
-        opt.player.parameters.clone(),
+        opt.player.parameters,
         Box::new(|_| {}),
     );
     player

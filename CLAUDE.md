@@ -47,7 +47,7 @@ cargo build -p turu --no-default-features --features software_video,external_vid
 ./target/debug/turu                      # starts skua.swf -> AQW; log in with the game's own screen
 cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md)
-cargo clippy -p turu_bot -p turu_frontend -p turu --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
+cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
 cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (their CI checks it)
@@ -77,4 +77,6 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 * Match the surrounding code's style. Rust: `cargo fmt` for `bot/`; `frontend/src/gui/turu/`
   files use `max_width = 120`, formatted one file at a time (see STATUS.md). Upstream Ruffle files keep their
   conventions; mark Turu changes in them with `// Turu:` comments.
+* Pull requests run `.github/workflows/ci.yml` (rebased on main, format, clippy, tests) and
+  are merged by rebase only: see `CONTRIBUTING.md`.
 * Don't commit unless asked.

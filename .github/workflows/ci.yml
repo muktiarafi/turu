@@ -1,0 +1,149 @@
+name: CI
+
+# Every pull request to main (and every push to main) is checked here: the branch is rebased on
+# main with no merge commits, the Rust code is formatted and passes clippy, the tests pass and
+# the scripts type-check against this commit's bot/js/turu.ts. CONTRIBUTING.md lists the same
+# commands to run before pushing. Branch protection on main requires these jobs.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The app's feature set (CLAUDE.md), the same on every platform.
+  FEATURES: turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen
+
+jobs:
+  rebased:
+    name: Rebased on main
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      # The pull request's own commits, not the merge commit GitHub makes for it.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Check the branch is rebased on main, without merge commits
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags origin "$BASE"
+          if ! git merge-base --is-ancestor "origin/$BASE" HEAD; then
+            echo "::error::The branch is behind $BASE. Rebase it: git fetch origin && git rebase origin/$BASE && git push --force-with-lease"
+            exit 1
+          fi
+          merges=$(git rev-list --merges "origin/$BASE..HEAD")
+          if [[ -n "$merges" ]]; then
+            echo "::error::The branch has merge commits ($(echo $merges | tr '\n' ' ')). Rebase instead of merging: git rebase origin/$BASE"
+            exit 1
+          fi
+          echo "Rebased on $BASE: $(git rev-list --count "origin/$BASE..HEAD") commit(s) on top"
+
+  format:
+    name: Format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      # Only Turu's own code: Ruffle's files in app/ keep their own layout (docs/STATUS.md,
+      # "Formatting"). The UI windows use max_width = 120; mod.rs isn't one of them.
+      - name: Check the bot engine's formatting
+        run: cargo fmt -p turu_bot --check
+
+      - name: Check the UI windows' formatting
+        run: |
+          for file in frontend/src/gui/turu/*.rs; do
+            [[ "$(basename "$file")" == mod.rs ]] && continue
+            rustfmt --edition 2024 --config max_width=120 --check "$file"
+          done
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: git submodule update --init --depth 1 ruffle
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Ruffle compiles its Flash classes (playerglobal) with asc.jar.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-clippy
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $(cat .github/linux-dependencies.txt)
+
+      # redundant_clone is allowed as in CLAUDE.md: it flags clones that are needed.
+      - name: Clippy
+        run: |
+          cargo clippy --locked -p turu_bot -p turu_frontend -p turu --all-targets \
+            --no-default-features --features "$FEATURES" -- -A clippy::redundant_clone
+
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      # scripts/ (turu-scripts): the engine tests load its scripts, and they are type-checked
+      # against this commit's bot/js/turu.ts.
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $(cat .github/linux-dependencies.txt)
+
+      - name: Test the bot engine
+        run: cargo test --locked -p turu_bot
+
+      - name: Test the app and the frontend
+        run: cargo test --locked -p turu -p turu_frontend --no-default-features --features "$FEATURES"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Type-check scripts
+        working-directory: scripts
+        run: npx -y -p typescript@5.9.3 tsc --noEmit -p .

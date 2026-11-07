@@ -69,7 +69,7 @@ Calls are synchronous (no `await`). API: [bot/js/turu.ts](bot/js/turu.ts). Guide
 
 [Architecture](docs/ARCHITECTURE.md) · [Status](docs/STATUS.md) · [UI](docs/UI.md) ·
 [Headless](docs/HEADLESS.md) · [Android](docs/ANDROID.md) ·
-[VibeSkua reference](docs/VIBESKUA_SPEC.md)
+[VibeSkua reference](docs/VIBESKUA_SPEC.md) · [Contributing](CONTRIBUTING.md)
 
 ## Credits
 
