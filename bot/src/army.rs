@@ -311,8 +311,12 @@ impl Army {
         self.queued.lock().clone()
     }
 
-    /// Starts a client now.
+    /// Starts a client now. Not on Android, whose executable is the system's `app_process`:
+    /// accounts open in tabs there (`turu_frontend`'s Accounts), and nothing starts a process.
     pub fn launch(self: &Arc<Self>, launch: Launch) -> Result<Arc<Client>, String> {
+        if cfg!(target_os = "android") {
+            return Err("Android opens accounts in tabs, not in processes of their own".into());
+        }
         if self.client(&launch.username).is_some() {
             return Err(format!("{} is running already", launch.username));
         }
