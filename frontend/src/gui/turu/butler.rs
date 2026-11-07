@@ -5,6 +5,9 @@
 //! client's state; Follow waits for a previous follow to end, and Send to player calls the
 //! game, so both run off the UI thread.
 //! [`show_suspend_notice`] asks what to do when a script starts while following.
+//!
+//! On a touch screen (Android) it's a full-screen sheet when the window would not fit, with
+//! finger-sized Follow/Summon buttons and roomier roster rows.
 
 use super::theme::{DANGER, EDGE, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
@@ -18,6 +21,11 @@ use turu_bot::Bot;
 use turu_bot::butler::debug_log::{Level, LogLine};
 use turu_bot::butler::sync::SyncData;
 use turu_bot::butler::{self, ClassType, FollowSource, ParkSpot, SuspendNotice};
+
+/// The height of Butler's buttons: finger-sized on a touch screen.
+fn control_height() -> f32 {
+    widgets::target(26.0, 40.0)
+}
 
 /// How often the roster is read again.
 const REFRESH: Duration = Duration::from_secs(1);
@@ -58,9 +66,13 @@ impl ButlerWindow {
         if self.read_at.is_none_or(|t| t.elapsed() >= REFRESH) {
             self.refresh(&bot);
         }
-        super::window(ctx, "Butler", [520.0, 560.0], 6)
-            .open(open)
-            .show(ctx, |ui| self.ui(ui, &bot));
+        let mut window = super::window(ctx, "Butler", [520.0, 560.0], 6).open(open);
+        // On a phone a floating window would cover the game and still be cramped: a sheet.
+        let area = super::window_area(ctx);
+        if widgets::touch() && (area.width() < 560.0 || area.height() < 560.0) {
+            window = window.sheet(ctx);
+        }
+        window.show(ctx, |ui| self.ui(ui, &bot));
         ctx.request_repaint_after(REFRESH);
     }
 
@@ -125,8 +137,9 @@ impl ButlerWindow {
                     ui.label(RichText::new(state).size(12.0).color(color));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let control = vec2(0.0, control_height());
                     if !followers.is_empty()
-                        && widgets::button(ui, "Release all", Kind::Normal, enabled, vec2(0.0, 26.0), "")
+                        && widgets::button(ui, "Release all", Kind::Normal, enabled, control, "")
                             .on_hover_text("Clear the summon list; released butlers go to their park spot")
                             .clicked()
                     {
@@ -135,7 +148,7 @@ impl ButlerWindow {
                         changed = true;
                     }
                     if following.is_some()
-                        && widgets::button(ui, "Stop following", Kind::Danger, true, vec2(0.0, 26.0), "").clicked()
+                        && widgets::button(ui, "Stop following", Kind::Danger, true, control, "").clicked()
                     {
                         butler::stop_follow(bot);
                         self.say(Ok("Stopped following.".into()));
@@ -174,9 +187,11 @@ impl ButlerWindow {
                             .color(MUTED),
                         );
                     }
+                    // Roomier rows for a finger.
+                    let separator = if widgets::touch() { 14.0 } else { 6.0 };
                     for (i, account) in self.roster.iter().enumerate() {
                         if i > 0 {
-                            ui.separator();
+                            ui.add(egui::Separator::default().spacing(separator));
                         }
                         changed |= self.row(ui, bot, account);
                     }
@@ -240,10 +255,18 @@ impl ButlerWindow {
                 .into_iter()
                 .filter(|v| !v.is_empty())
                 .collect();
-                ui.label(RichText::new(place.join("  ·  ")).size(11.0).color(MUTED));
+                ui.label(
+                    RichText::new(place.join("  ·  "))
+                        .size(widgets::small_label_size())
+                        .color(MUTED),
+                );
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let size = vec2(72.0, 26.0);
+                let size = if widgets::touch() {
+                    vec2(84.0, control_height())
+                } else {
+                    vec2(72.0, 26.0)
+                };
                 // Summon / Release.
                 if summoned {
                     if widgets::button(ui, "Release", Kind::Normal, true, size, "").clicked() {

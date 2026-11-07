@@ -318,9 +318,13 @@ impl ArmyWindow {
         if !*open {
             return;
         }
-        super::window(ctx, "Army Control", [560.0, 620.0], 5)
-            .open(open)
-            .show(ctx, |ui| self.ui(ui));
+        let mut window = super::window(ctx, "Army Control", [560.0, 620.0], 5).open(open);
+        // On a phone a floating window would cover the game and still be cramped: a sheet.
+        let area = super::window_area(ctx);
+        if widgets::touch() && (area.width() < 600.0 || area.height() < 620.0) {
+            window = window.sheet(ctx);
+        }
+        window.show(ctx, |ui| self.ui(ui));
         ctx.request_repaint_after(Duration::from_millis(500));
     }
 
@@ -479,7 +483,7 @@ impl ArmyWindow {
             });
             ScrollArea::vertical()
                 .id_salt("turu_army_clients")
-                .max_height(260.0)
+                .max_height(widgets::target(260.0, 320.0))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for row in rows {
@@ -566,8 +570,9 @@ impl ArmyWindow {
                 ui.label(RichText::new(format!("→ {who}")).small().color(color));
             });
             let any = !targets.is_empty();
+            let height = widgets::target(28.0, 40.0);
             let width = (ui.available_width() - 12.0) / 3.0;
-            let size = vec2(width, 28.0);
+            let size = vec2(width, height);
             ui.horizontal(|ui| {
                 if widgets::button(ui, "Start script", Kind::Primary, any, size, "").clicked() {
                     self.send(rows, Command::StartScript(None));
@@ -581,6 +586,25 @@ impl ArmyWindow {
                     everyone && targets.len() > 1,
                 ) {
                     self.send(rows, Command::StopScript);
+                }
+                // Without file dialogs (Android): the script this tab's Script Loader has loaded.
+                if !crate::platform::platform().has_file_dialogs() {
+                    let loaded = crate::turu::bot().scripts.loaded();
+                    let load = widgets::button(
+                        ui,
+                        "Load this script",
+                        Kind::Normal,
+                        any && loaded.is_some(),
+                        size,
+                        "Load one in the Script Loader (Search Scripts) first",
+                    )
+                    .on_hover_text("The script this tab's Script Loader has loaded");
+                    if load.clicked()
+                        && let Some(path) = loaded
+                    {
+                        self.send(rows, Command::LoadScript(path.display().to_string()));
+                    }
+                    return;
                 }
                 let load = widgets::button(
                     ui,
@@ -601,7 +625,7 @@ impl ArmyWindow {
                 }
             });
             let width = (ui.available_width() - 18.0) / 4.0;
-            let size = vec2(width, 28.0);
+            let size = vec2(width, height);
             ui.horizontal(|ui| {
                 if widgets::button(ui, "Log in", Kind::Normal, any, size, "").clicked() {
                     self.send(rows, Command::Login);
@@ -619,7 +643,7 @@ impl ArmyWindow {
             // VibeSkua's "Start/Stop Auto-Attack for All": no confirmation there, and stopping
             // loses nothing.
             let width = (ui.available_width() - 6.0) / 2.0;
-            let size = vec2(width, 28.0);
+            let size = vec2(width, height);
             ui.horizontal(|ui| {
                 let tip = "Each client's Auto Attack with its equipped class (rows running a script are skipped)";
                 if widgets::button(ui, "Start Auto-Attack", Kind::Normal, any, size, "")
@@ -775,6 +799,21 @@ impl ArmyWindow {
 /// One row: check box, dot, name, where it is, its script; below, its own buttons.
 fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
     let mut action = None;
+    // On a touch screen: a bigger check box and finger-sized row buttons.
+    let touch = widgets::touch();
+    if touch {
+        let spacing = ui.spacing_mut();
+        spacing.icon_width = 24.0;
+        spacing.icon_width_inner = 14.0;
+        spacing.interact_size.y = 40.0;
+    }
+    let row_button = |ui: &mut Ui, label: &str, enabled: bool| {
+        if touch {
+            widgets::button(ui, label, Kind::Normal, enabled, vec2(0.0, 36.0), "")
+        } else {
+            widgets::small_button(ui, label, enabled)
+        }
+    };
     ui.horizontal(|ui| {
         ui.add_enabled(!row.ended, egui::Checkbox::without_text(checked));
         widgets::dot(ui, row.color, 4.0);
@@ -800,10 +839,7 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
     ui.horizontal(|ui| {
         ui.add_space(26.0);
         let mut button = |ui: &mut Ui, label: &str, enabled: bool, tooltip: &str, choice: RowAction| {
-            if widgets::small_button(ui, label, enabled)
-                .on_hover_text(tooltip)
-                .clicked()
-            {
+            if row_button(ui, label, enabled).on_hover_text(tooltip).clicked() {
                 action = Some(choice);
             }
         };
@@ -824,7 +860,7 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
         }
         button(ui, "Gear", true, "Its gear: what's worn, equip, bank", RowAction::Gear);
         if let Some(tab) = row.tab
-            && widgets::small_button(ui, "Show", tab != crate::turu::active_tab()).clicked()
+            && row_button(ui, "Show", tab != crate::turu::active_tab()).clicked()
         {
             crate::turu::request_tab(crate::turu::TabRequest::Select(tab));
         }
