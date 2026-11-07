@@ -109,6 +109,17 @@ pub struct Stats {
     pub quests_accepted: u64,
     pub quests_completed: u64,
     pub relogins: u64,
+    /// Advanced Mode's live rates (VibeSkua `ScriptBotStats` gameplay metrics), sampled by the
+    /// background thread; Reset starts them over too.
+    pub gameplay: crate::stats::Gameplay,
+}
+
+impl Stats {
+    /// VibeSkua `UpdateGameplaySnapshot` with this tab's kill and death counters.
+    pub fn update_gameplay(&mut self, reading: Option<crate::stats::PlayerReading>, now: Instant) {
+        let (kills, deaths) = (self.kills, self.deaths);
+        self.gameplay.update(reading, kills, deaths, now);
+    }
 }
 
 impl GameState {

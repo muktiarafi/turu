@@ -63,6 +63,11 @@ pub struct AppSettings {
     /// Send crash reports to Turu's developers (builds with Sentry: Android's `CrashUploads.kt`
     /// and the desktop's `crash_uploads`, which read this at start). `None` until the user answered the question Turu asks once.
     pub send_crash_reports: Option<bool>,
+    // Combat > Stats
+    /// The Advanced switch (VibeSkua `StatsAdvancedMode`).
+    pub stats_advanced_mode: bool,
+    /// The rates' unit: `/hr`, `/min` or `/sec` (VibeSkua `StatsRateUnit`; `stats::RateUnit`).
+    pub stats_rate_unit: String,
 }
 
 impl Default for AppSettings {
@@ -98,6 +103,8 @@ impl Default for AppSettings {
             monitor_machine_name: String::new(),
             monitor_accept_commands: true,
             send_crash_reports: None,
+            stats_advanced_mode: false,
+            stats_rate_unit: "/hr".into(),
         }
     }
 }

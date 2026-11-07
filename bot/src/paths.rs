@@ -273,6 +273,12 @@ impl Paths {
         self.root.join("settings.json")
     }
 
+    /// Combat > Stats' rate snapshots, shared by every client (`stats::load_history`; VibeSkua
+    /// `StatsRateHistory` in its settings).
+    pub fn stats_rate_history_file(&self) -> PathBuf {
+        self.root.join("StatsRateHistory.json")
+    }
+
     /// Tools > Loader's quest cache (VibeSkua `QuestData.json`, `quest_cache`).
     pub fn quest_data_file(&self) -> PathBuf {
         self.root.join(crate::quest_cache::FILE_NAME)
@@ -344,7 +350,7 @@ impl Paths {
 
 /// Writes `text` to a temporary file next to `path`, then renames it over `path`, so a reader
 /// (or another Turu on the same data folder) never sees half a file.
-fn write_atomically(path: &std::path::Path, text: &str) -> io::Result<()> {
+pub(crate) fn write_atomically(path: &std::path::Path, text: &str) -> io::Result<()> {
     let mut temp = path.as_os_str().to_owned();
     temp.push(format!(".{}.tmp", std::process::id()));
     let temp = PathBuf::from(temp);

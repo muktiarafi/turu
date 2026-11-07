@@ -112,7 +112,9 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 let mut state = bot.state.lock();
                 let free = state.pickups_sent.remove(&item_id);
                 if num(data.get("bSuccess")) == Some(1) {
-                    state.stats.drops += num(data.get("iQty")).unwrap_or_default().max(0) as u64;
+                    let quantity = num(data.get("iQty")).unwrap_or_default();
+                    state.stats.gameplay.record_item_pickup(quantity);
+                    state.stats.drops += quantity.max(0) as u64;
                     // Only an accepted pickup leaves the drop stack (VibeSkua `PickupResult`).
                     state.refused_drops.remove(&item_id);
                     state.drops.remove(&item_id);
