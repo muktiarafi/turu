@@ -13,6 +13,7 @@
 //!   the answer to the web monitor's hub ([`crate::monitor::Hub`]), where Army Control reads it.
 
 pub mod jump;
+pub mod queue;
 
 use crate::Bot;
 use parking_lot::Mutex;
@@ -47,6 +48,11 @@ pub struct Launch {
     /// Start the script once logged in, not only load it.
     pub run_script: bool,
     pub headless: bool,
+    /// The Script Options storage the script runs with, started without asking
+    /// (`--script-options-storage`; Army Queue's squads and accounts).
+    pub options_storage: Option<String>,
+    /// Log out and quit once the script stops (`--exit-on-script-stop`; Army Queue).
+    pub exit_on_stop: bool,
 }
 
 /// How a client's process is doing; its game is in the hub.
@@ -83,6 +89,11 @@ impl Client {
 
     pub fn is_running(&self) -> bool {
         self.state.lock().exited.is_none()
+    }
+
+    /// The process has ended (asks the system now, not only the poll's last look).
+    pub fn has_exited(&self) -> bool {
+        self.reap()
     }
 
     pub fn pid(&self) -> u32 {
@@ -335,6 +346,12 @@ impl Army {
         }
         if launch.headless {
             process.arg("--headless");
+        }
+        if let Some(storage) = launch.options_storage.as_deref().filter(|s| !s.is_empty()) {
+            process.arg("--script-options-storage").arg(storage);
+        }
+        if launch.exit_on_stop {
+            process.arg("--exit-on-script-stop");
         }
         let mut child = process
             .spawn()

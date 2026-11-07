@@ -25,6 +25,9 @@ pub struct Startup {
     pub playlist: Option<PathBuf>,
     /// Start the playlist once logged in (`--run-playlist`), instead of the script.
     pub run_playlist: bool,
+    /// VibeSkua `--script-options-storage`: the script's options come from
+    /// `options/<storage>.cfg`, and it starts without asking for them (Army Queue).
+    pub options_storage: Option<String>,
 }
 
 impl Startup {
@@ -44,7 +47,11 @@ pub fn configure(bot: &Bot, mut startup: Startup) {
     if let Some(script) = startup.script.take() {
         match crate::script::resolve(&scripts, &script) {
             Some(found) => {
-                bot.scripts.load(&found);
+                let storage = startup
+                    .options_storage
+                    .as_deref()
+                    .filter(|s| !s.trim().is_empty());
+                bot.scripts.load_with_storage(&found, storage);
                 // Without a window (`--headless`) nobody sets the options before the run.
                 if startup.run_script
                     && !bot.scripts.is_interactive()
@@ -135,7 +142,11 @@ pub(crate) fn auto_login(bot: &Arc<Bot>) {
     } else if startup.run_script
         && startup.script.is_some()
         // VibeSkua is silent only with `--script-options-storage`: the window shows (not headless).
-        && let Err(e) = crate::script::start(bot)
+        && let Err(e) = if startup.options_storage.is_some() {
+            crate::script::start_silent(bot)
+        } else {
+            crate::script::start(bot)
+        }
     {
         bot.log(format!("Couldn't start the script: {e}"));
     }

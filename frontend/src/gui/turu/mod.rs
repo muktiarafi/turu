@@ -7,6 +7,7 @@
 mod accounts;
 mod application_options;
 mod army;
+mod army_queue;
 mod army_travel;
 mod auto;
 mod butler;
@@ -81,6 +82,8 @@ pub struct Windows {
     pub loadouts: bool,
     pub accounts: bool,
     pub army: bool,
+    /// Army > Army Queue (VibeSkua Manager's Army Queue tab).
+    pub army_queue: bool,
     pub butler: bool,
     pub cosmetics: bool,
     /// Diagnostics > Notification Center.
@@ -196,6 +199,8 @@ pub struct TuruUi {
     accounts_open: bool,
     army: army::ArmyWindow,
     army_open: bool,
+    army_queue: army_queue::ArmyQueueWindow,
+    army_queue_open: bool,
 }
 
 impl TuruUi {
@@ -213,6 +218,8 @@ impl TuruUi {
             accounts_open: false,
             army: Default::default(),
             army_open: false,
+            army_queue: Default::default(),
+            army_queue_open: false,
         }
     }
 
@@ -302,10 +309,27 @@ impl TuruUi {
         client_update::show(ctx, &mut w.client_update);
         stop_auto_while_following();
         let (accounts, army) = (std::mem::take(&mut w.accounts), std::mem::take(&mut w.army));
+        let army_queue = std::mem::take(&mut w.army_queue);
         self.accounts_open |= accounts;
         self.army_open |= army;
+        self.army_queue_open |= army_queue;
         self.accounts.show(ctx, &mut self.accounts_open);
         self.army.show(ctx, &mut self.army_open);
+        self.army_queue.show(ctx, &mut self.army_queue_open);
+        // Army Queue's script and options buttons open the active tab's windows.
+        let (open_repo, options) = (
+            std::mem::take(&mut self.army_queue.open_repo),
+            self.army_queue.edit_options.take(),
+        );
+        if open_repo || options.is_some() {
+            let tab = self.active();
+            tab.windows.script_repo |= open_repo;
+            if let Some(options) = options {
+                tab.script_options.edit_queued(options);
+                tab.windows.script_options = true;
+            }
+            ctx.request_repaint();
+        }
         // Last, so the script's message box sits over the other windows.
         message_box::show(ctx);
         butler::show_suspend_notice(ctx);
@@ -444,6 +468,10 @@ mod tests {
             (
                 "Fast Travel",
                 boxed(fast_travel::FastTravelWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Army Queue",
+                boxed(army_queue::ArmyQueueWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Loadouts Manager",
