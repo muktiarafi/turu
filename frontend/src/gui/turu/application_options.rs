@@ -175,6 +175,12 @@ fn vibeskua_entries() -> Vec<Entry> {
         ),
         entry!(
             General,
+            "Auto-jump on Position Change",
+            "Automatically jump when selecting a map cell or pad in the Jump control",
+            Field::Bool(|s| &mut s.auto_jump_on_position_change)
+        ),
+        entry!(
+            General,
             "Clear Flash Cache",
             "Deletes the game's saved data (SharedObjects), such as the remembered login. Restart Turu afterwards",
             Field::ClearFlashCache

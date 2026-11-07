@@ -3,7 +3,7 @@
 //! The drop stack itself (`bot.state.drops`) is filled by the `dropItem` packet handler; this
 //! module picks drops up, rejects them and runs the background pickup loop.
 
-use super::inventory::{self, name_or_ids};
+use super::inventory::{self, Container, name_or_ids};
 use super::{Args, NameOrId, map, ok, player, wait};
 use crate::Bot;
 use crate::error::{BotError, BotResult};
@@ -149,10 +149,10 @@ fn drop_tick(bot: &Bot, cancel: &AtomicBool) -> BotResult<()> {
         (o.accept_all_drops, o.accept_ac_drops, o.reject_all_drops)
     };
     if accept_all {
-        return pickup_all(bot, false);
+        return pickup_all_inner(bot, false, true);
     }
     if accept_ac {
-        pickup_ac_items(bot)?;
+        pickup_ac_inner(bot, true)?;
     }
     if reject_all {
         return reject_all_drops(bot);
@@ -160,12 +160,12 @@ fn drop_tick(bot: &Bot, cancel: &AtomicBool) -> BotResult<()> {
     let ids = bot.drops.to_pickup_ids();
     if !ids.is_empty() {
         let items: Vec<NameOrId> = ids.iter().map(|&id| NameOrId::Id(id)).collect();
-        pickup(bot, &items)?;
+        pickup_each(bot, matching(bot, &items), true)?;
     }
     let names = bot.drops.to_pickup();
     if !names.is_empty() {
         let items: Vec<NameOrId> = names.iter().map(|n| NameOrId::Name(n)).collect();
-        pickup(bot, &items)?;
+        pickup_each(bot, matching(bot, &items), true)?;
     }
     if bot.drops.reject_else() {
         // VibeSkua `BuildRejectElseWhitelist`: the names, plus the names of listed IDs.
@@ -190,59 +190,122 @@ pub fn current(bot: &Bot) -> Vec<ItemBase> {
     drops
 }
 
-/// VibeSkua `Drops.Pickup(name|id)`: if the item is in the drop stack and fits (temporary
-/// items always fit), sends `getDrop` and removes it from the stack.
+/// VibeSkua `SendPickup`: sends `getDrop` for this drop if it fits (temporary items always
+/// fit). The drop stays in the stack until the server answers: an accepted pickup removes it, a
+/// refused one is remembered. The pickup loop (`automatic`) sends a refused drop again only once
+/// an inventory slot has freed up; a pickup a script asks for always tries. Returns whether a
+/// request went out, so whether a reply is coming.
+fn send_pickup(bot: &Bot, drop: &ItemBase, automatic: bool) -> BotResult<bool> {
+    if !drop.temp && !inventory::has_space_for(bot, drop, 1)? {
+        return Ok(false);
+    }
+    let refused = bot.state.lock().refused_drops.get(&drop.id).copied();
+    let free = inventory::free_slots(bot, Container::Inventory)?;
+    if automatic && refused.is_some_and(|at_refusal| free <= at_refusal) {
+        return Ok(false);
+    }
+    let room = map::room_id(bot)?;
+    {
+        let mut state = bot.state.lock();
+        state.refused_drops.remove(&drop.id);
+        state.pickups_sent.insert(drop.id, free);
+    }
+    bot.flash
+        .send_packet(&format!("%xt%zm%getDrop%{room}%{}%", drop.id))?;
+    Ok(true)
+}
+
+/// VibeSkua `Drops.Pickup(name|id)`: sends `getDrop` for the drop with this name or ID, if it's
+/// in the stack and fits. Doesn't wait for the answer.
 pub fn pickup_one(bot: &Bot, item: NameOrId) -> BotResult<()> {
     let Some(drop) = bot.state.lock().find_drop(item).cloned() else {
         return Ok(());
     };
-    if !drop.temp && !inventory::has_space_for(bot, &drop, 1)? {
-        return Ok(());
+    send_pickup(bot, &drop, false)?;
+    Ok(())
+}
+
+/// VibeSkua `WaitForReplies`: until the server answered every one of these pickups (the drop
+/// left the stack or was refused), or we stopped playing. 10 tries.
+fn wait_for_replies(bot: &Bot, ids: &[i64]) -> BotResult<bool> {
+    if ids.is_empty() {
+        return Ok(true);
     }
-    let room = map::room_id(bot)?;
-    bot.flash
-        .send_packet(&format!("%xt%zm%getDrop%{room}%{}%", drop.id))?;
-    bot.state.lock().drops.remove(&drop.id);
+    wait::until(
+        bot,
+        || {
+            if !player::playing(bot)? {
+                return Ok(true);
+            }
+            let state = bot.state.lock();
+            Ok(ids
+                .iter()
+                .all(|id| state.refused_drops.contains_key(id) || !state.drops.contains_key(id)))
+        },
+        10,
+    )
+}
+
+/// The drops in the stack matching one of `items` (each same-named drop on its own), sorted.
+fn matching(bot: &Bot, items: &[NameOrId]) -> Vec<ItemBase> {
+    current(bot)
+        .into_iter()
+        .filter(|d| {
+            items.iter().any(|item| match *item {
+                NameOrId::Name(name) => d.name_is(name),
+                NameOrId::Id(id) => d.id == id,
+            })
+        })
+        .collect()
+}
+
+/// VibeSkua `PickupEach`: one drop at a time, each by its ID, waiting for the server's answer
+/// after each (a refusal ends the wait at once).
+fn pickup_each(bot: &Bot, drops: Vec<ItemBase>, automatic: bool) -> BotResult<()> {
+    for drop in drops {
+        if send_pickup(bot, &drop, automatic)? {
+            wait_for_replies(bot, &[drop.id])?;
+        }
+    }
     Ok(())
 }
 
 // Shared with other modules (kill, hunt). Signatures are fixed.
 
-/// Picks these items up if they're in the drop stack (VibeSkua `Drops.Pickup(params ...)`:
-/// each pickup is followed by `Wait.ForPickup`).
+/// Picks these items up if they're in the drop stack (VibeSkua `Drops.Pickup(params ...)`).
 pub fn pickup(bot: &Bot, items: &[NameOrId]) -> BotResult<()> {
-    for &item in items {
-        pickup_one(bot, item)?;
-        wait::for_pickup(bot, item, 10)?;
-    }
-    Ok(())
+    pickup_each(bot, matching(bot, items), false)
 }
 
-/// VibeSkua `PickupAll(skipWait)`: picks up every drop, then waits (10 tries) for the stack
-/// to empty.
+/// VibeSkua `PickupAll(skipWait)`: sends a pickup for every drop, then waits (10 tries) for the
+/// server to answer them all.
 pub fn pickup_all(bot: &Bot, skip_wait: bool) -> BotResult<()> {
+    pickup_all_inner(bot, skip_wait, false)
+}
+
+fn pickup_all_inner(bot: &Bot, skip_wait: bool, automatic: bool) -> BotResult<()> {
+    let mut sent = Vec::new();
     for drop in current(bot) {
-        pickup_one(bot, NameOrId::Name(&drop.name))?;
+        if send_pickup(bot, &drop, automatic)? {
+            sent.push(drop.id);
+        }
     }
     if !skip_wait {
-        wait::for_pickup(bot, NameOrId::Name("*"), 10)?;
+        wait_for_replies(bot, &sent)?;
     }
     Ok(())
 }
 
 /// VibeSkua `PickupACItems`: picks up every AC (`bCoins`) drop.
 pub fn pickup_ac_items(bot: &Bot) -> BotResult<()> {
-    let names: Vec<String> = current(bot)
-        .into_iter()
-        .filter(|d| d.coins)
-        .map(|d| d.name)
-        .collect();
-    let items: Vec<NameOrId> = names.iter().map(|n| NameOrId::Name(n)).collect();
-    pickup(bot, &items)
+    pickup_ac_inner(bot, false)
 }
 
-/// VibeSkua `RejectExceptCore`: `rejectExcept(csv of lowercase names)` (AC drops are kept
-/// with `acceptACDrops`), then forgets the rejected drops.
+fn pickup_ac_inner(bot: &Bot, automatic: bool) -> BotResult<()> {
+    let drops = current(bot).into_iter().filter(|d| d.coins).collect();
+    pickup_each(bot, drops, automatic)
+}
+
 fn reject_except_names(bot: &Bot, names: Vec<String>) -> BotResult<()> {
     let mut keep: HashSet<String> = names
         .iter()

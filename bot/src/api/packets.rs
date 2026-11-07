@@ -57,12 +57,21 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
         }
         "ct" => on_combat_tick(bot, data),
         "sellItem" => {
-            bot.state.lock().signals.item_sold = true;
+            {
+                let mut state = bot.state.lock();
+                state.signals.item_sold = true;
+                // A slot may have freed up: the pickup loop tries refused drops again.
+                state.refused_drops.clear();
+            }
             bot.events.emit(BotEvent::ItemSold);
         }
         "buyItem" => {
             if num(data.get("bitSuccess")) == Some(1) {
-                bot.state.lock().signals.item_bought = true;
+                {
+                    let mut state = bot.state.lock();
+                    state.signals.item_bought = true;
+                    state.refused_drops.clear();
+                }
                 bot.events.emit(BotEvent::ItemBought);
             }
         }
@@ -99,13 +108,20 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
         }
         "getDrop" => {
             let item_id = num(data.get("ItemID")).unwrap_or_default();
-            if num(data.get("bSuccess")) == Some(1) {
+            {
                 let mut state = bot.state.lock();
-                state.stats.drops += num(data.get("iQty")).unwrap_or_default().max(0) as u64;
-                // The item left the drop stack (VibeSkua removes it when it sends getDrop).
-                state.drops.remove(&item_id);
+                let free = state.pickups_sent.remove(&item_id);
+                if num(data.get("bSuccess")) == Some(1) {
+                    state.stats.drops += num(data.get("iQty")).unwrap_or_default().max(0) as u64;
+                    // Only an accepted pickup leaves the drop stack (VibeSkua `PickupResult`).
+                    state.refused_drops.remove(&item_id);
+                    state.drops.remove(&item_id);
+                } else {
+                    state.refused_drops.insert(item_id, free.unwrap_or(0));
+                }
             }
             if truthy(data.get("bBank")) {
+                bot.state.lock().refused_drops.clear();
                 bot.events.post(Work::BankItemAdded {
                     item_id,
                     quantity_now: num(data.get("iQtyNow")).unwrap_or_default(),
@@ -189,11 +205,25 @@ fn on_combat_tick(bot: &Arc<Bot>, data: &Value) {
         && me.get("intHP").is_some()
         && num(me.get("intHP")) == Some(0)
     {
-        bot.state.lock().stats.deaths += 1;
-        // VibeSkua `ScriptCombat.PlayerDead`.
-        bot.combat.set_stop_attacking(false);
-        bot.events.emit(BotEvent::PlayerDeath);
+        // Combat packets repeat while we stay dead: only the first one is a death.
+        let first = {
+            let mut state = bot.state.lock();
+            let first = !state.player_dead;
+            if first {
+                state.stats.deaths += 1;
+            }
+            state.player_dead = true;
+            first
+        };
+        if first {
+            // VibeSkua `ScriptCombat.PlayerDead`.
+            bot.combat.set_stop_attacking(false);
+            bot.events.emit(BotEvent::PlayerDeath);
+        }
         return;
+    }
+    if me.is_some() {
+        bot.state.lock().player_dead = false;
     }
     let anim_msg = data
         .get("anims")
@@ -243,6 +273,7 @@ fn on_str(bot: &Arc<Bot>, data: &Value) {
                 let mut state = bot.state.lock();
                 state.reset_session();
                 state.intentional_logout = false;
+                state.player_dead = false;
                 if !username.is_empty() {
                     state.username = Some(username.clone());
                 }

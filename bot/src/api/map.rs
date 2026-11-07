@@ -34,6 +34,22 @@ pub fn cells(bot: &Bot) -> BotResult<Vec<String>> {
     bot.flash.select("world.map.currentScene.labels", "name")
 }
 
+/// VibeSkua `RoomNumber`: the number after the last `-` of `world.strAreaName` ("battleon-1234"
+/// is 1234); 0 when there's none.
+pub fn room_number(bot: &Bot) -> BotResult<i64> {
+    let area: Option<String> = bot.flash.get_opt("world.strAreaName")?;
+    Ok(area.as_deref().map_or(0, parse_room_number))
+}
+
+/// The room number in an area name ("battleon-1234"), 0 when it has none.
+pub fn parse_room_number(area: &str) -> i64 {
+    let area = area.trim().trim_matches('"');
+    match area.rfind('-') {
+        Some(i) if i + 1 < area.len() => area[i + 1..].parse().unwrap_or(0),
+        _ => 0,
+    }
+}
+
 /// The area name with its room number ("battleon-1234"), from the area list's title.
 pub fn full_name(bot: &Bot) -> BotResult<String> {
     if !loaded(bot)? {
@@ -272,6 +288,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "name" => ok(self::name(bot)?),
         "fullName" => ok(full_name(bot)?),
         "roomId" => ok(room_id(bot)?),
+        "roomNumber" => ok(room_number(bot)?),
         "loading" => ok(loading(bot)?),
         "loaded" => ok(loaded(bot)?),
         "cells" => ok(cells(bot)?),
@@ -301,5 +318,17 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "reload" => ok(reload(bot)?),
         "getMapItem" => ok(get_map_item(bot, args.i64(0)?)?),
         _ => Err(BotError::UnknownMethod(format!("map.{name}"))),
+    }
+}
+
+#[cfg(test)]
+mod room_number_tests {
+    #[test]
+    fn room_numbers_come_after_the_last_dash() {
+        assert_eq!(super::parse_room_number("battleon-1234"), 1234);
+        assert_eq!(super::parse_room_number("\"dark-carnax-77\""), 77);
+        assert_eq!(super::parse_room_number("battleon"), 0);
+        assert_eq!(super::parse_room_number("battleon-"), 0);
+        assert_eq!(super::parse_room_number("battleon-abc"), 0);
     }
 }

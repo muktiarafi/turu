@@ -31,6 +31,7 @@ const PREFS: Preferences = Preferences {
     any: false,
     relogin_server: "Twilly",
     last_ip: "1.1.1.1",
+    fallback: true,
 };
 
 #[test]
@@ -80,6 +81,33 @@ fn selection_prefers_the_requested_server_then_relogin_server() {
     let other = servers::select_server(&candidates, None, None, &any).unwrap();
     assert_eq!(other.name, "Twilly", "AutoReloginAny skips the last IP");
     assert_eq!(servers::select_server(&[], None, None, &PREFS), None);
+}
+
+#[test]
+fn without_fallback_selection_keeps_the_chosen_servers() {
+    let candidates = [server("Artix", "1.1.1.1"), server("Safiria", "3.3.3.3")];
+    let strict = Preferences {
+        fallback: false,
+        ..PREFS
+    };
+    let mut attempted = HashSet::from(["safiria".to_owned()]);
+    let pick = servers::select_server(&candidates, Some("Safiria"), Some(&mut attempted), &strict);
+    assert_eq!(
+        pick.unwrap().name,
+        "Safiria",
+        "tried again after a failed attempt"
+    );
+    assert_eq!(
+        servers::select_server(&candidates, None, None, &strict),
+        None,
+        "Twilly isn't listed: wait instead of taking the first server"
+    );
+    assert_eq!(
+        servers::select_server(&candidates, None, None, &PREFS)
+            .unwrap()
+            .name,
+        "Artix"
+    );
 }
 
 #[test]

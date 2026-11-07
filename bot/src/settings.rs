@@ -30,6 +30,9 @@ pub struct AppSettings {
     pub check_client_prereleases: bool,
     /// Tools > Junk Items' "Skip sell warning" (VibeSkua `JunkSkipSellWarning`).
     pub junk_skip_sell_warning: bool,
+    /// Fast Map Jump jumps as soon as a cell or pad is picked (VibeSkua
+    /// `AutoJumpOnPositionChange`, Application options, off by default); off, Jump does it.
+    pub auto_jump_on_position_change: bool,
     // Webhooks & Alerts (`crate::webhooks`)
     pub discord_webhook_url: String,
     pub webhook_notify_started: bool,
@@ -76,6 +79,7 @@ impl Default for AppSettings {
             check_client_updates: true,
             check_client_prereleases: false,
             junk_skip_sell_warning: false,
+            auto_jump_on_position_change: false,
             discord_webhook_url: String::new(),
             webhook_notify_started: true,
             webhook_notify_stopped: true,

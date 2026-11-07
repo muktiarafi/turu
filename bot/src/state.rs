@@ -46,8 +46,15 @@ pub struct GameState {
     pub map_file_path: Option<String>,
     /// The last map name `Join` targeted or `moveToArea` reported (VibeSkua `Map.LastMap`).
     pub last_map: Option<String>,
-    /// Items currently offered in the drop stack, by item ID (`dropItem` packets).
+    /// Items currently offered in the drop stack, by item ID (`dropItem` packets). A drop
+    /// leaves it only when the server accepts its `getDrop` (VibeSkua `PickupResult`).
     pub drops: HashMap<i64, ItemBase>,
+    /// Drops whose `getDrop` the server refused, with the free inventory slots when the request
+    /// went out (VibeSkua `_refusedIDs`). The pickup loop sends one again only once a slot has
+    /// freed up; a sale, a purchase or a bank move forgets them.
+    pub refused_drops: HashMap<i64, i64>,
+    /// Free inventory slots when each unanswered `getDrop` went out, by drop ID.
+    pub(crate) pickups_sent: HashMap<i64, i64>,
     /// Counters for Combat > Stats.
     pub stats: Stats,
     /// Shop data from the last `loadShop` packet.
@@ -65,6 +72,9 @@ pub struct GameState {
     pub hand_login: bool,
     /// `dataLeaf.afk` as the last `uotls` packet about us said.
     pub afk: bool,
+    /// The last `ct` about us had our HP at 0: combat packets repeat while we stay dead, and
+    /// only the first counts as a death (VibeSkua `_playerDead`). Cleared at login.
+    pub player_dead: bool,
     /// One-shot signals for `Wait.ForItemBuy`, `ForItemSell`, `ForBankLoad` (VibeSkua's
     /// `AutoResetEvent`s): set by the packet, consumed by the wait.
     pub signals: Signals,
@@ -133,6 +143,8 @@ impl GameState {
     /// Forgets what belongs to the last session (drops, bank, applied options).
     pub fn reset_session(&mut self) {
         self.drops.clear();
+        self.refused_drops.clear();
+        self.pickups_sent.clear();
         self.bank_loaded = false;
         self.afk = false;
         self.catching_packets = false;

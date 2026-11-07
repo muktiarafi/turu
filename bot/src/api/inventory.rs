@@ -367,6 +367,37 @@ pub fn to_bank(bot: &Bot, from: Container, which: NameOrId) -> BotResult<bool> {
     }
 }
 
+/// VibeSkua `FavoritedItems` / `UnfavoritedItems`: the inventory items that are (or aren't)
+/// favourites.
+pub fn favorited_items(bot: &Bot, favorited: bool) -> BotResult<Vec<ItemBase>> {
+    let mut found = Vec::new();
+    for item in items(bot, Container::Inventory)? {
+        if is_favorited(bot, item.id)? == favorited {
+            found.push(item);
+        }
+    }
+    Ok(found)
+}
+
+/// VibeSkua `BankAllItems(skipFavorited, skipEquipped)`: moves every inventory item that can be
+/// banked to the bank, leaving favourites and equipped items alone unless told otherwise. The
+/// number moved.
+pub fn bank_all_items(bot: &Bot, skip_favorited: bool, skip_equipped: bool) -> BotResult<i64> {
+    let mut banked = 0;
+    for item in items(bot, Container::Inventory)? {
+        if !can_bank(bot, &item)?
+            || (skip_equipped && item.equipped)
+            || (skip_favorited && is_favorited(bot, item.id)?)
+        {
+            continue;
+        }
+        if to_bank_item(bot, Container::Inventory, &item)? {
+            banked += 1;
+        }
+    }
+    Ok(banked)
+}
+
 /// VibeSkua `EnsureToBank`: retries up to `maximumTries`, sleeping `actionDelay`.
 pub fn ensure_to_bank(bot: &Bot, from: Container, which: NameOrId) -> BotResult<bool> {
     let Some(item) = get_item(bot, from, which)? else {
@@ -610,6 +641,23 @@ pub fn dispatch(bot: &Arc<Bot>, module: &str, name: &str, args: Args) -> BotResu
             args.i64_or(1, 1),
         )?),
         (Container::Inventory, "equipItem") => ok(equip_item(bot, args.name_or_id(0)?)?),
+        (Container::Inventory, "isFavorited") => {
+            let id = match args.name_or_id(0)? {
+                NameOrId::Id(id) => Some(id),
+                which => get_item(bot, container, which)?.map(|i| i.id),
+            };
+            ok(match id {
+                Some(id) => is_favorited(bot, id)?,
+                None => false,
+            })
+        }
+        (Container::Inventory, "favoritedItems") => ok(favorited_items(bot, true)?),
+        (Container::Inventory, "unfavoritedItems") => ok(favorited_items(bot, false)?),
+        (Container::Inventory, "bankAllItems") => ok(bank_all_items(
+            bot,
+            args.bool_or(0, true),
+            args.bool_or(1, true),
+        )?),
         (Container::Inventory, "equipUsableItem") => {
             ok(equip_usable_item(bot, args.name_or_id(0)?)?)
         }

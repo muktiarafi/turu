@@ -541,19 +541,26 @@ pub struct Preferences<'a> {
     /// `ReloginServer`.
     pub relogin_server: &'a str,
     pub last_ip: &'a str,
+    /// `ReloginFallback`: hop to any free server when the chosen ones can't be used.
+    pub fallback: bool,
 }
 
 impl Preferences<'_> {
     fn with<T>(bot: &Bot, f: impl FnOnce(&Preferences) -> T) -> T {
-        let (any, relogin_server) = {
+        let (any, relogin_server, fallback) = {
             let o = bot.opts();
-            (o.auto_relogin_any, o.relogin_server.clone())
+            (
+                o.auto_relogin_any,
+                o.relogin_server.clone(),
+                o.relogin_fallback,
+            )
         };
         let last_ip = bot.servers.last_ip();
         f(&Preferences {
             any,
             relogin_server: &relogin_server,
             last_ip: &last_ip,
+            fallback,
         })
     }
 }
@@ -578,8 +585,10 @@ fn find_by_name<'s>(
 }
 
 /// VibeSkua `SelectReloginServer`: the preferred server, else (with `AutoReloginAny`) any
-/// other than the last, else `ReloginServer`, else the first; servers in `attempted` go last,
-/// and once all were tried the list starts over.
+/// other than the last, else `ReloginServer`, else (only with `ReloginFallback`) the first;
+/// servers in `attempted` go last, and once all were tried the list starts over. Without the
+/// fallback, the preferred and Relogin Server are picked even after a failed attempt, and
+/// `None` makes the caller wait and try again.
 pub fn select_server(
     candidates: &[Server],
     preferred: Option<&str>,
@@ -590,6 +599,23 @@ pub fn select_server(
         return None;
     }
     let empty = HashSet::new();
+    if !prefs.fallback {
+        let tried = attempted.as_deref().unwrap_or(&empty);
+        return find_by_name(candidates, preferred, true, None)
+            .or_else(|| {
+                prefs
+                    .any
+                    .then(|| {
+                        candidates
+                            .iter()
+                            .filter(|s| !tried.contains(&s.name.to_lowercase()))
+                            .find(|s| s.ip != prefs.last_ip)
+                    })
+                    .flatten()
+            })
+            .or_else(|| find_by_name(candidates, Some(prefs.relogin_server), true, None))
+            .cloned();
+    }
     {
         let tried = attempted.as_deref().unwrap_or(&empty);
         let untried = |s: &&Server| !tried.contains(&s.name.to_lowercase());
@@ -888,29 +914,47 @@ pub fn ensure_relogin(ctx: &Ctx, name: Option<&str>) -> BotResult<bool> {
     let server = name
         .and_then(|n| select_by_name(bot, n, true, None))
         .or_else(|| select(bot));
-    let Some(server) = server else {
-        relogin_log(
-            bot,
-            match name {
-                Some(n) => {
-                    format!("No eligible servers available for requested relogin target {n}.")
-                }
-                None => "No eligible servers available for auto relogin.".into(),
-            },
-        );
-        return Ok(false);
+    let fallback = bot.opts().relogin_fallback;
+    let preferred = match (&server, fallback) {
+        (Some(server), true) => server.name.clone(),
+        (None, true) => {
+            relogin_log(
+                bot,
+                match name {
+                    Some(n) => {
+                        format!("No eligible servers available for requested relogin target {n}.")
+                    }
+                    None => "No eligible servers available for auto relogin.".into(),
+                },
+            );
+            return Ok(false);
+        }
+        // Without the fallback the requested (or Relogin) server stays the target for every
+        // retry, usable now or not.
+        (_, false) => name
+            .map(str::to_owned)
+            .or_else(|| server.as_ref().map(|s| s.name.clone()))
+            .unwrap_or_else(|| bot.opts().relogin_server.clone()),
     };
     relogin_log(
         bot,
-        match name {
-            Some(n) => format!(
+        match (name, &server) {
+            (Some(n), Some(server)) => format!(
                 "Auto relogin started for target {n}. Preferred server: {}.",
                 server.name
             ),
-            None => format!("Auto relogin started. Preferred server: {}.", server.name),
+            (None, Some(server)) => {
+                format!("Auto relogin started. Preferred server: {}.", server.name)
+            }
+            (Some(n), None) => format!(
+                "Requested relogin target {n} is not eligible right now; retrying until it is or the tries run out."
+            ),
+            (None, None) => format!(
+                "Relogin server {preferred} is not eligible right now; retrying until it is or the tries run out."
+            ),
         },
     );
-    ensure_login(ctx, &server)
+    ensure_login(ctx, &preferred)
 }
 
 /// VibeSkua `WaitReloginDelay`: `ReloginTryDelay` plus 400-1000 ms.
@@ -940,14 +984,14 @@ pub fn conn_detail(bot: &Bot) -> String {
 }
 
 /// VibeSkua `EnsureLogin`.
-fn ensure_login(ctx: &Ctx, server: &Server) -> BotResult<bool> {
+fn ensure_login(ctx: &Ctx, preferred: &str) -> BotResult<bool> {
     let bot = ctx.bot;
     let max = bot.opts().relogin_tries;
     let mut tries = 0;
     let mut attempted = HashSet::new();
     // Turu: servers that said they're full during this login (the list's counts lag behind).
     let mut full: HashSet<String> = HashSet::new();
-    let preferred = Some(server.name.clone());
+    let preferred = Some(preferred.to_owned());
     while !player::playing(bot).unwrap_or(false) && tries < max {
         ctx.check()?;
         tries += 1;
@@ -1190,12 +1234,9 @@ fn wait_for_server_list(ctx: &Ctx) -> BotResult<bool> {
             .unwrap_or_default();
         let modal = modal.trim();
         if !modal.is_empty() && modal != "null" {
-            relogin_log(
-                bot,
-                format!("Login modal warning detected: '{modal}'. Clearing dialog."),
-            );
-            let _ = bot.flash.call("killLoginModals", vec![]);
             let lower = modal.to_lowercase();
+            // A lockout's dialog stays on screen so you can read why (VibeSkua c8e1fb9); any
+            // other login warning is cleared.
             if lower.contains("banned") || lower.contains("disabled") {
                 relogin_log(
                     bot,
@@ -1207,6 +1248,11 @@ fn wait_for_server_list(ctx: &Ctx) -> BotResult<bool> {
                 // VibeSkua swallows this and tries again; with the account locked that's no use.
                 return Err(BotError::Other(format!("account lockout: {modal}")));
             }
+            relogin_log(
+                bot,
+                format!("Login modal warning detected: '{modal}'. Clearing dialog."),
+            );
+            let _ = bot.flash.call("killLoginModals", vec![]);
             return Ok(false);
         }
         if server_list_ready(bot) {
