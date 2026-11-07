@@ -26,6 +26,7 @@ mod restart;
 mod saf;
 mod screen;
 mod storage;
+mod tabs;
 mod ui;
 
 use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
@@ -53,8 +54,10 @@ use std::rc::Rc;
 use std::sync::mpsc::{Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex, Once, OnceLock};
 use std::time::{Duration, Instant};
+use turu_bot::Bot;
 use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs};
-use turu_frontend::turu;
+use turu_frontend::players::{Players, Slot};
+use turu_frontend::turu::{self, TabId, TabRequest};
 use url::Url;
 use wgpu::rwh::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 
@@ -555,36 +558,156 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     }
     GPU.set(Some((descriptors, blit)));
     let sender = ENGINE_TX.get().expect("set before the thread started").clone();
-    let player = build_player(root, movie_url, renderer, sender.clone());
+    // The first tab; the UI's "+", Army > Accounts and Army Control open and select more.
+    let tab = turu::active_tab();
+    let bot = turu::bot();
+    let mut players = Players::new();
+    let player = build_player(root, &movie_url, renderer, sender.clone(), tab, &bot);
+    players.add(Slot::new(Some(tab), player, ()));
+    let requests = Mutex::new(sender.clone());
+    turu::set_tab_requests(Box::new(move |request| {
+        requests
+            .lock()
+            .is_ok_and(|sender| sender.send(EngineEvent::Tab(request)).is_ok())
+    }));
     // A window that came while the engine started up.
-    attach_surface(&mut player.lock().unwrap_or_else(|e| e.into_inner()));
-    turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
+    if let Some(mut player) = players.get() {
+        attach_surface(&mut player);
+    }
+    bot.set_host(Some(Arc::new(engine::flash_host(sender.clone(), tab))));
     tracing::info!("Engine running");
     memory::init();
-    let mut frames_seen = player.lock().unwrap_or_else(|e| e.into_inner()).frames_run();
-    engine::run_loop_paced(&player, events, |player, step| {
-        if let engine::Step::Ticked { frame_ms } = step {
-            if let Some(frame_ms) = frame_ms {
-                frame_perf::frames(
-                    player.frames_run() - frames_seen,
-                    Duration::from_secs_f64(frame_ms / 1000.0),
-                    Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0)),
+    // Frames the active tab's player had run at its last tick, for `--perf-log`'s frame count;
+    // taken again when a tab request may have made another player the active one.
+    let frames_seen = Cell::new(players.get().map_or(0, |player| player.frames_run()));
+    // The tabs open before Android stopped the app, after this one (`android-tabs.json`).
+    tabs::reopen();
+    engine::run_loop_paced(
+        &mut players,
+        events,
+        |player, step| {
+            if let engine::Step::Ticked { frame_ms } = step {
+                if let Some(frame_ms) = frame_ms {
+                    frame_perf::frames(
+                        player.frames_run().saturating_sub(frames_seen.get()),
+                        Duration::from_secs_f64(frame_ms / 1000.0),
+                        Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0)),
+                    );
+                }
+                frames_seen.set(player.frames_run());
+                if test_gpu_loss.is_some_and(|at| Instant::now() >= at) {
+                    test_gpu_loss = None;
+                    tracing::warn!("--test-gpu-loss: destroying the GPU device");
+                    GPU.with_borrow(|gpu| gpu.as_ref().map(|(descriptors, _)| descriptors.device.destroy()));
+                }
+                memory::tick(player);
+                if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
+                    audio.recreate_stream_if_needed();
+                }
+            }
+            SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)))
+        },
+        |players, request| {
+            tab_request(players, request, root, &movie_url, &sender);
+            frames_seen.set(players.get().map_or(0, |player| player.frames_run()));
+        },
+    );
+    for (_, bot) in turu::tabs() {
+        bot.set_host(None);
+    }
+}
+
+/// Opens, selects or closes a tab, as the desktop's window does (`app.rs`, `tab_request`): one
+/// player per tab, the active one drawn on the screen and heard, the others muted and ticked at
+/// the hidden tab's rate. A new tab over Options > Application > Tab Limit is refused.
+fn tab_request(
+    players: &mut Players<()>,
+    request: TabRequest,
+    root: &Path,
+    movie_url: &Url,
+    sender: &Sender<EngineEvent>,
+) {
+    match request {
+        TabRequest::Open(startup) => {
+            let limit = turu::bot().settings.read().tab_limit.clamp(1, 4) as usize;
+            if players.len() >= limit {
+                let message = format!(
+                    "Not opening a tab: {limit} are open, the Tab Limit (Options > Application). Each one takes about 400 MB."
                 );
+                tracing::warn!("{message}");
+                turu::bot().log(message);
+                return;
             }
-            frames_seen = player.frames_run();
-            if test_gpu_loss.is_some_and(|at| Instant::now() >= at) {
-                test_gpu_loss = None;
-                tracing::warn!("--test-gpu-loss: destroying the GPU device");
-                GPU.with_borrow(|gpu| gpu.as_ref().map(|(descriptors, _)| descriptors.device.destroy()));
+            let Some(renderer) = GPU.with_borrow(|gpu| {
+                let (descriptors, blit) = gpu.as_ref()?;
+                let target = MovieTexture::new(blit.clone(), &descriptors.device, engine::STAGE.0, engine::STAGE.1);
+                WgpuRenderBackend::new(descriptors.clone(), target)
+                    .inspect_err(|e| tracing::error!("Couldn't make the new tab's renderer: {e}"))
+                    .ok()
+            }) else {
+                return;
+            };
+            leave_active(players);
+            let (tab, bot) = turu::add_tab(*startup);
+            let player = build_player(root, movie_url, renderer, sender.clone(), tab, &bot);
+            players.add(Slot::new(Some(tab), player, ()));
+            bot.set_host(Some(Arc::new(engine::flash_host(sender.clone(), tab))));
+            turu::set_active_tab(tab);
+            tracing::info!("Opened a tab ({} open)", players.len());
+        }
+        TabRequest::Select(tab) => {
+            if players.active().and_then(Slot::tab) == Some(tab) {
+                return;
             }
-            memory::tick(player);
-            if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
-                audio.recreate_stream_if_needed();
+            leave_active(players);
+            if players.select_tab(tab) {
+                turu::set_active_tab(tab);
             }
         }
-        SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)))
-    });
-    turu::bot().set_host(None);
+        TabRequest::Close(tab) => {
+            if players.len() < 2 {
+                return;
+            }
+            if players.active().and_then(Slot::tab) == Some(tab) {
+                leave_active(players);
+            }
+            // The player first: it detaches the tab's bot, which `remove_tab` stops.
+            players.remove_tab(tab);
+            turu::remove_tab(tab);
+            let active = turu::active_tab();
+            turu::set_active_tab(active);
+            players.select_tab(active);
+        }
+        // No Grid View on a phone: the tiles would be too small.
+        TabRequest::Grid(_) => return,
+    }
+    // Only the active tab is heard, and only while a window shows it (`set_heard`: its volume
+    // comes back when one does).
+    let shown = window_shown();
+    for (active, mut player) in players.all() {
+        player.set_volume(if active && shown { 1.0 } else { 0.0 });
+    }
+    if !shown {
+        BACKGROUND_MUTED.set(Some(1.0));
+    }
+    // Without a window the active tab's game slows down too, as the one tab's did.
+    if !window_shown() {
+        turu::bot().state.lock().hidden_tab = true;
+    }
+    tabs::save();
+}
+
+/// The active tab's player stops being the one on screen: its fingers are let go, and the next
+/// one gets the screen's size.
+fn leave_active(players: &Players<()>) {
+    if let Some(mut player) = players.get() {
+        with_screen(|screen| screen.leave(&mut player));
+    }
+}
+
+/// Whether the game is drawn in a window now.
+fn window_shown() -> bool {
+    SCREEN.with_borrow(|screen| screen.as_ref().is_some_and(Screen::shown))
 }
 
 /// Frame interpolation (Options > Application; off by default) is on while this file is in the
@@ -635,9 +758,11 @@ fn read_args(file: &Path) -> Vec<OsString> {
 /// skua.swf's stage until the screen's first frame sets it.
 fn build_player(
     root: &Path,
-    movie_url: Url,
+    movie_url: &Url,
     renderer: WgpuRenderBackend<MovieTexture>,
     sender: Sender<EngineEvent>,
+    tab: TabId,
+    bot: &Arc<Bot>,
 ) -> Arc<Mutex<Player>> {
     let content = PlayingContent::DirectFile(ContentDescriptor {
         url: movie_url.clone(),
@@ -647,7 +772,7 @@ fn build_player(
         movie_url.clone(),
         None,
         None,
-        Executor::new(sender),
+        Executor::new(sender, tab),
         None,
         false,
         HashSet::new(),
@@ -656,13 +781,13 @@ fn build_player(
         Rc::new(content),
         NoDialogs,
     );
-    let navigator = turu_frontend::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));
+    let navigator = turu_frontend::capture::CaptureNavigator::new(navigator, Some(bot.capture.clone()));
     let mut builder = PlayerBuilder::new()
         .with_navigator(navigator)
         .with_renderer(renderer)
         .with_ui(ui::AndroidUiBackend::new())
         .with_storage(Box::new(DiskStorageBackend::new(root.join("SharedObjects"))))
-        .with_external_interface(Box::new(turu::TuruExternalInterface { bot: turu::bot() }))
+        .with_external_interface(Box::new(turu::TuruExternalInterface { bot: bot.clone() }))
         .with_autoplay(true)
         .with_letterbox(Letterbox::On)
         .with_quality(StageQuality::High)

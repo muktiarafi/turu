@@ -77,9 +77,9 @@ impl Platform for AndroidPlatform {
         false
     }
 
-    // No tabs yet: Army and Butler need several clients.
-    fn has_army(&self) -> bool {
-        false
+    // A phone's memory holds two or three clients (Options > Application > Tab Limit).
+    fn limits_tabs(&self) -> bool {
+        true
     }
 
     fn shares_text(&self) -> bool {

@@ -1,7 +1,8 @@
 //! The tab strip above the nav bar (VibeSkua's `TabbedHostWindow`), once there are two tabs:
 //! one tab per game client, named after its character, with a dot while its script or Auto
 //! Attack runs ("!" when its script or Butler waits for you), "×" to close it, and "+" for a
-//! new one at the login screen.
+//! new one at the login screen. On a touch screen the tabs are taller and only the active one
+//! has its "×" (a finger aimed at a tab would close it otherwise).
 
 use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
 use crate::gui::tab_strip_height;
@@ -41,8 +42,13 @@ impl TabStrip {
                                     .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"));
                                 tab_button(ui, tab, &turu::tab_label(&bot), tab == active, busy, waits);
                             }
+                            let plus_size = super::widgets::target(0.0, tab_strip_height() as f32 - 3.0);
                             let plus = ui
-                                .add(egui::Button::new(RichText::new("+").size(16.0)).frame(false))
+                                .add(
+                                    egui::Button::new(RichText::new("+").size(16.0))
+                                        .frame(false)
+                                        .min_size(vec2(plus_size, plus_size)),
+                                )
                                 .on_hover_text(
                                     "New tab (log in there, or start an account in it from Army > Accounts)",
                                 );
@@ -62,13 +68,14 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
         .layout_no_wrap(label.to_owned(), FontId::proportional(12.0), TEXT);
     let width = (galley.size().x + 52.0).min(TAB_WIDTH);
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
-    // A finger-sized "×" on a touch screen (its mark stays small).
+    // A finger-sized "×" on a touch screen (its mark stays small), on the active tab only.
+    let closable = active || !super::widgets::touch();
     let close_size = super::widgets::target(16.0, 28.0);
     let close_rect = egui::Rect::from_center_size(
         pos2(rect.right() - 5.0 - close_size / 2.0, rect.center().y),
         vec2(close_size, close_size),
     );
-    let close = ui.interact(close_rect, ui.id().with(("turu_tab_close", tab)), Sense::click());
+    let close = closable.then(|| ui.interact(close_rect, ui.id().with(("turu_tab_close", tab)), Sense::click()));
 
     let fill = if active {
         PANEL
@@ -110,7 +117,14 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
     }
     let text_rect = egui::Rect::from_min_max(
         pos2(rect.left() + 22.0, rect.top()),
-        pos2(close_rect.left() - 4.0, rect.bottom()),
+        pos2(
+            if closable {
+                close_rect.left() - 4.0
+            } else {
+                rect.right() - 8.0
+            },
+            rect.bottom(),
+        ),
     );
     ui.painter().with_clip_rect(text_rect).text(
         pos2(text_rect.left(), rect.center().y),
@@ -119,21 +133,23 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
         FontId::proportional(12.0),
         if active { TEXT } else { MUTED },
     );
-    if close.hovered() {
-        ui.painter().rect_filled(close_rect, CornerRadius::same(4), HOVER);
+    if let Some(close) = &close {
+        if close.hovered() {
+            ui.painter().rect_filled(close_rect, CornerRadius::same(4), HOVER);
+        }
+        ui.painter().text(
+            close_rect.center(),
+            Align2::CENTER_CENTER,
+            "×",
+            FontId::proportional(13.0),
+            MUTED,
+        );
     }
-    ui.painter().text(
-        close_rect.center(),
-        Align2::CENTER_CENTER,
-        "×",
-        FontId::proportional(13.0),
-        MUTED,
-    );
 
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    if close.on_hover_text("Close this tab (stops its script)").clicked() {
+    if close.is_some_and(|close| close.on_hover_text("Close this tab (stops its script)").clicked()) {
         turu::request_tab(TabRequest::Close(tab));
     } else if response
         .on_hover_text(match waits {

@@ -81,10 +81,15 @@ pub trait Platform: Send + Sync {
     }
 
     /// Whether several clients work together: the Army menu (Accounts, Army Control, New Tab)
-    /// and Plugins > Butler. False on Android, which has no tabs yet (`docs/ANDROID_PROPOSAL.md`,
-    /// "Plan: tabs, Army and Butler"), so they're hidden there.
+    /// and Plugins > Butler. Where it's false they're hidden.
     fn has_army(&self) -> bool {
         true
+    }
+
+    /// Whether the tabs are limited by Options > Application > Tab Limit (`AppSettings::tab_limit`):
+    /// on a phone, whose memory holds two or three game clients.
+    fn limits_tabs(&self) -> bool {
+        false
     }
 
     /// Whether the screen is touched rather than pointed at: no hover, so tooltips never show,

@@ -54,3 +54,5 @@ rayon = { workspace = true }
 # sysroot in BINDGEN_EXTRA_CLANG_ARGS; the app's `cargoNdk` task sets both).
 rquickjs = { version = "0.14", features = ["bindgen"] }
 url = { workspace = true }
+# The tabs reopened after a kill (`tabs.rs`, `android-tabs.json`).
+serde_json = { workspace = true }

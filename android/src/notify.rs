@@ -1,14 +1,16 @@
-//! The Java side's foreground service (`TuruService.java`): its native methods, and the status it
+//! The Java side's foreground service (`TuruService.kt`): its native methods, and the status it
 //! shows. The service starts the engine (also after Android killed the process, when there's no
-//! activity), its notification shows the script and has Stop and Pause, and it holds a wake lock
-//! while a script runs. A thread here sends it the bot's state every 2 s, when it changed.
+//! activity), its notification shows the active tab's script with Stop and Pause (and a line per
+//! tab with several), and it holds a wake lock while any tab's script runs. A thread here sends
+//! it the bots' state every 2 s, when it changed, and keeps `android-tabs.json` up to date.
 
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{Global, JClass, JObject, JString, JValue};
 use jni::{Env, EnvUnowned, JavaVM, jni_sig, jni_str};
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
+use turu_bot::Bot;
 use turu_frontend::turu;
 
 /// The JVM and `TuruService`'s class: a native thread can't look the app's classes up itself.
@@ -73,29 +75,62 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeAction<'local>(
 struct Status {
     title: String,
     text: String,
+    /// The active tab's script runs (Pause and Stop act on it).
     running: bool,
     paused: bool,
+    /// Some tab's script runs: the wake lock is held.
+    awake: bool,
+}
+
+/// The tab's script's name, while one is loaded.
+fn script_name(bot: &Bot) -> Option<String> {
+    bot.scripts
+        .loaded()
+        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
+}
+
+/// One tab's line: "Name is farming", "Name is in game, no script running", ... With one tab
+/// the name is left out of the logged-out states ("Not logged in").
+fn tab_line(bot: &Bot, named: bool) -> String {
+    let who = turu::tab_label(bot);
+    let running = bot.scripts.is_running();
+    let logged_in = bot.state.lock().in_game;
+    let (state, alone) = match (logged_in, running) {
+        (true, true) => return format!("{who} is farming"),
+        (true, false) => return format!("{who} is in game, no script running"),
+        (false, _) if bot.servers.is_relogging() => ("logging back in", "Logging back in"),
+        (false, _) => ("not logged in", "Not logged in"),
+    };
+    if named {
+        format!("{who}: {state}")
+    } else {
+        alone.to_owned()
+    }
 }
 
 fn status() -> Status {
     let bot = turu::bot();
+    let tabs = turu::tabs();
     let running = bot.scripts.is_running();
     let paused = running && bot.control.is_paused();
-    let script = bot
-        .scripts
-        .loaded()
-        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
-    let logged_in = bot.state.lock().in_game;
-    let title = match (&script, running) {
+    let title = match (script_name(&bot), running) {
         (Some(name), true) => format!("{name} {}", if paused { "paused" } else { "running" }),
         _ => "Turu".to_owned(),
     };
-    let who = turu::tab_label(&bot);
-    let mut text = match (logged_in, running) {
-        (true, true) => format!("{who} is farming"),
-        (true, false) => format!("{who} is in game, no script running"),
-        (false, _) if bot.servers.is_relogging() => "Logging back in".to_owned(),
-        (false, _) => "Not logged in".to_owned(),
+    let mut text = if tabs.len() > 1 {
+        // A line per tab, the active one marked: "▶ Name is farming (GoldFarm)".
+        tabs.iter()
+            .map(|(_, tab)| {
+                let mark = if Arc::ptr_eq(tab, &bot) { "▶ " } else { "" };
+                let script = script_name(tab)
+                    .filter(|_| tab.scripts.is_running())
+                    .map_or_else(String::new, |name| format!(" ({name})"));
+                format!("{mark}{}{script}", tab_line(tab, true))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        tab_line(&bot, false)
     };
     // The screen can't draw any more (`memory::gpu_lost`): the notification is what's left.
     if ruffle_render_wgpu::device_lost().is_some() {
@@ -106,6 +141,7 @@ fn status() -> Status {
         text,
         running,
         paused,
+        awake: tabs.iter().any(|(_, tab)| tab.scripts.is_running()),
     }
 }
 
@@ -114,6 +150,7 @@ fn start_updates() {
     let spawned = std::thread::Builder::new().name("Turu Notify".into()).spawn(|| {
         let mut shown: Option<Status> = None;
         loop {
+            crate::tabs::save();
             let now = status();
             if shown.as_ref() != Some(&now) {
                 match send(&now) {
@@ -182,7 +219,7 @@ pub(crate) fn gpu_lost(why: &str) {
     });
 }
 
-/// `TuruService.status(title, text, running, paused)`.
+/// `TuruService.status(title, text, running, paused, awake)`.
 fn send(status: &Status) -> jni::errors::Result<()> {
     let Some((vm, class)) = SERVICE.get() else {
         return Ok(());
@@ -193,12 +230,13 @@ fn send(status: &Status) -> jni::errors::Result<()> {
         env.call_static_method(
             class,
             jni_str!("status"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZ)V"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZ)V"),
             &[
                 JValue::Object(&title),
                 JValue::Object(&text),
                 JValue::Bool(status.running),
                 JValue::Bool(status.paused),
+                JValue::Bool(status.awake),
             ],
         )?;
         Ok(())
