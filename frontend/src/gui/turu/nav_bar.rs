@@ -575,8 +575,9 @@ impl NavBar {
         self.jump_open = open;
     }
 
-    /// VibeSkua `JumpViewModel`: picking a cell jumps there at once ("Enter" with pad
-    /// "Spawn", else the chosen pad or "Left"); Current selects where you are without
+    /// VibeSkua `JumpViewModel`: picking a cell selects a pad ("Enter" with pad "Spawn", else
+    /// the chosen pad or "Left"); with Auto-jump on Position Change (Application options) picking
+    /// a cell or a pad jumps there at once, else Jump does. Current selects where you are without
     /// jumping; the cell list is refreshed whenever its drop-down opens.
     fn jump_panel(&mut self, ui: &mut Ui) {
         ui.set_width(236.0);
@@ -587,7 +588,9 @@ impl NavBar {
         let half = (ui.available_width() - 6.0) / 2.0;
         let mut state = lock(&self.jump);
         let mut picked = None;
+        let mut picked_pad = false;
         let mut cells_open = false;
+        let auto_jump = crate::turu::bot().settings.read().auto_jump_on_position_change;
         ui.horizontal(|ui| {
             let cells = state.cells.clone();
             let combo = ComboBox::from_id_salt("jump_cell")
@@ -620,6 +623,9 @@ impl NavBar {
                     touch_rows(ui);
                     for pad in pads {
                         if ui.selectable_label(current == pad, &pad).clicked() {
+                            if pad != current {
+                                picked_pad = true;
+                            }
                             state.pad = pad;
                         }
                     }
@@ -638,6 +644,16 @@ impl NavBar {
                 state.pad = "Left".into();
             }
             state.cell = Some(cell.clone());
+            if auto_jump {
+                let pad = state.pad.clone();
+                drop(state);
+                self.jump_to(cell, pad, true);
+                state = lock(&self.jump);
+            }
+        } else if picked_pad
+            && auto_jump
+            && let Some(cell) = state.cell.clone()
+        {
             let pad = state.pad.clone();
             drop(state);
             self.jump_to(cell, pad, true);

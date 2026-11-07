@@ -269,6 +269,12 @@ fn entries() -> Vec<Entry> {
         ),
         b!(
             Relogin,
+            "Relogin Fallback",
+            relogin_fallback,
+            "When Relogin Server is full or offline, relogs to any free server. Off, it keeps trying Relogin Server"
+        ),
+        b!(
+            Relogin,
             "Retry Relogin",
             retry_relogin,
             "When Relogin Tries attempts fail, auto-relogin tries again after 1, 2, 5, then every 10 minutes"

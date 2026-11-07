@@ -392,6 +392,8 @@ export class GameMap {
     get name(): string { return call("map.name"); }
     get fullName(): string { return call("map.fullName"); }
     get roomId(): number { return call("map.roomId"); }
+    /** The room's number, from the server's area name (`battleon-1234` is 1234); 0 when there's none. */
+    get roomNumber(): number { return call("map.roomNumber"); }
     get loading(): boolean { return call("map.loading"); }
     get loaded(): boolean { return call("map.loaded"); }
     get cells(): string[] { return call("map.cells"); }
@@ -806,6 +808,17 @@ export class Inventory extends ItemContainer {
     equipUsableItem(item: string | number): void { call("inventory.equipUsableItem", item); }
     toBank(item: string | number): boolean { return call("inventory.toBank", item); }
     ensureToBank(item: string | number): boolean { return call("inventory.ensureToBank", item); }
+    /** The item is one of your favourites (AQW's favourite star). False when you don't have it. */
+    isFavorited(item: string | number): boolean { return call("inventory.isFavorited", item); }
+    /** The inventory items marked as favourites. */
+    get favoritedItems(): InventoryItem[] { return call("inventory.favoritedItems"); }
+    /** The inventory items not marked as favourites. */
+    get unfavoritedItems(): InventoryItem[] { return call("inventory.unfavoritedItems"); }
+    /**
+     * Moves every item that can be banked to the bank. Favourites and equipped items stay unless
+     * `skipFavorited` / `skipEquipped` is false. Returns how many items were moved.
+     */
+    bankAllItems(skipFavorited = true, skipEquipped = true): number { return call("inventory.bankAllItems", skipFavorited, skipEquipped); }
 }
 
 /** `bot.bank`. */
@@ -1112,6 +1125,8 @@ export interface OptionValues {
     loginTimeout: number;
     /** Start auto-relogin on an unexpected disconnect or a lost connection (VibeSkua's "Relogin Watchdog"). */
     reloginWatchdog: boolean;
+    /** When the preferred or Relogin Server can't be used, relog to any free server (VibeSkua's "Relogin Fallback"). Off: keep trying it. */
+    reloginFallback: boolean;
     privateRooms: boolean;
     privateNumber: number;
     skipCutscenes: boolean;

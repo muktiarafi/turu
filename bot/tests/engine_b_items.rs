@@ -312,6 +312,21 @@ fn drops_pickup_sends_get_drop() {
     assert_eq!(call(&bot, "drops.exists", json!(["*"])), json!(true));
     call(&bot, "drops.pickup", json!([["dragon scale", 999]]));
     assert_eq!(*game.sent.lock(), ["%xt%zm%getDrop%42%11%"]);
+    // The drop stays until the server answers (VibeSkua `PickupResult`).
+    assert_eq!(call(&bot, "drops.exists", json!([11])), json!(true));
+    let reply = |success: i64| {
+        let data = json!({ "cmd": "getDrop", "bSuccess": success, "ItemID": 11, "iQty": 1, "bBank": false });
+        let packet = json!({ "params": { "type": "json", "dataObj": data } });
+        bot.on_flash_call("pext", vec![Value::String(packet.to_string())]);
+    };
+    reply(0);
+    assert_eq!(
+        call(&bot, "drops.exists", json!([11])),
+        json!(true),
+        "a refused drop stays"
+    );
+    assert!(bot.state.lock().refused_drops.contains_key(&11));
+    reply(1);
     assert_eq!(call(&bot, "drops.exists", json!([11])), json!(false));
     call(&bot, "drops.rejectExcept", json!([["Something"]]));
     assert!(

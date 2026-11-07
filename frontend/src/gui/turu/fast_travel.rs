@@ -90,7 +90,7 @@ impl Default for FastTravelWindow {
         Self {
             list: Vec::new(),
             search: String::new(),
-            private_room: false,
+            private_room: true,
             room: DEFAULT_ROOM,
             form: empty_form(),
             editing: None,

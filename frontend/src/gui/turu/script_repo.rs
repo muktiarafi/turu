@@ -470,31 +470,24 @@ impl ScriptRepoWindow {
         if widgets::chip(ui, "Local", self.local_only) {
             self.local_only = !self.local_only;
         }
-        fit(ui, 100.0);
-        ComboBox::from_id_salt("turu_repo_sort")
-            .width(100.0)
-            .selected_text(match self.sort {
-                Sort::Name => "Name",
-                Sort::Added => "Date added",
-            })
-            .show_ui(ui, |ui| {
-                touch_rows(ui);
-                ui.selectable_value(&mut self.sort, Sort::Name, "Name");
-                ui.selectable_value(&mut self.sort, Sort::Added, "Date added");
-            })
-            .response
-            .on_hover_text("Sort by");
+        // VibeSkua `CycleSort`: one button steps through A to Z, Z to A, Newest, Oldest.
         let order = match (self.sort, self.descending) {
-            (Sort::Name, false) => "A to Z",
-            (Sort::Name, true) => "Z to A",
-            (Sort::Added, false) => "Oldest first",
+            (Sort::Name, false) => "Name A to Z",
+            (Sort::Name, true) => "Name Z to A",
             (Sort::Added, true) => "Newest first",
+            (Sort::Added, false) => "Oldest first",
         };
-        if widgets::button(ui, order, Kind::Normal, true, vec2(96.0, control), "")
-            .on_hover_text("Reverse the order")
+        fit(ui, 110.0);
+        if widgets::button(ui, order, Kind::Normal, true, vec2(110.0, control), "")
+            .on_hover_text("Change the order: name A to Z, Z to A, newest, oldest")
             .clicked()
         {
-            self.descending = !self.descending;
+            (self.sort, self.descending) = match (self.sort, self.descending) {
+                (Sort::Name, false) => (Sort::Name, true),
+                (Sort::Name, true) => (Sort::Added, true),
+                (Sort::Added, true) => (Sort::Added, false),
+                (Sort::Added, false) => (Sort::Name, false),
+            };
         }
         // Compact, the search box's line has the count.
         if header != Header::Compact {
@@ -576,11 +569,21 @@ impl ScriptRepoWindow {
         rows.sort_by(|&(a, _), &(b, _)| {
             let (a, b) = (&entries[a], &entries[b]);
             b.pinned.cmp(&a.pinned).then_with(|| {
-                let order = match self.sort {
-                    Sort::Name => a.info.name.to_lowercase().cmp(&b.info.name.to_lowercase()),
-                    Sort::Added => a.info.added.cmp(&b.info.added),
-                };
-                if self.descending { order.reverse() } else { order }
+                let by_name = || a.info.name.to_lowercase().cmp(&b.info.name.to_lowercase());
+                match self.sort {
+                    Sort::Name if self.descending => by_name().reverse(),
+                    Sort::Name => by_name(),
+                    // VibeSkua `CompareScripts`: scripts without a date go last either way, and
+                    // scripts of the same date are in name order.
+                    Sort::Added => {
+                        let (a_dated, b_dated) = (!a.info.added.is_empty(), !b.info.added.is_empty());
+                        b_dated.cmp(&a_dated).then_with(|| {
+                            let dates = a.info.added.cmp(&b.info.added);
+                            if self.descending { dates.reverse() } else { dates }
+                        })
+                    }
+                    .then_with(by_name),
+                }
             })
         });
         if !self.search.trim().is_empty() {

@@ -511,10 +511,15 @@ impl SkillsWindow {
                     .min_scrolled_height(120.0)
                     .max_height((ui.available_height() - 60.0).max(120.0))
                     .show(ui, |ui| {
+                        // VibeSkua `FilteredLoadedSkills`: only the picked class's sets.
+                        let class = self.class.clone();
+                        let shown = |set: &AdvancedSkill| {
+                            class.as_deref().is_none_or(|c| set.class_name.eq_ignore_ascii_case(c))
+                        };
                         if self.sets.is_empty() {
                             ui.label(RichText::new("No saved skill sets found.").color(MUTED));
                         }
-                        for (i, set) in self.sets.iter().enumerate() {
+                        for (i, set) in self.sets.iter().enumerate().filter(|(_, set)| shown(set)) {
                             let text = RichText::new(set.save_string()).color(TEXT);
                             let row = ui.add_sized(
                                 [ui.available_width(), 22.0],
@@ -531,6 +536,13 @@ impl SkillsWindow {
                     });
             });
             ui.add_space(6.0);
+            // A selection the class filter hides is dropped, as VibeSkua's.
+            if let Some(i) = self.selected
+                && let (Some(class), Some(set)) = (self.class.as_deref(), self.sets.get(i))
+                && !set.class_name.eq_ignore_ascii_case(class)
+            {
+                self.selected = None;
+            }
             let has_selection = self.selected.is_some_and(|i| i < self.sets.len());
             ui.horizontal(|ui| {
                 let size = vec2(0.0, 26.0);

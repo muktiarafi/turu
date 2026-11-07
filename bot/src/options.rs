@@ -50,6 +50,10 @@ pub struct BotOptions {
     /// VibeSkua's "Relogin Watchdog" (Application options): an unexpected disconnect or a
     /// lost connection starts auto-relogin.
     pub relogin_watchdog: bool,
+    /// VibeSkua's "Relogin Fallback" (Game options, off by default): when the preferred or
+    /// Relogin Server can't be used, log in on whichever server is free. Off, the relogin keeps
+    /// trying the server it was asked for until it's usable or the tries run out.
+    pub relogin_fallback: bool,
     // Gameplay & Character
     pub private_rooms: bool,
     pub private_number: i32,
@@ -100,6 +104,7 @@ impl Default for BotOptions {
             relogin_try_delay: 800,
             login_timeout: 30000,
             relogin_watchdog: true,
+            relogin_fallback: false,
             private_rooms: false,
             private_number: 100000,
             skip_cutscenes: false,

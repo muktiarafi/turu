@@ -47,14 +47,23 @@ impl BoostType {
         }
     }
 
-    /// What the boost item's name contains.
-    fn search(self) -> &'static str {
+    /// What the boost item's name contains besides "boost", any one of them (VibeSkua
+    /// `BoostSearchTerms`).
+    fn search(self) -> &'static [&'static str] {
         match self {
-            Self::Gold => "gold",
-            Self::Class => "class",
-            Self::Reputation => "rep",
-            Self::Experience => "xp",
+            Self::Gold => &["gold"],
+            Self::Class => &["class"],
+            Self::Reputation => &["rep", "reputation"],
+            Self::Experience => &["xp", "exp", "experience"],
         }
+    }
+
+    /// VibeSkua `IsMatchingBoost`: the name has "boost" and one of [`Self::search`]'s terms,
+    /// ignoring case. Boosts are misc items too, not only ServerUse ones, so the category isn't
+    /// checked.
+    fn matches(self, name: &str) -> bool {
+        let name = name.to_lowercase();
+        name.contains("boost") && self.search().iter().any(|term| name.contains(term))
     }
 
     fn index(self) -> usize {
@@ -160,10 +169,10 @@ pub fn use_boost(bot: &Bot, id: i64) -> BotResult<()> {
         .send_packet(&format!("%xt%zm%serverUseItem%{room}%+%{id}%"))
 }
 
-/// VibeSkua `GetBoostID`: the ID of the first boost item (category ServerUse) of `boost` in
-/// the inventory, else, with `search_bank`, in the bank (moved to the inventory). 0 when there
-/// is none. The name is matched ignoring case ("Gold Boost! (1 hr)" for "gold"); VibeSkua
-/// matches it as is.
+/// VibeSkua `GetBoostID`: the ID of the first boost item of `boost` in the inventory (its name
+/// has "boost" and one of the boost's terms, any category), else, with `search_bank`, in the
+/// bank, moved to the inventory. 0 when there is none, or when the bank item couldn't be moved
+/// (a boost that can't be used from the inventory is never set).
 pub fn get_boost_id(bot: &Bot, boost: BoostType, search_bank: bool) -> BotResult<i64> {
     if !player::logged_in(bot)? {
         return Ok(0);
@@ -171,23 +180,27 @@ pub fn get_boost_id(bot: &Bot, boost: BoostType, search_bank: bool) -> BotResult
     let find = |container| -> BotResult<i64> {
         Ok(inventory::items(bot, container)?
             .iter()
-            .find(|i| {
-                i.category.eq_ignore_ascii_case("ServerUse")
-                    && i.name.to_lowercase().contains(boost.search())
-            })
+            .find(|i| boost.matches(&i.name))
             .map_or(0, |i| i.id))
     };
-    let mut id = find(Container::Inventory)?;
-    if id == 0 && search_bank {
-        if !bot.state.lock().bank_loaded {
-            inventory::bank_load(bot, true)?;
-        }
-        id = find(Container::Bank)?;
-        if id > 0 {
-            inventory::bank_ensure_to_inventory(bot, NameOrId::Id(id), false)?;
-        }
+    let id = find(Container::Inventory)?;
+    if id != 0 || !search_bank {
+        return Ok(id);
     }
-    Ok(id)
+    if !bot.state.lock().bank_loaded {
+        inventory::bank_load(bot, true)?;
+    }
+    let id = find(Container::Bank)?;
+    if id == 0 {
+        return Ok(0);
+    }
+    Ok(
+        if inventory::bank_ensure_to_inventory(bot, NameOrId::Id(id), false)? {
+            id
+        } else {
+            0
+        },
+    )
 }
 
 /// VibeSkua `SetAllBoostsIDs(searchBank)`: sets each boost's ID to the item
@@ -242,5 +255,20 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(())
         }
         _ => Err(BotError::UnknownMethod(format!("boosts.{name}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BoostType;
+
+    #[test]
+    fn boost_names_match_any_term() {
+        assert!(BoostType::Experience.matches("Experience Boost! (1 hr)"));
+        assert!(BoostType::Experience.matches("Daily EXP Boost"));
+        assert!(BoostType::Reputation.matches("REPUTATION Boost! (20 min)"));
+        assert!(BoostType::Gold.matches("Gold Boost! (1 hr)"));
+        assert!(!BoostType::Gold.matches("Gold Voucher 100k"));
+        assert!(!BoostType::Class.matches("Experience Boost! (1 hr)"));
     }
 }
