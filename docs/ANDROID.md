@@ -17,18 +17,28 @@ How to build, run and check the Android app. The design and the plan are in
 > below; a full farming run on a phone isn't recorded yet.
 >
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
-> text; Turu's text boxes near the top stay visible); no file dialogs (Load Script and the
-> other dialogs do nothing: scripts come from Search Scripts, or `adb push` into `scripts/`);
-> the windows are the desktop's, at the phone's density (no drawer or full-screen sheets yet);
-> OpenGL ES draws only parts of the game (use Vulkan, the default); after a restart only
-> `turu-args.txt`'s script runs (not one started by hand); phone makers' own battery managers
-> (Xiaomi, Samsung, Huawei) can still kill the service: see their settings.
+> text; a strip above it shows what they hold); the windows are the desktop's, at the phone's
+> density (no drawer or full-screen sheets yet); OpenGL ES draws only parts of the game (use
+> Vulkan, the default); after a restart a Scheduler playlist started by hand doesn't come back
+> (a script does); phone makers' own battery managers (Xiaomi, Samsung, Huawei) can still kill
+> the service: see their settings.
+>
+> **Without a computer (2026-11-07, compiled, not yet tried on a device):** file dialogs are the
+> system picker (`saf.rs`): Load Script, Junk Items' and Loadouts' import and export, the
+> Scheduler, the Interceptor's export and the logs' Save work as on a desktop (a picked script
+> is copied into `scripts/Imported/`, other files into the app's cache). Accounts keeps
+> passwords in the Android Keystore (`storage.rs`, `Storage.kt`) and logs in by itself (once
+> tabs bring back the Army menu). A Turu
+> text box under the keyboard moves up above it with its window (`pan.rs`). After a kill the
+> script started by hand comes back too, with its options and the account (`restart.rs`).
 
 ## What's where
 
 | Path | What |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser; no file dialogs yet). Empty on other systems. |
+| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser, the share sheet), `saf.rs` (file dialogs: the system picker), `pan.rs` (Turu's text box above the keyboard). Empty on other systems. |
+| `android/src/storage.rs`, `android/app/.../Storage.kt` | account passwords (Accounts' `SecretStore`): AES-GCM with a key in the Android Keystore, in the app's internal storage (`noBackupFilesDir/passwords`, not the shared data folder); copying and writing the picker's documents. |
+| `android/src/restart.rs` | the script started by hand, kept in the data folder's `android-restart.txt` while it runs (its options storage, the account and server; the password, when Accounts hasn't it, with the Keystore's key), run again when the service comes back without an activity after a kill (`turu-args.txt`'s own script wins). |
 | `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's buttons) and the status it shows, sent every 2 s when it changed. |
 | `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity: full screen, Back to the background, asks once for notifications and battery optimisation, starts the service), `TuruService` (the foreground service: starts the engine, also alone after a kill; the notification; the wake lock), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
 | `android/rustls-platform-verifier/` | Gradle module building the Kotlin half of `rustls-platform-verifier` (HTTPS certificate checks against Android's trust store) from the submodule `android/vendor/rustls-platform-verifier`. |
@@ -154,8 +164,10 @@ adb push turu-args.txt /sdcard/Android/data/com.muktiarafi.turu/files/
 ```
 
 Restart the app after changing it (`adb shell am force-stop com.muktiarafi.turu`, then start it).
-The password sits in that file in the clear, readable with `adb`; this is for testing until
-phase 3 keeps it in the Android Keystore.
+The password sits in that file in the clear, readable with `adb`: for testing. On the phone
+itself, log in on the game's screen and start the script: after a kill it comes back with
+the login, kept with the Android Keystore's key. Accounts keeps its passwords the same way
+(Army > Accounts, hidden on Android until tabs work).
 
 ## Watch it
 

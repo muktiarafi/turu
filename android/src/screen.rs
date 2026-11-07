@@ -590,6 +590,8 @@ impl Screen {
             }
         });
         self.ui_typing = output.platform_output.ime.is_some();
+        let ime = output.platform_output.ime.as_ref();
+        crate::pan::follow_text_field(&self.egui, ime, self.size.1 as f32 / ppp, keyboard);
         self.soft_keyboard();
         for command in &output.platform_output.commands {
             if let egui::OutputCommand::CopyText(text) = command {

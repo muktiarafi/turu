@@ -235,19 +235,19 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 ## Known gaps
 
 * No real phone yet; no 6-hour run (phase 4's "done when").
-* The strip above the keyboard is for the game's fields only; Turu's own text boxes (egui) can
-  still be under the keyboard when a window sits low.
+* The strip above the keyboard is for the game's fields; Turu's own text boxes (egui) move up
+  above the keyboard with their window (`pan.rs`; compiled, not tried on a device).
 * OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
   made on Metal, Vulkan and DX12. Vulkan is the default.
-* No file dialogs (`platform.rs` refuses them): scripts come from Search Scripts or `adb push`.
-  SAF import needs Kotlin in the activity (`ACTION_OPEN_DOCUMENT`, `onActivityResult`, a native
-  callback).
+* File dialogs are the system picker (`saf.rs`, `TuruActivity.openDocument` /
+  `createDocument`): a picked file is copied in and its path is the answer; a save answers a
+  cache file and copies it into the document once written. Not tried on a device yet.
 * The desktop windows at the phone's density work, but there is no drawer or full-screen sheet
   layout yet.
-* After a restart (kill), only `turu-args.txt`'s script runs, not one started by hand.
-* Passwords for Accounts: `SecretStore` has no Android implementation (Keystore via JNI). Its
-  `NoStore` says `keeps_passwords() == false`, so Accounts shows no password field there; a
-  Keystore store brings the field back by keeping the trait's default.
+* After a restart (kill), the script started by hand runs again (`restart.rs`), but not a
+  Scheduler playlist.
+* Passwords for Accounts: `storage.rs`'s `KeystoreStore` (AES-GCM, key in the Android Keystore,
+  files in internal storage). Not tried on a device yet.
 * The Army menu and Plugins > Butler are hidden on Android (`Platform::has_army`) until tabs
   work there (phase 5). Accounts would start accounts only in tabs (`launches_processes`: the
   executable is app_process, not a `turu`), with the loaded script (no file dialogs).
@@ -263,7 +263,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 2. Bring the ruffle-aqw fix to `main` (desktop `--headless` on a fresh server has the same login
    bug).
 3. Log in by hand on the game's screen on a phone, now that typing shows above the keyboard.
-4. SAF import and the Keystore `SecretStore` (phone use without a computer).
+4. Try SAF import/export, the Keystore `SecretStore`, the text box pan and the restart of a
+   hand-started script on a phone (done in code, 2026-11-07).
 5. Proposal phase 5: tabs (several clients), Army scripts and Butler (steps and estimate in
    `ANDROID_PROPOSAL.md`, "Plan: tabs, Army and Butler"), a tablet layout, gamepads (Cosmetics is
    done, above).
