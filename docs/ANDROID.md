@@ -4,7 +4,8 @@ How to build, run and check the Android app. The design and the plan are in
 `docs/ANDROID_PROPOSAL.md`.
 
 > **Status (phase 4):** the game on screen (Vulkan) with Turu's nav bar and bot windows over it,
-> touch, keys, the soft keyboard and sound, full screen, and kept running in the background: a
+> touch, keys, the soft keyboard and sound (muted while no window shows the game; Notify
+> Drop's beep still sounds), full screen, and kept running in the background: a
 > foreground service with the script's state and Stop / Pause in its notification, a wake lock
 > while a script runs, a one-time prompt to leave Turu out of battery optimisation, and a
 > restart without a window after Android kills the process (it logs back in and runs

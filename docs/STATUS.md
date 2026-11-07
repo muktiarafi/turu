@@ -488,7 +488,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and
-  bot windows (the desktop's, by touch), keys, the soft keyboard and sound; a foreground service
+  bot windows (the desktop's, by touch), keys, the soft keyboard and sound (muted in the
+  background, as a hidden desktop tab; Notify Drop's beep still sounds); a foreground service
   keeps it online in the background (status and Stop / Pause in its notification, a wake lock
   while a script runs, back on its own after a kill). Checked on an emulator, not a phone. No file dialogs
   (scripts come from Search Scripts); OpenGL ES misdraws; the soft keyboard covers the game's

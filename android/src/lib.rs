@@ -42,7 +42,7 @@ use screen::{Blit, Graphics, MovieTexture, SCREEN, Screen};
 use std::any::Any;
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Sender, channel, sync_channel};
@@ -65,6 +65,8 @@ static APP: Mutex<Option<AndroidApp>> = Mutex::new(None);
 thread_local! {
     /// The engine thread's GPU, for the screen the first window gets.
     static GPU: RefCell<Option<(Arc<Descriptors>, Arc<Blit>)>> = const { RefCell::new(None) };
+    /// The game's volume while it's muted in the background, to give back on return.
+    static BACKGROUND_MUTED: Cell<Option<f32>> = const { Cell::new(None) };
 }
 
 /// The latest activity's app, when one has started.
@@ -93,7 +95,7 @@ fn android_main(app: AndroidApp) {
         app.poll_events(None, |event| match event {
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 *lock_window() = app.native_window();
-                run_on_engine(|_| attach_surface());
+                run_on_engine(attach_surface);
             }
             PollEvent::Main(MainEvent::TerminateWindow { .. }) => detach_surface(),
             PollEvent::Main(
@@ -145,6 +147,7 @@ fn detach_surface() {
         with_screen(Screen::detach);
         // The game slows down like a hidden tab's (`api::options`).
         turu::bot().state.lock().hidden_tab = true;
+        set_heard(player, false);
         let _ = done.send(());
         // Nothing is drawn until a window comes back. After the answer: it waits for the GPU.
         memory::trim(player, "the window went away");
@@ -161,11 +164,34 @@ fn with_screen(work: impl FnOnce(&mut Screen)) {
     });
 }
 
-/// Draws in the current window from now on: the first one gets the screen.
-fn attach_surface() {
+/// Mutes the game while no window shows it, as a hidden desktop tab (`set_tab_volumes`), and gives
+/// its volume back when one does. Notify Drop's beep has a stream of its own and still sounds.
+/// Not a paused stream: Ruffle's mixer only lets a sound finish by playing it, so sounds started
+/// while paused would pile up (32 at most, then no new ones) and all play at once on return.
+fn set_heard(player: &mut Player, heard: bool) {
+    match (heard, BACKGROUND_MUTED.get()) {
+        (true, Some(volume)) => {
+            player.set_volume(volume);
+            BACKGROUND_MUTED.set(None);
+            tracing::info!("Sound back on");
+        }
+        (false, None) => {
+            BACKGROUND_MUTED.set(Some(player.volume()));
+            player.set_volume(0.0);
+            tracing::info!("Sound muted while no window shows the game");
+        }
+        _ => {}
+    }
+}
+
+/// Draws in the current window from now on: the first one gets the screen. Without a window (the
+/// service started the engine alone), the game stays muted.
+fn attach_surface(player: &mut Player) {
     let Some(window) = lock_window().clone() else {
+        set_heard(player, false);
         return;
     };
+    set_heard(player, true);
     let made = SCREEN.with_borrow_mut(|screen| match screen {
         Some(screen) => {
             screen.attach(&window);
@@ -444,7 +470,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let sender = ENGINE_TX.get().expect("set before the thread started").clone();
     let player = build_player(root, movie_url, renderer, sender.clone());
     // A window that came while the engine started up.
-    attach_surface();
+    attach_surface(&mut player.lock().unwrap_or_else(|e| e.into_inner()));
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Engine running");
     memory::init();
