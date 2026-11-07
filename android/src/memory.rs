@@ -8,6 +8,8 @@
 //!   ([`init`]), as if the GPU were always nearly full;
 //! * every minute, the geometry of shapes not drawn for 5 minutes is freed (other maps, the gear
 //!   of players who left; AQW keeps every SWF it loaded, so it otherwise grows all session);
+//! * every 10 s, finished GPU work is let go ([`release_finished_gpu_work`]), so its command
+//!   buffers are freed though the game submits nothing new (wgpu only looks after a submit);
 //! * when the phone runs low on memory ([`MemAvailable`](read_meminfo) under 15%), when Android
 //!   says so (`TuruService.onTrimMemory`), and when the window goes away (nothing is drawn then),
 //!   the idle textures and the shapes not drawn for 2 minutes are freed too ([`trim`]).
@@ -132,6 +134,7 @@ pub fn tick(player: &mut Player) {
             return;
         }
         watch.last_check = now;
+        release_finished_gpu_work(player);
         let Some((available, total)) = read_meminfo() else {
             return;
         };
@@ -151,6 +154,16 @@ pub fn tick(player: &mut Player) {
             trim(player, "the phone is low on memory");
         }
     });
+}
+
+/// Lets wgpu release the command buffers of GPU work that has finished. It only looks after the
+/// next submit or a poll, and without a window the game may submit nothing for minutes: on the
+/// emulator, one submission of a bitmap draw (~1300 render passes, a command buffer each, ~1 MB
+/// of the driver's memory each) stayed held all that time. A poll that doesn't wait.
+fn release_finished_gpu_work(player: &mut Player) {
+    if let Some(renderer) = <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut()) {
+        let _ = renderer.descriptors().device.poll(wgpu::PollType::Poll);
+    }
 }
 
 /// Frees the idle pooled textures (waiting for the GPU to let them go) and the shapes not drawn
