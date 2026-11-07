@@ -66,7 +66,7 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   tasks.cancel("walk");  // ends it, running its `finally` blocks
   ```
 
-  Wait with `yield` inside a task: `bot.sleep` there blocks the whole script. `scripts/README.md`
+  Wait with `yield` inside a task: `bot.sleep` there blocks the whole script. `scripts/docs/PORTING.md`
   ("Ultras") maps the C# forms.
 - **Stopping**: `bot.events.on("scriptStopping", (error) => ...)` runs once the script was
   stopped (Stop, `bot.stop()`) or failed (`error` is the message), but not when `main` returns,
@@ -162,13 +162,13 @@ the script starts in battleon, oaklore or bludrutbrawl, and when the script is s
 "Map after stopping the Bot" (`home`/`house`, `none`/`off`, or a map name) and puts your
 starting gear back on. Farms such as `Farm.gold()` use boosts when the CBO's Other > Boosters
 switch is on (`bot.boosts`: the boost item is found in the inventory or bank and used every 30 s
-while it isn't active; the timer stops when the script ends). `scripts/README.md` covers the
+while it isn't active; the timer stops when the script ends). `scripts/docs/PORTING.md` covers the
 porting conventions (C# named flags become option objects, wait inside `Core.sleep`).
 
 ## Porting a C# script
 
 `scripts/tools/cs2ts` does the first pass (`node tools/cs2ts/cs2ts.mjs <C# path>` in `scripts/`;
-`scripts/README.md`, "Converting with cs2ts"): it applies the steps below and marks what it can't
+`scripts/docs/PORTING.md`, "cs2ts"): it applies the steps below and marks what it can't
 convert. Then fix what `tsc` reports, read the draft against the C#, and remove its first-line
 marker. By hand:
 

@@ -210,26 +210,26 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 - **Merge scripts:** every merge outside the Ultras folders (436 more, 455 in all) and the 150
   scripts they include, drafted by the converter `scripts/tools/cs2ts` (tree-sitter C# + the
   TypeScript checker) and fixed by hand where it fell short; the Core members they reach were
-  added (`scripts/README.md`, "Merge scripts", lists them and 5 C# bugs fixed on purpose). All
+  added (`scripts/docs/PORTING.md`, "Merge scripts", lists them and 5 C# bugs fixed on purpose). All
   type-check and load; none has run in game.
 - **Story scripts:** every script in the C# `Story/` folder (the 282 left after the merges,
   drafted by cs2ts), with the rest of CoreToD, CoreDoomwood, Core7DD and CoreSummer (28 members).
   Their calls and literal arguments match the C# file by file; one C# bug is fixed on purpose
-  (`CoreMemet.zorbasPalace`'s last three quest IDs; `scripts/README.md`, "Story scripts"). All
+  (`CoreMemet.zorbasPalace`'s last three quest IDs; `scripts/docs/PORTING.md`, "Story scripts"). All
   type-check and load; none has run in game.
 - **Core content areas:** every script in the C# `Nation`, `Legion`, `Hollowborn`, `Darkon`,
   `Good`, `Evil`, `Chaos`, `ShadowsOfWar`, `Farm`, `Dailies` and `Enhancement` folders (the 326
   left, drafted by cs2ts) and 7 scripts outside them that they include, with the rest of
-  CoreFarms' reputations, CoreNSOD and 11 CoreNation members (`scripts/README.md`, "Core content
+  CoreFarms' reputations, CoreNSOD and 11 CoreNation members (`scripts/docs/PORTING.md`, "Core content
   areas", lists them, the 23 hand-fixed files and 8 C# bugs fixed on purpose). All type-check and
   load; none has run in game.
 - **Seasonal scripts:** every script in the C# `Seasonal/` folder (the 235 left, drafted by
-  cs2ts) but `CheckForDonatedACs` (Army), with CoreBots' `playerAFK` (`scripts/README.md`,
+  cs2ts) but `CheckForDonatedACs` (Army), with CoreBots' `playerAFK` (`scripts/docs/PORTING.md`,
   "Seasonal", lists the 9 hand-fixed files and 4 C# bugs fixed on purpose). All type-check and
   load; none has run in game.
 - **Other scripts:** every script in the C# `Other/` folder (the 187 left, drafted by cs2ts) and
   `prototypes/InfernalArenaLW`, with CoreBots' `ghostItem` and `QuestData.requiredFactionRep`
-  (`scripts/README.md`, "Other", lists the 18 hand-fixed files, 4 C# bugs fixed on purpose, and
+  (`scripts/docs/PORTING.md`, "Other", lists the 18 hand-fixed files, 4 C# bugs fixed on purpose, and
   the converter fixes; one of them, `Bot.Skills.StartAdvanced("1 | 4")` becoming a rotation
   instead of a class name, also fixed 7 earlier ports). All type-check and load; none has run in
   game.
@@ -241,7 +241,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   barrier with a round count (`bot.army.barrier`, `army/<name>.barrier`; the army waits use it),
   the Army > Accounts usernames, logging in an account
   with its keychain password (`doForAll`), and the army's private room numbers; and
-  `bot.map.getPlayer` / `playerExists` (VibeSkua `TryGetPlayer`). `scripts/README.md` ("Army",
+  `bot.map.getPlayer` / `playerExists` (VibeSkua `TryGetPlayer`). `scripts/docs/PORTING.md` ("Army",
   "Tools") lists what differs from C#, the three Ultra-engine Army scripts that are logged skips,
   the skipped tools and why, and 4 C# bugs fixed on purpose. All type-check and load; none has
   run in game, and the shared log, its lock, the barrier and keychain login are only tested
@@ -256,13 +256,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `WrongTurnatVoidbuquerque`). C#'s threads and
   `async` work run as generator tasks (`scripts/core/CoreTasks.ts`, with C#'s
   `CancellationTokenSource` and `ManualResetEvent`). The boss scripts are cs2ts drafts fixed until
-  they type-check; `scripts/README.md` ("Ultras") has the C# mapping and what differs. Tested:
+  they type-check; `scripts/docs/PORTING.md` ("Ultras") has the C# mapping and what differs. Tested:
   the tasks against a fake game and that every Ultrasv3 script loads (`bot/tests/core_tasks.rs`);
   none of it has run in game.
 - **FarmerJoe:** `other/farmjoekits/0FarmerJoeDoAll.ts` (VibeSkua's level 1 to 100
   progression) and the 127 content scripts its `DoAll` reaches: classes, weapons, the story cores,
   UnlockForgeEnhancements, the Nation, Legion, SDKA, BLoD and Awe trees, 19 merge scripts.
-  `scripts/README.md` ("FarmerJoe") lists what each file leaves out, the 19 included files that
+  `scripts/docs/PORTING.md` ("FarmerJoe") lists what each file leaves out, the 19 included files that
   aren't ported (DoAll never calls them) and the spots that differ from C#.
 - **CoreBots like VibeSkua:** reads Options > CoreBots (`CBO_Storage(<user>).txt`) in
   `setOptions()`, starts from your house when you are in battleon, goes to the CBO stop map
@@ -559,7 +559,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   FarmerJoe's pet step reads its real option, TheLeeryContract uses the reward it's given, and
   Dage PvP reads the CBO solo-boss switch's value.
 - **Nation fixes that differ from VibeSkua (unverified in game):** 11 bugs still in VibeSkua's
-  C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/README.md`): voucher
+  C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/docs/PORTING.md`): voucher
   turn-ins check the Gems not the Diamonds, the member voucher isn't sold before the quests that
   need it, the Dwobo shop map name, and smaller guard and loop fixes. Only type-checked.
 - **The converted scripts are unverified in game:** 1559 of the 1658 files cs2ts made (586 for
@@ -570,7 +570,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
   packets). Nothing is left to port but what is
   skipped on purpose: the Ultras' `TestZone`, `Templates`, the unused `Prototypes`, the generator, and the
-  Tools listed in `scripts/README.md`.
+  Tools listed in `scripts/docs/PORTING.md`.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
