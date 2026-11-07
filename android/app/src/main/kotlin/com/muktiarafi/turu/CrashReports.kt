@@ -115,9 +115,11 @@ internal object CrashReports {
             .append("), status ").append(exit.status).append('\n')
         exit.description?.let { report.append("Description: ").append(it).append('\n') }
         report.append("Was: ").append(importance(exit.importance)).append('\n')
-        // Android often leaves PSS at 0.
+        // Android often leaves PSS at 0, and some phones fill in nonsense (an OPPO: 20 million
+        // MB): only a PSS the phone's memory could hold is shown.
         report.append("Memory at the end: RSS ").append(exit.rss / 1024).append(" MB")
-        if (exit.pss > 0) {
+        val phoneMemory = ActivityManager.MemoryInfo().also { activities.getMemoryInfo(it) }.totalMem
+        if (exit.pss > 0 && exit.pss * 1024 <= phoneMemory) {
             report.append(", PSS ").append(exit.pss / 1024).append(" MB")
         }
         report.append('\n')
@@ -187,11 +189,25 @@ internal object CrashReports {
         ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE,
         ApplicationExitInfo.REASON_FREEZER,
         ->
-            "If nobody stopped Turu: some phones' battery savers (Xiaomi's MIUI and HyperOS, Huawei, " +
-                "Samsung's sleeping apps) close apps in the background. Allow Turu to start on its own " +
-                "(Autostart) and set its battery saver to No restrictions."
+            if (colorOs()) {
+                // EXCESSIVE_RESOURCE_USAGE "o-kill:6" on an OPPO A9 2020 running as a foreground
+                // service: ColorOS's own background manager (Android's CPU check spares those).
+                "If nobody stopped Turu: ColorOS (OPPO, realme, OnePlus) closes apps in the background on " +
+                    "its own, even with battery optimisation off. In Settings > Battery > App battery " +
+                    "management > Turu, allow background activity and auto launch; also lock Turu in the " +
+                    "recent apps (hold its card, then the lock)."
+            } else {
+                "If nobody stopped Turu: some phones' battery savers (Xiaomi's MIUI and HyperOS, Huawei, " +
+                    "Samsung's sleeping apps, ColorOS on OPPO, realme and OnePlus) close apps in the " +
+                    "background. Allow Turu to start on its own (Autostart) and set its battery saver to " +
+                    "No restrictions."
+            }
         else -> null
     }
+
+    /** OPPO, realme and OnePlus phones run ColorOS (OnePlus since Android 12's OxygenOS 12). */
+    private fun colorOs(): Boolean =
+        Build.MANUFACTURER.lowercase(Locale.US) in setOf("oppo", "realme", "oneplus")
 
     private fun appendDevice(context: Context, activities: ActivityManager, report: StringBuilder) {
         report.append("Phone: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append(" (")

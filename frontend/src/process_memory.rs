@@ -3,13 +3,21 @@
 //! (`android/src/memory.rs`): a Pixel 8 aborted after 27 minutes in the background, at 1.9 GB of
 //! RSS with 3 GB of the phone's memory free, and nothing said what had grown.
 //!
-//! A [`Reading`] is cheap (two small files and a count of `/proc/self/maps`' lines);
+//! A reading also has the CPU time the process used so far ([`Reading::cpu_time`]), so two give
+//! its share of a core in between ([`cpu_percent`]): OPPO's ColorOS closed Turu in the background
+//! "for using too much CPU", and the report couldn't say how much it had used.
+//!
+//! A [`Reading`] is cheap (three small files and a count of `/proc/self/maps`' lines);
 //! [`largest_mappings`] reads all of `maps` and is for every few minutes.
 
 use std::fmt;
 use std::io::{BufRead, BufReader};
+use std::time::Duration;
 
 const MB: u64 = 1 << 20;
+/// `/proc`'s clock ticks per second (`USER_HZ`): 100 on Linux and Android, whatever the kernel's
+/// own rate.
+const TICKS_PER_SECOND: u64 = 100;
 
 /// One reading of this process's memory, in bytes.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -32,6 +40,9 @@ pub struct Reading {
     /// Bytes `malloc` has handed out and not freed (`mallinfo`), when the caller adds it. Pages
     /// never written to don't count in RSS, so this can be above `rss_anon`.
     pub heap: Option<u64>,
+    /// CPU time used since the process started, all threads, user and system
+    /// (`/proc/self/stat`); not part of the [`Display`](fmt::Display) text.
+    pub cpu_time: Option<Duration>,
 }
 
 impl Reading {
@@ -45,8 +56,30 @@ impl Reading {
         reading.maps = std::fs::File::open("/proc/self/maps")
             .ok()
             .map(|file| BufReader::new(file).split(b'\n').count() as u64);
+        reading.cpu_time = std::fs::read_to_string("/proc/self/stat")
+            .ok()
+            .and_then(|text| parse_cpu_time(&text));
         Some(reading)
     }
+}
+
+/// The share of one core `now` used since `before`, `elapsed` apart, in percent (above 100 when
+/// several threads are busy); `None` without both CPU times.
+pub fn cpu_percent(before: &Reading, now: &Reading, elapsed: Duration) -> Option<f64> {
+    let used = now.cpu_time?.checked_sub(before.cpu_time?)?;
+    (!elapsed.is_zero()).then(|| used.as_secs_f64() * 100.0 / elapsed.as_secs_f64())
+}
+
+/// `utime` + `stime` from `/proc/<pid>/stat`. Its second field, the thread's name in
+/// parentheses, can hold spaces and parentheses, so the fields are counted after its last `)`.
+pub fn parse_cpu_time(stat: &str) -> Option<Duration> {
+    let rest = &stat[stat.rfind(')')? + 1..];
+    // Fields 3 (state) onwards: utime is field 14, stime 15.
+    let mut fields = rest.split_whitespace().skip(11);
+    let utime: u64 = fields.next()?.parse().ok()?;
+    let stime: u64 = fields.next()?.parse().ok()?;
+    let ticks = utime + stime;
+    Some(Duration::from_millis(ticks * 1000 / TICKS_PER_SECOND))
 }
 
 impl fmt::Display for Reading {
@@ -186,6 +219,23 @@ mod tests {
             reading.to_string(),
             "RSS 100 MB (anon 0, file 0, shared 0), PSS 120 MB, heap 80 MB, swap 5 MB, virtual 0 MB, 4000 maps, 3 threads"
         );
+    }
+
+    #[test]
+    fn reads_cpu_time_after_the_name() {
+        // A name with a space and a parenthesis; utime 1234, stime 566 ticks.
+        let stat = "4043 (Turu (x) y) S 1 4043 0 0 -1 4194624 9000 0 0 0 1234 566 0 0 20 0 60 0 100 0";
+        assert_eq!(parse_cpu_time(stat), Some(Duration::from_secs(18)));
+        assert_eq!(parse_cpu_time("4043 (turu) S 1"), None);
+    }
+
+    #[test]
+    fn gives_the_share_of_a_core_between_two_readings() {
+        let at = |secs| Reading { cpu_time: Some(Duration::from_secs(secs)), ..Default::default() };
+        let percent = cpu_percent(&at(10), &at(19), Duration::from_secs(60)).unwrap();
+        assert!((percent - 15.0).abs() < 1e-9);
+        assert_eq!(cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)), None);
+        assert_eq!(cpu_percent(&at(10), &at(19), Duration::ZERO), None);
     }
 
     #[test]
