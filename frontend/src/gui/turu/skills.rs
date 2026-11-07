@@ -770,17 +770,27 @@ fn aura_row(
 
 /// The USE RULES card's contents (VibeSkua `SkillRulesViewModel`), shared with Edit Rules.
 fn rules_form(ui: &mut Ui, rules: &mut SkillRules, id: &str) {
+    // In a narrow card (a phone) the checkboxes go on a row of their own, under the heading.
+    let narrow = ui.available_width() < 380.0;
     ui.horizontal(|ui| {
         widgets::section_label(ui, "USE RULES");
         ui.add_space(6.0);
-        ui.checkbox(&mut rules.use_rule, "Enable Rule");
-        ui.checkbox(&mut rules.multi_aura, "Multi Aura");
+        if !narrow {
+            ui.checkbox(&mut rules.use_rule, "Enable Rule");
+            ui.checkbox(&mut rules.multi_aura, "Multi Aura");
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if widgets::small_button(ui, "Reset", true).clicked() {
                 *rules = SkillRules::default();
             }
         });
     });
+    if narrow {
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut rules.use_rule, "Enable Rule");
+            ui.checkbox(&mut rules.multi_aura, "Multi Aura");
+        });
+    }
     ui.add_space(4.0);
     amount_row(
         ui,

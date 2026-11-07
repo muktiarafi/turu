@@ -160,7 +160,7 @@ impl StatsWindow {
         } else if self.shown != Some(true) {
             // Turned on (or opened on): VibeSkua's fixed 760, within the screen; resizable after.
             let size = vec2(WIDTH, ADVANCED_HEIGHT).min(area.size() - vec2(24.0, 24.0));
-            window = super::ToolWindow(window.0.fixed_size(size));
+            window = window.fixed_size(size);
         }
         self.shown = Some(advanced);
         window.show(ctx, |ui| self.ui(ui));

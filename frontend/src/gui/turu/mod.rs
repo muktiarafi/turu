@@ -105,14 +105,15 @@ fn window_area(ctx: &Context) -> Rect {
 ///
 /// It stays inside [`window_area`] and never gets taller than it, also when the app window
 /// shrinks after it opened: content taller than the window scrolls (egui would otherwise grow
-/// the window past the screen's bottom and its buttons with it).
+/// the window past the screen's bottom and its buttons with it). On a touch screen too small
+/// for its default size (a phone) it is a full-screen sheet ([`ToolWindow::sheet`]).
 fn window<'a>(ctx: &Context, title: &'a str, size: [f32; 2], slot: u32) -> ToolWindow<'a> {
     let offset = 18.0 * slot as f32;
     let area = window_area(ctx);
     let room = (area.size() - vec2(24.0, 24.0)).max(Vec2::ZERO);
     let min = vec2(260.0, 160.0).min(area.size());
-    ToolWindow(
-        Window::new(title)
+    let window = ToolWindow {
+        window: Window::new(title)
             .id(egui::Id::new(("turu_window", title)))
             .default_pos(pos2(16.0 + offset, area.top() + 12.0 + offset))
             .default_size(vec2(size[0], size[1]).min(room).max(min))
@@ -122,31 +123,66 @@ fn window<'a>(ctx: &Context, title: &'a str, size: [f32; 2], slot: u32) -> ToolW
             .vscroll(true)
             .collapsible(false)
             .resizable(true),
-    )
+        sheet: false,
+    };
+    if phone_sheet(ctx, size) { window.sheet(ctx) } else { window }
+}
+
+/// Whether a window of `size` is a full-screen sheet: on a touch screen whose window area can't
+/// hold it with a margin around (a phone). A floating window there covers the game anyway, leaves
+/// a strip of it to tap by mistake, and its fields end up under the keyboard.
+fn phone_sheet(ctx: &Context, size: [f32; 2]) -> bool {
+    let area = window_area(ctx);
+    widgets::touch() && (area.width() < size[0] + 48.0 || area.height() < size[1] + 48.0)
 }
 
 /// An egui [`Window`] made by [`window`].
 #[must_use = "call `show`"]
-struct ToolWindow<'a>(Window<'a>);
+struct ToolWindow<'a> {
+    window: Window<'a>,
+    /// A full-screen sheet: it can't be moved or resized.
+    sheet: bool,
+}
 
 impl<'a> ToolWindow<'a> {
     fn open(self, open: &'a mut bool) -> Self {
-        Self(self.0.open(open))
+        Self {
+            window: self.window.open(open),
+            ..self
+        }
     }
 
     fn resizable(self, resizable: bool) -> Self {
-        Self(self.0.resizable(resizable))
+        let resizable = resizable && !self.sheet;
+        Self {
+            window: self.window.resizable(resizable),
+            ..self
+        }
+    }
+
+    /// A fixed size, unless it's a sheet (which fills the screen).
+    fn fixed_size(self, size: Vec2) -> Self {
+        if self.sheet {
+            return self;
+        }
+        Self {
+            window: self.window.fixed_size(size),
+            ..self
+        }
     }
 
     /// On a phone: the window fills [`window_area`] (less a small margin), as a full-screen
     /// sheet, and follows it when the screen turns. It can't be moved or resized then.
     fn sheet(self, ctx: &Context) -> Self {
         let rect = window_area(ctx).shrink(4.0);
-        Self(self.0.fixed_rect(rect).movable(false).resizable(false))
+        Self {
+            window: self.window.fixed_rect(rect).movable(false).resizable(false),
+            sheet: true,
+        }
     }
 
     fn show<R>(self, ctx: &Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
-        let response = self.0.show(ctx, |ui| {
+        let response = self.window.show(ctx, |ui| {
             let inner = add_contents(ui);
             #[cfg(test)]
             tests::record(ui);

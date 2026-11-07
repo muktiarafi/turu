@@ -331,9 +331,11 @@ impl LoaderWindow {
         if notice.is_some() {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
         }
+        // On a phone the range gets a row of its own: beside the buttons it has no room.
+        let narrow = ui.available_width() < 640.0;
         widgets::card(ui, |ui| {
             ui.set_min_height(CONTROL_HEIGHT);
-            ui.horizontal(|ui| {
+            let body = |ui: &mut Ui| {
                 let small = vec2(0.0, CONTROL_HEIGHT);
                 if busy {
                     ui.label(RichText::new(&progress).size(11.0).strong().color(MUTED));
@@ -379,27 +381,43 @@ impl LoaderWindow {
                         self.download_cache();
                     }
                 }
-                ui.separator();
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let clicked = widgets::button(
-                        ui,
-                        "Update range",
-                        Kind::Normal,
-                        !busy,
-                        vec2(112.0, CONTROL_HEIGHT),
-                        "Busy",
-                    )
-                    .clicked();
-                    let width = ui.available_width();
-                    widgets::text_box(ui, &mut self.range, "Range, e.g. 2566, 2599", width);
-                    if clicked {
-                        match quest_cache::parse_range(&self.range) {
-                            Ok((start, end)) => self.update_cache(UpdateMode::Range(start, end)),
-                            Err(message) => notify(&self.shared, message, 2),
-                        }
-                    }
-                });
-            });
+                if !narrow {
+                    ui.separator();
+                    self.range_row(ui, busy);
+                }
+            };
+            if narrow {
+                ui.horizontal_wrapped(body);
+            } else {
+                ui.horizontal(body);
+            }
+            if narrow {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| self.range_row(ui, busy));
+            }
+        });
+    }
+
+    /// The range box and Update range, right-aligned.
+    fn range_row(&mut self, ui: &mut Ui, busy: bool) {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let clicked = widgets::button(
+                ui,
+                "Update range",
+                Kind::Normal,
+                !busy,
+                vec2(112.0, CONTROL_HEIGHT),
+                "Busy",
+            )
+            .clicked();
+            let width = ui.available_width();
+            widgets::text_box(ui, &mut self.range, "Range, e.g. 2566, 2599", width);
+            if clicked {
+                match quest_cache::parse_range(&self.range) {
+                    Ok((start, end)) => self.update_cache(UpdateMode::Range(start, end)),
+                    Err(message) => notify(&self.shared, message, 2),
+                }
+            }
         });
     }
 

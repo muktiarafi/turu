@@ -1338,8 +1338,8 @@ const SYMBOL_SIZE: f32 = 18.0;
 /// Between the symbol and the first menu.
 const SYMBOL_GAP: f32 = 6.0;
 
-fn symbol(ui: &mut Ui, size: f32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+fn symbol(ui: &mut Ui, size: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::click());
     let painter = ui.painter();
     // The SVG's 256 grid: the tile spans 16..240, its corners round by about a quarter.
     let unit = size / 224.0;
@@ -1361,6 +1361,7 @@ fn symbol(ui: &mut Ui, size: f32) {
         painter.circle_filled(points[16], width / 2.0, Color32::WHITE);
         painter.add(egui::Shape::line(points, Stroke::new(width, Color32::WHITE)));
     }
+    response
 }
 
 /// What leads a quick action's label.
@@ -1470,6 +1471,41 @@ fn rail_fit(height: f32, update: bool, grid: bool) -> RailFit {
     RailFit { symbol, update, bank }
 }
 
+/// While the rail is hidden: a small tab on the screen's left edge, halfway down, that brings it
+/// back. It floats over the game, which has the whole width then.
+fn rail_handle(ui: &mut Ui, inset: f32) {
+    let screen = ui.ctx().content_rect();
+    let size = vec2(24.0 + inset, 64.0);
+    let pos = pos2(screen.left(), screen.center().y - size.y / 2.0);
+    egui::Area::new(egui::Id::new("turu_rail_handle"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .show(ui.ctx(), |ui| {
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            let fill = if response.hovered() || response.is_pointer_button_down_on() {
+                ACCENT
+            } else {
+                PANEL.gamma_multiply(0.85)
+            };
+            let corners = CornerRadius {
+                ne: 10,
+                se: 10,
+                ..CornerRadius::ZERO
+            };
+            ui.painter().rect_filled(rect, corners, fill);
+            ui.painter().text(
+                pos2(rect.left() + inset + 12.0, rect.center().y),
+                egui::Align2::CENTER_CENTER,
+                "›",
+                egui::FontId::proportional(22.0),
+                TEXT,
+            );
+            if response.on_hover_text("Show the side bar").clicked() {
+                crate::gui::set_rail_hidden(false);
+            }
+        });
+}
+
 /// The icons a rail item draws, in one 1.6-point stroke.
 #[derive(Clone, Copy)]
 enum RailIcon {
@@ -1488,6 +1524,10 @@ enum RailIcon {
 impl NavBar {
     fn show_rail(&mut self, ui: &mut Ui, windows: &mut Windows) {
         let inset = crate::gui::rail_inset();
+        if crate::gui::rail_hidden() {
+            rail_handle(ui, inset);
+            return;
+        }
         Panel::left("turu_rail")
             .exact_size(crate::gui::left_width() as f32)
             .resizable(false)
@@ -1520,7 +1560,10 @@ impl NavBar {
 
         if fit.symbol {
             ui.add_space((RAIL_SYMBOL_ROW - RAIL_SYMBOL_SIZE) / 2.0 - 2.0);
-            symbol(ui, RAIL_SYMBOL_SIZE);
+            // A tap on the logo hides the rail (the game gets the whole width).
+            if symbol(ui, RAIL_SYMBOL_SIZE).on_hover_text("Hide the side bar").clicked() {
+                crate::gui::set_rail_hidden(true);
+            }
             ui.add_space((RAIL_SYMBOL_ROW - RAIL_SYMBOL_SIZE) / 2.0 + 2.0);
         }
 
@@ -1546,6 +1589,10 @@ impl NavBar {
                     windows.client_update = true;
                 }
                 folded(ui, windows, menus(), folded_bank);
+                ui.separator();
+                if item(ui, "Hide Side Bar") {
+                    crate::gui::set_rail_hidden(true);
+                }
             });
 
         let running = auto::running(&bot);

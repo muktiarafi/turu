@@ -2,7 +2,7 @@
 
 pub mod turu;
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// VibeSkua's top nav bar: the window shows the movie this far down.
 pub const NAV_BAR_HEIGHT: u32 = 34;
@@ -56,9 +56,24 @@ pub fn rail_inset() -> f32 {
     f32::from_bits(RAIL_INSET.load(Ordering::Relaxed))
 }
 
-/// The width left of the movie: the rail with its inset, or nothing with a top bar.
+/// Whether the rail is hidden (its logo, or Menu > Hide Side Bar): the game takes the whole
+/// width, and a small handle at the left edge brings the rail back.
+static RAIL_HIDDEN: AtomicBool = AtomicBool::new(false);
+
+/// Whether the rail is hidden.
+pub fn rail_hidden() -> bool {
+    RAIL_HIDDEN.load(Ordering::Relaxed)
+}
+
+/// Hides or shows the rail.
+pub fn set_rail_hidden(hidden: bool) {
+    RAIL_HIDDEN.store(hidden, Ordering::Relaxed);
+}
+
+/// The width left of the movie: the rail with its inset, or nothing with a top bar or while the
+/// rail is hidden.
 pub fn left_width() -> u32 {
-    if nav_rail() {
+    if nav_rail() && !rail_hidden() {
         RAIL_WIDTH + rail_inset().ceil() as u32
     } else {
         0
