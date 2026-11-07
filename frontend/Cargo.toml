@@ -18,6 +18,9 @@ ruffle_core = { path = "../ruffle/core" }
 # here: each frontend picks one.
 ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }
 async-task = "4.7.1"
+# Several tabs' players on one thread (`players.rs`) swap the renderer's unsubmitted command
+# segments, as the core's thread-local state.
+ruffle_render_wgpu = { path = "../ruffle/render/wgpu" }
 # Grabber > GetMap Item IDs and the map pads read the map SWF's AS3 bytecode.
 swf = { path = "../ruffle/swf", default-features = false }
 egui = { workspace = true }
