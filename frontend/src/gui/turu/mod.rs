@@ -7,6 +7,7 @@
 mod accounts;
 mod application_options;
 mod army;
+mod army_travel;
 mod auto;
 mod butler;
 mod client_logs;

@@ -331,6 +331,12 @@ impl Paths {
         self.root.join("butler_player_targets.json")
     }
 
+    /// Army Control's map travel: the last destination and player, map presets and the maps
+    /// the clients visited (`army::jump`; VibeSkua `army-control-jump.json`).
+    pub fn army_jump_file(&self) -> PathBuf {
+        self.root.join(crate::army::jump::FILE_NAME)
+    }
+
     pub fn load_settings(&self) -> Option<AppSettings> {
         let text = fs::read_to_string(self.settings_file()).ok()?;
         serde_json::from_str(&text).ok()

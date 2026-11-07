@@ -12,6 +12,8 @@
 //! * A "Turu Army" thread asks every client for `/snapshot` every [`POLL_INTERVAL`] and hands
 //!   the answer to the web monitor's hub ([`crate::monitor::Hub`]), where Army Control reads it.
 
+pub mod jump;
+
 use crate::Bot;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -154,6 +156,8 @@ pub enum Command {
     StartAutoAttack,
     /// VibeSkua's "Stop Auto-Attack for All": stops Auto Attack or Auto Hunt.
     StopAuto,
+    /// VibeSkua's "Change Server for All" (`WM_SKUA_CHANGE_SERVER`): relog on that server.
+    ChangeServer(String),
 }
 
 impl Command {
@@ -176,6 +180,7 @@ impl Command {
             Self::RefreshGear => "Read gear".into(),
             Self::StartAutoAttack => "Start Auto-Attack".into(),
             Self::StopAuto => "Stop Auto-Attack".into(),
+            Self::ChangeServer(server) => format!("Change server to {server}"),
         }
     }
 
@@ -236,6 +241,7 @@ impl Command {
             Self::RefreshGear => return (false, with("/gear", &[]), Vec::new()),
             Self::StartAutoAttack => (with("/auto/attack", &[]), Vec::new()),
             Self::StopAuto => (with("/auto/stop", &[]), Vec::new()),
+            Self::ChangeServer(server) => (with("/relogin", &[("server", server)]), Vec::new()),
         };
         (true, path, body)
     }
@@ -715,6 +721,10 @@ mod tests {
             "/equip?item=Necrotic+Sword+of+Doom&stop=1"
         );
         assert_eq!(path(Command::Relogin), "/relogin");
+        assert_eq!(
+            path(Command::ChangeServer("Yorumi".into())),
+            "/relogin?server=Yorumi"
+        );
         assert!(!Command::RefreshGear.request().0);
         assert_eq!(path(Command::RefreshGear), "/gear");
         let (post, path, body) = Command::SetOptions(json!({ "lagKiller": true })).request();
