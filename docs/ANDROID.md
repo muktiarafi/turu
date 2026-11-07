@@ -16,7 +16,7 @@ How to build, run and check the Android app. The design and the plan are in
 > 10 (Mali-G52, 4 GB) ran out of GPU memory logging in, which led to the limits in "GPU memory"
 > below; a full farming run on a phone isn't recorded yet.
 >
-> **Tabs, Army and Butler (phase 5, 2026-11-07; built, not run on a device or emulator yet):**
+> **Tabs, Army and Butler (phase 5, 2026-11-07; run on a MuMu Player 12 emulator, Android 15 x86_64):**
 > several game clients in tabs, as on the desktop: the tab strip's "+", Army > Accounts ("In a
 > tab" only; "Log in by hand" without a saved password) and Army Control's Show open and select
 > them; one engine thread runs them all (`turu_frontend::players`), the active tab drawn and
@@ -28,17 +28,22 @@ How to build, run and check the Android app. The design and the plan are in
 > `android-tabs.json` in the data folder (account, server, script, whether it ran; no password)
 > and reopened when the engine starts, after `turu-args.txt`'s.
 >
-> **Unverified on a device (only `cargo ndk check` so far):** two tabs drawing and switching
-> without the renderers' state mixing (the thread-state swap the desktop does); sound switching
-> with the active tab; memory with two clients (~410 MB each on the emulator in phase 1) and
-> what the Tab Limit should default to; the notification's lines and the wake lock with two
-> tabs; reopening tabs after a kill (`android-tabs.json`), including a script that starts once
-> its tab is logged in by hand; Butler (a master and a follower) and an army script
-> (`bot.army.barrier`) across two tabs; the sheets and touch sizes of Butler, Army Control and
-> the tab strip; `onTrimMemory` stopping hidden tabs' scripts (not done). Accounts can't log a
-> tab in by itself until the Keystore `SecretStore` exists (phase 5, step 5). HotKeys stay
-> hidden: keys reach egui only while a Turu text box has the focus, with no function keys or
-> modifiers (`input.rs`).
+> **Checked on MuMu (2026-11-07, at the login screen, no account logged in):** a second tab
+> from Army > New Tab, switching between the two, closing one, and the second reopened from
+> `android-tabs.json` after a restart (two clients at the login screen: ~245 MB PSS); the
+> Army menu, Army Control's sheet and its Map Travel window, a map preset saved to
+> `army-control-jump.json`; Butler and its Send to player pop-up; Accounts' server list with
+> each server's ping; Advanced Stats, Notification Center ("Script started/stopped: name"),
+> Junk Items and Game Options at phone width; Load Script through the SAF picker (the script
+> copied to `scripts/Imported/`); HotKeys from MuMu's keyboard (F9 opened Load Script, F10
+> started the loaded script, Escape closed a dialog). Army Queue is hidden on Android: its
+> squads run as processes of their own, which Android can't start.
+>
+> **Unverified on a device:** anything after logging in (scripts that play, Butler with a
+> master and a follower, an army script across two tabs, drops, deaths); sound switching with
+> the active tab; the notification's lines and the wake lock with two tabs; a script that
+> starts once its tab is logged in by hand; `onTrimMemory` stopping hidden tabs' scripts (not
+> done).
 >
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
 > text; a strip above it shows what they hold); the windows are the desktop's, at the phone's

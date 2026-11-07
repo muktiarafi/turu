@@ -421,48 +421,52 @@ impl Travel {
         let response = Modal::new(egui::Id::new("turu_army_preset_editor")).show(ctx, |ui| {
             let width = dialog_width(ui, 420.0);
             ui.heading(title);
-            let p = &mut editor.preset;
-            for (label, value, hint) in [
-                ("Preset name", &mut p.name, "Preset name"),
-                ("Map", &mut p.map, "Map name"),
-                ("Room number (optional)", &mut p.room, "Room number (optional)"),
-                ("Cell", &mut p.cell, "Cell"),
-                ("Pad", &mut p.pad, "Pad"),
-            ] {
-                ui.label(label);
-                widgets::text_box(ui, value, hint, width);
-            }
-            if widgets::button(
-                ui,
-                "Use Current Client Location",
-                Kind::Normal,
-                true,
-                button_size(0.0),
-                "",
-            )
-            .clicked()
-            {
-                match &current_location {
-                    Some(location) => {
-                        let name = std::mem::take(&mut p.name);
-                        *p = location.to_destination();
-                        if !name.trim().is_empty() {
-                            p.name = name;
+            // A phone's screen is shorter than five touch-sized rows: the fields scroll, the title
+            // and the buttons stay on screen.
+            scroll_body(ui, 150.0, |ui| {
+                let p = &mut editor.preset;
+                for (label, value, hint) in [
+                    ("Preset name", &mut p.name, "Preset name"),
+                    ("Map", &mut p.map, "Map name"),
+                    ("Room number (optional)", &mut p.room, "Room number (optional)"),
+                    ("Cell", &mut p.cell, "Cell"),
+                    ("Pad", &mut p.pad, "Pad"),
+                ] {
+                    ui.label(label);
+                    widgets::text_box(ui, value, hint, width);
+                }
+                if widgets::button(
+                    ui,
+                    "Use Current Client Location",
+                    Kind::Normal,
+                    true,
+                    button_size(0.0),
+                    "",
+                )
+                .clicked()
+                {
+                    match &current_location {
+                        Some(location) => {
+                            let name = std::mem::take(&mut p.name);
+                            *p = location.to_destination();
+                            if !name.trim().is_empty() {
+                                p.name = name;
+                            }
+                            editor.error = None;
                         }
-                        editor.error = None;
-                    }
-                    None => {
-                        editor.error = Some(
-                            "The selected client has not reported a current location yet. Log in and wait a \
-                             moment, then try again."
-                                .into(),
-                        )
+                        None => {
+                            editor.error = Some(
+                                "The selected client has not reported a current location yet. Log in and wait \
+                                 a moment, then try again."
+                                    .into(),
+                            )
+                        }
                     }
                 }
-            }
-            if let Some(error) = &editor.error {
-                ui.label(RichText::new(error).color(DANGER));
-            }
+                if let Some(error) = &editor.error {
+                    ui.label(RichText::new(error).color(DANGER));
+                }
+            });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if widgets::button(ui, "Save Preset", Kind::Primary, true, button_size(100.0), "").clicked() {
                     answer = Some(true);
@@ -655,6 +659,16 @@ fn dialog_width(ui: &mut Ui, width: f32) -> f32 {
     let width = width.min(ui.ctx().content_rect().width() - 48.0).max(200.0);
     ui.set_width(width);
     width
+}
+
+/// A dialog's middle, scrolling when the screen is too short for it; `reserve` is the height its
+/// title and buttons need.
+fn scroll_body(ui: &mut Ui, reserve: f32, add: impl FnOnce(&mut Ui)) {
+    let max = (ui.ctx().content_rect().height() - reserve).max(120.0);
+    egui::ScrollArea::vertical()
+        .max_height(max)
+        .auto_shrink([false, true])
+        .show(ui, add);
 }
 
 fn button_size(width: f32) -> egui::Vec2 {
