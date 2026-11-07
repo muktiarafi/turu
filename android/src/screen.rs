@@ -94,6 +94,9 @@ pub struct Screen {
     /// ([`Screen::configure`]).
     configured: bool,
     retry_configure: Instant,
+    /// The refresh rate last asked of the activity for the game's frame rate (Hz, 0: the system's
+    /// choice); `None` until asked in this window.
+    asked_refresh: Option<u32>,
 }
 
 /// The GPU, set up without a window (the API `graphics` asks for), the blit the screen draws the
@@ -213,6 +216,7 @@ impl Screen {
             draw_started: Instant::now(),
             configured: false,
             retry_configure: Instant::now(),
+            asked_refresh: None,
         };
         let mut screen = screen;
         screen.configure();
@@ -276,6 +280,8 @@ impl Screen {
             Ok(surface) => {
                 self.surface = Some(surface);
                 self.surface_for = ptr;
+                // A new window (the activity came back): its display mode is asked for again.
+                self.asked_refresh = None;
                 self.size = crate::window_size(window);
                 self.configure();
             }
@@ -458,6 +464,7 @@ impl Screen {
         if self.surface.is_none() {
             return None;
         }
+        self.prefer_refresh_rate(player.frame_rate());
         // Headless Mode's screen hides the game: nothing to interpolate.
         let interpolating = ruffle_core::frame_interpolation::enabled()
             && player.is_playing()
@@ -468,6 +475,14 @@ impl Screen {
         };
         match (step, interpolating) {
             (Step::Ticked { .. }, false) => {
+                // Faster than the display (Set FPS above its refresh rate): presenting each tick
+                // would wait for vsync and hold the game back to the display's rate. The game
+                // ticks at its rate and the screen shows the newest picture once a refresh.
+                self.update_refresh_rate();
+                let refresh = self.pacing.refresh_interval();
+                if self.draw_started.elapsed() < refresh.mul_f32(0.75) {
+                    return None;
+                }
                 if self.behind(player) {
                     crate::frame_perf::skipped();
                     return None;
@@ -502,6 +517,17 @@ impl Screen {
         player.is_playing()
             && self.draw_started.elapsed() < MAX_DRAW_GAP
             && player.time_til_next_frame() * 2 < Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0))
+    }
+
+    /// A game running faster than 60 FPS (Options > Game > Set FPS) asks the activity for a display
+    /// mode that keeps up with it: many 90 and 120 Hz phones hold an app at 60 Hz unless it asks.
+    /// At 60 or less the system chooses again (saving battery).
+    fn prefer_refresh_rate(&mut self, frame_rate: f64) {
+        let want = if frame_rate > 61.0 { frame_rate.round() as u32 } else { 0 };
+        if self.asked_refresh != Some(want) {
+            self.asked_refresh = Some(want);
+            crate::ui::prefer_refresh_rate(want);
+        }
     }
 
     /// The display's refresh rate, from the activity (`ui::refresh_millihertz`).

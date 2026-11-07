@@ -57,6 +57,26 @@ pub fn soft_keyboard(show: bool) {
     }
 }
 
+/// Asks the activity for a display mode refreshing at least `hz` times a second (0: the system's
+/// choice): `TuruActivity.preferRefreshRate(hz)`, which does it on the UI thread.
+pub fn prefer_refresh_rate(hz: u32) {
+    let Some(app) = crate::app() else {
+        return;
+    };
+    let result = crate::platform::with_activity(&app, |env, activity| {
+        env.call_method(
+            activity,
+            jni::jni_str!("preferRefreshRate"),
+            jni::jni_sig!("(F)V"),
+            &[jni::objects::JValue::Float(hz as f32)],
+        )?;
+        Ok(())
+    });
+    if let Err(e) = result {
+        tracing::warn!("Couldn't ask for a {hz} Hz display mode: {e}");
+    }
+}
+
 /// The display cutout's (left, right) insets in window pixels.
 pub fn cutout() -> (u32, u32) {
     (CUTOUT_LEFT.load(Ordering::Relaxed), CUTOUT_RIGHT.load(Ordering::Relaxed))

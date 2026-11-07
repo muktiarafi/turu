@@ -78,6 +78,17 @@ How to build, run and check the Android app. The design and the plan are in
 > Loader moved it under Favourites; the notification read "turu_long loaded" with Start, which
 > started it (then Pause and Stop), and Stop brought Start back.
 >
+> **High frame rates (2026-11-08):** Options > Game > Set FPS goes up to 240, with a ▾ of the
+> usual rates (Off, 24, 30, 60, 90, 120, 144, 165, 240). Above 60 the screen asks the activity
+> for a display mode that keeps up (`TuruActivity.preferRefreshRate`: the slowest refresh rate
+> at least that fast, at the same resolution, else the fastest; at 60 or less the system
+> chooses again), since many 90 and 120 Hz phones hold an app at 60 Hz otherwise. When the game
+> still ticks faster than the display, the screen shows the newest picture once a refresh
+> instead of waiting for vsync after every tick, so the game keeps its rate. On MuMu (one
+> 480 Hz mode, so the mode switch itself isn't exercised; the request is logged): 120 FPS ran
+> at 121-123 in an empty room (`whitemap`), 24 FPS at 23.9; crowded Battleon (10 players) ran
+> at 14-16 FPS whatever the setting, the engine thread taking a whole core of the emulator.
+>
 > **Without a computer (2026-11-07, compiled, not yet tried on a device):** file dialogs are the
 > system picker (`saf.rs`): Load Script, Junk Items' and Loadouts' import and export, the
 > Scheduler, the Interceptor's export and the logs' Save work as on a desktop (a picked script

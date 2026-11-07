@@ -60,7 +60,9 @@ impl Field {
     fn width(&self) -> f32 {
         match self {
             Field::Bool(_) => 48.0,
-            Field::Int(..) | Field::Fps => 100.0,
+            Field::Int(..) => 100.0,
+            // The number and its presets' ▾.
+            Field::Fps => 100.0 + 6.0 + widgets::target(24.0, 40.0),
             Field::ReloadMap => 80.0,
             Field::Server | Field::Priority => 150.0,
             Field::Text(..) => 210.0,
@@ -165,7 +167,7 @@ fn entries() -> Vec<Entry> {
             Section::Visuals,
             "Set FPS",
             Field::Fps,
-            "Frame rate to force in game. Off (0) leaves it to the game's own FPS setting",
+            "Frame rate to force in game, up to 240 (▾ for the usual ones). Off (0) leaves it to the game's own FPS setting. On Android, above 60 asks the display for a faster refresh rate (a 90, 120 or 144 Hz screen)",
         ),
         entry(
             Section::Visuals,
@@ -1110,6 +1112,13 @@ fn label(ui: &mut Ui, entry: &Entry, mark: Option<Mark>) {
     ui.label(RichText::new(entry.description).small().color(MUTED));
 }
 
+/// Set FPS's ceiling: Ruffle runs up to 1000, but past the fastest phone and desktop displays
+/// (240 Hz) the extra frames are never seen and only cost CPU.
+const MAX_FPS: i32 = 240;
+
+/// Set FPS's ▾: Off, AQW's own 24, then the usual display refresh rates.
+const FPS_PRESETS: [i32; 9] = [0, 24, 30, 60, 90, 120, 144, 165, 240];
+
 /// Options VibeSkua has that Turu stores but nothing reads yet (their descriptions say so): shown
 /// greyed, as Application Options' "coming soon" rows.
 const UNUSED: [&str; 3] = ["Hunt Buffer", "Hunt Priority", "Use Function Based Skills"];
@@ -1163,10 +1172,35 @@ fn edit(
                 ..Default::default()
             };
             let size = vec2(96.0, widgets::target(24.0, 40.0));
-            if widgets::number(ui, label, &mut value, 0..=i32::MAX, 1.0, format, size).changed() {
-                bot.options.write().set_fps = value;
-                changed = true;
-            }
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if widgets::number(ui, label, &mut value, 0..=MAX_FPS, 1.0, format, size).changed() {
+                    bot.options.write().set_fps = value;
+                    changed = true;
+                }
+                let side = widgets::target(24.0, 40.0);
+                ui.scope(|ui| {
+                    ui.spacing_mut().interact_size = vec2(side, side);
+                    ui.menu_button("▾", |ui| {
+                        for fps in FPS_PRESETS {
+                            let text = if fps == 0 {
+                                "Off".to_owned()
+                            } else {
+                                format!("{fps} FPS")
+                            };
+                            let button = egui::Button::selectable(snapshot.set_fps == fps, text)
+                                .min_size(vec2(120.0, widgets::target(24.0, 40.0)));
+                            if ui.add(button).clicked() {
+                                bot.options.write().set_fps = fps;
+                                changed = true;
+                                ui.close();
+                            }
+                        }
+                    })
+                    .response
+                    .on_hover_text("The usual frame rates");
+                });
+            });
         }
         Field::Text(access, hint) => {
             let mut value = access(snapshot).clone();

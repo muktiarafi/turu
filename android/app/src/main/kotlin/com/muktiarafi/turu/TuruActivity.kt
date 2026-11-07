@@ -143,14 +143,45 @@ class TuruActivity : NativeActivity() {
 
     private fun displays() = getSystemService(DISPLAY_SERVICE) as DisplayManager
 
+    private fun currentDisplay(): android.view.Display? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        this.display
+    } else {
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay
+    }
+
     private fun sendRefreshRate() {
-        val current = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            this.display
-        } else {
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay
+        currentDisplay()?.let { nativeRefreshRate(it.refreshRate) }
+    }
+
+    /**
+     * From the Rust side (`ui.rs`, any thread): the game runs at [hz] frames a second, faster than
+     * 60 (Set FPS). Asks for the display mode with the slowest refresh rate that keeps up with it
+     * (the fastest there is when none does), at the current resolution: a 120 Hz phone otherwise
+     * often keeps an app at 60. 0 gives the choice back to the system. The display then calls
+     * [displayListener], which passes the new rate on.
+     */
+    fun preferRefreshRate(hz: Float) {
+        runOnUiThread {
+            val display = currentDisplay() ?: return@runOnUiThread
+            val now = display.mode
+            val modes = display.supportedModes.filter {
+                it.physicalWidth == now.physicalWidth && it.physicalHeight == now.physicalHeight
+            }
+            val mode = if (hz <= 0f) {
+                null
+            } else {
+                modes.filter { it.refreshRate >= hz - 0.5f }.minByOrNull { it.refreshRate }
+                    ?: modes.maxByOrNull { it.refreshRate }
+            }
+            val attributes = window.attributes
+            val id = mode?.modeId ?: 0
+            if (attributes.preferredDisplayModeId != id) {
+                attributes.preferredDisplayModeId = id
+                window.attributes = attributes
+            }
+            Log.i("turu", "Display mode for $hz FPS: ${mode?.refreshRate ?: "the system's"} Hz")
         }
-        current?.let { nativeRefreshRate(it.refreshRate) }
     }
 
     /**
