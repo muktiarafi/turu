@@ -144,6 +144,7 @@ fn timer(weak: Weak<Bot>) {
     let mut last_kick_check = Instant::now();
     let mut last_load_check = Instant::now();
     let mut last_game_check = Instant::now();
+    let mut last_gameplay = Instant::now();
     let mut load = LoadWatch::default();
     loop {
         std::thread::sleep(Duration::from_millis(20));
@@ -218,6 +219,15 @@ fn timer(weak: Weak<Bot>) {
             last_load_check = Instant::now();
             check_stuck_loading(&bot, &mut load);
         }
+        // Advanced Stats track connected gameplay whether or not a script runs.
+        if last_gameplay.elapsed() >= GAMEPLAY_STATS_EVERY {
+            last_gameplay = Instant::now();
+            let reading = in_game.then(|| player_reading(&bot));
+            bot.state
+                .lock()
+                .stats
+                .update_gameplay(reading, Instant::now());
+        }
         if !in_game {
             continue;
         }
@@ -244,6 +254,33 @@ fn timer(weak: Weak<Bot>) {
                 tracing::debug!("Applying options failed: {e}");
             }
         }
+    }
+}
+
+/// How often the gameplay rates are sampled (VibeSkua's `gameplayStats` limit).
+const GAMEPLAY_STATS_EVERY: Duration = Duration::from_millis(1000);
+
+/// What VibeSkua's `ScriptTimer` hands `Stats.UpdateGameplaySnapshot` (read before taking the
+/// state lock; a failed read is 0, as its bindings' defaults).
+fn player_reading(bot: &Bot) -> crate::stats::PlayerReading {
+    let int = |path: &str| {
+        let value: Option<serde_json::Value> = bot.flash.get_opt(path).ok().flatten();
+        crate::api::packets::num(value.as_ref()).unwrap_or(0)
+    };
+    let class_id = inventory::items(bot, Container::Inventory)
+        .ok()
+        .and_then(|items| items.into_iter().find(|i| i.equipped && i.is_class()))
+        .map_or(0, |i| i.id);
+    crate::stats::PlayerReading {
+        experience: int("world.myAvatar.objData.intExp"),
+        required_experience: int("world.myAvatar.objData.intExpToLevel"),
+        level: int("world.myAvatar.dataLeaf.intLevel"),
+        gold: int("world.myAvatar.objData.intGold"),
+        class_id,
+        // iCurCP is progress within the current rank; iCPToRank is that rank's requirement.
+        class_points: int("world.myAvatar.objData.iCurCP"),
+        class_points_to_rank: int("world.myAvatar.objData.iCPToRank"),
+        class_rank: int("world.myAvatar.objData.iRank"),
     }
 }
 

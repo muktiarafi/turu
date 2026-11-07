@@ -494,8 +494,17 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   proxy needs a relog through `127.0.0.1:5588`; here Connect starts capturing at once, and a
   picked server only makes it relog there. Disconnect stops capturing and leaves the game
   connected (VibeSkua's drops the connection). Not built: the category filter button.
-* **Stats** (`stats.rs`): script clock (keeps its last value after the script ends), KILLS,
-  DEATHS, PICKUPS, ACCEPTED, COMPLETED, RE-LOGINS, Reset. The STORAGE section is not built.
+* **Stats** (`stats.rs`, 480 wide): script clock (H:MM:SS, keeps its last value after the script
+  ends), the Advanced switch (`statsAdvancedMode`), Reset; KILLS, DEATHS, PICKUPS, ACCEPTED,
+  COMPLETED, RE-LOGINS tiles. Advanced (VibeSkua's 760 high, a full-screen sheet on a phone):
+  GAMEPLAY with the session clock and the unit selector (`/hr` `/min` `/sec`, `statsRateUnit`),
+  Level and Rank (to rank 10, 302,500 CP) bars with their rate and time left, then Net gold,
+  Items, Kills, Deaths (one column when narrow). The rates are `turu_bot::stats::Gameplay`,
+  sampled once a second by the bot's background thread while in game, script or not; a
+  disconnect stops the clock and rebaselines. RATE HISTORY: Save, Export (CSV; Share where there
+  are no file dialogs), Clear (asks), and a table sortable by its headers, kept in
+  `StatsRateHistory.json` in the data folder and shared by every client (written under a lock,
+  re-read every 2 s). Not built: resizing the table's columns, the STORAGE section.
 * **Runtime** (`runtime.rs`, 955x596, VibeSkua `RuntimeHelpersView`): two columns. DROPS HELPER:
   the pickup list (`bot.drops`: names, then IDs), multi-select with Remove Selected; "Drop Name
   (e.g. Unidentified 13)" with Add Drop (`|`-separated, a number is an item ID; Enter adds too);

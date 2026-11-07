@@ -38,6 +38,7 @@ pub mod skills;
 pub mod spammer;
 pub mod startup;
 pub mod state;
+pub mod stats;
 pub mod updates;
 pub mod webhooks;
 

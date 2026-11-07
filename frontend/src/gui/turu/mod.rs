@@ -575,7 +575,7 @@ mod tests {
         let replacement = uv('\u{FFFF}');
         assert_eq!(replacement, uv('◻'), "an unknown character draws ◻");
         let missing: Vec<char> =
-            "«·»×–…‹›←↑→↓≤≥⋮⋯■▶▾★♡♥⚙✕⟳".chars().filter(|&c| uv(c) == replacement).collect();
+            "«·»×–—…‹›←↑→↓≤≥⋮⋯■▶▾★♡♥⚙✕⟳".chars().filter(|&c| uv(c) == replacement).collect();
         assert!(missing.is_empty(), "missing glyphs: {missing:?}");
     }
 
