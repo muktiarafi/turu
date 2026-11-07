@@ -113,6 +113,9 @@ internal object CrashUploads {
         }
         Sentry.captureMessage(summary, SentryLevel.WARNING) { scope ->
             scope.setTag("exit_reason", reason)
+            // One issue per exit reason: Sentry otherwise groups every exit by this call's stack,
+            // and a ColorOS CPU kill, low-memory kills and a start timeout became one issue.
+            scope.fingerprint = listOf("android-exit", reason)
             scope.addAttachment(Attachment(report.absolutePath, report.name, "text/plain"))
         }
     }
