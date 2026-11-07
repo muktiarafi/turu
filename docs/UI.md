@@ -51,7 +51,7 @@ Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Appl
 HotKeys; no Application Themes: Turu keeps Mugetsu's palette), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
 Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Notification Center, Logs,
 Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; no View Plugins:
-Turu builds its plugins in), **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them
+Turu builds its plugins in), **Army** (Accounts, Army Control, Army Queue, New Tab; Turu's: VibeSkua has them
 in its Manager app and its tabbed host). Android has no Army menu and no Butler yet (no tabs:
 `Platform::has_army`), and no HotKeys (`has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
@@ -350,8 +350,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   filter, Select /
   Unselect All, Add Selected to
   Group and "Select a group's accounts" (checks that group's accounts and only those; each group
-  has Remove, which keeps its accounts), and Launch: Server (the same drop-down
-  as Relogin Server, `widgets::server_combo`), Where (In a tab, In its own window, Without a
+  has Remove, which keeps its accounts), and Launch: Server (each server as
+  VibeSkua's `ServerStatusInline`, "Twilly [M] - 42ms - 120/1000": the ping is the game's
+  SmartFox version check answered, median of three, "No response" or "Offline", measured when
+  the list is read and again a minute later; without the server list, the names alone), Where (In a tab, In its own window, Without a
   window), the script (Browse / Clear) with Auto-start (disabled without a script, saying so on
   hover), Start Selected, Start All. Saved on every change.
   Where Army can't start a `turu` of its own (`Platform::launches_processes`; Android, whose
@@ -379,8 +381,33 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   an Army > Accounts group's rows (Group ▾), and its ⋯ has Clear ended and Close all launched
   clients. ACTIONS go to the checked rows, or to every row when none is checked (it says which,
   in yellow for everyone): Start script, Stop script, Load script…, Log in, Log out, Relog, Go
-  to house, Start Auto-Attack, Stop Auto-Attack; Travel (join a map at "cell[, pad]", go to a player), Quest (accept with an optional
-  reward) and Misc options fold away, closed at first. Stop script and Log out sent to
+  to house, Start Auto-Attack, Stop Auto-Attack; Travel (open: Map Travel…, Jump to Player…,
+  Change Server…), Quest (accept with an optional reward) and Misc options fold away, closed at
+  first. Travel is VibeSkua's tabbed host's travel menu (`army_travel.rs`): **Map Travel**
+  (520x360) has Recent destinations (the maps and rooms the clients actually visited, read every
+  second while Turu runs, the newest first, at most 15; Select / Jump, Clear History) and Saved
+  presets ("Name — map-room - cell, pad"; Select / Jump, Create, Edit, Delete), then Jump to
+  Map / Cell... (a box for `Map,Room,Cell`, room optional, starting with the last jump) and
+  Close. Create/Edit Map Preset asks Preset name, Map, Room number (optional), Cell, Pad, with
+  Use Current Client Location (the only checked row, else the active tab; a new preset starts
+  there). Jump to Player… lists the clients' logged-in players in a ▾ next to a box that takes
+  any name; Change Server… loads the online servers (Artix first picked) and relogs the clients
+  there (`/relogin?server=`). The last jump, player, history and presets are saved in
+  `army-control-jump.json` with VibeSkua's field names. The dialogs are modals, as wide as a
+  phone allows.
+* **Army Queue** (`army_queue.rs`, 600x640; VibeSkua Manager's Army Queue tab): ▶ Start Queue /
+  Pause Queue / Resume Queue / ■ Stop Queue (asks first), How to Use (the Quick Guide, hidden for
+  good with "Got it, hide guide"), the running status and progress, the squad tabs (name, count,
+  ✕; drag one onto another to move it; + and Import Group), the selected squad (Squad Name, its
+  default script with Browse (Search Scripts: the script it loads), File…, Options and ✕, "+
+  Pick Accounts", then each account: name, its Script or "(Uses Squad Script)", its run state,
+  and Script, File…, Options, ✕, Remove), and Preset: (drop-down, Load, Preset Name, Save
+  Preset). Pick Accounts for Squad searches by name or username, with All (the shown ones),
+  None, Done and Cancel. Squads run one after another (`bot/src/army/queue.rs`): each account in
+  a `turu` of its own with `--run-script`, `--script-options-storage ArmyQueue_<squad>[_<user>]_
+  <script>` and `--exit-on-script-stop`, 3 s apart; once all have quit, a 5 s ghost-session
+  countdown, then the next squad. Editing waits while it runs. Saved as you edit in
+  `ArmyQueueActive.json`, presets in `ArmyQueues.json`. Stop script and Log out sent to
   everyone need a second click ("Log out all?") within 4 s. The last outcome shows below, with
   the earlier ones under History. VibeSkua's "Include this window's tabs" is gone: tabs are rows.
   Start script (▶ Start too) shows each client's Script Options window first, as VibeSkua's Army
