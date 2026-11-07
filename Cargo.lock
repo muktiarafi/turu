@@ -7330,6 +7330,7 @@ dependencies = [
  "egui-wgpu",
  "futures",
  "jni 0.22.4",
+ "libc",
  "log",
  "ndk",
  "reqwest",

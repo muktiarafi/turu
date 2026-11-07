@@ -179,6 +179,9 @@ in the data folder's `crash/` (`/sdcard/Android/data/com.muktiarafi.turu/files/c
   not across an uninstall: a tester who saw a crash should install the new build over the old one.
 * `panic-<time>.txt`: a Rust panic's message and backtrace, written by the panic hook before the
   abort (the abort then shows up as an `exit-...-crash_native` report too).
+* `memory-<pid>.log`: the running process's memory, a reading a minute (GPU memory, below). An
+  exit report gets its process's log under "Memory over the run", and the logs of earlier
+  processes are then deleted.
 
 The first start after a new report shows "Turu closed unexpectedly"; Diagnostics > Logs >
 Crashes lists them, with Share (Android's share sheet: mail, a chat, Drive), Copy and Delete. The
@@ -261,6 +264,19 @@ works from the phone's memory:
 * Spare textures and the shapes not drawn for 2 minutes are freed when the window goes away,
   when Android calls `onTrimMemory` at `RUNNING_LOW` or above (the service passes it on), and
   every 30 s while `/proc/meminfo`'s `MemAvailable` is under 15% of the phone's memory.
+
+None of that says what grows. A Pixel 8 (8 GB, 0.2.0-beta.2) aborted after 27 minutes in the
+background on a failed allocation (`handle_alloc_error` in a mouse pick's tiny matrix cache, just
+the allocation that hit the limit) at 1.9 GB of RSS and 2.5 GB of PSS, with 3 GB of the phone's
+memory still free: a limit of the process (the allocator's regions, or the number of mappings)
+rather than the phone's. So the engine logs the process's memory every minute
+(`turu_frontend::process_memory`, `memory.rs`): RSS and its parts, PSS, the `malloc` heap
+(`mallinfo`: bytes handed out, above anonymous RSS while pages are untouched), swap, address
+space, mappings and threads, and every 5 minutes the largest mappings by name (e.g.
+`[anon:scudo:primary_reserve]`, the GPU driver's device). It goes to logcat, to
+`crash/memory-<pid>.log` (the last 150 readings) for that process's exit report, and every 5
+minutes to Sentry as a breadcrumb. On the emulator at the login screen: RSS ~230-300 MB, ~3500
+maps.
 
 Frame interpolation (Options > Application > Frame Interpolation, off by default; saved as
 `mugetsu-interpolation.txt` in the data folder) is paced as on a desktop (`turu_frontend::pacing`):

@@ -18,7 +18,9 @@ import java.util.Locale
  * reasons, Android 11 and later): a report in the data folder's `crash/` for each exit Turu
  * didn't ask for, so a crash, a low-memory kill or a battery saver's kill is known after the fact
  * without logcat. Native crashes come with their tombstone (Android 12 and later), read by
- * [Tombstone], plus the raw file next to the report. The Rust side lists the reports
+ * [Tombstone], plus the raw file next to the report. The engine's memory log of that process
+ * (`crash/memory-<pid>.log`, `android/src/memory.rs`) is added to its report, and the logs of
+ * older processes are then deleted. The Rust side lists the reports
  * (Diagnostics > Logs > Crashes, `turu_frontend::crash_reports`) and shows a notice for new ones.
  * Runs once per process, before the engine starts.
  */
@@ -73,6 +75,14 @@ internal object CrashReports {
             }
         }
         prefs.edit().putLong("lastExit", newest).apply()
+        deleteMemoryLogs(dir)
+    }
+
+    /** The memory logs of earlier processes, once their reports have them (or they ended well). */
+    private fun deleteMemoryLogs(dir: File) {
+        val mine = "memory-${android.os.Process.myPid()}.log"
+        dir.listFiles { file -> file.name.startsWith("memory-") && file.name.endsWith(".log") && file.name != mine }
+            ?.forEach { it.delete() }
     }
 
     /** Not a stop someone asked for (Force stop, an update, Turu's own clean exit). */
@@ -112,6 +122,11 @@ internal object CrashReports {
         }
         report.append('\n')
         appendDevice(context, activities, report)
+        val memory = File(dir, "memory-${exit.pid}.log")
+        if (memory.isFile) {
+            report.append("\nMemory over the run (").append(memory.name).append(", a reading a minute)\n")
+                .append(memory.readText())
+        }
         if (tombstone) {
             val formatted = Tombstone.format(trace)
             val raw = File(dir, "$name-tombstone.pb")
