@@ -16,6 +16,30 @@ How to build, run and check the Android app. The design and the plan are in
 > 10 (Mali-G52, 4 GB) ran out of GPU memory logging in, which led to the limits in "GPU memory"
 > below; a full farming run on a phone isn't recorded yet.
 >
+> **Tabs, Army and Butler (phase 5, 2026-11-07; built, not run on a device or emulator yet):**
+> several game clients in tabs, as on the desktop: the tab strip's "+", Army > Accounts ("In a
+> tab" only; "Log in by hand" without a saved password) and Army Control's Show open and select
+> them; one engine thread runs them all (`turu_frontend::players`), the active tab drawn and
+> heard, the others muted and ticked at the hidden tab's rate. Options > Application > Tab Limit
+> (default 2, at most 4) refuses more, with a log line. The Army menu and Plugins > Butler show
+> (`Platform::has_army`), Butler and Army Control as full-screen sheets with finger-sized
+> buttons. The wake lock is held while any tab's script runs and the notification has a line per
+> tab (Pause and Stop act on the active one). The tabs after the first are written to
+> `android-tabs.json` in the data folder (account, server, script, whether it ran; no password)
+> and reopened when the engine starts, after `turu-args.txt`'s.
+>
+> **Unverified on a device (only `cargo ndk check` so far):** two tabs drawing and switching
+> without the renderers' state mixing (the thread-state swap the desktop does); sound switching
+> with the active tab; memory with two clients (~410 MB each on the emulator in phase 1) and
+> what the Tab Limit should default to; the notification's lines and the wake lock with two
+> tabs; reopening tabs after a kill (`android-tabs.json`), including a script that starts once
+> its tab is logged in by hand; Butler (a master and a follower) and an army script
+> (`bot.army.barrier`) across two tabs; the sheets and touch sizes of Butler, Army Control and
+> the tab strip; `onTrimMemory` stopping hidden tabs' scripts (not done). Accounts can't log a
+> tab in by itself until the Keystore `SecretStore` exists (phase 5, step 5). HotKeys stay
+> hidden: keys reach egui only while a Turu text box has the focus, with no function keys or
+> modifiers (`input.rs`).
+>
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
 > text; a strip above it shows what they hold); the windows are the desktop's, at the phone's
 > density (no drawer or full-screen sheets yet); OpenGL ES draws only parts of the game (use
@@ -36,13 +60,12 @@ How to build, run and check the Android app. The design and the plan are in
 
 | Path | What |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser, the share sheet), `saf.rs` (file dialogs: the system picker), `pan.rs` (Turu's text box above the keyboard). Empty on other systems. |
-| `android/src/storage.rs`, `android/app/.../Storage.kt` | account passwords (Accounts' `SecretStore`): AES-GCM with a key in the Android Keystore, in the app's internal storage (`noBackupFilesDir/passwords`, not the shared data folder); copying and writing the picker's documents. |
-| `android/src/restart.rs` | the script started by hand, kept in the data folder's `android-restart.txt` while it runs (its options storage, the account and server; the password, when Accounts hasn't it, with the Keystore's key), run again when the service comes back without an activity after a kill (`turu-args.txt`'s own script wins). |
-| `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's buttons) and the status it shows, sent every 2 s when it changed. |
+| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser; no file dialogs yet). Empty on other systems. |
+| `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's buttons) and the status it shows (a line per tab with several), sent every 2 s when it changed. |
+| `android/src/tabs.rs` | `android-tabs.json`: the tabs after the first, written when they change and reopened when the engine starts. |
 | `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity: full screen, Back to the background, asks once for notifications and battery optimisation, starts the service), `TuruService` (the foreground service: starts the engine, also alone after a kill; the notification; the wake lock), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
 | `android/rustls-platform-verifier/` | Gradle module building the Kotlin half of `rustls-platform-verifier` (HTTPS certificate checks against Android's trust store) from the submodule `android/vendor/rustls-platform-verifier`. |
-| `frontend/src/engine.rs` | the windowless player loop, shared with the desktop's `--headless`. |
+| `frontend/src/engine.rs`, `frontend/src/players.rs` | the windowless player loop with its tabs (shared with the desktop's `--headless`, one tab there), and the tabs' players and thread state (shared with the desktop's window). |
 
 ## Build
 

@@ -51,9 +51,10 @@ Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Appl
 HotKeys; no Application Themes: Turu keeps Mugetsu's palette), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
 Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Notification Center, Logs,
 Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; no View Plugins:
-Turu builds its plugins in), **Army** (Accounts, Army Control, Army Queue, New Tab; Turu's: VibeSkua has them
-in its Manager app and its tabbed host). Android has no Army menu and no Butler yet (no tabs:
-`Platform::has_army`), and no HotKeys (`has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
+Turu builds its plugins in), **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them
+in its Manager app and its tabbed host). Android has them too (its tabs run in one engine
+thread; Butler and Army Control are full-screen sheets with finger-sized buttons there, and the
+tab strip's tabs are taller, with "×" on the active one only), but no HotKeys (`has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
 Right: **Update** (only while a newer Turu is out: below), the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**

@@ -412,7 +412,15 @@ Android's limits are the biggest behavioural difference from a desktop:
 
 ## Plan: tabs, Army and Butler (phase 5)
 
-Written 2026-11-04 against `script-loader-layout` (`55bce1e5b`). Not started.
+Written 2026-11-04 against `script-loader-layout` (`55bce1e5b`). Steps 1-4, 6 and 7 built on
+2026-11-07 (branch `wt/android-tabs`), checked with `cargo ndk check` only; step 5 (Keystore)
+and step 8 (a phone) are open. As built: the tabs after the first are reopened at every engine
+start (not only after a kill: Android doesn't tell them apart for the service), muted tabs keep
+their AAudio streams open (paused streams would replay stale sounds), Army Control's Load
+script uses the loaded script without file dialogs, and HotKeys stay hidden (keys don't reach
+egui outside a text box). `Army::launch` refuses on Android with `cfg!` rather than
+`#[cfg]`, so the process code (and what only it uses) still compiles without dead-code
+warnings.
 
 ### Why tabs, not processes
 

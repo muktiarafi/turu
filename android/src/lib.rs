@@ -1,7 +1,7 @@
 //! Turu on Android (docs/ANDROID_PROPOSAL.md, phase 4): the game on screen with Turu's nav bar
 //! and bot windows over it, touch, keys and sound, and kept running in the background by a
 //! foreground service (`notify.rs`). The engine thread (`turu_frontend::engine`'s loop) owns the
-//! player and the screen (`screen.rs`) for as long as the process lives; the activity or the
+//! tabs' players (one game client each: [`tab_request`], `tabs.rs`) and the screen (`screen.rs`) for as long as the process lives; the activity or the
 //! service starts it ([`start_engine`]), whichever comes first, so it also runs with no window
 //! (after Android killed the process, the service comes back alone). `android_main` forwards
 //! the activity's events to it: a window to draw in (the first gets a screen, later ones a new

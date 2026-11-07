@@ -244,13 +244,14 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   cache file and copies it into the document once written. Not tried on a device yet.
 * The desktop windows at the phone's density work, but there is no drawer or full-screen sheet
   layout yet.
-* After a restart (kill), the script started by hand runs again (`restart.rs`), but not a
-  Scheduler playlist.
-* Passwords for Accounts: `storage.rs`'s `KeystoreStore` (AES-GCM, key in the Android Keystore,
-  files in internal storage). Not tried on a device yet.
-* The Army menu and Plugins > Butler are hidden on Android (`Platform::has_army`) until tabs
-  work there (phase 5). Accounts would start accounts only in tabs (`launches_processes`: the
-  executable is app_process, not a `turu`), with the loaded script (no file dialogs).
+* After a restart (kill), only `turu-args.txt`'s script runs, not one started by hand.
+* Passwords for Accounts: `SecretStore` has no Android implementation (Keystore via JNI). Its
+  `NoStore` says `keeps_passwords() == false`, so Accounts shows no password field there; a
+  Keystore store brings the field back by keeping the trait's default.
+* Tabs, the Army menu and Plugins > Butler (phase 5, steps 1-4, 6, 7) are built but not run on
+  a device: see docs/ANDROID.md's status for what is unverified. Accounts start accounts only in
+  tabs (`launches_processes`: the executable is app_process, not a `turu`), with the loaded
+  script (no file dialogs).
 * The data folder is on shared storage (for `adb`); private files (tokens, passwords) belong in
   internal storage.
 * No device fonts from `/system/fonts` (Ruffle's `default_font` covers `_sans`).
