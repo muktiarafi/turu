@@ -26,6 +26,7 @@ pub mod map_items;
 pub mod models;
 pub mod monitor;
 pub mod options;
+pub mod packet_filters;
 pub mod paths;
 pub mod perf;
 pub mod quest_cache;

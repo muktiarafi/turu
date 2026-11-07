@@ -29,6 +29,7 @@ mod loader;
 mod logs;
 mod message_box;
 mod nav_bar;
+mod packet_filters;
 mod packet_logger;
 mod notify_drop;
 mod runtime;

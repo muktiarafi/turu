@@ -26,7 +26,7 @@ existing `FilePicker` (rfd, async) and never block the UI.
 
 `theme::install` sets this style on both of egui's themes once, so the nav bar, popups and
 windows (and Ruffle's own dialogs) are dark Turu-styled whatever the OS theme is. Mugetsu's
-right-click menu is untouched. Body text is 13 px, buttons have radius 8, windows radius 12.
+right-click menu is untouched. Body text is 13 px, buttons have radius 8, windows radius 12. Buttons (`widgets::button`) shrink to 96% while pressed and spring back, and with a pointer a soft glow follows the cursor over a hovered button (VibeSkua `HoverGlow`; none on a touch screen).
 The windows are not scaled with the window height (Mugetsu's `z`): they keep VibeSkua's sizes
 (370x500, 612x720, ...) and are clamped to the window. They stay below the nav bar and shrink
 with the app window, also after they opened; what no longer fits scrolls, so the footer buttons
@@ -234,7 +234,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 * **Message boxes** (`message_box.rs`): what a script shows with `bot.showMessageBox`, as an egui
   modal over the windows (caption, message, the buttons left to right, the last one primary).
   The script waits for the click; Escape or a click outside answers "closed", and Stop closes it.
-* **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
+* **Game options** (`game_options.rs`, 800x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button), each with a one-line
   description under its label (search matches it; VibeSkua's window has none). Search also
@@ -245,7 +245,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   matches). Reload Map is enabled only in game. The descriptions
   say what Turu does: Hunt Buffer, Hunt Priority and Use Function Based Skills say Turu doesn't
   use them yet (their controls are greyed, as Application Options' "coming soon" rows: `UNUSED`),
-  and Safe Timings that only scripts read it. Edits are written to
+  and Safe Timings that only scripts read it. Each section's options sit two to a row
+  (VibeSkua's two columns) from 640 px wide, one per row on a phone. Edits are written to
   `bot.options` at once. Footer: a status line (unsaved changes, "Saved.", or Save's error), then
   Defaults / Revert (VibeSkua's Reset: reload `options.json`) / Save. The window remembers which
   options it changed since the last Save or Revert; what else differs from `options.json` was
@@ -286,7 +287,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 * **Application Options** (`application_options.rs`, 580x650, VibeSkua `ApplicationOptionsView`):
   search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title
-  (the window title gets " – <character>" while you play), Client Animation Frame-rate (the
+  (the window title gets " – <character>" while you play), Grandpa Mode (larger log and packet text), Client Animation Frame-rate (the
   `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
   stores it and never reads it), Frame Interpolation (Turu's: Mugetsu's switch, also in the game's
   right-click menu on a computer, which a phone can't open; `Platform::set_frame_interpolation`
@@ -453,7 +454,11 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Save at the end and turns into "Undo clear" for 8 s, which puts the lines back before those
   logged since (`LogBuffer::take` / `restore`). **Logger** (`packet_logger.rs`):
   Start/Stop Logging turns `bot.logs.packet_logging` on or off; while it is on the engine keeps
-  the outgoing packets in `bot.logs.packets` (1000 lines), search box, count, Copy/Save/Clear. Not built: the filter button.
+  the outgoing packets in `bot.logs.packets` (1000 lines), search box, the "Show n / m" filter button (`packet_filters.rs`, VibeSkua `PacketFiltersButton`: a flyout
+  with "SHOW PACKETS", All / None / Invert and the twelve filters as check boxes in three columns; a packet an
+  unticked filter takes isn't logged from then on: `bot.logs.packet_hidden`, `turu_bot::packet_filters::logger_keeps`),
+  count, Copy/Save/Clear. Options > Application > Grandpa Mode makes the log text (every `LogView`: Logs, Script
+  Loader, Logger, client logs), the Interceptor's and Spammer's packets and their counts larger (VibeSkua's 15 pt for 11).
 * **Console** (`console.rs`, 700x520, VibeSkua's `ConsoleView`, one per tab): header card "TS
   SNIPPET" ("runs with `bot` in scope"), a monospace editor (default `bot.log("Test");`), Clear and
   Run (Ctrl/Cmd+Enter too), Stop while it runs; OUTPUT below with Copy/Clear: "› " and the
@@ -493,7 +498,11 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   `MessageInfo.content` or clear `send` to drop a packet; the log runs after them. VibeSkua's
   proxy needs a relog through `127.0.0.1:5588`; here Connect starts capturing at once, and a
   picked server only makes it relog there. Disconnect stops capturing and leaves the game
-  connected (VibeSkua's drops the connection). Not built: the category filter button.
+  connected (VibeSkua's drops the connection). Beside the search, the "Show n / m" button (as the Logger's) with
+  the categories Combat ... Misc and Other: a packet shows when the search finds it and any ticked category
+  takes one of the commands it carries (`turu_bot::packet_filters::commands`: `%xt%` packets and a `cmd`
+  packet's sub-command, every `"cmd"` of a JSON packet, an XML packet's `action`). Long packets aren't cut: the
+  list scrolls sideways.
 * **Stats** (`stats.rs`, 480 wide): script clock (H:MM:SS, keeps its last value after the script
   ends), the Advanced switch (`statsAdvancedMode`), Reset; KILLS, DEATHS, PICKUPS, ACCEPTED,
   COMPLETED, RE-LOGINS tiles. Advanced (VibeSkua's 760 high, a full-screen sheet on a phone):

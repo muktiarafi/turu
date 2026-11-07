@@ -146,6 +146,12 @@ fn vibeskua_entries() -> Vec<Entry> {
             "Whether to display logged-in character name in window title",
             Field::Bool(|s| &mut s.show_username_in_title)
         ),
+        entry!(
+            General,
+            "Grandpa Mode",
+            "Larger, easier-to-read text in logs and packet output",
+            Field::Bool(|s| &mut s.grandpa_mode)
+        ),
         Entry {
             restart: true,
             ..entry!(

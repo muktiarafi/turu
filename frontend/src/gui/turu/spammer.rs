@@ -194,12 +194,20 @@ impl SpammerWindow {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
+                    // Grandpa Mode: larger packets in taller rows.
+                    let text_size = widgets::log_text_size(11.0);
+                    let row_height = if widgets::grandpa_mode() { 30.0 } else { 26.0 };
                     for (i, packet) in packets.iter().enumerate() {
                         let selected = sending.map_or(self.selected == Some(i), |s| s == i);
-                        let row = widgets::list_row(ui, selected, 26.0, |ui| {
+                        let row = widgets::list_row(ui, selected, row_height, |ui| {
                             ui.add_sized(
                                 [28.0, 18.0],
-                                Label::new(RichText::new((i + 1).to_string()).monospace().size(11.0).color(MUTED)),
+                                Label::new(
+                                    RichText::new((i + 1).to_string())
+                                        .monospace()
+                                        .size(text_size)
+                                        .color(MUTED),
+                                ),
                             );
                             ui.add_space(4.0);
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -214,7 +222,8 @@ impl SpammerWindow {
                                 }
                                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                                     ui.add(
-                                        Label::new(RichText::new(packet).monospace().size(11.0).color(TEXT)).truncate(),
+                                        Label::new(RichText::new(packet).monospace().size(text_size).color(TEXT))
+                                            .truncate(),
                                     )
                                     .on_hover_text(packet);
                                 });
