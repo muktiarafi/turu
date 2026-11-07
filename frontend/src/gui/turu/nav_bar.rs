@@ -935,6 +935,10 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Army Control") {
                 windows.army = true;
             }
+            // VibeSkua Manager's Army Queue tab.
+            if item(ui, "Army Queue") {
+                windows.army_queue = true;
+            }
             // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
             if item(ui, "New Tab") {
                 crate::turu::request_tab(crate::turu::TabRequest::Open(Box::default()));

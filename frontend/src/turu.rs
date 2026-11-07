@@ -523,6 +523,8 @@ pub fn skua_swf_url() -> anyhow::Result<String> {
 ///   `.ts` optional; one Search Scripts lists is downloaded first (see [`configure_startup`]).
 /// * `--run-playlist <file>` / `--load-playlist <file>`: the same for a Scheduler playlist
 ///   (VibeSkua's playlist JSON), started in place of the script.
+/// * `--script-options-storage <name>`: the script's Script Options come from
+///   `options/<name>.cfg`, and `--run-script` starts it without asking for them (Army Queue).
 /// * `--exit-on-script-stop` (or `--exit-on-finish`): log out and quit when the script stops
 ///   (not when auto-relogin stops it), or with a playlist, when the playlist ends.
 /// * `--headless`: no window (see `headless.rs`).
@@ -1059,6 +1061,7 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
                 startup.playlist = value().map(Into::into);
                 startup.run_playlist = false;
             }
+            "--script-options-storage" => startup.options_storage = value(),
             "--exit-on-script-stop" | "--exit-on-finish" => flags.exit_on_stop = true,
             "--headless" => flags.headless = true,
             "--exit-with-parent" => flags.exit_with_parent = true,

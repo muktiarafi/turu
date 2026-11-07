@@ -337,6 +337,16 @@ impl Paths {
         self.root.join(crate::army::jump::FILE_NAME)
     }
 
+    /// Army Queue's saved presets, by name (`army::queue`; VibeSkua `ArmyQueues.json`).
+    pub fn army_queues_file(&self) -> PathBuf {
+        self.root.join(crate::army::queue::PRESETS_FILE)
+    }
+
+    /// The Army Queue being edited, saved as it changes (VibeSkua `ArmyQueueActive.json`).
+    pub fn army_queue_active_file(&self) -> PathBuf {
+        self.root.join(crate::army::queue::ACTIVE_FILE)
+    }
+
     pub fn load_settings(&self) -> Option<AppSettings> {
         let text = fs::read_to_string(self.settings_file()).ok()?;
         serde_json::from_str(&text).ok()

@@ -72,6 +72,9 @@ pub struct AppSettings {
     pub stats_advanced_mode: bool,
     /// The rates' unit: `/hr`, `/min` or `/sec` (VibeSkua `StatsRateUnit`; `stats::RateUnit`).
     pub stats_rate_unit: String,
+    // Army Queue
+    /// Its "How to Use" guide was dismissed (VibeSkua `ArmyQueueHelpDismissed`).
+    pub army_queue_help_dismissed: bool,
 }
 
 impl Default for AppSettings {
@@ -111,6 +114,7 @@ impl Default for AppSettings {
             send_crash_reports: None,
             stats_advanced_mode: false,
             stats_rate_unit: "/hr".into(),
+            army_queue_help_dismissed: false,
         }
     }
 }
