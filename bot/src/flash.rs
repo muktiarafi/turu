@@ -53,7 +53,7 @@ impl Flash {
         self.control.check()?;
         let host = self.host.read().clone();
         let Some(host) = host else {
-            return Err(BotError::Host("the game isn't running".into()));
+            return Err(BotError::Host(crate::host::HostError::NoPlayer));
         };
         let path = match args.first() {
             Some(FlashArg::String(path)) if crate::perf::takes_path(name) => Some(path.clone()),

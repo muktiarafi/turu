@@ -47,8 +47,8 @@ pub const COMMANDS: [&str; 12] = [
     "/logout",
     "/relogin",
     "/map/join",
-    "/house",
-    "/auto/attack/start",
+    "/map/house",
+    "/auto/attack",
     "/auto/stop",
 ];
 
@@ -900,7 +900,7 @@ mod tests {
         assert_eq!(waiting.join().unwrap(), (200, json!({ "stopping": true })));
         // Routes the page can't send aren't queued.
         let control = hub.control("remote:vps:tab:0").unwrap();
-        assert_eq!(hub.run(control, true, "/options", b"").0, 403);
+        assert_eq!(hub.run(control, true, "/game/options", b"").0, 403);
         assert!(hub.take_commands("vps").is_empty());
     }
 
@@ -909,7 +909,7 @@ mod tests {
         assert!(allowed_route(true, "/script/stop"));
         assert!(allowed_route(true, "/map/join?map=battleon"));
         assert!(!allowed_route(true, "/script/start?path=/tmp/evil.ts"));
-        assert!(!allowed_route(true, "/options"));
+        assert!(!allowed_route(true, "/game/options"));
         assert!(allowed_route(false, "/log?type=script&since=0"));
         assert!(!allowed_route(false, "/script/stop"));
         assert!(allowed_route(false, "/script/options"));

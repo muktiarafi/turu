@@ -150,9 +150,11 @@ fn takes_commands_from_its_own_page_or_with_the_key() {
     let (bot, _server, base) = start();
     let own = base.as_str();
     let stop = format!("{base}/api/bots/tab%3A0/script/stop");
+    let (status, body) = post(&stop, Some(own), None);
     assert_eq!(
-        post(&stop, Some(own), None),
-        (200, serde_json::json!({ "stopping": false }))
+        (status, &body["running"]),
+        (200, &serde_json::json!(false)),
+        "{body}"
     );
     // Another site's page, or a request with neither Origin nor key, is refused.
     assert_eq!(post(&stop, Some("https://evil.example"), None).0, 403);
@@ -352,9 +354,11 @@ fn remote_machines_report_and_take_commands() {
         id.replace(':', "%3A").replace(' ', "%20")
     );
     let started = Instant::now();
+    let (status, body) = post(&url, Some(&base), None);
     assert_eq!(
-        post(&url, Some(&base), None),
-        (200, serde_json::json!({ "stopping": false }))
+        (status, &body["running"]),
+        (200, &serde_json::json!(false)),
+        "{body}"
     );
     assert!(
         started.elapsed() < Duration::from_secs(8),
@@ -411,4 +415,77 @@ fn reports_need_the_push_key() {
         get(&format!("{base}/api/state"), other, Some(PUSH_KEY)).0,
         401
     );
+}
+
+/// `/api/events` sends the state only when it changed: no two frames in a row are the same but
+/// for the clock.
+#[test]
+fn streams_the_state_only_when_it_changes() {
+    let (_bot, _server, base) = start();
+    let response = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap()
+        .get(format!("{base}/api/events"))
+        .send()
+        .unwrap();
+    let mut lines = BufReader::new(response).lines();
+    let without_clock = |data: &str| {
+        let mut state: Value = serde_json::from_str(data).unwrap();
+        state["now"] = Value::Null;
+        state["uptimeSeconds"] = Value::Null;
+        state
+    };
+    let mut frames = Vec::new();
+    while frames.len() < 3 {
+        let line = lines.next().unwrap().unwrap();
+        if let Some(data) = line.strip_prefix("data: ") {
+            frames.push(without_clock(data));
+        }
+    }
+    assert_ne!(frames[0], frames[1]);
+    assert_ne!(frames[1], frames[2]);
+}
+
+/// A bot's log as it's written, from the line asked for.
+#[test]
+fn streams_a_bots_log() {
+    let (bot, _server, base) = start();
+    bot.logs.script.push("before the stream");
+    let (status, _) = get(&format!("{base}/api/bots/nobody/log/stream"), None, None);
+    assert_eq!(status, 404);
+    let (status, _) = get(
+        &format!("{base}/api/bots/tab%3A0/log/stream?type=packet"),
+        None,
+        None,
+    );
+    assert_eq!(status, 400);
+    let response = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap()
+        .get(format!(
+            "{base}/api/bots/tab%3A0/log/stream?type=script&since=0"
+        ))
+        .send()
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    let mut lines = BufReader::new(response).lines();
+    let mut next_lines = || loop {
+        let line = lines.next().unwrap().unwrap();
+        if line == "event: lines" {
+            let data = lines.next().unwrap().unwrap();
+            let reply: Value = serde_json::from_str(data.strip_prefix("data: ").unwrap()).unwrap();
+            break reply["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l["text"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>();
+        }
+    };
+    assert_eq!(next_lines(), ["before the stream"]);
+    bot.logs.script.push("while streaming");
+    assert_eq!(next_lines(), ["while streaming"]);
 }

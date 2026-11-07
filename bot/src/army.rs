@@ -214,15 +214,17 @@ impl Command {
                 (with("/map/join", &pairs), Vec::new())
             }
             Self::JumpPlayer(name) => (with("/player/goto", &[("name", name)]), Vec::new()),
-            Self::JumpHouse => (with("/house", &[]), Vec::new()),
+            Self::JumpHouse => (with("/map/house", &[]), Vec::new()),
             Self::AcceptQuest { id, reward } => {
                 let (id, reward) = (id.to_string(), reward.to_string());
                 (
-                    with("/quests/register", &[("id", &id), ("reward", &reward)]),
+                    with("/quest/register", &[("id", &id), ("reward", &reward)]),
                     Vec::new(),
                 )
             }
-            Self::SetOptions(values) => (with("/options", &[]), values.to_string().into_bytes()),
+            Self::SetOptions(values) => {
+                (with("/game/options", &[]), values.to_string().into_bytes())
+            }
             Self::Relogin => (with("/relogin", &[]), Vec::new()),
             Self::Equip { item, stop } => {
                 let mut pairs = vec![("item", item.as_str())];
@@ -232,7 +234,7 @@ impl Command {
                 (with("/equip", &pairs), Vec::new())
             }
             Self::RefreshGear => return (false, with("/gear", &[]), Vec::new()),
-            Self::StartAutoAttack => (with("/auto/attack/start", &[]), Vec::new()),
+            Self::StartAutoAttack => (with("/auto/attack", &[]), Vec::new()),
             Self::StopAuto => (with("/auto/stop", &[]), Vec::new()),
         };
         (true, path, body)
@@ -696,7 +698,7 @@ mod tests {
                 id: 2566,
                 reward: -1
             }),
-            "/quests/register?id=2566&reward=-1"
+            "/quest/register?id=2566&reward=-1"
         );
         assert_eq!(
             path(Command::Equip {
@@ -717,7 +719,7 @@ mod tests {
         assert_eq!(path(Command::RefreshGear), "/gear");
         let (post, path, body) = Command::SetOptions(json!({ "lagKiller": true })).request();
         assert!(post);
-        assert_eq!(path, "/options");
+        assert_eq!(path, "/game/options");
         assert_eq!(body, br#"{"lagKiller":true}"#);
     }
 
@@ -740,7 +742,7 @@ mod tests {
         assert_ne!(status, 404);
         let (status, _) = crate::control_api::local(&bot, false, "/map/join?map=x", &[]);
         assert_eq!(status, 405);
-        let (status, reply) = crate::control_api::local(&bot, true, "/quests/register", &[]);
+        let (status, reply) = crate::control_api::local(&bot, true, "/quest/register", &[]);
         assert_eq!(status, 400, "{reply}");
     }
 }

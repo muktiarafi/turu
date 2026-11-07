@@ -386,7 +386,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   start does, unless the script sets `dontPreconfigure` or the client is headless; in a tab it
   shows when you open that tab.
   Start/Stop Auto-Attack are VibeSkua's tabbed host's "Start/Stop Auto-Attack for All"
-  (`WM_SKUA_AUTO_ATTACK`), sent through the control API (`/auto/attack/start`, `/auto/stop`),
+  (`WM_SKUA_AUTO_ATTACK`), sent through the control API (`/auto/attack`, `/auto/stop`),
   with no second click (VibeSkua asks none; stopping loses nothing). A client starts Auto Attack
   as its Auto popup would, but with its equipped class in Base and no Manual MapIDs (VibeSkua's
   clients used their own popup's picks; Turu's popup belongs to the window, not to a tab).

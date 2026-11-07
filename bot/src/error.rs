@@ -6,7 +6,7 @@ pub enum BotError {
     #[error("script stopped")]
     Stopped,
     #[error("flash: {0}")]
-    Host(String),
+    Host(HostError),
     #[error("couldn't read game data from {path}: {message}")]
     Json { path: String, message: String },
     #[error("{0}")]
@@ -21,7 +21,7 @@ pub enum BotError {
 
 impl From<HostError> for BotError {
     fn from(value: HostError) -> Self {
-        Self::Host(value.to_string())
+        Self::Host(value)
     }
 }
 

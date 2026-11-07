@@ -122,7 +122,7 @@ may call `equip` while it runs (it's the script choosing).
 | `POST /bank/load` | Loads the bank and writes the cache. Same script-running rule as the equips. |
 | `POST /loadout/equip?name=<loadout>` | `EquipReport` with its `source`. `name` may carry a source (`cbo:Solo`, `army:Boss`). |
 | `POST /loadout/save?name=<loadout>&to=account\|army` | Saves what's worn now (default `account`). |
-| `POST /butler/follow?master=<name>` / `/butler/stop` | Butler from outside (below). |
+| `POST /butler/follow?master=<name>` / `/butler/unfollow` | Butler from outside (below). |
 
 Each is a new `army::Command` variant (`Equip`, `EquipLoadout`, `SaveLoadout`, `Follow`,
 `StopFollow`), so Army Control, the tabs (`control_api::local`) and the web monitor's control

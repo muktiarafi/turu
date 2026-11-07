@@ -145,7 +145,7 @@ your password
 Twilly
 --run-script
 farm/GoldFarm
---api=0.0.0.0:8791
+--api=127.0.0.1:9021
 ```
 
 ```bash
@@ -320,14 +320,19 @@ with one sample at every stage quality. To test a trim: `adb shell am send-trim-
 com.muktiarafi.turu RUNNING_LOW` (with the app in the background); the log says "freed spare
 textures".
 
-The control API (`--api`) works as on a desktop. From the computer:
+The control API (`--api`) works as on a desktop. Keep it on `127.0.0.1` and reach it through
+`adb forward`, which connects to the phone's own localhost. `--api=0.0.0.0:9021` would serve it
+in plain HTTP to everyone on the Wi-Fi, who could read the token off the network. To steer the
+phone from another machine without adb, report to that machine's web monitor instead
+(`--report-to`, `docs/HEADLESS.md`): the phone connects out, so it opens no port. From the
+computer:
 
 ```bash
-adb forward tcp:8791 tcp:8791
+adb forward tcp:9021 tcp:9021
 ```
 
 Its token file (`api-token` in the data folder) is made readable by the app only, which `adb`
-can't read on shared storage. Put your own token there before starting the app (16 characters or
+can't read on shared storage. Put your own token there before starting the app (32 characters or
 more), and it's used as is:
 
 ```bash
@@ -335,7 +340,7 @@ openssl rand -hex 24 > api-token && adb shell rm -f /sdcard/Android/data/com.muk
 ```
 
 ```bash
-curl -H "Authorization: Bearer $(cat api-token)" http://127.0.0.1:8791/status
+curl -H "Authorization: Bearer $(cat api-token)" http://127.0.0.1:9021/status
 ```
 
 Windowless (phase 1) the app used ~164 MB (PSS) and ~4% of a CPU at AQW's title screen, and

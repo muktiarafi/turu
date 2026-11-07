@@ -393,16 +393,6 @@ pub enum GearError {
     Game(String),
 }
 
-impl GearError {
-    /// The control API's status for it.
-    pub fn status(&self) -> u16 {
-        match self {
-            Self::Game(_) => 500,
-            _ => 409,
-        }
-    }
-}
-
 impl std::fmt::Display for GearError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -449,22 +449,27 @@ pub fn army() -> &'static Arc<turu_bot::army::Army> {
     })
 }
 
+/// This window's tabs as the web monitor and the control API name them (`tab:<n>`, "Tab 2").
+fn tab_sources() -> turu_bot::monitor::hub::Sources {
+    Arc::new(|| {
+        tabs()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (id, bot))| turu_bot::monitor::hub::Source {
+                id: format!("tab:{}", id.0),
+                label: format!("Tab {}", i + 1),
+                bot,
+            })
+            .collect()
+    })
+}
+
 /// The web monitor's hub: this window's tabs and the Army clients, kept even while the monitor
 /// is off (Army Control reads the clients from it).
 pub fn monitor_hub() -> &'static Arc<turu_bot::monitor::Hub> {
     MONITOR_HUB.get_or_init(|| {
         let hub = turu_bot::monitor::Hub::new(Some(bot().paths.monitor_file()));
-        hub.set_tabs(Arc::new(|| {
-            tabs()
-                .into_iter()
-                .enumerate()
-                .map(|(i, (id, bot))| turu_bot::monitor::hub::Source {
-                    id: format!("tab:{}", id.0),
-                    label: format!("Tab {}", i + 1),
-                    bot,
-                })
-                .collect()
-        }));
+        hub.set_tabs(tab_sources());
         hub.start();
         hub
     })
@@ -523,7 +528,7 @@ pub fn skua_swf_url() -> anyhow::Result<String> {
 /// * `--headless`: no window (see `headless.rs`).
 /// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
-/// * `--api` (or `--api=<address>`, default `127.0.0.1:8791`): the control API (see
+/// * `--api` (or `--api=<address>`, default `127.0.0.1:9021`): the control API (see
 ///   `turu_bot::control_api`), started by [`start_api`].
 pub fn take_startup_args(args: &mut Vec<OsString>) {
     let Flags {
@@ -636,7 +641,7 @@ pub fn start_api() {
     let addr: std::net::SocketAddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:8791)");
+            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:9021)");
             return;
         }
     };
@@ -652,7 +657,7 @@ pub fn start_api() {
             token
         }
     };
-    match token.and_then(|token| turu_bot::control_api::start(&bot(), addr, token)) {
+    match token.and_then(|token| turu_bot::control_api::start_tabs(tab_sources(), addr, token)) {
         Ok(local) => {
             tracing::info!("Control API on http://{local}");
             if !local.ip().is_loopback() {
@@ -1058,7 +1063,7 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             "--headless" => flags.headless = true,
             "--exit-with-parent" => flags.exit_with_parent = true,
             // The address only inline (`--api=...`): the next argument may be anything.
-            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:8791".into())),
+            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:9021".into())),
             // Likewise: `--monitor` alone takes Options > Application's port.
             "--monitor" => flags.monitor = Some(inline.unwrap_or_default()),
             "--report-to" => flags.report_to = value(),
@@ -1355,7 +1360,7 @@ mod tests {
         } = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-p", "low", "-g", "metal"]);
         assert!(headless);
-        assert_eq!(api.as_deref(), Some("127.0.0.1:8791"));
+        assert_eq!(api.as_deref(), Some("127.0.0.1:9021"));
         assert_eq!(startup.username.as_deref(), Some("Hero"));
         assert_eq!(startup.password.as_deref(), Some("a=b"));
         assert_eq!(startup.server.as_deref(), Some("Artix"));

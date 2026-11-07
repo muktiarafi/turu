@@ -149,7 +149,7 @@ shared `http.rs`.
 The page shows character names, gold, rooms; control can run scripts as the account. Modelled on
 Nexus's, but stricter where it's cheap:
 
-* Listens on `127.0.0.1:8790` by default (8791 is the control API). "Allow other devices"
+* Listens on `127.0.0.1:8790` by default (9021 is the control API). "Allow other devices"
   switches to `0.0.0.0`. Never suggests port forwarding; the docs describe Tailscale Serve, as
   Nexus does.
 * Three keys in `monitor-keys.json` (owner-readable, like `api-token`): **view**, **control**,
@@ -215,8 +215,8 @@ Differences from the plan above:
   keeps only the process (`answered`, `error`, `exited`); Army Control reads the game from the
   hub.
 * One route, `GET /api/state` (version, uptime, `allowControl`, every entry), instead of
-  `/api/bots` and `/api/usage`; `GET /api/events` sends the same state every second as
-  `event: state`; `GET /api/bots/<id>` has the events and history.
+  `/api/bots` and `/api/usage`; `GET /api/events` sends the same state as `event: state`
+  when it changes (looked at every second); `GET /api/bots/<id>` has the events and history.
 * **Control is on by default** (Allow Control), and there is one key, not view / control / push
   keys. A command is refused unless it carries the page's own `Origin` or the key, so another
   site can't send one through a browser on this computer, and DNS rebinding fails the `Host`

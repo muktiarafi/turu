@@ -4,12 +4,13 @@
 //! |---|---|
 //! | `GET /` | The page (`bot/assets/monitor/index.html`). |
 //! | `GET /api/state` | Every entry (latest snapshot, recent events), Turu's version and uptime, a newer Turu (`update`, or null), and whether control is allowed. |
-//! | `GET /api/events` | Server-Sent Events: the same state as an `event: state` every second. |
+//! | `GET /api/events` | Server-Sent Events: the same state as an `event: state` when it changes (looked at every second), and a comment every 15 s. The page keeps its clock running between them. |
 //! | `GET /api/bots/<id>` | One entry with all its events and its history. |
 //! | `GET /api/bots/<id>/log?type=script\|debug[&since=]` | Its log lines from number `since` (the control API's `/log`). |
+//! | `GET /api/bots/<id>/log/stream?type=script\|debug[&since=]` | Server-Sent Events: the same lines as `event: lines` (`lines`, `next`) as they're logged, read every half second, until the bot goes. |
 //! | `GET /api/bots/<id>/script/options` | Its loaded script's Script Options (the control API's `/script/options`). |
 //! | `POST /api/bots/<id>/script/options[?reset=1]` | Control: set and save them (body as the control API's). |
-//! | `POST /api/bots/<id>/script/start\|stop\|pause\|resume`, `/login`, `/logout`, `/relogin[?server=]`, `/map/join?map=[&cell=][&pad=]`, `/house` | Control: the control API's route of that name, for a tab or an Army client. |
+//! | `POST /api/bots/<id>/script/start\|stop\|pause\|resume`, `/login`, `/logout`, `/relogin[?server=]`, `/map/join?map=[&cell=][&pad=]`, `/map/house`, `/auto/attack`, `/auto/stop` | Control: the control API's route of that name, for a tab or an Army client. |
 //! | `POST /api/bots/<id>/forget` | Control: drops an offline entry. |
 //! | `POST /api/ingest` | Another machine's [`Report`] (needs the push key, nothing else does). The reply carries the commands waiting for it, held up to 4 s for one to come. |
 //!
@@ -44,7 +45,13 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 const PAGE: &str = include_str!("../../assets/monitor/index.html");
+/// How often `/api/events` looks for a change.
 const STREAM_EVERY: Duration = Duration::from_secs(1);
+/// How often a stream sends a comment when nothing changes (so proxies keep it open, and a
+/// browser that left is noticed).
+const STREAM_PING: Duration = Duration::from_secs(15);
+/// How often `/log/stream` asks for new lines.
+const LOG_EVERY: Duration = Duration::from_millis(500);
 /// How often the accept loop and the streams look at the stop flag.
 const STOP_CHECK: Duration = Duration::from_millis(250);
 /// How long `/api/ingest` holds its reply waiting for a command.
@@ -96,13 +103,30 @@ struct Shared {
 
 impl Shared {
     fn state(&self) -> String {
+        self.state_with_clock(true)
+    }
+
+    /// The state, with the clock or without it: what changed, for `/api/events`. Without, `now`
+    /// and `uptimeSeconds` are 0, and so is an online bot's `lastSeen`, which moves every second
+    /// and which the page shows only once the bot is offline.
+    fn state_with_clock(&self, clock: bool) -> String {
+        let mut bots = self.hub.views();
+        if !clock {
+            for bot in bots.iter_mut().filter(|b| b.online) {
+                bot.last_seen = 0;
+            }
+        }
         let state = State {
             version: self.version.clone(),
-            uptime_seconds: self.hub.uptime().as_secs(),
-            now: super::snapshot::now_ms(),
+            uptime_seconds: if clock {
+                self.hub.uptime().as_secs()
+            } else {
+                0
+            },
+            now: if clock { super::snapshot::now_ms() } else { 0 },
             allow_control: self.allow_control.load(Ordering::Relaxed),
             update: crate::updates::status_json(),
-            bots: self.hub.views(),
+            bots,
         };
         serde_json::to_string(&state).unwrap_or_else(|_| "{}".into())
     }
@@ -346,7 +370,7 @@ async fn handle(
     }
 }
 
-/// `GET /api/events`: the state every second until the browser goes.
+/// `GET /api/events`: the state when it changes, until the browser goes.
 fn events(shared: Arc<Shared>) -> Response<Body> {
     let (mut tx, body) = Channel::<Bytes, Infallible>::new(2);
     tokio::spawn(async move {
@@ -359,13 +383,25 @@ fn events(shared: Arc<Shared>) -> Response<Body> {
             return;
         }
         let mut next = tokio::time::Instant::now();
+        let (mut last, mut sent) = (String::new(), tokio::time::Instant::now());
         while !shared.stop.load(Ordering::Relaxed) {
             if tokio::time::Instant::now() >= next {
                 next = tokio::time::Instant::now() + STREAM_EVERY;
-                let frame = format!("event: state\ndata: {}\n\n", shared.state());
-                // Fails once the browser has gone.
-                if tx.send_data(Bytes::from(frame)).await.is_err() {
-                    return;
+                let now = shared.state_with_clock(false);
+                let frame = if now != last {
+                    last = now;
+                    Some(format!("event: state\ndata: {}\n\n", shared.state()))
+                } else if sent.elapsed() >= STREAM_PING {
+                    Some(": ping\n\n".to_owned())
+                } else {
+                    None
+                };
+                if let Some(frame) = frame {
+                    sent = tokio::time::Instant::now();
+                    // Fails once the browser has gone.
+                    if tx.send_data(Bytes::from(frame)).await.is_err() {
+                        return;
+                    }
                 }
             }
             let wait = next.saturating_duration_since(tokio::time::Instant::now());
@@ -412,6 +448,19 @@ async fn bot_route(
             let route = format!("/log?type={kind}&since={since}");
             forward(hub, &id, false, route, Bytes::new()).await
         }
+        (false, "/log/stream") => {
+            let kind = query_value(query, "type").unwrap_or_else(|| "script".into());
+            if kind != "script" && kind != "debug" {
+                return error(StatusCode::BAD_REQUEST, "type is script or debug");
+            }
+            let since = query_value(query, "since")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            if hub.control(&id).is_none() {
+                return error(StatusCode::NOT_FOUND, "that bot isn't running");
+            }
+            log_stream(shared.clone(), id, kind, since)
+        }
         (false, "/script/options") => {
             forward(hub, &id, false, "/script/options".into(), body).await
         }
@@ -425,6 +474,46 @@ async fn bot_route(
         }
         _ => error(StatusCode::NOT_FOUND, "no such route"),
     }
+}
+
+/// `GET /api/bots/<id>/log/stream`: its new log lines as they come, through [`Hub::run`] (so a
+/// tab, an Army client and a remote one alike), until the bot or the browser goes.
+fn log_stream(shared: Arc<Shared>, id: String, kind: String, mut since: u64) -> Response<Body> {
+    let (mut tx, body) = Channel::<Bytes, Infallible>::new(4);
+    tokio::spawn(async move {
+        let mut sent = tokio::time::Instant::now();
+        while !shared.stop.load(Ordering::Relaxed) {
+            let Some(control) = shared.hub.control(&id) else {
+                return;
+            };
+            let (hub, route) = (
+                shared.hub.clone(),
+                format!("/log?type={kind}&since={since}"),
+            );
+            let asked =
+                tokio::task::spawn_blocking(move || hub.run(control, false, &route, b"")).await;
+            let Ok((200, reply)) = asked else {
+                return;
+            };
+            let frame = match reply["lines"].as_array() {
+                Some(lines) if !lines.is_empty() => {
+                    since = reply["next"].as_u64().unwrap_or(since);
+                    Some(format!("event: lines\ndata: {reply}\n\n"))
+                }
+                _ if sent.elapsed() >= STREAM_PING => Some(": ping\n\n".to_owned()),
+                _ => None,
+            };
+            if let Some(frame) = frame {
+                sent = tokio::time::Instant::now();
+                // Fails once the browser has gone.
+                if tx.send_data(Bytes::from(frame)).await.is_err() {
+                    return;
+                }
+            }
+            tokio::time::sleep(LOG_EVERY).await;
+        }
+    });
+    reply(StatusCode::OK, "text/event-stream", body.boxed())
 }
 
 /// Runs a control API route for the entry ([`Hub::run`]), off the runtime's thread: a login can
@@ -578,7 +667,7 @@ mod tests {
             &host("127.0.0.1:8790")
         ));
         assert!(!same_origin(
-            &origin("http://127.0.0.1:8791"),
+            &origin("http://127.0.0.1:9021"),
             &host("127.0.0.1:8790")
         ));
         assert!(!same_origin(&origin("null"), &host("127.0.0.1:8790")));

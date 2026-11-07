@@ -382,15 +382,15 @@ fn control_api_starts_and_stops_auto_attack() {
         turu_bot::control_api::start(&bot, "127.0.0.1:0".parse().unwrap(), TOKEN.into()).unwrap();
     let base = format!("http://{addr}");
 
-    assert_eq!(post(&format!("{base}/auto/attack/start"), None).0, 401);
+    assert_eq!(post(&format!("{base}/auto/attack"), None).0, 401);
     assert_eq!(post(&format!("{base}/auto/stop"), None).0, 401);
     assert!(!bot.auto.is_running());
 
-    let (status, body) = post(&format!("{base}/auto/attack/start?mapIds=2"), Some(TOKEN));
+    let (status, body) = post(&format!("{base}/auto/attack?maps=2"), Some(TOKEN));
     assert_eq!(status, 200, "{body}");
     assert_eq!(bot.auto.mode(), Some(AutoMode::Attack));
     wait_for("Slime dead", || !game.alive(2));
-    let (status, body) = post(&format!("{base}/auto/attack/start"), Some(TOKEN));
+    let (status, body) = post(&format!("{base}/auto/attack"), Some(TOKEN));
     assert_eq!(
         (status, body["error"].as_str()),
         (409, Some("Auto Attack is running already"))
@@ -429,6 +429,25 @@ fn control_api_starts_and_stops_auto_attack() {
     send_local(&bot, &Command::StopAuto).unwrap();
 }
 
+/// `/auto/hunt` starts Auto Hunt, as the Auto popup's Auto Hunt button does.
+#[test]
+fn control_api_starts_auto_hunt() {
+    let game = FakeGame::new(vec![
+        mon(5, 1, "Frogzard", "Enter"),
+        mon(6, 2, "Slime", "Enter"),
+    ]);
+    let bot = new_bot(&game);
+    let (status, body) = turu_bot::control_api::local(&bot, true, "/auto/hunt?maps=2", &[]);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["auto"], "Auto Hunt");
+    assert_eq!(bot.auto.mode(), Some(AutoMode::Hunt));
+    wait_for("Slime dead", || !game.alive(2));
+    let (status, _) = turu_bot::control_api::local(&bot, true, "/auto/attack", &[]);
+    assert_eq!(status, 409, "one at a time");
+    turu_bot::control_api::local(&bot, true, "/auto/stop", &[]);
+    wait_for("stopped", || !bot.auto.is_running());
+}
+
 /// No Auto Attack while a script runs (the Auto popup greys it out): 409, and nothing starts.
 #[test]
 fn control_api_refuses_auto_attack_while_a_script_runs() {
@@ -446,7 +465,7 @@ fn control_api_refuses_auto_attack_while_a_script_runs() {
     turu_bot::script::start_silent(&bot).unwrap();
     wait_for("the script runs", || bot.scripts.is_running());
 
-    let (status, body) = turu_bot::control_api::local(&bot, true, "/auto/attack/start", &[]);
+    let (status, body) = turu_bot::control_api::local(&bot, true, "/auto/attack", &[]);
     assert_eq!(
         (status, body["error"].as_str()),
         (409, Some("a script is running"))

@@ -842,7 +842,7 @@ fn the_control_api_summons_releases_and_follows() {
     let (status, state) = call(&alt, true, "/butler/follow?master=ApiMaster");
     assert_eq!(status, 200, "{state}");
     assert_eq!(state["following"]["summoned"], false);
-    assert_eq!(call(&alt, true, "/butler/stop").0, 200);
+    assert_eq!(call(&alt, true, "/butler/unfollow").0, 200);
     until("the stop", Duration::from_secs(5), || {
         alt.butler.following().is_none()
     });

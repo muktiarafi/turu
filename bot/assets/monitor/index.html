@@ -653,11 +653,11 @@ function actionsFor(b, full) {
     list.push([`Start ${s.script.name}`, "/script/start", null, "primary", "play"]);
   }
   if (s?.auto) list.push([`Stop ${s.auto}`, "/auto/stop", null, "danger", "stop"]);
-  else if (full && s?.state === "playing" && !s.script.running) list.push(["Auto Attack", "/auto/attack/start", null, "", "sword"]);
+  else if (full && s?.state === "playing" && !s.script.running) list.push(["Auto Attack", "/auto/attack", null, "", "sword"]);
   if (full) {
     if (s && s.state !== "loggedOut" && s.state !== "notLoaded") {
       list.push(["Relogin", "/relogin", `Log ${s.name} out and back in?`, "", "relog"]);
-      list.push(["House", "/house", null, "", "house"]);
+      list.push(["House", "/map/house", null, "", "house"]);
       list.push(["Log out", "/logout", `Log ${s.name} out? Auto Relogin won't bring it back.`, "danger", "logout"]);
     } else if (s?.state === "loggedOut") {
       list.push(["Log in", "/login", null, "primary", "login"]);
@@ -791,7 +791,7 @@ const BULK = [
   ["Start", "/script/start", b => b.online && !b.snapshot?.script.running && b.snapshot?.script.name, "primary", "play"],
   ["Stop", "/script/stop", b => b.online && b.snapshot?.script.running, "danger", "stop"],
   ["Relogin", "/relogin", b => b.online && isLive(b.snapshot), "", "relog"],
-  ["Auto Attack", "/auto/attack/start", b => b.online && b.snapshot?.state === "playing" && !b.snapshot.script.running && !b.snapshot.auto, "", "sword"],
+  ["Auto Attack", "/auto/attack", b => b.online && b.snapshot?.state === "playing" && !b.snapshot.script.running && !b.snapshot.auto, "", "sword"],
   ["Stop Auto", "/auto/stop", b => b.online && b.snapshot?.auto, "danger", "stop"],
   ["Forget", "/forget", b => !b.online && b.kind !== "tab", "danger", "trash"],
 ];
@@ -868,12 +868,24 @@ function toast(text, bad) {
   $("#toasts").append(t);
   setTimeout(() => t.remove(), bad ? 6000 : 3000);
 }
+// The stream sends the state only when it changes, so the page keeps the server's clock going
+// in between: "seen 2 min ago", "hasn't answered", and the last hour's trace move every second.
+let serverClock = null;
 function receive(text) {
   try { state = JSON.parse(text); } catch { return; }
+  serverClock = { now: state.now, uptime: state.uptimeSeconds, at: performance.now() };
   notice("");
   sample();
   render();
 }
+setInterval(() => {
+  if (!state || !serverClock) return;
+  const passed = performance.now() - serverClock.at;
+  state.now = serverClock.now + Math.round(passed);
+  state.uptimeSeconds = serverClock.uptime + Math.floor(passed / 1000);
+  sample();
+  render();
+}, 1000);
 function unauthorized() {
   setLive("Key needed", "warn");
   notice(`<span>${key ? "The monitor key is wrong, or Turu made a new one." : "This device needs the monitor key."}</span><button type="button" class="btn primary" data-key>${icon("key")}Enter the key</button>`);
@@ -979,7 +991,7 @@ const defaultsNote = reply => reply?.options === "defaults" && reply.optionsWind
 let detailId = null, detailTab = "overview", detail = null, logKind = "script", logNext = 0, detailTimer = null, returnFocus = null;
 const TABS = [["overview", "Overview"], ["events", "Events"], ["log", "Log"], ["history", "History"], ["options", "Options"]];
 function openDetail(id) {
-  if (detailId !== id) { detail = null; logNext = 0; logKind = "script"; resetOptions(); $("#pPane").dataset.html = ""; $("#pPane").innerHTML = ""; }
+  if (detailId !== id) { stopLog(); detail = null; logNext = 0; logKind = "script"; resetOptions(); $("#pPane").dataset.html = ""; $("#pPane").innerHTML = ""; }
   returnFocus = document.activeElement;
   detailId = id;
   $("#panel").hidden = false;
@@ -994,6 +1006,7 @@ function openDetail(id) {
 }
 function closePanel() {
   clearInterval(detailTimer);
+  stopLog();
   detailId = null;
   $("#panel").hidden = true;
   $("#scrim").hidden = true;
@@ -1062,6 +1075,7 @@ async function refreshDetail() {
   const id = detailId;
   if (!id || detailTab === "overview") return;
   if (detailTab === "options") { syncOptions(); return; }
+  if (detailTab === "log") { followLog(); return; }
   try {
     const r = await fetch(`/api/bots/${encodeURIComponent(id)}`, { headers: headers(), cache: "no-store" });
     if (!r.ok) { if (r.status === 404) setHtml($("#pPane"), `<div class="empty"><p class="lead">This bot is gone.</p></div>`); return; }
@@ -1070,7 +1084,6 @@ async function refreshDetail() {
   if (id !== detailId) return;
   if (detailTab === "events") renderEvents();
   else if (detailTab === "history") renderHistory();
-  else if (detailTab === "log") await pollLog();
 }
 function renderEvents() {
   const list = [...(detail?.events ?? [])].reverse();
@@ -1081,23 +1094,44 @@ function renderLogFrame() {
   pane.dataset.html = "";
   pane.innerHTML = `<div class="seg" role="tablist" aria-label="Log">${["script", "debug"].map(k => `<button type="button" role="tab" aria-selected="${k === logKind}" data-log="${k}">${k === "script" ? "Script log" : "Debug log"}</button>`).join("")}</div><div class="log" id="dLog" tabindex="0" aria-label="${logKind === "script" ? "Script log" : "Debug log"}"></div>`;
 }
-async function pollLog() {
+// The log tab reads /log/stream: lines come as they're logged. The 2 s refresh opens it again
+// (from the last line it got) after it ends: the bot relogged, Army restarted it, ...
+let logStream = null;
+function stopLog() { logStream?.abort(); logStream = null; }
+async function followLog() {
   const b = byId(detailId);
-  if (!b?.online) { setHtml($("#pPane"), `<div class="empty"><p class="lead">No log while it's offline</p><p>The log is only there while the bot runs.</p></div>`); return; }
-  if (!document.getElementById("dLog")) { renderLogFrame(); logNext = 0; }
+  if (!b?.online) { stopLog(); setHtml($("#pPane"), `<div class="empty"><p class="lead">No log while it's offline</p><p>The log is only there while the bot runs.</p></div>`); return; }
+  if (!document.getElementById("dLog")) { stopLog(); renderLogFrame(); logNext = 0; }
+  if (logStream) return;
+  const mine = logStream = new AbortController(), id = detailId, kind = logKind;
   try {
-    const r = await fetch(`/api/bots/${encodeURIComponent(detailId)}/log?type=${logKind}&since=${logNext}`, { headers: headers(), cache: "no-store" });
-    if (!r.ok) return;
-    const { lines, next } = await r.json();
-    const box = document.getElementById("dLog");
-    if (!box) return;
-    const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 20;
-    if (logNext === 0) box.textContent = lines.length ? "" : "Nothing logged yet.";
-    else if (lines.length && box.textContent === "Nothing logged yet.") box.textContent = "";
-    for (const l of lines) box.append(`${new Date(l.time).toLocaleTimeString()}  ${l.text}\n`);
-    logNext = next;
-    if (atEnd) box.scrollTop = box.scrollHeight;
+    const r = await fetch(`/api/bots/${encodeURIComponent(id)}/log/stream?type=${kind}&since=${logNext}`, { headers: headers(), cache: "no-store", signal: mine.signal });
+    if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+    if (logNext === 0) { const box = document.getElementById("dLog"); if (box) box.textContent = "Nothing logged yet."; }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let end;
+      while ((end = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+        const data = block.split("\n").filter(l => l.startsWith("data:")).map(l => l.slice(5).trimStart()).join("\n");
+        if (data && /^event: lines$/m.test(block) && id === detailId && kind === logKind) showLines(JSON.parse(data));
+      }
+    }
   } catch {}
+  if (logStream === mine) logStream = null;
+}
+function showLines({ lines, next }) {
+  const box = document.getElementById("dLog");
+  if (!box) return;
+  const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 20;
+  if (lines.length && box.textContent === "Nothing logged yet.") box.textContent = "";
+  for (const l of lines) box.append(`${new Date(l.time).toLocaleTimeString()}  ${l.text}\n`);
+  logNext = next;
+  if (atEnd) box.scrollTop = box.scrollHeight;
 }
 function spark(points, field, color) {
   const w = 400, h = 64;
@@ -1243,14 +1277,14 @@ document.addEventListener("click", e => {
   else if (t.dataset.bulk) bulk(t.dataset.bulk);
   else if (t.dataset.dtab) {
     if (detailTab === "options" && t.dataset.dtab !== "options" && edits.size) toast("Unsaved Script Options changes were dropped.", true);
-    detailTab = t.dataset.dtab; logNext = 0; resetOptions();
+    detailTab = t.dataset.dtab; logNext = 0; resetOptions(); stopLog();
     $("#pPane").dataset.html = ""; $("#pPane").innerHTML = detailTab === "overview" ? "" : `<div class="empty"><p>Loading…</p></div>`;
     renderPanel(); refreshDetail();
   }
   else if (t.dataset.opts === "save") saveOptions(false);
   else if (t.dataset.opts === "reset") saveOptions(true);
   else if (t.dataset.opts === "discard") { edits.clear(); renderOptions(); }
-  else if (t.dataset.log) { logKind = t.dataset.log; logNext = 0; renderLogFrame(); pollLog(); }
+  else if (t.dataset.log) { stopLog(); logKind = t.dataset.log; logNext = 0; renderLogFrame(); followLog(); }
   else if (t.dataset.key != null) openKey();
   else if (t.dataset.clearFilter != null) { $("#filter").value = ""; render(); $("#filter").focus(); }
 });

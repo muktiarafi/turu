@@ -44,10 +44,10 @@ the web monitor shows an event too, and `--run-script` warns at startup. Set the
 desktop in the web monitor (a bot's Details > Script Options) or with the control API:
 
 ```bash
-curl -H "$T" localhost:8791/script/options        # the loaded script's options and values
-curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:8791/script/options
-curl -H "$T" -X POST "localhost:8791/script/options?reset=1"     # back to the defaults
-curl -H "$T" "localhost:8791/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
+curl -H "$T" localhost:9021/script/options        # the loaded script's options and values
+curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:9021/script/options
+curl -H "$T" -X POST "localhost:9021/script/options?reset=1"     # back to the defaults
+curl -H "$T" "localhost:9021/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
 ```
 
 Or copy these from a desktop's data folder to the server's:
@@ -106,8 +106,9 @@ Each account gets `/etc/turu/<account>.env`, readable by root only
 TURU_USER=YourName
 TURU_PASSWORD=your password
 TURU_SERVER=Twilly
-TURU_API=127.0.0.1:8791
-TURU_API_TOKEN=a long random string, at least 16 characters
+TURU_API=127.0.0.1:9021
+# The control API token: 32 characters at least, e.g. from `openssl rand -hex 32`
+TURU_API_TOKEN=a long random string
 # Extra flags, e.g. --monitor=127.0.0.1:8790 (systemd reads no comments after a value)
 TURU_ARGS=
 ```
@@ -126,7 +127,7 @@ journalctl -u turu@main -f
 ## Several accounts
 
 Run one instance per account, all with **one data folder** (as above) and each with **its own
-`TURU_API` port** (`8791`, `8792`, ...). The shared folder is how clients find each other:
+`TURU_API` port** (`9021`, `9022`, ...). The shared folder is how clients find each other:
 Butler's sync files, army scripts' sync logs and their private room number
 (`bot.army.roomNumber()`, a hash of the folder's path) all live there. Start the instances a
 few seconds apart, so they don't update the same scripts at once.
@@ -177,21 +178,32 @@ http://<desktop>:8790` with the push key in `TURU_MONITOR_PUSH_KEY`. The server'
 the desktop's page and take its commands.
 
 **Control API** (`--api`): every request needs the token (`TURU_API_TOKEN`, else the data
-folder's `api-token`). All routes are listed in `bot/src/control_api.rs`.
+folder's `api-token`). All routes, and what each status means, are listed in
+`bot/src/control_api.rs`.
 
 ```bash
 T="Authorization: Bearer $TURU_API_TOKEN"
-curl -H "$T" localhost:8791/status
-curl -H "$T" "localhost:8791/log?since=0"
-curl -H "$T" -X POST "localhost:8791/script/start?path=farm/GoldFarm"
-curl -H "$T" -X POST localhost:8791/script/stop      # with a playlist: moves on to the next
-curl -H "$T" localhost:8791/scheduler
-curl -H "$T" -X POST --data-binary @daily.json localhost:8791/scheduler/load
-curl -H "$T" -X POST localhost:8791/scheduler/start  # and /scheduler/stop
-curl -H "$T" localhost:8791/butler                   # online accounts, who can be summoned
-curl -H "$T" -X POST "localhost:8791/butler/summon?user=MyAlt"   # also release, summon-all,
-                                                                 # release-all, follow, stop
+curl -H "$T" localhost:9021/status
+curl -H "$T" "localhost:9021/log?since=0"
+curl -H "$T" -X POST "localhost:9021/script/start?path=farm/GoldFarm"
+curl -H "$T" -X POST localhost:9021/script/stop      # with a playlist: moves on to the next
+curl -H "$T" localhost:9021/scheduler
+curl -H "$T" -X POST --data-binary @daily.json localhost:9021/scheduler/load
+curl -H "$T" -X POST localhost:9021/scheduler/start  # and /scheduler/stop
+curl -H "$T" localhost:9021/butler                   # online accounts, who can be summoned
+curl -H "$T" -X POST "localhost:9021/butler/summon?user=MyAlt"   # also release, summon-all,
+                                                                 # release-all, follow, unfollow
+curl -N -H "$T" "localhost:9021/events?logs=script,debug"       # follow it, instead of polling
+curl -H "$T" localhost:9021/tabs                     # with a window: the tabs
+curl -H "$T" localhost:9021/tabs/2/status            # any route, for one tab
 ```
+
+`/events` sends server-sent events: `script` (path, status, running) when it changes, `log`
+for each new line of the logs you ask for (`script` by default), `event` for each web monitor
+event, and a comment every 15 s. It reads the bot's state, never the game, so it costs nothing
+while idle; `/status` asks the game each time. Playlist paths in `/scheduler/load?path=` and
+`/scheduler/save?path=` are relative to the data folder's `playlists` folder, or absolute inside
+the data folder.
 
 **Updates:** it checks Turu's releases at launch and every 6 hours (Options > Application >
 Check for Client Updates in the shared `settings.json`) and only tells you: a log line
@@ -204,12 +216,18 @@ able to write the program's folder (`/opt/turu` above is root's: `chown` it to t
 update by hand). `SHA256SUMS.txt` proves the download is intact, not who published it.
 
 ```bash
-curl -H "$T" localhost:8791/status | jq .update
-curl -H "$T" -X POST localhost:8791/update            # ?stop=1 while a script runs
+curl -H "$T" localhost:9021/status | jq .update
+curl -H "$T" -X POST localhost:9021/update            # ?stop=1 while a script runs
 ```
 
-A refused command answers 409 with the reason (a playlist that runs can't be edited, Butler
-won't summon a busy account, ...).
+A command answers with what it changed: the script for `/script/*`, `/status` for the logins,
+where the player is for the moves, the playlist for `/scheduler/*`. A failure is
+`{"error": "...", "code": "..."}`: script on `code` (`not_logged_in`, `script_running`,
+`login_under_way`, `game_not_running`, `game_timeout`, ...; `bot/src/control_api.rs` lists
+them with their statuses), not on the message. A refused command answers 409, 503 means the game
+isn't running (still loading, or closing), 504 that it didn't answer in time, and a wrong method
+405 with an `Allow` header. Yes/no parameters (`stop`, `configure`, `reset`, `slow`) take `1` or
+`true`.
 
 **What keeps the game thread busy:** `GET /debug/perf` lists the Flash calls the client made
 since it started (by thread and callback, with the path for `getGameObject` and its kin: how
@@ -237,7 +255,7 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
-| `--api[=<address>]` | The control API, default `127.0.0.1:8791`. |
+| `--api[=<address>]` | The control API, default `127.0.0.1:9021`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |
 | `--report-to <url>` | Report to another machine's web monitor. |
 
@@ -245,7 +263,7 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 |---|---|
 | `TURU_PASSWORD` | The password for `--user`. |
 | `TURU_DATA_DIR` | The data folder. |
-| `TURU_API_TOKEN` | The control API token (16+ characters); else the data folder's `api-token`. |
+| `TURU_API_TOKEN` | The control API token (32+ characters); else the data folder's `api-token`. |
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |
 | `TURU_SCRIPTS_REPO` | Another scripts repository (`owner/name`). |
 | `TURU_RELEASES_URL` | Where to check for new Turu releases (GitHub's releases API format; default Turu's). |
@@ -266,6 +284,6 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | Butler doesn't list the other accounts | They don't share the data folder, aren't logged in, or Butler is off. |
 | Army clients wait in different rooms | They don't share the data folder. |
 | `Web monitor: ...` address in use | Enable Web Monitor is on in the shared `settings.json`. |
-| `Control API: ...` | The port is taken, or the token is under 16 characters. |
+| `Control API: ...` | The port is taken, or the token is under 32 characters. |
 | `Couldn't install Turu ...: couldn't replace ...` | The service's user can't write the program's folder. |
 | Clients overwrite each other's Ruffle log | It's one file per user (`~/.cache/ruffle/log`): use journald. |

@@ -72,20 +72,31 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   stacks and macOS's ICU data file (~80 MB) are reserved or shared, not heap.
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
-- **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8791`): HTTP routes from
-  VibeSkua-Docker's for status, loading/starting/stopping/pausing scripts, logs (`since`
-  paging), the bot options, login, relogin and logout (`bot/src/control_api.rs` lists them).
+- **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:9021`): HTTP routes for
+  status, loading/starting/stopping/pausing scripts, logs (`since` paging), the bot options,
+  login, relogin and logout (`bot/src/control_api.rs` lists them, with what each status means).
+  One table of routes answers each method and gives a wrong one 405 with `Allow`. Commands
+  answer with the state they changed; failures carry a stable `code` (a test keeps the module's
+  table of codes complete), and flags take `1` or `true`. Game failures answer by kind: 503 when the game isn't running, 504 when it didn't answer, 409 when not
+  logged in or a login is under way (`/login` and `/relogin` refuse to overlap an auto-relogin).
+  `GET /events` streams server-sent events (the script's state, new log lines, monitor events)
+  from the bot's state, without game calls, so clients needn't poll `/status`. The routes act on
+  the first tab; `/tabs` lists them and `/tabs/<id>/<route>` reaches one (ids as the web
+  monitor's, `tab:<id>`). `/scheduler/load` and `/scheduler/save` keep `path` inside the data
+  folder (relative paths are under `playlists/`; 403 otherwise).
   `/status` also tells whether the Scheduler's playlist runs (`script.scheduler`), and
   `/scheduler` edits, starts and stops it (`/script/stop` moves the playlist on;
   `/scheduler/stop` stops it). `/butler` summons, releases and follows (Butler without a
   window: `butler::summon` and `release` make the window's Summon checks).
-  Every request needs the token (`Authorization: Bearer` or `X-Api-Token`): `TURU_API_TOKEN`,
-  else the data folder's `api-token`, made on first use and readable by you only. Works with
+  Every request needs the token (`Authorization: Bearer`, 32 characters at least):
+  `TURU_API_TOKEN`, else the data folder's `api-token`, made on first use (64 characters) and
+  readable by you only; a shorter one there is replaced. Works with
   or without the window. Example:
-  `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8791/status`.
-  Army Control also uses `/map/join`, `/player/goto`, `/house`, `/quests/register`, and the
-  gear routes `/gear`, `/equip` and `/bank/load` (below), and `/auto/attack/start` and
-  `/auto/stop` (Start/Stop Auto-Attack; `/status` and the snapshot carry `auto`).
+  `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:9021/status`.
+  Army Control also uses `/map/join`, `/player/goto`, `/map/house`, `/quest/register`,
+  `/game/options`, the gear routes `/gear`, `/equip` and `/bank/load` (below), and
+  `/auto/attack` and `/auto/stop` (Start/Stop Auto-Attack; `/auto/hunt` starts Auto Hunt;
+  `/status` and the snapshot carry `auto`).
 - **Several accounts** (Army > Accounts and Army > Army Control; `bot/src/accounts.rs`,
   `bot/src/army.rs`): the account list and groups (VibeSkua Manager's Accounts tab) in
   `accounts.json`, with the passwords in the system keychain (`keyring`: Keychain, Credential
@@ -316,8 +327,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   marked at drops, deaths and relogins), its Scripts / Accounts / Resources tables, a filter, bulk
   actions on selected bots and streamer mode. A bot's side panel has its overview (map, level and
   class, gold, AC, bag slots, HP / MP / target, quests, equipment, the Combat > Stats counters,
-  gold and XP per hour), its events, its script and debug log, and an hour-by-hour history (gold,
-  XP, kills, drops; a point a minute, 6 h).
+  gold and XP per hour), its events, its script and debug log (streamed as it's written:
+  `/api/bots/<id>/log/stream`, server-sent events read every half second through the hub, so
+  tabs, Army clients and other machines alike), and an hour-by-hour history (gold, XP, kills,
+  drops; a point a minute, 6 h). `/api/events` sends the state only when it changed, with a
+  comment every 15 s; the page keeps the server's clock going between frames.
   **Control** (Allow Control, on by default): Start / Pause / Resume / Stop the loaded script, Log
   in, Relogin, Log out, House and Join map, on one bot or the selected ones (asking first for the
   ones that interrupt), and Forget for offline entries. The hub (`monitor/hub.rs`) keeps every

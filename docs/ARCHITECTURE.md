@@ -30,7 +30,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     flash.rs             `Flash`: typed calls into skua.swf's ExternalInterface callbacks
     host.rs              `FlashHost` trait (implemented by desktop) + `FlashArg`
     control.rs           Stop and Pause (`ScriptControl`), script-thread marking
-    control_api.rs       the HTTP control API (`--api`): hyper on its own thread, token auth
+    control_api.rs       the HTTP control API (`--api`): hyper on its own thread, token auth, one
+                         route table, `/tabs/<id>/...`, server-sent events on `/events`
     monitor/             the web monitor: a `Snapshot` sampler per bot, the hub (tabs, Army and
                          remote clients, events, history, `monitor.json`), the page server and its
                          commands, and `push.rs` (reporting to another machine's monitor)
