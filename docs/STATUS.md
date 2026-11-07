@@ -356,7 +356,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (`turu_bot::skills::startup_skill_sets`, also with `--headless`; tested with a fake download).
   The junk-item switches are stored only (VibeSkua never reads them either).
 - **Junk Items:** Tools & Helpers > Junk Items (`frontend/src/gui/turu/junk_items.rs`) lists the
-  inventory and bank items, marks the selected ones as junk and sells the junk in the inventory;
+  inventory and bank items (filters, quantities, equipped / favourite / near-cap chips, quantity
+  goals), marks the selected ones as junk and sells the junk in the inventory;
   scripts call `bot.sellJunk()`. The list is `JunkItems.json` in the data folder, in VibeSkua's
   format (`bot/src/junk.rs`; a VibeSkua file, or `auqw/Scripts`' community list, can be copied
   over). Tested against a fake game (`bot/tests/junk.rs`); not yet sold in game.
