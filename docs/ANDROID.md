@@ -266,6 +266,20 @@ works from the phone's memory:
 * Spare textures and the shapes not drawn for 2 minutes are freed when the window goes away,
   when Android calls `onTrimMemory` at `RUNNING_LOW` or above (the service passes it on), and
   every 30 s while `/proc/meminfo`'s `MemAvailable` is under 15% of the phone's memory.
+* The same trim runs, at most every 2 minutes, while Turu itself is over its budget
+  (`process_memory::over_budget`): RSS above the larger of 1 GB and 20% of the phone's memory, or
+  more than 30 000 mappings (half the kernel's usual limit, which apps can't read). Going over and
+  back are warnings, so they reach Sentry as breadcrumbs. On the emulator (with a test budget of
+  300 MB) it trimmed as meant but RSS hardly moved: most of a farming client's ~470 MB is the
+  game's own, which a trim can't free.
+* Every 10 s the engine polls the GPU without waiting, so finished GPU work's command buffers are
+  let go though the game may submit nothing new for minutes in the background (wgpu only looks
+  after a submit or a poll), and ruffle-aqw's Vulkan encoders keep at most 16 spare command
+  buffers. On the emulator, farming in the background, the heap jumped ~820 MB in a minute:
+  command buffers, one per render pass (~1300 in one bitmap draw), ~1 MB of the emulator driver's
+  memory each, and 3904 kept alive for good; with the fix ~500 stay alive. The emulator's driver
+  still keeps a 1 MB block for the most command buffers it had recording at once, so its heap
+  didn't drop; recording an encoder's passes into fewer command buffers would lower that peak.
 
 None of that says what grows. A Pixel 8 (8 GB, 0.2.0-beta.2) aborted after 27 minutes in the
 background on a failed allocation (`handle_alloc_error` in a mouse pick's tiny matrix cache, just

@@ -8,6 +8,10 @@
 //!   ([`init`]), as if the GPU were always nearly full;
 //! * every minute, the geometry of shapes not drawn for 5 minutes is freed (other maps, the gear
 //!   of players who left; AQW keeps every SWF it loaded, so it otherwise grows all session);
+//! * when Turu itself grows past its budget ([`process_memory::over_budget`]: RSS over the larger
+//!   of 1 GB and 20% of the phone's memory, or 30 000 mappings), it trims too, at most every 2
+//!   minutes: a Pixel 8 aborted at 1.9 GB with 3 GB of the phone free, so the phone's free memory
+//!   alone never said so;
 //! * every 10 s, finished GPU work is let go ([`release_finished_gpu_work`]), so its command
 //!   buffers are freed though the game submits nothing new (wgpu only looks after a submit);
 //! * when the phone runs low on memory ([`MemAvailable`](read_meminfo) under 15%), when Android
@@ -49,6 +53,8 @@ const TRIM_UNUSED_SECS: u32 = 120;
 const LOW_PERCENT: u64 = 15;
 /// The least time between two trims for low memory (each waits for the GPU to finish).
 const TRIM_EVERY: Duration = Duration::from_secs(30);
+/// The least time between two trims for Turu's own memory (it may stay over its budget).
+const OWN_TRIM_EVERY: Duration = Duration::from_secs(120);
 /// How often the process's memory is logged.
 const LOG_EVERY: Duration = Duration::from_secs(60);
 /// Every this many readings, the largest mappings are logged too and the reading goes to Sentry.
@@ -63,6 +69,9 @@ struct Watch {
     last_sweep: Instant,
     last_trim: Option<Instant>,
     low: bool,
+    /// Turu over its own memory budget, and when it last trimmed for that.
+    over: bool,
+    last_own_trim: Option<Instant>,
     log: MemoryLog,
 }
 
@@ -84,6 +93,8 @@ thread_local! {
         last_sweep: Instant::now(),
         last_trim: None,
         low: false,
+        over: false,
+        last_own_trim: None,
         log: MemoryLog {
             started: Instant::now(),
             last: None,
@@ -153,7 +164,30 @@ pub fn tick(player: &mut Player) {
             watch.last_trim = Some(now);
             trim(player, "the phone is low on memory");
         }
+        check_own_budget(watch, player, total, now);
     });
+}
+
+/// Trims when Turu itself is over its memory budget ([`process_memory::over_budget`]), at most
+/// every [`OWN_TRIM_EVERY`]. Going over and back are warnings, so they reach Sentry as breadcrumbs.
+fn check_own_budget(watch: &mut Watch, player: &mut Player, phone_memory: u64, now: Instant) {
+    let Some(reading) = Reading::now() else {
+        return;
+    };
+    let over = process_memory::over_budget(&reading, phone_memory);
+    if over.is_some() != watch.over {
+        watch.over = over.is_some();
+        match &over {
+            Some(why) => tracing::warn!(target: "ruffle_aqw_perf", "Turu is over its memory budget: {why}"),
+            None => tracing::warn!(target: "ruffle_aqw_perf", "Turu is back within its memory budget: {reading}"),
+        }
+    }
+    if let Some(why) = over
+        && watch.last_own_trim.is_none_or(|t| now.duration_since(t) >= OWN_TRIM_EVERY)
+    {
+        watch.last_own_trim = Some(now);
+        trim(player, &why);
+    }
 }
 
 /// Lets wgpu release the command buffers of GPU work that has finished. It only looks after the

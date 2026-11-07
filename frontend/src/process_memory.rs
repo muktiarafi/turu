@@ -109,6 +109,34 @@ impl fmt::Display for Reading {
     }
 }
 
+/// Turu's own memory budget: RSS above the larger of [`MIN_RSS_BUDGET`] and
+/// [`RSS_BUDGET_PERCENT`] of the phone's memory, or more mappings than [`MAX_MAPS`]. A Pixel 8
+/// aborted on a failed allocation at 1.9 GB of RSS (25% of its 7.5 GB) with 3 GB of the phone still
+/// free, so a check of the phone's free memory alone never fired; a farming client is ~500 MB.
+pub const MIN_RSS_BUDGET: u64 = 1024 * MB;
+pub const RSS_BUDGET_PERCENT: u64 = 20;
+/// Half the kernel's usual `vm.max_map_count` (65530), which apps can't read on Android.
+pub const MAX_MAPS: u64 = 30_000;
+
+/// Why this reading is over Turu's own memory budget (see [`MIN_RSS_BUDGET`]), given the phone's
+/// memory in bytes; `None` within it.
+pub fn over_budget(reading: &Reading, phone_memory: u64) -> Option<String> {
+    let budget = MIN_RSS_BUDGET.max(phone_memory / 100 * RSS_BUDGET_PERCENT);
+    if reading.rss > budget {
+        return Some(format!(
+            "RSS {} MB is over Turu's {} MB ({RSS_BUDGET_PERCENT}% of the phone's {} MB, at least {})",
+            reading.rss / MB,
+            budget / MB,
+            phone_memory / MB,
+            MIN_RSS_BUDGET / MB
+        ));
+    }
+    match reading.maps {
+        Some(maps) if maps > MAX_MAPS => Some(format!("{maps} memory maps, over {MAX_MAPS}")),
+        _ => None,
+    }
+}
+
 /// The kernel's limit on a process's mappings (`vm.max_map_count`), when it can be read.
 pub fn max_map_count() -> Option<u64> {
     std::fs::read_to_string("/proc/sys/vm/max_map_count")
@@ -236,6 +264,24 @@ mod tests {
         assert!((percent - 15.0).abs() < 1e-9);
         assert_eq!(cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)), None);
         assert_eq!(cpu_percent(&at(10), &at(19), Duration::ZERO), None);
+    }
+
+    #[test]
+    fn says_when_turu_is_over_its_own_budget() {
+        let with = |rss_mb: u64, maps| Reading { rss: rss_mb * MB, maps, ..Default::default() };
+        // A Pixel 8 (7572 MB): 20% is 1514 MB.
+        assert_eq!(
+            over_budget(&with(1895, Some(9000)), 7572 * MB).as_deref(),
+            Some("RSS 1895 MB is over Turu's 1514 MB (20% of the phone's 7572 MB, at least 1024)")
+        );
+        assert_eq!(over_budget(&with(500, Some(9000)), 7572 * MB), None);
+        // A 3 GB phone: the 1 GB floor.
+        assert_eq!(over_budget(&with(900, None), 3072 * MB), None);
+        assert!(over_budget(&with(1100, None), 3072 * MB).is_some());
+        assert_eq!(
+            over_budget(&with(500, Some(31_000)), 7572 * MB).as_deref(),
+            Some("31000 memory maps, over 30000")
+        );
     }
 
     #[test]
