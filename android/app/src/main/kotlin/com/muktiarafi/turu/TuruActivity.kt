@@ -18,6 +18,7 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
 import java.io.File
 import kotlin.concurrent.thread
@@ -83,9 +84,29 @@ class TuruActivity : NativeActivity() {
         }
         // What the soft keyboard types into (KeyInput: a tap on delete works).
         val keys = KeyInput(this)
+        keyInput = keys
         addContentView(keys, ViewGroup.LayoutParams(1, 1))
         keys.requestFocus()
         askOnce()
+    }
+
+    private var keyInput: KeyInput? = null
+
+    /**
+     * Shows or hides the soft keyboard for [KeyInput] (`ui.rs`, `screen.rs`). Called on the engine
+     * thread; the input method only takes it on the UI thread (Android 15 throws otherwise).
+     */
+    fun softKeyboard(show: Boolean) {
+        runOnUiThread {
+            val keys = keyInput ?: return@runOnUiThread
+            val methods = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            if (show) {
+                keys.requestFocus()
+                methods.showSoftInput(keys, 0)
+            } else {
+                methods.hideSoftInputFromWindow(keys.windowToken, 0)
+            }
+        }
     }
 
     private fun askOnce() {
