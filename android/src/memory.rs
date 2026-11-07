@@ -28,6 +28,9 @@
 //! minutes in the background at 1.9 GB of RSS, with 3 GB of the phone's memory free; its report
 //! couldn't say what had grown.
 //!
+//! When the GPU drops the device (wgpu loses it when the driver runs out of memory), nothing can be
+//! drawn any more, but the game and its scripts keep running: [`gpu_lost`] says so once.
+//!
 //! All of it runs on the engine thread: the shape caches are the player's thread's.
 
 use ruffle_core::Player;
@@ -72,6 +75,8 @@ struct Watch {
     /// Turu over its own memory budget, and when it last trimmed for that.
     over: bool,
     last_own_trim: Option<Instant>,
+    /// The GPU device was lost, and that was reported ([`gpu_lost`]).
+    gpu_lost: bool,
     log: MemoryLog,
 }
 
@@ -95,6 +100,7 @@ thread_local! {
         low: false,
         over: false,
         last_own_trim: None,
+        gpu_lost: false,
         log: MemoryLog {
             started: Instant::now(),
             last: None,
@@ -145,6 +151,12 @@ pub fn tick(player: &mut Player) {
             return;
         }
         watch.last_check = now;
+        if !watch.gpu_lost
+            && let Some(why) = ruffle_render_wgpu::device_lost()
+        {
+            watch.gpu_lost = true;
+            gpu_lost(&why);
+        }
         release_finished_gpu_work(player);
         let Some((available, total)) = read_meminfo() else {
             return;
@@ -195,9 +207,25 @@ fn check_own_budget(watch: &mut Watch, player: &mut Player, phone_memory: u64, n
 /// emulator, the last submission (and its command buffers) then stayed held all that time. A
 /// poll that doesn't wait.
 fn release_finished_gpu_work(player: &mut Player) {
+    // Nothing finishes on a lost device (its poll no longer panics, but there's no use).
+    if ruffle_render_wgpu::device_lost().is_some() {
+        return;
+    }
     if let Some(renderer) = <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut()) {
         let _ = renderer.descriptors().device.poll(wgpu::PollType::Poll);
     }
+}
+
+/// The GPU dropped the device: ruffle-aqw draws nothing from now on and the screen stops drawing
+/// (`Screen::draw`), while the game, its scripts and the notification's buttons go on. Said once:
+/// in the log, the debug log, the notification, and to Sentry as a warning of its own (a lost
+/// device used to abort in `Device::poll`, Sentry TURU-ANDROID-7 on beta.6: a Redmi 10 2022).
+fn gpu_lost(why: &str) {
+    tracing::error!("The GPU stopped working ({why}); the game goes on without a picture until Turu restarts");
+    turu::bot().logs.debug.push(format!(
+        "Graphics: the GPU stopped working ({why}); restart Turu to see the game"
+    ));
+    crate::notify::gpu_lost(why);
 }
 
 /// Frees the idle pooled textures (waiting for the GPU to let them go) and the shapes not drawn

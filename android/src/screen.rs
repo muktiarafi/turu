@@ -483,7 +483,9 @@ impl Screen {
     fn draw(&mut self, player: &mut Player, mut new_picture: bool) {
         let started = Instant::now();
         self.draw_started = started;
-        if self.surface.is_none() {
+        // A lost GPU device draws nothing (`memory::gpu_lost`): configuring the window again
+        // every second would only make warnings.
+        if self.surface.is_none() || ruffle_render_wgpu::device_lost().is_some() {
             return;
         }
         // The rail grows by a cutout on its side (a punch-hole camera, held sideways).

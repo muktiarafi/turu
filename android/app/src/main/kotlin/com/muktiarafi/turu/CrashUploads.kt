@@ -106,6 +106,20 @@ internal object CrashUploads {
         }
     }
 
+    /**
+     * The GPU dropped the device (out of memory, a driver reset): Turu keeps running without a
+     * picture. A warning of its own, grouped as one issue whatever the driver's message.
+     */
+    fun gpuLost(why: String) {
+        if (!started) {
+            return
+        }
+        Sentry.captureMessage("The GPU stopped working: $why", SentryLevel.WARNING) { scope ->
+            scope.setTag("gpu", "lost")
+            scope.fingerprint = listOf("gpu-lost")
+        }
+    }
+
     /** An exit Sentry doesn't catch itself (low memory, a kill), with Turu's report attached. */
     fun exit(reason: String, summary: String, report: File) {
         if (!started) {

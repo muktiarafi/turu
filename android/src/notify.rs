@@ -91,12 +91,16 @@ fn status() -> Status {
         _ => "Turu".to_owned(),
     };
     let who = turu::tab_label(&bot);
-    let text = match (logged_in, running) {
+    let mut text = match (logged_in, running) {
         (true, true) => format!("{who} is farming"),
         (true, false) => format!("{who} is in game, no script running"),
         (false, _) if bot.servers.is_relogging() => "Logging back in".to_owned(),
         (false, _) => "Not logged in".to_owned(),
     };
+    // The screen can't draw any more (`memory::gpu_lost`): the notification is what's left.
+    if ruffle_render_wgpu::device_lost().is_some() {
+        text.push_str(". Graphics stopped: restart Turu to see the game");
+    }
     Status {
         title,
         text,
@@ -158,6 +162,21 @@ pub(crate) fn breadcrumb(category: &str, message: &str) {
             jni_str!("breadcrumb"),
             jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
             &[JValue::Object(&category), JValue::Object(&message)],
+        )?;
+        Ok(())
+    });
+}
+
+/// `TuruService.gpuLost(why)`: the GPU dropped the device ([`crate::memory`]), sent to Sentry as a
+/// warning of its own.
+pub(crate) fn gpu_lost(why: &str) {
+    with_service(|env, class| {
+        let why = env.new_string(why)?;
+        env.call_static_method(
+            class,
+            jni_str!("gpuLost"),
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::Object(&why)],
         )?;
         Ok(())
     });

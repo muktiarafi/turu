@@ -158,6 +158,10 @@ class TuruService : Service() {
         @JvmStatic
         fun breadcrumb(category: String, message: String) = CrashUploads.breadcrumb(category, message)
 
+        /** Called by the Rust side (any thread): the GPU dropped the device. */
+        @JvmStatic
+        fun gpuLost(why: String) = CrashUploads.gpuLost(why)
+
         fun start(context: Context) {
             context.startForegroundService(Intent(context, TuruService::class.java))
         }

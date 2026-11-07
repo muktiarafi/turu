@@ -47,7 +47,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex, Once, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs};
 use turu_frontend::turu;
 use url::Url;
@@ -392,6 +392,8 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let mut args = read_args(&args_file);
     let graphics = take_graphics(&mut args);
     let safe_drawing = take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
+    // Destroys the GPU device 20 s after the start, to test what a lost device does.
+    let mut test_gpu_loss = take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!("{ARGS_FILE}: {} arguments aren't Turu's flags; ignored", args.len());
@@ -448,6 +450,11 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     memory::init();
     engine::run_loop_paced(&player, events, |player, step| {
         if let engine::Step::Ticked { .. } = step {
+            if test_gpu_loss.is_some_and(|at| Instant::now() >= at) {
+                test_gpu_loss = None;
+                tracing::warn!("--test-gpu-loss: destroying the GPU device");
+                GPU.with_borrow(|gpu| gpu.as_ref().map(|(descriptors, _)| descriptors.device.destroy()));
+            }
             memory::tick(player);
             if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
                 audio.recreate_stream_if_needed();

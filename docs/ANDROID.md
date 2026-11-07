@@ -131,8 +131,9 @@ The data folder is the app's files folder on shared storage,
 `/sdcard/Android/data/com.muktiarafi.turu/files` (Turu's usual data folder layout: `scripts/`,
 `options/`, `options.json`, ...). The app reads `turu-args.txt` there at start: the desktop's
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
-`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES) and `--safe-drawing` (as Options >
-Application > Safe Drawing: "Misdrawing" below). Without the file the game starts at its login
+`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES), `--safe-drawing` (as Options >
+Application > Safe Drawing: "Misdrawing" below) and `--test-gpu-loss` (destroys the GPU device
+20 s after the start: "A lost GPU device" below). Without the file the game starts at its login
 screen:
 
 ```
@@ -340,3 +341,25 @@ curl -H "Authorization: Bearer $(cat api-token)" http://127.0.0.1:8791/status
 Windowless (phase 1) the app used ~164 MB (PSS) and ~4% of a CPU at AQW's title screen, and
 ~410 MB and 4-16% while farming. On screen at the login screen (emulator, `-gpu host`): Vulkan
 ~199 MB and 16-23%. The emulator translates both APIs to the Mac's GPU, so a phone will differ.
+
+## A lost GPU device
+
+The GPU can drop the device: wgpu marks it lost when the driver runs out of memory or resets.
+That aborted Turu: the next `Device::poll` (the engine's every 10 s, or ruffle-aqw's) panicked,
+as wgpu treats any poll error but a timeout as fatal (Sentry TURU-ANDROID-7 on beta.6, a Redmi 10
+2022 with 4 GB, "Error in Device::poll: ... Parent device is lost"). A device can't come back, and
+the game's shapes and bitmaps live on it, so Turu now goes on without a picture:
+
+* ruffle-aqw's wgpu-core patch makes a lost device's poll return as if its queue were empty, and
+  its error handler tolerates every GPU error once the device-lost callback fired
+  (`ruffle_render_wgpu::device_lost`). Frames aren't drawn, and reading an image back
+  (`BitmapData.draw`) gives transparent black instead of waiting for a submission that failed.
+* The screen stops drawing, so the activity shows its last picture or black. The game, its
+  scripts and the notification's Stop and Pause go on.
+* `memory.rs` says so once: in logcat, the debug log, the notification ("Graphics stopped:
+  restart Turu to see the game") and to Sentry as a warning of its own (`gpu: lost`, one issue
+  whatever the driver's message, which it carries).
+
+Checked on the emulator with `--test-gpu-loss`: in game, the device destroyed, Turu kept running
+(its memory readings went on) and the notification said so. A real driver loss hasn't been seen
+since; the report's message will say which it was.
