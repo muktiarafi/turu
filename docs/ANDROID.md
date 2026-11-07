@@ -4,9 +4,8 @@ How to build, run and check the Android app. The design and the plan are in
 `docs/ANDROID_PROPOSAL.md`.
 
 > **Status (phase 4):** the game on screen (Vulkan) with Turu's nav bar and bot windows over it,
-> touch, keys, the soft keyboard and sound (muted while no window shows the game; Notify
-> Drop's beep still sounds), full screen, and kept running in the background: a
-> foreground service with the script's state and Stop / Pause in its notification, a wake lock
+> touch, keys, the soft keyboard and sound, full screen, and kept running in the background: a
+> foreground service with the script's state and Start / Pause / Stop in its notification, a wake lock
 > while a script runs, a one-time prompt to leave Turu out of battery optimisation, and a
 > restart without a window after Android kills the process (it logs back in and runs
 > `turu-args.txt`'s script). On an Android 16 arm64 emulator (2026-11-03): scripts found,
@@ -61,10 +60,23 @@ How to build, run and check the Android app. The design and the plan are in
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
 > text; a strip above it shows what they hold); the windows are the desktop's, at the phone's
 > density: a window too big for the screen opens as a full-screen sheet, and the side bar hides
-> (its logo, or Menu > Hide Side Bar; the `›` tab at the left edge brings it back); OpenGL ES draws only parts of the game (use
+> (its logo, or Menu > Hide Side Bar; the `›` tab at the left edge brings it back; it stays
+> hidden when Turu opens again: `sideBarHidden` in `settings.json`); OpenGL ES draws only parts of the game (use
 > Vulkan, the default); after a restart a Scheduler playlist started by hand doesn't come back
 > (a script does); phone makers' own battery managers (Xiaomi, Samsung, Huawei) can still kill
 > the service: see their settings.
+>
+> **Quick controls (2026-11-08, checked on MuMu at the login screen):** the notification has
+> Start while the active tab's script is loaded and stopped (silent: the saved options, no
+> Script Options window), besides Pause and Stop while it runs. The Script Loader's ★ beside the
+> script's name makes it a favourite; once there are favourites or recently started scripts
+> (the last 6, any start: by hand, the notification, the Scheduler, the API), a tap on the side
+> bar's script chip lists them under the Script Loader, and a tap on one loads and starts it.
+> They're kept in `quick-scripts.json` in the data folder, shared by the tabs. Checked: the
+> side bar hidden with its logo stayed hidden after a force stop and a new start, and came back
+> with the `›` tab; the chip's list started a recent script (`turu_long`), its ★ in the Script
+> Loader moved it under Favourites; the notification read "turu_long loaded" with Start, which
+> started it (then Pause and Stop), and Stop brought Start back.
 >
 > **Without a computer (2026-11-07, compiled, not yet tried on a device):** file dialogs are the
 > system picker (`saf.rs`): Load Script, Junk Items' and Loadouts' import and export, the
@@ -80,7 +92,9 @@ How to build, run and check the Android app. The design and the plan are in
 | Path | What |
 |---|---|
 | `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser; no file dialogs yet). Empty on other systems. |
-| `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's buttons) and the status it shows (a line per tab with several), sent every 2 s when it changed. |
+| `android/src/storage.rs`, `android/app/.../Storage.kt` | account passwords (Accounts' `SecretStore`): AES-GCM with a key in the Android Keystore, in the app's internal storage (`noBackupFilesDir/passwords`, not the shared data folder); copying and writing the picker's documents. |
+| `android/src/restart.rs` | the script started by hand, kept in the data folder's `android-restart.txt` while it runs (its options storage, the account and server; the password, when Accounts hasn't it, with the Keystore's key), run again when the service comes back without an activity after a kill (`turu-args.txt`'s own script wins). |
+| `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's Start, Pause and Stop) and the status it shows (a line per tab with several), sent every 2 s when it changed. |
 | `android/src/tabs.rs` | `android-tabs.json`: the tabs after the first, written when they change and reopened when the engine starts. |
 | `android/app/` | the Gradle app module: manifest (landscape), `TuruActivity` (a NativeActivity: full screen, Back to the background, asks once for notifications and battery optimisation, starts the service), `TuruService` (the foreground service: starts the engine, also alone after a kill; the notification; the wake lock), the `cargoNdk` task that builds the crate into `app/src/main/jniLibs/`. |
 | `android/rustls-platform-verifier/` | Gradle module building the Kotlin half of `rustls-platform-verifier` (HTTPS certificate checks against Android's trust store) from the submodule `android/vendor/rustls-platform-verifier`. |

@@ -187,10 +187,12 @@ impl ScriptLoader {
                                     }
                                 }
                                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                    favorite_star(ui, &bot, path);
                                     script_name(ui, &name, path);
                                 });
                             });
                         } else {
+                            favorite_star(ui, &bot, path);
                             script_name(ui, &name, path);
                         }
                     });
@@ -383,6 +385,31 @@ impl ScriptLoader {
 fn script_name(ui: &mut Ui, name: &str, path: &std::path::Path) {
     ui.add(Label::new(RichText::new(name).monospace().color(TEXT)).truncate())
         .on_hover_text(path.display().to_string());
+}
+
+/// The star before the loaded script's name: a favourite is listed on the side bar's script
+/// chip, which starts it with a tap (`turu_bot::quick_scripts`).
+fn favorite_star(ui: &mut Ui, bot: &turu_bot::Bot, path: &std::path::Path) {
+    let file = bot.paths.quick_scripts_file();
+    let on = turu_bot::quick_scripts::get(&file).is_favorite(path);
+    let (color, tip) = if on {
+        (
+            WARNING,
+            "A favourite: the side bar's script list starts it. Click to take it off",
+        )
+    } else {
+        (
+            MUTED,
+            "Add to favourites: the side bar's script list starts it with a tap",
+        )
+    };
+    let side = widgets::target(22.0, 40.0);
+    let star = egui::Button::new(RichText::new("★").size(16.0).color(color))
+        .frame(false)
+        .min_size(vec2(side, side));
+    if ui.add(star).on_hover_text(tip).clicked() {
+        turu_bot::quick_scripts::update(&file, |lists| lists.toggle_favorite(path));
+    }
 }
 
 /// How the loaded script's last run ended, for the status card and the nav bar's chip.

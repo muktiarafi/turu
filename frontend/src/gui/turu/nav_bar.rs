@@ -1471,6 +1471,17 @@ fn rail_fit(height: f32, update: bool, grid: bool) -> RailFit {
     RailFit { symbol, update, bank }
 }
 
+/// Hides or shows the rail and keeps the choice in `settings.json` (`side_bar_hidden`), so it
+/// holds when Turu opens again.
+fn set_rail_hidden(hidden: bool) {
+    crate::gui::set_rail_hidden(hidden);
+    let bot = crate::turu::bot();
+    if bot.settings.read().side_bar_hidden != hidden {
+        bot.settings.write().side_bar_hidden = hidden;
+        bot.save_settings();
+    }
+}
+
 /// While the rail is hidden: a small tab on the screen's left edge, halfway down, that brings it
 /// back. It floats over the game, which has the whole width then.
 fn rail_handle(ui: &mut Ui, inset: f32) {
@@ -1501,7 +1512,7 @@ fn rail_handle(ui: &mut Ui, inset: f32) {
                 TEXT,
             );
             if response.on_hover_text("Show the side bar").clicked() {
-                crate::gui::set_rail_hidden(false);
+                set_rail_hidden(false);
             }
         });
 }
@@ -1524,6 +1535,9 @@ enum RailIcon {
 impl NavBar {
     fn show_rail(&mut self, ui: &mut Ui, windows: &mut Windows) {
         let inset = crate::gui::rail_inset();
+        // The first time: hidden as it was when Turu last closed.
+        static RESTORED: std::sync::Once = std::sync::Once::new();
+        RESTORED.call_once(|| crate::gui::set_rail_hidden(crate::turu::bot().settings.read().side_bar_hidden));
         if crate::gui::rail_hidden() {
             rail_handle(ui, inset);
             return;
@@ -1561,8 +1575,11 @@ impl NavBar {
         if fit.symbol {
             ui.add_space((RAIL_SYMBOL_ROW - RAIL_SYMBOL_SIZE) / 2.0 - 2.0);
             // A tap on the logo hides the rail (the game gets the whole width).
-            if symbol(ui, RAIL_SYMBOL_SIZE).on_hover_text("Hide the side bar").clicked() {
-                crate::gui::set_rail_hidden(true);
+            if symbol(ui, RAIL_SYMBOL_SIZE)
+                .on_hover_text("Hide the side bar")
+                .clicked()
+            {
+                set_rail_hidden(true);
             }
             ui.add_space((RAIL_SYMBOL_ROW - RAIL_SYMBOL_SIZE) / 2.0 + 2.0);
         }
@@ -1591,7 +1608,7 @@ impl NavBar {
                 folded(ui, windows, menus(), folded_bank);
                 ui.separator();
                 if item(ui, "Hide Side Bar") {
-                    crate::gui::set_rail_hidden(true);
+                    set_rail_hidden(true);
                 }
             });
 
@@ -1658,10 +1675,84 @@ impl NavBar {
             if cells.is_empty() {
                 corners = CornerRadius::same(radius);
             }
-            if rail_chip(ui, &bot, status, corners).clicked() {
-                windows.script_loader = true;
+            let chip = rail_chip(ui, &bot, status, corners);
+            // With favourite or recent scripts, the chip lists them to start one with a tap (and
+            // the Script Loader); without, it opens the Script Loader.
+            let quick = turu_bot::quick_scripts::get(&bot.paths.quick_scripts_file());
+            if quick.is_empty() {
+                if chip.clicked() {
+                    windows.script_loader = true;
+                }
+            } else {
+                let config = MenuConfig::new().style(menu_style);
+                Popup::menu(&chip)
+                    .align(RectAlign::RIGHT_END)
+                    .style(menu_style)
+                    .info(
+                        egui::UiStackInfo::new(egui::UiKind::Menu).with_tag_value(MenuConfig::MENU_CONFIG_TAG, config),
+                    )
+                    .show(|ui| quick_scripts_menu(ui, &bot, &quick, windows));
             }
         });
+    }
+}
+
+/// The rail chip's list: the Script Loader, then the favourite and the recently started scripts
+/// (`turu_bot::quick_scripts`); a tap loads one and starts it. Scripts no longer on disk are left
+/// out.
+fn quick_scripts_menu(
+    ui: &mut Ui,
+    bot: &Arc<turu_bot::Bot>,
+    quick: &turu_bot::quick_scripts::QuickScripts,
+    windows: &mut Windows,
+) {
+    if item(ui, "Script Loader") {
+        windows.script_loader = true;
+    }
+    // Script Loader's rules for Start.
+    let why = if bot.scripts.status().is_active() {
+        Some("Stop the script first")
+    } else if auto::running(bot) || bot.scripts.is_snippet_running() {
+        Some("Stop Auto or the Console snippet first")
+    } else {
+        None
+    };
+    let lists = [
+        ("Favourites", quick.favorites.iter().collect::<Vec<_>>()),
+        ("Recent", quick.recent_only().collect()),
+    ];
+    for (title, list) in lists {
+        let list: Vec<_> = list.into_iter().filter(|path| path.is_file()).collect();
+        if list.is_empty() {
+            continue;
+        }
+        ui.separator();
+        ui.label(RichText::new(title).size(11.0).color(MUTED));
+        for path in list {
+            let name = path
+                .file_stem()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            let button = Button::new(name).min_size(vec2(190.0, control_height()));
+            let response = ui
+                .add_enabled(why.is_none(), button)
+                .on_hover_text(path.display().to_string());
+            if response.clicked() {
+                ui.close();
+                start_quick_script(bot, path);
+            }
+        }
+    }
+    if let Some(why) = why {
+        ui.label(RichText::new(why).size(11.0).color(MUTED));
+    }
+}
+
+/// Loads `path` and starts it, as Load Script then Start Script would.
+fn start_quick_script(bot: &Arc<turu_bot::Bot>, path: &std::path::Path) {
+    bot.scripts.load(path);
+    bot.log(format!("Loaded script {}", path.display()));
+    if let Err(e) = script::start(bot) {
+        bot.log(format!("Couldn't start the script: {e}"));
     }
 }
 
