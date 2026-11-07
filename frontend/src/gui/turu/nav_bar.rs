@@ -935,8 +935,9 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Army Control") {
                 windows.army = true;
             }
-            // VibeSkua Manager's Army Queue tab.
-            if item(ui, "Army Queue") {
+            // VibeSkua Manager's Army Queue tab. Its squads run as processes of their own, which
+            // Android can't start (`Army::launch`), so it isn't offered there.
+            if crate::platform::platform().launches_processes() && item(ui, "Army Queue") {
                 windows.army_queue = true;
             }
             // A client in a new tab, at the login screen (VibeSkua's tab strip "+").

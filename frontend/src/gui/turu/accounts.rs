@@ -256,6 +256,9 @@ impl AccountsWindow {
                             .password(!self.form.show_password)
                             .hint_text(hint)
                             .desired_width(half - SHOW_WIDTH - gap)
+                            // As tall as the other fields (widgets::text_box) on a touch screen.
+                            .min_size(vec2(0.0, widgets::target(0.0, 40.0)))
+                            .vertical_align(egui::Align::Center)
                             .margin(egui::Margin::symmetric(8, 5))
                             .background_color(super::theme::INSET),
                     );

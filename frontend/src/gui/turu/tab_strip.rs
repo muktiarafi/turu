@@ -66,11 +66,13 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_owned(), FontId::proportional(12.0), TEXT);
-    let width = (galley.size().x + 52.0).min(TAB_WIDTH);
-    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     // A finger-sized "×" on a touch screen (its mark stays small), on the active tab only.
     let closable = active || !super::widgets::touch();
     let close_size = super::widgets::target(16.0, 28.0);
+    // The dot and the label, then the "×" (with its gaps) or the right padding.
+    let trailing = if closable { close_size + 9.0 } else { 8.0 };
+    let width = (galley.size().x + 22.0 + trailing.max(30.0)).min(TAB_WIDTH);
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     let close_rect = egui::Rect::from_center_size(
         pos2(rect.right() - 5.0 - close_size / 2.0, rect.center().y),
         vec2(close_size, close_size),
