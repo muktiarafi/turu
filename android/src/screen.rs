@@ -25,7 +25,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use turu_frontend::engine::Step;
 use turu_frontend::gui::turu::TuruUi;
 use turu_frontend::pacing::Pacing;
@@ -86,6 +86,10 @@ pub struct Screen {
     refresh_millihertz: u32,
     /// When the last draw started.
     draw_started: Instant,
+    /// Whether the surface's last `configure` worked, and when to try again if it didn't
+    /// ([`Screen::configure`]).
+    configured: bool,
+    retry_configure: Instant,
 }
 
 /// The GPU, set up without a window (the API `graphics` asks for), the blit the screen draws the
@@ -203,26 +207,51 @@ impl Screen {
             pacing: Pacing::new(),
             refresh_millihertz: 0,
             draw_started: Instant::now(),
+            configured: false,
+            retry_configure: Instant::now(),
         };
+        let mut screen = screen;
         screen.configure();
         Some(screen)
     }
 
-    fn configure(&self) {
-        if let Some(surface) = &self.surface {
-            surface.configure(
-                &self.descriptors.device,
-                &wgpu::SurfaceConfiguration {
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    format: self.format,
-                    color_space: wgpu::SurfaceColorSpace::Auto,
-                    width: self.size.0,
-                    height: self.size.1,
-                    present_mode: Default::default(),
-                    desired_maximum_frame_latency: 2,
-                    alpha_mode: Default::default(),
-                    view_formats: Vec::new(),
-                },
+    /// Configures the surface for the window's size. A failed `configure` isn't fatal: wgpu
+    /// reports the error but leaves the surface without its error sink, and the next
+    /// `get_current_texture` then aborted (Sentry TURU-ANDROID-9: an Infinix back in front after
+    /// running out of GPU memory; TURU-ANDROID-8: an OPPO whose window "does not support the
+    /// adapter's queue family", one going away). So it runs in error scopes; until it works, the
+    /// screen isn't drawn and `draw` tries again once a second.
+    fn configure(&mut self) {
+        let Some(surface) = &self.surface else {
+            self.configured = false;
+            return;
+        };
+        let device = &self.descriptors.device;
+        let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        surface.configure(
+            device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.format,
+                color_space: wgpu::SurfaceColorSpace::Auto,
+                width: self.size.0,
+                height: self.size.1,
+                present_mode: Default::default(),
+                desired_maximum_frame_latency: 2,
+                alpha_mode: Default::default(),
+                view_formats: Vec::new(),
+            },
+        );
+        let error = pop_error_scope(memory).or(pop_error_scope(validation));
+        self.configured = error.is_none();
+        self.retry_configure = Instant::now() + Duration::from_secs(1);
+        if let Some(error) = error {
+            tracing::warn!(
+                target: "ruffle_aqw_perf",
+                "Couldn't set up the window for drawing ({}x{}); trying again: {error}",
+                self.size.0,
+                self.size.1
             );
         }
     }
@@ -454,9 +483,9 @@ impl Screen {
     fn draw(&mut self, player: &mut Player, mut new_picture: bool) {
         let started = Instant::now();
         self.draw_started = started;
-        let Some(surface) = &self.surface else {
+        if self.surface.is_none() {
             return;
-        };
+        }
         // The rail grows by a cutout on its side (a punch-hole camera, held sideways).
         turu_frontend::gui::set_rail_inset(crate::ui::cutout().0 as f32 / self.pixels_per_point);
         let movie_size = self.movie_area();
@@ -476,6 +505,18 @@ impl Screen {
             player.render();
             self.pacing.record_draw(started.elapsed().as_secs_f64() * 1000.0);
         }
+        if !self.configured {
+            if Instant::now() < self.retry_configure {
+                return;
+            }
+            self.configure();
+            if !self.configured {
+                return;
+            }
+        }
+        let Some(surface) = &self.surface else {
+            return;
+        };
         let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
@@ -936,5 +977,16 @@ impl RenderTargetFrame for MovieFrame {
 
     fn view(&self) -> &wgpu::TextureView {
         &self.0
+    }
+}
+
+/// The error a popped scope caught, if any. On native wgpu the future is ready at once, so it's
+/// polled once here (an executor's `block_on` panics inside another executor).
+fn pop_error_scope(scope: wgpu::ErrorScopeGuard) -> Option<wgpu::Error> {
+    let future = std::pin::pin!(scope.pop());
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    match std::future::Future::poll(future, &mut context) {
+        std::task::Poll::Ready(error) => error,
+        std::task::Poll::Pending => None,
     }
 }
