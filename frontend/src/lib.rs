@@ -13,6 +13,7 @@ pub mod map_items;
 pub mod map_pads;
 pub mod pacing;
 pub mod platform;
+pub mod players;
 pub mod process_memory;
 pub mod touch;
 pub mod turu;

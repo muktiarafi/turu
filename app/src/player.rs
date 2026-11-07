@@ -13,7 +13,7 @@ use ruffle_core::backend::navigator::{OwnedFuture, SocketMode};
 use ruffle_core::config::Letterbox;
 use ruffle_core::events::{GamepadButton, KeyCode};
 use ruffle_core::font::DefaultFont;
-use ruffle_core::{FloatDuration, LoadBehavior, Player, PlayerBuilder, PlayerEvent, PlayerThreadState};
+use ruffle_core::{LoadBehavior, Player, PlayerBuilder, PlayerEvent};
 use ruffle_frontend_utils::backends::audio::CpalAudioBackend;
 use ruffle_frontend_utils::backends::navigator::{ExternalNavigatorBackend, FutureSpawner};
 use ruffle_frontend_utils::bundle::source::BundleSourceError;
@@ -27,14 +27,13 @@ use ruffle_render_wgpu::backend::WgpuRenderBackend;
 use ruffle_render_wgpu::clap::PowerPreference;
 use ruffle_render_wgpu::descriptors::Descriptors;
 use std::borrow::Cow;
-use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
+use turu_frontend::players::{Players, Slot, TabPlayer};
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
@@ -109,23 +108,17 @@ impl From<&GlobalPreferences> for LaunchOptions {
 
 /// Represents a current Player and any associated state with that player,
 /// which may be lost when this Player is closed (dropped)
+///
+/// Turu: what the desktop keeps beside a tab's player (`turu_frontend::players::Slot`).
 struct ActivePlayer {
     id: PlayerId,
-    /// Turu: the tab this player is the game of (when it plays AQW).
-    tab: Option<crate::turu::TabId>,
-    player: Arc<Mutex<Player>>,
-    /// Turu: this player's thread-local state while another player is the active one (see
-    /// `ThreadState`); the active player's is the thread's, and this is left default.
-    thread_state: RefCell<ThreadState>,
-    /// Turu: while it's a hidden tab's player, when it was last ticked and when it's due again
-    /// (`PlayerController::tick_hidden`).
-    hidden_tick: Cell<Option<(Instant, Instant)>>,
-    /// Turu: the tab's bot's stats, which count this player's ticks.
-    perf: Option<Arc<turu_bot::perf::PerfStats>>,
 
     #[cfg(target_os = "linux")]
     _gamemode_session: crate::dbus::GameModeSession,
 }
+
+/// Turu: a tab's player on the desktop.
+type PlayerSlot = Slot<ActivePlayer>;
 
 impl ActivePlayer {
     #[expect(clippy::too_many_arguments)]
@@ -140,7 +133,7 @@ impl ActivePlayer {
         preferences: GlobalPreferences,
         file_picker: FilePicker,
         tab: crate::turu::TabId,
-    ) -> Self {
+    ) -> PlayerSlot {
         let player_id = PlayerId::new();
         let tab = crate::mugetsu::plays_aqw().then_some(tab);
         let bot = tab.and_then(crate::turu::tab_bot);
@@ -448,95 +441,15 @@ impl ActivePlayer {
             );
         }
 
-        Self {
-            id: player_id,
+        Slot::new(
             tab,
             player,
-            thread_state: RefCell::default(),
-            hidden_tick: Cell::new(None),
-            perf: bot.as_ref().map(|bot| bot.flash.perf().clone()),
-            #[cfg(target_os = "linux")]
-            _gamemode_session: crate::dbus::GameModeSession::new(gamemode_enable),
-        }
-    }
-}
-
-/// Turu: the longest a hidden tab's player goes without a tick, so its sockets (the game's
-/// packets) and timers are serviced at least this often.
-const HIDDEN_TICK_MAX: Duration = Duration::from_millis(50);
-
-/// Turu: what one player keeps in the thread: the core's (`PlayerThreadState`) and its
-/// renderer's command segments not submitted yet (`ruffle_render_wgpu::segments`), which
-/// another player's submit must not take.
-#[derive(Default)]
-struct ThreadState {
-    core: PlayerThreadState,
-    segments: ruffle_render_wgpu::segments::ThreadState,
-}
-
-impl ThreadState {
-    /// Swaps this state with the thread's.
-    fn swap(&mut self) {
-        self.core.swap();
-        ruffle_render_wgpu::segments::swap(&mut self.segments);
-    }
-}
-
-/// Turu: while alive, a player that isn't the active one has its own thread-local state.
-struct SwappedIn<'a>(&'a RefCell<ThreadState>);
-
-impl<'a> SwappedIn<'a> {
-    fn new(state: &'a RefCell<ThreadState>) -> Self {
-        state.borrow_mut().swap();
-        Self(state)
-    }
-}
-
-impl Drop for SwappedIn<'_> {
-    fn drop(&mut self) {
-        self.0.borrow_mut().swap();
-    }
-}
-
-/// Turu: a tab's locked player. Unless it's the active tab's, its own thread-local state is
-/// swapped in until this drops, as its code may run.
-pub struct TabPlayer<'a> {
-    player: MutexGuard<'a, Player>,
-    _swapped: Option<SwappedIn<'a>>,
-}
-
-impl Deref for TabPlayer<'_> {
-    type Target = Player;
-
-    fn deref(&self) -> &Player {
-        &self.player
-    }
-}
-
-impl DerefMut for TabPlayer<'_> {
-    fn deref_mut(&mut self) -> &mut Player {
-        &mut self.player
-    }
-}
-
-impl ActivePlayer {
-    /// Turu: locks the player, swapping its thread-local state in unless it's the active one.
-    fn lock(&self, active: bool) -> TabPlayer<'_> {
-        TabPlayer {
-            _swapped: (!active).then(|| SwappedIn::new(&self.thread_state)),
-            player: self
-                .player
-                .try_lock()
-                .expect("Player lock must be available"),
-        }
-    }
-
-    /// Turu: detaches the tab's bot, which would otherwise take the closed game for a
-    /// disconnect.
-    fn detach_bot(&self) {
-        if let Some(bot) = self.tab.and_then(crate::turu::tab_bot) {
-            bot.set_host(None);
-        }
+            Self {
+                id: player_id,
+                #[cfg(target_os = "linux")]
+                _gamemode_session: crate::dbus::GameModeSession::new(gamemode_enable),
+            },
+        )
     }
 }
 
@@ -545,9 +458,8 @@ impl ActivePlayer {
 ///
 /// Turu: one player per tab; `get` and `handle_event` are the active tab's.
 pub struct PlayerController {
-    players: Vec<ActivePlayer>,
-    /// Index of the active player in `players`.
-    active: usize,
+    /// Turu: the tabs' players (shared with the windowless loop: `turu_frontend::players`).
+    players: Players<ActivePlayer>,
     event_loop: EventLoopProxy<RuffleEvent>,
     window: Arc<Window>,
     descriptors: Arc<Descriptors>,
@@ -574,8 +486,7 @@ impl PlayerController {
                 .is_ok_and(|e| e.send_event(RuffleEvent::TuruTab(request)).is_ok())
         }));
         Self {
-            players: Vec::new(),
-            active: 0,
+            players: Players::new(),
             event_loop,
             window,
             descriptors,
@@ -593,12 +504,12 @@ impl PlayerController {
 
     /// Turu: the index of the active tab's player in tab order.
     pub fn active_index(&self) -> usize {
-        self.active
+        self.players.active_index()
     }
 
     /// Turu: the tab of the player at `index` in tab order.
     pub fn tab_at(&self, index: usize) -> Option<crate::turu::TabId> {
-        self.players.get(index)?.tab
+        self.players.tab_at(index)
     }
 
     /// Turu: Grid View shows: on, with two tabs or more.
@@ -609,8 +520,7 @@ impl PlayerController {
     /// Turu: every player in tab order (the order of Grid View's tiles), with its tab and whether
     /// it's the active one. Use one at a time, as [`Self::all`].
     pub fn in_order(&self) -> impl Iterator<Item = (Option<crate::turu::TabId>, bool, TabPlayer<'_>)> {
-        let active = self.active;
-        self.players.iter().enumerate().map(move |(i, slot)| (slot.tab, i == active, slot.lock(i == active)))
+        self.players.in_order()
     }
 
     /// Turu: the picture each player last drew (its movie view), in tab order, for Grid View.
@@ -634,15 +544,7 @@ impl PlayerController {
     ) {
         let tab = crate::turu::active_tab();
         let player = self.new_player(opt, content_descriptor, movie_view, tab);
-        if let Some(slot) = self.players.get_mut(self.active) {
-            slot.detach_bot();
-            // The thread gets a new player's state; the old one's goes with it.
-            slot.thread_state.borrow_mut().swap();
-            *slot = player;
-        } else {
-            self.players.push(player);
-            self.active = self.players.len() - 1;
-        }
+        self.players.replace_active(player);
     }
 
     /// Turu: opens the movie in a new tab's player and makes it the active one.
@@ -654,47 +556,18 @@ impl PlayerController {
         tab: crate::turu::TabId,
     ) {
         let player = self.new_player(opt, content_descriptor, movie_view, tab);
-        self.players.push(player);
-        self.select_tab(tab);
+        self.players.add(player);
     }
 
     /// Turu: makes the tab's player the active one (the others are muted); false when it
     /// has none.
     pub fn select_tab(&mut self, tab: crate::turu::TabId) -> bool {
-        let Some(i) = self.players.iter().position(|p| p.tab == Some(tab)) else {
-            return false;
-        };
-        if i != self.active {
-            // The old active player's state goes into its slot, the new one's into the thread.
-            if let Some(old) = self.players.get(self.active) {
-                old.thread_state.borrow_mut().swap();
-                // Hidden from now on: `tick_hidden` starts timing it afresh.
-                old.hidden_tick.set(None);
-            }
-            self.players[i].thread_state.borrow_mut().swap();
-            self.active = i;
-        }
-        true
+        self.players.select_tab(tab)
     }
 
     /// Turu: closes the tab's player.
     pub fn remove_tab(&mut self, tab: crate::turu::TabId) {
-        let Some(i) = self.players.iter().position(|p| p.tab == Some(tab)) else {
-            return;
-        };
-        let was_active = i == self.active;
-        if was_active {
-            // The thread's state is the closed player's: it goes with it.
-            self.players[i].thread_state.borrow_mut().swap();
-        }
-        let player = self.players.remove(i);
-        player.detach_bot();
-        if self.active > i || self.active >= self.players.len() {
-            self.active = self.active.saturating_sub(1);
-        }
-        if was_active && let Some(new) = self.players.get(self.active) {
-            new.thread_state.borrow_mut().swap();
-        }
+        self.players.remove_tab(tab);
     }
 
     pub fn len(&self) -> usize {
@@ -704,55 +577,28 @@ impl PlayerController {
     /// Turu: every player (to tick them all), the active one first.
     /// Use one at a time: each other player's state is swapped in while its guard lives.
     pub fn all(&self) -> impl Iterator<Item = (bool, TabPlayer<'_>)> {
-        let active = self.active;
-        let order = std::iter::once(active).chain((0..self.players.len()).filter(move |i| *i != active));
-        order.filter_map(move |i| Some((i == active, self.players.get(i)?.lock(i == active))))
+        self.players.all()
     }
 
     /// Turu: ticks the hidden tabs' players whose next frame or timer is due, or that waited
-    /// [`HIDDEN_TICK_MAX`], rather than all of them on every pass of the event loop (thousands
+    /// `HIDDEN_TICK_MAX`, rather than all of them on every pass of the event loop (thousands
     /// a second while the mouse moves); returns when the next one is due.
     ///
     /// In Grid View (and with `TURU_GRID_TEST`) they also draw each frame they run; the bool says
     /// whether one did, so the window shows it.
     pub fn tick_hidden(&self, now: Instant) -> (Option<Instant>, bool) {
         let draw = self.grid() || crate::turu::grid_test_fps().is_some();
-        let mut drew = false;
-        let mut soonest: Option<Instant> = None;
-        for (i, slot) in self.players.iter().enumerate() {
-            if i == self.active {
-                continue;
+        self.players.tick_hidden(now, |player| {
+            // Turu: a tile draws each frame it runs, into its own movie view (with
+            // `TURU_GRID_TEST`, never shown).
+            if !draw {
+                return false;
             }
-            let next = match slot.hidden_tick.get() {
-                Some((last, due)) if now >= due => {
-                    let mut player = slot.lock(false);
-                    let started = Instant::now();
-                    let frames_before = player.frames_run();
-                    player.tick(FloatDuration::from_std(now - last));
-                    if let Some(perf) = &slot.perf {
-                        perf.record_tick(started.elapsed());
-                    }
-                    // Turu: a tile draws each frame it runs, into its own movie view (with
-                    // `TURU_GRID_TEST`, never shown).
-                    if draw && player.frames_run() != frames_before {
-                        let drawing = Instant::now();
-                        player.render();
-                        crate::thread_perf::add(crate::thread_perf::Phase::HiddenDraw, drawing.elapsed());
-                        drew = true;
-                    }
-                    now + player.time_til_next_frame().min(HIDDEN_TICK_MAX)
-                }
-                Some((_, due)) => {
-                    soonest = Some(soonest.map_or(due, |t| t.min(due)));
-                    continue;
-                }
-                // Just hidden: the active tab's loop ticked it until now.
-                None => now + HIDDEN_TICK_MAX,
-            };
-            slot.hidden_tick.set(Some((now, next)));
-            soonest = Some(soonest.map_or(next, |t| t.min(next)));
-        }
-        (soonest, drew)
+            let drawing = Instant::now();
+            player.render();
+            crate::thread_perf::add(crate::thread_perf::Phase::HiddenDraw, drawing.elapsed());
+            true
+        })
     }
 
     /// Turu: gives the mouse to the active tab's player (when the cursor is in the window) and
@@ -771,8 +617,7 @@ impl PlayerController {
 
     /// Turu: the tab's player.
     pub fn get_tab(&self, tab: crate::turu::TabId) -> Option<TabPlayer<'_>> {
-        let i = self.players.iter().position(|p| p.tab == Some(tab))?;
-        Some(self.players[i].lock(i == self.active))
+        self.players.get_tab(tab)
     }
 
     fn new_player(
@@ -781,7 +626,7 @@ impl PlayerController {
         content_descriptor: &ContentDescriptor,
         movie_view: MovieView,
         tab: crate::turu::TabId,
-    ) -> ActivePlayer {
+    ) -> PlayerSlot {
         ActivePlayer::new(
             opt,
             self.event_loop.clone(),
@@ -798,34 +643,16 @@ impl PlayerController {
 
     /// Closes every player.
     pub fn destroy(&mut self) {
-        // The thread's state is the active player's: it goes with it.
-        if let Some(active) = self.players.get(self.active) {
-            active.thread_state.borrow_mut().swap();
-        }
-        for player in self.players.drain(..) {
-            player.detach_bot();
-        }
-        self.active = 0;
+        self.players.clear();
     }
 
     /// Turu: the active tab's player ticked for `took` (counted in its bot's stats).
     pub fn record_tick(&self, took: Duration) {
-        if let Some(perf) = self.players.get(self.active).and_then(|p| p.perf.as_ref()) {
-            perf.record_tick(took);
-        }
+        self.players.record_tick(took);
     }
 
     pub fn get(&self) -> Option<MutexGuard<'_, Player>> {
-        match self.players.get(self.active) {
-            None => None,
-            // We don't want to return None when the lock fails to grab as that's a fatal error, not a lack of player
-            Some(player) => Some(
-                player
-                    .player
-                    .try_lock()
-                    .expect("Player lock must be available"),
-            ),
-        }
+        self.players.get()
     }
 
     pub fn handle_event(&self, event: PlayerEvent) -> bool {
@@ -843,11 +670,9 @@ impl PlayerController {
         // otherwise it is stale, and should be cancelled (which
         // happens implicitly on drop).
         let id = *task.0.metadata();
-        if let Some(i) = self.players.iter().position(|player| id == player.id) {
+        if let Some(i) = self.players.slots().iter().position(|slot| id == slot.extra.id) {
             // Turu: another tab's future runs with that player's thread-local state.
-            let _swapped =
-                (i != self.active).then(|| SwappedIn::new(&self.players[i].thread_state));
-            task.0.run();
+            self.players.run_for(i, || task.0.run());
         }
     }
 }
