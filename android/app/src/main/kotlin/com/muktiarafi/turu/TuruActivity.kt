@@ -40,6 +40,19 @@ class TuruActivity : NativeActivity() {
             WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,
         )
+        // The window covers the whole screen, the display cutout included, whether the system bars
+        // show or not. With the default cutout mode (Android 14 and older; 15+ with target SDK 35
+        // makes it "always"), the window kept clear of a camera on a short edge only while the
+        // bars were hidden: the keyboard or a swipe from an edge brought them up, the window and
+        // the cutout's inset changed size, and the game was resized with them, flickering.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
         TuruService.start(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {

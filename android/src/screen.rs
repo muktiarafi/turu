@@ -256,9 +256,21 @@ impl Screen {
         self.keyboard_shown = false;
     }
 
-    pub fn resize(&mut self, window: &NativeWindow) {
-        self.size = crate::window_size(window);
+    /// Android said the window may have changed (resized, content rect or configuration changed).
+    /// Only a new size reconfigures the surface: that drops its pictures, and some drivers then
+    /// show black until the next draw (up to a SWF frame, ~40 ms, later), so the game flickered
+    /// on every inset change (the keyboard, the system bars). A new size is drawn right away.
+    pub fn resize(&mut self, window: &NativeWindow, player: &mut Player) {
+        let size = crate::window_size(window);
+        if size == self.size {
+            return;
+        }
+        tracing::info!("window now {}x{} (was {}x{})", size.0, size.1, self.size.0, self.size.1);
+        self.size = size;
         self.configure();
+        if self.surface.is_some() {
+            self.draw(player, true);
+        }
     }
 
     /// What of Turu is above the game (the tab strip, with tabs), in pixels.
@@ -439,7 +451,7 @@ impl Screen {
 
     /// Draws a frame, when there's a window: the game (rendered again with `new_picture`) below
     /// the bar, the UI over it.
-    fn draw(&mut self, player: &mut Player, new_picture: bool) {
+    fn draw(&mut self, player: &mut Player, mut new_picture: bool) {
         let started = Instant::now();
         self.draw_started = started;
         let Some(surface) = &self.surface else {
@@ -455,6 +467,10 @@ impl Screen {
                 height: movie_size.1,
                 scale_factor: f64::from(self.pixels_per_point),
             });
+            // The resize made the game's texture anew, empty: drawn without a new picture, it
+            // flashed black (or stretched) until the next frame rendered.
+            new_picture = true;
+            tracing::info!("game area now {}x{}", movie_size.0, movie_size.1);
         }
         if new_picture {
             player.render();

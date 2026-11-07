@@ -199,6 +199,15 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   `TuruActivity` handles it (moves the task back).
 * **Edge to edge** (Android 15+): the status bar drew over the nav bar; the activity runs
   immersive full screen.
+* **The game flickered, as if stretching to the whole screen** (a phone, after logging in): with
+  the default cutout mode (Android 14 and older) the window kept clear of a camera on a short
+  edge only while the system bars were hidden, so the keyboard or a swipe from an edge changed
+  the window's size and the cutout's inset (the rail's width), and with them the game's area,
+  whose texture is made anew and empty on a resize. `TuruActivity` sets the cutout mode to
+  short edges and `setDecorFitsSystemWindows(false)`, and `Screen::draw` renders the game in a
+  frame that resized it. A Samsung S24 FE still flickered: every window event (resized, content rect or
+  configuration changed, as insets come and go) reconfigured the surface, which drops its
+  pictures; `Screen::resize` now does that only for a new size, and draws right away.
 * **The app's code is Kotlin, called from Rust over JNI** (package `com.muktiarafi.turu`, so the
   native functions are `Java_com_muktiarafi_turu_<Class>_<method>`). What Rust calls or
   implements must stay `@JvmStatic` in the class's `companion object` (`TuruService.status`,

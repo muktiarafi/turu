@@ -99,7 +99,7 @@ fn android_main(app: AndroidApp) {
             PollEvent::Main(
                 MainEvent::WindowResized { .. } | MainEvent::ConfigChanged { .. } | MainEvent::ContentRectChanged { .. },
             ) => {
-                run_on_engine(|_| resize());
+                run_on_engine(resize);
             }
             PollEvent::Main(MainEvent::InputAvailable) => forward_input(&app),
             PollEvent::Main(MainEvent::Destroy) => destroyed = true,
@@ -183,10 +183,12 @@ fn attach_surface() {
     }
 }
 
-fn resize() {
-    if let Some(window) = lock_window().as_ref() {
-        with_screen(|screen| screen.resize(window));
-    }
+fn resize(player: &mut Player) {
+    // A copy: the lock isn't held while drawing.
+    let Some(window) = lock_window().clone() else {
+        return;
+    };
+    with_screen(|screen| screen.resize(&window, player));
 }
 
 fn forward_input(app: &AndroidApp) {
