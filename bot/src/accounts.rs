@@ -230,8 +230,9 @@ pub trait SecretStore: Send + Sync {
     fn get(&self, username: &str) -> Result<Option<String>, String>;
     /// None saved is fine.
     fn delete(&self, username: &str) -> Result<(), String>;
-    /// Whether it keeps passwords at all (Android's [`NoStore`], until there's a Keystore one,
-    /// doesn't): the Accounts window doesn't offer a password field when it can't.
+    /// Whether it keeps passwords at all ([`NoStore`], the fallback until the app installs its
+    /// store, such as Android's Keystore one, doesn't): the Accounts window doesn't offer a
+    /// password field when it can't.
     fn keeps_passwords(&self) -> bool {
         true
     }

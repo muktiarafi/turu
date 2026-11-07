@@ -42,6 +42,13 @@ class TuruService : Service() {
         startForegroundWith(build())
         CrashUploads.start(applicationContext)
         CrashReports.collect(applicationContext)
+        // Passwords and documents (`storage.rs`), before the engine reads a password.
+        Storage.init(applicationContext)
+        // No activity in this process: Android restarted the service after killing it, and the
+        // engine runs again the script that was running (`restart.rs`).
+        if (!TuruActivity.started) {
+            nativeRestarted()
+        }
         val files = getExternalFilesDir(null) ?: filesDir
         nativeStart(applicationContext, files.absolutePath)
     }
@@ -140,6 +147,9 @@ class TuruService : Service() {
 
         @JvmStatic
         private external fun nativeAction(action: String)
+
+        @JvmStatic
+        private external fun nativeRestarted()
 
         @JvmStatic
         private external fun nativeTrimMemory(level: Int)
