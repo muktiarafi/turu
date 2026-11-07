@@ -44,13 +44,15 @@ How to build, run and check the Android app. The design and the plan are in
 > Android 15 refused it from the engine thread); a script joining a private room
 > (`greenguardwest-93101`), killing Slimes with the class's saved rotation, `monsterKilled`,
 > `itemDropped` and `extensionPacket` events in the script, and the drop grabber asking for
-> its drops (the server refused them: already full or banked on that account); Fast Travel to
+> its drops (the server refused them: already full or banked on that account), and
+> `bot.drops.pickup` landing one (Bludrut's Dark Energy: `getDrop` succeeded, an AC item,
+> into the bank); a death counted once (`playerDeath`, at Ultra Engineer); Fast Travel to
 > Tercessuinotlim (it asks for room 111111, as VibeSkua; the server put it in another room,
 > 111111 being full); Army Control > Map Travel jumping to a saved preset (`yulgar`), the
 > recent list filling in.
 >
 > **Unverified on a device:** Butler with a master and a follower and an army script across
-> two tabs (they need a second account); deaths and boosts; sound switching with
+> two tabs (they need a second account); boosts; sound switching with
 > the active tab; the notification's lines and the wake lock with two tabs; a script that
 > starts once its tab is logged in by hand; `onTrimMemory` stopping hidden tabs' scripts (not
 > done).
