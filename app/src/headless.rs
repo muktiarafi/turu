@@ -20,6 +20,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs, STAGE};
+use turu_frontend::players::{Players, Slot};
 use url::Url;
 
 /// Runs `movie_url` (skua.swf) without a window until the process is stopped.
@@ -27,8 +28,11 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     let runtime = tokio::runtime::Runtime::new()?;
     let _guard = runtime.enter();
     let (sender, events) = channel();
-    let player = build_player(&preferences, movie_url, sender.clone());
-    turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
+    // One tab, through the loop that runs Android's tabs.
+    let tab = turu::active_tab();
+    let mut players = Players::new();
+    players.add(Slot::new(Some(tab), build_player(&preferences, movie_url, sender.clone(), tab), ()));
+    turu::bot().set_host(Some(Arc::new(engine::flash_host(sender, tab))));
     // Turu: nothing is drawn, so in game it runs at a hidden tab's 2 FPS (`api::options`; the
     // login screen keeps full speed). Halved the process's CPU on a farm, with the same kills.
     turu::bot().state.lock().hidden_tab = true;
@@ -37,7 +41,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     turu::start_updates();
     let mut memory_log = turu::perf_log_every().map(|every| (every, Instant::now()));
     let mut last_collect = Instant::now();
-    engine::run_loop_with(&player, &events, |player| {
+    engine::run_loop_with(&mut players, &events, |player| {
         // Turu: hand the memory mimalloc keeps free back to the system (see `release_free_memory`).
         if last_collect.elapsed() >= Duration::from_secs(60) {
             last_collect = Instant::now();
@@ -85,7 +89,12 @@ fn log_memory(player: &mut Player) {
     }
 }
 
-fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<EngineEvent>) -> Arc<Mutex<Player>> {
+fn build_player(
+    preferences: &GlobalPreferences,
+    movie_url: Url,
+    sender: Sender<EngineEvent>,
+    tab: turu::TabId,
+) -> Arc<Mutex<Player>> {
     let opt = LaunchOptions::from(preferences);
     let content = PlayingContent::DirectFile(ContentDescriptor {
         url: movie_url.clone(),
@@ -95,7 +104,7 @@ fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<
         opt.player.base.clone().unwrap_or_else(|| movie_url.clone()),
         opt.player.referer.clone(),
         opt.player.cookie.clone(),
-        Executor::new(sender),
+        Executor::new(sender, tab),
         opt.proxy.clone(),
         opt.player.upgrade_to_https.unwrap_or_default(),
         opt.socket_allowed.clone(),
