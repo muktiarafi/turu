@@ -4,7 +4,8 @@
 //!
 //! Keys reach Turu through egui, so a hotkey works while Turu's window has focus (VibeSkua's
 //! main window handler; its Windows-only global hook isn't ported). Platforms without keyboard
-//! shortcuts (`Platform::has_hotkeys`, Android) neither run nor show them.
+//! shortcuts (`Platform::has_hotkeys` false) neither run nor show them; Android has them for a
+//! hardware keyboard.
 
 use super::TabUi;
 use super::auto;

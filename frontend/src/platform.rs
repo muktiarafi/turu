@@ -99,8 +99,8 @@ pub trait Platform: Send + Sync {
     }
 
     /// Whether keyboard shortcuts work: Options > HotKeys and its bindings (VibeSkua's F10, F9,
-    /// ...). False on Android: its key events carry no function keys or modifiers to the UI,
-    /// and most phones have no keyboard, so the window is hidden there.
+    /// ...). Android has them too, for a hardware keyboard (`android/src/input.rs` gives egui
+    /// every key with its modifiers, as winit does on a desktop).
     fn has_hotkeys(&self) -> bool {
         true
     }

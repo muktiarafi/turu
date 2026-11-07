@@ -54,7 +54,7 @@ Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; n
 Turu builds its plugins in), **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them
 in its Manager app and its tabbed host). Android has them too (its tabs run in one engine
 thread; Butler and Army Control are full-screen sheets with finger-sized buttons there, and the
-tab strip's tabs are taller, with "×" on the active one only), but no HotKeys (`has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
+tab strip's tabs are taller, with "×" on the active one only), and HotKeys for a hardware keyboard. Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
 Right: **Update** (only while a newer Turu is out: below), the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
@@ -818,8 +818,8 @@ VibeSkua); Lite settings are read and flipped in the game on a bot thread; Army 
 every tab and every account Army started (`army::broadcast`), Army toggles flip here and send
 the new value; Load Script to All opens Army Control. Tooltips show the current key (Start,
 Stop, Force Stop, Load Script, Bank). VibeSkua has no action for pausing, so Turu has none.
-Android (`Platform::has_hotkeys` false: its key events carry no function keys or modifiers to
-the UI, and phones rarely have a keyboard) hides the menu entry and runs no hotkeys.
+Android runs them from a hardware keyboard: `android/src/input.rs` gives egui every key (F1-F12,
+letters, digits) with Ctrl, Shift and Alt, as winit does on a desktop.
 
 ## Adding a window
 

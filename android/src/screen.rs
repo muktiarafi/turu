@@ -429,13 +429,15 @@ impl Screen {
         self.events.extend(input::egui_events(phase, x, y, self.pixels_per_point));
     }
 
-    /// A key: the UI's while a text box of it has the focus, else the game's. A game text field
+    /// A key: the UI's while a text box of it has the focus, else the game's (and HotKeys'). A game text field
     /// takes no more characters once it's full ([`Typing::MAX_CHARS`]).
     pub fn key(&mut self, player: &mut Player, key: &Key) {
         if self.ui_typing {
             self.events.extend(key.egui_events());
             return;
         }
+        // Turu's HotKeys see the press too (no text: nothing types into a window).
+        self.events.extend(key.egui_key_events());
         let full = key.typed.is_some() && key.control.is_none() && Typing::read(player).is_some_and(|t| t.is_full());
         for event in key.player_events() {
             if !(full && matches!(event, ruffle_core::PlayerEvent::TextInput { .. })) {

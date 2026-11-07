@@ -108,6 +108,8 @@ pub struct Key {
     pub typed: Option<char>,
     /// What it does in a text field instead of typing (Backspace, arrows, Ctrl+V), with a key down.
     pub control: Option<TextControlCode>,
+    /// Ctrl, Shift and Alt as they were, for Turu's HotKeys.
+    pub modifiers: egui::Modifiers,
 }
 
 impl Key {
@@ -131,33 +133,61 @@ impl Key {
         if let (true, Some(c)) = (self.down, self.typed) {
             return vec![egui::Event::Text(c.to_string())];
         }
-        let LogicalKey::Named(named) = self.key.logical_key else {
+        self.egui_key_events()
+    }
+
+    /// For egui, without the text: the key with its modifiers, so Turu's HotKeys see presses
+    /// that go to the game (as the desktop's winit gives egui every key).
+    pub fn egui_key_events(&self) -> Vec<egui::Event> {
+        let Some(key) = egui_key(&self.key.logical_key) else {
             return Vec::new();
-        };
-        let key = match named {
-            NamedKey::Enter => egui::Key::Enter,
-            NamedKey::Tab => egui::Key::Tab,
-            NamedKey::Backspace => egui::Key::Backspace,
-            NamedKey::Delete => egui::Key::Delete,
-            NamedKey::Escape => egui::Key::Escape,
-            NamedKey::ArrowUp => egui::Key::ArrowUp,
-            NamedKey::ArrowDown => egui::Key::ArrowDown,
-            NamedKey::ArrowLeft => egui::Key::ArrowLeft,
-            NamedKey::ArrowRight => egui::Key::ArrowRight,
-            NamedKey::Home => egui::Key::Home,
-            NamedKey::End => egui::Key::End,
-            NamedKey::PageUp => egui::Key::PageUp,
-            NamedKey::PageDown => egui::Key::PageDown,
-            _ => return Vec::new(),
         };
         vec![egui::Event::Key {
             key,
             physical_key: None,
             pressed: self.down,
             repeat: false,
-            modifiers: egui::Modifiers::NONE,
+            modifiers: self.modifiers,
         }]
     }
+}
+
+/// egui's key for a Ruffle logical key: named keys, letters, digits and function keys.
+fn egui_key(key: &LogicalKey) -> Option<egui::Key> {
+    let named = match key {
+        LogicalKey::Character(c) => return egui::Key::from_name(&c.to_ascii_uppercase().to_string()),
+        LogicalKey::Named(named) => named,
+        _ => return None,
+    };
+    Some(match named {
+        NamedKey::Enter => egui::Key::Enter,
+        NamedKey::Tab => egui::Key::Tab,
+        NamedKey::Backspace => egui::Key::Backspace,
+        NamedKey::Delete => egui::Key::Delete,
+        NamedKey::Escape => egui::Key::Escape,
+        NamedKey::ArrowUp => egui::Key::ArrowUp,
+        NamedKey::ArrowDown => egui::Key::ArrowDown,
+        NamedKey::ArrowLeft => egui::Key::ArrowLeft,
+        NamedKey::ArrowRight => egui::Key::ArrowRight,
+        NamedKey::Home => egui::Key::Home,
+        NamedKey::End => egui::Key::End,
+        NamedKey::PageUp => egui::Key::PageUp,
+        NamedKey::PageDown => egui::Key::PageDown,
+        NamedKey::Insert => egui::Key::Insert,
+        NamedKey::F1 => egui::Key::F1,
+        NamedKey::F2 => egui::Key::F2,
+        NamedKey::F3 => egui::Key::F3,
+        NamedKey::F4 => egui::Key::F4,
+        NamedKey::F5 => egui::Key::F5,
+        NamedKey::F6 => egui::Key::F6,
+        NamedKey::F7 => egui::Key::F7,
+        NamedKey::F8 => egui::Key::F8,
+        NamedKey::F9 => egui::Key::F9,
+        NamedKey::F10 => egui::Key::F10,
+        NamedKey::F11 => egui::Key::F11,
+        NamedKey::F12 => egui::Key::F12,
+        _ => return None,
+    })
 }
 
 /// A key event, read: None for keys neither the game nor the UI uses (volume, back).
@@ -194,6 +224,13 @@ pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Key> {
         },
         typed: typed.filter(|c| down && !c.is_control()),
         control,
+        modifiers: egui::Modifiers {
+            alt: meta.alt_on(),
+            ctrl: meta.ctrl_on(),
+            shift: meta.shift_on(),
+            mac_cmd: false,
+            command: meta.ctrl_on(),
+        },
     })
 }
 
@@ -255,6 +292,19 @@ fn named(code: Keycode) -> Option<(LogicalKey, KeyLocation)> {
         Keycode::AltLeft => (NamedKey::Alt, KeyLocation::Left),
         Keycode::AltRight => (NamedKey::Alt, KeyLocation::Right),
         Keycode::CapsLock => (NamedKey::CapsLock, KeyLocation::Standard),
+        Keycode::Insert => (NamedKey::Insert, KeyLocation::Standard),
+        Keycode::F1 => (NamedKey::F1, KeyLocation::Standard),
+        Keycode::F2 => (NamedKey::F2, KeyLocation::Standard),
+        Keycode::F3 => (NamedKey::F3, KeyLocation::Standard),
+        Keycode::F4 => (NamedKey::F4, KeyLocation::Standard),
+        Keycode::F5 => (NamedKey::F5, KeyLocation::Standard),
+        Keycode::F6 => (NamedKey::F6, KeyLocation::Standard),
+        Keycode::F7 => (NamedKey::F7, KeyLocation::Standard),
+        Keycode::F8 => (NamedKey::F8, KeyLocation::Standard),
+        Keycode::F9 => (NamedKey::F9, KeyLocation::Standard),
+        Keycode::F10 => (NamedKey::F10, KeyLocation::Standard),
+        Keycode::F11 => (NamedKey::F11, KeyLocation::Standard),
+        Keycode::F12 => (NamedKey::F12, KeyLocation::Standard),
         _ => return None,
     };
     Some((LogicalKey::Named(key), location))
