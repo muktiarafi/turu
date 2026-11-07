@@ -20,6 +20,8 @@ const ROW_HEIGHT: f32 = 22.0;
 const CONTROL_HEIGHT: f32 = 26.0;
 const SIDEBAR_WIDTH: f32 = 164.0;
 const DETAILS_WIDTH: f32 = 232.0;
+/// Narrower than this, the window shows its lists in a drop-down instead of the sidebar.
+const NARROW_WIDTH: f32 = 720.0;
 
 /// What a list's bot threads hand back.
 #[derive(Default)]
@@ -215,6 +217,16 @@ impl GrabberWindow {
 
     fn ui(&mut self, ui: &mut Ui) {
         let rect = ui.available_rect_before_wrap();
+        if rect.width() < NARROW_WIDTH {
+            // A phone: the lists in a drop-down above, the list below at the window's width.
+            ui.horizontal(|ui| {
+                widgets::section_label(ui, "LIST");
+                self.list_picker(ui);
+            });
+            ui.add_space(4.0);
+            self.list_ui(ui);
+            return;
+        }
         let gap = 14.0;
         let side = Rect::from_min_max(rect.min, pos2(rect.left() + SIDEBAR_WIDTH, rect.bottom()));
         let main = Rect::from_min_max(pos2(side.right() + gap, rect.top()), rect.max);
@@ -223,6 +235,27 @@ impl GrabberWindow {
         let mut content = ui.new_child(UiBuilder::new().id_salt("main").max_rect(main));
         self.list_ui(&mut content);
         ui.allocate_rect(rect, Sense::hover());
+    }
+
+    /// The lists in a drop-down, grouped as the sidebar (a narrow window has no room for it).
+    fn list_picker(&mut self, ui: &mut Ui) {
+        ui.spacing_mut().interact_size.y = widgets::target(CONTROL_HEIGHT, 40.0);
+        egui::ComboBox::from_id_salt("turu_grabber_list")
+            .selected_text(self.tab.title())
+            .width(ui.available_width())
+            .height(f32::INFINITY)
+            .show_ui(ui, |ui| {
+                let mut group = "";
+                for kind in GrabKind::ALL {
+                    if kind.group() != group {
+                        group = kind.group();
+                        widgets::section_label(ui, group);
+                    }
+                    if ui.selectable_label(self.tab == kind, kind.title()).clicked() {
+                        self.tab = kind;
+                    }
+                }
+            });
     }
 
     /// The grouped sidebar: a heading before each group's first list.
@@ -266,7 +299,14 @@ impl GrabberWindow {
 
         // Grab, search, Multi-select.
         ui.horizontal(|ui| {
-            let grab = widgets::button(ui, "⟳ Grab", Kind::Primary, !busy, vec2(112.0, CONTROL_HEIGHT), "Busy");
+            let grab = widgets::button(
+                ui,
+                "⟳ Grab",
+                Kind::Primary,
+                !busy,
+                vec2(112.0, widgets::target(CONTROL_HEIGHT, 40.0)),
+                "Busy",
+            );
             let grab = if list.kind == GrabKind::MapItems {
                 grab.on_hover_text("Download the current map's SWF and read its map items (kept per map file)")
             } else {
@@ -304,67 +344,42 @@ impl GrabberWindow {
         let right = Rect::from_min_max(pos2(body.right() - details_width, body.top()), body.max);
         {
             let ui = &mut ui.new_child(UiBuilder::new().id_salt("items").max_rect(left));
+            // The heading, the status and Cancel; Unselect / Copy / Export beside them, or on a
+            // row of their own below when the list is narrow (a phone).
+            let narrow = left.width() < 480.0;
             ui.horizontal(|ui| {
                 ui.set_min_height(CONTROL_HEIGHT);
                 widgets::section_label(ui, "ITEMS");
                 widgets::count_badge(ui, list.shown.len());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.add_enabled_ui(!busy, |ui| {
-                        if widgets::small_button(ui, "Export", true)
-                            .on_hover_text("Export everything grabbed for the selected items (or all) to a .txt file")
-                            .clicked()
-                        {
-                            let targets = list.targets();
-                            if targets.is_empty() {
-                                report(&list.shared, "No items to export.", 3);
-                            } else {
-                                let text = grabber::detailed_export_text(list.kind.title(), &targets);
-                                let file = format!("{}.txt", list.kind.title().replace(' ', ""));
-                                report(&list.shared, format!("Exported {} item(s) to file.", targets.len()), 3);
-                                self.export = Some((file, text));
-                            }
-                        }
-                        if widgets::small_button(ui, "Copy", true)
-                            .on_hover_text("Copy the selected items (or all) to the clipboard")
-                            .clicked()
-                        {
-                            let targets = list.targets();
-                            if targets.is_empty() {
-                                report(&list.shared, "No items to copy.", 3);
-                            } else {
-                                ui.ctx().copy_text(grabber::export_text(list.kind.title(), &targets));
-                                report(
-                                    &list.shared,
-                                    format!("Copied {} item(s) to clipboard.", targets.len()),
-                                    3,
-                                );
-                            }
-                        }
-                        if widgets::small_button(ui, "Unselect", true)
-                            .on_hover_text("Unselect all")
-                            .clicked()
-                        {
-                            list.selection.clear();
-                        }
-                    });
+                    if !narrow {
+                        list_actions(ui, list, busy, &mut self.export);
+                    }
                     if busy && widgets::button(ui, "Cancel", Kind::Danger, true, vec2(64.0, 22.0), "").clicked() {
                         list.cancel.store(true, Ordering::Release);
                     }
-                    match &message {
-                        Some(text) => {
-                            ui.label(RichText::new(text).size(11.0).strong().color(MUTED));
-                        }
-                        None if !list.selection.is_empty() => {
-                            ui.label(
-                                RichText::new(format!("{} selected", list.selection.len()))
-                                    .size(11.0)
-                                    .color(MUTED),
-                            );
-                        }
-                        None => {}
+                    let status = match &message {
+                        Some(text) => Some(RichText::new(text).size(11.0).strong().color(MUTED)),
+                        None if !list.selection.is_empty() => Some(
+                            RichText::new(format!("{} selected", list.selection.len()))
+                                .size(11.0)
+                                .color(MUTED),
+                        ),
+                        None => None,
+                    };
+                    if let Some(status) = status {
+                        ui.add(egui::Label::new(status).truncate());
                     }
                 });
             });
+            if narrow {
+                ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        list_actions(ui, list, busy, &mut self.export);
+                    });
+                });
+                ui.add_space(2.0);
+            }
             let height = ui.available_height().max(60.0);
             widgets::list_well(ui, height, |ui| item_list(ui, list));
         }
@@ -578,6 +593,48 @@ fn item_list(ui: &mut Ui, list: &mut List) {
     if let Some(index) = clicked {
         list.selection.click(index, &list.shown, multiple, shift);
     }
+}
+
+/// Unselect / Copy / Export, laid out right to left (Export rightmost).
+fn list_actions(ui: &mut Ui, list: &mut List, busy: bool, export: &mut Option<(String, String)>) {
+    ui.add_enabled_ui(!busy, |ui| {
+        if widgets::small_button(ui, "Export", true)
+            .on_hover_text("Export everything grabbed for the selected items (or all) to a .txt file")
+            .clicked()
+        {
+            let targets = list.targets();
+            if targets.is_empty() {
+                report(&list.shared, "No items to export.", 3);
+            } else {
+                let text = grabber::detailed_export_text(list.kind.title(), &targets);
+                let file = format!("{}.txt", list.kind.title().replace(' ', ""));
+                report(&list.shared, format!("Exported {} item(s) to file.", targets.len()), 3);
+                *export = Some((file, text));
+            }
+        }
+        if widgets::small_button(ui, "Copy", true)
+            .on_hover_text("Copy the selected items (or all) to the clipboard")
+            .clicked()
+        {
+            let targets = list.targets();
+            if targets.is_empty() {
+                report(&list.shared, "No items to copy.", 3);
+            } else {
+                ui.ctx().copy_text(grabber::export_text(list.kind.title(), &targets));
+                report(
+                    &list.shared,
+                    format!("Copied {} item(s) to clipboard.", targets.len()),
+                    3,
+                );
+            }
+        }
+        if widgets::small_button(ui, "Unselect", true)
+            .on_hover_text("Unselect all")
+            .clicked()
+        {
+            list.selection.clear();
+        }
+    });
 }
 
 /// The DETAILS card: the row's fields and values (VibeSkua's property grid).

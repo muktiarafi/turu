@@ -60,7 +60,8 @@ How to build, run and check the Android app. The design and the plan are in
 >
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
 > text; a strip above it shows what they hold); the windows are the desktop's, at the phone's
-> density (no drawer or full-screen sheets yet); OpenGL ES draws only parts of the game (use
+> density: a window too big for the screen opens as a full-screen sheet, and the side bar hides
+> (its logo, or Menu > Hide Side Bar; the `›` tab at the left edge brings it back); OpenGL ES draws only parts of the game (use
 > Vulkan, the default); after a restart a Scheduler playlist started by hand doesn't come back
 > (a script does); phone makers' own battery managers (Xiaomi, Samsung, Huawei) can still kill
 > the service: see their settings.
