@@ -19,11 +19,14 @@ pub struct AAudioAudioBackend {
 type Error = Box<dyn std::error::Error>;
 
 impl AAudioAudioBackend {
+    /// Opens the stream already started, as the desktop's cpal backend does: an autoplaying
+    /// player (`PlayerBuilder::with_autoplay`) starts out playing without calling `play`, so a
+    /// stream left paused here would never start.
     pub fn new() -> Result<Self, Error> {
         let mut backend = Self {
             stream: None,
             mixer: AudioMixer::new(2, 44100),
-            paused: true,
+            paused: false,
         };
         backend.recreate_stream()?;
         Ok(backend)
