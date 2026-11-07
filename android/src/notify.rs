@@ -148,6 +148,21 @@ pub(crate) fn panicked(message: &str) {
     });
 }
 
+/// `TuruService.breadcrumb(category, message)`: a warning that goes with the next crash report.
+pub(crate) fn breadcrumb(category: &str, message: &str) {
+    with_service(|env, class| {
+        let category = env.new_string(category)?;
+        let message = env.new_string(message)?;
+        env.call_static_method(
+            class,
+            jni_str!("breadcrumb"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
+            &[JValue::Object(&category), JValue::Object(&message)],
+        )?;
+        Ok(())
+    });
+}
+
 /// `TuruService.status(title, text, running, paused)`.
 fn send(status: &Status) -> jni::errors::Result<()> {
     let Some((vm, class)) = SERVICE.get() else {

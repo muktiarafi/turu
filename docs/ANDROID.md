@@ -241,10 +241,18 @@ phone, the next step is to find which switch does it and turn it on for that GPU
 
 ## GPU memory
 
-A phone's GPU shares its RAM, and running out of GPU memory aborts Turu: a Redmi 10 (Mali-G52,
-4 GB) crashed logging in, wgpu panicking on a 64-byte buffer that came back invalid
-(`Globals::new`, from `Player::render`). Mugetsu's desktop memory watch reads the GPU's own
-budget, which Android doesn't give, so `android/src/memory.rs` works from the phone's memory:
+A phone's GPU shares its RAM, and running out of GPU memory aborted Turu: a Redmi 10 (Mali-G52,
+4 GB) crashed logging in, and an Infinix HOT 11S (6 GB) 1 to 6 minutes into a session (Sentry
+TURU-ANDROID-3, 0.2.0-beta.2), both with wgpu panicking on a 64-byte buffer that came back invalid
+(`Globals::new`, from `Player::render`). The GPU had refused the buffer and ruffle-aqw's
+out-of-memory handler tolerated that, but wgpu's `create_buffer_init` then `expect`s the invalid
+buffer's mapping, a panic the handler can't catch. ruffle-aqw now creates such buffers with its
+own `utils::create_buffer_init`, which leaves a buffer that failed unfilled (it draws nothing),
+and `TexturePool::get_globals` frees idle textures and retries once when the GPU is out of memory
+for one. ruffle-aqw's GPU warnings (`ruffle_aqw_perf`, at most 100) also go to Sentry as
+breadcrumbs, so a later crash report shows the out-of-memory errors before it. Mugetsu's desktop
+memory watch reads the GPU's own budget, which Android doesn't give, so `android/src/memory.rs`
+works from the phone's memory:
 
 * Idle pooled textures are capped at Mugetsu's low-memory budget, 64 MB, for the whole run
   (`set_memory_pressure(true)`; the "idle texture budget" log line still prints the normal one).

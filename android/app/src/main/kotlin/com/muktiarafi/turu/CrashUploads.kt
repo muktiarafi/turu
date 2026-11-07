@@ -90,6 +90,22 @@ internal object CrashUploads {
         }
     }
 
+    /** A warning from the Rust side (ruffle-aqw's GPU warnings), kept for the next crash report. */
+    fun breadcrumb(category: String, message: String) {
+        if (!started) {
+            return
+        }
+        try {
+            val crumb = Breadcrumb()
+            crumb.category = category
+            crumb.level = SentryLevel.WARNING
+            crumb.message = message
+            Sentry.addBreadcrumb(crumb)
+        } catch (_: Throwable) {
+            // Only a breadcrumb.
+        }
+    }
+
     /** An exit Sentry doesn't catch itself (low memory, a kill), with Turu's report attached. */
     fun exit(reason: String, summary: String, report: File) {
         if (!started) {

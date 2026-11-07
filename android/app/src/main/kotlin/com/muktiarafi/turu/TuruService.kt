@@ -154,6 +154,10 @@ class TuruService : Service() {
         @JvmStatic
         fun panicked(message: String) = CrashUploads.panicked(message)
 
+        /** Called by the Rust side (any thread): a warning that goes with the next crash report. */
+        @JvmStatic
+        fun breadcrumb(category: String, message: String) = CrashUploads.breadcrumb(category, message)
+
         fun start(context: Context) {
             context.startForegroundService(Intent(context, TuruService::class.java))
         }

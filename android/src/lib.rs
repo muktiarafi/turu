@@ -241,18 +241,24 @@ pub(crate) fn init_logging() {
 }
 
 fn init_logging_now() {
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
-            .with_tag("turu")
-            .with_filter(
-                android_logger::FilterBuilder::new()
-                    // The desktop's default (`main.rs`): AQW's trace output and script errors
-                    // stay out.
-                    .parse("warn,turu=info,turu_bot=info,turu_frontend=info,turu_android=info,ruffle_aqw_perf=info,ruffle_core::avm2=off,ruffle_core::stub=off,avm_trace=off,symphonia_bundle_mp3=error")
-                    .build(),
-            ),
-    );
+    static LOGGER: OnceLock<GpuCrumbs> = OnceLock::new();
+    let logger = LOGGER.get_or_init(|| {
+        GpuCrumbs(android_logger::AndroidLogger::new(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Info)
+                .with_tag("turu")
+                .with_filter(
+                    android_logger::FilterBuilder::new()
+                        // The desktop's default (`main.rs`): AQW's trace output and script errors
+                        // stay out.
+                        .parse("warn,turu=info,turu_bot=info,turu_frontend=info,turu_android=info,ruffle_aqw_perf=info,ruffle_core::avm2=off,ruffle_core::stub=off,avm_trace=off,symphonia_bundle_mp3=error")
+                        .build(),
+                ),
+        ))
+    });
+    if log::set_logger(logger).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
     log::info!("Turu {} starting", turu::VERSION);
     std::panic::set_hook(Box::new(|info| {
         let thread = std::thread::current();
@@ -262,6 +268,35 @@ fn init_logging_now() {
         write_panic_report(thread, info, &backtrace);
         notify::panicked(&format!("Panic on {thread}: {info}"));
     }));
+}
+
+/// Logcat, plus ruffle-aqw's drawing warnings (`ruffle_aqw_perf`: the GPU out of memory, an error
+/// tolerated) as breadcrumbs of the next crash report: the panic itself only shows the last step,
+/// not the out-of-memory error that led to it. At most `MAX` per process.
+struct GpuCrumbs(android_logger::AndroidLogger);
+
+impl log::Log for GpuCrumbs {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        self.0.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        const MAX: u32 = 100;
+        static SENT: AtomicU32 = AtomicU32::new(0);
+        if record.level() <= log::Level::Warn
+            && record.target().starts_with("ruffle_aqw_perf")
+            && self.0.enabled(record.metadata())
+            && SENT.fetch_add(1, Ordering::Relaxed) < MAX
+        {
+            notify::breadcrumb("gpu", &record.args().to_string());
+        }
+        self.0.log(record);
+    }
+
+    fn flush(&self) {
+        self.0.flush();
+    }
 }
 
 /// The data folder's `crash/`, once the engine set the data folder (a panic before has only
