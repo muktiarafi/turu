@@ -409,9 +409,13 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   action's outcome); ACCOUNTS, the other online accounts read from the sync files every second,
   with chips (fighting, following me / following X / summoned, busy: script, parking, other
   server), map-room, server and class, and Follow/Stop and Summon/Release, disabled with
-  V5's reasons; the online count, Summon all, Settings and Debug Log. Settings for every
-  client (Enable, passive attack, leech mode, always goto, goto delay, rescue threshold, park
-  location; WHILE FOLLOWING: quest bypasses, custom bypass quest IDs, unlock all quests, fake
+  V5's reasons; the footer: the online count on the left, Send to player (a pop-up: a player
+  name box, Enter or Send, and up to 8 recent names to pick), Summon all, Settings and Debug
+  Log on the right, the count on its own line and the buttons wrapping when the window is
+  narrow. Settings for every
+  client (Enable, passive attack, leech mode, always goto, copy master's walking, goto delay,
+  rescue threshold, park location; WHILE FOLLOWING: quest bypasses, custom bypass quest IDs,
+  follow master's quests, unlock all quests, fake
   level 100, AntiLag while summoned / following, debug logs, auto-save logs) and for this
   account (class type, obey summons), saved on change, V5's descriptions on hover. DEBUG LOG:
   Butler's log lines (time, component, message; repeats counted), colored by level, following

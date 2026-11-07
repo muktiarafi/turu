@@ -325,6 +325,12 @@ impl Paths {
         self.root.join("butler.json")
     }
 
+    /// Butler's recent "Send to player" names (VibeSkua `butlerv5_player_targets.json`),
+    /// shared by every client.
+    pub fn butler_player_targets_file(&self) -> PathBuf {
+        self.root.join("butler_player_targets.json")
+    }
+
     pub fn load_settings(&self) -> Option<AppSettings> {
         let text = fs::read_to_string(self.settings_file()).ok()?;
         serde_json::from_str(&text).ok()

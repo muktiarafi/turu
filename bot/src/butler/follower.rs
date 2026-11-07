@@ -4,11 +4,14 @@
 //! of the master's exact `map-room` from its file. In the master's room it jumps to its cell
 //! and fights (or, in leech mode, waits at Enter). It parks while the master is offline or on
 //! another server, and suspends while a script runs in this client. While it follows it fakes
-//! quests and the level on its own client, and turns AntiLag on, as the options say.
+//! quests and the level on its own client, and turns AntiLag on, as the options say. With
+//! "Copy master's walking" it walks where the master walks inside their cell; with "Follow
+//! master's quests" it registers the master's quests ([`quest_sync`]).
 
 use super::sync::{self, SyncData};
 use super::{
-    ButlerSettings, FollowSource, Level, ParkSpot, antilag, quest_bypass, server_name, trace,
+    ButlerSettings, FollowSource, Level, ParkSpot, antilag, quest_bypass, quest_sync, server_name,
+    trace,
 };
 use crate::api::inventory::{self, Container};
 use crate::api::{NameOrId, combat, map, player, wait};
@@ -26,6 +29,12 @@ const LOOP_MS: u64 = 250;
 const JUMP_INTERVAL: Duration = Duration::from_millis(500);
 /// The shortest time between two joins of the same room.
 const JOIN_INTERVAL: Duration = Duration::from_secs(5);
+/// Copy walking: no walk closer than this to the master (VibeSkua: 10 px, squared 100).
+const WALK_NEAR: f64 = 10.0;
+/// Copy walking: a master that moved less than this keeps the last walk target.
+const WALK_TARGET_MOVE: i64 = 4;
+/// Copy walking: the same target is walked to again after this.
+const WALK_REPEAT: Duration = Duration::from_millis(1500);
 const PARK_MAP: &str = "whitemap-100000";
 
 /// How a follow is asked to end.
@@ -162,6 +171,14 @@ impl Follow {
     }
 }
 
+/// The master's place in this room (VibeSkua `PlayerInfo`, from `world.uoTree`).
+struct MasterPosition {
+    cell: String,
+    pad: String,
+    /// Its position, when the game has it in this room (`None`: from its file).
+    at: Option<(f64, f64)>,
+}
+
 /// The follower thread's state (VibeSkua `Follower`'s fields).
 struct Follower<'a> {
     bot: &'a Arc<Bot>,
@@ -202,6 +219,10 @@ struct Follower<'a> {
     anti_lag: Option<Option<antilag::Snapshot>>,
     /// (username, `house-<CharID>`) of this account's own house.
     own_house: Option<(String, String)>,
+    /// Copy walking: the last walk's target and when it was sent.
+    last_walk: Option<((i64, i64), Instant)>,
+    /// The quests registered for the master ("Follow master's quests").
+    quests: quest_sync::Mirror,
 }
 
 impl<'a> Follower<'a> {
@@ -236,6 +257,8 @@ impl<'a> Follower<'a> {
             last_pre_apply_map: None,
             anti_lag: None,
             own_house: None,
+            last_walk: None,
+            quests: quest_sync::Mirror::default(),
         }
     }
 
@@ -260,6 +283,22 @@ impl<'a> Follower<'a> {
             FollowSource::Ordered => "summoned",
         };
         log(bot, format!("Following {} ({source}).", self.master));
+        let s = self.settings();
+        debug(
+            bot,
+            format!(
+                "options in THIS client: passiveAttack={} leech={} park={:?} gotoDelay={}ms alwaysGoto={} copyWalk={} questSync={} rescue={} questBypass={}",
+                s.passive_attack,
+                s.leech_mode,
+                s.park,
+                s.goto_delay,
+                s.always_goto,
+                s.copy_walk,
+                s.quest_sync,
+                s.rescue_threshold,
+                s.quest_bypass
+            ),
+        );
         self.was_logged_in = player::logged_in(bot).unwrap_or(false);
         self.arm(false);
         while !self.stopping() {
@@ -442,6 +481,9 @@ impl<'a> Follower<'a> {
         let bot = self.bot;
         if !player::logged_in(bot)? {
             self.was_logged_in = false;
+            // A logout clears the client's registrations: apply the master's list again
+            // after the relogin.
+            self.quests.forget();
             return Ok(1000);
         }
         if !player::alive(bot)? {
@@ -459,6 +501,7 @@ impl<'a> Follower<'a> {
         if bot.scripts.is_running() {
             if !self.suspended {
                 self.suspended = true;
+                self.clear_synced_quests();
                 self.stop_skills();
                 self.stop_attacking(true)?;
                 log(
@@ -483,6 +526,9 @@ impl<'a> Follower<'a> {
                 bot,
                 format!("Script stopped - following {} again.", self.master),
             );
+        }
+        if !self.settings().quest_sync {
+            self.clear_synced_quests();
         }
         if self.shared.parked() {
             self.force_aggro_off();
@@ -512,6 +558,7 @@ impl<'a> Follower<'a> {
             // One bad read can be a file caught mid-write: three in a row is offline.
             self.bad_reads += 1;
             if self.bad_reads >= 3 {
+                self.clear_synced_quests();
                 self.park_once(&format!(
                     "{} looks offline. Parked, waiting for them to return.",
                     self.master
@@ -536,11 +583,15 @@ impl<'a> Follower<'a> {
 
         let my_server = server_name(bot);
         if !m.server.is_empty() && !m.server.eq_ignore_ascii_case(&my_server) {
+            self.clear_synced_quests();
             self.park_once(&format!(
                 "{} is on another server ({}, this one {my_server}). Parked.",
                 self.master, m.server
             ));
             return Ok(2000);
+        }
+        if self.settings().quest_sync {
+            self.sync_quests();
         }
         if let Some(blocked) = &self.blocked_map {
             if blocked.eq_ignore_ascii_case(&m.map) {
@@ -612,17 +663,33 @@ impl<'a> Follower<'a> {
             }
             return Ok(LOOP_MS);
         }
+        // Only the cell matters: walking in a cell changes the pad, and chasing it stutters.
+        let MasterPosition { cell, pad, at } = self.master_position(&m)?;
+        // Copy walking needs the master's position in this room, and the same cell.
+        let copy_walk = at
+            .filter(|_| settings.copy_walk)
+            .map(|at| player::cell(bot).map(|c| c.eq_ignore_ascii_case(&cell).then_some(at)))
+            .transpose()?
+            .flatten();
         // Goto is resolved by the server and always lands on the master: it fixes a butler
-        // left in the wrong cell (after a death) whose own reads look right.
-        if settings.always_goto && !m.off_goto && !self.shared.goto_off.load(Ordering::Acquire) {
+        // left in the wrong cell (after a death) whose own reads look right. Copy walking
+        // takes over from it while it can walk.
+        if settings.always_goto
+            && copy_walk.is_none()
+            && !m.off_goto
+            && !self.shared.goto_off.load(Ordering::Acquire)
+        {
             self.try_goto(&settings)?;
         }
-        // Only the cell matters: walking in a cell changes the pad, and chasing it stutters.
-        let (cell, pad) = self.master_position(&m)?;
         if !player::cell(bot)?.eq_ignore_ascii_case(&cell) && self.jump_due() {
             debug(bot, format!("jump to {cell}/{pad}"));
             self.last_jump = Some(Instant::now());
             self.jump(&cell, &pad)?;
+        }
+        if let Some(at) = copy_walk {
+            self.copy_master_walk(at, &settings);
+        } else if !settings.copy_walk {
+            self.last_walk = None;
         }
         self.fight(&m, &settings)?;
         Ok(LOOP_MS)
@@ -854,8 +921,9 @@ impl<'a> Follower<'a> {
         map::jump(self.bot, cell, pad, false, false)
     }
 
-    /// The master's cell and pad: from the game when it's in this room, else its file.
-    fn master_position(&self, m: &SyncData) -> BotResult<(String, String)> {
+    /// The master's cell, pad and position: from the game when it's in this room, else the
+    /// cell and pad from its file.
+    fn master_position(&self, m: &SyncData) -> BotResult<MasterPosition> {
         let info: Option<Value> = self
             .bot
             .flash
@@ -867,13 +935,128 @@ impl<'a> Follower<'a> {
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned)
         };
-        match field("strFrame") {
-            Some(cell) => {
-                let pad = field("strPad").unwrap_or_else(|| m.pad.clone());
-                Ok((cell, pad))
+        let number = |key: &str| {
+            info.as_ref().and_then(|i| i.get(key)).and_then(|v| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
+        };
+        Ok(match field("strFrame") {
+            Some(cell) => MasterPosition {
+                cell,
+                pad: field("strPad").unwrap_or_else(|| m.pad.clone()),
+                at: Some((number("tx").unwrap_or(0.0), number("ty").unwrap_or(0.0))),
+            },
+            None => MasterPosition {
+                cell: m.cell.clone(),
+                pad: m.pad.clone(),
+                at: None,
+            },
+        })
+    }
+
+    /// Walks to the master's position in the same cell without waiting for the walk to end
+    /// (VibeSkua `CopyMasterWalk`); cell and room changes stay with goto, jumps and joins.
+    fn copy_master_walk(&mut self, (x, y): (f64, f64), settings: &ButlerSettings) {
+        let bot = self.bot;
+        let target = (x.round() as i64, y.round() as i64);
+        let here = player::x(bot).and_then(|px| Ok((px, player::y(bot)?)));
+        let (px, py) = match here {
+            Ok(here) => here,
+            Err(e) => {
+                debug(bot, format!("copy walk failed: {e}"));
+                return;
             }
-            None => Ok((m.cell.clone(), m.pad.clone())),
+        };
+        let (dx, dy) = (target.0 as f64 - px, target.1 as f64 - py);
+        // Already together: no small correcting walks.
+        if dx * dx + dy * dy <= WALK_NEAR * WALK_NEAR {
+            self.last_walk = None;
+            return;
         }
+        let (changed, elapsed) = match self.last_walk {
+            None => (true, None),
+            Some(((lx, ly), at)) => (
+                (target.0 - lx).abs() >= WALK_TARGET_MOVE
+                    || (target.1 - ly).abs() >= WALK_TARGET_MOVE,
+                Some(at.elapsed()),
+            ),
+        };
+        if !changed && elapsed.is_some_and(|e| e < WALK_REPEAT) {
+            return;
+        }
+        // Goto delay throttles the walks too, from the loop's tick to 2 s.
+        let throttle = Duration::from_millis(settings.goto_delay.clamp(LOOP_MS, 2000));
+        if elapsed.is_some_and(|e| e < throttle) {
+            return;
+        }
+        let speed = player::walk_speed(bot)
+            .ok()
+            .filter(|&s| s > 0)
+            .map_or(8, |s| s.clamp(1, 20));
+        match bot.flash.call(
+            "walkTo",
+            vec![target.0.into(), target.1.into(), speed.into()],
+        ) {
+            Ok(_) => self.last_walk = Some((target, Instant::now())),
+            Err(e) => debug(bot, format!("copy walk failed: {e}")),
+        }
+    }
+
+    /// Registers the master's quests and drops the ones it no longer has, when its list
+    /// changed (VibeSkua `SyncRegisteredQuests`); checked at most once a second.
+    fn sync_quests(&mut self) {
+        let bot = self.bot;
+        if !self.quests.check_due() {
+            return;
+        }
+        let dir = &bot.butler.dir;
+        let Some(time) = quest_sync::file_time(dir, &self.master) else {
+            return;
+        };
+        if !self.quests.is_new(time) {
+            return;
+        }
+        let Some(requested) = quest_sync::read(dir, &self.master) else {
+            return;
+        };
+        let plan = self
+            .quests
+            .plan(&requested, &bot.quests.registered(), Some(time));
+        if !plan.unregister.is_empty() {
+            bot.quests.unregister(&plan.unregister);
+        }
+        if !plan.register.is_empty() {
+            bot.quests.register(bot, &plan.register);
+        }
+        trace(
+            bot,
+            "QuestSync",
+            Level::Info,
+            format!(
+                "{}: added/updated {}, removed {}, tracking {} active/registered quest(s)",
+                self.master,
+                plan.register.len(),
+                plan.unregister.len(),
+                requested.len()
+            ),
+        );
+    }
+
+    /// Unregisters only the quests this follow registered (VibeSkua
+    /// `ClearSyncedQuestRegistrations`).
+    fn clear_synced_quests(&mut self) {
+        let ids = self.quests.take();
+        if ids.is_empty() {
+            return;
+        }
+        self.bot.quests.unregister(&ids);
+        trace(
+            self.bot,
+            "QuestSync",
+            Level::Info,
+            format!("removed {} mirrored quest registration(s)", ids.len()),
+        );
     }
 
     /// Goto the master, at most every Goto delay; whether one was sent.
@@ -1142,6 +1325,7 @@ impl<'a> Follower<'a> {
     fn finish(&mut self) {
         let bot = self.bot;
         let mode = self.shared.mode();
+        self.clear_synced_quests();
         self.stop_skills();
         if mode != Mode::Abort {
             let _ = self.stop_attacking(true);

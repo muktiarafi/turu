@@ -207,12 +207,22 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   debug log (`butler/debug_log.rs`, also to the debug log as before), shown in the window with
   Copy, Save (`butler_logs/`), Clear and Open folder, optionally auto-saved. A closing tab and
   a quitting app (window, `--exit-with-parent`, `--exit-on-script-stop`, the graphics restart)
-  write the account offline at once (`butler::close`). Without a window a follower works as it
+  write the account offline at once (`butler::close`). Send to player
+  (`butler::send_all_to_player`, V5's Send All): the client `/goto`s an outside player itself
+  and puts a one-shot goto for every available account (the Summon all filter) in its sync file;
+  a recipient obeys it once, within 60 s of its write, unless Obey Summons is off, a script runs
+  or the sender is on another server; the names go in `butler_player_targets.json` (20 recent).
+  Copy master's walking: in the master's room and cell the follower `walkTo`s the master's
+  position (V5's 10 px dead zone, Goto delay throttle), Always goto only when the position is
+  unknown. Follow master's quests (`butler/quest_sync.rs`): a master writes its active and
+  registered quests and rewards to `butler/<username>.quests` every 2 s; a butler registers
+  them (`bot.quests`), drops only its own registrations when the master does, and on a script
+  start, park, setting off or the follow's end; a relogin applies the list again. Without a window a follower works as it
   is (the suspend question stays unanswered: it stays suspended), and a master uses the control
   API's `/butler` routes; Butler only sees clients sharing its data folder. Its tests run a master and a butler
   against two fake games. The window (`docs/UI.md`) lists the other online accounts with
   Follow and Summon, and edits the options; following stops the tab's Auto Attack/Hunt. Not built:
-  quest cloning (V5 copies the master's quest slots). The quest fakes, the level fake, AntiLag
+  quest cloning (V5 copies the master's quest slots; Follow master's quests is built). The quest fakes, the level fake, AntiLag
   and the question are unverified in game.
 - **Cosmetics** (Plugins > Cosmetics, `bot/src/cosmetics/`, VibeSkua's Cosmetics plugin): shows
   any item on your avatar without owning it, client side only (`objData.eqp`, `loadMovieAtES`,

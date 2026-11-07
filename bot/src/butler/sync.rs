@@ -6,6 +6,7 @@
 //! seconds, rewritten every few seconds) is recent. VibeSkua checks the writer's PID instead,
 //! which can't tell apart tabs of one process.
 
+use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,6 +14,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// How old a file's `beat` may be before the account counts as offline.
 pub const STALE_AFTER: Duration = Duration::from_secs(15);
+/// How long a Send All goto may be obeyed after it was published (VibeSkua: 60 s).
+pub const SEND_ALL_EXPIRY: Duration = Duration::from_secs(60);
+/// How many Send All commands a client remembers having obeyed (VibeSkua: 64).
+const SEND_ALL_SEEN: usize = 64;
 
 /// One account's published state (VibeSkua `SyncData`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +49,14 @@ pub struct SyncData {
     pub parking: bool,
     /// Turu: when the file was written (Unix seconds).
     pub beat: u64,
+    /// The external player of the latest one-shot Send All goto.
+    pub send_all_target: String,
+    /// The Send All's unique ID, so each recipient obeys it once.
+    pub send_all_command: String,
+    /// The accounts the Send All was addressed to.
+    pub send_all_recipients: Vec<String>,
+    /// When the Send All was published (Unix milliseconds; VibeSkua: UTC ticks).
+    pub send_all_issued: u64,
 }
 
 impl Default for SyncData {
@@ -67,6 +80,10 @@ impl Default for SyncData {
             declined: String::new(),
             parking: false,
             beat: 0,
+            send_all_target: String::new(),
+            send_all_command: String::new(),
+            send_all_recipients: Vec::new(),
+            send_all_issued: 0,
         }
     }
 }
@@ -127,6 +144,10 @@ impl SyncData {
             ("declined", self.declined.clone()),
             ("parking", flag(self.parking).into()),
             ("beat", self.beat.to_string()),
+            ("sendalltarget", self.send_all_target.clone()),
+            ("sendallcommand", self.send_all_command.clone()),
+            ("sendallrecipients", self.send_all_recipients.join(",")),
+            ("sendallissued", self.send_all_issued.to_string()),
         ];
         let mut text = String::new();
         for (key, value) in lines {
@@ -157,24 +178,123 @@ impl SyncData {
                 "loggedin" => data.logged_in = value == "1",
                 "attacking" => data.attacking = value == "1",
                 "offgoto" => data.off_goto = value == "1",
-                "followers" => {
-                    data.followers = value
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|f| !f.is_empty())
-                        .map(str::to_owned)
-                        .collect();
-                }
+                "followers" => data.followers = name_list(value),
                 "following" => data.following = value.into(),
                 "script" => data.script_on = value == "1",
                 "scriptname" => data.script_name = value.into(),
                 "declined" => data.declined = value.into(),
                 "parking" => data.parking = value == "1",
                 "beat" => data.beat = value.parse().unwrap_or(0),
+                "sendalltarget" => data.send_all_target = value.into(),
+                "sendallcommand" => data.send_all_command = value.into(),
+                "sendallrecipients" => data.send_all_recipients = name_list(value),
+                "sendallissued" => data.send_all_issued = value.parse().unwrap_or(0),
                 _ => {}
             }
         }
         (!data.username.is_empty()).then_some(data)
+    }
+
+    /// The key of the Send All goto this file addresses to `me`, while it's fresh (VibeSkua
+    /// `ProcessSendAllGotoCommands`' checks): a command, a target, an issue time no more than
+    /// [`SEND_ALL_EXPIRY`] before `now_ms` (and not after it), and `me` among the recipients.
+    pub fn send_all_for(&self, me: &str, now_ms: u64) -> Option<String> {
+        if self.send_all_command.trim().is_empty()
+            || self.send_all_target.trim().is_empty()
+            || self.send_all_issued == 0
+            || !self
+                .send_all_recipients
+                .iter()
+                .any(|r| r.eq_ignore_ascii_case(me))
+        {
+            return None;
+        }
+        let age = now_ms.checked_sub(self.send_all_issued)?;
+        (age <= SEND_ALL_EXPIRY.as_millis() as u64)
+            .then(|| format!("{}:{}", self.username, self.send_all_command))
+    }
+}
+
+fn name_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The Send All commands a client already obeyed (or skipped): the last [`SEND_ALL_SEEN`].
+#[derive(Debug, Default)]
+pub struct SendAllSeen {
+    keys: HashSet<String>,
+    order: VecDeque<String>,
+}
+
+impl SendAllSeen {
+    /// True the first time `key` is seen: the command is acted on once.
+    pub fn first_time(&mut self, key: &str) -> bool {
+        let key = key.to_lowercase();
+        if !self.keys.insert(key.clone()) {
+            return false;
+        }
+        self.order.push_back(key);
+        while self.order.len() > SEND_ALL_SEEN {
+            if let Some(old) = self.order.pop_front() {
+                self.keys.remove(&old);
+            }
+        }
+        true
+    }
+}
+
+/// Why a recipient doesn't obey a fresh Send All goto (VibeSkua's skip rules): a script runs
+/// in it, or the sender is on another server. `None`: go.
+pub fn send_all_skip(
+    sender: &SyncData,
+    script_running: bool,
+    my_server: &str,
+) -> Option<&'static str> {
+    if script_running {
+        Some("a script is running")
+    } else if !sender.server.is_empty()
+        && !my_server.is_empty()
+        && !sender.server.eq_ignore_ascii_case(my_server)
+    {
+        Some("server mismatch")
+    } else {
+        None
+    }
+}
+
+/// Why `account` can't be summoned or sent by `me` now (VibeSkua's `Summon all` and `Send All`
+/// filter); `None` when it can. `followers` are the accounts `me` summons.
+pub fn unavailable(
+    account: &SyncData,
+    me: &str,
+    my_server: &str,
+    followers: &[String],
+) -> Option<&'static str> {
+    let summoned = followers
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case(&account.username));
+    if account.script_on {
+        Some("a script is running")
+    } else if account.following.eq_ignore_ascii_case(me) && !summoned {
+        Some("already follows me")
+    } else if !account.following.is_empty() && !account.following.eq_ignore_ascii_case(me) {
+        Some("follows another account")
+    } else if !account.followers.is_empty() {
+        Some("is a master")
+    } else if !account.server.is_empty()
+        && !my_server.is_empty()
+        && !account.server.eq_ignore_ascii_case(my_server)
+    {
+        Some("on another server")
+    } else if account.parking {
+        Some("parking")
+    } else {
+        None
     }
 }
 
@@ -182,6 +302,13 @@ pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
+}
+
+/// Unix milliseconds (Send All's issue time).
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// The folder of sync files (VibeSkua `%APPDATA%\Skua\character_locations`).
