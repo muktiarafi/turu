@@ -3,6 +3,7 @@
 //! Gear, and a ⋯ menu), and ACTIONS that go to the checked rows, or to every row when none is
 //! checked, through their control API.
 
+use super::army_travel::{self, Travel};
 use super::client_logs::ClientLogs;
 use super::files::{self, Pending};
 use super::gear::GearWindow;
@@ -255,9 +256,8 @@ pub struct ArmyWindow {
     groups_read: Option<Instant>,
     gear: Vec<GearWindow>,
     logs: Vec<ClientLogs>,
-    map: String,
-    cell: String,
-    player: String,
+    /// Map Travel, the player picker and Change Server (VibeSkua's travel menu items).
+    travel: Travel,
     quest: String,
     reward: String,
     misc: [bool; MISC_OPTIONS.len()],
@@ -277,9 +277,7 @@ impl Default for ArmyWindow {
             groups_read: None,
             gear: Vec::new(),
             logs: Vec::new(),
-            map: String::new(),
-            cell: String::new(),
-            player: String::new(),
+            travel: Travel::default(),
             quest: String::new(),
             reward: String::new(),
             misc: [false; MISC_OPTIONS.len()],
@@ -306,6 +304,17 @@ impl ArmyWindow {
         for window in &mut self.logs {
             window.show(ctx);
         }
+        // The clients' visited maps are recorded while Turu runs, as VibeSkua's.
+        if crate::platform::platform().has_army() {
+            let rows = Self::rows();
+            self.travel.poll(&travel_peers(&rows));
+            let targets = self.targets(&rows).len();
+            let current = self.current_key(&rows);
+            self.travel.show(ctx, current.as_deref(), targets);
+            for command in std::mem::take(&mut self.travel.commands) {
+                self.send(&rows, command);
+            }
+        }
         if !*open {
             return;
         }
@@ -313,6 +322,16 @@ impl ArmyWindow {
             .open(open)
             .show(ctx, |ui| self.ui(ui));
         ctx.request_repaint_after(Duration::from_millis(500));
+    }
+
+    /// The client "Use Current Client Location" reads (VibeSkua: the selected tab): the only
+    /// checked row, else the active tab.
+    fn current_key(&self, rows: &[Row]) -> Option<String> {
+        if self.checked.len() == 1 {
+            return self.checked.iter().next().cloned();
+        }
+        let active = crate::turu::active_tab();
+        rows.iter().find(|r| r.tab == Some(active)).map(|r| r.key.clone())
     }
 
     /// Every tab, then every launched client.
@@ -618,42 +637,27 @@ impl ArmyWindow {
             });
             CollapsingHeader::new("Travel")
                 .id_salt("turu_army_travel")
+                .default_open(true)
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        widgets::text_box(ui, &mut self.map, "Map, e.g. battleon-1e9", 170.0);
-                        widgets::text_box(ui, &mut self.cell, "Cell[, pad]", 110.0);
-                        let map = self.map.trim().to_owned();
-                        if widgets::button(
-                            ui,
-                            "Join",
-                            Kind::Normal,
-                            any && !map.is_empty(),
-                            vec2(0.0, 26.0),
-                            "Enter a map",
-                        )
-                        .clicked()
+                    ui.horizontal_wrapped(|ui| {
+                        let size = vec2(0.0, widgets::target(26.0, 40.0));
+                        if widgets::button(ui, "Map Travel…", Kind::Normal, true, size, "")
+                            .on_hover_text("Recent destinations and saved map presets")
+                            .clicked()
                         {
-                            let (cell, pad) = match self.cell.split_once(',') {
-                                Some((cell, pad)) => (cell.trim().to_owned(), pad.trim().to_owned()),
-                                None => (self.cell.trim().to_owned(), String::new()),
-                            };
-                            self.send(rows, Command::JumpMap { map, cell, pad });
+                            self.travel.open = true;
                         }
-                    });
-                    ui.horizontal(|ui| {
-                        widgets::text_box(ui, &mut self.player, "Player name", 170.0);
-                        let name = self.player.trim().to_owned();
-                        if widgets::button(
-                            ui,
-                            "Go to player",
-                            Kind::Normal,
-                            any && !name.is_empty(),
-                            vec2(0.0, 26.0),
-                            "Enter a name",
-                        )
-                        .clicked()
+                        if widgets::button(ui, "Jump to Player…", Kind::Normal, any, size, "")
+                            .on_hover_text("Pick a player from the open clients, or type a name")
+                            .clicked()
                         {
-                            self.send(rows, Command::JumpPlayer(name));
+                            self.travel.open_player_picker(&travel_peers(rows));
+                        }
+                        if widgets::button(ui, "Change Server…", Kind::Normal, any, size, "")
+                            .on_hover_text("Relog the clients on another server")
+                            .clicked()
+                        {
+                            self.travel.open_server_picker();
                         }
                     });
                 });
@@ -858,6 +862,28 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
         }
     });
     action
+}
+
+/// The rows as Map Travel needs them: tabs read their own location, clients come from the hub.
+fn travel_peers(rows: &[Row]) -> Vec<army_travel::Peer> {
+    rows.iter()
+        .filter(|r| !r.ended)
+        .map(|r| {
+            let (bot, player) = match &r.peer {
+                Peer::Tab(bot) => {
+                    let name = bot.state.lock().username.clone().filter(|n| !n.trim().is_empty());
+                    (Some(bot.clone()), name.or_else(|| Some(r.username.clone())))
+                }
+                Peer::Client { .. } => (None, Some(r.username.clone())),
+            };
+            army_travel::Peer {
+                key: r.key.clone(),
+                bot,
+                username: r.username.clone(),
+                player: player.filter(|p| r.logged_in && !p.trim().is_empty()),
+            }
+        })
+        .collect()
 }
 
 /// "Alt1: Equip Legion Revenant: done".
