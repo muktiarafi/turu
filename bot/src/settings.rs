@@ -32,6 +32,8 @@ pub struct AppSettings {
     pub check_client_prereleases: bool,
     /// Tools > Junk Items' "Skip sell warning" (VibeSkua `JunkSkipSellWarning`).
     pub junk_skip_sell_warning: bool,
+    /// Tools > Junk Items' quantity goals, item ID to quantity (VibeSkua `InventoryGoals`).
+    pub inventory_goals: std::collections::BTreeMap<i64, i64>,
     /// Fast Map Jump jumps as soon as a cell or pad is picked (VibeSkua
     /// `AutoJumpOnPositionChange`, Application options, off by default); off, Jump does it.
     pub auto_jump_on_position_change: bool,
@@ -87,6 +89,7 @@ impl Default for AppSettings {
             check_client_updates: true,
             check_client_prereleases: false,
             junk_skip_sell_warning: false,
+            inventory_goals: Default::default(),
             auto_jump_on_position_change: false,
             discord_webhook_url: String::new(),
             webhook_notify_started: true,

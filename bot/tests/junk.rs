@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, Weak};
-use turu_bot::junk::{self, Entry, JunkItem};
+use turu_bot::junk::{self, AcFilter, Entry, Filter, Highlight, JunkItem};
 use turu_bot::{Bot, FlashArg, FlashHost, HostError, api};
 
 fn junk_item(id: i64, name: &str, category: &str) -> JunkItem {
@@ -83,6 +83,7 @@ struct FakeGame {
     bot: OnceLock<Weak<Bot>>,
     sent: Mutex<Vec<String>>,
     inventory: Mutex<Vec<Value>>,
+    bank: Mutex<Vec<Value>>,
     favourites: Vec<i64>,
 }
 
@@ -95,16 +96,20 @@ impl FlashHost for FakeGame {
         };
         let answer = match (name, arg(0).as_str()) {
             ("isLoggedIn", _) => "true".into(),
-            ("isFavoriteItem", id) => self.favourites.iter().any(|f| f.to_string() == id).to_string(),
+            ("isFavoriteItem", id) => self
+                .favourites
+                .iter()
+                .any(|f| f.to_string() == id)
+                .to_string(),
             ("getGameObject", "world.myAvatar.dataLeaf.intState") => "1".into(),
             ("getGameObject", "world.curRoom") => "42".into(),
             ("getGameObject", "world.lock.sellItem") => json!({ "ts": 0, "cd": 0 }).to_string(),
-            ("getGameObject", "world.myAvatar.items") => Value::Array(self.inventory.lock().clone()).to_string(),
-            ("getGameObject", "world.bankinfo.items") => json!([
-                { "ItemID": 4, "CharItemID": 400, "sName": "Banked Junk", "iQty": 1, "sType": "Item" },
-                { "ItemID": 1, "CharItemID": 100, "sName": "Dragon Scale", "iQty": 5, "sType": "Item" }
-            ])
-            .to_string(),
+            ("getGameObject", "world.myAvatar.items") => {
+                Value::Array(self.inventory.lock().clone()).to_string()
+            }
+            ("getGameObject", "world.bankinfo.items") => {
+                Value::Array(self.bank.lock().clone()).to_string()
+            }
             ("callGameFunction", "sfc.sendString") => {
                 let packet = arg(1);
                 // %xt%zm%sellItem%room%id%qty%charItemId%
@@ -138,7 +143,13 @@ fn setup(favourites: Vec<i64>) -> (Arc<Bot>, Arc<FakeGame>) {
         json!({ "ItemID": 3, "CharItemID": 300, "sName": "Old Note", "iQty": 3, "sType": "Quest Item" }),
         json!({ "ItemID": 5, "CharItemID": 500, "sName": "Keeper", "iQty": 1, "sType": "Item" }),
     ];
+    *game.bank.lock() = vec![
+        json!({ "ItemID": 4, "CharItemID": 400, "sName": "Banked Junk", "iQty": 1, "sType": "Item" }),
+        json!({ "ItemID": 1, "CharItemID": 100, "sName": "Dragon Scale", "iQty": 5, "sType": "Item" }),
+    ];
     game.bot.set(Arc::downgrade(&bot)).unwrap();
+    // Goals another test saved don't count.
+    bot.settings.write().inventory_goals.clear();
     bot.set_host(Some(game.clone()));
     (bot, game)
 }
@@ -189,24 +200,206 @@ fn lists_inventory_and_bank_items() {
     .unwrap();
     bot.state.lock().bank_loaded = true;
     let entries = junk::entries(&bot).unwrap();
-    let entry = |id: i64, name: &str, category: &str, junk: bool| Entry {
-        id,
-        name: name.into(),
-        category: category.into(),
-        junk,
-    };
-    // By name, the first of each ID, `sType` as VibeSkua's `ItemCategory` name.
+    let entry =
+        |id: i64, name: &str, category: &str, junk: bool, inventory: i64, bank: i64| Entry {
+            id,
+            name: name.into(),
+            category: category.into(),
+            junk,
+            inventory_quantity: inventory,
+            bank_quantity: bank,
+            ..Default::default()
+        };
+    // By name, one per ID, `sType` as VibeSkua's `ItemCategory` name, quantities from both.
     assert_eq!(
         entries,
         [
-            entry(4, "Banked Junk", "Item", true),
-            entry(1, "Dragon Scale", "Item", false),
-            entry(2, "Junk Sword", "Sword", false),
-            entry(5, "Keeper", "Item", false),
+            entry(4, "Banked Junk", "Item", true, 0, 1),
+            entry(1, "Dragon Scale", "Item", false, 5, 5),
+            Entry {
+                equipped: true,
+                ..entry(2, "Junk Sword", "Sword", false, 1, 0)
+            },
+            entry(5, "Keeper", "Item", false, 1, 0),
             // C#'s `Enum.TryParse("Quest Item")` fails.
-            entry(3, "Old Note", "Unknown", false),
+            entry(3, "Old Note", "Unknown", false, 3, 0),
         ]
     );
     // The bank was loaded already: no `loadBank`.
     assert!(game.sent.lock().is_empty());
+}
+
+#[test]
+fn reads_equipped_favourites_and_stacks() {
+    let _turn = LIST.lock().unwrap_or_else(|e| e.into_inner());
+    let (bot, game) = setup(vec![1, 6]);
+    junk::save(&bot.paths.junk_items_file(), &[]).unwrap();
+    bot.state.lock().bank_loaded = true;
+    game.inventory.lock().extend([
+        json!({ "ItemID": 6, "CharItemID": 600, "sName": "Arrows", "iQty": 7, "iStk": 10, "sType": "Item", "bCoins": 1 }),
+        json!({ "ItemID": 6, "CharItemID": 601, "sName": "Arrows", "iQty": 9, "iStk": 10, "sType": "Item", "bEquip": 1 }),
+        json!({ "ItemID": 7, "CharItemID": 700, "sName": "Gems", "iQty": 7, "iStk": 10, "sType": "Item" }),
+        json!({ "ItemID": 7, "CharItemID": 701, "sName": "Gems", "iQty": 7, "iStk": 10, "sType": "Item" }),
+        json!({ "ItemID": 8, "CharItemID": 800, "sName": "Ore", "iQty": 8, "iStk": 10, "sType": "Item" }),
+        json!({ "ItemID": 9, "CharItemID": 900, "sName": "Stone", "iQty": 8, "iStk": 0, "sType": "Item" }),
+    ]);
+    game.bank.lock().push(
+        json!({ "ItemID": 6, "CharItemID": 602, "sName": "Arrows", "iQty": 2, "iStk": 20, "sType": "Item" }),
+    );
+    let entries = junk::entries(&bot).unwrap();
+    let find = |id: i64| entries.iter().find(|e| e.id == id).unwrap().clone();
+
+    // Two stacks, 7/10 and 9/10, the second one equipped: near cap and equipped come from
+    // either stack, the quantities add up, the bank's bigger stack size is the max.
+    let arrows = find(6);
+    assert!(arrows.equipped && arrows.near_stack_limit && arrows.favorite && arrows.ac);
+    assert_eq!(
+        (
+            arrows.inventory_quantity,
+            arrows.bank_quantity,
+            arrows.max_stack
+        ),
+        (16, 2, 20)
+    );
+    // 7/10 and 7/10: 14 of 20 together, but neither stack is 80% full.
+    let gems = find(7);
+    assert!(!gems.near_stack_limit && !gems.equipped && !gems.favorite && !gems.ac);
+    assert_eq!((gems.inventory_quantity, gems.max_stack), (14, 10));
+    // 8 of 10 is exactly 80%; a stack size of 0 is never near it.
+    assert!(find(8).near_stack_limit);
+    assert!(!find(9).near_stack_limit);
+    // Favourites are asked from the game (`isFavoriteItem`).
+    assert!(find(1).favorite);
+    assert!(!find(5).favorite);
+}
+
+#[test]
+fn saves_quantity_goals() {
+    let _turn = LIST.lock().unwrap_or_else(|e| e.into_inner());
+    let (bot, _game) = setup(Vec::new());
+    junk::save(&bot.paths.junk_items_file(), &[]).unwrap();
+    bot.state.lock().bank_loaded = true;
+
+    // Set goal: a whole number above 0.
+    assert_eq!(junk::parse_goal(" 2000 "), Some(2000));
+    assert_eq!(junk::parse_goal("0"), None);
+    assert_eq!(junk::parse_goal("-3"), None);
+    assert_eq!(junk::parse_goal("1.5"), None);
+    assert_eq!(junk::parse_goal(""), None);
+
+    junk::set_goals(&bot, &[1, 3], Some(2000));
+    // Saved as `inventoryGoals` in settings.json.
+    let saved: Value =
+        serde_json::from_str(&std::fs::read_to_string(bot.paths.settings_file()).unwrap()).unwrap();
+    assert_eq!(saved["inventoryGoals"], json!({ "1": 2000, "3": 2000 }));
+    let entries = junk::entries(&bot).unwrap();
+    let scale = entries.iter().find(|e| e.id == 1).unwrap();
+    assert_eq!(scale.goal, 2000);
+    // Inventory and bank together.
+    assert_eq!(scale.goal_progress(), "10 / 2,000");
+    assert_eq!(scale.quantity_display(), "Inv: 5  |  Bank: 5");
+
+    junk::set_goals(&bot, &[1], Some(4));
+    junk::set_goals(&bot, &[3], None);
+    let entries = junk::entries(&bot).unwrap();
+    let scale = entries.iter().find(|e| e.id == 1).unwrap();
+    // At most the goal.
+    assert_eq!(scale.goal_progress(), "4 / 4");
+    assert!(!entries.iter().find(|e| e.id == 3).unwrap().goal_tracked());
+    junk::set_goals(&bot, &[1], None);
+    assert!(bot.settings.read().inventory_goals.is_empty());
+}
+
+#[test]
+fn filters_by_search_category_ac_and_highlight() {
+    let item = |id: i64, name: &str, category: &str| Entry {
+        id,
+        name: name.into(),
+        category: category.into(),
+        ..Default::default()
+    };
+    let entries = [
+        Entry {
+            ac: true,
+            equipped: true,
+            ..item(10, "Blade of Awe", "Sword")
+        },
+        Entry {
+            favorite: true,
+            junk: true,
+            ..item(21, "Rusty Axe", "axe")
+        },
+        Entry {
+            near_stack_limit: true,
+            goal: 5,
+            ..item(32, "Tokens", "Item")
+        },
+        item(43, "Pebble", "Item"),
+    ];
+    // "All Categories", then each once, ignoring case.
+    assert_eq!(
+        junk::categories(&entries),
+        ["All Categories", "axe", "Item", "Sword"]
+    );
+
+    let shown = |filter: &Filter| -> Vec<i64> {
+        entries
+            .iter()
+            .filter(|e| filter.matches(e))
+            .map(|e| e.id)
+            .collect()
+    };
+    assert_eq!(shown(&Filter::default()), [10, 21, 32, 43]);
+    // Name, ID or category, ignoring case.
+    let search = |text: &str| Filter {
+        search: text.into(),
+        ..Filter::default()
+    };
+    assert_eq!(shown(&search(" AWE ")), [10]);
+    assert_eq!(shown(&search("3")), [32, 43]);
+    assert_eq!(shown(&search("sWoRd")), [10]);
+    let category = Filter {
+        category: "ITEM".into(),
+        ..Filter::default()
+    };
+    assert_eq!(shown(&category), [32, 43]);
+    let ac = |ac| Filter {
+        ac,
+        ..Filter::default()
+    };
+    assert_eq!(shown(&ac(AcFilter::Ac)), [10]);
+    assert_eq!(shown(&ac(AcFilter::NonAc)), [21, 32, 43]);
+    let highlight = |highlight| Filter {
+        highlight,
+        ..Filter::default()
+    };
+    assert_eq!(shown(&highlight(Highlight::Goal)), [32]);
+    assert_eq!(shown(&highlight(Highlight::NearStackLimit)), [32]);
+    assert_eq!(shown(&highlight(Highlight::Favorites)), [21]);
+    assert_eq!(shown(&highlight(Highlight::Equipped)), [10]);
+    assert_eq!(shown(&highlight(Highlight::Junk)), [21]);
+    // The filters add up.
+    let both = Filter {
+        search: "peb".into(),
+        category: "Item".into(),
+        highlight: Highlight::Goal,
+        ..Filter::default()
+    };
+    assert!(shown(&both).is_empty());
+    // VibeSkua's option labels.
+    assert_eq!(
+        AcFilter::ALL.map(AcFilter::label),
+        ["All Items", "AC Items", "Non-AC Items"]
+    );
+    assert_eq!(
+        Highlight::ALL.map(Highlight::label),
+        [
+            "All Highlights",
+            "Goal Items",
+            "Near Stack Limit",
+            "Favorites",
+            "Equipped",
+            "Junk"
+        ]
+    );
 }

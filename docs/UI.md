@@ -678,10 +678,16 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   file in `map-items.json` (map files are versioned by name), so a second Grab doesn't download.
 * **Current Drops** (`current_drops.rs`): search, AC count, AC only, checkable list, Pick up all
   (`drops.pickupAll`) and Pick up selected (`drops.pickup` with the item IDs), through `spawn_action`.
-* **Junk Items** (`junk_items.rs`, 550x500, VibeSkua `JunkItemsView`): search (ID, name or
-  category) and ⟳; a select-all check box ("n selected", partly checked when only some shown rows
-  are), Mark as junk and Unmark; the inventory and bank items by name, each row with a check box
-  (a click on the row toggles it), the ID, the name (category on hover) and a red "Junk" chip;
+* **Junk Items** (`junk_items.rs`, 700x500, VibeSkua `JunkItemsView`): search (ID, name or
+  category) and ⟳; the category, AC (All / AC / Non-AC Items) and highlight (Goal Items, Near
+  Stack Limit, Favorites, Equipped, Junk) filters; a select-all check box ("n selected", partly
+  checked when only some shown rows are), Mark as junk and Unmark; 🎯 Goal quantity with Set goal
+  and Clear goal for the selected rows (saved as `inventoryGoals` in `settings.json`, progress
+  counts inventory + bank); the inventory and bank items by name, each row with a check box
+  (a click on the row toggles it), the ID, the name (category on hover; amber and the row tinted
+  when equipped), the AC, Equipped, ★, Near cap (an inventory stack at least 80% full) and goal
+  progress chips, "Inv: n  |  Bank: n" and a red "Junk" chip. Narrow, the filters, goal row and
+  sell row take two lines and the rows show their chips on a second line;
   Skip sell warning, Unmark all, Sell selected (marks them as junk, then sells) and Sell all junk
   (n). Opening the window refreshes it, loading the bank first if needed; refresh and selling run
   through `spawn_action` (`turu_bot::junk`), the list is saved to `JunkItems.json` at each change.
