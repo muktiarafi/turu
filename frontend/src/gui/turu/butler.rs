@@ -2,14 +2,15 @@
 //! accounts running Butler, with Follow and Summon, Butler's options and its debug log.
 //!
 //! The roster is read from the sync files once a second. Summon and release only change this
-//! client's state; Follow waits for a previous follow to end, so it runs off the UI thread.
+//! client's state; Follow waits for a previous follow to end, and Send to player calls the
+//! game, so both run off the UI thread.
 //! [`show_suspend_notice`] asks what to do when a script starts while following.
 
 use super::theme::{DANGER, EDGE, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use egui::{
-    Align, Color32, ComboBox, Context, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Stroke,
-    TextStyle, TextWrapMode, Ui, vec2,
+    Align, Color32, ComboBox, Context, CornerRadius, Frame, Key, Label, Layout, Margin, Modal, Popup,
+    PopupCloseBehavior, RectAlign, RichText, ScrollArea, Stroke, TextEdit, TextStyle, TextWrapMode, Ui, vec2,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -32,6 +33,10 @@ pub struct ButlerWindow {
     log_version: Option<u64>,
     /// The last action's outcome (set from the Follow thread too) and whether it failed.
     message: Arc<Mutex<Option<(String, bool)>>>,
+    /// Send to player: the pop-up is open, its name box, and the recent names shown.
+    send_open: bool,
+    send_target: String,
+    recent_targets: Vec<String>,
 }
 
 impl ButlerWindow {
@@ -322,61 +327,165 @@ impl ButlerWindow {
         changed
     }
 
-    /// The online count, Summon all and Settings.
+    /// The online count on the left; Send to player, Summon all, Settings and the debug log
+    /// on the right, the count on its own line above them when one row is too narrow
+    /// (VibeSkua's `FooterBar`).
     fn footer(&mut self, ui: &mut Ui, bot: &Arc<Bot>) -> bool {
+        let butler = &bot.butler;
+        let enabled = butler.enabled();
+        let text = if enabled {
+            let n = self.roster.len();
+            format!("{n} other account{} online", if n == 1 { "" } else { "s" })
+        } else {
+            "Butler is disabled: turn it on in Settings".into()
+        };
+        let tip = if enabled {
+            format!("The list is read again every {}s.", REFRESH.as_secs())
+        } else {
+            "Open Settings and turn on Enable Butler.".to_owned()
+        };
+        let status = RichText::new(text).small().color(if enabled { MUTED } else { DANGER });
+        let mut changed = false;
+        if ui.available_width() < 480.0 {
+            ui.label(status).on_hover_text(tip);
+            ui.with_layout(Layout::right_to_left(Align::Center).with_main_wrap(true), |ui| {
+                changed |= self.footer_buttons(ui, bot);
+            });
+        } else {
+            ui.horizontal(|ui| {
+                ui.label(status).on_hover_text(tip);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    changed |= self.footer_buttons(ui, bot);
+                });
+            });
+        }
+        changed
+    }
+
+    /// The footer's buttons, right to left.
+    fn footer_buttons(&mut self, ui: &mut Ui, bot: &Arc<Bot>) -> bool {
         let butler = &bot.butler;
         let enabled = butler.enabled();
         let following = butler.following();
         let mut changed = false;
-        ui.horizontal(|ui| {
-            let text = if enabled {
-                let n = self.roster.len();
-                format!("{n} other account{} online", if n == 1 { "" } else { "s" })
-            } else {
-                "Butler is disabled: turn it on in Settings".into()
-            };
-            ui.label(RichText::new(text).small().color(if enabled { MUTED } else { DANGER }));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let label = if self.show_settings {
-                    "Hide Settings"
-                } else {
-                    "Settings"
-                };
-                if widgets::button(ui, label, Kind::Normal, true, vec2(0.0, 26.0), "").clicked() {
-                    self.show_settings = !self.show_settings;
-                }
-                let label = if self.show_log { "Hide Log" } else { "Debug Log" };
-                if widgets::button(ui, label, Kind::Normal, true, vec2(0.0, 26.0), "")
-                    .on_hover_text("Butler's diagnostics: what the broadcast, orders and follower did")
-                    .clicked()
-                {
-                    self.show_log = !self.show_log;
-                }
-                let block = if !enabled {
-                    "Butler is disabled"
-                } else if following.is_some() {
-                    "You're following someone: stop first"
-                } else {
-                    ""
-                };
-                let summon = widgets::button(
-                    ui,
-                    "Summon all",
-                    Kind::Primary,
-                    block.is_empty(),
-                    vec2(0.0, 26.0),
-                    block,
+        let label = if self.show_settings {
+            "Hide Settings"
+        } else {
+            "Settings"
+        };
+        if widgets::button(ui, label, Kind::Normal, true, vec2(0.0, 26.0), "").clicked() {
+            self.show_settings = !self.show_settings;
+        }
+        let label = if self.show_log { "Hide Log" } else { "Debug Log" };
+        if widgets::button(ui, label, Kind::Normal, true, vec2(0.0, 26.0), "")
+            .on_hover_text("Butler's diagnostics: what the broadcast, orders and follower did")
+            .clicked()
+        {
+            self.show_log = !self.show_log;
+        }
+        let block = if !enabled {
+            "Butler is disabled"
+        } else if following.is_some() {
+            "You're following someone: stop first"
+        } else {
+            ""
+        };
+        let summon = widgets::button(
+            ui,
+            "Summon all",
+            Kind::Primary,
+            block.is_empty(),
+            vec2(0.0, 26.0),
+            block,
+        );
+        if summon
+            .on_hover_text("Have every available account on this server follow this one")
+            .clicked()
+        {
+            self.say(butler::summon_all(bot));
+            changed = true;
+        }
+        self.send_to_player(ui, enabled);
+        changed
+    }
+
+    /// "Send to player" and its pop-up (VibeSkua's flyout): a name box (Enter sends), Send, and
+    /// the recent names to pick from.
+    fn send_to_player(&mut self, ui: &mut Ui, enabled: bool) {
+        let tip = if enabled {
+            "Send this account and every available butler to another player."
+        } else {
+            "Butler is disabled. Turn it on in Settings first."
+        };
+        let button = widgets::button(ui, "Send to player", Kind::Normal, enabled, vec2(0.0, 26.0), tip);
+        if button.clicked() {
+            self.send_open = !self.send_open;
+            if self.send_open {
+                self.recent_targets = crate::turu::bot().butler.recent_targets();
+            }
+        }
+        if !enabled {
+            self.send_open = false;
+        }
+        let mut send = false;
+        let width = (ui.ctx().content_rect().width() - 32.0).min(340.0);
+        Popup::from_response(&button)
+            .open_bool(&mut self.send_open)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .align(RectAlign::TOP_END)
+            .width(width)
+            .show(|ui| {
+                ui.set_width(width);
+                ui.label(
+                    RichText::new("/goto a player with this account and every available butler.")
+                        .small()
+                        .color(MUTED),
                 );
-                if summon
-                    .on_hover_text("Have every available account on this server follow this one")
-                    .clicked()
-                {
-                    self.say(butler::summon_all(bot));
-                    changed = true;
+                ui.horizontal(|ui| {
+                    let height = widgets::target(26.0, 40.0);
+                    let send_width = 64.0;
+                    let edit = ui.add(
+                        TextEdit::singleline(&mut self.send_target)
+                            .hint_text("Player name (not one of your butlers)")
+                            .desired_width(ui.available_width() - send_width - 8.0)
+                            .min_size(vec2(0.0, height)),
+                    );
+                    if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        send = true;
+                    }
+                    if widgets::button(ui, "Send", Kind::Primary, true, vec2(send_width, height), "").clicked() {
+                        send = true;
+                    }
+                });
+                if !self.recent_targets.is_empty() {
+                    ui.label(RichText::new("Recent").small().color(MUTED));
+                    ui.horizontal_wrapped(|ui| {
+                        for name in self.recent_targets.iter().take(8) {
+                            if widgets::small_button(ui, name, true)
+                                .on_hover_text(format!("Use {name}."))
+                                .clicked()
+                            {
+                                self.send_target = name.clone();
+                            }
+                        }
+                    });
                 }
             });
-        });
-        changed
+        if send {
+            let target = self.send_target.trim().to_owned();
+            if !target.is_empty() {
+                self.send_open = false;
+            }
+            let message = self.message.clone();
+            crate::turu::spawn_action("Butler Send to player", move |bot| {
+                let result = butler::send_all_to_player(bot, &target);
+                *message.lock().unwrap_or_else(|e| e.into_inner()) = Some(match result {
+                    Ok(text) => (text, false),
+                    Err(text) => (text, true),
+                });
+                Ok(())
+            });
+        }
     }
 }
 
@@ -557,8 +666,17 @@ fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
             ui,
             "Always goto the master",
             "Keep sending goto while already in the master's room: fixes a butler stuck in the wrong cell \
-             after dying, at the cost of a goto every Goto delay.",
+             after dying, at the cost of a goto every Goto delay. Ignored in leech mode and when Copy \
+             master's walking is on.",
             |ui| widgets::switch(ui, &mut settings.always_goto),
+        );
+        row(
+            ui,
+            "Copy master's walking",
+            "When following in the same room and cell, walk where the master walks instead of standing still \
+             after teleporting beside them. Goto, cell jumps, direct joins and rescues still handle map and room \
+             changes. Ignored in leech mode and takes over from Always goto.",
+            |ui| widgets::switch(ui, &mut settings.copy_walk),
         );
         row(
             ui,
@@ -629,6 +747,14 @@ fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
             "Extra quest IDs to fake when the follow starts, separated by commas (1234, 5678). For a map whose \
              cells stay locked for butlers and isn't in the built-in table yet. Empty: none.",
             |ui| widgets::text_box(ui, &mut settings.quest_bypass_custom, "1234, 5678", 140.0),
+        );
+        row(
+            ui,
+            "Follow master's quests",
+            "While following, mirror the master's active and registered quests: the butler registers the same \
+             quests here, with the chosen rewards, so it accepts them, collects its own drops and turns them in \
+             from its own inventory. Applied again after a relogin; removed when the follow ends.",
+            |ui| widgets::switch(ui, &mut settings.quest_sync),
         );
         row(
             ui,

@@ -1,6 +1,7 @@
 //! Butler (VibeSkua ButlerV5): the sync file, and a master summoning a butler, both on fake
 //! games that share one data folder; the follower's quest, level and AntiLag fakes, the
-//! suspend question and the offline write on close.
+//! suspend question and the offline write on close; Send to player, the target history and
+//! Follow master's quests.
 
 mod common;
 
@@ -9,8 +10,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
-use turu_bot::butler::sync::{SyncData, SyncDir, master_ordering, now};
-use turu_bot::butler::{self, ButlerSettings, FollowSource, antilag, quest_bypass, room_of};
+use turu_bot::butler::quest_sync::{self, Entry, Mirror, Plan};
+use turu_bot::butler::sync::{
+    SEND_ALL_EXPIRY, SendAllSeen, SyncData, SyncDir, master_ordering, now, now_ms, send_all_skip,
+    unavailable,
+};
+use turu_bot::butler::{
+    self, ButlerSettings, FollowSource, antilag, quest_bypass, room_of, target_history,
+};
 use turu_bot::{Bot, FlashArg, FlashHost, HostError, script};
 
 /// Held by the tests that follow: they share `butler.json`, and some change it.
@@ -848,4 +855,372 @@ fn the_control_api_summons_releases_and_follows() {
     });
     until_follow_ended(&alt);
     assert_eq!(call(&master, true, "/butler/release-all").0, 200);
+}
+
+/// A file carrying a Send All goto from `sender`, issued at `issued` (Unix ms).
+fn send_all(sender: &str, recipients: &[&str], issued: u64) -> SyncData {
+    SyncData {
+        username: sender.into(),
+        logged_in: true,
+        server: "Artix".into(),
+        beat: now(),
+        send_all_target: "Stranger".into(),
+        send_all_command: "c0ffee".into(),
+        send_all_recipients: recipients.iter().map(|r| r.to_string()).collect(),
+        send_all_issued: issued,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_send_all_goto_round_trips_and_expires_after_a_minute() {
+    let now = now_ms();
+    let data = send_all("Boss", &["Alt1", "Alt2"], now);
+    let back = SyncData::parse(&data.serialize()).unwrap();
+    assert_eq!(back, data);
+    assert!(
+        !back.same_state(&SyncData {
+            send_all_command: "other".into(),
+            ..back.clone()
+        }),
+        "a new command is a change to write"
+    );
+
+    // Addressed to a recipient (any case), fresh: once per sender and command.
+    assert_eq!(
+        back.send_all_for("ALT2", now).as_deref(),
+        Some("Boss:c0ffee")
+    );
+    assert_eq!(back.send_all_for("Other", now), None, "not a recipient");
+    let expiry = SEND_ALL_EXPIRY.as_millis() as u64;
+    assert!(
+        back.send_all_for("Alt1", now + expiry).is_some(),
+        "60 s is still fresh"
+    );
+    assert_eq!(back.send_all_for("Alt1", now + expiry + 1), None, "expired");
+    assert_eq!(
+        back.send_all_for("Alt1", now - 1),
+        None,
+        "issued in the future"
+    );
+    for broken in [
+        SyncData {
+            send_all_command: " ".into(),
+            ..data.clone()
+        },
+        SyncData {
+            send_all_target: String::new(),
+            ..data.clone()
+        },
+        SyncData {
+            send_all_issued: 0,
+            ..data.clone()
+        },
+    ] {
+        assert_eq!(broken.send_all_for("Alt1", now), None, "{broken:?}");
+    }
+    assert_eq!(SyncData::default().send_all_for("Alt1", now), None);
+
+    // Each command is obeyed once; the oldest of 65 is forgotten.
+    let mut seen = SendAllSeen::default();
+    assert!(seen.first_time("Boss:c0ffee"));
+    assert!(!seen.first_time("boss:C0FFEE"));
+    for i in 0..64 {
+        assert!(seen.first_time(&format!("Boss:{i}")));
+    }
+    assert!(
+        seen.first_time("Boss:c0ffee"),
+        "forgotten after 64 newer ones"
+    );
+
+    // Skip rules: a script running here, the sender on another server.
+    assert_eq!(send_all_skip(&data, false, "artix"), None);
+    assert_eq!(send_all_skip(&data, false, ""), None, "this server unknown");
+    assert_eq!(
+        send_all_skip(&data, true, "Artix"),
+        Some("a script is running")
+    );
+    assert_eq!(
+        send_all_skip(&data, false, "Twilly"),
+        Some("server mismatch")
+    );
+}
+
+#[test]
+fn summon_all_and_send_all_skip_busy_accounts() {
+    let account = |f: fn(&mut SyncData)| {
+        let mut d = SyncData {
+            username: "Alt".into(),
+            server: "Artix".into(),
+            logged_in: true,
+            ..Default::default()
+        };
+        f(&mut d);
+        d
+    };
+    let followers = vec!["alt".to_owned()];
+    assert_eq!(unavailable(&account(|_| {}), "Me", "Artix", &[]), None);
+    type Change = fn(&mut SyncData);
+    let cases: [(Change, &str); 6] = [
+        (|d| d.script_on = true, "a script is running"),
+        (|d| d.following = "me".into(), "already follows me"),
+        (|d| d.following = "Other".into(), "follows another account"),
+        (|d| d.followers = vec!["X".into()], "is a master"),
+        (|d| d.server = "Twilly".into(), "on another server"),
+        (|d| d.parking = true, "parking"),
+    ];
+    for (change, why) in cases {
+        assert_eq!(unavailable(&account(change), "Me", "Artix", &[]), Some(why));
+    }
+    // A summoned butler following me can still be sent.
+    assert_eq!(
+        unavailable(
+            &account(|d| d.following = "Me".into()),
+            "Me",
+            "Artix",
+            &followers
+        ),
+        None
+    );
+}
+
+#[test]
+fn the_target_history_keeps_twenty_recent_names() {
+    let path = std::env::temp_dir()
+        .join(format!("turu-butler-targets-{}", std::process::id()))
+        .join("targets.json");
+    let _ = std::fs::remove_file(&path);
+    assert!(target_history::load(&path).is_empty());
+    target_history::add(&path, " Stranger ");
+    target_history::add(&path, "Friend");
+    assert_eq!(target_history::add(&path, "  "), ["Friend", "Stranger"]);
+    assert_eq!(
+        target_history::add(&path, "stranger"),
+        ["stranger", "Friend"],
+        "a repeat moves to the top, as last typed"
+    );
+    for i in 0..25 {
+        target_history::add(&path, &format!("P{i}"));
+    }
+    let names = target_history::load(&path);
+    assert_eq!(names.len(), target_history::MAX_ENTRIES);
+    assert_eq!(names[0], "P24");
+    // A hand-edited file: blanks and repeats dropped.
+    std::fs::write(&path, r#"["A", " ", "a", " B "]"#).unwrap();
+    assert_eq!(target_history::load(&path), ["A", "B"]);
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+fn entry(quest_id: i64, reward_id: i64) -> Entry {
+    Entry {
+        quest_id,
+        reward_id,
+    }
+}
+
+#[test]
+fn the_quest_list_is_published_once_and_read_back() {
+    // Active quests without a reward; a registered quest's reward wins; bad IDs dropped.
+    let list = quest_sync::entries(&[30, 10, 0, 20], &[(20, 7), (40, -1), (-5, 1)]);
+    assert_eq!(
+        list,
+        [entry(10, -1), entry(20, 7), entry(30, -1), entry(40, -1)]
+    );
+
+    let dir = std::env::temp_dir().join(format!("turu-butler-quests-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let sync = SyncDir::new(&dir);
+    assert_eq!(
+        quest_sync::read(&sync, "Boss"),
+        None,
+        "nothing published yet"
+    );
+    assert!(quest_sync::file_time(&sync, "Boss").is_none());
+    assert!(quest_sync::publish(&sync, "Boss", &list).unwrap());
+    assert!(
+        !quest_sync::publish(&sync, "Boss", &list).unwrap(),
+        "unchanged"
+    );
+    assert_eq!(quest_sync::read(&sync, "BOSS").unwrap(), list);
+    assert!(quest_sync::file_time(&sync, "boss").is_some());
+    // The quest list isn't an account's state file.
+    assert!(sync.read_all().is_empty());
+    // A repeated ID: the last wins; bad IDs are dropped.
+    std::fs::write(
+        quest_sync::path_for(&sync, "Boss"),
+        r#"[{"questId":5,"rewardId":1},{"questId":0,"rewardId":1},{"questId":5,"rewardId":2}]"#,
+    )
+    .unwrap();
+    assert_eq!(quest_sync::read(&sync, "Boss").unwrap(), [entry(5, 2)]);
+    std::fs::write(quest_sync::path_for(&sync, "Boss"), "not json").unwrap();
+    assert_eq!(quest_sync::read(&sync, "Boss"), None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_butler_mirrors_the_masters_quests_and_only_removes_its_own() {
+    let mut mirror = Mirror::default();
+    // 1 is registered here by a script: left alone, never removed.
+    let plan = mirror.plan(&[entry(1, -1), entry(2, -1), entry(3, 9)], &[1], None);
+    assert_eq!(
+        plan,
+        Plan {
+            unregister: vec![],
+            register: vec![(2, -1), (3, 9)],
+        }
+    );
+    assert_eq!(mirror.synced(), [2, 3]);
+
+    // The same list again: nothing to do.
+    let plan = mirror.plan(&[entry(1, -1), entry(2, -1), entry(3, 9)], &[1, 2, 3], None);
+    assert_eq!(plan, Plan::default());
+
+    // 2 dropped, 3's reward changed, 4 new.
+    let plan = mirror.plan(&[entry(1, -1), entry(3, 8), entry(4, -1)], &[1, 2, 3], None);
+    assert_eq!(
+        plan,
+        Plan {
+            unregister: vec![2, 3],
+            register: vec![(3, 8), (4, -1)],
+        }
+    );
+    assert_eq!(mirror.synced(), [3, 4]);
+
+    // A synced quest someone else unregistered (a script ended) comes back.
+    let plan = mirror.plan(&[entry(3, 8), entry(4, -1)], &[3], None);
+    assert_eq!(plan.register, [(4, -1)]);
+    assert!(plan.unregister.is_empty());
+
+    // Only newer lists are applied, and checks are at most once a second.
+    let t0 = std::time::SystemTime::now();
+    assert!(mirror.is_new(t0));
+    mirror.plan(&[entry(3, 8), entry(4, -1)], &[3, 4], Some(t0));
+    assert!(!mirror.is_new(t0));
+    assert!(mirror.is_new(t0 + Duration::from_secs(1)));
+    assert!(mirror.check_due());
+    assert!(!mirror.check_due());
+
+    // A logout forgets without unregistering (the client already did); the cleanup returns
+    // what it registered.
+    mirror.forget();
+    assert!(mirror.synced().is_empty());
+    assert!(
+        mirror.is_new(t0),
+        "the unchanged list is applied again after a relogin"
+    );
+    mirror.plan(&[entry(7, -1)], &[], None);
+    assert_eq!(mirror.take(), [7]);
+    assert!(mirror.synced().is_empty());
+}
+
+#[test]
+fn send_to_player_sends_this_account_and_the_available_butlers() {
+    let _follows = FOLLOWS.lock();
+    let sender_game = FakeGame::new("Sender", "battleon", "6", "Enter");
+    let alt_game = FakeGame::new("SendAlt", "yulgar", "2", "Enter");
+    let sender = client(&sender_game);
+    let alt = client(&alt_game);
+    until("both files", Duration::from_secs(5), || {
+        sender.butler.username() == "Sender"
+            && alt.butler.username() == "SendAlt"
+            && sender
+                .butler
+                .roster()
+                .iter()
+                .any(|d| d.username == "SendAlt")
+            && alt.butler.roster().iter().any(|d| d.username == "Sender")
+    });
+    let gotos = |game: &FakeGame| -> Vec<String> {
+        game.game_function_calls("world.goto")
+            .iter()
+            .map(|a| arg(a, 1))
+            .collect()
+    };
+
+    assert_eq!(
+        butler::send_all_to_player(&sender, " ").unwrap_err(),
+        "Enter a player name first."
+    );
+    assert!(
+        butler::send_all_to_player(&sender, "sendalt")
+            .unwrap_err()
+            .contains("already one of the active Butler client accounts"),
+        "not one of the clients"
+    );
+    let message = butler::send_all_to_player(&sender, "Stranger").unwrap();
+    assert!(message.starts_with("Sent "), "{message}");
+    assert!(
+        message.contains("and this account to Stranger."),
+        "{message}"
+    );
+    assert_eq!(
+        gotos(&sender_game),
+        ["Stranger"],
+        "the issuing client goes too"
+    );
+    let file = alt.butler.dir.read_user("Sender").unwrap();
+    assert_eq!(file.send_all_target, "Stranger");
+    assert!(file.send_all_recipients.iter().any(|r| r == "SendAlt"));
+    assert!(file.send_all_for("SendAlt", now_ms()).is_some());
+    until("the butler's goto", Duration::from_secs(5), || {
+        gotos(&alt_game) == ["Stranger"]
+    });
+    // Once only, however often the file is read again.
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(gotos(&alt_game), ["Stranger"]);
+    assert_eq!(sender.butler.recent_targets()[0], "Stranger");
+}
+
+#[test]
+fn a_butler_registers_its_masters_quests_while_following() {
+    let _follows = FOLLOWS.lock();
+    let lead_game = FakeGame::new("QuestLead", "battleon", "8", "Enter");
+    let tag_game = FakeGame::new("QuestTag", "battleon", "8", "Enter");
+    *tag_game.other.lock() = Some(("QuestLead".into(), lead_game.clone()));
+    lead_game.set(
+        "world.questTree",
+        r#"{"5001":{"QuestID":5001,"sName":"Active","status":"p"},"5002":{"QuestID":5002,"sName":"Idle"}}"#,
+    );
+    let lead = client(&lead_game);
+    let tag = client(&tag_game);
+    until("both files", Duration::from_secs(5), || {
+        tag.butler
+            .roster()
+            .iter()
+            .any(|d| d.username == "QuestLead")
+    });
+    let defaults = tag.butler.settings();
+    tag.butler
+        .set_settings(ButlerSettings {
+            quest_sync: true,
+            quest_unlock_all: false,
+            quest_bypass: false,
+            ..defaults.clone()
+        })
+        .unwrap();
+    // The master's own registration, with its reward.
+    lead.quests.register(&lead, &[(6001, 77)]);
+    until("the published list", Duration::from_secs(5), || {
+        quest_sync::read(&lead.butler.dir, "QuestLead")
+            .is_some_and(|l| l == [entry(5001, -1), entry(6001, 77)])
+    });
+
+    // A quest this client registered itself stays when the follow ends.
+    tag.quests.register(&tag, &[(5001, -1)]);
+    butler::start_follow(&tag, "QuestLead").unwrap();
+    until("the mirrored quests", Duration::from_secs(10), || {
+        tag.quests.registered_rewards().contains(&(6001, 77))
+    });
+    assert!(tag.quests.registered().contains(&5001));
+    butler::stop_follow(&tag);
+    until_follow_ended(&tag);
+    assert_eq!(
+        tag.quests.registered(),
+        [5001],
+        "only its own registrations removed"
+    );
+
+    tag.quests.unregister_all();
+    lead.quests.unregister_all();
+    tag.butler.set_settings(defaults).unwrap();
 }

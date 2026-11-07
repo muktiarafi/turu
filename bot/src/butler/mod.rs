@@ -8,17 +8,22 @@
 //! changed, else every [`HEARTBEAT`]), "Butler Orders" reads the others' files and obeys.
 //!
 //! The follower also fakes quests, the level and AntiLag on its own client while it follows
-//! ([`quest_bypass`], [`antilag`]); every component logs to [`debug_log`] for the window's
-//! viewer. Not ported: quest cloning (copying the master's quest slots).
+//! ([`quest_bypass`], [`antilag`]), and with "Follow master's quests" registers the master's
+//! quests ([`quest_sync`]); every component logs to [`debug_log`] for the window's viewer.
+//! "Send to player" ([`send_all_to_player`]) sends this account and every available one to an
+//! outside player with a one-shot goto in the sync file. Not ported: quest cloning (copying the
+//! master's quest slots).
 
 pub mod antilag;
 pub mod debug_log;
 pub mod follower;
 pub mod quest_bypass;
+pub mod quest_sync;
 pub mod sync;
+pub mod target_history;
 
 use crate::Bot;
-use crate::api::{inventory, map, player};
+use crate::api::{inventory, map, player, quests};
 pub use debug_log::Level;
 use debug_log::{DebugLog, LogLine};
 use follower::{Follow, Mode};
@@ -29,7 +34,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant, SystemTime};
-use sync::{SyncData, SyncDir};
+use sync::{SendAllSeen, SyncData, SyncDir};
 
 /// How often an unchanged file is rewritten, to show the account is still online.
 pub const HEARTBEAT: Duration = Duration::from_secs(5);
@@ -115,6 +120,9 @@ pub struct ButlerSettings {
     pub goto_delay: u64,
     /// Keep sending goto while already in the master's room and cell.
     pub always_goto: bool,
+    /// "Copy master's walking": in the master's room and cell, walk where it walks (takes
+    /// over from Always goto while the master's position is known).
+    pub copy_walk: bool,
     pub park: ParkSpot,
     /// Wait at the master's Enter cell and never fight.
     pub leech_mode: bool,
@@ -124,6 +132,9 @@ pub struct ButlerSettings {
     pub quest_bypass: bool,
     /// "Custom bypass quest IDs" ("1234, 5678"), faked when the follow starts.
     pub quest_bypass_custom: String,
+    /// "Follow master's quests": a master publishes its active and registered quests, a
+    /// butler registers them (with the chosen rewards).
+    pub quest_sync: bool,
     /// "Unlock all quests": max every quest slot instead (wins over the bypasses).
     pub quest_unlock_all: bool,
     /// "Fake level 100" on this client while following.
@@ -147,11 +158,13 @@ impl Default for ButlerSettings {
             passive_attack: false,
             goto_delay: 500,
             always_goto: false,
+            copy_walk: false,
             park: ParkSpot::House,
             leech_mode: false,
             rescue_threshold: 3,
             quest_bypass: true,
             quest_bypass_custom: String::new(),
+            quest_sync: false,
             quest_unlock_all: true,
             fake_level: false,
             anti_lag_summoned: true,
@@ -190,6 +203,20 @@ struct Broadcast {
     attacking_seen: Option<Instant>,
     /// The last file written, and when.
     written: Option<(SyncData, Instant)>,
+    /// When the quest list was last published.
+    quests_published: Option<Instant>,
+}
+
+/// The one-shot Send All goto this account publishes (VibeSkua `Broadcaster`'s `_sendAll*`).
+#[derive(Debug, Clone, Default)]
+struct SendAll {
+    target: String,
+    command: String,
+    recipients: Vec<String>,
+    /// Unix milliseconds; set when the file that carries it is written.
+    issued: u64,
+    /// Not written yet: the expiry starts when it is (a map change mustn't use it up).
+    pending: bool,
 }
 
 /// "A script started while following" (VibeSkua `ShowSuspendNotice`): the question the UI
@@ -220,6 +247,9 @@ pub struct Butler {
     /// Saved logs and, with auto-save, the running log (`butler_logs`).
     pub logs_dir: PathBuf,
     settings_file: PathBuf,
+    /// Recent "Send to player" names ([`target_history`]).
+    targets_file: PathBuf,
+    send_all: Mutex<SendAll>,
     settings: RwLock<ButlerSettings>,
     /// The settings file's modification time when last read.
     settings_stamp: Mutex<Option<SystemTime>>,
@@ -245,6 +275,8 @@ impl Butler {
             dir: SyncDir::new(paths.butler_dir()),
             logs_dir: paths.butler_logs_dir(),
             settings_file: paths.butler_settings_file(),
+            targets_file: paths.butler_player_targets_file(),
+            send_all: Mutex::new(SendAll::default()),
             settings: RwLock::new(ButlerSettings::default()),
             settings_stamp: Mutex::new(None),
             followers: Mutex::new(Vec::new()),
@@ -410,6 +442,11 @@ impl Butler {
         Ok(path)
     }
 
+    /// The recent "Send to player" names, newest first (VibeSkua `RecentPlayerTargets`).
+    pub fn recent_targets(&self) -> Vec<String> {
+        target_history::load(&self.targets_file)
+    }
+
     /// The suspend question waiting for an answer, if any.
     pub fn suspend_notice(&self) -> Option<SuspendNotice> {
         self.notice.lock().clone()
@@ -506,6 +543,7 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
         return Ok(());
     }
     let butler = &bot.butler;
+    publish_quests(bot, &username);
     {
         let mut name = butler.log_name.lock();
         if *name != username {
@@ -565,6 +603,13 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
     let parking = butler.is_parking();
     let declined = butler.declined.lock().clone().unwrap_or_default();
     let followers = butler.followers();
+    let send_all = {
+        let mut s = butler.send_all.lock();
+        if s.pending {
+            s.issued = sync::now_ms();
+        }
+        s.clone()
+    };
 
     let mut b = butler.broadcast.lock();
     b.username = username.clone();
@@ -608,25 +653,91 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
         declined,
         parking,
         beat: sync::now(),
+        send_all_target: send_all.target,
+        send_all_command: send_all.command.clone(),
+        send_all_recipients: send_all.recipients,
+        send_all_issued: send_all.issued,
     };
-    write_if_changed(butler, &mut b, data);
+    let written = write_if_changed(butler, &mut b, data);
+    drop(b);
+    if written && send_all.pending {
+        let mut s = butler.send_all.lock();
+        // Unless another Send All was queued meanwhile.
+        if s.pending && s.command == send_all.command {
+            s.pending = false;
+            let text = format!(
+                "published send-all goto to {} accounts: {}",
+                s.recipients.len(),
+                s.target
+            );
+            drop(s);
+            debug(bot, "Broadcaster", text);
+        }
+    }
     Ok(())
 }
 
-fn write_if_changed(butler: &Butler, b: &mut Broadcast, data: SyncData) {
+/// Writes the file when the state changed or the heartbeat is due; whether the file now holds
+/// `data`'s state.
+fn write_if_changed(butler: &Butler, b: &mut Broadcast, data: SyncData) -> bool {
     // Checked under the lock `close` takes, so no broadcast lands after its offline write.
     if butler.closed.load(Ordering::Acquire) {
-        return;
+        return false;
     }
     let due = match &b.written {
         Some((last, at)) => !last.same_state(&data) || at.elapsed() >= HEARTBEAT,
         None => true,
     };
-    if due {
-        match butler.dir.write(&data) {
-            Ok(()) => b.written = Some((data, Instant::now())),
-            Err(e) => tracing::debug!("Couldn't write the Butler file: {e}"),
+    if !due {
+        return true;
+    }
+    match butler.dir.write(&data) {
+        Ok(()) => {
+            b.written = Some((data, Instant::now()));
+            true
         }
+        Err(e) => {
+            tracing::debug!("Couldn't write the Butler file: {e}");
+            false
+        }
+    }
+}
+
+/// With "Follow master's quests", publishes this account's active and registered quests every
+/// 2 s (VibeSkua `QuestSync.Publish` from the broadcaster).
+fn publish_quests(bot: &Bot, username: &str) {
+    let butler = &bot.butler;
+    if !butler.settings.read().quest_sync {
+        return;
+    }
+    {
+        let mut b = butler.broadcast.lock();
+        if b.quests_published
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(2))
+        {
+            return;
+        }
+        b.quests_published = Some(Instant::now());
+    }
+    let active: Vec<i64> = match quests::tree(bot) {
+        Ok(tree) => tree.iter().filter(|q| q.active()).map(|q| q.id).collect(),
+        Err(e) => {
+            debug(bot, "QuestSync", format!("publish failed: {e}"));
+            return;
+        }
+    };
+    let entries = quest_sync::entries(&active, &bot.quests.registered_rewards());
+    match quest_sync::publish(&butler.dir, username, &entries) {
+        Ok(true) => debug(
+            bot,
+            "QuestSync",
+            format!(
+                "published {} active/registered quest(s) for {username}",
+                entries.len()
+            ),
+        ),
+        Ok(false) => {}
+        Err(e) => debug(bot, "QuestSync", format!("publish failed: {e}")),
     }
 }
 
@@ -704,6 +815,8 @@ struct Orders {
     /// Since when the ordering master's file has been unreadable or offline.
     gone_since: Option<Instant>,
     busy_logged: bool,
+    /// The Send All gotos already acted on.
+    send_all_seen: SendAllSeen,
 }
 
 fn order_loop(weak: Weak<Bot>) {
@@ -741,6 +854,9 @@ fn obey_orders(bot: &Arc<Bot>, orders: &mut Orders) {
         return;
     }
     let online = butler.dir.online(Some(&me));
+    if butler.settings().account(&me).obey_summons {
+        send_all_orders(bot, &me, &online, &mut orders.send_all_seen);
+    }
     handshakes(bot, &me, &online);
     let current = butler.following();
     if current
@@ -818,6 +934,52 @@ fn obey_orders(bot: &Arc<Bot>, orders: &mut Orders) {
         }
     } else {
         orders.gone_since = None;
+    }
+}
+
+/// Obeys the fresh Send All gotos addressed to this account, once each (VibeSkua
+/// `ProcessSendAllGotoCommands`); "Obey summons" off ignores them.
+fn send_all_orders(bot: &Bot, me: &str, online: &[SyncData], seen: &mut SendAllSeen) {
+    let now = sync::now_ms();
+    for sender in online {
+        let Some(key) = sender.send_all_for(me, now) else {
+            continue;
+        };
+        if !seen.first_time(&key) {
+            continue;
+        }
+        let my_server = bot.butler.server();
+        if let Some(why) = sync::send_all_skip(sender, bot.scripts.is_running(), &my_server) {
+            debug(
+                bot,
+                "Orders",
+                format!("ignored send-all goto from {}: {why}", sender.username),
+            );
+            continue;
+        }
+        let target = &sender.send_all_target;
+        match player::goto(bot, target) {
+            Ok(()) => {
+                debug(
+                    bot,
+                    "Orders",
+                    format!("goto {target} requested by {}", sender.username),
+                );
+                log(
+                    bot,
+                    "Orders",
+                    format!(
+                        "Sent to external player {target} on request from {}.",
+                        sender.username
+                    ),
+                );
+            }
+            Err(e) => debug(
+                bot,
+                "Orders",
+                format!("send-all goto failed for {target}: {e}"),
+            ),
+        }
     }
 }
 
@@ -1011,27 +1173,12 @@ pub fn release(bot: &Bot, username: &str) -> Result<String, String> {
 /// per-row Summon button out too); `None` when it can.
 pub fn unavailable(bot: &Bot, account: &SyncData) -> Option<&'static str> {
     let butler = &bot.butler;
-    let me = butler.username();
-    let my_server = butler.server();
-    if account.script_on {
-        Some("a script is running")
-    } else if account.following.eq_ignore_ascii_case(&me) && !butler.is_follower(&account.username)
-    {
-        Some("already follows me")
-    } else if !account.following.is_empty() && !account.following.eq_ignore_ascii_case(&me) {
-        Some("follows another account")
-    } else if !account.followers.is_empty() {
-        Some("is a master")
-    } else if !account.server.is_empty()
-        && !my_server.is_empty()
-        && !account.server.eq_ignore_ascii_case(&my_server)
-    {
-        Some("on another server")
-    } else if account.parking {
-        Some("parking")
-    } else {
-        None
-    }
+    sync::unavailable(
+        account,
+        &butler.username(),
+        &butler.server(),
+        &butler.followers(),
+    )
 }
 
 /// Summons every available online account (VibeSkua `SummonAll`), keeping those already
@@ -1084,4 +1231,158 @@ pub fn summon_all(bot: &Bot) -> Result<String, String> {
 pub fn release_all(bot: &Bot) {
     bot.butler.set_followers(Vec::new());
     log(bot, "UI", "Released all followers.");
+}
+
+/// "Send to player" (VibeSkua `SendAllToPlayer`): `/goto`s an outside player with this account
+/// and every available online account (the `Summon all` filter), the others through a
+/// one-shot command in this account's sync file that expires after a minute. The name goes in
+/// the recent targets. Calls Flash: not for the UI thread. The message to show.
+pub fn send_all_to_player(bot: &Bot, player_name: &str) -> Result<String, String> {
+    let butler = &bot.butler;
+    let target = player_name.trim();
+    if target.is_empty() {
+        return Err(say(bot, "Enter a player name first."));
+    }
+    if !butler.enabled() {
+        return Err(say(
+            bot,
+            "Can't send all - Butler is disabled. Turn it on first.",
+        ));
+    }
+    let me = if player::logged_in(bot).unwrap_or(false) {
+        player::username(bot).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    if me.is_empty() {
+        return Err(say(bot, "Can't send all - this account is not logged in."));
+    }
+    let roster = butler.dir.online(Some(&me));
+    if target.eq_ignore_ascii_case(&me)
+        || roster
+            .iter()
+            .any(|a| a.username.eq_ignore_ascii_case(target))
+    {
+        return Err(say(
+            bot,
+            &format!(
+                "'{target}' is already one of the active Butler client accounts. Enter an external player name instead."
+            ),
+        ));
+    }
+    let (my_server, followers) = (butler.server(), butler.followers());
+    let (skipped, recipients): (Vec<SyncData>, Vec<SyncData>) = roster
+        .into_iter()
+        .partition(|a| sync::unavailable(a, &me, &my_server, &followers).is_some());
+    let skipped: Vec<String> = skipped.into_iter().map(|a| a.username).collect();
+    let recipients: Vec<String> = recipients.into_iter().map(|a| a.username).collect();
+
+    // The issuing client goes itself: its own file isn't a delivery to itself.
+    let mut sent_locally = false;
+    if !bot.scripts.is_running() {
+        match player::goto(bot, target) {
+            Ok(()) => sent_locally = true,
+            Err(e) => debug(
+                bot,
+                "UI",
+                format!("Local send-all goto failed for {target}: {e}"),
+            ),
+        }
+    }
+
+    if recipients.is_empty() {
+        if sent_locally {
+            target_history::add(&butler.targets_file, target);
+            return Ok(say(
+                bot,
+                &format!(
+                    "Sent this account to {target}; no other available Butler accounts were online."
+                ),
+            ));
+        }
+        return Err(say(
+            bot,
+            &if skipped.is_empty() {
+                "No available Butler accounts to send, and this account is busy running a script."
+                    .to_owned()
+            } else {
+                format!(
+                    "No available butlers to send to {target}. Skipped: {}",
+                    skipped.join(", ")
+                )
+            },
+        ));
+    }
+
+    *butler.send_all.lock() = SendAll {
+        target: target.to_owned(),
+        command: command_id(),
+        recipients: recipients.clone(),
+        issued: 0,
+        pending: true,
+    };
+    if game_ready(bot)
+        && let Err(e) = broadcast(bot)
+    {
+        tracing::debug!("Butler broadcast failed: {e}");
+    }
+    let published = !butler.send_all.lock().pending;
+    target_history::add(&butler.targets_file, target);
+    let message = if published {
+        let mut text = format!(
+            "Sent {} other butler(s){} to {target}.",
+            recipients.len(),
+            if sent_locally {
+                " and this account"
+            } else {
+                ""
+            }
+        );
+        if !skipped.is_empty() {
+            text.push_str(&format!(
+                " Skipped {} unavailable account(s).",
+                skipped.len()
+            ));
+        }
+        text
+    } else {
+        format!(
+            "{} to {target}; queued Send All for {} other butler(s). It will publish when this account finishes loading its map.",
+            if sent_locally {
+                "This account was sent"
+            } else {
+                "This account was not sent"
+            },
+            recipients.len()
+        )
+    };
+    debug(
+        bot,
+        "UI",
+        format!(
+            "Send all to {target}: local=[{sent_locally}], recipients=[{}], skipped=[{}]",
+            recipients.join(", "),
+            skipped.join(", ")
+        ),
+    );
+    Ok(say(bot, &message))
+}
+
+/// Logs a message for the user and hands it back.
+fn say(bot: &Bot, message: &str) -> String {
+    log(bot, "UI", message);
+    message.to_owned()
+}
+
+/// A new Send All command's unique ID (VibeSkua: a GUID).
+fn command_id() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!(
+        "{nanos:x}{:x}{:x}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
 }
