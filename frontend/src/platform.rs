@@ -131,7 +131,27 @@ pub trait Platform: Send + Sync {
     fn set_frame_interpolation(&self, on: bool) {
         ruffle_core::frame_interpolation::set_enabled(on);
     }
+
+    /// Whether Safe Drawing ([`SAFE_DRAWING`]) is saved on for the next start, or None where
+    /// Options > Application doesn't offer it (the desktop: files next to the exe).
+    fn safe_drawing(&self) -> Option<bool> {
+        None
+    }
+
+    /// Saves Safe Drawing for the next start (the switches are read once, as they're first used).
+    fn set_safe_drawing(&self, _on: bool) {}
 }
+
+/// Mugetsu's drawing speed-ups' switches (environment variables read when they're first used),
+/// all set by Safe Drawing: Ruffle's plain ways of drawing, for graphics drivers that misdraw
+/// with the speed-ups (a Snapdragon laptop lost parts of maps; a PowerVR phone drew streaks).
+pub const SAFE_DRAWING: [&str; 5] = [
+    "RUFFLE_NO_SHARED_SHAPES",
+    "RUFFLE_NO_ATLAS",
+    "RUFFLE_NO_CACHE_BATCH",
+    "RUFFLE_NO_PASS_MERGE",
+    "RUFFLE_SLOW_MULTIPLY",
+];
 
 /// The beep's pitch and length: .NET's `Console.Beep()` (800 Hz, 200 ms).
 pub const BEEP_HZ: f32 = 800.0;

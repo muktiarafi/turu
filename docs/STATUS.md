@@ -478,7 +478,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   keeps it online in the background (status and Stop / Pause in its notification, a wake lock
   while a script runs, back on its own after a kill). Checked on an emulator, not a phone. No file dialogs
   (scripts come from Search Scripts); OpenGL ES misdraws; the soft keyboard covers the game's
-  own text fields.
+  own text fields. Vulkan misdrew on an Infinix Hot 30i (PowerVR): the debug log now names the
+  GPU and driver, and Options > Application > Safe Drawing turns Mugetsu's speed-ups off to test
+  (docs/ANDROID.md, "Misdrawing"; not yet tried on that phone).
 - **Windowless mode logs in and farms** (2026-11-03: desktop `--headless` and Android, GoldFarm).
   It needed a fix in ruffle-aqw (`core/src/bitmap/operations.rs`): with AQW's default settings
   (no saved `AQWUserPref`, as on a new server or phone) the game draws the stage into a bitmap

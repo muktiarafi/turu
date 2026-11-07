@@ -439,14 +439,7 @@ fn preferred_adapter(_low_power: bool) -> Option<(u32, String)> {
 // each can be turned off with a file next to the exe, to find out which (not yet confirmed on
 // Adreno, so nothing is turned off automatically).
 
-/// The speed-ups' switches (environment variables read when they're first used).
-const SAFE_DRAWING: [&str; 5] = [
-    "RUFFLE_NO_SHARED_SHAPES",
-    "RUFFLE_NO_ATLAS",
-    "RUFFLE_NO_CACHE_BATCH",
-    "RUFFLE_NO_PASS_MERGE",
-    "RUFFLE_SLOW_MULTIPLY",
-];
+use crate::platform::SAFE_DRAWING;
 
 /// Called first thing in `main` (before any other thread exists): a `safe-drawing` file next to
 /// the exe turns all the speed-ups off (Ruffle's plain ways of drawing); `no-shared-shapes`,

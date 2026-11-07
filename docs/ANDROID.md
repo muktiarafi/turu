@@ -131,8 +131,9 @@ The data folder is the app's files folder on shared storage,
 `/sdcard/Android/data/com.muktiarafi.turu/files` (Turu's usual data folder layout: `scripts/`,
 `options/`, `options.json`, ...). The app reads `turu-args.txt` there at start: the desktop's
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
-`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES). Without the file the game starts at
-its login screen:
+`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES) and `--safe-drawing` (as Options >
+Application > Safe Drawing: "Misdrawing" below). Without the file the game starts at its login
+screen:
 
 ```
 --user
@@ -220,6 +221,23 @@ workflow then uploads `libturu_android.so`'s symbols with `sentry-cli`. A local 
 DSN from `-PsentryDsn=...`, `SENTRY_DSN` or `sentryDsn` in `android/local.properties`.
 
 The desktop app sends its own to a separate project (docs/STATUS.md, "Crash reports to Sentry").
+
+## Misdrawing
+
+A driver that draws garbage says nothing: no error, no crash report. An Infinix Hot 30i (PowerVR
+GE8320, going by its spec sheet) showed streaks, stripes and blocks of colour over the login
+screen and bands around the game's menus (2026-11-07). So the debug log (Diagnostics > Logs >
+Debug, and its Share) starts with the GPU and its driver, as
+`Graphics: Vulkan on <name> (<type>, vendor 0x...., device 0x....); driver <name> <version>`,
+plus a `Graphics: ... failed` line for each API that couldn't start.
+
+MSAA isn't the cause there: Android always draws with Flash-style edge smoothing (no MSAA, at
+any of AQW's Quality settings). What can be turned off is Mugetsu's drawing speed-ups: Options >
+Application > Safe Drawing (or `--safe-drawing` in `turu-args.txt`) sets the desktop's
+`safe-drawing` switches (`turu_frontend::platform::SAFE_DRAWING`: no shared shapes, atlas,
+cacheAsBitmap batching or pass merging, plain multiply) at the next start, saved as
+`safe-drawing.txt` in the data folder; the debug log then says `Safe Drawing: ...`. If it fixes a
+phone, the next step is to find which switch does it and turn it on for that GPU alone.
 
 ## GPU memory
 

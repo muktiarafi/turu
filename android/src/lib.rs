@@ -300,6 +300,13 @@ fn init_certificates(app: &AndroidApp) -> jni::errors::Result<()> {
     })
 }
 
+/// Takes every `flag` out of `args`; whether there was one.
+fn take_flag(args: &mut Vec<OsString>, flag: &str) -> bool {
+    let before = args.len();
+    args.retain(|arg| arg.to_str() != Some(flag));
+    args.len() != before
+}
+
 /// Takes `--graphics <auto|vulkan|gl>` (or `--graphics=...`) out of `args`.
 fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
     let mut graphics = Graphics::Auto;
@@ -347,6 +354,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let args_file = root.join(ARGS_FILE);
     let mut args = read_args(&args_file);
     let graphics = take_graphics(&mut args);
+    let safe_drawing = take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!("{ARGS_FILE}: {} arguments aren't Turu's flags; ignored", args.len());
@@ -357,6 +365,13 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // waits for its new shapes, and Flash-style edge smoothing.
     ruffle_core::set_shape_wait(Some(Duration::from_millis(12)));
     ruffle_render::tessellator::set_flash_aa(true);
+    if safe_drawing {
+        for var in turu_frontend::platform::SAFE_DRAWING {
+            // SAFETY: before the engine's threads exist and before Ruffle reads them; the
+            // process's other threads (Java's) don't read Turu's environment.
+            unsafe { std::env::set_var(var, "1") };
+        }
+    }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     turu::configure_startup();
     turu::start_api();
@@ -380,6 +395,12 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         tracing::error!("No graphics API worked; the game can't start");
         return;
     };
+    if safe_drawing {
+        turu::bot()
+            .logs
+            .debug
+            .push("Safe Drawing: Mugetsu's drawing speed-ups are off");
+    }
     GPU.set(Some((descriptors, blit)));
     let sender = ENGINE_TX.get().expect("set before the thread started").clone();
     let player = build_player(root, movie_url, renderer, sender.clone());
@@ -403,10 +424,17 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
 /// Frame interpolation (Options > Application; off by default) is on while this file is in the
 /// data folder, as Mugetsu's on a desktop.
 const INTERPOLATION_FILE: &str = "mugetsu-interpolation.txt";
+/// Options > Application > Safe Drawing, for the next start (as `--safe-drawing` does).
+pub(crate) const SAFE_DRAWING_FILE: &str = "safe-drawing.txt";
 
 /// Saves frame interpolation's switch (`platform.rs`).
 pub(crate) fn save_interpolation(on: bool) {
-    let path = turu_bot::paths::Paths::new().root.join(INTERPOLATION_FILE);
+    save_switch(INTERPOLATION_FILE, on);
+}
+
+/// Saves a switch read at start: the file in the data folder while it's on.
+pub(crate) fn save_switch(file: &str, on: bool) {
+    let path = turu_bot::paths::Paths::new().root.join(file);
     let result = if on {
         std::fs::write(&path, "on\n")
     } else {
@@ -416,7 +444,7 @@ pub(crate) fn save_interpolation(on: bool) {
         }
     };
     if let Err(e) = result {
-        tracing::warn!("Couldn't save frame interpolation in {}: {e}", path.display());
+        tracing::warn!("Couldn't save {}: {e}", path.display());
     }
 }
 

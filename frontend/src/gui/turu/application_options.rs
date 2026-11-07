@@ -2,7 +2,7 @@
 //! Turu's own settings in five sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
 //! just those two fields of `options.json`. Frame Interpolation is Mugetsu's, saved by the
-//! frontend (`Platform::set_frame_interpolation`). Web Monitor replaces VibeSkua's Skua Nexus webhook.
+//! frontend (`Platform::set_frame_interpolation`), as is Safe Drawing where it's offered. Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
@@ -78,6 +78,8 @@ enum Field {
     CheckClientUpdates,
     /// Mugetsu's frame interpolation, applied and saved by the frontend (`Platform`).
     FrameInterpolation,
+    /// Safe Drawing, saved by the frontend for the next start (`Platform::safe_drawing`).
+    SafeDrawing,
 }
 
 struct Entry {
@@ -104,6 +106,24 @@ macro_rules! entry {
 /// Every setting, in VibeSkua's order, then Turu's own.
 fn entries() -> Vec<Entry> {
     let mut entries = vibeskua_entries();
+    if crate::platform::platform().safe_drawing().is_some() {
+        let at = entries
+            .iter()
+            .position(|e| matches!(e.field, Field::FrameInterpolation))
+            .map_or(entries.len(), |i| i + 1);
+        entries.insert(
+            at,
+            Entry {
+                restart: true,
+                ..entry!(
+                    General,
+                    "Safe Drawing",
+                    "Turns off Turu's drawing speed-ups and draws the game the plain way. Try it if the game shows streaks, stripes or garbled colours, or parts of maps go missing. Slower, so leave it off when the game draws fine",
+                    Field::SafeDrawing
+                )
+            },
+        );
+    }
     if crate::platform::platform().uploads_crash_reports() {
         entries.insert(
             1,
@@ -551,6 +571,13 @@ impl ApplicationOptionsWindow {
                                         let mut on = ruffle_core::frame_interpolation::enabled();
                                         if widgets::switch(ui, &mut on).changed() {
                                             crate::platform::platform().set_frame_interpolation(on);
+                                        }
+                                    }
+                                    Field::SafeDrawing => {
+                                        let platform = crate::platform::platform();
+                                        let mut on = platform.safe_drawing() == Some(true);
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            platform.set_safe_drawing(on);
                                         }
                                     }
                                     Field::CrashReports => {

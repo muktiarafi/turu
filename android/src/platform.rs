@@ -65,6 +65,15 @@ impl Platform for AndroidPlatform {
         tracing::info!("Frame interpolation turned {}", if on { "on" } else { "off" });
     }
 
+    fn safe_drawing(&self) -> Option<bool> {
+        Some(turu_bot::paths::Paths::new().root.join(crate::SAFE_DRAWING_FILE).exists())
+    }
+
+    fn set_safe_drawing(&self, on: bool) {
+        crate::save_switch(crate::SAFE_DRAWING_FILE, on);
+        tracing::info!("Safe Drawing turned {} for the next start", if on { "on" } else { "off" });
+    }
+
     // `input::key` maps no function keys and sends egui no modifiers: no hotkeys to bind.
     fn has_hotkeys(&self) -> bool {
         false

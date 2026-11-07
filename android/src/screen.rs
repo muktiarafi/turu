@@ -106,12 +106,23 @@ pub fn gpu(graphics: Graphics, size: (u32, u32)) -> Option<(Arc<Descriptors>, Ar
         ));
         match made {
             Ok((adapter, device, queue)) => {
+                // In the debug log too (Diagnostics > Logs, and its Share), not only logcat: a
+                // driver that misdraws says nothing, so a report needs to say which one it was.
                 let info = adapter.get_info();
-                tracing::info!("Graphics: {} on {}", info.backend.to_str(), info.name);
+                turu::bot().logs.debug.push(format!(
+                    "Graphics: {} on {} ({:?}, vendor {:#06x}, device {:#06x}); driver {} {}",
+                    info.backend.to_str(),
+                    info.name,
+                    info.device_type,
+                    info.vendor,
+                    info.device,
+                    info.driver,
+                    info.driver_info,
+                ));
                 Some(Arc::new(Descriptors::new(instance, adapter, device, queue)))
             }
             Err(e) => {
-                tracing::warn!("Graphics: {backend:?} failed: {e}");
+                turu::bot().logs.debug.push(format!("Graphics: {backend:?} failed: {e}"));
                 None
             }
         }
