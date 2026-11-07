@@ -3,6 +3,8 @@
 //! they are in a [`SecretStore`], by default the system's keychain under the service
 //! [`KEYCHAIN_SERVICE`].
 
+pub mod ping;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;

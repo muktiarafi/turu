@@ -469,8 +469,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   busy tabs slow each other down (VibeSkua's processes use several cores; hidden tabs in game
   run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
   all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
-  login), as VibeSkua's processes do. `--api` steers the first tab only. Not built: VibeSkua's
-  Army Scheduler and per-squad Army Queue. Logging
+  login), as VibeSkua's processes do. `--api` steers the first tab only. Army > Army Queue runs squads
+  one after another (`bot/src/army/queue.rs`); not built: VibeSkua's Army Scheduler. Logging
   in and farming in several tabs is unverified with real accounts.
 - **Grid View is new and unchecked with real accounts** (`frontend/src/grid.rs`, nav bar Grid, with
   two tabs or more): every tab at once, each in a tile in VibeSkua's layout (rows of ⌈√n⌉),

@@ -629,7 +629,7 @@ impl AccountsWindow {
             ui.horizontal(|ui| {
                 ui.label("Server");
                 let bot = crate::turu::bot();
-                if let Some(server) = widgets::server_combo(ui, "turu_accounts_server", &bot, &self.list.server) {
+                if let Some(server) = server_status_combo(ui, &bot, &self.list.server) {
                     self.list.server = server;
                     self.save();
                 }
@@ -910,6 +910,40 @@ impl AccountsWindow {
             self.launch(accounts);
         }
     }
+}
+
+/// The launch server's drop-down with each server's status (VibeSkua Manager's
+/// `ServerStatusInline`): "Twilly [M] - 42ms - 120/1000", the ping measured with the game's
+/// handshake (`turu_bot::accounts::ping`). Falls back to the names alone without the list.
+fn server_status_combo(ui: &mut Ui, bot: &std::sync::Arc<turu_bot::Bot>, current: &str) -> Option<String> {
+    turu_bot::api::servers::refresh_in_background(bot);
+    let servers = bot.servers.cached();
+    let pings = turu_bot::accounts::ping::Pings::global();
+    pings.measure_in_background(servers.clone());
+    if servers.is_empty() {
+        return widgets::server_combo(ui, "turu_accounts_server", bot, current);
+    }
+    if pings.is_measuring() || bot.servers.is_refreshing() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    }
+    let mut picked = None;
+    ComboBox::from_id_salt("turu_accounts_server")
+        .selected_text(current)
+        .width(150.0)
+        .show_ui(ui, |ui| {
+            ui.spacing_mut().interact_size.y = widgets::target(24.0, 40.0);
+            ui.set_min_width(widgets::target(260.0, 240.0));
+            for server in &servers {
+                let name = server.name.trim();
+                let line = turu_bot::accounts::ping::status_line(server, pings.get(name));
+                if ui.selectable_label(current.eq_ignore_ascii_case(name), line).clicked() {
+                    picked = Some(name.to_owned());
+                }
+            }
+        })
+        .response
+        .on_hover_text("Which server to login when launching accounts");
+    picked
 }
 
 /// Whether the list shows the account with this tag filter and search (its name, username or a
