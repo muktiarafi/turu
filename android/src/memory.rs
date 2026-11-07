@@ -192,8 +192,8 @@ fn check_own_budget(watch: &mut Watch, player: &mut Player, phone_memory: u64, n
 
 /// Lets wgpu release the command buffers of GPU work that has finished. It only looks after the
 /// next submit or a poll, and without a window the game may submit nothing for minutes: on the
-/// emulator, one submission of a bitmap draw (~1300 render passes, a command buffer each, ~1 MB
-/// of the driver's memory each) stayed held all that time. A poll that doesn't wait.
+/// emulator, the last submission (and its command buffers) then stayed held all that time. A
+/// poll that doesn't wait.
 fn release_finished_gpu_work(player: &mut Player) {
     if let Some(renderer) = <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut()) {
         let _ = renderer.descriptors().device.poll(wgpu::PollType::Poll);
