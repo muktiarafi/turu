@@ -25,6 +25,7 @@ pub mod log;
 pub mod map_items;
 pub mod models;
 pub mod monitor;
+pub mod notifications;
 pub mod options;
 pub mod packet_filters;
 pub mod paths;
@@ -110,6 +111,8 @@ pub struct Bot {
     pub scheduler: scheduler::Scheduler,
     /// The army logs a script holds locked (`bot.army.withLock`).
     pub army: api::army::ArmyLocks,
+    /// Diagnostics > Notification Center: the feed of game and script events.
+    pub notifications: notifications::Feed,
     pub paths: paths::Paths,
 }
 
@@ -146,6 +149,7 @@ impl Bot {
             spammer: Arc::default(),
             scheduler: scheduler::Scheduler::default(),
             army: api::army::ArmyLocks::default(),
+            notifications: notifications::Feed::default(),
             paths,
         });
         background::start(&bot);
@@ -154,6 +158,7 @@ impl Bot {
         butler::start(&bot);
         gear::start(&bot);
         cosmetics::avatar::start(&bot);
+        notifications::start(&bot);
         bot
     }
 

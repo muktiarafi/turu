@@ -55,7 +55,15 @@ pub enum BotEvent {
         shop_item_id: i64,
     },
     ItemBought,
-    ItemSold,
+    /// `sellItem` (VibeSkua `ItemSoldMessage`): `quantity_now` is what is left of the stack,
+    /// `cost` what the sale paid, in AC when `is_ac`.
+    ItemSold {
+        char_item_id: i64,
+        quantity_sold: i64,
+        quantity_now: i64,
+        cost: i64,
+        is_ac: bool,
+    },
     BankLoaded,
     ShopLoaded,
     ConnectionLost,
@@ -103,7 +111,7 @@ impl BotEvent {
             Self::ItemAddedToBank { .. } => "itemAddedToBank",
             Self::TryBuyItem { .. } => "tryBuyItem",
             Self::ItemBought => "itemBought",
-            Self::ItemSold => "itemSold",
+            Self::ItemSold { .. } => "itemSold",
             Self::BankLoaded => "bankLoaded",
             Self::ShopLoaded => "shopLoaded",
             Self::ConnectionLost => "connectionLost",
@@ -144,6 +152,19 @@ impl BotEvent {
             } => {
                 json!({ "shopId": shop_id, "itemId": item_id, "shopItemId": shop_item_id })
             }
+            Self::ItemSold {
+                char_item_id,
+                quantity_sold,
+                quantity_now,
+                cost,
+                is_ac,
+            } => json!({
+                "charItemId": char_item_id,
+                "quantitySold": quantity_sold,
+                "currentQuantity": quantity_now,
+                "cost": cost,
+                "isAC": is_ac,
+            }),
             Self::ReloginTriggered { was_kicked } => json!({ "wasKicked": was_kicked }),
             Self::Login { username } => json!({ "username": username }),
             Self::CounterAttack { faded } => json!({ "faded": faded }),

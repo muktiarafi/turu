@@ -32,6 +32,7 @@ mod nav_bar;
 mod packet_filters;
 mod packet_logger;
 mod notify_drop;
+mod notifications;
 mod runtime;
 mod scheduler;
 mod script_loader;
@@ -81,6 +82,8 @@ pub struct Windows {
     pub army: bool,
     pub butler: bool,
     pub cosmetics: bool,
+    /// Diagnostics > Notification Center.
+    pub notifications: bool,
     /// The nav bar's "Update" notice: a newer Turu (`client_update`).
     pub client_update: bool,
 }
@@ -180,6 +183,7 @@ struct TabUi {
     loadouts: loadouts::LoadoutsWindow,
     butler: butler::ButlerWindow,
     cosmetics: cosmetics::CosmeticsWindow,
+    notifications: notifications::NotificationCenterWindow,
 }
 
 pub struct TuruUi {
@@ -281,6 +285,7 @@ impl TuruUi {
         w.notify_drop |= std::mem::take(&mut tab.runtime.open_notify_drop);
         tab.notify_drop.show(ctx, &mut w.notify_drop);
         tab.skills.show(ctx, &mut w.skills);
+        tab.notifications.show(ctx, &mut w.notifications);
         tab.logs.show(ctx, &mut w.logs);
         // A modal: over the windows whatever the order.
         logs::show_crash_notice(ctx, &mut w.logs, &mut tab.logs);
@@ -469,6 +474,10 @@ mod tests {
                 boxed(interceptor::InterceptorWindow::default(), |w, c, o| w.show(c, o)),
             ),
             ("Butler", boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                notifications::TITLE,
+                boxed(notifications::NotificationCenterWindow::default(), |w, c, o| w.show(c, o)),
+            ),
             (
                 "Cosmetics & Outfits",
                 boxed(cosmetics::CosmeticsWindow::default(), |w, c, o| w.show(c, o)),

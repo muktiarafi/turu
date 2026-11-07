@@ -22,6 +22,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-06), from `docs/STATUS.md`, `
 | 12 | View Plugins / plugin system | Plugins | Loads `ISkuaPlugin` DLLs. Turu builds Butler and Cosmetics in; no plugin loading, and the greyed View Plugins entry is gone. | skip (for now) |
 | 13 | Daily & Weekly Tracker plugin | Plugins (`Skua.Plugin.DailyTracker`) | Shows which dailies/weeklies are done. | skip (for now) |
 | 14 | BotWindow (the "+" tool host) | Nav bar "+" | Tabbed host of every tool window with a search sidebar. Turu's "+" opens the Script Loader. | |
+| 14a | Notification Center | Diagnostics | Feed of drops, deaths, relogins, maps, quests, sales and script starts/stops/errors with filter chips. **Ported** (`frontend/src/gui/turu/notifications.rs`, `bot/src/notifications.rs`, `bot/tests/notifications.rs`): collected per bot from its start; `itemSold` now carries VibeSkua's sale data. | port (done) |
 
 ## Smaller UI pieces
 

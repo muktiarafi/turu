@@ -899,6 +899,9 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
         }
         Menu::Diagnostics => {
+            if item(ui, "Notification Center") {
+                windows.notifications = true;
+            }
             if item(ui, "Logs") {
                 windows.logs = true;
             }
