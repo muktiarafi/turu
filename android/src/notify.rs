@@ -1,7 +1,7 @@
 //! The Java side's foreground service (`TuruService.kt`): its native methods, and the status it
 //! shows. The service starts the engine (also after Android killed the process, when there's no
-//! activity), its notification shows the active tab's script with Stop and Pause (and a line per
-//! tab with several), and it holds a wake lock while any tab's script runs. A thread here sends
+//! activity), its notification shows the active tab's script with Pause and Stop while it runs,
+//! Start while one is loaded and stopped (and a line per tab with several), and it holds a wake lock while any tab's script runs. A thread here sends
 //! it the bots' state every 2 s, when it changed, and keeps `android-tabs.json` up to date.
 
 use jni::errors::ThrowRuntimeExAndDefault;
@@ -56,6 +56,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeAction<'local>(
             // Off the calling thread: stopping waits for the script's stop handlers.
             turu::spawn_action("Notification", move |bot| {
                 match action.as_str() {
+                    "start" => start(bot),
                     "stop" => turu_bot::script::stop(bot),
                     "pause" => {
                         let paused = bot.control.is_paused();
@@ -70,6 +71,27 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeAction<'local>(
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// The notification's Start: the loaded script, under Script Loader's rules (not while it runs,
+/// nor while Auto or a Console snippet does). Silent (VibeSkua `SilentConfig`): nobody may be
+/// looking at the app to answer the Script Options window, so the saved options are used.
+fn start(bot: &Arc<Bot>) {
+    if !can_start(bot) {
+        return;
+    }
+    if let Err(e) = turu_bot::script::start_silent(bot) {
+        bot.log(format!("Couldn't start the script: {e}"));
+    }
+}
+
+/// Whether Start can start the tab's script: one is loaded, it doesn't run, and neither Auto nor a
+/// Console snippet does.
+fn can_start(bot: &Bot) -> bool {
+    bot.scripts.loaded().is_some()
+        && !bot.scripts.status().is_active()
+        && !bot.auto.is_running()
+        && !bot.scripts.is_snippet_running()
+}
+
 /// What the notification shows.
 #[derive(Clone, PartialEq)]
 struct Status {
@@ -78,6 +100,8 @@ struct Status {
     /// The active tab's script runs (Pause and Stop act on it).
     running: bool,
     paused: bool,
+    /// The active tab's script is loaded and can start (Start).
+    startable: bool,
     /// Some tab's script runs: the wake lock is held.
     awake: bool,
 }
@@ -115,6 +139,8 @@ fn status() -> Status {
     let paused = running && bot.control.is_paused();
     let title = match (script_name(&bot), running) {
         (Some(name), true) => format!("{name} {}", if paused { "paused" } else { "running" }),
+        // Loaded and stopped: what Start runs.
+        (Some(name), false) => format!("{name} loaded"),
         _ => "Turu".to_owned(),
     };
     let mut text = if tabs.len() > 1 {
@@ -141,6 +167,7 @@ fn status() -> Status {
         text,
         running,
         paused,
+        startable: can_start(&bot),
         awake: tabs.iter().any(|(_, tab)| tab.scripts.is_running()),
     }
 }
@@ -219,7 +246,7 @@ pub(crate) fn gpu_lost(why: &str) {
     });
 }
 
-/// `TuruService.status(title, text, running, paused, awake)`.
+/// `TuruService.status(title, text, running, paused, startable, awake)`.
 fn send(status: &Status) -> jni::errors::Result<()> {
     let Some((vm, class)) = SERVICE.get() else {
         return Ok(());
@@ -230,12 +257,13 @@ fn send(status: &Status) -> jni::errors::Result<()> {
         env.call_static_method(
             class,
             jni_str!("status"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZ)V"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZZ)V"),
             &[
                 JValue::Object(&title),
                 JValue::Object(&text),
                 JValue::Bool(status.running),
                 JValue::Bool(status.paused),
+                JValue::Bool(status.startable),
                 JValue::Bool(status.awake),
             ],
         )?;

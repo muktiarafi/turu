@@ -109,6 +109,11 @@ impl Paths {
         self.root.join("scripts")
     }
 
+    /// Favourite and recently started scripts (`quick_scripts`), shared by every client.
+    pub fn quick_scripts_file(&self) -> PathBuf {
+        self.root.join("quick-scripts.json")
+    }
+
     /// Writes `types/turu.ts` into the scripts folder for code editors: the script API this app
     /// runs, rewritten whenever it differs. The repository's `tsconfig.json`, downloaded with
     /// the scripts (`repo::ScriptRepo`), maps `"turu"` to it; without both, editors report

@@ -612,6 +612,9 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
     // VibeSkua sends `ScriptStartedMessage` just before the thread starts, so a script that ends
     // at once can't log its stop first (Notification Center).
     bot.notifications.script_started(Some(&path));
+    crate::quick_scripts::update(&bot.paths.quick_scripts_file(), |lists| {
+        lists.note_started(&path)
+    });
     let thread_bot = bot.clone();
     std::thread::Builder::new()
         .name("Script Thread".into())

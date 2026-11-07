@@ -78,6 +78,9 @@ pub struct AppSettings {
     /// Turu (Android): how many tabs (game clients) may be open at once, 1 to 4. Each one takes
     /// about 400 MB, so a phone holds 2, maybe 3 (`docs/ANDROID_PROPOSAL.md`, phase 5).
     pub tab_limit: i32,
+    /// The side bar (the rail on a touch screen) was hidden with its logo or Menu > Hide Side
+    /// Bar: it stays hidden when Turu opens again, until the tab at the left edge brings it back.
+    pub side_bar_hidden: bool,
 }
 
 impl Default for AppSettings {
@@ -119,6 +122,7 @@ impl Default for AppSettings {
             stats_rate_unit: "/hr".into(),
             army_queue_help_dismissed: false,
             tab_limit: 2,
+            side_bar_hidden: false,
         }
     }
 }

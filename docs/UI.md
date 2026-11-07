@@ -84,7 +84,11 @@ pressed; a dot badge for Auto running or an update; a spinner in place of Bank's
 **Menu** (every menu as a submenu, opening beside the rail), **Auto**, **Jump**, **Bank**, **Grid**
 (two tabs or more) and **Update** (while one is out). At the bottom, the script's status in one
 column: a 56x48 chip (status dot over the clock, or "Finished", "Stopped", "Error", "No
-script"; opens the Script Loader) with the run controls under it, 44 high. Popups open beside
+script"; opens the Script Loader, or with favourite or recent scripts a list beside it:
+Script Loader, then Favourites and Recent, a tap loading and starting one; `quick-scripts.json`,
+the Script Loader's ★ beside the name) with the run controls under it, 44 high. The symbol and
+Menu > Hide Side Bar hide the rail (a `›` tab at the left edge brings it back), and it stays
+hidden across restarts (`sideBarHidden`). Popups open beside
 their item. A short screen folds the symbol, then Update, then Bank into Menu; the fit always
 counts two run controls, so starting or stopping a script doesn't move the items. In the bar
 (desktop) its buttons, toggles, chip and run cells are 26 high; menu rows on a touch screen

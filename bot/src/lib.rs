@@ -31,6 +31,7 @@ pub mod packet_filters;
 pub mod paths;
 pub mod perf;
 pub mod quest_cache;
+pub mod quick_scripts;
 pub mod repo;
 pub mod scheduler;
 pub mod script;

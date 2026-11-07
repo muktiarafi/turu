@@ -18,7 +18,7 @@ import android.os.PowerManager
  * Keeps Turu running in the background: without a foreground service Android cuts a background
  * app's network after a few seconds, which drops the game. It starts the engine (the Rust side,
  * also when Android restarts the service after killing the process, with no activity), shows
- * the script's state with Stop and Pause, and holds a wake lock while a script runs.
+ * the script's state with Pause and Stop (Start while one is loaded and stopped), and holds a wake lock while a script runs.
  *
  * The Rust side reaches only this class (its `@JvmStatic` methods, by name and JNI signature:
  * `notify.rs`, `platform.rs`), so keep those static, public and with the same parameter types.
@@ -30,6 +30,7 @@ class TuruService : Service() {
     private var running = false
     private var awake = false
     private var paused = false
+    private var startable = false
 
     override fun onCreate() {
         super.onCreate()
@@ -56,6 +57,7 @@ class TuruService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_START -> nativeAction("start")
             ACTION_STOP -> nativeAction("stop")
             ACTION_PAUSE -> nativeAction("pause")
         }
@@ -83,11 +85,19 @@ class TuruService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun show(title: String, text: String, running: Boolean, paused: Boolean, awake: Boolean) {
+    private fun show(
+        title: String,
+        text: String,
+        running: Boolean,
+        paused: Boolean,
+        startable: Boolean,
+        awake: Boolean,
+    ) {
         this.title = title
         this.text = text
         this.running = running
         this.paused = paused
+        this.startable = startable
         this.awake = awake
         // The CPU stays awake while any tab's script runs (the screen may go off).
         if (awake && !wakeLock.isHeld) {
@@ -129,6 +139,8 @@ class TuruService : Service() {
                 Notification.Action.Builder(null, if (paused) "Resume" else "Pause", action(ACTION_PAUSE, 1)).build(),
             )
             builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_STOP, 2)).build())
+        } else if (startable) {
+            builder.addAction(Notification.Action.Builder(null, "Start", action(ACTION_START, 3)).build())
         }
         return builder.build()
     }
@@ -136,6 +148,7 @@ class TuruService : Service() {
     companion object {
         private const val CHANNEL = "turu"
         private const val NOTIFICATION = 1
+        const val ACTION_START = "com.muktiarafi.turu.START"
         const val ACTION_STOP = "com.muktiarafi.turu.STOP"
         const val ACTION_PAUSE = "com.muktiarafi.turu.PAUSE"
 
@@ -182,17 +195,18 @@ class TuruService : Service() {
 
         /**
          * Called by the Rust side (any thread) when the bots' state changes: [running] and
-         * [paused] are the active tab's script's (Pause and Stop act on it), [awake] says whether
-         * any tab's script runs (the wake lock).
+         * [paused] are the active tab's script's (Pause and Stop act on it), [startable] says its
+         * loaded script can start (Start), [awake] says whether any tab's script runs (the wake
+         * lock).
          */
         @JvmStatic
-        fun status(title: String, text: String, running: Boolean, paused: Boolean, awake: Boolean) {
-            main.post { instance?.show(title, text, running, paused, awake) }
+        fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
+            main.post { instance?.show(title, text, running, paused, startable, awake) }
         }
 
         /** Posts the notification again: it's dropped while the permission isn't granted yet. */
         fun refresh() {
-            main.post { instance?.let { it.show(it.title, it.text, it.running, it.paused, it.awake) } }
+            main.post { instance?.let { it.show(it.title, it.text, it.running, it.paused, it.startable, it.awake) } }
         }
     }
 }
