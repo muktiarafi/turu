@@ -1,7 +1,9 @@
 package com.muktiarafi.turu
 
 import android.Manifest
+import android.app.Activity
 import android.app.NativeActivity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
@@ -10,12 +12,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.window.OnBackInvokedDispatcher
+import java.io.File
+import kotlin.concurrent.thread
 
 /**
  * NativeActivity, which runs the Rust side (libturu_android.so), plus the foreground service
@@ -53,7 +58,9 @@ class TuruActivity : NativeActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
         }
+        started = true
         TuruService.start(this)
+        Storage.init(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
                 moveTaskToBack(true)
@@ -125,6 +132,87 @@ class TuruActivity : NativeActivity() {
         current?.let { nativeRefreshRate(it.refreshRate) }
     }
 
+    /**
+     * The bot windows' "open file" dialog (`saf.rs`): the system picker for `mimeTypes` (one per
+     * line). The chosen document is copied into `folder` (the cache when empty) and its copy's
+     * path goes back through [nativeDocumentPicked]. Called on the engine thread.
+     */
+    fun openDocument(mimeTypes: String, folder: String) {
+        val types = mimeTypes.lines().filter { it.isNotBlank() }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(types.singleOrNull() ?: "*/*")
+        if (types.size > 1) {
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, types.toTypedArray())
+        }
+        pickFolder = folder
+        runOnUiThread { startPicker(intent, OPEN_DOCUMENT) }
+    }
+
+    /**
+     * The bot windows' "save file" dialog (`saf.rs`): the system picker making a document named
+     * `fileName`; [nativeDocumentCreated] gets it and a file for the window to write.
+     */
+    fun createDocument(mimeType: String, fileName: String) {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(mimeType)
+            .putExtra(Intent.EXTRA_TITLE, fileName)
+        runOnUiThread { startPicker(intent, CREATE_DOCUMENT) }
+    }
+
+    private fun startPicker(intent: Intent, request: Int) {
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, request)
+        } catch (e: ActivityNotFoundException) {
+            Log.w("turu", "No document picker on this phone: $e")
+            answer(request, null)
+        }
+    }
+
+    /** The answer when there's no document: cancelled, or no picker. */
+    private fun answer(request: Int, uri: Uri?) {
+        if (request == CREATE_DOCUMENT) {
+            if (uri == null) {
+                nativeDocumentCreated(null, null)
+            } else {
+                val path = try {
+                    Storage.saveFile(uri).absolutePath
+                } catch (e: Exception) {
+                    Log.w("turu", "Couldn't make a file to save into: $e")
+                    null
+                }
+                nativeDocumentCreated(path?.let { uri.toString() }, path)
+            }
+            return
+        }
+        if (uri == null) {
+            nativeDocumentPicked(null)
+            return
+        }
+        val folder = pickFolder
+        // Off the main thread: a document can be large, or on the network (Drive).
+        thread(name = "Turu Pick") {
+            val path = try {
+                Storage.copyDocument(uri, if (folder.isEmpty()) Storage.pickedFolder() else File(folder)).absolutePath
+            } catch (e: Exception) {
+                Log.w("turu", "Couldn't copy the chosen document: $e")
+                null
+            }
+            nativeDocumentPicked(path)
+        }
+    }
+
+    @Deprecated("The pickers use startActivityForResult, which NativeActivity has")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == OPEN_DOCUMENT || requestCode == CREATE_DOCUMENT) {
+            answer(requestCode, if (resultCode == Activity.RESULT_OK) data?.data else null)
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
         TuruService.refresh()
@@ -164,7 +252,31 @@ class TuruActivity : NativeActivity() {
         }
     }
 
+    /** Where the "open" picker's document is copied (`openDocument`). */
+    @Volatile
+    private var pickFolder = ""
+
     companion object {
+        private const val OPEN_DOCUMENT = 41
+        private const val CREATE_DOCUMENT = 42
+
+        /**
+         * Whether an activity started in this process: the service started without one is a
+         * restart after Android killed the process (`restart.rs`).
+         */
+        @Volatile
+        @JvmStatic
+        var started = false
+            private set
+
+        /** The "open" picker's answer: the copy's path, null when cancelled (`saf.rs`). */
+        @JvmStatic
+        private external fun nativeDocumentPicked(path: String?)
+
+        /** The "save" picker's answer: the document and the file to write, nulls when cancelled. */
+        @JvmStatic
+        private external fun nativeDocumentCreated(uri: String?, path: String?)
+
         /** The soft keyboard's height in window pixels, 0 when it's down (`ui.rs`). */
         @JvmStatic
         private external fun nativeKeyboardHeight(pixels: Int)

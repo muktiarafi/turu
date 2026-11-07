@@ -1,7 +1,6 @@
-//! What the bot windows ask of Android (`turu_frontend::platform`). There are no file dialogs
-//! yet (the system picker answers through the activity, which needs Java of ours): the windows
-//! hide Load Script and Save, and scripts come from Search Scripts. Web pages open in the
-//! browser; folders and files only get logged, so Edit Script and Open VSCode are hidden too.
+//! What the bot windows ask of Android (`turu_frontend::platform`). File dialogs are the system's
+//! picker (`saf.rs`), answering with a path as on a desktop. Web pages open in the browser;
+//! folders and files only get logged, so Edit Script and Open VSCode are hidden.
 //! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
 //! `OutputCommand::CopyText`, passed on by `screen.rs`) goes to Android's clipboard.
 //! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`). Frame interpolation
@@ -18,14 +17,12 @@ use turu_frontend::platform::{Answer, FileDialog, Platform};
 pub struct AndroidPlatform;
 
 impl Platform for AndroidPlatform {
-    fn pick_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
-        tracing::info!("No file dialogs on Android yet: Search Scripts downloads and loads scripts");
-        false
+    fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
+        crate::saf::pick_file(&dialog, answer)
     }
 
-    fn save_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
-        tracing::info!("No file dialogs on Android yet");
-        false
+    fn save_file(&self, dialog: FileDialog, answer: Answer) -> bool {
+        crate::saf::save_file(&dialog, answer)
     }
 
     fn open_url(&self, url: &str) {
@@ -45,10 +42,6 @@ impl Platform for AndroidPlatform {
 
     fn open_file(&self, path: &Path) {
         tracing::info!("The file is {} (on the phone's storage)", path.display());
-    }
-
-    fn has_file_dialogs(&self) -> bool {
-        false
     }
 
     fn opens_files(&self) -> bool {
@@ -151,7 +144,7 @@ pub fn copy_text(text: &str) {
 }
 
 /// Runs `work` with the activity, on a thread attached to the JavaVM.
-fn with_activity<T>(
+pub(crate) fn with_activity<T>(
     app: &AndroidApp,
     work: impl FnOnce(&mut jni::Env, &JObject) -> jni::errors::Result<T>,
 ) -> jni::errors::Result<T> {

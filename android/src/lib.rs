@@ -19,9 +19,13 @@ mod audio;
 mod input;
 mod memory;
 mod notify;
+mod pan;
 mod platform;
 mod frame_perf;
+mod restart;
+mod saf;
 mod screen;
+mod storage;
 mod ui;
 
 use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
@@ -118,6 +122,7 @@ pub(crate) fn start_engine(root: PathBuf) {
         // Before any reqwest client is built (Search Scripts, the navigator).
         let _ = rustls::crypto::ring::default_provider().install_default();
         turu_bot::paths::set_default_root(root.clone());
+        storage::install();
         let _ = CRASH_DIR.set(turu_bot::paths::Paths::new().crash_dir());
         let (sender, events) = channel();
         let _ = ENGINE_TX.set(sender);
@@ -486,6 +491,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss = take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
+    restart::prepare(&mut args);
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!("{ARGS_FILE}: {} arguments aren't Turu's flags; ignored", args.len());
@@ -505,6 +511,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     turu::configure_startup();
+    restart::start();
     turu::start_api();
     turu::start_monitor();
     turu::start_client_updates();
