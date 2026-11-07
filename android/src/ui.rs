@@ -36,6 +36,27 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeKeyboardHeight<'lo
 static CUTOUT_LEFT: AtomicU32 = AtomicU32::new(0);
 static CUTOUT_RIGHT: AtomicU32 = AtomicU32::new(0);
 
+/// Shows or hides the soft keyboard: `TuruActivity.softKeyboard(show)`, which does it on the UI
+/// thread (android-activity's `show_soft_input` calls the input method on this one, which Android
+/// 15 refuses with a `CalledFromWrongThreadException`, so the keyboard never came up).
+pub fn soft_keyboard(show: bool) {
+    let Some(app) = crate::app() else {
+        return;
+    };
+    let result = crate::platform::with_activity(&app, |env, activity| {
+        env.call_method(
+            activity,
+            jni::jni_str!("softKeyboard"),
+            jni::jni_sig!("(Z)V"),
+            &[jni::objects::JValue::Bool(show)],
+        )?;
+        Ok(())
+    });
+    if let Err(e) = result {
+        tracing::warn!("Couldn't {} the soft keyboard: {e}", if show { "show" } else { "hide" });
+    }
+}
+
 /// The display cutout's (left, right) insets in window pixels.
 pub fn cutout() -> (u32, u32) {
     (CUTOUT_LEFT.load(Ordering::Relaxed), CUTOUT_RIGHT.load(Ordering::Relaxed))
@@ -87,15 +108,11 @@ impl AndroidUiBackend {
 
 impl UiBackend for AndroidUiBackend {
     fn open_virtual_keyboard(&self) {
-        if let Some(app) = crate::app() {
-            app.show_soft_input(true);
-        }
+        soft_keyboard(true);
     }
 
     fn close_virtual_keyboard(&self) {
-        if let Some(app) = crate::app() {
-            app.hide_soft_input(true);
-        }
+        soft_keyboard(false);
     }
 
     fn mouse_visible(&self) -> bool {

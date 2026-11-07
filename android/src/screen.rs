@@ -680,15 +680,9 @@ impl Screen {
     /// Brings the soft keyboard up while a text box of the UI has the focus.
     fn soft_keyboard(&mut self) {
         let wanted = self.ui_typing;
-        if wanted != self.keyboard_shown
-            && let Some(app) = crate::app()
-        {
+        if wanted != self.keyboard_shown {
             self.keyboard_shown = wanted;
-            if wanted {
-                app.show_soft_input(true);
-            } else {
-                app.hide_soft_input(true);
-            }
+            crate::ui::soft_keyboard(wanted);
         }
     }
 }

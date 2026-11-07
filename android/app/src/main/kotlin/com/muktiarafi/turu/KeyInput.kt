@@ -19,8 +19,8 @@ import android.view.inputmethod.InputConnection
  * Its editor is [InputType.TYPE_NULL], which asks the keyboard for key events only (no
  * suggestions, no composing); a delete request that comes anyway becomes Backspace or Delete
  * keys. The keys reach the Rust side as all of the window's do (NativeActivity takes its input
- * queue). The keyboard is still shown and hidden for NativeActivity's own view (`ui.rs`, through
- * ANativeActivity_showSoftInput), which [checkInputConnectionProxy] accepts.
+ * queue). The keyboard is shown and hidden for this view on the UI thread
+ * (`TuruActivity.softKeyboard`).
  */
 internal class KeyInput(context: Context) : View(context) {
     init {
