@@ -499,7 +499,7 @@ impl GameOptionsWindow {
             self.save_result = None;
             return;
         }
-        let mut window = super::window(ctx, "Game Options", [612.0, 720.0], 1).open(open);
+        let mut window = super::window(ctx, "Game Options", [800.0, 720.0], 1).open(open);
         // On a phone a floating window leaves the footer's buttons off screen: it fills the
         // screen instead.
         let area = super::window_area(ctx);
@@ -589,29 +589,47 @@ impl GameOptionsWindow {
                                 .color(WARNING),
                             );
                         }
-                        let mut group = "";
-                        for (i, entry) in rows.into_iter().enumerate() {
-                            if entry.group != group {
-                                group = entry.group;
-                                if !group.is_empty() {
-                                    if i > 0 {
-                                        ui.add_space(6.0);
-                                    }
-                                    ui.label(RichText::new(group).small().strong().color(MUTED));
-                                }
-                            }
-                            // Differs from options.json: changed here, or by something else.
-                            let mark = differs.contains(&entry.label).then(|| {
-                                if self.edited.contains(entry.label) {
+                        // Differs from options.json: changed here, or by something else.
+                        let edited = &self.edited;
+                        let mark = |entry: &Entry| {
+                            differs.contains(&entry.label).then(|| {
+                                if edited.contains(entry.label) {
                                     Mark::Edited
                                 } else {
                                     Mark::Outside
                                 }
-                            });
-                            if row(ui, entry, mark, &mut snapshot, &bot) {
-                                self.edited.insert(entry.label);
+                            })
+                        };
+                        // VibeSkua's two columns (a row of two options at a time), one when narrow.
+                        let two_columns = ui.available_width() >= TWO_COLUMNS_WIDTH;
+                        let mut changed = Vec::new();
+                        for (i, run) in rows.chunk_by(|a, b| a.group == b.group).enumerate() {
+                            let group = run[0].group;
+                            if !group.is_empty() {
+                                if i > 0 {
+                                    ui.add_space(6.0);
+                                }
+                                ui.label(RichText::new(group).small().strong().color(MUTED));
+                            }
+                            if !two_columns {
+                                for entry in run {
+                                    if row(ui, entry, mark(entry), &mut snapshot, &bot) {
+                                        changed.push(entry.label);
+                                    }
+                                }
+                                continue;
+                            }
+                            for pair in run.chunks(2) {
+                                ui.columns(2, |columns| {
+                                    for (column, entry) in columns.iter_mut().zip(pair) {
+                                        if row(column, entry, mark(entry), &mut snapshot, &bot) {
+                                            changed.push(entry.label);
+                                        }
+                                    }
+                                });
                             }
                         }
+                        self.edited.extend(changed);
                     });
                 }
             });
@@ -1002,6 +1020,10 @@ fn matches(entry: &Entry, needle: &str) -> bool {
 /// The narrowest a row's label and description get beside its control; narrower, the control
 /// goes under them.
 const MIN_TEXT_WIDTH: f32 = 160.0;
+
+/// From this wide a section shows its options in two columns (VibeSkua's `UniformGrid`); a phone
+/// gets one.
+const TWO_COLUMNS_WIDTH: f32 = 640.0;
 
 /// Why a row differs from `options.json`.
 #[derive(Clone, Copy, PartialEq, Eq)]

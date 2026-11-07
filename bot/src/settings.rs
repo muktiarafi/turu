@@ -14,6 +14,8 @@ pub struct AppSettings {
     /// VibeSkua's "Client Animation Frame-rate": the frame rate the client starts with, until
     /// the game's own FPS setting (or Options > Game > Set FPS) applies in game.
     pub animation_frame_rate: i32,
+    /// VibeSkua's "Grandpa Mode" (`GrandpaMode`): larger text in the logs and the packet tools.
+    pub grandpa_mode: bool,
     // Auto Updates & Sync. The script ones are read at launch (`repo::ScriptRepo::startup`);
     // the skill-set and junk-item ones are stored only.
     pub check_bot_scripts_updates: bool,
@@ -75,6 +77,7 @@ impl Default for AppSettings {
         Self {
             show_username_in_title: true,
             animation_frame_rate: GAME_FRAME_RATE,
+            grandpa_mode: false,
             check_bot_scripts_updates: true,
             auto_update_bot_scripts: true,
             check_advance_skill_sets_updates: true,

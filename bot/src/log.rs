@@ -141,6 +141,9 @@ pub struct Logs {
     pub packets: LogBuffer,
     /// Diagnostics > Logger is on: outgoing packets go to `packets`.
     pub packet_logging: std::sync::atomic::AtomicBool,
+    /// The Logger's unticked "Show" filters, bit `i` for `packet_filters::LOGGER_FILTERS[i]`:
+    /// packets they take aren't logged (VibeSkua `LogPackets`). 0: every filter ticked.
+    pub packet_hidden: std::sync::atomic::AtomicU32,
 }
 
 impl Default for Logs {
@@ -150,6 +153,7 @@ impl Default for Logs {
             debug: LogBuffer::new("debug", 5000),
             packets: LogBuffer::new("packets", 1000),
             packet_logging: std::sync::atomic::AtomicBool::new(false),
+            packet_hidden: std::sync::atomic::AtomicU32::new(0),
         }
     }
 }
@@ -163,6 +167,15 @@ pub fn packets_to_log() -> bool {
 }
 
 impl Logs {
+    /// Whether the Logger keeps `packet` with its current filters.
+    pub fn keeps_packet(&self, packet: &str) -> bool {
+        let hidden = self.packet_hidden.load(Ordering::Relaxed);
+        let checked: Vec<bool> = (0..crate::packet_filters::LOGGER_FILTERS.len())
+            .map(|i| hidden & (1 << i) == 0)
+            .collect();
+        crate::packet_filters::logger_keeps(packet, &checked)
+    }
+
     pub fn get(&self, kind: LogKind) -> &LogBuffer {
         match kind {
             LogKind::Script => &self.script,

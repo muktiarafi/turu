@@ -5,9 +5,12 @@ use super::theme::{
     ACCENT, ACCENT_HOVER, ACCENT_PRESSED, CARD, DANGER, DANGER_HOVER, DANGER_PRESSED, EDGE, HOVER, INSET, MUTED,
     RADIUS, SMALL_RADIUS, TEXT, TRACK,
 };
+use egui::emath::TSTransform;
+use egui::epaint::PathStroke;
+use egui::layers::ShapeIdx;
 use egui::{
-    Align, Button, Color32, CornerRadius, FontId, Frame, Label, Layout, Margin, Rect, Response, RichText, ScrollArea,
-    Sense, Stroke, TextStyle, TextWrapMode, Ui, Vec2, pos2, vec2,
+    Align, Button, Color32, CornerRadius, FontId, Frame, Label, Layout, Margin, Mesh, Pos2, Rect, Response, RichText,
+    ScrollArea, Sense, Shape, Stroke, StrokeKind, TextStyle, TextWrapMode, Ui, Vec2, pos2, vec2,
 };
 
 /// VibeSkua's button classes: `skua-button`, `skua-primary`, `skua-danger`, `outline`.
@@ -20,7 +23,18 @@ pub enum Kind {
 }
 
 /// A button of `size` in one of VibeSkua's styles. `tooltip` shows when it is disabled.
+///
+/// As VibeSkua's buttons (`Buttons.axaml`, `HoverGlow`): it shrinks to 96% while pressed and
+/// springs back, and with a pointer (not on a touch screen) a soft glow follows the cursor
+/// across its fill and edge while hovered.
 pub fn button(ui: &mut Ui, label: &str, kind: Kind, enabled: bool, size: Vec2, tooltip: &str) -> Response {
+    let layer = ui.layer_id();
+    let first_shape = ui
+        .ctx()
+        .graphics(|g| g.get(layer).map_or(ShapeIdx(0), |l| l.next_idx()));
+    let glow = enabled && !touch();
+    // Under the button: its hover fill with the glow, painted once its state is known.
+    let glow_slot = glow.then(|| ui.painter().add(Shape::Noop));
     let response = ui
         .scope(|ui| {
             let w = &mut ui.visuals_mut().widgets;
@@ -38,14 +52,136 @@ pub fn button(ui: &mut Ui, label: &str, kind: Kind, enabled: bool, size: Vec2, t
             if kind == Kind::Outline {
                 w.inactive.bg_stroke = Stroke::new(1.0, EDGE);
             }
+            if glow {
+                // The glow slot paints the hovered fill and edge.
+                w.hovered.weak_bg_fill = Color32::TRANSPARENT;
+                w.hovered.bg_stroke = Stroke::NONE;
+            }
             ui.add_enabled(enabled, Button::new(label).min_size(size))
         })
         .inner;
+    if let Some(slot) = glow_slot {
+        ui.painter().set(slot, hover_glow(ui, &response, kind));
+    }
+    press_shrink(ui, &response, layer, first_shape);
     if !enabled && !tooltip.is_empty() {
         response.on_disabled_hover_text(tooltip)
     } else {
         response
     }
+}
+
+/// VibeSkua `HoverGlow`'s size: a circle, so wide and narrow buttons look the same.
+const GLOW_RADIUS: f32 = 56.0;
+
+/// VibeSkua `HoverGlow`: while the button shows its hovered look, its fill runs from `base`
+/// mixed `amount` of the way to `light` at the cursor out to plain `base` [`GLOW_RADIUS`] away,
+/// and its edge does the same with its own colours. Each kind glows in its own colours, as
+/// VibeSkua's style setters give them (secondary: accent on the hover fill; primary and danger:
+/// white on their hover colour). Nothing when it isn't hovered.
+fn hover_glow(ui: &Ui, response: &Response, kind: Kind) -> Shape {
+    // The same test as egui's hovered look (`WidgetVisuals::style`).
+    let active = response.is_pointer_button_down_on() || response.has_focus() || response.clicked();
+    if active || !(response.hovered() || response.highlighted()) {
+        return Shape::Noop;
+    }
+    let ((base, light, amount), (edge_base, edge_light, edge_amount)) = match kind {
+        Kind::Normal | Kind::Outline => ((HOVER, ACCENT, 0.22), (EDGE, ACCENT, 1.0)),
+        Kind::Primary => ((ACCENT_HOVER, Color32::WHITE, 0.4), (ACCENT_HOVER, Color32::WHITE, 0.6)),
+        Kind::Danger => (
+            (DANGER_HOVER, Color32::WHITE, 0.25),
+            (DANGER_HOVER, Color32::WHITE, 0.6),
+        ),
+    };
+    let rect = response.rect;
+    let cursor = response.hover_pos().unwrap_or(rect.center()).clamp(rect.min, rect.max);
+    let corner = ui.visuals().widgets.hovered.corner_radius;
+    // How much of the light at `pos`.
+    let glow_at = move |pos: Pos2| (1.0 - pos.distance(cursor) / GLOW_RADIUS).max(0.0);
+
+    // The plain fill first, smooth at the edge; the glow over it, a pixel inside the edge.
+    let mut shapes = vec![Shape::rect_filled(rect, corner, base)];
+    let inner = rect.shrink(1.0);
+    let mut edge = Vec::new();
+    rounded_path(&mut edge, inner, corner, 1.0);
+    let mut mesh = Mesh::default();
+    mesh.colored_vertex(cursor, mix(base, light, amount));
+    for &point in &edge {
+        let distance = point.distance(cursor).max(f32::EPSILON);
+        // Where the glow ends on the way to this edge point, or the point itself when it's closer.
+        let ring = cursor + (point - cursor) * (GLOW_RADIUS / distance).min(1.0);
+        mesh.colored_vertex(ring, mix(base, light, amount * glow_at(ring)));
+        mesh.colored_vertex(point, mix(base, light, amount * glow_at(point)));
+    }
+    let n = edge.len() as u32;
+    for i in 0..n {
+        let (ring, point) = (1 + 2 * i, 2 + 2 * i);
+        let (next_ring, next_point) = (1 + 2 * ((i + 1) % n), 2 + 2 * ((i + 1) % n));
+        mesh.add_triangle(0, ring, next_ring);
+        mesh.add_triangle(ring, next_ring, next_point);
+        mesh.add_triangle(ring, next_point, point);
+    }
+    shapes.push(Shape::mesh(mesh));
+
+    let mut outline = Vec::new();
+    rounded_path(&mut outline, rect, corner, 2.0);
+    let stroke = PathStroke::new_uv(1.0, move |_, pos| {
+        mix(edge_base, edge_light, edge_amount * glow_at(pos))
+    })
+    .with_kind(StrokeKind::Inside);
+    shapes.push(Shape::closed_line(outline, stroke));
+    Shape::Vec(shapes)
+}
+
+/// `rect`'s rounded outline in `path`, with a point at least every `step` points (the glow is
+/// coloured per point).
+fn rounded_path(path: &mut Vec<Pos2>, rect: Rect, corner: CornerRadius, step: f32) {
+    let mut corners = Vec::new();
+    egui::epaint::tessellator::path::rounded_rectangle(&mut corners, rect, corner.into());
+    path.clear();
+    for (i, &from) in corners.iter().enumerate() {
+        let to = corners[(i + 1) % corners.len()];
+        let pieces = ((from.distance(to) / step).ceil() as usize).max(1);
+        path.extend((0..pieces).map(|k| from.lerp(to, k as f32 / pieces as f32)));
+    }
+}
+
+/// `from` mixed `amount` (0 to 1) of the way to `to`, alpha included (VibeSkua `HoverGlow.Mix`).
+fn mix(from: Color32, to: Color32, amount: f32) -> Color32 {
+    let amount = amount.clamp(0.0, 1.0);
+    let channel = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * amount).round() as u8;
+    Color32::from_rgba_premultiplied(
+        channel(from.r(), to.r()),
+        channel(from.g(), to.g()),
+        channel(from.b(), to.b()),
+        channel(from.a(), to.a()),
+    )
+}
+
+/// VibeSkua's press-shrink: while held the button (the shapes from `first_shape` on) scales to
+/// 96% around its centre, springing back on release (`BackEaseOut`, 0.15 s). Only what's drawn
+/// moves: nothing around it does, and clicks land where they did.
+fn press_shrink(ui: &Ui, response: &Response, layer: egui::LayerId, first_shape: ShapeIdx) {
+    let pressed = response.enabled() && response.is_pointer_button_down_on();
+    let how_pressed = ui.ctx().animate_bool_with_time_and_easing(
+        response.id.with("turu_press"),
+        pressed,
+        0.15,
+        egui::emath::easing::back_out,
+    );
+    if how_pressed <= 0.0 {
+        return;
+    }
+    let scale = 1.0 - 0.04 * how_pressed.min(1.0);
+    let centre = response.rect.center().to_vec2();
+    let transform = TSTransform::from_translation(centre)
+        * TSTransform::from_scaling(scale)
+        * TSTransform::from_translation(-centre);
+    ui.ctx().graphics_mut(|g| {
+        let list = g.entry(layer);
+        let end = list.next_idx();
+        list.transform_range(first_shape, end, transform);
+    });
 }
 
 /// Whether the screen is touched (`Platform::is_touch`): no hover, finger-sized targets.
@@ -61,6 +197,28 @@ pub fn target(height: f32, touch_height: f32) -> f32 {
 /// The size of the small labels: 11 points, 12 on a touch screen (a phone held at arm's length).
 pub fn small_label_size() -> f32 {
     if touch() { 12.0 } else { 11.0 }
+}
+
+/// Options > Application > Grandpa Mode is on (VibeSkua `GrandpaModeState`): the logs' and the
+/// packet tools' text is larger.
+pub fn grandpa_mode() -> bool {
+    crate::turu::bot().settings.read().grandpa_mode
+}
+
+/// `size` for log or packet text: in Grandpa Mode, as much larger as VibeSkua's 15 points are
+/// than its 11.
+pub fn log_text_size(size: f32) -> f32 {
+    if grandpa_mode() {
+        (size * 15.0 / 11.0).round()
+    } else {
+        size
+    }
+}
+
+/// The size of a log's or packet tool's count ("12 packets"): 13 points in Grandpa Mode
+/// (VibeSkua's `CountText`), else [`small_label_size`].
+pub fn log_count_size() -> f32 {
+    if grandpa_mode() { 13.0 } else { small_label_size() }
 }
 
 /// A small text button for a card header ("Copy", "Save", "Clear").
@@ -420,14 +578,18 @@ impl LogView {
 
     /// Draws the list into the remaining space, following the end like a console.
     pub fn show(&mut self, ui: &mut Ui, id: &str, height: f32) {
+        // Grandpa Mode: larger text with more room around it (VibeSkua's padding 4 to 7).
+        let margin: i8 = if grandpa_mode() { 9 } else { 6 };
+        let inside = (height - 2.0 * margin as f32 - 2.0).max(40.0);
         Frame::new()
             .fill(INSET)
             .stroke(Stroke::new(1.0, EDGE))
             .corner_radius(CornerRadius::same(SMALL_RADIUS))
-            .inner_margin(Margin::same(6))
+            .inner_margin(Margin::same(margin))
             .show(ui, |ui| {
-                let font = TextStyle::Monospace.resolve(ui.style());
-                let row_height = ui.text_style_height(&TextStyle::Monospace) + 2.0;
+                let mut font = TextStyle::Monospace.resolve(ui.style());
+                font.size = log_text_size(font.size);
+                let row_height = ui.ctx().fonts_mut(|f| f.row_height(&font)) + 2.0;
                 ui.set_width(ui.available_width());
                 let cols = if self.wrap {
                     let char_width = ui.ctx().fonts_mut(|f| f.glyph_width(&font, 'M')).max(1.0);
@@ -444,7 +606,7 @@ impl LogView {
                 }
                 .id_salt(id)
                 .auto_shrink([false, false])
-                .max_height((height - 14.0).max(40.0))
+                .max_height(inside)
                 .stick_to_bottom(true);
                 if let Some(row) = target {
                     // `show_rows` spaces rows by the outer item spacing; two rows of context above.
@@ -460,7 +622,7 @@ impl LogView {
                 if self.shown.is_empty()
                     && let Some(text) = empty
                 {
-                    ui.set_min_height((height - 14.0).max(40.0));
+                    ui.set_min_height(inside);
                     ui.add(Label::new(RichText::new(text).color(MUTED)).wrap());
                     return;
                 }
@@ -469,7 +631,7 @@ impl LogView {
                         ui.spacing_mut().item_spacing.y = 2.0;
                         for row in &self.shown[range] {
                             ui.add(
-                                Label::new(RichText::new(row).monospace().color(TEXT))
+                                Label::new(RichText::new(row).font(font.clone()).color(TEXT))
                                     .wrap_mode(TextWrapMode::Extend)
                                     .selectable(true),
                             );

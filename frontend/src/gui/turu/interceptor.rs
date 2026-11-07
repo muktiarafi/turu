@@ -1,6 +1,7 @@
 //! Diagnostics > Interceptor (VibeSkua `PacketInterceptorView`): the server box with refresh,
-//! Connect/Disconnect, Log packets and the Connected chip; search; the captured packets (OUT,
-//! IN or BLOCK, multi-select, Ctrl/Cmd+C copies); the count, Copy, Export and Clear.
+//! Connect/Disconnect, Log packets and the Connected chip; search and the "Show n / m" category
+//! filters; the captured packets (OUT, IN or BLOCK, multi-select, Ctrl/Cmd+C copies, scrolling
+//! sideways for long ones); the count, Copy, Export and Clear.
 //!
 //! The capture is the tab's `bot.capture`, fed by the app's socket wrapper (`app/src/capture.rs`):
 //! Connect starts it at once, without the relog VibeSkua's proxy needs. Picking a server makes
@@ -10,9 +11,10 @@ use super::files::SaveText;
 use super::theme::{ACCENT, DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
 use egui::{Align, Context, CornerRadius, Key, Label, Layout, Modifiers, RichText, ScrollArea, Ui, vec2};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 use turu_bot::capture::{self, InterceptedPacket};
+use turu_bot::packet_filters;
 
 /// The server box's first entry: connect on the server you're on.
 const CURRENT: &str = "Current server";
@@ -22,9 +24,16 @@ pub struct InterceptorWindow {
     /// The server Connect relogs to; `None` stays on the current one.
     server: Option<String>,
     search: String,
-    /// Shown packets (number, packet), built from the capture's version and the search.
+    /// Each category filter's tick (`packet_filters::interceptor_filters`); all ticked at first.
+    filters: Vec<bool>,
+    /// Each logged packet's commands, by number, parsed once (VibeSkua's lazy `Commands`).
+    commands: HashMap<u64, Vec<String>>,
+    /// Shown packets (number, packet), built from the capture's version, the search and the
+    /// filters.
     rows: Vec<(u64, InterceptedPacket)>,
-    built_from: Option<(u64, String)>,
+    /// The longest shown packet, in characters: how far the list scrolls sideways.
+    widest: usize,
+    built_from: Option<(u64, String, Vec<bool>)>,
     /// Selected packets, by number.
     selected: BTreeSet<u64>,
     anchor: Option<u64>,
@@ -135,7 +144,15 @@ impl InterceptorWindow {
             }
         });
 
-        widgets::text_box(ui, &mut self.search, "Search packets", ui.available_width());
+        let names = packet_filters::interceptor_filters();
+        if self.filters.len() != names.len() {
+            self.filters = vec![true; names.len()];
+        }
+        ui.horizontal(|ui| {
+            let width = ui.available_width() - 140.0 - ui.spacing().item_spacing.x;
+            widgets::text_box(ui, &mut self.search, "Search packets", width.max(80.0));
+            super::packet_filters::filters_button(ui, "interceptor_filters", &names, &mut self.filters);
+        });
         self.rebuild(&capture);
 
         let height = (ui.available_height() - 40.0).max(80.0);
@@ -153,7 +170,7 @@ impl InterceptorWindow {
             if picked > 0 {
                 text.push_str(&format!(" · {picked} selected"));
             }
-            ui.label(RichText::new(text).small().color(MUTED));
+            ui.label(RichText::new(text).size(widgets::log_count_size()).color(MUTED));
             if picked > 0
                 && ui
                     .add(egui::Button::new(RichText::new("✕").small().color(MUTED)).frame(false))
@@ -184,17 +201,39 @@ impl InterceptorWindow {
         });
     }
 
+    /// The shown packets: those the search finds (VibeSkua: a search of spaces finds all) in a
+    /// ticked category (VibeSkua `MatchesPacket`).
     fn rebuild(&mut self, capture: &turu_bot::capture::CaptureProxy) {
-        let key = (capture.version(), self.search.clone());
+        let key = (capture.version(), self.search.clone(), self.filters.clone());
         if self.built_from.as_ref() == Some(&key) {
             return;
         }
-        let needle = self.search.to_lowercase();
+        let needle = (!self.search.trim().is_empty()).then(|| self.search.to_lowercase());
         let (first, packets) = capture.snapshot();
-        self.rows = (first..)
-            .zip(packets)
-            .filter(|(_, p)| needle.is_empty() || p.packet.to_lowercase().contains(&needle))
-            .collect();
+        self.commands.retain(|n, _| *n >= first);
+        let mut rows = Vec::new();
+        for (n, packet) in (first..).zip(packets) {
+            if needle
+                .as_ref()
+                .is_some_and(|needle| !packet.packet.to_lowercase().contains(needle))
+            {
+                continue;
+            }
+            let commands = self
+                .commands
+                .entry(n)
+                .or_insert_with(|| packet_filters::commands(&packet.packet));
+            if packet_filters::interceptor_shows(commands, &self.filters) {
+                rows.push((n, packet));
+            }
+        }
+        self.rows = rows;
+        self.widest = self
+            .rows
+            .iter()
+            .map(|(_, p)| p.packet.chars().count())
+            .max()
+            .unwrap_or(0);
         self.selected.retain(|n| *n >= first);
         self.built_from = Some(key);
     }
@@ -230,26 +269,38 @@ impl InterceptorWindow {
                 });
                 return;
             }
-            let row_height = 24.0;
-            ScrollArea::vertical()
+            let size = widgets::log_text_size(11.0);
+            let row_height = if widgets::grandpa_mode() { 28.0 } else { 24.0 };
+            // Long packets aren't cut: the list scrolls sideways (VibeSkua's horizontal scroll bar).
+            let char_width = ui
+                .ctx()
+                .fonts_mut(|f| f.glyph_width(&egui::FontId::monospace(size), 'M'));
+            let content_width = 52.0 + 6.0 + 24.0 + self.widest as f32 * char_width;
+            ScrollArea::both()
                 .id_salt("interceptor_packets")
                 .auto_shrink([false, false])
                 .stick_to_bottom(true)
                 .show_rows(ui, row_height, self.rows.len(), |ui, range| {
                     ui.spacing_mut().item_spacing.y = 0.0;
+                    let row_width = content_width.max(ui.available_width());
                     for (n, packet) in &self.rows[range] {
                         let selected = self.selected.contains(n);
-                        let row = widgets::list_row(ui, selected, row_height, |ui| {
-                            direction_chip(ui, packet);
-                            ui.add_space(6.0);
-                            let mut text = RichText::new(&packet.packet).monospace().size(11.0);
-                            text = if packet.is_blocked() {
-                                text.color(MUTED).strikethrough()
-                            } else {
-                                text.color(TEXT)
-                            };
-                            ui.add(Label::new(text).truncate()).on_hover_text(&packet.packet);
-                        });
+                        let row = ui
+                            .allocate_ui(vec2(row_width, row_height), |ui| {
+                                ui.set_width(row_width);
+                                widgets::list_row(ui, selected, row_height, |ui| {
+                                    direction_chip(ui, packet);
+                                    ui.add_space(6.0);
+                                    let mut text = RichText::new(&packet.packet).monospace().size(size);
+                                    text = if packet.is_blocked() {
+                                        text.color(MUTED).strikethrough()
+                                    } else {
+                                        text.color(TEXT)
+                                    };
+                                    ui.add(Label::new(text).extend()).on_hover_text(&packet.packet);
+                                })
+                            })
+                            .inner;
                         if row.clicked() {
                             clicked = Some(*n);
                         }

@@ -252,7 +252,7 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         },
         "packet" => {
             let packet = arg_str(0).to_owned();
-            if bot.logs.packet_logging.load(Ordering::Relaxed) {
+            if bot.logs.packet_logging.load(Ordering::Relaxed) && bot.logs.keeps_packet(&packet) {
                 bot.logs.packets.push(packet.clone());
             }
             if crate::log::packets_to_log() {
