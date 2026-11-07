@@ -52,7 +52,8 @@ How to build, run and check the Android app. The design and the plan are in
 > recent list filling in.
 >
 > **Unverified on a device:** Butler with a master and a follower and an army script across
-> two tabs (they need a second account); boosts; sound switching with
+> two tabs (they need a second account); using a boost (the lookup runs: no boost in that
+> account's inventory, none active); sound switching with
 > the active tab; the notification's lines and the wake lock with two tabs; a script that
 > starts once its tab is logged in by hand; `onTrimMemory` stopping hidden tabs' scripts (not
 > done).
