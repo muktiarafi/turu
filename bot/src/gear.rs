@@ -302,7 +302,7 @@ pub(crate) fn start(bot: &Arc<Bot>) {
                 gear.mark_dirty();
             }
             BotEvent::Logout => gear.logged_in.store(false, Ordering::Relaxed),
-            BotEvent::ItemAdded { .. } | BotEvent::ItemBought | BotEvent::ItemSold => {
+            BotEvent::ItemAdded { .. } | BotEvent::ItemBought | BotEvent::ItemSold { .. } => {
                 gear.mark_dirty()
             }
             _ => {}

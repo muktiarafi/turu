@@ -609,6 +609,9 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
     // VibeSkua's `Handlers.Clear()` before the script thread starts.
     bot.handlers.clear();
     bot.scripts.set_status(ScriptStatus::Compiling);
+    // VibeSkua sends `ScriptStartedMessage` just before the thread starts, so a script that ends
+    // at once can't log its stop first (Notification Center).
+    bot.notifications.script_started(Some(&path));
     let thread_bot = bot.clone();
     std::thread::Builder::new()
         .name("Script Thread".into())
@@ -638,6 +641,7 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
         })
         .map_err(|e| {
             bot.scripts.running.store(false, Ordering::Release);
+            bot.notifications.script_stopped(None);
             e.to_string()
         })?;
     Ok(())
@@ -747,6 +751,7 @@ fn finish(
         Err(runtime::RunError::Failed(message)) => {
             bot.log(format!("Script {name} failed:\n{message}"));
             let first = message.lines().next().unwrap_or_default();
+            bot.notifications.script_error(first, Some(path));
             bot.monitor
                 .event(EventKind::ScriptError, format!("{name} failed: {first}"));
             error = Some(message);

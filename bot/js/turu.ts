@@ -1183,7 +1183,8 @@ export interface EventMap {
     playerAFK: null;
     runToArea: { zone: string };
     itemBought: null;
-    itemSold: null;
+    /** A sale went through: what was sold, what is left of the stack and what it paid (in AC when `isAC`). */
+    itemSold: { charItemId: number; quantitySold: number; currentQuantity: number; cost: number; isAC: boolean };
     bankLoaded: null;
     shopLoaded: null;
     connectionLost: null;

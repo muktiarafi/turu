@@ -389,7 +389,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   data; the Options window's Report section and QR code only built, not looked at. Not built:
   browser notifications.
 - **UI:** VibeSkua's nav bar and the windows listed in `docs/UI.md` (Script Loader, Scheduler,
-  Script Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Logs, Console,
+  Script Options, Game, Application and CoreBots options, Skills, Stats, Runtime, Notification
+  Center, Logs, Console,
   Spammer, Logger, Interceptor, Current Drops, Loader, Grabber, Auto, Jump).
   Diagnostics > Spammer and Interceptor are tested against a fake game and fake socket bytes
   (`bot/tests/spammer_interceptor.rs`), not yet in game: the capture's socket wrapper

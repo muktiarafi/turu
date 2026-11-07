@@ -174,7 +174,7 @@ pub(crate) fn start(bot: &Arc<Bot>) {
         match event {
             BotEvent::ItemAdded { .. }
             | BotEvent::ItemBought
-            | BotEvent::ItemSold
+            | BotEvent::ItemSold { .. }
             | BotEvent::QuestAccepted { .. }
             | BotEvent::QuestTurnedIn { .. }
             | BotEvent::MapChanged { .. } => monitor.dirty.store(true, Ordering::Relaxed),

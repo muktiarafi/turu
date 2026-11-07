@@ -63,7 +63,13 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 // A slot may have freed up: the pickup loop tries refused drops again.
                 state.refused_drops.clear();
             }
-            bot.events.emit(BotEvent::ItemSold);
+            bot.events.emit(BotEvent::ItemSold {
+                char_item_id: num(data.get("CharItemID")).unwrap_or_default(),
+                quantity_sold: num(data.get("iQty")).unwrap_or_default(),
+                quantity_now: num(data.get("iQtyNow")).unwrap_or_default(),
+                cost: num(data.get("intAmount")).unwrap_or_default(),
+                is_ac: num(data.get("bCoins")) == Some(1),
+            });
         }
         "buyItem" => {
             if num(data.get("bitSuccess")) == Some(1) {

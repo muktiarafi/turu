@@ -49,7 +49,7 @@ next to it).
 drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scripts** (Script
 Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
 HotKeys; no Application Themes: Turu keeps Mugetsu's palette), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
-Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Logs,
+Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Notification Center, Logs,
 Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; no View Plugins:
 Turu builds its plugins in), **Army** (Accounts, Army Control, New Tab; Turu's: VibeSkua has them
 in its Manager app and its tabbed host). Android has no Army menu and no Butler yet (no tabs:
@@ -449,6 +449,18 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   drop-down and the page arrows join the search row (Check Updates goes to the tab row), and
   the selected item's actions share one row. On a phone the window fills the screen and its
   controls are 40 px high (the main buttons 44).
+* **Notification Center** (`notifications.rs`, 560x480, VibeSkua's `NotificationCenterView`):
+  the bot's feed of events (`turu_bot::notifications`: drops "(dropped)" and pickups "(picked
+  up)", sales, deaths, relogins, map changes, quests accepted and completed, "Script started:
+  name", "Script stopped: name", "Script error (name): ..."), newest first, the newest 500. Every
+  bot collects it from its start, whether the window is open or not. Filter chips with counts
+  (All, Items, Activity, Warnings, Errors, Maps; they wrap on a narrow window), then the rows: the
+  kind's icon in its colour (painted: gift, warning triangle, error circle, map pin, play button;
+  the kind as tooltip), the time and the message, wrapping. A click toggles a row's selection;
+  Ctrl+C over the list copies it. Empty: a bell and VibeSkua's text for the filter. Footer: "N
+  events · K selected" ("Copied N events" after a copy), Copy (the selection or all shown),
+  Deselect, Save (Share on Android) and Clear (danger-soft); under 420 px the count goes above the
+  buttons. VibeSkua's button icons and menu icon are left out: Turu's buttons and menus have none.
 * **Logs** (`logs.rs`): Script / Debug tabs, Copy/Save/Clear. In every log's header
   (`logs::log_buttons`: Script Loader, Logs, Logger, client logs) Clear stands apart from Copy and
   Save at the end and turns into "Undo clear" for 8 s, which puts the lines back before those
