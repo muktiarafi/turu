@@ -39,8 +39,18 @@ How to build, run and check the Android app. The design and the plan are in
 > started the loaded script, Escape closed a dialog). Army Queue is hidden on Android: its
 > squads run as processes of their own, which Android can't start.
 >
-> **Unverified on a device:** anything after logging in (scripts that play, Butler with a
-> master and a follower, an army script across two tabs, drops, deaths); sound switching with
+> **Checked on MuMu, logged in (2026-11-07):** typing the username and password into the
+> game's login fields with MuMu's keyboard (the soft keyboard is now shown on the UI thread:
+> Android 15 refused it from the engine thread); a script joining a private room
+> (`greenguardwest-93101`), killing Slimes with the class's saved rotation, `monsterKilled`,
+> `itemDropped` and `extensionPacket` events in the script, and the drop grabber asking for
+> its drops (the server refused them: already full or banked on that account); Fast Travel to
+> Tercessuinotlim (it asks for room 111111, as VibeSkua; the server put it in another room,
+> 111111 being full); Army Control > Map Travel jumping to a saved preset (`yulgar`), the
+> recent list filling in.
+>
+> **Unverified on a device:** Butler with a master and a follower and an army script across
+> two tabs (they need a second account); deaths and boosts; sound switching with
 > the active tab; the notification's lines and the wake lock with two tabs; a script that
 > starts once its tab is logged in by hand; `onTrimMemory` stopping hidden tabs' scripts (not
 > done).
