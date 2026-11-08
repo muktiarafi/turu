@@ -154,6 +154,14 @@ impl Default for Logs {
     }
 }
 
+/// `TURU_PACKET_LOG` (set, not `0`): every packet the client sends also goes to the app's log
+/// (target `turu::packet`), as Diagnostics > Logger does in the window. Without a window it's the
+/// only way to see them: which action the server called "too soon", say.
+pub fn packets_to_log() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("TURU_PACKET_LOG").is_ok_and(|v| !v.is_empty() && v != "0"))
+}
+
 impl Logs {
     pub fn get(&self, kind: LogKind) -> &LogBuffer {
         match kind {

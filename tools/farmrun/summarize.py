@@ -20,6 +20,8 @@ STAMP = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z")
 # `turu::script: [user] [16:48:02] (beginnerItems) text` (CoreBots' logger), or without the tag.
 SCRIPT = re.compile(r"turu::script: (?:\[[^\]]*\] )?(?:\[\d\d:\d\d:\d\d\] )?(?:\((?P<tag>[^)]+)\) )?(?P<text>.*)")
 DEBUG = re.compile(r"turu::debug: (?:\[[^\]]*\] )?(?P<text>.*)")
+# `TURU_PACKET_LOG`: a packet the client sent, `%xt%zm%<command>%<room>%<args>...%`.
+PACKET = re.compile(r"turu::packet: (?P<packet>.*)")
 PERF = re.compile(r"player thread (\d+) ms/s \(ticks (\d+), calls (\d+)\); ([\d.]+) calls/s")
 MEMORY = re.compile(r"memory: process resident (\d+) MB .*?rust heap (\d+) MB; (\d+) loaded SWFs .*?(\d+) GC objects")
 CALL_ROW = re.compile(r"^\s+([\d.]+)/s\s+wait\s+([\d.]+) ms\s+run\s+([\d.]+) ms\s+(\d+) B\s+(.{18}) (.*)$")
@@ -72,6 +74,8 @@ def parse(path):
             r["memory"].append((t, *map(int, m.groups())))
         elif (m := SCRIPT.search(line)) and t:
             r["script"].append((t, m["tag"], m["text"]))
+        elif (m := PACKET.search(line)) and t:
+            r["packets"].append((t, m["packet"]))
         elif (m := DEBUG.search(line)) and t:
             r["debug"].append((t, m["text"]))
         elif " ERROR " in line and "ModalStack" not in line or "panicked" in line:
@@ -166,7 +170,21 @@ def report(r, stuck_min, section_min):
         if run_start and (prev_t - run_start).total_seconds() / 60 >= stuck_min:
             stuck.append((run_start, prev_t, run_sig))
     stalls = [(t, x) for t, x in debug if x.startswith("Skill timer: no target")]
-    afk = [(t, x) for t, x in debug if "afk" in x.lower() and "no longer" not in x.lower()]
+    # AFK stretches: from "now Away From Keyboard" to "no longer set to AFK". The server marks a new
+    # login AFK until the client says otherwise, a second or so later: only a minute or more counts.
+    afk, since = [], None
+    for t, x in debug:
+        low = x.lower()
+        if "afk" not in low:
+            continue
+        if "no longer" in low:
+            if since and (t - since).total_seconds() >= 60:
+                afk.append((since, f"AFK for {span(since, t)}"))
+            since = None
+        elif since is None:
+            since = t
+    if since and (end - since).total_seconds() >= 60:
+        afk.append((since, f"AFK since then, still at {clock(end)}"))
     print(f"\nStanding still (nothing moved for {stuck_min:g} min or more)")
     if not samples:
         print("  (needs farmrun samples)")
@@ -201,8 +219,47 @@ def report(r, stuck_min, section_min):
     if ended and "failed" in ended[2]:
         print("  The script failed:\n    " + "\n    ".join(ended[2].splitlines()[:8]))
 
+    # ---- Packets (TURU_PACKET_LOG) ----
+    packets(r, debug, hours)
+
     # ---- Resources ----
     resources(r, samples)
+
+
+def command(packet):
+    parts = [p for p in packet.split("%") if p]
+    return parts[2] if len(parts) > 2 else packet[:30]
+
+
+def packets(r, debug, hours):
+    sent = r["packets"]
+    if not sent:
+        return
+    print(f"\nPackets the client sent ({len(sent)}, {len(sent) / hours:.0f}/h)")
+    mix = Counter(command(p) for _, p in sent)
+    print("  " + ", ".join(f"{c} {n}" for c, n in mix.most_common(12)))
+    # What went out just before each "too soon": the server drops the action it complains about.
+    soon = [t for t, x in debug if "Last action was too soon" in x]
+    if not soon:
+        return
+    pairs = Counter()
+    shown = 0
+    print(f"  Before each of the {len(soon)} \"too soon\" warnings (the 2 s before it):")
+    times = [t for t, _ in sent]
+    import bisect
+    for w in soon:
+        i = bisect.bisect_right(times, w)
+        recent = [(t, p) for t, p in sent[max(0, i - 6):i] if (w - t).total_seconds() <= 2]
+        if len(recent) >= 2:
+            (t1, p1), (t2, p2) = recent[-2], recent[-1]
+            pairs[(command(p1), command(p2))] += 1
+        if shown < 8:
+            shown += 1
+            seq = ", ".join(f"{command(p)} -{(w - t).total_seconds() * 1000:.0f}ms" for t, p in recent) or "nothing"
+            print(f"    {clock(w)} {seq}")
+    if pairs:
+        print("  Last two packets before a warning, most often: " +
+              ", ".join(f"{a} -> {b} ({n})" for (a, b), n in pairs.most_common(6)))
 
 
 def slope_per_hour(points, warmup_min=10):

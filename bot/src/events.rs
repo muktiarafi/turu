@@ -255,6 +255,9 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             if bot.logs.packet_logging.load(Ordering::Relaxed) {
                 bot.logs.packets.push(packet.clone());
             }
+            if crate::log::packets_to_log() {
+                tracing::info!(target: "turu::packet", "{packet}");
+            }
             crate::api::packets::on_packet_sent(bot, &packet);
         }
         "packetFromServer" => {}
