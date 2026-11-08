@@ -258,7 +258,7 @@ the symbols. With a
 window it covers every tab, plus a total line and a `main thread` line: where the event loop's
 time goes (idle, drawing and its parts, the games and bot calls, the rest).
 
-**Measuring a farming run:** `tools/farmrun/run.sh [script] [minutes]` (default FarmerJoe DoAll,
+**Measuring a farming run** (findings so far, open issues and next steps: `docs/HEADLESS_MONITORING_HANDOFF.md`): `tools/farmrun/run.sh [script] [minutes]` (default FarmerJoe DoAll,
 120 minutes; `0` runs until the script stops) logs in from `turu-args.txt` as memrun does, with
 `TURU_PERF_LOG` and a control API of its own (`API`, default `127.0.0.1:9031`). Every `PERIOD`
 seconds (60) it adds a `farmrun:` line to the log (`tools/farmrun/sample.py`): `/status`'s level,
