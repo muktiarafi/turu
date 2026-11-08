@@ -126,6 +126,30 @@ unsafe extern "system" fn crash_filter(
         return EXCEPTION_CONTINUE_EXECUTION;
     }
 
+    // Turu: Windows is unloading the DLLs because Turu is already exiting (`ExitProcess`, then
+    // `LdrShutdownProcess`). TURU-DESKTOP-4: after Turu's window closed, DXGI's own shutdown code
+    // raised 0x87A as a non-continuable exception, so the check above let it through and the
+    // user got a "crashed" box and a report for closing Turu. Nothing is lost by ending now:
+    // end quietly, as the exit was going to, with its exit code if Windows has recorded it yet
+    // (`--headless` exits with 75 for its service to install an update), else 0.
+    if dll_shutdown_in_progress() {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, GetExitCodeProcess, TerminateProcess,
+        };
+        const STILL_ACTIVE: u32 = 259;
+        // SAFETY: the current process's pseudo-handle, never closed; `exit_code` outlives the call.
+        unsafe {
+            let mut exit_code = STILL_ACTIVE;
+            if GetExitCodeProcess(GetCurrentProcess(), &mut exit_code) == 0
+                || exit_code == STILL_ACTIVE
+            {
+                exit_code = 0;
+            }
+            TerminateProcess(GetCurrentProcess(), exit_code);
+        }
+        return EXCEPTION_EXECUTE_HANDLER;
+    }
+
     static HANDLING: AtomicBool = AtomicBool::new(false);
     if HANDLING.swap(true, Ordering::SeqCst) {
         // Another thread crashed too (or this one crashed again inside the handler): leave the
@@ -171,7 +195,7 @@ unsafe extern "system" fn crash_filter(
 
     if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
         message_box(
-            "Mugetsu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
+            "Turu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
             generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \
             laptop processors don't have it.",
             false,
@@ -182,12 +206,12 @@ unsafe extern "system" fn crash_filter(
         crate::mugetsu::save_vulkan_crash(&module.path);
         let restart = message_box(
             &format!(
-                "The graphics driver crashed while Mugetsu was starting Vulkan (in {file_name}).\n\n\
-                Mugetsu will use DirectX 12 on this PC instead, which runs about as well. On \
+                "The graphics driver crashed while Turu was starting Vulkan (in {file_name}).\n\n\
+                Turu will use DirectX 12 on this PC instead, which runs about as well. On \
                 a laptop's built-in graphics, set Quality to Low in AQW's options if the game \
-                runs slowly. Mugetsu tries Vulkan again by itself after you update your \
+                runs slowly. Turu tries Vulkan again by itself after you update your \
                 graphics driver.\n\n\
-                Click OK to start Mugetsu again."
+                Click OK to start Turu again."
             ),
             true,
         );
@@ -199,16 +223,15 @@ unsafe extern "system" fn crash_filter(
             String::new()
         } else {
             format!(
-                "It happened inside {file_name}, which isn't part of Mugetsu: usually the \
+                "It happened inside {file_name}, which isn't part of Turu: usually the \
                 graphics driver, or a program that hooks into games (overlays, recorders). \
                 Updating your graphics driver often fixes it.\n\n"
             )
         };
         message_box(
             &format!(
-                "Mugetsu crashed (error 0x{code:08X} in {file_name}) and has to close.\n\n{hint}\
-                Details were saved to %LOCALAPPDATA%\\ruffle\\log\\ruffle.log (it is replaced \
-                the next time Mugetsu starts)."
+                "Turu crashed (error 0x{code:08X} in {file_name}) and has to close.\n\n{hint}\
+                Details were saved to ruffle.log (it is replaced the next time Turu starts)."
             ),
             false,
         );
@@ -221,6 +244,17 @@ unsafe extern "system" fn crash_filter(
         TerminateProcess(GetCurrentProcess(), code);
     }
     EXCEPTION_EXECUTE_HANDLER
+}
+
+/// Turu: whether Windows is unloading the DLLs because the process is exiting
+/// (`LdrShutdownProcess`, after `ExitProcess`). Only ntdll exports it, hence the link.
+fn dll_shutdown_in_progress() -> bool {
+    #[link(name = "ntdll", kind = "raw-dylib")]
+    unsafe extern "system" {
+        fn RtlDllShutdownInProgress() -> u8;
+    }
+    // SAFETY: takes nothing and only reads the loader's state.
+    unsafe { RtlDllShutdownInProgress() != 0 }
 }
 
 /// AQW build: `RUFFLE_TEST_NATIVE_CRASH=driver` crashes inside a Windows DLL (counts as a
@@ -299,7 +333,7 @@ fn message_box(text: &str, ok_cancel: bool) -> bool {
         IDOK, MB_ICONERROR, MB_OK, MB_OKCANCEL, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
     };
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
-    let (text, title) = (wide(text), wide("Mugetsu"));
+    let (text, title) = (wide(text), wide("Turu"));
     let buttons = if ok_cancel { MB_OKCANCEL } else { MB_OK };
     // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call.
     let result = unsafe {
@@ -458,10 +492,10 @@ mod graphics_menu {
         }
         let name = choice.map_or("Automatic", Graphics::name);
         let text = wide(&format!(
-            "Mugetsu will restart to use {name} graphics.\n\n\
+            "Turu will restart to use {name} graphics.\n\n\
              You can switch again any time: right-click the game or the title bar."
         ));
-        let title = wide("Mugetsu");
+        let title = wide("Turu");
         // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call.
         let answer = unsafe {
             MessageBoxW(hwnd, text.as_ptr(), title.as_ptr(), MB_OKCANCEL | MB_ICONQUESTION)
@@ -470,7 +504,7 @@ mod graphics_menu {
             return;
         }
         mugetsu::save_graphics(choice);
-        tracing::info!("Graphics changed to {name}; starting Mugetsu again");
+        tracing::info!("Graphics changed to {name}; starting Turu again");
         // Turu: the other clients' Butler drops the accounts at once.
         crate::turu::close_butlers();
         super::start_again();

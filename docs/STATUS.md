@@ -645,6 +645,12 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `--headless`). `app/src/crash_uploads.rs`: a panic is sent as it happens (Sentry's panic hook
   runs before Turu's); a native crash on Windows is written to the data folder's `crash/` by the
   crash handler (`native-<date>.txt`, so the crash notice shows it too) and sent at the next start.
+  The handler (`app/src/windows.rs`, `crash_filter`) skips continuable informational exceptions
+  (DirectX's 0x87A and 0x87D), and ends quietly, with no report or message box, on any exception
+  while Windows unloads the DLLs of a process that is already exiting (`RtlDllShutdownInProgress`):
+  Sentry TURU-DESKTOP-4 (beta.7) was DXGI raising 0x87A as non-continuable during shutdown, after
+  the window had closed. It ends with the exit's code if Windows has recorded it yet, else 0.
+  Checked only by type-checking that code for Windows from macOS (the app doesn't cross-build).
   No IP address, no computer name, the home folder's path replaced with `~`, no logs. The release
   workflow builds with line tables (`CARGO_PROFILE_DIST_DEBUG`) and uploads the PDB / dSYM /
   Linux binary with `sentry-cli` (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_DESKTOP_PROJECT`),
