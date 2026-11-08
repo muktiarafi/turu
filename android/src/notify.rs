@@ -133,7 +133,7 @@ fn start_updates() {
 /// service started the engine or when the call failed.
 pub(crate) fn with_service<T>(work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>) -> Option<T> {
     let (vm, class) = SERVICE.get()?;
-    vm.attach_current_thread(|env: &mut Env| work(env, class))
+    crate::attach(vm, |env: &mut Env| work(env, class))
         .inspect_err(|e| tracing::warn!("A call to TuruService failed: {e}"))
         .ok()
 }
@@ -187,7 +187,7 @@ fn send(status: &Status) -> jni::errors::Result<()> {
     let Some((vm, class)) = SERVICE.get() else {
         return Ok(());
     };
-    vm.attach_current_thread(|env: &mut Env| {
+    crate::attach(vm, |env: &mut Env| {
         let title = env.new_string(&status.title)?;
         let text = env.new_string(&status.text)?;
         env.call_static_method(

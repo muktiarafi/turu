@@ -366,13 +366,33 @@ fn write_panic_report(thread: &str, info: &std::panic::PanicHookInfo, backtrace:
     let _ = std::fs::write(dir.join(format!("panic-{}.txt", now.format("%F_%H-%M-%S"))), report);
 }
 
+/// Runs `work` on this thread attached to the JavaVM, under the thread's own name. A thread
+/// attached without one gets "Thread-N" from Android, as its Java name and in `/proc` too: the
+/// engine's calls into Java (breadcrumbs, the notification, the GPU-lost notice) renamed "Turu
+/// Engine", and the memory log's busiest threads said "Thread-3" (Sentry TURU-ANDROID-B). The
+/// name counts on the first attach, which stays for the thread's life.
+pub(crate) fn attach<T, E>(vm: &JavaVM, work: impl FnOnce(&mut jni::Env) -> Result<T, E>) -> Result<T, E>
+where
+    E: From<jni::errors::Error>,
+{
+    let name = std::thread::current().name().map(jni::strings::JNIString::from);
+    vm.attach_current_thread_with_config(
+        || match &name {
+            Some(name) => jni::AttachConfig::new().thread_name(name),
+            None => jni::AttachConfig::new(),
+        },
+        Some(jni::DEFAULT_LOCAL_FRAME_CAPACITY),
+        work,
+    )
+}
+
 /// Lets reqwest check server certificates against Android's trust store.
 fn init_certificates(app: &AndroidApp) -> jni::errors::Result<()> {
     // SAFETY: android-activity hands out the process's JavaVM.
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
     // A global reference: it can only be borrowed, not wrapped as a local one.
     let activity_raw = app.activity_as_ptr() as jobject;
-    vm.attach_current_thread(|env| {
+    attach(&vm, |env| {
         // SAFETY: the activity outlives this call.
         let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw) }?;
         let context = env.new_local_ref(&*activity)?;
@@ -436,6 +456,16 @@ fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
 /// The engine thread: sets the bot up from `turu-args.txt`, then runs the player, drawing while
 /// there is a window.
 fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
+    // Rayon's pool (ruffle-aqw finishes command buffers and uploads textures on it) is made by the
+    // first thread to use it, this one, and Linux gives new threads their maker's name: its
+    // workers were "Turu Engine" too, and the memory log's busiest threads added their CPU to the
+    // engine's. Made first, with names of their own.
+    if let Err(e) = rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("Turu Rayon {i}"))
+        .build_global()
+    {
+        log::warn!("Couldn't name rayon's threads: {e}");
+    }
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
         Err(e) => {

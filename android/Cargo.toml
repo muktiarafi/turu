@@ -49,6 +49,7 @@ reqwest = { workspace = true, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-platform-verifier = "0.7.1"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+rayon = { workspace = true }
 # rquickjs ships no QuickJS bindings for Android: generate them (libclang, and the NDK's
 # sysroot in BINDGEN_EXTRA_CLANG_ARGS; the app's `cargoNdk` task sets both).
 rquickjs = { version = "0.14", features = ["bindgen"] }

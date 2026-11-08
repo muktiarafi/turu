@@ -324,7 +324,9 @@ rather than the phone's. So the engine logs the process's memory every minute
 (`mallinfo`: bytes handed out, above anonymous RSS while pages are untouched), swap, address
 space, mappings and threads, its share of a CPU core since the reading before (from
 `/proc/self/stat`) with the 4 busiest threads' shares by name (`/proc/self/task/*/stat`, e.g.
-`CPU 94% of a core (Turu Engine 60%, Script Thread 25%)`), and every 5 minutes the largest
+`CPU 94% of a core (Turu Engine 60%, Script Thread 25%)`; threads that call into Java attach
+under their own name, `crate::attach`, as Android otherwise renames them "Thread-N", and rayon's
+workers are "Turu Rayon N", not their maker's name), and every 5 minutes the largest
 mappings by name (e.g. `[anon:scudo:primary_reserve]`, the GPU driver's device). It goes to logcat, to
 `crash/memory-<pid>.log` (the last 150 readings) for that process's exit report, and every 5
 minutes to Sentry as a breadcrumb. On the emulator at the login screen: RSS ~230-300 MB, ~3500

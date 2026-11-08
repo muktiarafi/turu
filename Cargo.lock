@@ -7331,6 +7331,7 @@ dependencies = [
  "libc",
  "log",
  "ndk",
+ "rayon",
  "reqwest",
  "rquickjs",
  "ruffle_core",

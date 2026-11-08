@@ -159,7 +159,7 @@ fn with_activity<T>(
     let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
     // A global reference: it can only be borrowed, not wrapped as a local one.
     let activity_raw = app.activity_as_ptr() as jobject;
-    vm.attach_current_thread(|env| {
+    crate::attach(&vm, |env| {
         // SAFETY: the activity outlives this call.
         let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw) }?;
         work(env, &activity)
