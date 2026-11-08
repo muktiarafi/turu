@@ -2,7 +2,11 @@
 //! question Turu asks once, and Options > Application's switch: `sendCrashReports` in
 //! `settings.json`). The desktop's side of Android's `CrashUploads.kt`:
 //!
-//! * a Rust panic is sent as it happens, by Sentry's panic hook (before Turu's own message box);
+//! * a Rust panic is sent as it happens, by Sentry's panic hook (before Turu's own message box),
+//!   and Turu's hook keeps it in the crash folder too ([`write_panic_report`]), so the crash notice
+//!   and Diagnostics > Logs > Crashes show it;
+//! * the GPU dropping the device (a driver reset) is sent as a warning ([`gpu_lost`]): Turu goes
+//!   on without a picture;
 //! * a native crash (Windows' `windows::install_crash_handler`, almost always a graphics driver)
 //!   is written to the crash folder ([`write_native_report`]) and sent at the next start
 //!   ([`send_pending`]): a crashed process is no place for HTTPS.
@@ -15,15 +19,18 @@
 
 use crate::turu;
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 /// The project's DSN, given when building.
 const DSN: Option<&str> = option_env!("TURU_SENTRY_DSN");
 
-/// Native crash reports in the crash folder start with this (`native-<time>.txt`).
+/// Native crash reports in the crash folder start with this (`native-<time>-<pid>.txt`).
 const NATIVE_PREFIX: &str = "native-";
+/// Panic reports start with this (`panic-<time>-<pid>.txt`, as on Android). Sentry's panic hook
+/// sent them already, so [`send_pending`] leaves them.
+const PANIC_PREFIX: &str = "panic-";
 
 /// The reports [`send_pending`] has sent, one name a line (hidden from the crash list).
 const SENT_FILE: &str = ".sent-to-sentry";
@@ -42,6 +49,15 @@ pub fn available() -> bool {
 /// Starts Sentry (builds with a DSN), and sends the native crash reports not sent yet if the user
 /// said yes. Once, on the main thread, after Turu's panic hook is installed (Sentry's runs first).
 pub fn start() {
+    // `TURU_TEST_PANIC=1` panics on a thread of its own 10 s after the start, to test the
+    // reports (a dev build carries on; a release build closes, as on a real panic). Before the
+    // DSN check, so it also tests the crash file and message of builds without one.
+    if std::env::var_os("TURU_TEST_PANIC").is_some() {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            panic!("TURU_TEST_PANIC: a test panic");
+        });
+    }
     let Some(dsn) = DSN.filter(|_| available()) else {
         return;
     };
@@ -69,14 +85,6 @@ pub fn start() {
     if consented {
         tracing::info!("Crash reports: on");
         std::thread::spawn(send_pending);
-    }
-    // `TURU_TEST_PANIC=1` panics on a thread of its own 10 s after the start, to test the
-    // reports (a dev build carries on; a release build closes, as on a real panic).
-    if std::env::var_os("TURU_TEST_PANIC").is_some() {
-        std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            panic!("TURU_TEST_PANIC: a test panic");
-        });
     }
 }
 
@@ -122,15 +130,33 @@ fn scrub_text(text: &str) -> String {
     }
 }
 
-/// `crash/native-<time>.txt`, written now, from the crash handler: the first line says what
-/// crashed (the crash notice shows it), then `details`. [`send_pending`] sends it at the next
-/// start.
+/// `crash/native-<time>-<pid>.txt`, written now, from the crash handler: the first line says
+/// what crashed (the crash notice shows it), then `details`. [`send_pending`] sends it at the
+/// next start.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn write_native_report(summary: &str, details: &str) {
-    write_native_report_in(&turu_bot::paths::Paths::new().crash_dir(), summary, details);
+    write_report_in(
+        &turu_bot::paths::Paths::new().crash_dir(),
+        NATIVE_PREFIX,
+        summary,
+        details,
+    );
 }
 
-fn write_native_report_in(dir: &Path, summary: &str, details: &str) {
+/// `crash/panic-<time>-<pid>.txt`, written now, from the panic hook (a release build aborts
+/// right after it): where the report went, if it could be written.
+pub fn write_panic_report(summary: &str, details: &str) -> Option<PathBuf> {
+    write_report_in(
+        &turu_bot::paths::Paths::new().crash_dir(),
+        PANIC_PREFIX,
+        summary,
+        details,
+    )
+}
+
+/// A report named after the time and this process (two clients crashing in the same second, as
+/// a driver reset makes them, would otherwise share a name).
+fn write_report_in(dir: &Path, prefix: &str, summary: &str, details: &str) -> Option<PathBuf> {
     let now = chrono::Local::now();
     let report = format!(
         "{summary}\n\nTuru {}\n{}\n{details}\n",
@@ -138,9 +164,29 @@ fn write_native_report_in(dir: &Path, summary: &str, details: &str) {
         now.to_rfc3339()
     );
     let _ = std::fs::create_dir_all(dir);
-    let _ = std::fs::write(
-        dir.join(format!("{NATIVE_PREFIX}{}.txt", now.format("%F_%H-%M-%S"))),
-        report,
+    let path = dir.join(format!(
+        "{prefix}{}-{}.txt",
+        now.format("%F_%H-%M-%S"),
+        std::process::id()
+    ));
+    std::fs::write(&path, report).ok().map(|()| path)
+}
+
+/// The GPU dropped the device (a driver reset, or out of memory): Turu keeps running without a
+/// picture. A warning of its own, one issue whatever the driver's message (TURU-DESKTOP-5: two
+/// clients panicked on the same reset).
+pub fn gpu_lost(why: &str) {
+    sentry::with_scope(
+        |scope| {
+            scope.set_tag("gpu", "lost");
+            scope.set_fingerprint(Some(["gpu-lost"].as_slice()));
+        },
+        || {
+            sentry::capture_message(
+                &scrub_text(&format!("The GPU stopped working: {why}")),
+                sentry::Level::Warning,
+            )
+        },
     );
 }
 
@@ -217,12 +263,15 @@ mod tests {
     #[test]
     fn native_reports_are_sent_once() {
         let dir = folder("once");
-        write_native_report_in(
+        write_report_in(
             &dir,
+            NATIVE_PREFIX,
             "Turu crashed: exception 0xC0000005 in igvk64.dll",
             "at offset 0x10",
-        );
-        std::fs::write(dir.join("panic-1.txt"), "Turu panicked").unwrap();
+        )
+        .unwrap();
+        // Sentry's panic hook sent the panic already.
+        write_report_in(&dir, PANIC_PREFIX, "Turu crashed (a panic)", "").unwrap();
         let first = take_unsent_in(&dir);
         assert_eq!(first.len(), 1);
         assert_eq!(

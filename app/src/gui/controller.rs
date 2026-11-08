@@ -30,6 +30,10 @@ use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{ImePurpose as WinitImePurpose, Theme, Window};
 
+/// Turu: acquires in a row that may fail with a validation error before it counts as fatal
+/// (about 2 seconds of frames).
+const MAX_ACQUIRE_ERRORS: u32 = 120;
+
 /// Integration layer connecting wgpu+winit to egui.
 pub struct GuiController {
     descriptors: Arc<Descriptors>,
@@ -55,6 +59,15 @@ pub struct GuiController {
     theme_controller: ThemeController,
     /// Turu: the window title last set, to follow the character's name.
     title: String,
+    /// Turu: the GPU dropped the device and that was said ([`Self::gpu_lost`]); nothing is drawn
+    /// from then on.
+    gpu_lost: bool,
+    /// Turu: acquires in a row that failed with a validation error while the device still
+    /// worked.
+    acquire_errors: u32,
+    /// Turu: `TURU_TEST_GPU_LOSS=1` destroys the GPU device at this time (20 s after the start),
+    /// to test [`Self::gpu_lost`] (Android's `--test-gpu-loss`).
+    test_gpu_loss: Option<Instant>,
     #[cfg(feature = "tracy_images")]
     tracy_frame_captures: crate::tracy::FrameCapturesHolder,
 }
@@ -219,6 +232,10 @@ impl GuiController {
             input_repaint: false,
             theme_controller,
             title: crate::window_title(),
+            gpu_lost: false,
+            acquire_errors: 0,
+            test_gpu_loss: (std::env::var_os("TURU_TEST_GPU_LOSS").is_some_and(|v| v == "1"))
+                .then(|| Instant::now() + Duration::from_secs(20)),
             #[cfg(feature = "tracy_images")]
             tracy_frame_captures,
         })
@@ -392,6 +409,29 @@ impl GuiController {
         PhysicalPosition::new(x, y)
     }
 
+    /// Turu: the GPU dropped the device. Said once: in the log, every tab's debug log, the window
+    /// title and to Sentry (a warning of its own, as on Android). The window keeps its last
+    /// picture; the game, its scripts and closing the window still work.
+    fn gpu_lost(&mut self, why: &str) {
+        if std::mem::replace(&mut self.gpu_lost, true) {
+            return;
+        }
+        tracing::error!(
+            "The GPU stopped working ({why}); the game goes on without a picture until Turu restarts"
+        );
+        for (_, bot) in crate::turu::tabs() {
+            bot.logs.debug.push(format!(
+                "Graphics: the GPU stopped working ({why}); scripts keep running, restart Turu to see the game"
+            ));
+        }
+        self.title = format!(
+            "{} - graphics stopped, restart Turu to see the game",
+            crate::window_title()
+        );
+        self.window.set_title(&self.title);
+        crate::crash_uploads::gpu_lost(why);
+    }
+
     /// Draws the window: the active tab's movie, or with `tiles` (Grid View: each tab's picture
     /// and its tile, below the top bar) every tab's; then the UI.
     pub fn render(
@@ -400,11 +440,26 @@ impl GuiController {
         tiles: &[(crate::grid::Tile, wgpu::BindGroup)],
     ) {
         use crate::thread_perf::{Phase, add}; // Turu: `TURU_PERF_LOG`.
+        // Turu: the GPU dropped the device (a driver reset: TURU-DESKTOP-5, two clients at once).
+        // It can't come back, and the game's shapes and bitmaps lived on it, so the window stops
+        // drawing (ruffle-aqw draws nothing either) while the game and its scripts go on.
+        if self.test_gpu_loss.is_some_and(|at| Instant::now() >= at) {
+            self.test_gpu_loss = None;
+            tracing::warn!("TURU_TEST_GPU_LOSS: destroying the GPU device");
+            self.descriptors.device.destroy();
+        }
+        if let Some(why) = ruffle_render_wgpu::device_lost() {
+            self.gpu_lost(&why);
+            return;
+        }
         let acquiring = Instant::now();
         let acquired = self.surface.get_current_texture();
         add(Phase::Acquire, acquiring.elapsed());
         let surface_texture = match acquired {
-            wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
+            wgpu::CurrentSurfaceTexture::Success(surface_texture) => {
+                self.acquire_errors = 0;
+                surface_texture
+            }
             wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
                 // The acquired texture is still usable - no reason to waste
                 // this frame. The surface should ideally be reconfigured
@@ -444,6 +499,20 @@ impl GuiController {
                 return;
             }
             wgpu::CurrentSurfaceTexture::Validation => {
+                // Turu: wgpu reports every error of the acquire this way, a lost device's too
+                // (TURU-DESKTOP-5: both clients panicked here on one driver reset). Go on without
+                // a picture then; otherwise skip the frame, and give up only when it keeps failing.
+                if let Some(why) = ruffle_render_wgpu::device_lost() {
+                    self.gpu_lost(&why);
+                    return;
+                }
+                self.acquire_errors += 1;
+                if self.acquire_errors < MAX_ACQUIRE_ERRORS {
+                    tracing::warn!(
+                        "Surface acquisition failed with a validation error, skipping a frame"
+                    );
+                    return;
+                }
                 // Generic error, not much we can do.
                 panic!("wgpu: Acquiring a texture failed with a validation error");
             }

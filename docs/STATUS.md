@@ -654,8 +654,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   project once the user agrees: the same "Send crash reports?" question and Options >
   Application switch as Android (`sendCrashReports` in `settings.json`; set it there for
   `--headless`). `app/src/crash_uploads.rs`: a panic is sent as it happens (Sentry's panic hook
-  runs before Turu's); a native crash on Windows is written to the data folder's `crash/` by the
-  crash handler (`native-<date>.txt`, so the crash notice shows it too) and sent at the next start.
+  runs before Turu's), and Turu's hook writes `panic-<date>-<pid>.txt` in the data folder's
+  `crash/` (it used to write `crash-<date>.log` next to ruffle.log, which the crash notice and
+  Diagnostics > Logs > Crashes don't read, so a panic left nothing to see there); a native crash
+  on Windows is written to the data folder's `crash/` by the crash handler
+  (`native-<date>-<pid>.txt`, so the crash notice shows it too) and sent at the next start.
   The handler (`app/src/windows.rs`, `crash_filter`) skips continuable informational exceptions
   (DirectX's 0x87A and 0x87D), and ends quietly, with no report or message box, on any exception
   while Windows unloads the DLLs of a process that is already exiting (`RtlDllShutdownInProgress`):
@@ -665,13 +668,28 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   No IP address, no computer name, the home folder's path replaced with `~`, no logs. The release
   workflow builds with line tables (`CARGO_PROFILE_DIST_DEBUG`) and uploads the PDB / dSYM /
   Linux binary with `sentry-cli` (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_DESKTOP_PROJECT`),
-  then strips the Linux binary. `TURU_TEST_PANIC=1` panics 10 s after the start, to test it.
+  then strips the Linux binary. `TURU_TEST_PANIC=1` panics 10 s after the start, to test it
+  (also in builds without a DSN: the crash file and message).
 - **egui out of GPU memory:** egui-wgpu panicked when the GPU had no staging buffer for the
   overlay's vertices or indices (Sentry TURU-DESKTOP-3, beta.5, Windows). ruffle-aqw patches it
   (`ruffle/patches/egui-wgpu`, wired up in both workspaces' `[patch.crates-io]`): that frame draws
   no egui meshes and logs a warning, and a buffer that failed is made anew next frame. It's the
   overlay on the desktop and the whole UI on Android. Tested with a device whose buffers are too
   small; not seen on a real out-of-memory GPU.
+- **A lost GPU device (desktop):** a driver reset (Windows' TDR, a driver crash) drops the
+  device in every program at once: Sentry TURU-DESKTOP-5 (beta.8, Windows 11) was two clients in
+  their own windows panicking in the same second, as getting the window's next picture failed
+  ("Acquiring a texture failed with a validation error": wgpu reports a lost device's acquire that
+  way). As on Android, the window now stops drawing (`GuiController::render` checks
+  `ruffle_render_wgpu::device_lost()`, which ruffle-aqw's device-lost callback sets) and keeps its
+  last picture, while the game and its scripts go on; it's said once in the log, every tab's debug
+  log, the window title ("graphics stopped, restart Turu to see the game") and to Sentry (a warning,
+  `gpu: lost`). An acquire's validation error with the device still working skips the frame, and
+  panics only after 120 in a row. The UI can't be used until Turu restarts (closing the window
+  works). `TURU_TEST_GPU_LOSS=1` destroys the device 20 s after the start: on macOS (debug build)
+  the first acquire after it failed with that validation error before the device-lost callback
+  ran (where TURU-DESKTOP-5 panicked), was skipped, and the next frame stopped drawing; the game
+  went on (no panic, the debug log and title said so). Not seen on a real driver reset.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies

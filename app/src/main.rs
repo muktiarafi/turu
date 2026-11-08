@@ -233,22 +233,19 @@ fn panic_hook(info: &PanicHookInfo) {
     // AQW build: keep the crash and where it happened in ruffle.log.
     let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!("fatal error: {info}\n{backtrace}");
-    // Turu: and in a file of its own, written now: the log is written on another thread, which
-    // a release build's abort may not let finish.
-    let crash_file = mugetsu::log_folder().map(|folder| {
-        let thread = std::thread::current();
-        let report = format!(
-            "Turu {APP_VERSION}\n{}\nthread '{}': {info}\n\n{backtrace}\n",
-            chrono::Local::now().to_rfc3339(),
-            thread.name().unwrap_or("<unnamed>"),
-        );
-        let path = folder.join(format!(
-            "crash-{}.log",
-            chrono::Local::now().format("%F_%H-%M-%S")
-        ));
-        let _ = std::fs::write(&path, report);
-        path
-    });
+    // Turu: and a report in the data folder's crash folder, written now: the log is written on
+    // another thread, which a release build's abort may not let finish, and the crash notice and
+    // Diagnostics > Logs > Crashes only look there (they used to miss panics, written next to
+    // ruffle.log instead).
+    let thread = std::thread::current();
+    let thread = thread.name().unwrap_or("<unnamed>");
+    let crash_file = crash_uploads::write_panic_report(
+        &format!(
+            "Turu crashed (a panic on {thread}): {}",
+            message.lines().next().unwrap_or_default()
+        ),
+        &format!("thread '{thread}': {info}\n\n{backtrace}"),
+    );
 
     // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
     // its crashes aren't theirs to triage). Say plainly what happened instead.
@@ -260,24 +257,25 @@ fn panic_hook(info: &PanicHookInfo) {
         "Out of Memory",
         "out of memory",
     ];
+    // Turu: the crash file's real path (the data folder isn't the same on every system).
+    let saved = crash_file.map_or_else(
+        || "Details were saved to ruffle.log (it is replaced the next time Turu starts).".to_string(),
+        |path| format!("Details were saved to {}.", path.display()),
+    );
     let description = if GPU_RESET_HINTS.iter().any(|hint| message.contains(hint)) {
-        "The graphics driver stopped responding or was reset by Windows (for example after a \
-        driver update or a driver crash, or because the graphics card ran out of memory), so \
-        Mugetsu has to close.\n\n\
-        Please start Mugetsu again. If this keeps happening in crowded rooms, set Quality to LOW \
-        in AQW's options."
-            .to_string()
+        format!(
+            "The graphics driver stopped responding or was reset by Windows (for example after a \
+            driver update or a driver crash, or because the graphics card ran out of memory), so \
+            Turu has to close.\n\n\
+            Please start Turu again. If this keeps happening in crowded rooms, set Quality to LOW \
+            in AQW's options.\n\n{saved}"
+        )
     } else {
-        // Turu: the crash file's real path (the log folder isn't the same on every system).
-        let saved = crash_file.map_or_else(
-            || "Details were saved to ruffle.log (it is replaced the next time Turu starts).".to_string(),
-            |path| format!("Details were saved to {}.", path.display()),
-        );
         format!("Turu ran into an error and has to close.\n\n{message}\n\n{saved}")
     };
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
-        .set_title("Mugetsu")
+        .set_title("Turu")
         .set_description(description)
         .set_buttons(rfd::MessageButtons::Ok)
         .show();
