@@ -689,7 +689,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   works). `TURU_TEST_GPU_LOSS=1` destroys the device 20 s after the start: on macOS (debug build)
   the first acquire after it failed with that validation error before the device-lost callback
   ran (where TURU-DESKTOP-5 panicked), was skipped, and the next frame stopped drawing; the game
-  went on (no panic, the debug log and title said so). Not seen on a real driver reset.
+  went on (no panic, the debug log and title said so). Not seen on a real driver reset. Getting
+  the picture back without a restart: docs/GPU_RECOVERY_PROPOSAL.md.
 - **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
   error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies

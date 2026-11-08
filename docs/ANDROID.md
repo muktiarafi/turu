@@ -402,5 +402,8 @@ the game's shapes and bitmaps live on it, so Turu now goes on without a picture:
   whatever the driver's message, which it carries).
 
 Checked on the emulator with `--test-gpu-loss`: in game, the device destroyed, Turu kept running
-(its memory readings went on) and the notification said so. A real driver loss hasn't been seen
-since; the report's message will say which it was.
+(its memory readings went on) and the notification said so. On a phone: a Redmi 10 2022 lost its
+device 5.5 minutes in on beta.8, in the foreground (Sentry TURU-ANDROID-B, "Unknown: Device is
+lost"), and Turu went on with a frozen screen, as meant; it was that phone's third loss. Getting
+the picture back without a restart is proposed in docs/GPU_RECOVERY_PROPOSAL.md (a new device
+and player, then auto-relogin).
