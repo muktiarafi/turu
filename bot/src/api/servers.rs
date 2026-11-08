@@ -112,6 +112,19 @@ impl ServerRunner {
             .map(|(username, _)| username.clone())
     }
 
+    /// Turu: forgets the `setLoginInfo` login when another account logged in (`loginResponse`):
+    /// it was left from an earlier login (the command line's, `bot.army.login`'s) and relogins
+    /// would take the tab back to that account. Relogins then use the game's login.
+    pub(crate) fn forget_login_info_unless(&self, username: &str) {
+        let mut info = self.login_info.lock();
+        if info
+            .as_ref()
+            .is_some_and(|(name, _)| !name.trim().eq_ignore_ascii_case(username.trim()))
+        {
+            *info = None;
+        }
+    }
+
     /// An auto-relogin is under way.
     pub fn is_relogging(&self) -> bool {
         self.waiting_for_login.load(Ordering::Acquire)
@@ -266,6 +279,15 @@ pub fn login(bot: &Bot, username: &str, password: &str) -> BotResult<()> {
     }
     bot.flash
         .call_game_function("login", vec![username.into(), password.into()])
+}
+
+/// `Login(username, password)` that relogins also use from now on (`setLoginInfo`). Turu: the
+/// game's remembered `loginInfo` is the login screen's account (the one it remembers, or the
+/// last one typed there), so after the bot logged in another account (`bot.army.login`), a
+/// relogin with it logged in the wrong account.
+pub fn login_as(bot: &Bot, username: &str, password: &str) -> BotResult<()> {
+    set_login_info(bot, username, password);
+    login(bot, username, password)
 }
 
 /// VibeSkua `Login()`: logs in with the game's remembered `loginInfo`.
@@ -1334,7 +1356,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         }
         "login" => {
             match (args.opt_str(0), args.opt_str(1)) {
-                (Some(username), Some(password)) => login(bot, username, password)?,
+                (Some(username), Some(password)) => login_as(bot, username, password)?,
                 _ => login_again(bot)?,
             }
             ok(())

@@ -247,6 +247,9 @@ fn on_str(bot: &Arc<Bot>, data: &Value) {
                     state.username = Some(username.clone());
                 }
             }
+            if !username.is_empty() {
+                bot.servers.forget_login_info_unless(&username);
+            }
             // VibeSkua clears the custom name and guild on every login. Never block here:
             // a script thread may hold the options lock while it waits on Flash.
             if let Some(mut options) = bot.options.try_write() {

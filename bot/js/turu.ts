@@ -358,7 +358,10 @@ export class Servers {
 
     /** The login relogins use instead of the game's remembered one. */
     setLoginInfo(username: string, password: string): void { call("servers.setLoginInfo", username, password); }
-    /** Logs in (to the server list); without arguments, with the game's remembered login. */
+    /**
+     * Logs in (to the server list); without arguments, with the game's remembered login. With a
+     * username and password, relogins use them too (`setLoginInfo`), until another account logs in.
+     */
     login(username?: string, password?: string): void { call("servers.login", username ?? null, password ?? null); }
     /** Logs out to the login screen. Auto-relogin doesn't bring you back. */
     logout(): void { call("servers.logout"); }
@@ -480,7 +483,7 @@ export class Army {
     /**
      * Logs in with an Army > Accounts account, the password read from the system keychain (the
      * script never sees it); false when the account has no saved password. Like
-     * `bot.servers.login`, it stops at the server list.
+     * `bot.servers.login`, it stops at the server list, and relogins use this account from now on.
      */
     login(username: string): boolean { return call("army.login", username); }
     /**

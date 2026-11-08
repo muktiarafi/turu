@@ -393,7 +393,7 @@ pub fn login(bot: &Bot, username: &str) -> BotResult<bool> {
     let password = accounts::password(username).map_err(BotError::Other)?;
     match password {
         Some(password) if !password.is_empty() => {
-            servers::login(bot, username, &password)?;
+            servers::login_as(bot, username, &password)?;
             Ok(true)
         }
         _ => Ok(false),

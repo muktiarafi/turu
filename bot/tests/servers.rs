@@ -313,6 +313,55 @@ fn auto_relogin_logs_back_in_after_a_server_logout() {
     assert_eq!(bot.state.lock().stats.relogins, 1);
 }
 
+/// The server's `loginResponse` for `username`.
+fn login_response(bot: &Arc<Bot>, username: &str) {
+    let data = json!(["loginResponse", "-1", "true", "1", username, "message"]);
+    let packet = json!({ "params": { "type": "str", "dataObj": data } });
+    bot.on_flash_call("pext", vec![json!(packet.to_string())]);
+}
+
+/// The relogin's `login` call, after the first `skip` logins.
+fn relogin_credentials(game: &FakeGame, skip: usize) -> (String, String) {
+    let login = game
+        .calls_to("callGameFunction")
+        .into_iter()
+        .filter(|a| arg(a, 0) == "login")
+        .nth(skip)
+        .expect("logged in");
+    (arg(&login, 1), arg(&login, 2))
+}
+
+/// An account the bot logged in with a password (`bot.army.login`) is the one relogins use, not
+/// the game's remembered login screen account; another account's login forgets it.
+#[test]
+fn auto_relogin_uses_the_account_the_bot_logged_in() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    bot.options.write().auto_relogin = true;
+    turu_bot::api::dispatch(&bot, "servers.login", &[json!("Alt"), json!("alt-pass")]).unwrap();
+    login_response(&bot, "alt");
+
+    server_logout(&bot, &game);
+    assert!(wait_until(Duration::from_secs(10), || !bot
+        .servers
+        .is_relogging()));
+    assert_eq!(
+        relogin_credentials(&game, 1),
+        ("Alt".into(), "alt-pass".into())
+    );
+
+    // The game's account logged in by hand: relogins go back to it.
+    login_response(&bot, "Hero");
+    server_logout(&bot, &game);
+    assert!(wait_until(Duration::from_secs(10), || !bot
+        .servers
+        .is_relogging()));
+    assert_eq!(
+        relogin_credentials(&game, 2),
+        ("Hero".into(), "secret".into())
+    );
+}
+
 #[test]
 fn intentional_logout_doesnt_relogin() {
     let game = FakeGame::new();
