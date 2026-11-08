@@ -133,8 +133,8 @@ The data folder is the app's files folder on shared storage,
 `options/`, `options.json`, ...). The app reads `turu-args.txt` there at start: the desktop's
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
 `--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES), `--safe-drawing` (as Options >
-Application > Safe Drawing: "Misdrawing" below) and `--test-gpu-loss` (destroys the GPU device
-20 s after the start: "A lost GPU device" below). Without the file the game starts at its login
+Application > Safe Drawing: "Misdrawing" below), `--test-gpu-loss` (destroys the GPU device
+20 s after the start: "A lost GPU device" below) and `--perf-log <seconds>` ("Watch it" below). Without the file the game starts at its login
 screen:
 
 ```
@@ -164,6 +164,33 @@ The log is in logcat under the tag `turu`, with the desktop's default filter:
 ```bash
 adb logcat -s turu
 ```
+
+`--perf-log <seconds>` in `turu-args.txt` is the desktop's `TURU_PERF_LOG` (an app can't be
+started with environment variables): every `seconds` the log has each tab's Flash calls and ticks
+(`docs/HEADLESS.md`), and, from `android/src/frame_perf.rs`, the engine thread's time while there
+is a window: game frames per second and stutters (gaps of 1.5 frames), draws (and the ones skipped,
+below), and per draw rendering the game, Turu's UI, getting the next picture and presenting, then
+ruffle-aqw's render timers and counters per rendered picture (the desktop's `ruffle_aqw_perf`
+lines: render passes, blend layers, cacheAsBitmap redraws, new textures).
+
+```bash
+adb logcat -s turu | grep -E "engine thread|render per|per rendered"
+```
+
+**Crowded rooms** (2026-11-08, emulator `-gpu host` on an Apple M5, battleon on Alteon, ~300 render
+passes a frame from the avatars' multiply and overlay blends, the same as on the desktop): one
+render of the game took ~45-50 ms (the desktop: ~8 ms), nearly all of it on the CPU in recording
+and submitting those passes (`gpu_wait` 0.1 ms); the game's frames ~4-9 ms, the UI and presenting
+under 1 ms. As the screen was drawn after every tick and Mugetsu's catch-up
+(`Player::max_frames_per_tick`) leaves no time when a render alone is longer than a frame, the game
+ran one frame per render: 14-19 FPS instead of 30, in slow motion. Now a tick's draw is skipped
+while more than half a frame of game time is already waiting (`Screen::behind`; drawn at least
+every 250 ms), which a render that fits in half a frame never does: 25-28 game FPS with 16-18
+pictures a second there. Also, cacheAsBitmap textures freed by objects that changed size are reused
+at the same size for ~1 s (ruffle-aqw `TextureRecycler`): ~4.5 new textures a frame, ~1 ms each on
+the emulator's Vulkan, of which ~25% are now reused (`texture_create` 6-9 -> ~3 ms a render). A
+phone's balance between the CPU's command recording and the GPU's drawing (`gpu_wait`) isn't
+measured yet.
 
 ## Crash reports
 
@@ -308,6 +335,9 @@ beta.2) closed Turu with `EXCESSIVE_RESOURCE_USAGE` "o-kill:6" while it ran as a
 service with battery optimisation off. Android's own CPU check spares foreground services, so
 that was ColorOS's background manager; on OPPO, realme and OnePlus phones the exit report's hint
 now points to ColorOS's own switches (App battery management: background activity, auto launch).
+TURU-ANDROID-D (the same phone, beta.7, 5 kills in 8 hours) killed it at ~20% of a core, 3.5
+hours in: the log showed 11-17% in the background at 2 FPS (the emulator: ~3%) and stretches of
+~94% for 10 minutes, but not whose; the thread shares are there to say.
 
 Frame interpolation (Options > Application > Frame Interpolation, off by default; saved as
 `mugetsu-interpolation.txt` in the data folder) is paced as on a desktop (`turu_frontend::pacing`):
@@ -335,9 +365,6 @@ adb forward tcp:9021 tcp:9021
 
 Its token file (`api-token` in the data folder) is made readable by the app only, which `adb`
 can't read on shared storage. Put your own token there before starting the app (32 characters or
-TURU-ANDROID-D (the same phone, beta.7, 5 kills in 8 hours) killed it at ~20% of a core, 3.5
-hours in: the log showed 11-17% in the background at 2 FPS (the emulator: ~3%) and stretches of
-~94% for 10 minutes, but not whose; the thread shares are there to say.
 more), and it's used as is:
 
 ```bash

@@ -20,6 +20,7 @@ mod input;
 mod memory;
 mod notify;
 mod platform;
+mod frame_perf;
 mod screen;
 mod ui;
 
@@ -370,6 +371,24 @@ fn take_flag(args: &mut Vec<OsString>, flag: &str) -> bool {
     args.len() != before
 }
 
+/// Takes `flag <value>` (or `flag=value`) out of `args`, returning the value.
+fn take_value(args: &mut Vec<OsString>, flag: &str) -> Option<String> {
+    let mut value = None;
+    let mut rest = Vec::with_capacity(args.len());
+    let mut iter = std::mem::take(args).into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.to_str() {
+            Some(text) if text == flag => value = iter.next().and_then(|v| v.into_string().ok()),
+            Some(text) if text.strip_prefix(flag).is_some_and(|v| v.starts_with('=')) => {
+                value = Some(text[flag.len() + 1..].to_owned());
+            }
+            _ => rest.push(arg),
+        }
+    }
+    *args = rest;
+    value
+}
+
 /// Takes `--graphics <auto|vulkan|gl>` (or `--graphics=...`) out of `args`.
 fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
     let mut graphics = Graphics::Auto;
@@ -420,6 +439,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let safe_drawing = take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss = take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
+    let perf_log = take_value(&mut args, "--perf-log");
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!("{ARGS_FILE}: {} arguments aren't Turu's flags; ignored", args.len());
@@ -442,7 +462,21 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::start_api();
     turu::start_monitor();
     turu::start_client_updates();
-    turu::start_perf_log(None);
+    // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with.
+    if let Some(seconds) = perf_log {
+        // SAFETY: before the engine's threads exist (the perf log's is started just below).
+        unsafe { std::env::set_var("TURU_PERF_LOG", seconds) };
+    }
+    turu::start_perf_log(Some({
+        // The engine thread as a whole while there's a window (`frame_perf`).
+        let mut last = frame_perf::snapshot();
+        Box::new(move |_| {
+            let now = frame_perf::snapshot();
+            let report = now.report(&last);
+            last = now;
+            report
+        }) as turu::ThreadReport
+    }));
 
     let movie_url = match turu::skua_swf_url().map(|url| Url::parse(&url)) {
         Ok(Ok(url)) => url,
@@ -474,8 +508,17 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
     tracing::info!("Engine running");
     memory::init();
+    let mut frames_seen = player.lock().unwrap_or_else(|e| e.into_inner()).frames_run();
     engine::run_loop_paced(&player, events, |player, step| {
-        if let engine::Step::Ticked { .. } = step {
+        if let engine::Step::Ticked { frame_ms } = step {
+            if let Some(frame_ms) = frame_ms {
+                frame_perf::frames(
+                    player.frames_run() - frames_seen,
+                    Duration::from_secs_f64(frame_ms / 1000.0),
+                    Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0)),
+                );
+            }
+            frames_seen = player.frames_run();
             if test_gpu_loss.is_some_and(|at| Instant::now() >= at) {
                 test_gpu_loss = None;
                 tracing::warn!("--test-gpu-loss: destroying the GPU device");

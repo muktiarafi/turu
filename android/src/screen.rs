@@ -9,9 +9,10 @@
 //! to the UI when it comes down on it (the nav bar, a window), else to the game; keys go to the UI
 //! while one of its text boxes has the focus, which also brings up the soft keyboard.
 //!
-//! The screen is drawn after each tick. With frame interpolation on (Options > Application) it's
-//! presented on every refresh of the display instead, with a new in-between picture on every n-th
-//! refresh, paced as on the desktop (`turu_frontend::pacing`, [`Screen::step`]).
+//! The screen is drawn after each tick, unless the game is behind ([`Screen::behind`]). With frame
+//! interpolation on (Options > Application) it's presented on every refresh of the display
+//! instead, with a new in-between picture on every n-th refresh, paced as on the desktop
+//! (`turu_frontend::pacing`, [`Screen::step`]).
 
 use crate::input::{self, Key, Touch};
 use ndk::native_window::NativeWindow;
@@ -32,6 +33,9 @@ use turu_frontend::pacing::Pacing;
 use turu_frontend::touch::GameTouches;
 use turu_frontend::turu;
 use wgpu::util::DeviceExt;
+
+/// The longest the screen goes undrawn while the game is behind (see [`Screen::behind`]).
+const MAX_DRAW_GAP: Duration = Duration::from_millis(250);
 
 thread_local! {
     /// The engine thread's screen, once the first window came.
@@ -450,6 +454,10 @@ impl Screen {
         };
         match (step, interpolating) {
             (Step::Ticked { .. }, false) => {
+                if self.behind(player) {
+                    crate::frame_perf::skipped();
+                    return None;
+                }
                 let new_picture = player.needs_render();
                 self.draw(player, new_picture);
                 None
@@ -466,6 +474,20 @@ impl Screen {
                 Some(self.draw_started + self.pacing.refresh_interval() / 2)
             }
         }
+    }
+
+    /// Whether to skip this tick's draw because the game is behind: more than half a frame of
+    /// game time is already waiting to run. A phone that renders a crowded room in more than a
+    /// frame (50 ms on the emulator in battleon, 280 render passes) otherwise ran one game
+    /// frame per render (`Player::max_frames_per_tick` leaves no time to catch up), so the game
+    /// itself played at 15-18 FPS instead of 30, in slow motion. Skipping the draws that would
+    /// make the game later keeps it at full speed and draws as often as the rest of the time
+    /// allows (30 game frames and ~15 pictures a second there, not 18 and 18). A render that fits
+    /// in half a frame never skips; the screen is drawn at least every [`MAX_DRAW_GAP`].
+    fn behind(&self, player: &Player) -> bool {
+        player.is_playing()
+            && self.draw_started.elapsed() < MAX_DRAW_GAP
+            && player.time_til_next_frame() * 2 < Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0))
     }
 
     /// The display's refresh rate, from the activity (`ui::refresh_millihertz`).
@@ -505,7 +527,9 @@ impl Screen {
         }
         if new_picture {
             player.render();
-            self.pacing.record_draw(started.elapsed().as_secs_f64() * 1000.0);
+            let took = started.elapsed();
+            crate::frame_perf::add(crate::frame_perf::Phase::Render, took);
+            self.pacing.record_draw(took.as_secs_f64() * 1000.0);
         }
         if !self.configured {
             if Instant::now() < self.retry_configure {
@@ -519,7 +543,10 @@ impl Screen {
         let Some(surface) = &self.surface else {
             return;
         };
-        let frame = match surface.get_current_texture() {
+        let acquire_started = Instant::now();
+        let acquired = surface.get_current_texture();
+        crate::frame_perf::add(crate::frame_perf::Phase::Acquire, acquire_started.elapsed());
+        let frame = match acquired {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                 self.configure();
@@ -528,6 +555,7 @@ impl Screen {
             _ => return,
         };
 
+        let ui_started = Instant::now();
         let ppp = self.pixels_per_point;
         let mut raw_input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -570,6 +598,7 @@ impl Screen {
         }
 
         let primitives = self.egui.tessellate(output.shapes, output.pixels_per_point);
+        crate::frame_perf::add(crate::frame_perf::Phase::Ui, ui_started.elapsed());
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [self.size.0, self.size.1],
             pixels_per_point: output.pixels_per_point,
@@ -622,11 +651,14 @@ impl Screen {
             self.egui_renderer.render(&mut pass, &primitives, &screen);
         }
         buffers.push(encoder.finish());
+        let present_started = Instant::now();
         queue.submit(buffers);
         for id in &output.textures_delta.free {
             self.egui_renderer.free_texture(id);
         }
         queue.present(frame);
+        crate::frame_perf::add(crate::frame_perf::Phase::Present, present_started.elapsed());
+        crate::frame_perf::add(crate::frame_perf::Phase::Draw, started.elapsed());
     }
 
     /// Brings the soft keyboard up while a text box of the UI has the focus.
