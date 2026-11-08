@@ -23,6 +23,7 @@ pub mod junk;
 pub mod loadouts;
 pub mod log;
 pub mod map_items;
+pub mod map_scripts;
 pub mod models;
 pub mod monitor;
 pub mod notifications;

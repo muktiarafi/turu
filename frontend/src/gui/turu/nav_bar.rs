@@ -19,6 +19,7 @@ use serde_json::json;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use turu_bot::api::dispatch;
+use turu_bot::map_scripts::MapScript;
 use turu_bot::script::{self, ScriptOptionsState, ScriptStatus};
 
 /// The menus, in VibeSkua's order. Bank is an action, not a menu: it sits with the quick
@@ -113,6 +114,33 @@ pub struct NavBar {
     /// way, the name gets what's left, or nothing.
     right_rest: f32,
     bank: Arc<Mutex<BankState>>,
+    /// The scripts for the active tab's map, on the rail's script chip.
+    map_scripts: MapScriptsCache,
+}
+
+/// The scripts made for the active tab's map (`turu_bot::map_scripts`), worked out again when the
+/// map or the Search Scripts list changes.
+#[derive(Default)]
+struct MapScriptsCache {
+    map: String,
+    generation: u64,
+    /// `None` while the scripts folder is read.
+    list: Option<Vec<MapScript>>,
+}
+
+impl MapScriptsCache {
+    /// The scripts for `map`; `None` when there are none (or not yet).
+    fn get(&mut self, bot: &turu_bot::Bot, map: &str) -> Option<&[MapScript]> {
+        let repo = crate::turu::script_repo();
+        let generation = repo.generation();
+        if self.map != map || self.generation != generation || self.list.is_none() {
+            let snapshot = repo.snapshot();
+            self.list = turu_bot::map_scripts::scripts_for(&bot.paths.scripts_dir(), map, &snapshot.entries);
+            self.map = map.to_owned();
+            self.generation = snapshot.generation;
+        }
+        self.list.as_deref().filter(|list| !list.is_empty())
+    }
 }
 
 impl Default for NavBar {
@@ -137,6 +165,7 @@ impl Default for NavBar {
             right_width: 0.0,
             right_rest: 0.0,
             bank: Arc::default(),
+            map_scripts: MapScriptsCache::default(),
         }
     }
 }
@@ -1600,16 +1629,33 @@ impl NavBar {
             .style(menu_style)
             .info(egui::UiStackInfo::new(egui::UiKind::Menu).with_tag_value(MenuConfig::MENU_CONFIG_TAG, config))
             .show(|ui| {
-                if let (Some(release), false) = (&update.available, fit.update)
-                    && item(ui, &format!("Update to {}", release.version))
-                {
-                    windows.client_update = true;
-                }
-                folded(ui, windows, menus(), folded_bank);
-                ui.separator();
-                if item(ui, "Hide Side Bar") {
-                    set_rail_hidden(true);
-                }
+                // Taller than a phone held sideways: it scrolls.
+                let room = ui.ctx().content_rect().height() - 24.0;
+                egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
+                    if let (Some(release), false) = (&update.available, fit.update)
+                        && item(ui, &format!("Update to {}", release.version))
+                    {
+                        windows.client_update = true;
+                    }
+                    folded(ui, windows, menus(), folded_bank);
+                    ui.separator();
+                    if item(ui, "Hide Side Bar") {
+                        set_rail_hidden(true);
+                    }
+                    // Turu's joystick and skill buttons over the game (`touch_controls`).
+                    let controls = crate::touch_controls::enabled();
+                    let label = if controls {
+                        "Hide Touch Controls"
+                    } else {
+                        "Show Touch Controls"
+                    };
+                    if item(ui, label) {
+                        crate::touch_controls::set_enabled(!controls);
+                    }
+                    if item(ui, "Edit Touch Controls") {
+                        crate::touch_controls::edit();
+                    }
+                });
             });
 
         let running = auto::running(&bot);
@@ -1676,10 +1722,20 @@ impl NavBar {
                 corners = CornerRadius::same(radius);
             }
             let chip = rail_chip(ui, &bot, status, corners);
-            // With favourite or recent scripts, the chip lists them to start one with a tap (and
-            // the Script Loader); without, it opens the Script Loader.
+            // The scripts made for this map: a badge with how many while none runs.
+            let map = bot.state.lock().map_name.clone().filter(|map| !map.is_empty());
+            let here = map
+                .as_deref()
+                .and_then(|map| self.map_scripts.get(&bot, map).map(|list| (map, list)));
+            if let Some((_, list)) = here
+                && !status.is_active()
+            {
+                map_badge(ui, chip.rect, list.len());
+            }
+            // With scripts for this map, favourite or recent ones, the chip lists them to start
+            // one with a tap (and the Script Loader); without, it opens the Script Loader.
             let quick = turu_bot::quick_scripts::get(&bot.paths.quick_scripts_file());
-            if quick.is_empty() {
+            if quick.is_empty() && here.is_none() {
                 if chip.clicked() {
                     windows.script_loader = true;
                 }
@@ -1691,18 +1747,44 @@ impl NavBar {
                     .info(
                         egui::UiStackInfo::new(egui::UiKind::Menu).with_tag_value(MenuConfig::MENU_CONFIG_TAG, config),
                     )
-                    .show(|ui| quick_scripts_menu(ui, &bot, &quick, windows));
+                    .show(|ui| {
+                        // Taller than a phone held sideways: it scrolls.
+                        let room = ui.ctx().content_rect().height() - 24.0;
+                        egui::ScrollArea::vertical()
+                            .id_salt("turu_quick_scripts")
+                            .max_height(room)
+                            .show(ui, |ui| quick_scripts_menu(ui, &bot, here, &quick, windows));
+                    });
             }
         });
     }
 }
 
-/// The rail chip's list: the Script Loader, then the favourite and the recently started scripts
-/// (`turu_bot::quick_scripts`); a tap loads one and starts it. Scripts no longer on disk are left
-/// out.
+/// How many scripts are made for the map, in an accent bubble on the chip's top right corner.
+fn map_badge(ui: &Ui, chip: Rect, count: usize) {
+    let text = if count > 99 {
+        "99+".to_owned()
+    } else {
+        count.to_string()
+    };
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text, FontId::proportional(10.0), Color32::WHITE);
+    let size = vec2((galley.size().x + 8.0).max(16.0), 16.0);
+    let rect = Rect::from_center_size(pos2(chip.right() - size.x / 2.0 - 2.0, chip.top() + 10.0), size);
+    ui.painter().rect_filled(rect, size.y / 2.0, ACCENT);
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, Color32::WHITE);
+}
+
+/// The rail chip's list: the Script Loader, the scripts made for the map the tab is on
+/// (`turu_bot::map_scripts`), then the favourite and the recently started scripts
+/// (`turu_bot::quick_scripts`); a tap loads one and starts it (a map's script not downloaded yet
+/// is downloaded first). Scripts no longer on disk are left out.
 fn quick_scripts_menu(
     ui: &mut Ui,
     bot: &Arc<turu_bot::Bot>,
+    here: Option<(&str, &[MapScript])>,
     quick: &turu_bot::quick_scripts::QuickScripts,
     windows: &mut Windows,
 ) {
@@ -1717,6 +1799,38 @@ fn quick_scripts_menu(
     } else {
         None
     };
+    if let Some((map, list)) = here {
+        ui.separator();
+        ui.label(
+            RichText::new(format!("On {map} · {}", list.len()))
+                .size(11.0)
+                .color(MUTED),
+        );
+        egui::ScrollArea::vertical()
+            .id_salt("turu_map_scripts")
+            .max_height(5.5 * (control_height() + 4.0))
+            .show(ui, |ui| {
+                for script in list {
+                    let (text, tip) = if script.downloaded {
+                        (script.name.clone(), script.path.clone())
+                    } else {
+                        (
+                            format!("{} ↓", script.name),
+                            format!("{} (downloaded when started)", script.path),
+                        )
+                    };
+                    let button = Button::new(text).min_size(vec2(220.0, control_height()));
+                    if ui.add_enabled(why.is_none(), button).on_hover_text(tip).clicked() {
+                        ui.close();
+                        if script.downloaded {
+                            start_quick_script(bot, &bot.paths.scripts_dir().join(&script.path));
+                        } else {
+                            download_and_start(bot, script.path.clone());
+                        }
+                    }
+                }
+            });
+    }
     let lists = [
         ("Favourites", quick.favorites.iter().collect::<Vec<_>>()),
         ("Recent", quick.recent_only().collect()),
@@ -1744,6 +1858,22 @@ fn quick_scripts_menu(
     }
     if let Some(why) = why {
         ui.label(RichText::new(why).size(11.0).color(MUTED));
+    }
+}
+
+/// Downloads `path` (relative to the scripts folder) from the scripts repository, then loads it and
+/// starts it, off the UI thread.
+fn download_and_start(bot: &Arc<turu_bot::Bot>, path: String) {
+    bot.log(format!("Downloading {path}"));
+    let bot = bot.clone();
+    let spawned = std::thread::Builder::new()
+        .name("Turu Map Script".into())
+        .spawn(move || match crate::turu::script_repo().ensure(&path) {
+            Ok(local) => start_quick_script(&bot, &local),
+            Err(e) => bot.log(format!("Couldn't download {path}: {e}")),
+        });
+    if let Err(e) = spawned {
+        tracing::error!("Couldn't start the download: {e}");
     }
 }
 

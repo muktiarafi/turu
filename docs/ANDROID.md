@@ -78,6 +78,43 @@ How to build, run and check the Android app. The design and the plan are in
 > Loader moved it under Favourites; the notification read "turu_long loaded" with Start, which
 > started it (then Pause and Stop), and Stop brought Start back.
 >
+> **Touch controls (2026-11-08, checked on MuMu):** Menu > Show Touch
+> Controls puts Turu's own joystick and six action bar buttons (the game's keys 1 to 6: auto
+> attack, skills 1 to 4, potion) over the game, in game only and hidden while a script runs
+> (an option). Menu > Edit Touch Controls drags each one where it goes, sizes it (40 to 220 pt),
+> hides it, and sets their opacity; Reset brings the defaults back. The layout is kept in the
+> data folder's `touch-controls.json`, places as fractions of the game's area. The joystick
+> walks with `walkTo` to a point 140 stage pixels ahead in its direction every 200 ms while held,
+> and to where the avatar stands when let go; a button uses its slot as the key does
+> (`useSkill`). A skill button shows its slot's icon cut live from the game's own action bar
+> (`ui.mcInterface.actBar`, read every 3 s; the slots measured on AQW's interface: 41 x 41,
+> 45.35 stage pixels apart): the class's icons, with the game's cooldown shading. The screen
+> lends the game's texture to egui and the stage's matrix into it
+> (`Screen::share_game_picture`, `touch_controls::set_game_picture`). Each control has its own
+> opacity too (times the layout's), in the editor. The controls take their fingers in `Screen::touch` before egui and the game
+> (`turu_frontend::touch_controls`), so the joystick and a button work at once. AQW's own
+> mobile joystick and buttons (`liteAssets.mobile`) stay as they were: they can't be moved or
+> sized. On MuMu: the joystick walked right and up-left and stopped when let go; the attack
+> button killed a Dark Makai in `tercessuinotlim`; the editor moved button 6, sized it to
+> 162 pt and Reset put it back, all saved to `touch-controls.json`; the controls hid while
+> `turu_long` ran; the Void Highlord's icons showed in the buttons, lined up with the action
+> bar's, and button 1's own opacity at 0.18 made it faint. Not checked: the joystick and a button at once (adb taps one finger at a
+> time). The rail's Menu and the script chip's list now scroll: on MuMu both were taller than
+> the screen, which hid Hide Side Bar and the touch controls' items, and the chip list's top.
+>
+> **Scripts for the map (2026-11-08):** joining a map puts a badge on the side bar's script
+> chip with how many scripts are made for it, and the chip's list has them under "On <map>"
+> (scrolling), the scripts naming the map most first; a tap loads and starts one, and one not
+> downloaded yet (marked ↓, from the index's `maps`) is downloaded first. A script's maps are
+> the ones its source names in a call that takes a map (`huntMonster`, `killMonster`, `join`,
+> ...; `turu_bot::map_scripts`, and the scripts repository's `tools/build-index.mjs` the same
+> way); a script that takes its map from a variable or its options isn't found, and maps
+> scripts only pass through (`whitemap`, `battleon`, `yulgar`, `house`) list none. The
+> scripts folder is read once in the background (MuMu: 1869 files, 809 maps, 636 ms) and again
+> after Search Scripts changes it. On MuMu, `tercessuinotlim` showed 24 on the chip and the
+> list "On tercessuinotlim · 24" under the Script Loader; a download from it is not checked on
+> a device yet.
+>
 > **High frame rates (2026-11-08):** Options > Game > Set FPS goes up to 240, with a ▾ of the
 > usual rates (Off, 24, 30, 60, 90, 120, 144, 165, 240). Above 60 the screen asks the activity
 > for a display mode that keeps up (`TuruActivity.preferRefreshRate`: the slowest refresh rate
