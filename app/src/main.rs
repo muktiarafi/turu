@@ -86,6 +86,28 @@ pub struct CountingAlloc;
 #[cfg(not(feature = "tracy"))]
 pub static HEAP_BYTES: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
+/// Turu: makes mimalloc hand the memory it keeps free (this thread's heap and abandoned pages)
+/// back to the system; its own purging leaves those pages. Called once a minute from the thread
+/// that runs the players: at Primarch (headless, debug build) RSS fell from ~340 to ~250 MB for
+/// ~4 ms a call (`tools/memrun`, 2026-11-08); purging sooner (`MIMALLOC_PURGE_DELAY=0`) did
+/// nothing. `TURU_MI_COLLECT=0` turns it off, to compare.
+pub fn release_free_memory() {
+    #[cfg(not(feature = "tracy"))]
+    {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if !*ENABLED
+            .get_or_init(|| std::env::var("TURU_MI_COLLECT").map_or(true, |v| v.trim() != "0"))
+            || CountingAlloc::system()
+        {
+            return;
+        }
+        let started = std::time::Instant::now();
+        // SAFETY: no arguments to get wrong; mimalloc allows it from any thread.
+        unsafe { libmimalloc_sys::mi_collect(true) };
+        tracing::debug!(target: "turu_perf", "mi_collect(true) took {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
+    }
+}
+
 #[cfg(not(feature = "tracy"))]
 impl CountingAlloc {
     /// Turu: with `TURU_SYSTEM_ALLOC` set, the system allocator instead of mimalloc, so heap

@@ -83,6 +83,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   each death, 1-2 death-ad `LoaderInfo`s alive at a time, footprint flat at ~250-275 MB
   (before: +185-225 MB/h). Disable Death Ads is also on by default (VibeSkua: off), though an
   `options.json` saved before keeps its `false`.
+  The allocator (mimalloc v3) kept ~170 MB resident beyond the live Rust heap, which its own
+  purging never returned: purging at once (`MIMALLOC_PURGE_DELAY=0`) changed nothing, but a
+  forced `mi_collect(true)` once a minute cut RSS from ~340 to ~250 MB at ~4 ms a call (debug
+  build). The desktop app now does that once a minute on the thread that runs the players
+  (`release_free_memory`; `TURU_MI_COLLECT=0` turns it off). macOS's footprint barely moved
+  (~260 -> ~254 MB): it already left out those pages. Not measured on Linux or Windows, where
+  RSS / the working set is what counts. Android uses its own allocator (scudo), not mimalloc.
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:9021`): HTTP routes for

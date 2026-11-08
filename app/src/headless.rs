@@ -33,7 +33,13 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     // Turu: Options > Application's launch updates (skill sets; the script it runs is updated on its own).
     turu::start_updates();
     let mut memory_log = turu::perf_log_every().map(|every| (every, Instant::now()));
+    let mut last_collect = Instant::now();
     engine::run_loop_with(&player, &events, |player| {
+        // Turu: hand the memory mimalloc keeps free back to the system (see `release_free_memory`).
+        if last_collect.elapsed() >= Duration::from_secs(60) {
+            last_collect = Instant::now();
+            crate::release_free_memory();
+        }
         if let Some((every, last)) = &mut memory_log
             && last.elapsed() >= *every
         {

@@ -23,13 +23,18 @@ MEMORY = re.compile(
 FOOTPRINT = re.compile(r"^memrun: (\d\d:\d\d:\d\d) footprint (\d+) (KB|MB|GB)")
 UNIT = {"KB": 1 / 1024, "MB": 1, "GB": 1024}
 census = []  # (time, the `memory census:` line's text)
-FIELDS = ["rss", "commit", "heap", "swfs", "freed", "urls", "swf_mb", "shapes", "gc"]
+collects = []  # `TURU_MI_COLLECT`: how long each mi_collect took, in ms
+COLLECT = re.compile(r"mi_collect\(true\) took ([\d.]+) ms")
+FIELDS = ["rss", "commit", "heap", "gap", "swfs", "freed", "urls", "swf_mb", "shapes", "gc"]
 
 
 def parse(path):
     rows, footprints, notable = [], [], []
     for raw in path.read_text(errors="replace").splitlines():
         line = ANSI.sub("", raw)
+        if m := COLLECT.search(line):
+            collects.append(float(m[1]))
+            continue
         if "memory census: " in line:
             s = STAMP.match(line)
             census.append((s[1][11:19] if s else "", line.split("memory census: ", 1)[1]))
@@ -45,6 +50,7 @@ def parse(path):
         s = STAMP.match(line)
         t = datetime.fromisoformat(s[1]).replace(tzinfo=timezone.utc) if s else None
         row = {k: int(v) for k, v in m.groupdict().items()}
+        row["gap"] = row["commit"] - row["heap"]  # what mimalloc keeps beyond the live heap
         row["time"] = t
         rows.append(row)
     if rows and rows[0]["time"]:
@@ -125,6 +131,9 @@ def main():
               "and malloc_history -allBySize at two times and diff.")
     if g("gc") > 10_000:
         print(f"  - GC objects grow ~{g('gc'):,.0f}/h: the game holds onto Flash objects.")
+    if collects:
+        print(f"\nmi_collect(true): {len(collects)} calls, {sum(collects) / len(collects):.1f} ms average, "
+              f"{max(collects):.1f} ms at most")
     if census:
         print("\nMost-loaded URLs among live movies (first, middle, last reading):")
         for when, text in dict.fromkeys([census[0], census[len(census) // 2], census[-1]]):

@@ -330,14 +330,25 @@ fn memory_watch(player: &mut ruffle_core::Player) {
         low_since: Option<Instant>,
         last_log: Option<Instant>,
         last_sweep: Option<Instant>,
+        last_collect: Option<Instant>,
     }
     static WATCH: std::sync::Mutex<Watch> = std::sync::Mutex::new(Watch {
         pressure: false,
         low_since: None,
         last_log: None,
         last_sweep: None,
+        last_collect: None,
     });
     let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
+    // Turu: once a minute, hand the memory mimalloc keeps free back to the system
+    // (`release_free_memory`).
+    if watch
+        .last_collect
+        .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
+    {
+        watch.last_collect = Some(Instant::now());
+        crate::release_free_memory();
+    }
     // AQW build: on every GPU (and every OS), once a minute, free the tessellations of shapes
     // not drawn for 10 minutes: other maps, the gear of players who left. AQW keeps every SWF
     // it has loaded, so shape geometry otherwise grows for the whole session (800 MB in four
