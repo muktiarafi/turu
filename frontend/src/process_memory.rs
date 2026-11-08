@@ -82,6 +82,82 @@ pub fn parse_cpu_time(stat: &str) -> Option<Duration> {
     Some(Duration::from_millis(ticks * 1000 / TICKS_PER_SECOND))
 }
 
+/// One thread's CPU time so far, from `/proc/self/task/<tid>/stat`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadCpu {
+    pub tid: u32,
+    /// The thread's name (`comm`: at most 15 bytes, so "Turu Monitor Report" is "Turu Monitor Re").
+    pub name: String,
+    /// User and system time.
+    pub time: Duration,
+}
+
+/// Every thread of this process with its CPU time so far; empty without `/proc/self/task`. About
+/// 60 small files on a farming client: for every reading, not every frame.
+pub fn thread_cpu_times() -> Vec<ThreadCpu> {
+    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .filter_map(|task| {
+            let tid = task.file_name().to_str()?.parse().ok()?;
+            let stat = std::fs::read_to_string(task.path().join("stat")).ok()?;
+            parse_thread_stat(tid, &stat)
+        })
+        .collect()
+}
+
+/// A thread's name and CPU time from its `stat`: the name is between the first `(` and the last
+/// `)`, as it can hold both.
+pub fn parse_thread_stat(tid: u32, stat: &str) -> Option<ThreadCpu> {
+    let name = stat.get(stat.find('(')? + 1..stat.rfind(')')?)?.to_owned();
+    Some(ThreadCpu {
+        tid,
+        name,
+        time: parse_cpu_time(stat)?,
+    })
+}
+
+/// The threads that used the most CPU between two [`thread_cpu_times`], `elapsed` apart: up to `n`
+/// names with their share of a core in percent, busiest first, threads of one name added up (a
+/// pool's workers, the GPU driver's), and none under 1%. A thread not there before started since,
+/// so all its time counts; one whose time went down is a new thread with an old one's id.
+pub fn busiest_threads(before: &[ThreadCpu], now: &[ThreadCpu], elapsed: Duration, n: usize) -> Vec<(String, f64)> {
+    if elapsed.is_zero() {
+        return Vec::new();
+    }
+    let mut by_name: Vec<(String, Duration)> = Vec::new();
+    for thread in now {
+        let earlier = before
+            .iter()
+            .find(|old| old.tid == thread.tid && old.name == thread.name)
+            .map_or(Duration::ZERO, |old| old.time);
+        let used = thread.time.checked_sub(earlier).unwrap_or(thread.time);
+        match by_name.iter_mut().find(|(name, _)| *name == thread.name) {
+            Some((_, total)) => *total += used,
+            None => by_name.push((thread.name.clone(), used)),
+        }
+    }
+    let mut shares: Vec<(String, f64)> = by_name
+        .into_iter()
+        .map(|(name, used)| (name, used.as_secs_f64() * 100.0 / elapsed.as_secs_f64()))
+        .filter(|(_, percent)| *percent >= 1.0)
+        .collect();
+    shares.sort_by(|a, b| b.1.total_cmp(&a.1));
+    shares.truncate(n);
+    shares
+}
+
+/// `Turu Engine 62%, Script Thread 20%` from [`busiest_threads`].
+pub fn format_threads(threads: &[(String, f64)]) -> String {
+    threads
+        .iter()
+        .map(|(name, percent)| format!("{name} {percent:.0}%"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl fmt::Display for Reading {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -264,6 +340,42 @@ mod tests {
         assert!((percent - 15.0).abs() < 1e-9);
         assert_eq!(cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)), None);
         assert_eq!(cpu_percent(&at(10), &at(19), Duration::ZERO), None);
+    }
+
+    #[test]
+    fn reads_a_threads_name_and_time() {
+        let stat = "4051 (Script (x) Thread) S 1 4043 0 0 -1 4194624 9000 0 0 0 300 100 0 0 20 0 60 0 100 0";
+        let thread = parse_thread_stat(4051, stat).unwrap();
+        assert_eq!(thread.name, "Script (x) Thread");
+        assert_eq!(thread.time, Duration::from_secs(4));
+        assert_eq!(parse_thread_stat(1, "4051 (x S 1"), None);
+    }
+
+    #[test]
+    fn names_the_busiest_threads_between_two_readings() {
+        let thread = |tid, name: &str, secs| ThreadCpu { tid, name: name.into(), time: Duration::from_secs(secs) };
+        let before = [
+            thread(1, "Turu Engine", 100),
+            thread(2, "Script Thread", 10),
+            thread(3, "pool", 5),
+            thread(4, "pool", 5),
+            thread(5, "idle", 50),
+            thread(9, "gone", 70),
+        ];
+        let now = [
+            thread(1, "Turu Engine", 136), // 36 s: 60%
+            thread(2, "Script Thread", 22), // 12 s: 20%
+            thread(3, "pool", 8),          // 3 s and
+            thread(4, "pool", 6),          // 1 s: 4 s, 6.7%
+            thread(5, "idle", 50),         // nothing
+            thread(6, "new", 3),           // started since: 3 s, 5%
+            thread(9, "reused", 2),        // a new thread on an old id: 2 s, 3.3%
+        ];
+        let busiest = busiest_threads(&before, &now, Duration::from_secs(60), 4);
+        let names: Vec<_> = busiest.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["Turu Engine", "Script Thread", "pool", "new"]);
+        assert_eq!(format_threads(&busiest), "Turu Engine 60%, Script Thread 20%, pool 7%, new 5%");
+        assert!(busiest_threads(&before, &now, Duration::ZERO, 4).is_empty());
     }
 
     #[test]

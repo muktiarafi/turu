@@ -19,8 +19,9 @@
 //!   the idle textures and the shapes not drawn for 2 minutes are freed too ([`trim`]).
 //!
 //! It also logs the process's own memory every minute ([`log_memory`]), with its share of a CPU
-//! core since the reading before (ColorOS closed Turu "for using too much CPU" in the background,
-//! and the report couldn't say how much it had used): RSS and its parts, PSS,
+//! core since the reading before and the busiest threads' shares (ColorOS closed Turu "for using
+//! too much CPU" in the background: TURU-ANDROID-D's log showed 12-16% at 2 FPS and stretches of
+//! ~94% for 10 minutes, and couldn't say whose): RSS and its parts, PSS,
 //! the `malloc` heap, the address space and the number of mappings, every 5 minutes with the
 //! largest mappings by name. The last readings are kept in the data folder's
 //! `crash/memory-<pid>.log`, which `CrashReports.kt` adds to that process's exit report, and every
@@ -40,7 +41,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use turu_frontend::process_memory::{self, Reading};
+use turu_frontend::process_memory::{self, Reading, ThreadCpu};
 use turu_frontend::turu;
 
 use crate::screen::MovieTexture;
@@ -66,6 +67,8 @@ const DETAIL_EVERY: u32 = 5;
 const LOG_LINES: usize = 150;
 /// The largest mappings logged.
 const LARGEST_MAPPINGS: usize = 6;
+/// The busiest threads named with the CPU share.
+const BUSIEST_THREADS: usize = 4;
 
 struct Watch {
     last_check: Instant,
@@ -85,8 +88,9 @@ struct MemoryLog {
     started: Instant,
     last: Option<Instant>,
     readings: u32,
-    /// The reading before and when it was taken, for the CPU share in between.
-    previous: Option<(Instant, Reading)>,
+    /// The reading before, its threads' CPU times and when it was taken, for the CPU share in
+    /// between.
+    previous: Option<(Instant, Reading, Vec<ThreadCpu>)>,
     /// The file's first lines: the process, and the kernel's limit on mappings.
     header: String,
     lines: VecDeque<String>,
@@ -253,9 +257,19 @@ fn log_memory(log: &mut MemoryLog, now: Instant) {
     let detail = log.readings.is_multiple_of(DETAIL_EVERY);
     log.readings += 1;
     let up = now.duration_since(log.started).as_secs() / 60;
+    let threads = process_memory::thread_cpu_times();
     let cpu = match &log.previous {
-        Some((then, before)) => process_memory::cpu_percent(before, &reading, now.duration_since(*then))
-            .map(|percent| format!("CPU {percent:.0}% of a core, ")),
+        Some((then, before, before_threads)) => {
+            let elapsed = now.duration_since(*then);
+            process_memory::cpu_percent(before, &reading, elapsed).map(|percent| {
+                let busiest = process_memory::busiest_threads(before_threads, &threads, elapsed, BUSIEST_THREADS);
+                if busiest.is_empty() {
+                    format!("CPU {percent:.0}% of a core, ")
+                } else {
+                    format!("CPU {percent:.0}% of a core ({}), ", process_memory::format_threads(&busiest))
+                }
+            })
+        }
         None => reading.cpu_time.map(|time| format!("CPU {:.1} s so far, ", time.as_secs_f64())),
     }
     .unwrap_or_default();
@@ -268,7 +282,7 @@ fn log_memory(log: &mut MemoryLog, now: Instant) {
         line.push_str("\n    largest: ");
         line.push_str(&largest);
     }
-    log.previous = Some((now, reading));
+    log.previous = Some((now, reading, threads));
     if log.lines.len() >= LOG_LINES {
         log.lines.pop_front();
     }

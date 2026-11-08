@@ -296,8 +296,9 @@ rather than the phone's. So the engine logs the process's memory every minute
 (`turu_frontend::process_memory`, `memory.rs`): RSS and its parts, PSS, the `malloc` heap
 (`mallinfo`: bytes handed out, above anonymous RSS while pages are untouched), swap, address
 space, mappings and threads, its share of a CPU core since the reading before (from
-`/proc/self/stat`), and every 5 minutes the largest mappings by name (e.g.
-`[anon:scudo:primary_reserve]`, the GPU driver's device). It goes to logcat, to
+`/proc/self/stat`) with the 4 busiest threads' shares by name (`/proc/self/task/*/stat`, e.g.
+`CPU 94% of a core (Turu Engine 60%, Script Thread 25%)`), and every 5 minutes the largest
+mappings by name (e.g. `[anon:scudo:primary_reserve]`, the GPU driver's device). It goes to logcat, to
 `crash/memory-<pid>.log` (the last 150 readings) for that process's exit report, and every 5
 minutes to Sentry as a breadcrumb. On the emulator at the login screen: RSS ~230-300 MB, ~3500
 maps; 152% of a core in the first minute (the game loading), 3% in the background.
@@ -334,6 +335,9 @@ adb forward tcp:9021 tcp:9021
 
 Its token file (`api-token` in the data folder) is made readable by the app only, which `adb`
 can't read on shared storage. Put your own token there before starting the app (32 characters or
+TURU-ANDROID-D (the same phone, beta.7, 5 kills in 8 hours) killed it at ~20% of a core, 3.5
+hours in: the log showed 11-17% in the background at 2 FPS (the emulator: ~3%) and stretches of
+~94% for 10 minutes, but not whose; the thread shares are there to say.
 more), and it's used as is:
 
 ```bash

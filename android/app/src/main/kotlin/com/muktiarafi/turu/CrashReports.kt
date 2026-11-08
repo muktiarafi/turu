@@ -115,14 +115,16 @@ internal object CrashReports {
             .append("), status ").append(exit.status).append('\n')
         exit.description?.let { report.append("Description: ").append(it).append('\n') }
         report.append("Was: ").append(importance(exit.importance)).append('\n')
-        // Android often leaves PSS at 0, and some phones fill in nonsense (an OPPO: 20 million
-        // MB): only a PSS the phone's memory could hold is shown.
-        report.append("Memory at the end: RSS ").append(exit.rss / 1024).append(" MB")
+        // Android often leaves RSS and PSS at 0 (ColorOS's kills: "RSS 0 MB"), and some phones
+        // fill in nonsense (an OPPO: 20 million MB): only sizes the phone's memory could hold are
+        // shown, and the line is left out without any (the memory log below has the readings).
         val phoneMemory = ActivityManager.MemoryInfo().also { activities.getMemoryInfo(it) }.totalMem
-        if (exit.pss > 0 && exit.pss * 1024 <= phoneMemory) {
-            report.append(", PSS ").append(exit.pss / 1024).append(" MB")
+        val sizes = listOf("RSS" to exit.rss, "PSS" to exit.pss)
+            .filter { (_, kb) -> kb > 0 && kb * 1024 <= phoneMemory }
+            .joinToString(", ") { (name, kb) -> "$name ${kb / 1024} MB" }
+        if (sizes.isNotEmpty()) {
+            report.append("Memory at the end: ").append(sizes).append('\n')
         }
-        report.append('\n')
         appendDevice(context, activities, report)
         val memory = File(dir, "memory-${exit.pid}.log")
         if (memory.isFile) {
