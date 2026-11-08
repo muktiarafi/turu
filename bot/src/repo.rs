@@ -79,6 +79,9 @@ pub struct ScriptInfo {
     /// No `export default`, so nothing to run (CoreBots, CoreFarms, ...): Search Scripts doesn't
     /// list it, and it comes with the scripts that import it. VibeSkua lists its Core files.
     pub library: bool,
+    /// The maps its source names in a call that takes one (`huntMonster("nulgath", ...)`, ...),
+    /// lowercase: the scripts listed for a map before they're downloaded (`map_scripts`).
+    pub maps: Vec<String>,
 }
 
 impl ScriptInfo {
@@ -516,6 +519,11 @@ impl ScriptRepo {
             message,
             failed,
         }
+    }
+
+    /// [`Snapshot::generation`], without copying the rest.
+    pub fn generation(&self) -> u64 {
+        self.data.lock().generation
     }
 
     pub fn is_busy(&self) -> bool {
@@ -1054,6 +1062,8 @@ impl ScriptRepo {
 
     /// Works out every script's status from the index, the manifest and the scripts folder.
     pub fn rescan(&self) {
+        // Downloads and deletes end here: the scripts' maps are read again.
+        crate::map_scripts::refresh();
         let (index, manifest, pinned, mut hashes) = {
             let mut data = self.data.lock();
             let hashes = std::mem::take(&mut data.hashes);
