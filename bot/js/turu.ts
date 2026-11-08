@@ -1122,6 +1122,7 @@ export interface OptionValues {
     joinMapTries: number;
     questAcceptAndCompleteTries: number;
     loadTimeout: number;
+    /** Hide the ad the game shows when you die. On by default (VibeSkua: off): each ad stays in memory. */
     disableDeathAds: boolean;
 }
 

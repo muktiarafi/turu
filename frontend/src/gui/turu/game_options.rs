@@ -331,7 +331,7 @@ fn entries() -> Vec<Entry> {
                 Gameplay,
                 "Disable Death Ads",
                 disable_death_ads,
-                "Hides the ad shown when you die"
+                "Hides the ad shown when you die. On by default: each ad stays in memory, so a bot that dies often keeps growing"
             ),
             b!(
                 Gameplay,

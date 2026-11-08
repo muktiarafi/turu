@@ -237,7 +237,13 @@ ticks. `TURU_PERF_LOG=<seconds>` logs the same for each tab every `seconds`, ove
 unless `TURU_PERF_LOG_ROWS` says how many). Without a window it also logs a `memory:` line:
 the process's resident and committed memory (with peaks), the Rust heap that's live, the SWFs
 the game loaded (their data in MB) and the Flash objects it holds, to tell a leak from the
-allocator keeping freed memory. To see what holds the heap, run with `TURU_SYSTEM_ALLOC=1`: the
+allocator keeping freed memory. A `memory census:` line follows: the URLs with the most live
+movies (images with their decoded size), so a file loaded again and again and never freed
+stands out. `TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
+of matching movies are alive and the chain of references that keeps the oldest, middle and
+newest alive (a walk of the whole heap: a short pause). `tools/memrun/run.sh [script]
+[minutes]` runs a long session this way, logging in from `turu-args.txt`, and
+`tools/memrun/summarize.py` prints the trend per hour. To see what holds the heap, run with `TURU_SYSTEM_ALLOC=1`: the
 system allocator instead of mimalloc (the memory line's commit then reads ~0), which heap
 profilers see: on macOS `MallocStackLogging=1`, then `malloc_history <pid> -allBySize` (live
 memory by call stack) or `-callTree -invert`; on Linux `heaptrack`. Use a debug build, which has
@@ -269,6 +275,7 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 | `TURU_RELEASES_URL` | Where to check for new Turu releases (GitHub's releases API format; default Turu's). |
 | `TURU_PERF_LOG` | Every this many seconds, log each tab's Flash calls and player ticks (and memory, without a window). |
 | `TURU_SYSTEM_ALLOC` | Set: the system allocator instead of mimalloc, for heap profilers. |
+| `TURU_RETAIN_URL` | Without a window, with `TURU_PERF_LOG`: what keeps the `LoaderInfo`s of movies whose URL contains this alive, every 5th memory reading. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
 | `TURU_TEST_PANIC` | Set: panic 10 s after the start, to test crash reports (`sendCrashReports: true` in `settings.json` sends them; there is no question without a window). |
 | `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |

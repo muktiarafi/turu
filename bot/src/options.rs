@@ -113,7 +113,9 @@ impl Default for BotOptions {
             join_map_tries: 3,
             quest_accept_and_complete_tries: 30,
             load_timeout: 30000,
-            disable_death_ads: false,
+            // Turu: on by default (VibeSkua: off). Every death's ad image stays in memory under
+            // Ruffle, ~1 MB each (docs/STATUS.md).
+            disable_death_ads: true,
             use_function_based_skills: false,
         }
     }

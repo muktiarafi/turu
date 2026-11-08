@@ -70,6 +70,17 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   66 -> 48 MB). What's left is mostly the game's own: AS3 and display objects, classes and
   methods (~80 MB), SWF data (~20 MB), images it loaded (~10 MB). In `malloc_history`, thread
   stacks and macOS's ICU data file (~80 MB) are reserved or shared, not heap.
+  Growth over time (2026-11-08, `tools/memrun/run.sh`, NSoD for 2 h): flat while hopping maps,
+  but at Primarch, dying every ~15 s, the footprint grew ~185 MB/h. The `memory census:` line
+  (headless, with `TURU_PERF_LOG`: the URLs with the most live movies) showed only
+  `DeathAds/*.jpg`: the game loads an ad on each death and none was freed. With
+  `TURU_RETAIN_URL=DeathAds/` (a retention report for those movies' `LoaderInfo`s) the chain was
+  the GC root itself: Ruffle's `LoadManager` never removed a finished AVM2 image load (its
+  removal check only handles movie clips), keeping each `Loader`, `LoaderInfo` and image, ~1 MB
+  a death. Upstream Ruffle has the same check. ruffle-aqw now removes such loads once they
+  succeed, and its library cleanup also tests images (it skipped them as AVM1); not yet
+  re-measured. Disable Death Ads is also on by default (VibeSkua: off), though an
+  `options.json` saved before keeps its `false`.
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:9021`): HTTP routes for
