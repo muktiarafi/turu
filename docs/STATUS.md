@@ -78,8 +78,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   the GC root itself: Ruffle's `LoadManager` never removed a finished AVM2 image load (its
   removal check only handles movie clips), keeping each `Loader`, `LoaderInfo` and image, ~1 MB
   a death. Upstream Ruffle has the same check. ruffle-aqw now removes such loads once they
-  succeed, and its library cleanup also tests images (it skipped them as AVM1); not yet
-  re-measured. Disable Death Ads is also on by default (VibeSkua: off), though an
+  succeed, and its library cleanup also tests images (it skipped them as AVM1). Re-measured
+  (30 min at Primarch, ads on, ~4 deaths a minute): live movies stayed at ~50, freed rose with
+  each death, 1-2 death-ad `LoaderInfo`s alive at a time, footprint flat at ~250-275 MB
+  (before: +185-225 MB/h). Disable Death Ads is also on by default (VibeSkua: off), though an
   `options.json` saved before keeps its `false`.
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
