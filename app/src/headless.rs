@@ -73,6 +73,8 @@ fn log_memory(player: &mut Player) {
     );
     // Turu: what's loaded most, to tell which URL's movies pile up.
     tracing::info!(target: "turu_perf", "memory census: {}", player.aqw_movie_census(8));
+    // Turu: what costs the most while loaded (a map, a monster, gear; images with their pixels).
+    tracing::info!(target: "turu_perf", "memory biggest: {}", player.aqw_movie_sizes(8));
     // Turu: `TURU_RETAIN_URL=<part of a URL>`: every 5th reading, what keeps the `LoaderInfo`s
     // of those movies alive (walks the whole heap: a short pause).
     static READINGS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);

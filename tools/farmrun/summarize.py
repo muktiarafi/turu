@@ -70,6 +70,9 @@ def parse(path):
             r["perf_blocks"].append(perf_block)
             continue
         perf_block = None
+        if "memory biggest: " in line and t:
+            r["biggest"].append((t, line.split("memory biggest: ", 1)[1]))
+            continue
         if (m := MEMORY.search(line)) and t:
             r["memory"].append((t, *map(int, m.groups())))
         elif (m := SCRIPT.search(line)) and t:
@@ -327,6 +330,10 @@ def resources(r, samples):
         trend("Rust heap", [(t, heap) for t, _, heap, _, _ in mem], "MB")
         trend("Loaded SWFs", [(t, swfs) for t, _, _, swfs, _ in mem], "SWFs")
         trend("Flash GC objects", [(t, gc) for t, _, _, _, gc in mem], "objects")
+    if r["biggest"]:
+        print("  Biggest loaded files (URL, live copies, data and pixels held):")
+        for t, text in dict.fromkeys([r["biggest"][0], r["biggest"][-1]]):
+            print(f"    {clock(t)}: {text}")
     threads = [v for _, v in points("threads")]
     if threads:
         print(f"  Threads: {min(threads)} to {max(threads)}")

@@ -243,7 +243,10 @@ the process's resident and committed memory (with peaks), the Rust heap that's l
 the game loaded (their data in MB) and the Flash objects it holds, to tell a leak from the
 allocator keeping freed memory. A `memory census:` line follows: the URLs with the most live
 movies (images with their decoded size), so a file loaded again and again and never freed
-stands out. `TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
+stands out. A `memory biggest:` line lists the URLs whose live movies hold the most memory
+(decompressed SWF data, plus decoded pixels for images), with their copies: what a map, a monster
+or a piece of gear costs while it stays loaded, and which stays loaded when it shouldn't.
+`TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
 of matching movies are alive and the chain of references that keeps the oldest, middle and
 newest alive (a walk of the whole heap: a short pause). `tools/memrun/run.sh [script]
 [minutes]` runs a long session this way, logging in from `turu-args.txt`, and
@@ -279,7 +282,7 @@ also works on a run still going or on any Turu log, reports:
   "Please slow down" (the server drops the action it calls too soon);
 - resources: CPU (average, 95th percentile, user and system, per kill), memory and its growth per
   hour after the first 10 minutes (with the `memory:` lines' Rust heap, loaded SWFs and Flash
-  objects, to tell a leak from warm-up), threads, open files, network and disk rates, the log's
+  objects, to tell a leak from warm-up; the biggest loaded files at the start and the end), threads, open files, network and disk rates, the log's
   growth, the game thread's time and the busiest bot calls.
 
 It also writes the samples to `<log>.csv`.
