@@ -337,7 +337,11 @@ that was ColorOS's background manager; on OPPO, realme and OnePlus phones the ex
 now points to ColorOS's own switches (App battery management: background activity, auto launch).
 TURU-ANDROID-D (the same phone, beta.7, 5 kills in 8 hours) killed it at ~20% of a core, 3.5
 hours in: the log showed 11-17% in the background at 2 FPS (the emulator: ~3%) and stretches of
-~94% for 10 minutes, but not whose; the thread shares are there to say.
+~94% for 10 minutes, but not whose; the thread shares are there to say. Since then the player
+also has no pointer while no window shows the game (`set_touchable` in `src/lib.rs`): Ruffle
+hit-tested the whole display list for it on every update, about 50 a second whatever the frame
+rate, which was 75% of the player's time at 2 FPS (measured with `--headless`, which runs the
+same loop; not yet measured on a phone).
 
 Frame interpolation (Options > Application > Frame Interpolation, off by default; saved as
 `mugetsu-interpolation.txt` in the data folder) is paced as on a desktop (`turu_frontend::pacing`):

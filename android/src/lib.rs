@@ -31,7 +31,7 @@ use jni::sys::jobject;
 use ndk::native_window::NativeWindow;
 use ruffle_core::backend::navigator::SocketMode;
 use ruffle_core::config::Letterbox;
-use ruffle_core::{LoadBehavior, Player, PlayerBuilder};
+use ruffle_core::{LoadBehavior, Player, PlayerBuilder, PlayerEvent};
 use ruffle_frontend_utils::backends::navigator::ExternalNavigatorBackend;
 use ruffle_frontend_utils::backends::storage::DiskStorageBackend;
 use ruffle_frontend_utils::content::{ContentDescriptor, PlayingContent};
@@ -149,6 +149,7 @@ fn detach_surface() {
         // The game slows down like a hidden tab's (`api::options`).
         turu::bot().state.lock().hidden_tab = true;
         set_heard(player, false);
+        set_touchable(player, false);
         let _ = done.send(());
         // Nothing is drawn until a window comes back. After the answer: it waits for the GPU.
         memory::trim(player, "the window went away");
@@ -185,14 +186,29 @@ fn set_heard(player: &mut Player, heard: bool) {
     }
 }
 
+/// Takes the pointer off the stage while no window shows the game, as `give_mouse` does for a hidden
+/// desktop tab, and puts it back when one does. Ruffle starts with it on the stage, and then every
+/// update hit-tests the whole display list for it (`run_mouse_pick`): in the background, at 2 FPS,
+/// that was 75% of the player's time (measured with `--headless`, which has the same loop).
+fn set_touchable(player: &mut Player, on: bool) {
+    if player.mouse_in_stage() != on {
+        player.set_mouse_in_stage(on);
+        if !on {
+            player.handle_event(PlayerEvent::MouseLeave);
+        }
+    }
+}
+
 /// Draws in the current window from now on: the first one gets the screen. Without a window (the
 /// service started the engine alone), the game stays muted.
 fn attach_surface(player: &mut Player) {
     let Some(window) = lock_window().clone() else {
         set_heard(player, false);
+        set_touchable(player, false);
         return;
     };
     set_heard(player, true);
+    set_touchable(player, true);
     let made = SCREEN.with_borrow_mut(|screen| match screen {
         Some(screen) => {
             screen.attach(&window);

@@ -524,6 +524,17 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   bitmap as it is. A desktop that had played AQW in a window kept settings that skip the draw,
   which hid it. The control API is the only way to steer it. CoreBots' restart after a logout
   (`Bot.Manager.RestartScriptAsync`) isn't ported.
+  In game it runs at a hidden tab's 2 FPS (`state.hidden_tab`, set in `app/src/headless.rs`;
+  the login screen keeps full speed), and its player has no mouse (`set_mouse_in_stage(false)`).
+  Ruffle starts with the mouse on the stage, and every update (about 50 a second, for timers and
+  the socket, whatever the frame rate) then hit-tests the whole display list (`run_mouse_pick`):
+  13% of the player's time at 30 FPS, 75% at 2 FPS. Android does the same while no window
+  shows the game. Measured on FarmerJoe DoAll at Icestorm Arena (2026-11-08, debug build, 5
+  minutes each): the process used 30% of a core at CoreBots' 30 FPS, 17% at 2 FPS, 13% with
+  both; the player's ticks went from ~280 to ~80 ms/s, with as many kills.
+  Of what's left, ~25% of a 30 FPS frame was AS3 `gotoAndStop` to the frame a clip is already
+  on: Ruffle's `MovieClip::no_op_goto` still runs a goto's phases over the whole stage
+  (`run_inner_goto_frame`). Which clips call it isn't known yet.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.

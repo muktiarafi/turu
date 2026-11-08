@@ -229,6 +229,10 @@ isn't running (still loading, or closing), 504 that it didn't answer in time, an
 405 with an `Allow` header. Yes/no parameters (`stop`, `configure`, `reset`, `slow`) take `1` or
 `true`.
 
+**Frame rate:** nothing is drawn, so in game the client runs at 2 FPS, as a hidden tab does
+(the login screen keeps full speed); the bot plays as fast. Options > Game's Set FPS doesn't
+change that.
+
 **What keeps the game thread busy:** `GET /debug/perf` lists the Flash calls the client made
 since it started (by thread and callback, with the path for `getGameObject` and its kin: how
 many, how long they waited, how long the player took to run them, reply bytes) and its player's

@@ -29,6 +29,9 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     let (sender, events) = channel();
     let player = build_player(&preferences, movie_url, sender.clone());
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender))));
+    // Turu: nothing is drawn, so in game it runs at a hidden tab's 2 FPS (`api::options`; the
+    // login screen keeps full speed). Halved the process's CPU on a farm, with the same kills.
+    turu::bot().state.lock().hidden_tab = true;
     tracing::info!("Running without a window (--headless); stop with Ctrl+C");
     // Turu: Options > Application's launch updates (skill sets; the script it runs is updated on its own).
     turu::start_updates();
@@ -121,10 +124,13 @@ fn build_player(preferences: &GlobalPreferences, movie_url: Url, sender: Sender<
         .with_frame_rate(opt.player.frame_rate)
         .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled)
         .build();
-    player.lock().expect("the player was just built").fetch_root_movie(
-        movie_url.to_string(),
-        opt.player.parameters,
-        Box::new(|_| {}),
-    );
+    {
+        let mut locked = player.lock().expect("the player was just built");
+        // Turu: there's no mouse. Ruffle starts with it on the stage, and then every update
+        // hit-tests the whole display list for it (`run_mouse_pick`): 13% of the player's time at
+        // 30 FPS, 75% at 2 FPS (updates run for timers and the socket whatever the frame rate).
+        locked.set_mouse_in_stage(false);
+        locked.fetch_root_movie(movie_url.to_string(), opt.player.parameters, Box::new(|_| {}));
+    }
     player
 }
