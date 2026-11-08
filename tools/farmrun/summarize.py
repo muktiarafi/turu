@@ -10,6 +10,7 @@ import argparse
 import csv
 import json
 import re
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +21,7 @@ STAMP = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z")
 SCRIPT = re.compile(r"turu::script: (?:\[[^\]]*\] )?(?:\[\d\d:\d\d:\d\d\] )?(?:\((?P<tag>[^)]+)\) )?(?P<text>.*)")
 DEBUG = re.compile(r"turu::debug: (?:\[[^\]]*\] )?(?P<text>.*)")
 PERF = re.compile(r"player thread (\d+) ms/s \(ticks (\d+), calls (\d+)\); ([\d.]+) calls/s")
-MEMORY = re.compile(r"memory: process resident (\d+) MB .*rust heap (\d+) MB")
+MEMORY = re.compile(r"memory: process resident (\d+) MB .*?rust heap (\d+) MB; (\d+) loaded SWFs .*?(\d+) GC objects")
 CALL_ROW = re.compile(r"^\s+([\d.]+)/s\s+wait\s+([\d.]+) ms\s+run\s+([\d.]+) ms\s+(\d+) B\s+(.{18}) (.*)$")
 # The signature of "moving": any change here, or a script line, is progress.
 MOVING = ("loggedIn", "running", "level", "map", "cell", "kills", "questsAccepted", "questsCompleted")
@@ -68,7 +69,7 @@ def parse(path):
             continue
         perf_block = None
         if (m := MEMORY.search(line)) and t:
-            r["memory"].append((t, int(m[1]), int(m[2])))
+            r["memory"].append((t, *map(int, m.groups())))
         elif (m := SCRIPT.search(line)) and t:
             r["script"].append((t, m["tag"], m["text"]))
         elif (m := DEBUG.search(line)) and t:
@@ -200,18 +201,96 @@ def report(r, stuck_min, section_min):
     if ended and "failed" in ended[2]:
         print("  The script failed:\n    " + "\n    ".join(ended[2].splitlines()[:8]))
 
-    # ---- Cost ----
-    print("\nCost")
-    cpu = [(y["cpuSeconds"] - x["cpuSeconds"]) / max((y["t"] - x["t"]).total_seconds(), 1) * 100
-           for x, y in zip(samples, samples[1:]) if x.get("cpuSeconds") is not None and y.get("cpuSeconds") is not None]
+    # ---- Resources ----
+    resources(r, samples)
+
+
+def slope_per_hour(points, warmup_min=10):
+    """Least-squares growth per hour of (time, value) points, leaving out the first minutes."""
+    if not points:
+        return None
+    t0 = points[0][0]
+    pts = [((t - t0).total_seconds() / 3600, v) for t, v in points if (t - t0).total_seconds() >= warmup_min * 60]
+    if len(pts) < 3:
+        return None
+    n = len(pts)
+    mx, my = sum(x for x, _ in pts) / n, sum(y for _, y in pts) / n
+    var = sum((x - mx) ** 2 for x, _ in pts)
+    return sum((x - mx) * (y - my) for x, y in pts) / var if var else None
+
+
+def deltas(samples, key):
+    """(seconds, amount) a counter grew between consecutive samples. A counter that went down was
+    reset: macOS's `nettop` sums the sockets still open, so closing one drops it, and the new value
+    is what the open sockets carried since (a lower bound: a socket that closed in between is lost)."""
+    out = []
+    for x, y in zip(samples, samples[1:]):
+        if x.get(key) is not None and y.get(key) is not None:
+            grew = y[key] - x[key]
+            out.append((max((y["t"] - x["t"]).total_seconds(), 1), grew if grew >= 0 else y[key]))
+    return out
+
+
+def rates(samples, key):
+    """Per-second rates of a counter between consecutive samples."""
+    return [amount / secs for secs, amount in deltas(samples, key)]
+
+
+def trend(label, points, unit, fmt="{:,.0f}"):
+    """`label: first -> last, max; growth/h` for (time, value) points."""
+    if not points:
+        return
+    vals = [v for _, v in points]
+    growth = slope_per_hour(points)
+    g = f", {growth:+,.1f}{' ' + unit if unit else ''}/h after 10 min" if growth is not None else ""
+    u = f" {unit}" if unit else ""
+    print(f"  {label}: {fmt.format(vals[0])} -> {fmt.format(vals[-1])}{u}, {fmt.format(max(vals))} at most{g}")
+
+
+def resources(r, samples):
+    print("\nResources")
+    hours = (samples[-1]["t"] - samples[0]["t"]).total_seconds() / 3600 if len(samples) > 1 else 0
+    cpu = [x * 100 for x in rates(samples, "cpuSeconds")]
     if cpu:
-        print(f"  CPU: {sum(cpu) / len(cpu):.0f}% of a core on average, {max(cpu):.0f}% at most")
-    rss = [s["rssMb"] for s in samples if s.get("rssMb")]
-    if rss:
-        print(f"  Resident memory: {rss[0]} -> {rss[-1]} MB, {max(rss)} MB at most")
-    elif r["memory"]:
-        m = r["memory"]
-        print(f"  Resident memory: {m[0][1]} -> {m[-1][1]} MB, {max(x[1] for x in m)} MB at most")
+        p95 = sorted(cpu)[int(len(cpu) * 0.95) - 1 if len(cpu) > 1 else 0]
+        user, system = rates(samples, "userSeconds"), rates(samples, "sysSeconds")
+        split = (f" ({sum(user) / len(user) * 100:.0f}% user, {sum(system) / len(system) * 100:.0f}% system)"
+                 if user and system else "")
+        print(f"  CPU: {sum(cpu) / len(cpu):.0f}% of a core on average{split}, {p95:.0f}% at the 95th percentile, "
+              f"{max(cpu):.0f}% at most")
+        a, b = samples[0], samples[-1]
+        kills = (b.get("kills") or 0) - (a.get("kills") or 0)
+        if kills > 0 and a.get("cpuSeconds") is not None and b.get("cpuSeconds") is not None:
+            print(f"  CPU per kill: {(b['cpuSeconds'] - a['cpuSeconds']) / kills:.1f} s")
+    points = lambda key: [(s["t"], s[key]) for s in samples if s.get(key) is not None]
+    trend("Resident memory", points("rssMb") or [(t, rss) for t, rss, *_ in r["memory"]], "MB")
+    trend("Footprint (macOS) / PSS (Linux)", points("footprintMb"), "MB")
+    if r["memory"]:
+        mem = r["memory"]
+        trend("Rust heap", [(t, heap) for t, _, heap, _, _ in mem], "MB")
+        trend("Loaded SWFs", [(t, swfs) for t, _, _, swfs, _ in mem], "SWFs")
+        trend("Flash GC objects", [(t, gc) for t, _, _, _, gc in mem], "objects")
+    threads = [v for _, v in points("threads")]
+    if threads:
+        print(f"  Threads: {min(threads)} to {max(threads)}")
+    trend("Open files and sockets", points("fds"), "")
+    for key, label in (("net", "Network"), ("disk", "Disk")):
+        inn = rates(samples, key + ("InBytes" if key == "net" else "ReadBytes"))
+        out = rates(samples, key + ("OutBytes" if key == "net" else "WriteBytes"))
+        if inn and out:
+            names = ("in", "out") if key == "net" else ("read", "written")
+            ki, ko = (key + "InBytes", key + "OutBytes") if key == "net" else (key + "ReadBytes", key + "WriteBytes")
+            tot = lambda k: sum(amount for _, amount in deltas(samples, k)) / 1e6
+            note = " (at least: sockets that closed between samples are missed)" if key == "net" and \
+                sys.platform == "darwin" else ""
+            print(f"  {label}: {tot(ki):.1f} MB {names[0]}, {tot(ko):.1f} MB {names[1]} "
+                  f"({sum(inn) / len(inn) / 1024:.1f} / {sum(out) / len(out) / 1024:.1f} KB/s, "
+                  f"{max(inn) / 1024:.0f} / {max(out) / 1024:.0f} KB/s at most){note}")
+        elif key == "disk" and samples:
+            print("  Disk: not measured (macOS has no per-process disk I/O without root)")
+    logs = points("logBytes")
+    if len(logs) > 1 and hours:
+        print(f"  Log: {(logs[-1][1] - logs[0][1]) / 1e6 / hours:.1f} MB/h")
     if r["perf"]:
         p = r["perf"]
         avg = lambda i: sum(x[i] for x in p) / len(p)
@@ -228,7 +307,7 @@ def report(r, stuck_min, section_min):
             print("  Busiest bot calls among those logged (game thread ms/s, calls/s):")
             for (thread, call), (n, ms) in sorted(calls.items(), key=lambda kv: -kv[1][1])[:6]:
                 print(f"    {ms / blocks:5.2f} ms/s {n / blocks:6.1f}/s  {thread:<16} {call}")
-    if not (cpu or r["perf"]):
+    if not (cpu or r["perf"] or r["memory"]):
         print("  (no samples or turu_perf lines: set TURU_PERF_LOG)")
 
 

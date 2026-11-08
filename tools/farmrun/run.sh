@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A farming run to measure: logs in, runs a script headless and, every PERIOD seconds, writes a
-# `farmrun:` line (the control API's /status and the process's CPU and memory) into the log, next
-# to Turu's own `turu_perf` lines. Says at once when the character looks stuck or the run stops.
+# `farmrun:` line (the control API's /status and what the process uses: CPU, memory, threads, open
+# files, network and disk; tools/farmrun/sample.py) into the log, next to Turu's own `turu_perf`
+# lines. Says at once when the character looks stuck or the run stops.
 #
 #   tools/farmrun/run.sh [script] [minutes]
 #
@@ -61,47 +62,12 @@ pid=$!
 echo "turu pid $pid; Ctrl+C stops it early"
 trap 'kill -INT $pid 2>/dev/null || true' INT TERM
 
-# One `farmrun:` line: /status's progress fields, CPU (% of a core over the last period, from the
-# process's CPU time) and resident memory. Prints `<signature>` on stdout for the stuck check.
+# One `farmrun:` line (sample.py): /status's progress and what the process uses (CPU, memory,
+# threads, open files, network and disk bytes). Prints the progress signature for the stuck check.
 sample() {
-  local status ps
+  local status
   status=$(curl -s -m 20 -H "Authorization: Bearer $TURU_API_TOKEN" "http://$api/status" || true)
-  ps=$(ps -o cputime=,rss= -p "$pid" 2>/dev/null || true)
-  python3 - "$status" "$ps" "$log" <<'EOF'
-import json, sys, time
-status, ps, log = sys.argv[1:4]
-try:
-    d = json.loads(status)
-except ValueError:
-    d = {}
-s = d.get("stats") or {}
-cpu = rss = None
-if ps.split():
-    t, r = ps.split()[:2]
-    # macOS: [h:]m:ss.cc; Linux: [d-]hh:mm:ss.
-    days, _, t = t.rpartition("-")
-    secs = float(days or 0) * 86400
-    clock = 0.0
-    for part in t.split(":"):
-        clock = clock * 60 + float(part)
-    secs += clock
-    cpu, rss = secs, int(r) // 1024
-row = {
-    "t": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    "ok": bool(d),
-    "loggedIn": d.get("loggedIn"),
-    "running": (d.get("script") or {}).get("running"),
-    "level": d.get("level"), "map": d.get("map"), "cell": d.get("cell"),
-    "hp": d.get("health"), "maxHp": d.get("maxHealth"),
-    **{k: s.get(k) for k in ("kills", "deaths", "questsAccepted", "questsCompleted", "relogins", "drops")},
-    "cpuSeconds": cpu, "rssMb": rss,
-}
-with open(log, "a") as f:
-    f.write("farmrun: " + json.dumps(row) + "\n")
-# Deaths and relogins left out: dying over and over in one place is still stuck.
-print("|".join(str(row[k]) for k in ("loggedIn", "running", "level", "map", "cell", "kills",
-                                      "questsAccepted", "questsCompleted")))
-EOF
+  python3 "$root/tools/farmrun/sample.py" "$status" "$pid" "$log"
 }
 
 end=$(( minutes > 0 ? $(date +%s) + minutes * 60 : 0 ))

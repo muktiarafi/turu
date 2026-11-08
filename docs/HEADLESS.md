@@ -258,8 +258,16 @@ time goes (idle, drawing and its parts, the games and bot calls, the rest).
 **Measuring a farming run:** `tools/farmrun/run.sh [script] [minutes]` (default FarmerJoe DoAll,
 120 minutes; `0` runs until the script stops) logs in from `turu-args.txt` as memrun does, with
 `TURU_PERF_LOG` and a control API of its own (`API`, default `127.0.0.1:9031`). Every `PERIOD`
-seconds (60) it adds a `farmrun:` line to the log: `/status`'s level, map, cell, kills, quests,
-deaths and relogins, and the process's CPU time and resident memory. It says at once when nothing
+seconds (60) it adds a `farmrun:` line to the log (`tools/farmrun/sample.py`): `/status`'s level,
+map, cell, kills, quests, deaths and relogins, and what the process uses:
+- CPU time, user and system;
+- resident memory, and macOS's footprint or Linux's PSS;
+- threads, and open files and sockets;
+- network bytes (`nettop` on macOS; on Linux the network namespace's);
+- disk bytes (Linux only: macOS has no per-process disk I/O without root);
+- the log's size.
+
+It says at once when nothing
 has moved for `STUCK_MIN` minutes (10: no change in those fields and no script log line; deaths
 don't count as moving) or the client isn't logged in. `tools/farmrun/summarize.py <log>`, which
 also works on a run still going or on any Turu log, reports:
@@ -267,7 +275,10 @@ also works on a run still going or on any Turu log, reports:
 - the script's sections of 2 minutes or more, by the function that logged them;
 - stretches without progress, skill-timer stalls and AFK messages;
 - server warnings, refused or unanswered turn-ins, relogins and errors;
-- what it cost: CPU, memory, the game thread's time and the busiest bot calls.
+- resources: CPU (average, 95th percentile, user and system, per kill), memory and its growth per
+  hour after the first 10 minutes (with the `memory:` lines' Rust heap, loaded SWFs and Flash
+  objects, to tell a leak from warm-up), threads, open files, network and disk rates, the log's
+  growth, the game thread's time and the busiest bot calls.
 
 It also writes the samples to `<log>.csv`.
 
