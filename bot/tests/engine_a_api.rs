@@ -98,6 +98,11 @@ impl FlashHost for FakeGame {
                 common::sub_path(&a0, &whole).unwrap_or_else(|| self.get(&a0))
             }
             "callGameFunction0" if a0 == "world.myAvatar.pMC.artLoaded" => "true".into(),
+            "callGameFunction0" if a0 == "world.cHandle.isPending" => self.get(&a0),
+            "callGameFunction0" if a0 == "world.cHandle.cancel" => {
+                self.set("world.cHandle.isPending", "false");
+                "null".into()
+            }
             "callGameFunction" if a0 == "sfc.sendString" => {
                 // %xt%zm%cmd%room%tfer%user%map%cell%pad%
                 let packet = arg(&args, 1);
@@ -452,6 +457,61 @@ fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
         game.calls_to("killLag").last().unwrap(),
         &[FlashArg::Bool(false)]
     );
+}
+
+#[test]
+fn skipping_cutscenes_cancels_the_one_the_game_waits_for() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    let game_calls = |game: &FakeGame, path: &str| {
+        game.calls_to("callGameFunction0")
+            .iter()
+            .filter(|a| arg(a, 0) == path)
+            .count()
+    };
+    bot.options.write().skip_cutscenes = true;
+
+    // A game without a cutscene handler (or before a map made one): nothing to ask.
+    options::apply(&bot).unwrap();
+    assert_eq!(game_calls(&game, "world.cHandle.isPending"), 0);
+
+    game.set("world.cHandle", "{}");
+    game.set("world.cHandle.isPending", "false");
+    options::apply(&bot).unwrap();
+    assert_eq!(
+        game_calls(&game, "world.cHandle.cancel"),
+        0,
+        "nothing pending"
+    );
+
+    // lichwar's intro: the game holds the cell's monsters back while it waits for the overlay.
+    // Cancelling it, then entering the cell again, places them.
+    game.set("world.cHandle.isPending", "true");
+    options::apply(&bot).unwrap();
+    assert_eq!(game_calls(&game, "world.cHandle.cancel"), 1);
+    let moves: Vec<Vec<FlashArg>> = game
+        .calls_to("callGameFunction")
+        .into_iter()
+        .filter(|a| arg(a, 0) == "world.moveToCell")
+        .collect();
+    assert_eq!(moves.len(), 1);
+    assert_eq!(
+        (arg(&moves[0], 1), arg(&moves[0], 2)),
+        ("Enter".to_owned(), "Spawn".to_owned())
+    );
+
+    options::apply(&bot).unwrap();
+    assert_eq!(
+        game_calls(&game, "world.cHandle.cancel"),
+        1,
+        "cancelled once"
+    );
+
+    // With Skip Cutscenes off the game shows its cutscenes.
+    game.set("world.cHandle.isPending", "true");
+    bot.options.write().skip_cutscenes = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(game_calls(&game, "world.cHandle.cancel"), 1);
 }
 
 fn frame_rates(game: &FakeGame) -> Vec<FlashArg> {

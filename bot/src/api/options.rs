@@ -371,6 +371,7 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         if cutscene && !o.lag_killer {
             bot.flash.set("world.visible", true)?;
         }
+        cancel_pending_cutscene(bot)?;
     }
     if o.walk_speed != 8 {
         player::set_walk_speed(bot, o.walk_speed.into())?;
@@ -384,6 +385,38 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
             lite::set(bot, key, FlashArg::Bool(true))?;
         }
     }
+    Ok(())
+}
+
+/// Turu: Skip Cutscenes also cancels the cutscene the game is waiting to show. A map asks for
+/// one with `world.cHandle.showCutscene` (lichwar's intro, for one), and while `isPending` the
+/// game holds back the monsters of the cells you enter (`World.placeMissingCellMonsters`)
+/// until the cutscene's overlay appears, for up to 450 frames (~225 s at a hidden tab's
+/// 2 FPS). `skipCutscenes` removes the overlay, often before the game sees it, so the cell's
+/// monsters stayed unattackable for that long. `cancel` is what the cutscene's own end
+/// (`transfer`) calls. The game's cell settle gave up while the cutscene was pending (and its
+/// `scheduleCellSettle` is private), so entering the current cell again places its monsters.
+fn cancel_pending_cutscene(bot: &Bot) -> BotResult<()> {
+    if bot.flash.is_null("world.cHandle")? {
+        return Ok(());
+    }
+    let pending = bot
+        .flash
+        .call_game_function_json::<bool>("world.cHandle.isPending", vec![])?;
+    if pending != Some(true) {
+        return Ok(());
+    }
+    bot.flash
+        .call_game_function("world.cHandle.cancel", vec![])?;
+    let frame = bot.flash.get_opt::<String>("world.strFrame")?;
+    let pad = bot.flash.get_opt::<String>("world.strPad")?;
+    if let (Some(frame), Some(pad)) = (frame, pad) {
+        bot.flash.call_game_function(
+            "world.moveToCell",
+            vec![frame.as_str().into(), pad.as_str().into()],
+        )?;
+    }
+    bot.note("Skip Cutscenes: cancelled the cutscene the game was waiting to show.");
     Ok(())
 }
 
