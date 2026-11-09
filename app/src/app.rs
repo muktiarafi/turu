@@ -133,6 +133,18 @@ impl PerfStats {
     /// Every 12th window (~1 min): logs object counts, and the first time orphaned avatars pass
     /// 40 and again past 120, a retention report showing what keeps them alive.
     fn log_object_counts(&mut self, player: &mut ruffle_core::Player) {
+        // Turu (diagnostic): `TURU_CACHE_CENSUS` logs, every window, the live cacheAsBitmap
+        // textures and the share of them objects on the stage and orphans hold.
+        static CACHE_CENSUS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *CACHE_CENSUS.get_or_init(|| std::env::var_os("TURU_CACHE_CENSUS").is_some()) {
+            let (cabs, cab_bytes) = ruffle_render_wgpu::perf_counters::live_cab();
+            tracing::info!(
+                target: "ruffle_aqw_perf",
+                "cache census: {cabs} live cacheAsBitmap textures ({} MB); {}",
+                cab_bytes >> 20,
+                player.aqw_cache_census()
+            );
+        }
         self.windows_logged += 1;
         if self.windows_logged % 12 != 1 {
             return;

@@ -314,6 +314,7 @@ It also writes the samples to `<log>.csv`.
 | `TURU_SYSTEM_ALLOC` | Set: the system allocator instead of mimalloc, for heap profilers. |
 | `TURU_MI_COLLECT` | `0`: don't make mimalloc hand its free memory back to the system once a minute (to compare). |
 | `TURU_RETAIN_URL` | Without a window, with `TURU_PERF_LOG`: what keeps the `LoaderInfo`s of movies whose URL contains this alive, every 5th memory reading. |
+| `TURU_CACHE_CENSUS` | With a window and `TURU_PERF_LOG`: every window, a `cache census:` line: the live cacheAsBitmap textures, how many of them objects on the stage and orphans hold, and the classes holding the most. |
 | `TURU_PACKET_LOG` | Set: every packet the client sends goes to the log too (`turu::packet` lines), as Diagnostics > Logger does with a window. `tools/farmrun/summarize.py` then shows which packets came before each "Please slow down". |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
 | `TURU_TEST_PANIC` | Set: panic 10 s after the start, to test crash reports (`sendCrashReports: true` in `settings.json` sends them; there is no question without a window). |
