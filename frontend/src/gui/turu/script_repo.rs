@@ -807,11 +807,7 @@ impl ScriptRepoWindow {
         let repo = crate::turu::script_repo();
         let busy = snapshot.busy.is_some();
         let height = widgets::target(30.0, 48.0);
-        let outdated = snapshot
-            .entries
-            .iter()
-            .filter(|e| !e.info.library && e.status == Status::Outdated)
-            .count();
+        let outdated = outdated_count(&snapshot.entries);
         let wait = wait_tip(snapshot);
         ui.add_space(2.0);
         if stacked {
@@ -1048,6 +1044,12 @@ fn rules(snapshot: &Snapshot) -> Rules {
 }
 
 /// Why the buttons wait: one task runs at a time, and it can be cancelled.
+/// What Update all would update. Libraries (CoreBots, ...) count although the list hides them:
+/// an update that only changes CoreBots must still enable the button.
+fn outdated_count(entries: &[Entry]) -> usize {
+    entries.iter().filter(|e| e.status == Status::Outdated).count()
+}
+
 fn wait_tip(snapshot: &Snapshot) -> String {
     match &snapshot.busy {
         Some(progress) => format!("Wait for {} to finish, or Cancel it", progress.task),
@@ -1318,6 +1320,20 @@ mod tests {
             .iter()
             .map(|&i| snapshot.entries[i].info.name.clone())
             .collect()
+    }
+
+    /// An outdated library alone (a CoreBots-only update) enables Update all.
+    #[test]
+    fn outdated_libraries_count_for_update_all() {
+        let mut core = entry("core/CoreBots.ts", "CoreBots", "", Status::Outdated, false);
+        Arc::make_mut(&mut core.info).library = true;
+        let entries = vec![
+            entry("farm/GoldFarm.ts", "Gold Farm", "", Status::UpToDate, false),
+            entry("farm/Exp.ts", "Experience", "", Status::Modified, false),
+            core,
+        ];
+        assert_eq!(outdated_count(&entries), 1);
+        assert_eq!(outdated_count(&entries[..2]), 0);
     }
 
     /// VibeSkua's order: pinned first, then the sort; a search orders by rank; the categories
