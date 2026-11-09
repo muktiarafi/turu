@@ -918,3 +918,19 @@ fn finds_map_items_in_the_downloaded_map_and_keeps_them() {
         }
     );
 }
+
+#[test]
+fn quest_loads_skip_ids_asked_for_within_a_second() {
+    let (bot, game) = setup("quest-load-gap");
+    let load = |ids: &[i64]| turu_bot::api::quests::load(&bot, ids).unwrap();
+
+    // CoreBots' ensureLoad asks every 100 ms until the quest shows: one packet, not one per ask.
+    load(&[5]);
+    load(&[5]);
+    load(&[5, 6, 6]);
+    assert_eq!(*game.loads.lock(), ["5", "6"]);
+
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    load(&[5, 6]);
+    assert_eq!(*game.loads.lock(), ["5", "6", "5,6"]);
+}

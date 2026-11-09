@@ -17,6 +17,12 @@ use std::time::{Duration, Instant};
 /// VibeSkua `RegisterCompleteInterval`.
 const REGISTER_COMPLETE_INTERVAL: u64 = 2000;
 
+/// [`load`] doesn't ask the server again for a quest it asked for less than this long ago. The
+/// reply takes ~300 ms, and CoreBots' `ensureLoad` (like VibeSkua's) calls `Load` every 100 ms
+/// until the quest shows, so each quest sent 3-6 identical `getQuests` and the server answered
+/// "Please slow down. Last action was too soon!".
+const LOAD_REPEAT_GAP: Duration = Duration::from_secs(1);
+
 #[derive(Default)]
 struct Registry {
     /// Registered quest IDs, in registration order.
@@ -36,6 +42,8 @@ struct QuestShared {
     loader: Worker,
     /// The `Logout` subscription.
     subscribed: OnceLock<u64>,
+    /// When [`load`] last asked for each quest (pruned after [`LOAD_REPEAT_GAP`]).
+    recent_loads: Mutex<HashMap<i64, Instant>>,
 }
 
 /// The registered-quest auto turn-in loop (VibeSkua `RegisterQuests`).
@@ -323,7 +331,29 @@ pub fn get(bot: &Bot, id: i64) -> BotResult<Option<Quest>> {
 
 /// VibeSkua `Load(ids)`: `world.showQuests("1,2,3", "q")`, in chunks of 30 (sleeping
 /// `actionDelay` between chunks) for 30 or more.
+///
+/// Turu leaves out the quests it asked for less than [`LOAD_REPEAT_GAP`] ago, whose reply is
+/// likely on its way: asking again only draws "too soon" from the server.
 pub fn load(bot: &Bot, ids: &[i64]) -> BotResult<()> {
+    let ids: Vec<i64> = {
+        let mut recent = bot.quests.shared.recent_loads.lock();
+        let now = Instant::now();
+        recent.retain(|_, at| now.duration_since(*at) < LOAD_REPEAT_GAP);
+        let mut fresh = Vec::with_capacity(ids.len());
+        for &id in ids {
+            if !recent.contains_key(&id) && !fresh.contains(&id) {
+                fresh.push(id);
+            }
+        }
+        for &id in &fresh {
+            recent.insert(id, now);
+        }
+        fresh
+    };
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let ids = &ids[..];
     let join = |ids: &[i64]| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
     if ids.len() < 30 {
         return bot
