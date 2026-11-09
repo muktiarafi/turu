@@ -87,6 +87,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   each death, 1-2 death-ad `LoaderInfo`s alive at a time, footprint flat at ~250-275 MB
   (before: +185-225 MB/h). Disable Death Ads is also on by default (VibeSkua: off), though an
   `options.json` saved before keeps its `false`.
+  Monster files piled up too (2026-11-09): one live copy of each of a map's monsters per join,
+  x25 after 30 min of FarmerJoe's Blacksmithing loop (Greenguard East/West), +170 MB/h of heap.
+  AQW loads a map's monsters into one shared `ApplicationDomain`, which each of their libraries
+  holds and which exports all their classes, so the library cleanup, testing one library at a
+  time, always found each kept in use by the others. ruffle-aqw now tests libraries sharing a
+  domain together (`Library::sweep_movie_libraries`). Re-measured over 50 joins: live movies flat
+  at 21-29 (before: 29 -> 123 by the 40th join), heap flat (`docs/HEADLESS_MONITORING_HANDOFF.md`).
   The allocator (mimalloc v3) kept ~170 MB resident beyond the live Rust heap, which its own
   purging never returned: purging at once (`MIMALLOC_PURGE_DELAY=0`) changed nothing, but a
   forced `mi_collect(true)` once a minute cut RSS from ~340 to ~250 MB at ~4 ms a call (debug
@@ -102,7 +109,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   One table of routes answers each method and gives a wrong one 405 with `Allow`. Commands
   answer with the state they changed; failures carry a stable `code` (a test keeps the module's
   table of codes complete), and flags take `1` or `true`. Game failures answer by kind: 503 when the game isn't running, 504 when it didn't answer, 409 when not
-  logged in or a login is under way (`/login` and `/relogin` refuse to overlap an auto-relogin).
+  logged in or a login is under way (`/login` and `/relogin` refuse to overlap an auto-relogin,
+  but cancel one that only waits to retry).
   `GET /events` streams server-sent events (the script's state, new log lines, monitor events)
   from the bot's state, without game calls, so clients needn't poll `/status`. The routes act on
   the first tab; `/tabs` lists them and `/tabs/<id>/<route>` reaches one (ids as the web
@@ -508,7 +516,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   for a stuck load (no logout out of the server list after `LoadTimeout`). The bot's own `clickServer` also reports `selectServer`, so only
   a pick while no relogin runs counts. In the bot's relogins a full server ("full" on the
   loading screen or in a login dialog) ends the attempt at once and isn't tried again during
-  that login unless every server was full (VibeSkua waits out the world timeout).
+  that login unless every server was full (VibeSkua waits out the world timeout). When all
+  Relogin Tries attempts fail, Retry Relogin (on by default; VibeSkua reads it nowhere and gives
+  up) starts another round after 1, 2, 5, then every 10 minutes, so an unattended run survives a
+  network drop and restarts its script; a `/login` or `/relogin` during that wait cancels it
+  instead of being refused, and a login from the game's screen meanwhile counts as the relogin.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and

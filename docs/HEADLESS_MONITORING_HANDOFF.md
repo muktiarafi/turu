@@ -25,9 +25,9 @@ Turu's submodule pointer names commits nobody else can fetch.
 Docs: `docs/HEADLESS.md` (farmrun, `TURU_PACKET_LOG`, `memory biggest:`), `docs/STATUS.md`
 (headless frame rate and mouse), `docs/ANDROID.md` (pointer while hidden).
 
-## Monster-retention diagnostics (ruffle-aqw `cc12f1908`)
+## Monster-retention diagnostics (ruffle-aqw `cc12f1908`, extended)
 
-Six files in `ruffle/core/src`, built and committed; **the class-chain part has never run**:
+Behind env vars, at no cost otherwise; kept for the next leak:
 
 - `aqw_retention.rs`: `movie_holders()`, every reachable `MovieClipShared` and `TranslationUnitData`
   made from given movies.
@@ -35,66 +35,69 @@ Six files in `ruffle/core/src`, built and committed; **the class-chain part has 
   `display_object.rs` re-export: read a holder's movie pointer.
 - `player.rs` `log_movie_holders()`, run from `log_loader_retention` (`TURU_RETAIN_URL`): for
   copies of the movie that no live `LoaderInfo` points at, logs per copy how many holders it has,
-  the shortest chain that isn't its own library, and (new, untested) the chain to its linked AS3
-  class.
+  the shortest outside chain and the chain to its linked AS3 class. The walk now leaves those
+  copies' own libraries out (`Library::aqw_hide_libraries`), so the chains show what holds them
+  from outside, not the library itself; and a `class exported as <ns>::<name> by the domain of
+  <url|stage>` line says which domain exports each linked class (`Library::aqw_domains_exporting`).
 - `library.rs`: `RUFFLE_AQW_LIBRARY_WHY=<URL part>` logs why the library cleanup keeps a tested
   library (`kept: an AS3 class linked to its symbol N is alive` / `its code ... is alive` /
   `instances of its symbols [...] are alive`), and `Library::aqw_classes_of()`.
 
-They're behind env vars, at no cost otherwise; keep or drop them once the leak is fixed. The
-remaining `rustfmt --check` hunks in those files are older code, not from this work.
+The remaining `rustfmt --check` hunks in those files are older code, not from this work.
+
+## Fixed after the handoff (2026-11-09)
+
+Uncommitted at the time of writing: Turu (`bot/`, `frontend/`, docs) and ruffle-aqw
+(`core/src/library.rs`, `core/src/player.rs`).
+
+### 1. Monster SWFs piled up with every map join: fixed (ruffle-aqw)
+
+**Cause.** AQW loads all of a map's monsters into **one shared `ApplicationDomain`**: the domain
+report showed `Mogzard_v2`'s classes exported by the domain of `OgugStoneaxe_v2.swf`, later of
+`Dreadspider2_v2.swf`. Each of those libraries holds that domain (`MovieLibrary.avm2_domain`) and
+the domain exports every monster's classes, so library A kept B's classes alive and B kept A's.
+The library cleanup (`Library::sweep_movie_libraries`) tested libraries one at a time, each on its
+own backoff, so the members of a group were never tested in the same cycle: each was always found
+"in use" through the others. A copy of each monster stayed per join.
+
+**Fix.** `sweep_movie_libraries` also picks, for each library chosen for testing, every library
+sharing its domain (not the root movie's domain; groups up to 64), so a whole map's monsters are
+tested together and freed together once nothing outside holds them. Libraries still in use are
+revived as before, and `finalize_movie_libraries` runs again after a revival, so a group member
+whose class only became reachable through a revived library is kept.
+
+**Measured** (release, a 25-round Greenguard East/West loop like `blacksmithingREP`'s non-gold
+method: `Core.huntMonster` Wolf / Slime with quest 2777, 50 joins, then 5 min in Oaklore):
+
+| | live SWFs, round 1 -> 20 | Rust heap | census |
+|---|---|---|---|
+| before (`20261109-062337-*`) | 29 -> 123 | 147 -> 145 MB | every monster x6 at round 20 |
+| after (`20261109-065804-*`) | 21 -> 29 (24 at round 25) | 136 -> 130 MB (-45 MB/h) | monsters x1-2 |
+
+503 movies freed in 32 min, no `was freed but is still used`, 575 kills/h. Not yet re-measured
+over hours or in FarmerJoe's full run.
+
+### 2. Auto-relogin gave up for good after 5 attempts: fixed (Turu)
+
+The log showed the engine *does* restart the script after a successful relogin
+(`auto_relogin` in `bot/src/api/servers.rs`; CoreBots' "Bot stopped due to player logout" is that
+stop, logged on the way). The network drop lost the run only because the relogin gave up. Now,
+with Retry Relogin on (the default; VibeSkua reads it nowhere), a failed round of `ReloginTries`
+attempts is followed by another after 1, 2, 5, then every 10 minutes; a login from the game's
+screen meanwhile counts as the relogin (and the script restarts), and `/login` or `/relogin`
+cancel the wait instead of answering 409. Test: `a_failed_auto_relogin_waits_to_try_again`
+(`bot/tests/servers.rs`). **Not yet tested in game** by cutting the network.
+
+The `reloginServer` = `Twilly` target is documented behaviour (`ReloginServer` wins over the server
+you were on); left as is.
+
+### 3. Quest loads sent `getQuests` 3-6 times: fixed (Turu)
+
+`quests::load` (`bot/src/api/quests.rs`) leaves out IDs it asked for less than 1 s ago
+(`LOAD_REPEAT_GAP`). In game with `TURU_PACKET_LOG=1`: one `getQuests` for quest 2777 per
+registration. Test: `quest_loads_skip_ids_asked_for_within_a_second` (`bot/tests/loader_grabber.rs`).
 
 ## Open issues (most valuable first)
-
-### 1. Monster SWFs pile up with every map join (memory leak)
-
-**Evidence.**
-- The `memory census:` and `memory biggest:` lines show monster files with one live copy per join of their map, kept after leaving:
-  - Sandsea's monsters at x4 after 4 joins, with the character elsewhere;
-  - Icestorm's at x3.
-- FarmerJoe's Blacksmithing rep loop (`CoreFarms.blacksmithingREP`, non-gold) alternates Greenguard East/West every 15-40 s (69 joins in 30 min). It reached x25-26 per monster:
-  - live SWFs 117 -> 385 in 25 min;
-  - Rust heap +170 MB/h;
-  - footprint 394 MB.
-- A 4-hour run with only save states (`/whitemap` round trips every 30-60 min) grew:
-  - live SWFs 46 -> 128;
-  - heap 150 -> 253 MB;
-  - footprint 222 -> 308 MB.
-- Map files themselves are freed about 4 minutes after leaving (`maps/...` back to x1). Map SWFs are 0.4-1.7 MB uncompressed; monster SWFs ~0.1-0.2 MB each. The cost is mostly the AS3 objects built from them (GC objects +25-40k/h).
-
-**What's known about the cause** (logs: `tools/farmrun/out/20261109-holders-retain*.log`):
-
-- Old copies have **no live `LoaderInfo`** (`loader retention: 0`), so it isn't the load-manager bug fixed for death ads.
-- Each copy has ~40 holders: 39 are its own library's symbols (expected while the library is kept). The one outside chain is `GcRootData -> DomainData -> ScriptData -> TranslationUnitData`. Each load gets a child domain (`Avm2Domain::movie_domain` in `loader.rs` when the game passes no `LoaderContext`), which the copy's own library holds (`MovieLibrary.avm2_domain`, inline in the root). So that chain is only the library again.
-- `RUFFLE_AQW_LIBRARY_WHY=mon/Mogzard_v2.swf` on a controlled test (log in, no script, 8 joins alternating `greenguardwest`/`greenguardeast` via `POST /map/join`, then leave for Oaklore):
-  - the cleanup (`Library::finalize_movie_libraries`) keeps the old copy with **"an AS3 class linked to its symbol 54 is alive"**, still 4 minutes after leaving;
-  - its backoff doubles 0 -> 1 -> 3 -> 7 (test interval, capped at 63 GC cycles; a cycle is ~10 s, `RUFFLE_GC_CYCLE_SECONDS`).
-- The controlled test left only **1** old copy, the real farm 25. The difference is probably combat: monsters fought and killed, `world.monsters`, `pMC`, death animations, drops. That's not confirmed.
-
-**Next step.** Find what holds that AS3 class:
-1. Run the class-chain report: `TURU_RETAIN_URL=mon/Mogzard_v2.swf RUFFLE_AQW_LIBRARY_WHY=mon/Mogzard_v2.swf TURU_PERF_LOG=30`, and read the `class #n` lines.
-2. Do it in the real loop, not only with manual joins: run FarmerJoe until `blacksmithingREP` ("Farming rank 4", "Using Non-Gold Method"), or call `Farm.blacksmithingREP()` from a small script.
-3. Candidates: the game's own caches (AS3 objects holding the monster class, e.g. a dictionary of loaded monster classes keyed by file), or Ruffle keeping `ClassObject`s through prototypes/vtables of live instances.
-
-Flash itself frees an unreferenced child domain's classes, so if the holder is Ruffle-internal it's a ruffle-aqw fix (as with `LoadManager`). If it's the game's AS3, the fix may be an AQW-specific workaround.
-
-### 2. Auto-relogin gives up for good after 5 attempts; the script isn't restarted
-
-At 04:11 the Mac lost its network (every request failed: `game.aq.com`, `content.aq.com`).
-- `Bot stopped due to player logout`: CoreBots stops the script on logout. VibeSkua restarts it after a relogin (`Bot.Manager.RestartScriptAsync`); **not ported** (STATUS lists it).
-- Relogin: 5 attempts in ~95 s, then `[Relogin] Unable to reconnect within configured retries.` and nothing more (`bot/src/api/servers.rs` ~line 1120). The client sat logged out ~35 min until logged in by hand (`POST /login?server=Twig`, then `POST /script/start`).
-- The `retryRelogin` option (default true, `bot/src/options.rs`) is **read nowhere**. VibeSkua has it only in the options UI and interface, so it's dead there too.
-- The relogin aimed at **Twilly**, not Twig where it was, because the saved `reloginServer` option is `Twilly` (`options.json`).
-
-Fixes:
-- While `retryRelogin` is on, keep retrying with growing gaps (1, 2, 5, 10 min) after the attempts run out.
-- Port CoreBots' restart after relogin, so unattended runs survive network drops.
-- Consider dropping `reloginServer` when it differs from the server the run was started on, or at least logging it.
-
-### 3. Quest loads send `getQuests` 3-6 times; the server says "too soon"
-
-CoreBots' `ensureLoad` (`scripts/core/CoreBots.ts` ~3044) calls `bot.quests.load(id)` every 100 ms until the quest shows; C# does the same (`Wait.ForTrue(..., Quests.Load, 20)`, `WAIT_SLEEP` 100). The reply takes ~300 ms, so every quest step sends 3 identical packets (6 for Sandsea's 5 registered quests) and the server answers "Please slow down. Last action was too soon!", several per phase change (5 in 5 s at Sandsea).
-Fix (engine, all scripts benefit): in `bot/src/api/quests.rs` `load()`, skip `world.showQuests` for IDs requested less than ~1 s ago. `ensureLoad` keeps polling every 100 ms, so loading isn't slower.
 
 ### 4. Skills sent less than 1 s apart are sometimes rejected
 
@@ -173,8 +176,11 @@ Inside frames, **85% of ENTER_FRAME time is AS3 `gotoAndStop` to the frame a cli
 
 ## Next steps
 
-1. Finish issue 1: run the class-chain report in the Blacksmithing loop, find the class holder, fix it in ruffle-aqw (or work around it), and re-measure with farmrun (live SWFs and heap should stay flat across joins). Then keep or drop the diagnostics.
-2. Issue 2: relogin retry with backoff, and port the CoreBots restart after relogin. Test by cutting the network (e.g. turning Wi-Fi off) for 3+ minutes mid-run.
-3. Issue 3: de-duplicate `quests.load`; check with `TURU_PACKET_LOG` that a quest step sends one `getQuests` and the "too soon" count drops.
+1. Commit: ruffle-aqw first (its `aqw` branch was already 2 commits ahead of origin: push it
+   before Turu), then bump `ruffle/` and commit Turu's changes.
+2. Re-measure issue 1 over hours: FarmerJoe DoAll with farmrun (live SWFs and heap should stay
+   flat; the save-state run grew 46 -> 128 SWFs in 4 h before).
+3. Test the relogin retry in game: cut the network (Wi-Fi off) for 3+ minutes mid-run; expect
+   "Re-login failed; trying again in 1 min (Retry Relogin)." and the script restarting after.
 4. Add reputation/XP/CP/gold to `/status` and to farmrun's samples.
 5. Optional: Butler's inventory reads, the skill 1 s gap, the no-op `gotoAndStop` cost.

@@ -248,7 +248,8 @@ stands out. A `memory biggest:` line lists the URLs whose live movies hold the m
 or a piece of gear costs while it stays loaded, and which stays loaded when it shouldn't.
 `TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
 of matching movies are alive and the chain of references that keeps the oldest, middle and
-newest alive (a walk of the whole heap: a short pause). `tools/memrun/run.sh [script]
+newest alive (a walk of the whole heap: a short pause); for copies no `LoaderInfo` holds, what
+holds them from outside their own library and which domain exports their AS3 classes. `tools/memrun/run.sh [script]
 [minutes]` runs a long session this way, logging in from `turu-args.txt`, and
 `tools/memrun/summarize.py` prints the trend per hour. To see what holds the heap, run with `TURU_SYSTEM_ALLOC=1`: the
 system allocator instead of mimalloc (the memory line's commit then reads ~0), which heap
