@@ -1,0 +1,15 @@
+[package]
+# Makes AQW's client SWFs load under Adobe AIR's application sandbox, in AS3 bytecode
+# (docs/AIR_PROPOSAL.md). No Ruffle player: only Ruffle's `swf` crate, to read and write SWF/ABC.
+name = "turu_air_patch"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+swf = { path = "../ruffle/swf", default-features = false, features = ["flate2", "lzma"] }
+anyhow = { workspace = true }

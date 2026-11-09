@@ -7317,6 +7317,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "turu_air_patch"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "swf 0.3.0",
+]
+
+[[package]]
 name = "turu_android"
 version = "0.2.0"
 dependencies = [
