@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<application xmlns="http://ns.adobe.com/air/application/51.5">
+  <id>com.muktiarafi.turu.airspike</id>
+  <versionNumber>0.0.1</versionNumber>
+  <filename>TuruAirSpike</filename>
+  <name>Turu AIR Spike</name>
+  <initialWindow>
+    <content>TuruAirHost.swf</content>
+    <aspectRatio>landscape</aspectRatio>
+    <autoOrients>false</autoOrients>
+    <renderMode>auto</renderMode>
+    <fullScreen>true</fullScreen>
+    <softKeyboardBehavior>pan</softKeyboardBehavior>
+  </initialWindow>
+  <android>
+    <manifestAdditions><![CDATA[<manifest>
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+<uses-permission android:name="android.permission.WAKE_LOCK"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+<application>
+  <service android:name="com.muktiarafi.turu.air.TuruAirService" android:exported="false" android:foregroundServiceType="specialUse">
+    <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Runs a game client and its bot script while the app is in the background"/>
+  </service>
+</application>
+</manifest>]]></manifestAdditions>
+  </android>
+  <extensions>
+    <extensionID>com.muktiarafi.turu.air</extensionID>
+  </extensions>
+</application>

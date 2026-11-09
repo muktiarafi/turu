@@ -95,7 +95,55 @@ $799 a year up to $500 k
 ([PDF](https://airsdk.harman.com/assets/pdfs/Adobe%20AIR%20-%20Updated%20Pricing.pdf)). Read
 today's terms by hand before going further.
 
-**Left for the spike:** download the AIR SDK (accept its license; JDK 17); build skua-air.swf as
+**Under AIR (2026-11-09, emulator, Android 16 arm64, AIR SDK 51.5.1):** `air/spike/` is a bare
+host (`TuruAirHost.as`, `app.xml`, `build.sh`). It loads the live client, patched by
+`turu_air_patch` and bundled as `app:/Game-air.swf`, with `loadBytes` and `allowCodeImport` into
+a child `ApplicationDomain`. `params` (with `sFilePath`) are set before the game reaches the
+stage. Result: sandbox `application`, client constructed in 70 ms, login screen and title art
+drawn, no uncaught errors, `serverFilePath`/`serverGamePath` = AQW's URLs. Build notes:
+* ADT packages through its own Gradle 8.13, which fails on Java 25 ("Unsupported class file major
+  version 69"). It needs a JDK 17 (`AIR_JAVA_HOME` in `build.sh`) and `ANDROID_HOME`.
+* A free-tier splash screen shows for ~1.6 s at start (`AIRRuntimeCheck: showing Splash Screen`).
+* APK: 25 MB (captive runtime, arm64, with the 2.8 MB patched client).
+
+Logged in by hand on the emulator: battleon drawn with its NPCs, the news popup's art
+(`mcPopup_355/loadNews`, one of the swapped loaders), the avatar's gear; `/join yulgar` loaded
+the next map. 275 MB PSS in battleon. Two problems, neither from the patch:
+* **The game disconnected within seconds of going to the background.** AIR suspends a
+  deactivated app by default. The host now sets `NativeApplication.executeInBackground` and
+  `SystemIdleMode.KEEP_AWAKE`; Android's own limits (network cut ~17 s after Home without a
+  foreground service, docs/ANDROID_HANDOVER.md) still call for the service in the ANE.
+* **`softKeyboardBehavior` `pan` left the stage drawn ~325 px low** (with stale pixels above it)
+  after tapping the chat box, though no keyboard showed (the emulator's is hidden while the Mac's
+  counts as hardware). It drew right again after a trip to the background. To try: `none` and the
+  client's own handling of `stage.softKeyboardRect`.
+* Back sends an AIR app to the background (its default), as `TuruActivity` does.
+
+With `executeInBackground` the game still lost its connection in 2 minutes off screen: Android
+froze the process (`ActivityManager: freezing <pid> air.com.muktiarafi.turu.airspike`, 71 s after
+Home; ~10 s in the first run) and swapped ~200 MB of it out. AIR's switch can't stop the cached
+apps freezer: only a foreground service can (as `TuruService` does for Turu today). So the
+background test waits for the minimal ANE with the service.
+
+**The minimal ANE** (`air/ane/`, `com.muktiarafi.turu.air`): `TuruAirExtension`
+(`startService`, `stopService`), `TuruAirService` (a `specialUse` foreground service with an
+ongoing notification and a partial wake lock, as `TuruService`), in Kotlin, and the AS3
+`TuruAirNative`. The Kotlin side is a standalone Gradle library (`air/ane/android`, Turu's
+version catalog and Gradle wrapper, AGP's built-in Kotlin, `FlashRuntimeExtensions.jar`
+compile-only). An ANE gives AIR one jar per platform, so `build.sh` merges the library's classes
+with the Kotlin standard library: the ANE is 1.7 MB, nearly all stdlib (R8 could shrink it).
+`acompc` for the SWC; `adt -target ane`. The service is declared in `app.xml`'s manifest additions (full class
+name: the app's package is `air.<id>`). On the emulator the host starts it at launch: foreground,
+type `specialUse`, notification posted.
+
+**Background with the service: it holds.** Logged in, Home for 5 minutes, back: no `freezing`
+line in logcat, same process, still in battleon with the other players (6 in the room), no
+disconnect. 226-246 MB PSS while off screen, CPU ~0% (AIR slows a deactivated app; a bot script
+will need to check it keeps its pace).
+
+**Left for the spike:** a longer background run (an hour, screen off);
+pets, the Book of Lore and char select (through `SwfLoaderPatch`) (maps, pets, the Book of Lore, char select through
+`SwfLoaderPatch`); download the AIR SDK (accept its license; JDK 17); build skua-air.swf as
 above; a bare AIR app that loads the patched client; log in; then the device runs (Redmi 10,
 Infinix: 50 map changes, an hour idle, memory curve); the bridge benchmark (minimal ANE); ADT with
 a custom launcher.

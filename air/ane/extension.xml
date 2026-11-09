@@ -1,0 +1,16 @@
+<extension xmlns="http://ns.adobe.com/air/extension/51.5">
+    <id>com.muktiarafi.turu.air</id>
+    <versionNumber>0.0.1</versionNumber>
+    <platforms>
+        <platform name="Android-ARM64">
+            <applicationDeployment>
+                <nativeLibrary>turu-air.jar</nativeLibrary>
+                <initializer>com.muktiarafi.turu.air.TuruAirExtension</initializer>
+                <finalizer>com.muktiarafi.turu.air.TuruAirExtension</finalizer>
+            </applicationDeployment>
+        </platform>
+        <platform name="default">
+            <applicationDeployment/>
+        </platform>
+    </platforms>
+</extension>
