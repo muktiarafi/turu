@@ -52,6 +52,9 @@ pub struct ServerRunner {
     waiting_for_login: AtomicBool,
     /// Cancels the running auto-relogin (VibeSkua `_reloginCTS`).
     cancel: Mutex<Option<Arc<AtomicBool>>>,
+    /// Turu: the auto-relogin is waiting before another round of attempts (Retry Relogin); a
+    /// login asked for meanwhile cancels it instead of being refused.
+    retry_waiting: AtomicBool,
 }
 
 impl Default for ServerRunner {
@@ -68,6 +71,7 @@ impl Default for ServerRunner {
             refreshed_at: Mutex::new(None),
             waiting_for_login: AtomicBool::new(false),
             cancel: Mutex::new(None),
+            retry_waiting: AtomicBool::new(false),
         }
     }
 }
@@ -128,6 +132,11 @@ impl ServerRunner {
     /// An auto-relogin is under way.
     pub fn is_relogging(&self) -> bool {
         self.waiting_for_login.load(Ordering::Acquire)
+    }
+
+    /// The auto-relogin under way only waits before trying again (Retry Relogin).
+    pub fn is_waiting_to_retry(&self) -> bool {
+        self.is_relogging() && self.retry_waiting.load(Ordering::Acquire)
     }
 
     /// Remembers the server we're on (the background timer, once per login).
@@ -1268,6 +1277,16 @@ pub fn begin_logout(bot: &Arc<Bot>, logout_notified: bool) {
     }
 }
 
+/// Another round of relogin attempts is wanted: Retry Relogin and Auto Relogin are on and
+/// nobody logged out on purpose.
+fn retry_relogin(bot: &Bot) -> bool {
+    let wanted = {
+        let o = bot.opts();
+        o.retry_relogin && o.auto_relogin
+    };
+    wanted && !bot.state.lock().intentional_logout
+}
+
 fn finish_auto_relogin(bot: &Bot, cancel: &Arc<AtomicBool>) {
     let mut current = bot.servers.cancel.lock();
     if current.as_ref().is_some_and(|c| Arc::ptr_eq(c, cancel)) {
@@ -1277,6 +1296,11 @@ fn finish_auto_relogin(bot: &Bot, cancel: &Arc<AtomicBool>) {
             .store(false, Ordering::Release);
     }
 }
+
+/// Turu: with Retry Relogin on, the waits (minutes) before each further round of `ReloginTries`
+/// attempts once a round failed; the last repeats. VibeSkua gives up after one round (its
+/// `RetryRelogin` is read nowhere), so a network drop of a few minutes ended an unattended run.
+const RELOGIN_RETRY_MINUTES: [u64; 4] = [1, 2, 5, 10];
 
 /// VibeSkua `OnLogout` and `Relogin(delay, startScript)`.
 fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>) -> BotResult<()> {
@@ -1315,7 +1339,29 @@ fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>)
     ctx.sleep(delay as u64)?;
 
     bot.state.lock().stats.relogins += 1;
-    let relogged = ensure_relogin(&ctx, reconnect_target(bot).as_deref())?;
+    let mut relogged = ensure_relogin(&ctx, reconnect_target(bot).as_deref())?;
+    let mut round = 0;
+    while !relogged && retry_relogin(bot) {
+        let minutes = RELOGIN_RETRY_MINUTES[round.min(RELOGIN_RETRY_MINUTES.len() - 1)];
+        round += 1;
+        bot.log(format!(
+            "Re-login failed; trying again in {minutes} min (Retry Relogin)."
+        ));
+        bot.servers.retry_waiting.store(true, Ordering::Release);
+        let waited = ctx.sleep(minutes * 60_000);
+        bot.servers.retry_waiting.store(false, Ordering::Release);
+        waited?;
+        if player::playing(bot).unwrap_or(false) {
+            // Logged in from the game's screen meanwhile.
+            relogged = true;
+            break;
+        }
+        if !retry_relogin(bot) {
+            break;
+        }
+        bot.state.lock().stats.relogins += 1;
+        relogged = ensure_relogin(&ctx, reconnect_target(bot).as_deref())?;
+    }
     ctx.check()?;
     if was_running && relogged {
         if let Err(e) = crate::script::start_silent(bot) {

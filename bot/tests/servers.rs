@@ -733,3 +733,50 @@ fn a_full_message_left_from_the_last_attempt_isnt_the_next_servers() {
     let log = bot.logs.script.text();
     assert!(!log.contains("Twilly is full"), "{log}");
 }
+
+/// Retry Relogin: once Relogin Tries attempts fail, the relogin waits to try again instead of
+/// giving up for good (a network drop of a few minutes ended unattended runs); something else
+/// can end the wait. Off, it gives up after one round, as VibeSkua does.
+#[test]
+fn a_failed_auto_relogin_waits_to_try_again() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        o.relogin_tries = 1;
+        o.login_timeout = 300;
+        o.relogin_try_delay = 0;
+    }
+    game.stuck_connects.store(100, Ordering::SeqCst);
+    server_logout(&bot, &game);
+    assert!(
+        wait_until(Duration::from_secs(10), || bot
+            .servers
+            .is_waiting_to_retry()),
+        "{}",
+        bot.logs.script.text()
+    );
+    let log = bot.logs.script.text();
+    assert!(
+        log.contains("Re-login failed; trying again in 1 min (Retry Relogin)."),
+        "{log}"
+    );
+    servers::cancel_relogin(&bot);
+    assert!(wait_until(Duration::from_secs(2), || !bot
+        .servers
+        .is_relogging()));
+    assert!(!bot.servers.is_waiting_to_retry());
+
+    bot.options.write().retry_relogin = false;
+    server_logout(&bot, &game);
+    assert!(wait_until(Duration::from_secs(10), || !bot
+        .servers
+        .is_relogging()));
+    let log = bot.logs.script.text();
+    assert_eq!(log.matches("trying again in").count(), 1, "{log}");
+    assert!(
+        log.contains("Re-login was cancelled or unsuccessful."),
+        "{log}"
+    );
+}

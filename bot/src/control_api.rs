@@ -1089,6 +1089,10 @@ fn log(r: &Req) -> Reply {
 /// `/login` (`fresh`) and `/relogin`; one login at a time, an auto-relogin's included.
 fn login(r: &Req, fresh: bool) -> Reply {
     let bot = r.bot;
+    // An auto-relogin waiting minutes before trying again (Retry Relogin) gives way.
+    if bot.servers.is_waiting_to_retry() {
+        servers::cancel_relogin(bot);
+    }
     if bot.servers.is_relogging() {
         return error(Code::LoginUnderWay, "a login is under way");
     }

@@ -245,7 +245,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   matches). Reload Map is enabled only in game. The descriptions
   say what Turu does: Hunt Buffer, Hunt Priority and Use Function Based Skills say Turu doesn't
   use them yet (their controls are greyed, as Application Options' "coming soon" rows: `UNUSED`),
-  and Safe Timings and Retry Relogin that only scripts read them. Edits are written to
+  and Safe Timings that only scripts read it. Edits are written to
   `bot.options` at once. Footer: a status line (unsaved changes, "Saved.", or Save's error), then
   Defaults / Revert (VibeSkua's Reset: reload `options.json`) / Save. The window remembers which
   options it changed since the last Save or Revert; what else differs from `options.json` was

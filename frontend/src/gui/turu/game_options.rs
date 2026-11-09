@@ -271,7 +271,7 @@ fn entries() -> Vec<Entry> {
             Relogin,
             "Retry Relogin",
             retry_relogin,
-            "Scripts that read it (CoreBots) retry a failed relogin. Auto-relogin always tries up to Relogin Tries times"
+            "When Relogin Tries attempts fail, auto-relogin tries again after 1, 2, 5, then every 10 minutes"
         ),
         b!(
             Relogin,
