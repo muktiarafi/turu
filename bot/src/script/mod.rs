@@ -358,17 +358,31 @@ impl ScriptManager {
         matches!(&*self.options.lock(), ScriptOptionsState::Loaded(o) if o.get_in(category, name).is_some())
     }
 
-    /// `bot.config.get`: the value of one of the loaded script's options.
+    /// `bot.config.get`: the value of one of the loaded script's options. A missing option is
+    /// usually library code reading an option that only its own script declares, so the error
+    /// says how to fix that.
     pub fn option_value(&self, category: &str, name: &str) -> Result<Value, String> {
-        self.with_options(|options| {
-            options.get_in(category, name).cloned().ok_or_else(|| {
-                if category == options::MAIN {
-                    format!("this script has no option named \"{name}\"")
-                } else {
-                    format!("this script has no option named \"{name}\" in \"{category}\"")
-                }
-            })
-        })
+        const HINT: &str = "a script reads only the options its scriptOptions declares, so code \
+                            that other scripts import should take the value as a parameter";
+        match &*self.options.lock() {
+            ScriptOptionsState::Loaded(options) => {
+                options.get_in(category, name).cloned().ok_or_else(|| {
+                    if category == options::MAIN {
+                        format!("this script has no option named \"{name}\": {HINT}")
+                    } else {
+                        format!(
+                            "this script has no option named \"{name}\" in \"{category}\": {HINT}"
+                        )
+                    }
+                })
+            }
+            ScriptOptionsState::NoOptions => Err(format!(
+                "this script declares no options, so it has no \"{name}\": {HINT}"
+            )),
+            ScriptOptionsState::Failed(e) => {
+                Err(format!("the script's options couldn't be read: {e}"))
+            }
+        }
     }
 
     /// `bot.config.set`: sets an option of the loaded script and saves it.

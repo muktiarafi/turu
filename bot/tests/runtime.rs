@@ -204,6 +204,49 @@ export default function main(): void {{
     assert!(saved.contains("Options:Count=7"), "{saved}");
 }
 
+/// An imported file reading an option that only its own script declares (1BookOfMagus importing
+/// BuyScrolls' `buyScroll`): the running script's options are the ones read, and the error says
+/// how to fix the library.
+#[test]
+fn a_library_reading_its_own_scripts_option_fails_with_a_hint() {
+    let dir = temp_dir("library-option");
+    std::fs::write(
+        dir.join("lib.ts"),
+        r#"import { bot, defineScriptOptions, option } from "turu";
+export const scriptOptions = defineScriptOptions("RuntimeLibraryOptionTest", [option.bool("Own", "Own", "")]);
+export function readOwn(): void {
+    bot.config.get("Own");
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("main.ts"),
+        r#"import { bot } from "turu";
+import { readOwn } from "./lib";
+export default function main(): void {
+    try {
+        readOwn();
+    } catch (error) {
+        bot.log(`missing: ${(error as Error).message}`);
+    }
+}
+"#,
+    )
+    .unwrap();
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&dir.join("main.ts"));
+    script::start(&bot).unwrap();
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(
+        log.contains("declares no options, so it has no \"Own\""),
+        "{log}"
+    );
+    assert!(log.contains("take the value as a parameter"), "{log}");
+}
+
 #[test]
 fn choice_options_and_groups_read_and_save_like_vibeskua() {
     let dir = temp_dir("option-groups");

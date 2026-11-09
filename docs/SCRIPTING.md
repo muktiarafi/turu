@@ -107,6 +107,16 @@ export default function main(): void {
   so a file from VibeSkua's options folder can be copied over.
 - `bot.config.get<T>(name)` reads a value (the saved one, or the default). A name the script
   doesn't declare throws. `bot.config.set(name, value)` changes and saves a value.
+- The options are those of the script you start, not of the file the code is in. So code that
+  other scripts import (a `Core*` class, or a method another script calls) doesn't read its own
+  file's options: it takes the value as a parameter, and that file's `main` reads the option and
+  passes it in. `buyScroll(scroll, quant, useMysticParchment)` in `farm/BuyScrolls.ts` does this;
+  reading `UseMysticParchment` inside it made every ArchMage book fail. VibeSkua's `Config.Get`
+  returns `false`/`0` for an option the script lacks, so C# code that relies on that needs this
+  change when ported. Where a parameter doesn't fit (a content script that FarmerJoe's DoAll runs
+  with its own options loaded), CoreBots' `configOr(name, fallback)` reads the option when the
+  running script has it and gives `fallback` otherwise. Shared options (`Core.skipOptions`, a
+  core's `options` list) are fine: every script using them puts them in its own `scriptOptions`.
 - The window's Save writes the file; Cancel drops the changes. Reset Defaults only changes the
   window until you Save.
 - Start opens the Script Options window and waits until it closes, as VibeSkua does. Pass `true`
