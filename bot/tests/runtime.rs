@@ -710,6 +710,53 @@ fn stopping_handlers_dont_run_when_main_returns() {
     );
 }
 
+/// A listener that throws is logged and doesn't fail the bot call it ran in, and the other
+/// listeners still get the event (VibeSkua raises events on the game's thread, so a failing C#
+/// handler never reached the script).
+#[test]
+fn a_failing_event_listener_is_logged_and_the_script_goes_on() {
+    let dir = temp_dir("listener-error");
+    std::fs::write(
+        dir.join("main.ts"),
+        r#"import { bot } from "turu";
+export default function main(): void {
+    let seen = 0;
+    bot.events.on("packetSent", () => { throw new Error("bad packet"); });
+    bot.events.on("packetSent", (packet) => { seen++; bot.log(`second got ${packet}`); });
+    bot.events.on("scriptStopping", () => { throw new Error("bad stop"); });
+    bot.events.on("scriptStopping", () => bot.log("second stopping ran"));
+    while (seen < 2) bot.sleep(20);
+    bot.log(`main went on, gold ${bot.player.gold}`);
+    throw new Error("end");
+}
+"#,
+    )
+    .unwrap();
+    let bot = Bot::new();
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.scripts.load(&dir.join("main.ts"));
+    script::start(&bot).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    for packet in ["%xt%zm%a%1%", "%xt%zm%b%1%"] {
+        bot.events
+            .emit(turu_bot::events::BotEvent::PacketSent(packet.into()));
+    }
+    wait_until_done(&bot);
+    let log = bot.logs.script.text();
+    assert!(
+        log.contains("\"packetSent\" listener failed: bad packet"),
+        "{log}"
+    );
+    assert!(log.contains("second got %xt%zm%a%1%"), "{log}");
+    assert!(log.contains("second got %xt%zm%b%1%"), "{log}");
+    assert!(log.contains("main went on, gold 1234"), "{log}");
+    assert!(
+        log.contains("\"scriptStopping\" listener failed: bad stop"),
+        "{log}"
+    );
+    assert!(log.contains("second stopping ran"), "{log}");
+}
+
 #[test]
 fn snippets_return_their_last_value_and_log_lines() {
     temp_dir("snippet");

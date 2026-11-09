@@ -44,7 +44,10 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   `lagKiller`, `aggroMonsters`, `aggroAllMonsters`, `skipCutscenes` and `autoRelogin` off again
   when the script ends.
 - **Events**: `const off = bot.events.on("monsterKilled", (e) => bot.log(e.mapId));`, then
-  `off()` to remove it. Handlers run between your bot calls.
+  `off()` to remove it. Handlers run between your bot calls. One that throws is logged
+  (`"monsterKilled" listener failed: ...`) and doesn't fail the bot call it ran in; the other
+  listeners still get the event (VibeSkua raised events on the game's thread, so a failing C#
+  handler never reached the script either).
 - **Handlers** (VibeSkua `Bot.Handlers`): `bot.handlers.register("name", 1000, () => ...)` runs
   every 1000 ms, `bot.handlers.once(...)` runs once after the delay, and `remove("name")` /
   `clear()` stop them. Returning `false` from the function removes it. A name in use is replaced.
@@ -117,6 +120,11 @@ export default function main(): void {
   with its own options loaded), CoreBots' `configOr(name, fallback)` reads the option when the
   running script has it and gives `fallback` otherwise. Shared options (`Core.skipOptions`, a
   core's `options` list) are fine: every script using them puts them in its own `scriptOptions`.
+  The scripts repository's CI runs `tools/check-library-options.mjs`, which evaluates each
+  script's `scriptOptions` and reports every literal `bot.config.get(...)` in a file it imports
+  (outside that file's `main`) that it doesn't declare. A read guarded by `bot.config.has` of the
+  same name is skipped, and so is one marked `// options-check: ok` where every caller declares
+  the option.
 - The window's Save writes the file; Cancel drops the changes. Reset Defaults only changes the
   window until you Save.
 - Start opens the Script Options window and waits until it closes, as VibeSkua does. Pass `true`

@@ -1213,16 +1213,32 @@ function dispatchEvents(): void {
     try {
         const events = JSON.parse(__turuEvents()) as { name: string; data: unknown }[];
         for (const event of events) {
-            for (const listener of listeners.get(event.name) ?? []) listener(event.data);
+            for (const listener of [...(listeners.get(event.name) ?? [])]) runListener(event.name, listener, event.data);
         }
     } finally {
         dispatching = false;
     }
 }
 
+/**
+ * Runs one listener. Its error is logged, not thrown: listeners run inside whatever bot call the
+ * script was making, which shouldn't fail for it, and the other listeners still get the event.
+ * VibeSkua raises events on the game's thread, so a failing C# handler never reached the script.
+ */
+function runListener(name: string, listener: (data: unknown) => void, data: unknown): void {
+    try {
+        listener(data);
+    } catch (error) {
+        if (error instanceof ScriptStopped) throw error;
+        bot.log(`"${name}" listener failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
 // Called by the engine once the script has stopped or failed (see `EventMap.scriptStopping`).
 (globalThis as any).__turuScriptStopping = (error?: string | null): void => {
-    for (const listener of [...(listeners.get("scriptStopping") ?? [])]) listener(error ?? null);
+    for (const listener of [...(listeners.get("scriptStopping") ?? [])]) {
+        runListener("scriptStopping", listener, error ?? null);
+    }
 };
 
 /**
