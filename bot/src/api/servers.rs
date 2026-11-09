@@ -1323,13 +1323,11 @@ pub fn begin_logout(bot: &Arc<Bot>, logout_notified: bool) {
     }
 }
 
-/// Another round of relogin attempts is wanted: Retry Relogin and Auto Relogin are on and
-/// nobody logged out on purpose.
+/// Another round of relogin attempts is wanted: Retry Relogin is on and nobody logged out on
+/// purpose. Auto Relogin isn't read again: it was on when the relogin began, and the script it
+/// stopped turned it off (`reset_after_script`, VibeSkua's `ScriptStopped`).
 fn retry_relogin(bot: &Bot) -> bool {
-    let wanted = {
-        let o = bot.opts();
-        o.retry_relogin && o.auto_relogin
-    };
+    let wanted = bot.opts().retry_relogin;
     wanted && !bot.state.lock().intentional_logout
 }
 

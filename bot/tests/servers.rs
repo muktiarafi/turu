@@ -777,6 +777,23 @@ fn a_failed_auto_relogin_waits_to_try_again() {
         o.relogin_try_delay = 0;
     }
     game.stuck_connects.store(100, Ordering::SeqCst);
+    // A running script, as in an unattended run: the relogin stops it, and a stopping script
+    // turns Auto Relogin off (`reset_after_script`), which must not end the retries.
+    let dir = std::env::temp_dir().join(format!("turu-test-servers-retry-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("farm.ts");
+    std::fs::write(
+        &path,
+        "import { bot } from \"turu\";\nexport default function main(): void {\n    bot.log(\"farming\");\n    while (true) bot.sleep(20);\n}\n",
+    )
+    .unwrap();
+    bot.scripts.load(&path);
+    turu_bot::script::start_silent(&bot).unwrap();
+    assert!(wait_until(Duration::from_secs(10), || bot
+        .logs
+        .script
+        .text()
+        .contains("farming")));
     server_logout(&bot, &game);
     assert!(
         wait_until(Duration::from_secs(10), || bot
@@ -785,6 +802,8 @@ fn a_failed_auto_relogin_waits_to_try_again() {
         "{}",
         bot.logs.script.text()
     );
+    assert!(!bot.scripts.is_running());
+    assert!(!bot.opts().auto_relogin);
     let log = bot.logs.script.text();
     assert!(
         log.contains("Re-login failed; trying again in 1 min (Retry Relogin)."),
@@ -796,7 +815,11 @@ fn a_failed_auto_relogin_waits_to_try_again() {
         .is_relogging()));
     assert!(!bot.servers.is_waiting_to_retry());
 
-    bot.options.write().retry_relogin = false;
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        o.retry_relogin = false;
+    }
     server_logout(&bot, &game);
     assert!(wait_until(Duration::from_secs(10), || !bot
         .servers
