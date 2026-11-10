@@ -187,6 +187,8 @@ impl PerfStats {
             commit / (1 << 20),
             crate::HEAP_BYTES.load(std::sync::atomic::Ordering::Relaxed) / (1 << 20),
         );
+        // Turu: what AS3 gotos cost (each runs a frame's construction and scripts over the stage).
+        tracing::info!(target: "ruffle_aqw_perf", "gotos: {}", ruffle_core::take_goto_stats());
         crate::heap_census::report();
         // `RUFFLE_RETENTION_TEST=<class>` runs one report at startup, to check the tool itself.
         if self.windows_logged == 1

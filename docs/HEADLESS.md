@@ -246,6 +246,9 @@ movies (images with their decoded size), so a file loaded again and again and ne
 stands out. A `memory biggest:` line lists the URLs whose live movies hold the most memory
 (decompressed SWF data, plus decoded pixels for images), with their copies: what a map, a monster
 or a piece of gear costs while it stays loaded, and which stays loaded when it shouldn't.
+A `gotos:` line counts the AS3 gotos, how many went to the frame the clip was on, and how many
+clips their nested frames walked for construction and for frame scripts (`docs/STATUS.md`,
+"Windowless mode logs in and farms"; `RUFFLE_OLD_GOTO_SETTLE=1` compares with the old walks).
 `TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
 of matching movies are alive and the chain of references that keeps the oldest, middle and
 newest alive (a walk of the whole heap: a short pause); for copies no `LoaderInfo` holds, what

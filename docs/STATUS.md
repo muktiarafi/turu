@@ -564,7 +564,21 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   both; the player's ticks went from ~280 to ~80 ms/s, with as many kills.
   Of what's left, ~25% of a 30 FPS frame was AS3 `gotoAndStop` to the frame a clip is already
   on: Ruffle's `MovieClip::no_op_goto` still runs a goto's phases over the whole stage
-  (`run_inner_goto_frame`). Which clips call it isn't known yet.
+  (`run_inner_goto_frame`). Measured in game (2026-11-10, GoldFarm at battlegrounde, debug
+  build): ~165 gotos a second, half of them to the current frame, each walking ~1000 clips for
+  construction but only ~90 for frame scripts. The frame scripts a nested frame runs make gotos
+  of their own, each a nested frame again that constructs the whole stage before any of those
+  scripts has finished, so clips with a script still to run (which ruffle-aqw's `settle` can't
+  mark) were constructed about 11 times per goto. ruffle-aqw now also marks a clip
+  "constructed" at the end of its `construct_frame` (`MovieClip::can_mark_constructed`), which
+  later construction walks skip until something changes; a goto to the current frame leaves a
+  settled clip settled, and a `Loader` settles with its children. Same run, 5 minutes each way
+  (`RUFFLE_OLD_GOTO_SETTLE=1` puts the old behaviour back): construction visits 10.4 -> 0.9
+  million a minute, the player's ticks ~135 -> ~93 ms/s, as many gotos and kills. Ruffle's
+  regression tests pass as before (4 focus and key-input tests fail with or without it).
+  The perf log's `gotos:` line has the counts (`ruffle_core::take_goto_stats`). Left: buttons
+  never settle (their hidden state sprites have no parent to unsettle them through) and keep
+  ~25 clips per goto walked; not measured in a release build, with a window, or on a phone.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
