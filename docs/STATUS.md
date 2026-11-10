@@ -533,6 +533,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   up) starts another round after 1, 2, 5, then every 10 minutes, so an unattended run survives a
   network drop and restarts its script; a `/login` or `/relogin` during that wait cancels it
   instead of being refused, and a login from the game's screen meanwhile counts as the relogin.
+  The retries don't need Auto Relogin to stay on (stopping the script turns it off), and the
+  script a relogin restarts runs with Auto Relogin on again (VibeSkua leaves it off until the
+  script turns it on), so a drop right after a relogin (a Mac waking from sleep) relogs again
+  and `--exit-on-script-stop` waits out a relogin that starts within 2 s of the script stopping.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and

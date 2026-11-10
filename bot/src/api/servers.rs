@@ -1311,12 +1311,21 @@ pub fn begin_logout(bot: &Arc<Bot>, logout_notified: bool) {
         .name("Relogin".into())
         .spawn(move || {
             let bot = thread_bot;
-            match auto_relogin(&bot, logout_notified, &thread_cancel) {
-                Ok(()) => {}
-                Err(BotError::Stopped) => bot.log("Auto re-login cancelled."),
-                Err(e) => bot.log(format!("Auto re-login failed: {e}")),
-            }
+            let restart = match auto_relogin(&bot, logout_notified, &thread_cancel) {
+                Ok(restart) => restart,
+                Err(BotError::Stopped) => {
+                    bot.log("Auto re-login cancelled.");
+                    false
+                }
+                Err(e) => {
+                    bot.log(format!("Auto re-login failed: {e}"));
+                    false
+                }
+            };
             finish_auto_relogin(&bot, &thread_cancel);
+            if restart {
+                restart_script(&bot);
+            }
         });
     if spawned.is_err() {
         finish_auto_relogin(bot, &cancel);
@@ -1346,10 +1355,15 @@ fn finish_auto_relogin(bot: &Bot, cancel: &Arc<AtomicBool>) {
 /// `RetryRelogin` is read nowhere), so a network drop of a few minutes ended an unattended run.
 const RELOGIN_RETRY_MINUTES: [u64; 4] = [1, 2, 5, 10];
 
-/// VibeSkua `OnLogout` and `Relogin(delay, startScript)`.
-fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>) -> BotResult<()> {
+/// VibeSkua `OnLogout` and `Relogin(delay, startScript)`; whether the script it stopped should
+/// restart (`restart_script`, once the relogin is over).
+fn auto_relogin(
+    bot: &Arc<Bot>,
+    logout_notified: bool,
+    cancel: &Arc<AtomicBool>,
+) -> BotResult<bool> {
     if !bot.opts().auto_relogin || bot.state.lock().intentional_logout {
-        return Ok(());
+        return Ok(false);
     }
     let ctx = Ctx {
         bot,
@@ -1407,11 +1421,7 @@ fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>)
         relogged = ensure_relogin(&ctx, reconnect_target(bot).as_deref())?;
     }
     ctx.check()?;
-    if was_running && relogged {
-        if let Err(e) = crate::script::start_silent(bot) {
-            bot.log(format!("Couldn't restart the script: {e}"));
-        }
-    } else if was_running {
+    if was_running && !relogged {
         bot.log("Skipping script restart because re-login did not succeed.");
     }
     bot.log(format!(
@@ -1422,7 +1432,22 @@ fn auto_relogin(bot: &Arc<Bot>, logout_notified: bool, cancel: &Arc<AtomicBool>)
             "cancelled or unsuccessful"
         }
     ));
-    Ok(())
+    Ok(was_running && relogged)
+}
+
+/// Restarts the script the auto-relogin stopped, once the relogin is over (so a drop from now
+/// on starts another).
+///
+/// Turu: Auto Relogin goes back on first. It was on when the relogin began, but stopping the
+/// script turned it off (`reset_after_script`, VibeSkua's `ScriptStopped`) and the script only
+/// turns it on again once it has started: a drop in between (after a Mac's sleep, the socket
+/// can die a second after the relogin) went unhandled, the script found itself logged out and
+/// stopped, and `--exit-on-script-stop` quit an unattended run.
+fn restart_script(bot: &Arc<Bot>) {
+    bot.options.write().auto_relogin = true;
+    if let Err(e) = crate::script::start_silent(bot) {
+        bot.log(format!("Couldn't restart the script: {e}"));
+    }
 }
 
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {

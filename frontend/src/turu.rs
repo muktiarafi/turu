@@ -1108,8 +1108,13 @@ fn exit_on_script_stop(playlist: bool) {
     });
 }
 
-fn exit_after_stop(bot: &Arc<Bot>) -> ! {
+fn exit_after_stop(bot: &Arc<Bot>) {
     std::thread::sleep(Duration::from_secs(2));
+    // Turu: a script that found itself logged out may stop just before the drop starts the
+    // auto-relogin, which restarts it: the run goes on.
+    if bot.servers.is_relogging() || bot.scripts.is_running() {
+        return;
+    }
     let _ = turu_bot::api::servers::logout(bot);
     std::thread::sleep(Duration::from_secs(1));
     close_butlers();

@@ -779,21 +779,7 @@ fn a_failed_auto_relogin_waits_to_try_again() {
     game.stuck_connects.store(100, Ordering::SeqCst);
     // A running script, as in an unattended run: the relogin stops it, and a stopping script
     // turns Auto Relogin off (`reset_after_script`), which must not end the retries.
-    let dir = std::env::temp_dir().join(format!("turu-test-servers-retry-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("farm.ts");
-    std::fs::write(
-        &path,
-        "import { bot } from \"turu\";\nexport default function main(): void {\n    bot.log(\"farming\");\n    while (true) bot.sleep(20);\n}\n",
-    )
-    .unwrap();
-    bot.scripts.load(&path);
-    turu_bot::script::start_silent(&bot).unwrap();
-    assert!(wait_until(Duration::from_secs(10), || bot
-        .logs
-        .script
-        .text()
-        .contains("farming")));
+    start_farming(&bot, "retry");
     server_logout(&bot, &game);
     assert!(
         wait_until(Duration::from_secs(10), || bot
@@ -830,4 +816,60 @@ fn a_failed_auto_relogin_waits_to_try_again() {
         log.contains("Re-login was cancelled or unsuccessful."),
         "{log}"
     );
+}
+
+/// How many times the farming script has started (it logs "farming" once per start).
+fn farming_starts(bot: &Bot) -> usize {
+    bot.logs.script.text().matches("farming").count()
+}
+
+/// Starts a script that logs "farming" and runs until stopped, as an unattended run does. It
+/// never turns Auto Relogin on itself.
+fn start_farming(bot: &Arc<Bot>, name: &str) {
+    let dir = std::env::temp_dir().join(format!("turu-test-servers-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("farm.ts");
+    std::fs::write(
+        &path,
+        "import { bot } from \"turu\";\nexport default function main(): void {\n    bot.log(\"farming\");\n    while (true) bot.sleep(20);\n}\n",
+    )
+    .unwrap();
+    bot.scripts.load(&path);
+    turu_bot::script::start_silent(bot).unwrap();
+    assert!(wait_until(Duration::from_secs(10), || farming_starts(bot) == 1));
+}
+
+/// The script the relogin restarts runs with Auto Relogin on, though stopping it turned the
+/// option off: a drop right after the relogin (before the script turns it on again) relogs
+/// and restarts it again instead of leaving it logged out.
+#[test]
+fn a_drop_right_after_a_relogin_relogs_again() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        o.relogin_try_delay = 0;
+    }
+    start_farming(&bot, "again");
+
+    server_logout(&bot, &game);
+    assert!(
+        wait_until(Duration::from_secs(10), || farming_starts(&bot) == 2
+            && !bot.servers.is_relogging()),
+        "{}",
+        bot.logs.script.text()
+    );
+    assert!(bot.opts().auto_relogin);
+
+    server_logout(&bot, &game);
+    assert!(
+        wait_until(Duration::from_secs(10), || farming_starts(&bot) == 3
+            && !bot.servers.is_relogging()),
+        "{}",
+        bot.logs.script.text()
+    );
+    assert_eq!(bot.state.lock().stats.relogins, 2);
+    assert!(bot.scripts.is_running());
+    turu_bot::script::stop(&bot);
 }
