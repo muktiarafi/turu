@@ -159,6 +159,10 @@ fn inventory_json() -> String {
 struct FakeGame {
     sent: Mutex<Vec<String>>,
     calls: Mutex<Vec<String>>,
+    /// Answers skua.swf's `selectArrayObjects` and `getArrayObject` for the inventory.
+    narrow: std::sync::atomic::AtomicBool,
+    /// `getArrayObject` gives the item one place further: the list changed since the select.
+    shifted: std::sync::atomic::AtomicBool,
 }
 
 impl FlashHost for FakeGame {
@@ -177,6 +181,25 @@ impl FlashHost for FakeGame {
             && let Some(value) = common::sub_path(&arg(0), &whole)
         {
             return Ok(value);
+        }
+        use std::sync::atomic::Ordering::Relaxed;
+        if self.narrow.load(Relaxed) && arg(0) == "world.myAvatar.items" {
+            let items: Vec<Value> = serde_json::from_str(&inventory_json()).unwrap();
+            match name {
+                "selectArrayObjects" => {
+                    let column: Vec<Value> = items
+                        .iter()
+                        .map(|i| i.get(arg(1)).cloned().unwrap_or(Value::Null))
+                        .collect();
+                    return Ok(Value::Array(column).to_string());
+                }
+                "getArrayObject" => {
+                    let index: usize = arg(1).parse::<f64>().unwrap() as usize;
+                    let index = index + usize::from(self.shifted.load(Relaxed));
+                    return Ok(items.get(index).cloned().unwrap_or(Value::Null).to_string());
+                }
+                _ => {}
+            }
         }
         let answer = match (name, arg(0).as_str()) {
             ("isLoggedIn", _) | ("inventoryHasSpaceFor", _) | ("rejectExcept", _) => "true".into(),
@@ -209,6 +232,8 @@ fn setup() -> (Arc<Bot>, Arc<FakeGame>) {
     let game = Arc::new(FakeGame {
         sent: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
+        narrow: Default::default(),
+        shifted: Default::default(),
     });
     bot.set_host(Some(game.clone()));
     (bot, game)
@@ -440,4 +465,95 @@ fn items_carry_their_enhancement_pattern_and_proc() {
     // Unenhanced items have neither field.
     let plain: ItemBase = serde_json::from_value(json!({ "ItemID": 8, "sName": "Rock" })).unwrap();
     assert_eq!((plain.enhancement_pattern_id, plain.proc_id), (0, 0));
+}
+
+/// How often the whole inventory was read.
+fn whole_reads(game: &FakeGame) -> usize {
+    game.calls
+        .lock()
+        .iter()
+        .filter(|c| *c == "getGameObject(world.myAvatar.items)")
+        .count()
+}
+
+#[test]
+fn item_checks_read_only_the_items_they_ask_about() {
+    let (bot, game) = setup();
+    game.narrow
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(
+        call(&bot, "inventory.contains", json!(["dragon scale", 5])),
+        json!(true)
+    );
+    assert_eq!(
+        call(&bot, "inventory.contains", json!([1, 6])),
+        json!(false)
+    );
+    // A class counts at any quantity.
+    assert_eq!(
+        call(&bot, "inventory.contains", json!(["void highlord", 100])),
+        json!(true)
+    );
+    assert_eq!(
+        call(&bot, "inventory.contains", json!(["missing", 1])),
+        json!(false)
+    );
+    assert_eq!(
+        call(&bot, "inventory.getQuantity", json!(["Dragon Scale"])),
+        json!(5)
+    );
+    assert_eq!(call(&bot, "inventory.getQuantity", json!([3])), json!(0));
+    assert_eq!(call(&bot, "inventory.isMaxStack", json!([1])), json!(true));
+    assert_eq!(
+        call(&bot, "inventory.isEquipped", json!(["Void Highlord"])),
+        json!(true)
+    );
+    assert_eq!(
+        call(&bot, "inventory.getItem", json!([2]))["category"],
+        json!("Class")
+    );
+    assert_eq!(call(&bot, "inventory.getItem", json!([3])), Value::Null);
+    assert_eq!(
+        call(&bot, "player.currentClass", json!([])),
+        json!("Void Highlord")
+    );
+    assert_eq!(whole_reads(&game), 0, "{:?}", game.calls.lock());
+    // An item that isn't there takes one read of one column and no item.
+    game.calls.lock().clear();
+    call(&bot, "inventory.contains", json!(["missing", 1]));
+    assert_eq!(
+        *game.calls.lock(),
+        ["selectArrayObjects(world.myAvatar.items)"]
+    );
+    // The whole list is still there for who asks for it.
+    assert_eq!(
+        call(&bot, "inventory.items", json!([]))
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn an_item_check_reads_the_whole_list_when_it_changed_meanwhile() {
+    let (bot, game) = setup();
+    game.narrow
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    game.shifted
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    // The place the name was at now holds another item: the answer comes from the whole list.
+    assert_eq!(
+        call(&bot, "inventory.getQuantity", json!(["Dragon Scale"])),
+        json!(5)
+    );
+    assert_eq!(
+        call(&bot, "inventory.getItem", json!([2]))["name"],
+        json!("Void Highlord")
+    );
+    assert_eq!(
+        call(&bot, "player.currentClass", json!([])),
+        json!("Void Highlord")
+    );
+    assert_eq!(whole_reads(&game), 3);
 }

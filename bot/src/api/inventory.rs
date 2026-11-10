@@ -18,10 +18,23 @@ pub fn inventory_items(bot: &Bot) -> BotResult<Vec<ItemBase>> {
 
 /// The equipped class's name.
 pub fn current_class(bot: &Bot) -> BotResult<Option<String>> {
-    Ok(inventory_items(bot)?
-        .into_iter()
-        .find(|i| i.equipped && i.is_class())
-        .map(|i| i.name))
+    Ok(current_class_item(bot)?.map(|i| i.name))
+}
+
+/// The equipped class.
+pub fn current_class_item(bot: &Bot) -> BotResult<Option<ItemBase>> {
+    let is_worn_class = |i: &ItemBase| i.equipped && i.is_class();
+    Ok(
+        match matching_by(
+            bot,
+            Container::Inventory,
+            &["bEquip", "sType"],
+            is_worn_class,
+        )? {
+            Some(items) => items.into_iter().next(),
+            None => inventory_items(bot)?.into_iter().find(is_worn_class),
+        },
+    )
 }
 
 /// Which item list an operation reads.
@@ -148,22 +161,94 @@ pub fn items(bot: &Bot, container: Container) -> BotResult<Vec<ItemBase>> {
     Ok(parse_items(raw.unwrap_or_default()))
 }
 
+/// The container's items that `wanted` picks, in the list's order, read without copying the
+/// whole list: a member's inventory is 0.4 MB as JSON and a bank 0.9 MB, 4 to 10 ms of the
+/// game's thread per read, and scripts ask "do I have this item" several times a second.
+/// Reads only `fields` of every item (skua.swf's `selectArrayObjects`, a few kB), then the
+/// whole item at each place they pick (`getArrayObject`).
+///
+/// `None` when it can't tell and the caller must read the whole list: a column came back
+/// empty or not as long as the first (an empty or missing list, a game that has no such
+/// call), or an item wasn't `wanted` any more when it was read (the list changed between
+/// the calls). `wanted` must only look at `fields`.
+fn matching_by(
+    bot: &Bot,
+    container: Container,
+    fields: &[&str],
+    wanted: impl Fn(&ItemBase) -> bool,
+) -> BotResult<Option<Vec<ItemBase>>> {
+    let path = container.items_path();
+    let mut columns: Vec<Vec<Value>> = Vec::with_capacity(fields.len());
+    for field in fields {
+        match bot.flash.select::<Value>(path, field) {
+            Ok(column) if !column.is_empty() => columns.push(column),
+            _ => return Ok(None),
+        }
+    }
+    if columns.iter().any(|c| c.len() != columns[0].len()) {
+        return Ok(None);
+    }
+    let mut found = Vec::new();
+    for index in 0..columns[0].len() {
+        // The same parsing as a whole item's, so names and IDs compare the same.
+        let probe: serde_json::Map<String, Value> = fields
+            .iter()
+            .zip(&columns)
+            .map(|(field, column)| ((*field).to_owned(), column[index].clone()))
+            .collect();
+        let Ok(probe) = serde_json::from_value::<ItemBase>(Value::Object(probe)) else {
+            continue;
+        };
+        if !wanted(&probe) {
+            continue;
+        }
+        let item = bot
+            .flash
+            .get_array_item::<Value>(path, index)?
+            .filter(Value::is_object)
+            .and_then(|v| serde_json::from_value::<ItemBase>(v).ok());
+        match item {
+            Some(item) if wanted(&item) => found.push(item),
+            _ => return Ok(None),
+        }
+    }
+    Ok(Some(found))
+}
+
+/// The container's items with this name or ID, in the list's order.
+fn matching(bot: &Bot, container: Container, which: NameOrId) -> BotResult<Vec<ItemBase>> {
+    let field = match which {
+        NameOrId::Name(_) => "sName",
+        NameOrId::Id(_) => "ItemID",
+    };
+    if let Some(found) = matching_by(bot, container, &[field], |i| item_matches(i, which))? {
+        return Ok(found);
+    }
+    let mut all = items(bot, container)?;
+    all.retain(|i| item_matches(i, which));
+    Ok(all)
+}
+
 /// At least `quantity` of the item (VibeSkua `ICheckInventory.Contains`).
 pub fn contains(bot: &Bot, container: Container, item: NameOrId, quantity: i64) -> BotResult<bool> {
     if quantity == 0 {
         return Ok(true);
     }
-    Ok(contains_in(&items(bot, container)?, item, quantity))
+    Ok(contains_in(
+        &matching(bot, container, item)?,
+        item,
+        quantity,
+    ))
 }
 
 /// 0 when missing.
 pub fn quantity(bot: &Bot, container: Container, item: NameOrId) -> BotResult<i64> {
-    Ok(quantity_in(&items(bot, container)?, item))
+    Ok(quantity_in(&matching(bot, container, item)?, item))
 }
 
 /// VibeSkua `GetItem` / `TryGetItem`.
 pub fn get_item(bot: &Bot, container: Container, item: NameOrId) -> BotResult<Option<ItemBase>> {
-    Ok(find_item(&items(bot, container)?, item).cloned())
+    Ok(matching(bot, container, item)?.into_iter().next())
 }
 
 // ---------------------------------------------------------------------------------------
@@ -624,10 +709,8 @@ pub fn dispatch(bot: &Arc<Bot>, module: &str, name: &str, args: Args) -> BotResu
         "getItem" => return ok(get_item(bot, container, args.name_or_id(0)?)?),
         "getQuantity" => return ok(quantity(bot, container, args.name_or_id(0)?)?),
         "isMaxStack" => {
-            return ok(is_max_stack_in(
-                &items(bot, container)?,
-                args.name_or_id(0)?,
-            ));
+            let which = args.name_or_id(0)?;
+            return ok(is_max_stack_in(&matching(bot, container, which)?, which));
         }
         "isEquipped" => {
             return ok(get_item(bot, container, args.name_or_id(0)?)?.is_some_and(|i| i.equipped));

@@ -452,8 +452,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 - **Reads that copied whole objects:** `player::loaded` (asked by the skill timer every tick and
   by many waits) reads `world.myAvatar.items.length`, as VibeSkua does, not the whole inventory;
   `quests.get`/`canComplete` read `world.questTree.<id>`, not the whole quest tree. With nine
-  tabs these copies were a large part of the bot calls' time. Inventory and bank checks
-  (`contains`, ...) still read every item. They led to the
+  tabs these copies were a large part of the bot calls' time. They led to the
   background timer checking "still in game?" every 100 ms and the loading screen every 250 ms
   while in game (VibeSkua: every 20 ms and 100 ms), out of game every tick as before: those
   checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind
@@ -467,6 +466,17 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   replacer or indent, instead of building a tree first: 9.7 against 14.2 ms per MB, both in turns
   within one farm; 10,000 texts of that farm matched the tree's byte for byte
   (`RUFFLE_JSON_CHECK=1`); `RUFFLE_JSON_TREE=1` puts the tree back.
+  And the item checks (`contains`, `getQuantity`, `getItem`, `isMaxStack`, `isEquipped`, the
+  equipped class) no longer read the whole list (VibeSkua does): they read one field of every
+  item (skua.swf's `selectArrayObjects`: the names are 10 kB of an inventory's 366) and then
+  only the items that match (`getArrayObject`), and fall back to the whole list when a column
+  comes back empty or an item isn't the one asked for any more (`inventory::matching_by`).
+  The same farm after it: the bot's calls 47 -> 14 ms/s, the script thread's whole reads gone
+  (a column read takes 0.6 ms for the inventory, 2.2 ms for the bank). The gameplay stats'
+  sample, once a second, read the whole inventory for the equipped class's ID (~6 ms/s), and
+  each drop read it to look the item up: both read narrowly too now, and the same farm's calls
+  are at 8 ms/s. `containsMany` and whatever asks for the list itself (the gear file, a
+  script's `items`) still read all of it.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.

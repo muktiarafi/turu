@@ -93,10 +93,9 @@ fn do_work(bot: &Arc<Bot>, work: Work) {
 }
 
 fn find(bot: &Bot, container: Container, id: i64) -> Option<ItemBase> {
-    inventory::items(bot, container)
-        .ok()?
-        .into_iter()
-        .find(|i| i.id == id)
+    inventory::get_item(bot, container, crate::api::NameOrId::Id(id))
+        .ok()
+        .flatten()
 }
 
 /// VibeSkua `addItems`: the item is in the inventory or temp inventory (`ItemDropped` with
@@ -267,9 +266,10 @@ fn player_reading(bot: &Bot) -> crate::stats::PlayerReading {
         let value: Option<serde_json::Value> = bot.flash.get_opt(path).ok().flatten();
         crate::api::packets::num(value.as_ref()).unwrap_or(0)
     };
-    let class_id = inventory::items(bot, Container::Inventory)
+    // Not the whole inventory (0.4 MB of a member's, once a second): see `inventory::matching_by`.
+    let class_id = inventory::current_class_item(bot)
         .ok()
-        .and_then(|items| items.into_iter().find(|i| i.equipped && i.is_class()))
+        .flatten()
         .map_or(0, |i| i.id);
     crate::stats::PlayerReading {
         experience: int("world.myAvatar.objData.intExp"),
