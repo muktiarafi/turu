@@ -54,7 +54,11 @@ fn candidates_skip_unusable_servers_once_per_name() {
     let free = servers::relogin_candidates(&cached, &listed, true);
     assert_eq!(names(&free), ["Twilly", "Safiria"]);
     let members = servers::relogin_candidates(&cached, &listed, false);
-    assert_eq!(names(&members), ["Gravelyn", "Twilly", "Safiria"]);
+    // A member gets into a full server.
+    assert_eq!(
+        names(&members),
+        ["Galanoth", "Gravelyn", "Twilly", "Safiria"]
+    );
     assert_eq!(
         servers::blacklist_reason(&member, true),
         Some("member-only")

@@ -528,7 +528,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   for a stuck load (no logout out of the server list after `LoadTimeout`). The bot's own `clickServer` also reports `selectServer`, so only
   a pick while no relogin runs counts. In the bot's relogins a full server ("full" on the
   loading screen or in a login dialog) ends the attempt at once and isn't tried again during
-  that login unless every server was full (VibeSkua waits out the world timeout). When all
+  that login unless every server was full (VibeSkua waits out the world timeout). A server at its player limit only rules itself out for a
+  non-member (VibeSkua: for everyone): members get in, and a login asked for Artix went to
+  another server whenever Artix was full; while the account isn't known yet it counts as a
+  member's. Checked in game with a member on Artix at 1502/1500. When all
   Relogin Tries attempts fail, Retry Relogin (on by default; VibeSkua reads it nowhere and gives
   up) starts another round after 1, 2, 5, then every 10 minutes, so an unattended run survives a
   network drop and restarts its script; a `/login` or `/relogin` during that wait cancels it

@@ -483,7 +483,11 @@ fn relogin_log(bot: &Bot, message: impl AsRef<str>) {
     bot.log(format!("[Relogin] {}", message.as_ref()));
 }
 
-/// Why a server can't be used for a relogin (VibeSkua `GetBlacklistReason`).
+/// Why a server can't be used for a relogin (VibeSkua `GetBlacklistReason`). Unlike VibeSkua,
+/// a full server only rules itself out for a non-member: the game lets members into a server
+/// past its player limit, and a login asked for Artix went to another server whenever Artix
+/// was full, which it mostly is. While the account isn't known yet (the first login) it counts
+/// as a member's; a non-member is then told "Server is full" and moves on at once.
 pub fn blacklist_reason(server: &Server, non_member: bool) -> Option<&'static str> {
     if server.name.trim().is_empty() || server.ip.trim().is_empty() {
         Some("invalid")
@@ -491,7 +495,7 @@ pub fn blacklist_reason(server: &Server, non_member: bool) -> Option<&'static st
         Some("offline")
     } else if server.name.to_lowercase().contains("test") {
         Some("test server")
-    } else if server.max_players > 0 && server.player_count >= server.max_players {
+    } else if non_member && server.max_players > 0 && server.player_count >= server.max_players {
         Some("full")
     } else if server.upgrade && non_member {
         Some("member-only")
