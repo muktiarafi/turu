@@ -459,6 +459,14 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   checks were about half of all calls. And `isLoggedIn` and the avatar's `intState` (behind
   `alive`, `playing`, `inCombat`, ...) are read at most every 100 ms per client, each read
   shared by every thread (`api::player::shared`): nearly every wait and background loop asks.
+  Measured while farming (2026-11-10, 0MaxBags on Artix, release build, a member with 366 kB of
+  inventory and 909 kB of bank as JSON): the bot's calls took 47 ms/s of the player's thread,
+  the game's frames 26, and 42 of the 47 were whole reads of `world.myAvatar.items` (about 5 a
+  second) and `world.bankinfo.items` (1.6 a second), 4 to 10 ms each, nearly all of it in
+  `JSON.stringify`. ruffle-aqw's `JSON.stringify` now writes its text directly when it has no
+  replacer or indent, instead of building a tree first: 9.7 against 14.2 ms per MB, both in turns
+  within one farm; 10,000 texts of that farm matched the tree's byte for byte
+  (`RUFFLE_JSON_CHECK=1`); `RUFFLE_JSON_TREE=1` puts the tree back.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
