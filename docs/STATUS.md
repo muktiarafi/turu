@@ -477,6 +477,14 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   each drop read it to look the item up: both read narrowly too now, and the same farm's calls
   are at 8 ms/s. `containsMany` and whatever asks for the list itself (the gear file, a
   script's `items`) still read all of it.
+- **Hit-tests with the pointer over the game:** Ruffle looked for the hovered object after
+  every tick, not every frame, and the app ticks on each wake of its event loop: 190 to 250
+  times a second with a bot running (each bot call wakes it), against 30 frames. A hit-test
+  walks the stage (0.35 ms on a farm map, about 1 ms in a crowded Yulgar). ruffle-aqw's tick
+  leaves it to the frame and to pointer and button events now. Measured in one session with a
+  pointer put on the stage and taken off in turns (2026-11-10, release build, window covered),
+  game ticks: 0MaxBags farm 49 ms/s with the pointer away, 121 with it over the game, 62 with
+  the fix; Yulgar 14, 62 and 20.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
