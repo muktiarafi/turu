@@ -252,6 +252,8 @@ clips their nested frames walked for construction and for frame scripts (`docs/S
 `RUFFLE_NO_DORMANT=1` turns off the "dormant" mark that lets a frame skip clips standing still,
 and `RUFFLE_DORMANT_AB=<frames>` turns it on and off in turns of that many frames (with a window,
 each perf window then says `dormant marks on` or `off`), to compare frame times in one session.
+`RUFFLE_NO_BUTTON_MARKS=1` and `RUFFLE_BUTTON_AB=<frames>` do the same for the marks of buttons
+(the `gotos:` line says `button marks on` or `off`).
 `RUFFLE_JSON_TREE=1` makes `JSON.stringify` build its tree again for every call (the bot's reads
 of the game go through it), and `RUFFLE_JSON_CHECK=1` builds it too and logs an error when the
 direct text differs.

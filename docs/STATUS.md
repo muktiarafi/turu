@@ -623,7 +623,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   disconnection or script error. Ruffle's regression tests pass as before. `RUFFLE_NO_DORMANT=1`
   turns it off. Also: the search for AVM1 clips to remove (a walk of the display list each
   frame) only runs after one was queued, and the frame epoch the marks read is a shared atomic,
-  not a thread-local. Not tried: a session of hours over many maps and cutscenes, or a phone.
+  not a thread-local. Buttons (`SimpleButton`) carry the marks too now: before, one anywhere
+  below a clip kept the clip and its ancestors from settling. A button's states that aren't
+  shown have no parent, so a change in one can't walk up to the button: it takes every mark of
+  every object away instead (never seen while farming). Measured the same way (2026-11-11,
+  0MaxBags, turns of 2 minutes, `RUFFLE_BUTTON_AB=3600`): the clips that gotos' nested frames
+  walk went from 1.10 million a minute to 0.36 million, a frame from 1.9 to 1.75 ms, game ticks
+  from 68 to 65 ms/s: the walks that were left were cheap ones. `RUFFLE_NO_BUTTON_MARKS=1` turns
+  it off. Not tried: a session of hours over many maps and cutscenes, or a phone.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
