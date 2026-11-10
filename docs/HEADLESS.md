@@ -249,6 +249,9 @@ or a piece of gear costs while it stays loaded, and which stays loaded when it s
 A `gotos:` line counts the AS3 gotos, how many went to the frame the clip was on, and how many
 clips their nested frames walked for construction and for frame scripts (`docs/STATUS.md`,
 "Windowless mode logs in and farms"; `RUFFLE_OLD_GOTO_SETTLE=1` compares with the old walks).
+`RUFFLE_NO_DORMANT=1` turns off the "dormant" mark that lets a frame skip clips standing still,
+and `RUFFLE_DORMANT_AB=<frames>` turns it on and off in turns of that many frames (with a window,
+each perf window then says `dormant marks on` or `off`), to compare frame times in one session.
 `TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
 of matching movies are alive and the chain of references that keeps the oldest, middle and
 newest alive (a walk of the whole heap: a short pause); for copies no `LoaderInfo` holds, what

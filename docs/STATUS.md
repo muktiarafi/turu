@@ -579,6 +579,18 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   The perf log's `gotos:` line has the counts (`ruffle_core::take_goto_stats`). Left: buttons
   never settle (their hidden state sprites have no parent to unsettle them through) and keep
   ~25 clips per goto walked; not measured in a release build, with a window, or on a phone.
+  A frame's own three walks (entering the frame, construction, frame scripts) went over every
+  clip too, though most of a crowded room stands still. ruffle-aqw now marks a clip "dormant"
+  when it settles while stopped, with nothing queued and only such children: the mark outlives
+  the frame, and all three walks skip the clip until something wakes it (`unsettle`, which
+  `play` now calls too) or 32 frames have passed (a safety net). Measured with a window
+  (2026-11-10, release build, 30 FPS, the mark on and off in turns of 20 s within one session,
+  `RUFFLE_DORMANT_AB=600`), a frame's game logic: Battleon 2.2 -> 1.3 ms, Yulgar 3.1 -> 2.1 ms,
+  farming Legion Tokens at /fotia 4.9 -> 1.95 ms. A 20-minute farm with it on ran without a
+  disconnection or script error. Ruffle's regression tests pass as before. `RUFFLE_NO_DORMANT=1`
+  turns it off. Also: the search for AVM1 clips to remove (a walk of the display list each
+  frame) only runs after one was queued, and the frame epoch the marks read is a shared atomic,
+  not a thread-local. Not tried: a session of hours over many maps and cutscenes, or a phone.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.

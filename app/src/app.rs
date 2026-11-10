@@ -252,6 +252,10 @@ impl PerfStats {
             avg(self.render_ms_sum, self.renders),
             self.render_ms_max,
         );
+        // Turu: which turn of `RUFFLE_DORMANT_AB` this window was in.
+        if std::env::var_os("RUFFLE_DORMANT_AB").is_some() {
+            tracing::info!(target: "ruffle_aqw_perf", "dormant marks {}", if ruffle_core::dormant_active() { "on" } else { "off" });
+        }
         let counts = ruffle_render_wgpu::perf_counters::take();
         let per_render = ruffle_render_wgpu::perf_counters::NAMES
             .iter()
