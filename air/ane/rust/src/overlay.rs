@@ -200,7 +200,13 @@ struct Gpu {
     /// textures (the fonts) once. A new one per surface drew nothing after the app came back from
     /// the background ("Missing texture: Managed(0)").
     renderer: Option<(wgpu::TextureFormat, egui_wgpu::Renderer)>,
+    /// The renderer is new and hasn't egui's font atlas yet: egui sends it once, to the first.
+    needs_fonts: bool,
 }
+
+/// The GPU device was lost (a phone's driver may drop it while the app is off screen): the UI's
+/// thread makes a new one in the same window, else nothing is drawn again.
+static DEVICE_LOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The surface in the overlay's current window.
 struct Target {
@@ -256,15 +262,27 @@ fn run() {
         };
         if let Some(window) = window {
             target = None;
+            // A new view may be in a new activity (the app swiped away and opened again, the
+            // process kept by the service), whose game view has no margins yet: send them again.
+            sent_insets = (u32::MAX, u32::MAX);
             if let Some(window) = window {
                 target = make_target(&mut gpu, window);
             }
             let mut shared = shared();
             shared.applied = target_for;
             APPLIED.notify_all();
-            // A new view may be in a new activity (the app swiped away and opened again, the
-            // process kept by the service), whose game view has no margins yet: send them again.
-            sent_insets = (u32::MAX, u32::MAX);
+        }
+        if DEVICE_LOST.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            // A new device in the same window (its surface first, then the old device).
+            let window = target.take().map(|old| {
+                let window = old._window.clone();
+                drop(old);
+                window
+            });
+            gpu = None;
+            if let Some(window) = window {
+                target = make_target(&mut gpu, window);
+            }
         }
         let (Some(gpu), Some(target)) = (gpu.as_mut(), target.as_mut()) else {
             next = Instant::now() + IDLE_FRAME;
@@ -509,9 +527,17 @@ impl GameTyping {
 }
 
 fn make_target(gpu: &mut Option<Gpu>, window: NativeWindow) -> Option<Target> {
+    // Each way this gives up leaves the UI undrawn until the view's next surface: say so.
+    let handle = match window.window_handle() {
+        Ok(handle) => handle.as_raw(),
+        Err(e) => {
+            tracing::error!("Couldn't draw the UI in its view (no window handle): {e}");
+            return None;
+        }
+    };
     let target = wgpu::SurfaceTargetUnsafe::RawHandle {
         raw_display_handle: Some(RawDisplayHandle::Android(AndroidDisplayHandle::new())),
-        raw_window_handle: window.window_handle().ok()?.as_raw(),
+        raw_window_handle: handle,
     };
     if gpu.is_none() {
         *gpu = make_gpu(&target);
@@ -535,7 +561,11 @@ fn make_target(gpu: &mut Option<Gpu>, window: NativeWindow) -> Option<Target> {
             wgpu::TextureFormat::Bgra8Unorm,
         ])
         .find(|f| formats.contains(f))
-        .or_else(|| formats.first().copied())?;
+        .or_else(|| formats.first().copied());
+    let Some(format) = format else {
+        tracing::error!("Couldn't draw the UI in its view: its surface offers no format");
+        return None;
+    };
     if kept != Some(format) {
         if kept.is_some() {
             tracing::warn!("The UI's new surface is {format:?}: its textures are made again");
@@ -551,6 +581,7 @@ fn make_target(gpu: &mut Option<Gpu>, window: NativeWindow) -> Option<Target> {
             },
         );
         gpu.renderer = Some((format, renderer));
+        gpu.needs_fonts = true;
     }
     let mut target = Target {
         surface,
@@ -602,6 +633,10 @@ fn make_gpu(target: &wgpu::SurfaceTargetUnsafe) -> Option<Gpu> {
         }));
         match device {
             Ok((device, queue)) => {
+                device.set_device_lost_callback(|reason, message| {
+                    tracing::warn!("The UI's GPU device was lost ({reason:?}): {message}");
+                    DEVICE_LOST.store(true, std::sync::atomic::Ordering::SeqCst);
+                });
                 let info = adapter.get_info();
                 tracing::info!(
                     "UI drawn with {} on {} (driver {} {})",
@@ -616,6 +651,7 @@ fn make_gpu(target: &wgpu::SurfaceTargetUnsafe) -> Option<Gpu> {
                     device,
                     queue,
                     renderer: None,
+                    needs_fonts: false,
                 });
             }
             Err(e) => tracing::warn!("UI: {backends:?} has no device: {e}"),
@@ -665,9 +701,45 @@ fn configure(gpu: &Gpu, target: &mut Target) {
 }
 
 fn draw(gpu: &mut Gpu, target: &mut Target, egui: &egui::Context, output: egui::FullOutput) {
+    // egui's texture changes first, whether or not this frame gets drawn: it sends each one once
+    // (the fonts' atlas, which every shape is drawn through, at the start), and one dropped with
+    // a skipped frame (the surface not ready yet, coming back from the background) left the UI
+    // blank for good.
+    {
+        let Gpu {
+            device,
+            queue,
+            renderer,
+            needs_fonts,
+            ..
+        } = &mut *gpu;
+        let Some((_, renderer)) = renderer.as_mut() else {
+            return;
+        };
+        if std::mem::take(needs_fonts) {
+            let atlas = egui::epaint::ImageDelta::full(
+                egui.fonts(|f| f.image()),
+                egui::TextureOptions::LINEAR,
+            );
+            renderer.update_texture(device, queue, egui::TextureId::default(), &atlas);
+        }
+        for (id, deltas) in &output.textures_delta.set {
+            for delta in deltas {
+                renderer.update_texture(device, queue, *id, delta);
+            }
+        }
+    }
+    let free = |gpu: &mut Gpu| {
+        if let Some((_, renderer)) = gpu.renderer.as_mut() {
+            for id in &output.textures_delta.free {
+                renderer.free_texture(id);
+            }
+        }
+    };
     if !target.configured {
         configure(gpu, target);
         if !target.configured {
+            free(gpu);
             return;
         }
     }
@@ -676,9 +748,13 @@ fn draw(gpu: &mut Gpu, target: &mut Target, egui: &egui::Context, output: egui::
         | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
             configure(gpu, target);
+            free(gpu);
             return;
         }
-        _ => return,
+        _ => {
+            free(gpu);
+            return;
+        }
     };
     let primitives = egui.tessellate(output.shapes, output.pixels_per_point);
     let screen = egui_wgpu::ScreenDescriptor {
@@ -694,11 +770,6 @@ fn draw(gpu: &mut Gpu, target: &mut Target, egui: &egui::Context, output: egui::
     let Some((_, renderer)) = renderer.as_mut() else {
         return;
     };
-    for (id, deltas) in &output.textures_delta.set {
-        for delta in deltas {
-            renderer.update_texture(device, queue, *id, delta);
-        }
-    }
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Turu UI"),
     });
