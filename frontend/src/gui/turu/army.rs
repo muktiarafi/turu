@@ -11,7 +11,7 @@ use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::platform::FileDialog;
 use crate::turu::TabId;
-use egui::{Align, CollapsingHeader, Context, Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{Align, Checkbox, CollapsingHeader, Context, Label, Layout, RichText, ScrollArea, Ui, vec2};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -24,6 +24,8 @@ use turu_bot::monitor::snapshot::BotState;
 
 /// How many command outcomes the window keeps.
 const RESULTS: usize = 40;
+/// Narrower than this (a phone, a small window), a row keeps Start/Stop and ⋯ only.
+const NARROW: f32 = 480.0;
 /// How long a "click again to confirm" stays armed.
 const CONFIRM_FOR: Duration = Duration::from_secs(4);
 
@@ -267,6 +269,9 @@ pub struct ArmyWindow {
     /// An action on every row waiting for its second click, and since when.
     confirm: Option<(&'static str, Instant)>,
     results: Arc<Mutex<VecDeque<String>>>,
+    /// Search… asked for a script: the answer goes to Search Scripts' pick mode
+    /// ([`Self::take_script_search`]).
+    script_search: Option<crate::platform::Answer>,
 }
 
 impl Default for ArmyWindow {
@@ -285,6 +290,7 @@ impl Default for ArmyWindow {
             pending_targets: None,
             confirm: None,
             results: Arc::default(),
+            script_search: None,
         }
     }
 }
@@ -318,14 +324,24 @@ impl ArmyWindow {
         if !*open {
             return;
         }
+        self.window(ctx, open, &Self::rows());
+        ctx.request_repaint_after(Duration::from_millis(500));
+    }
+
+    /// The window itself, listing `rows`.
+    fn window(&mut self, ctx: &Context, open: &mut bool, rows: &[Row]) {
         let mut window = super::window(ctx, "Army Control", [560.0, 620.0], 5).open(open);
         // On a phone a floating window would cover the game and still be cramped: a sheet.
         let area = super::window_area(ctx);
         if widgets::touch() && (area.width() < 600.0 || area.height() < 620.0) {
             window = window.sheet(ctx);
         }
-        window.show(ctx, |ui| self.ui(ui));
-        ctx.request_repaint_after(Duration::from_millis(500));
+        window.show(ctx, |ui| self.ui(ui, rows));
+    }
+
+    /// Search…'s request: Search Scripts should open in its pick mode with this answer.
+    pub fn take_script_search(&mut self) -> Option<crate::platform::Answer> {
+        self.script_search.take()
     }
 
     /// The client "Use Current Client Location" reads (VibeSkua: the selected tab): the only
@@ -441,54 +457,44 @@ impl ArmyWindow {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
+    fn ui(&mut self, ui: &mut Ui, rows: &[Row]) {
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
-        let rows = Self::rows();
         self.checked
             .retain(|key| rows.iter().any(|r| &r.key == key && !r.ended));
-        self.clients_card(ui, &rows);
-        self.actions_card(ui, &rows);
+        self.clients_card(ui, rows);
+        self.actions_card(ui, rows);
         self.results_card(ui);
     }
 
     fn clients_card(&mut self, ui: &mut Ui, rows: &[Row]) {
         let army = crate::turu::army();
         let queued = army.queued();
+        let narrow = ui.available_width() < NARROW;
         let mut actions = Vec::new();
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                widgets::section_label(ui, "CLIENTS");
-                widgets::count_badge(ui, rows.iter().filter(|r| !r.ended).count());
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let launched = rows.iter().any(|r| r.tab.is_none());
-                    ui.add_enabled_ui(launched, |ui| {
-                        ui.menu_button("⋯", |ui| {
-                            if ui.button("Clear ended").clicked() {
-                                army.clear_exited();
-                                ui.close();
-                            }
-                            if ui
-                                .button(RichText::new("Close all launched clients").color(DANGER))
-                                .clicked()
-                            {
-                                army.close_all();
-                                self.checked.retain(|k| k.starts_with("tab:"));
-                                ui.close();
-                            }
-                        });
-                    });
-                    self.selection_buttons(ui, rows);
-                });
-            });
+            self.clients_header(ui, rows, queued.len());
+            let row_height = match (narrow, widgets::touch()) {
+                (_, true) => 60.0,
+                (_, false) => 44.0,
+            };
             ScrollArea::vertical()
                 .id_salt("turu_army_clients")
-                .max_height(widgets::target(260.0, 320.0))
+                .max_height(widgets::target(300.0, 360.0))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
                     for row in rows {
                         let mut checked = self.checked.contains(&row.key);
-                        if let Some(action) = row_ui(ui, row, &mut checked) {
+                        let picked = std::cell::Cell::new(None);
+                        let response = widgets::list_row(ui, checked, row_height, |ui| {
+                            picked.set(row_ui(ui, row, &mut checked, narrow));
+                        });
+                        // The whole row checks it, not only its box: an easy target for a finger.
+                        if response.clicked() && !row.ended {
+                            checked = !checked;
+                        }
+                        if let Some(action) = picked.get() {
                             actions.push((row, action));
                         }
                         if checked && !row.ended {
@@ -497,15 +503,20 @@ impl ArmyWindow {
                             self.checked.remove(&row.key);
                         }
                     }
+                    for username in &queued {
+                        widgets::list_row(ui, false, row_height, |ui| {
+                            ui.add_space(widgets::target(18.0, 30.0) + 6.0);
+                            ui.spinner();
+                            ui.label(RichText::new(format!("{username}: waiting to start")).color(MUTED));
+                        });
+                    }
                     if rows.iter().all(|r| r.tab.is_some()) && queued.is_empty() {
+                        ui.add_space(4.0);
                         ui.label(
                             RichText::new("Start more accounts from Army > Accounts.")
-                                .small()
+                                .size(12.0)
                                 .color(MUTED),
                         );
-                    }
-                    for username in &queued {
-                        ui.label(RichText::new(format!("{username}: waiting to start")).color(MUTED));
                     }
                 });
         });
@@ -514,18 +525,77 @@ impl ArmyWindow {
         }
     }
 
-    /// All, None, and Group ▾ (an Army > Accounts group's rows).
-    fn selection_buttons(&mut self, ui: &mut Ui, rows: &[Row]) {
+    /// Above the rows: a box that checks or clears them all, how many are checked, Groups ⏷
+    /// (an Army > Accounts group's rows) and ⋯ (Clear ended, Close all launched clients).
+    fn clients_header(&mut self, ui: &mut Ui, rows: &[Row], queued: usize) {
+        let live: Vec<&Row> = rows.iter().filter(|r| !r.ended).collect();
+        let checked = live.iter().filter(|r| self.checked.contains(&r.key)).count();
+        ui.horizontal(|ui| {
+            // The box lines up with the rows' boxes (`widgets::list_row`'s inset).
+            ui.add_space(8.0);
+            let mut all = !live.is_empty() && checked == live.len();
+            let some = checked > 0 && checked < live.len();
+            let check = ui
+                .add_enabled(!live.is_empty(), Checkbox::without_text(&mut all).indeterminate(some))
+                .on_hover_text("Checks or clears every client (All / None)");
+            if check.changed() {
+                if all && !some {
+                    self.checked = live.iter().map(|r| r.key.clone()).collect();
+                } else {
+                    self.checked.clear();
+                }
+            }
+            let mut count = match (checked, live.len()) {
+                (0, 1) => "1 client".to_owned(),
+                (0, n) => format!("{n} clients"),
+                (c, n) => format!("{c} of {n} selected"),
+            };
+            if queued > 0 {
+                count.push_str(&format!(" · {queued} waiting"));
+            }
+            let color = if checked > 0 { TEXT } else { MUTED };
+            ui.add(Label::new(RichText::new(count).size(12.0).color(color)).truncate());
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let army = crate::turu::army();
+                let launched = rows.iter().any(|r| r.tab.is_none());
+                ui.add_enabled_ui(launched, |ui| {
+                    ui.menu_button("⋯", |ui| {
+                        touch_rows(ui);
+                        if ui.button("Clear ended").clicked() {
+                            army.clear_exited();
+                            ui.close();
+                        }
+                        if ui
+                            .button(RichText::new("Close all launched clients").color(DANGER))
+                            .clicked()
+                        {
+                            army.close_all();
+                            self.checked.retain(|k| k.starts_with("tab:"));
+                            ui.close();
+                        }
+                    })
+                    .response
+                    .on_hover_text("Clear ended, close all launched clients");
+                });
+                self.groups_menu(ui, rows);
+            });
+        });
+    }
+
+    /// Groups ⏷: checks an Army > Accounts group's rows, and only those.
+    fn groups_menu(&mut self, ui: &mut Ui, rows: &[Row]) {
         if self.groups_read.is_none_or(|t| t.elapsed() >= Duration::from_secs(3)) {
             self.groups_read = Some(Instant::now());
             self.groups = Accounts::load(&crate::turu::bot().paths.accounts_file()).groups;
         }
         let groups = self.groups.clone();
         ui.add_enabled_ui(!groups.is_empty(), |ui| {
-            ui.menu_button("Group ▾", |ui| {
+            ui.menu_button("Groups ⏷", |ui| {
+                touch_rows(ui);
                 for group in &groups {
                     if ui
-                        .button(format!("{} ({})", group.name, group.accounts.len()))
+                        .button(format!("{}  ({})", group.name, group.accounts.len()))
+                        .on_hover_text("Checks this group's clients, and only those")
                         .clicked()
                     {
                         self.checked = rows
@@ -540,12 +610,6 @@ impl ArmyWindow {
             .response
             .on_disabled_hover_text("No groups yet: make them in Army > Accounts");
         });
-        if widgets::small_button(ui, "None", !self.checked.is_empty()).clicked() {
-            self.checked.clear();
-        }
-        if widgets::small_button(ui, "All", true).clicked() {
-            self.checked = rows.iter().filter(|r| !r.ended).map(|r| r.key.clone()).collect();
-        }
     }
 
     fn actions_card(&mut self, ui: &mut Ui, rows: &[Row]) {
@@ -555,6 +619,9 @@ impl ArmyWindow {
         if self.confirm.is_some_and(|(_, at)| at.elapsed() >= CONFIRM_FOR) {
             self.confirm = None;
         }
+        let any = !targets.is_empty();
+        let ask = everyone && targets.len() > 1;
+        let height = widgets::target(28.0, 44.0);
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -567,116 +634,133 @@ impl ArmyWindow {
                     (false, n) => format!("{n} selected"),
                 };
                 let color = if everyone && names.len() > 1 { WARNING } else { TEXT };
-                ui.label(RichText::new(format!("→ {who}")).small().color(color));
+                ui.add(Label::new(RichText::new(format!("→ {who}")).size(12.0).color(color)).truncate())
+                    .on_hover_text(names.join(", "));
             });
-            let any = !targets.is_empty();
-            let height = widgets::target(28.0, 40.0);
-            let width = (ui.available_width() - 12.0) / 3.0;
-            let size = vec2(width, height);
-            ui.horizontal(|ui| {
+
+            group_label(ui, "SCRIPT");
+            let mut grid = Grid::new(ui, 4, 116.0, height);
+            ui.horizontal_wrapped(|ui| {
+                let size = grid.next(ui);
                 if widgets::button(ui, "Start script", Kind::Primary, any, size, "").clicked() {
                     self.send(rows, Command::StartScript(None));
                 }
-                if self.guarded(
-                    ui,
-                    "Stop script",
-                    Kind::Danger,
-                    any,
-                    size,
-                    everyone && targets.len() > 1,
-                ) {
+                let size = grid.next(ui);
+                if self.guarded(ui, "Stop script", Kind::Normal, any, size, ask) {
                     self.send(rows, Command::StopScript);
                 }
-                // Without file dialogs (Android): the script this tab's Script Loader has loaded.
-                if !crate::platform::platform().has_file_dialogs() {
+                let waiting = self.pending_script.is_open();
+                let size = grid.next(ui);
+                let search = widgets::button(ui, "Search…", Kind::Normal, any && !waiting, size, "")
+                    .on_hover_text("Pick a script in Search Scripts and load it in each client");
+                if search.clicked() {
+                    self.pending_targets = Some(targets.iter().map(|&i| rows[i].clone()).collect());
+                    let mut asked = None;
+                    self.pending_script.open(ui.ctx(), |answer| {
+                        asked = Some(answer);
+                        true
+                    });
+                    self.script_search = asked;
+                }
+                if crate::platform::platform().has_file_dialogs() {
+                    let size = grid.next(ui);
+                    let load = widgets::button(ui, "Load file…", Kind::Normal, any && !waiting, size, "")
+                        .on_hover_text("Pick a script file and load it in each client");
+                    if load.clicked() {
+                        self.pending_targets = Some(targets.iter().map(|&i| rows[i].clone()).collect());
+                        let start = files::scripts_start_dir(crate::turu::bot().paths.scripts_dir());
+                        let dialog = FileDialog::new()
+                            .set_title("Load Script")
+                            .add_filter("Scripts", &["ts", "js"])
+                            .set_directory(start);
+                        self.pending_script.pick_file(ui.ctx(), dialog);
+                    }
+                } else {
+                    // Without file dialogs (Android): also the script this tab has loaded.
                     let loaded = crate::turu::bot().scripts.loaded();
+                    let size = grid.next(ui);
                     let load = widgets::button(
                         ui,
-                        "Load this script",
+                        "This tab's script",
                         Kind::Normal,
                         any && loaded.is_some(),
                         size,
                         "Load one in the Script Loader (Search Scripts) first",
                     )
-                    .on_hover_text("The script this tab's Script Loader has loaded");
+                    .on_hover_text("Loads the script this tab's Script Loader has loaded");
                     if load.clicked()
                         && let Some(path) = loaded
                     {
                         self.send(rows, Command::LoadScript(path.display().to_string()));
                     }
-                    return;
-                }
-                let load = widgets::button(
-                    ui,
-                    "Load script…",
-                    Kind::Normal,
-                    any && !self.pending_script.is_open(),
-                    size,
-                    "",
-                );
-                if load.clicked() {
-                    self.pending_targets = Some(targets.iter().map(|&i| rows[i].clone()).collect());
-                    let start = files::scripts_start_dir(crate::turu::bot().paths.scripts_dir());
-                    let dialog = FileDialog::new()
-                        .set_title("Load Script")
-                        .add_filter("Scripts", &["ts", "js"])
-                        .set_directory(start);
-                    self.pending_script.pick_file(ui.ctx(), dialog);
                 }
             });
-            let width = (ui.available_width() - 18.0) / 4.0;
-            let size = vec2(width, height);
-            ui.horizontal(|ui| {
+
+            group_label(ui, "ACCOUNT");
+            let mut grid = Grid::new(ui, 4, 100.0, height);
+            ui.horizontal_wrapped(|ui| {
+                let size = grid.next(ui);
                 if widgets::button(ui, "Log in", Kind::Normal, any, size, "").clicked() {
                     self.send(rows, Command::Login);
                 }
-                if self.guarded(ui, "Log out", Kind::Normal, any, size, everyone && targets.len() > 1) {
+                let size = grid.next(ui);
+                if self.guarded(ui, "Log out", Kind::Normal, any, size, ask) {
                     self.send(rows, Command::Logout);
                 }
+                let size = grid.next(ui);
                 if widgets::button(ui, "Relog", Kind::Normal, any, size, "").clicked() {
                     self.send(rows, Command::Relogin);
                 }
+                let size = grid.next(ui);
                 if widgets::button(ui, "Go to house", Kind::Normal, any, size, "").clicked() {
                     self.send(rows, Command::JumpHouse);
                 }
             });
+
             // VibeSkua's "Start/Stop Auto-Attack for All": no confirmation there, and stopping
             // loses nothing.
-            let width = (ui.available_width() - 6.0) / 2.0;
-            let size = vec2(width, height);
-            ui.horizontal(|ui| {
+            group_label(ui, "AUTO-ATTACK");
+            let mut grid = Grid::new(ui, 2, 140.0, height);
+            ui.horizontal_wrapped(|ui| {
                 let tip = "Each client's Auto Attack with its equipped class (rows running a script are skipped)";
+                let size = grid.next(ui);
                 if widgets::button(ui, "Start Auto-Attack", Kind::Normal, any, size, "")
                     .on_hover_text(tip)
                     .clicked()
                 {
                     self.send(rows, Command::StartAutoAttack);
                 }
-                if widgets::button(ui, "Stop Auto-Attack", Kind::Danger, any, size, "")
+                let size = grid.next(ui);
+                if widgets::button(ui, "Stop Auto-Attack", Kind::Normal, any, size, "")
                     .on_hover_text("Stops Auto Attack or Auto Hunt; scripts keep running")
                     .clicked()
                 {
                     self.send(rows, Command::StopAuto);
                 }
             });
+
+            ui.add_space(2.0);
             CollapsingHeader::new("Travel")
                 .id_salt("turu_army_travel")
                 .default_open(true)
                 .show(ui, |ui| {
+                    let mut grid = Grid::new(ui, 3, 130.0, widgets::target(26.0, 44.0));
                     ui.horizontal_wrapped(|ui| {
-                        let size = vec2(0.0, widgets::target(26.0, 40.0));
+                        let size = grid.next(ui);
                         if widgets::button(ui, "Map Travel…", Kind::Normal, true, size, "")
                             .on_hover_text("Recent destinations and saved map presets")
                             .clicked()
                         {
                             self.travel.open = true;
                         }
+                        let size = grid.next(ui);
                         if widgets::button(ui, "Jump to Player…", Kind::Normal, any, size, "")
                             .on_hover_text("Pick a player from the open clients, or type a name")
                             .clicked()
                         {
                             self.travel.open_player_picker(&travel_peers(rows));
                         }
+                        let size = grid.next(ui);
                         if widgets::button(ui, "Change Server…", Kind::Normal, any, size, "")
                             .on_hover_text("Relog the clients on another server")
                             .clicked()
@@ -688,19 +772,31 @@ impl ArmyWindow {
             CollapsingHeader::new("Quest")
                 .id_salt("turu_army_quest")
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        widgets::text_box(ui, &mut self.quest, "Quest ID", 80.0);
-                        widgets::text_box(ui, &mut self.reward, "Reward ID (optional)", 140.0);
-                        let id = self.quest.trim().parse::<i64>().ok().filter(|id| *id > 0);
-                        if widgets::button(
+                    let gap = ui.spacing().item_spacing.x;
+                    let room = ui.available_width();
+                    // Two fields and the button on a line, or the fields over a full-width button.
+                    let inline = room >= 380.0;
+                    let button = if inline { 120.0 } else { room };
+                    let fields = if inline { room - button - gap } else { room };
+                    let id = self.quest.trim().parse::<i64>().ok().filter(|id| *id > 0);
+                    ui.horizontal_wrapped(|ui| {
+                        // Rounded down, so the two never wrap on a fraction of a point.
+                        let quest = ((fields - gap) * 0.4).floor();
+                        widgets::text_box(ui, &mut self.quest, "Quest ID", quest);
+                        let reward = (fields - gap - quest - 1.0).floor();
+                        widgets::text_box(ui, &mut self.reward, "Reward ID (optional)", reward);
+                        if !inline {
+                            ui.end_row();
+                        }
+                        let accept = widgets::button(
                             ui,
                             "Accept quest",
                             Kind::Normal,
                             any && id.is_some(),
-                            vec2(0.0, 26.0),
+                            vec2(button, widgets::target(26.0, 44.0)),
                             "Enter a quest ID",
-                        )
-                        .clicked()
+                        );
+                        if accept.clicked()
                             && let Some(id) = id
                         {
                             let reward = self.reward.trim().parse().unwrap_or(-1);
@@ -711,14 +807,28 @@ impl ArmyWindow {
             CollapsingHeader::new("Misc options")
                 .id_salt("turu_army_misc")
                 .show(ui, |ui| {
+                    // Two columns of switches, or one when narrow.
+                    let columns = if ui.available_width() >= 360.0 { 2 } else { 1 };
+                    let width = (ui.available_width() - 12.0 * (columns - 1) as f32) / columns as f32;
                     let mut changed = None;
-                    ui.horizontal_wrapped(|ui| {
-                        for (i, (label, name)) in MISC_OPTIONS.iter().enumerate() {
-                            if ui.checkbox(&mut self.misc[i], *label).changed() {
-                                changed = Some((*name, self.misc[i]));
+                    for pair in MISC_OPTIONS.chunks(columns) {
+                        ui.horizontal(|ui| {
+                            for (label, name) in pair {
+                                let i = MISC_OPTIONS.iter().position(|(_, n)| n == name).unwrap_or(0);
+                                ui.allocate_ui_with_layout(
+                                    vec2(width, widgets::target(22.0, 40.0)),
+                                    Layout::left_to_right(Align::Center),
+                                    |ui| {
+                                        ui.set_min_width(width);
+                                        if widgets::switch(ui, &mut self.misc[i]).changed() {
+                                            changed = Some((*name, self.misc[i]));
+                                        }
+                                        ui.label(*label);
+                                    },
+                                );
                             }
-                        }
-                    });
+                        });
+                    }
                     if let Some((name, on)) = changed {
                         self.send(rows, Command::SetOptions(json!({ name: on })));
                     }
@@ -726,8 +836,8 @@ impl ArmyWindow {
         });
     }
 
-    /// A button that, when `ask`, needs a second click within a few seconds ("… all? click
-    /// again"). True when the action should run.
+    /// A button that, when `ask`, needs a second click within a few seconds ("… all?", in red).
+    /// True when the action should run.
     fn guarded(
         &mut self,
         ui: &mut Ui,
@@ -756,7 +866,7 @@ impl ArmyWindow {
         false
     }
 
-    /// The last outcome, and the earlier ones folded away.
+    /// The last outcome (cut to the width, whole on hover), and the earlier ones folded away.
     fn results_card(&self, ui: &mut Ui) {
         let results: Vec<String> = self
             .results
@@ -769,11 +879,14 @@ impl ArmyWindow {
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(last).monospace().size(11.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::small_button(ui, "Clear", true).clicked() {
                         self.results.lock().unwrap_or_else(|e| e.into_inner()).clear();
                     }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(Label::new(RichText::new(last).monospace().size(11.0)).truncate())
+                            .on_hover_text(last);
+                    });
                 });
             });
             if results.len() > 1 {
@@ -787,7 +900,7 @@ impl ArmyWindow {
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 for line in &results {
-                                    ui.label(RichText::new(line).monospace().size(11.0));
+                                    ui.add(Label::new(RichText::new(line).monospace().size(11.0)).wrap());
                                 }
                             });
                     });
@@ -796,108 +909,217 @@ impl ArmyWindow {
     }
 }
 
-/// One row: check box, dot, name, where it is, its script; below, its own buttons.
-fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool) -> Option<RowAction> {
-    let mut action = None;
-    // On a touch screen: a bigger check box and finger-sized row buttons.
+/// A small heading over a group of ACTIONS' buttons.
+fn group_label(ui: &mut Ui, text: &str) {
+    ui.add_space(2.0);
+    ui.label(RichText::new(text).size(10.5).color(MUTED));
+}
+
+/// Buttons in even columns, as many to a line as fit at their narrowest (at most `count`),
+/// sharing the line; drawn in `horizontal_wrapped`, a new line every `columns` buttons
+/// (Turu's buttons draw in a scope of their own, which doesn't wrap by itself).
+struct Grid {
+    columns: usize,
+    size: egui::Vec2,
+    placed: usize,
+}
+
+impl Grid {
+    fn new(ui: &Ui, count: usize, min: f32, height: f32) -> Self {
+        let gap = ui.spacing().item_spacing.x;
+        let room = ui.available_width();
+        let fit = (((room + gap) / (min + gap)).floor() as usize).clamp(1, count);
+        // As few columns as keep the same number of lines: 2 + 2, not 3 + 1.
+        let columns = count.div_ceil(count.div_ceil(fit));
+        // Rounded down, so a line never overflows on a fraction of a point.
+        let width = ((room - gap * (columns - 1) as f32) / columns as f32).floor();
+        Self {
+            columns,
+            size: vec2(width, height),
+            placed: 0,
+        }
+    }
+
+    /// The next button's size, starting a line when this one is full.
+    fn next(&mut self, ui: &mut Ui) -> egui::Vec2 {
+        if self.placed > 0 && self.placed.is_multiple_of(self.columns) {
+            ui.end_row();
+        }
+        self.placed += 1;
+        self.size
+    }
+}
+
+/// On a touch screen, a menu's rows are about 44 points high.
+fn touch_rows(ui: &mut Ui) {
+    if widgets::touch() {
+        ui.spacing_mut().button_padding.y = 14.0;
+        ui.spacing_mut().interact_size.y = 40.0;
+    }
+}
+
+/// One row (inside `widgets::list_row`): check box; the name, its kind and state mark; under
+/// it what it runs and where it is; on the right its own buttons. Narrow, Start/Stop and ⋯
+/// only (Log in/out and Gear move into ⋯).
+fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<RowAction> {
+    // Both the buttons and the menu set it.
+    let action = std::cell::Cell::new(None);
     let touch = widgets::touch();
     if touch {
         let spacing = ui.spacing_mut();
         spacing.icon_width = 24.0;
         spacing.icon_width_inner = 14.0;
-        spacing.interact_size.y = 40.0;
     }
-    let row_button = |ui: &mut Ui, label: &str, enabled: bool| {
-        if touch {
-            widgets::button(ui, label, Kind::Normal, enabled, vec2(0.0, 36.0), "")
-        } else {
-            widgets::small_button(ui, label, enabled)
-        }
-    };
-    ui.horizontal(|ui| {
-        ui.add_enabled(!row.ended, egui::Checkbox::without_text(checked));
-        widgets::dot(ui, row.color, 4.0);
-        // Long names and places are cut to the window's width (hover shows them whole).
-        let name = row.label();
-        let width = (ui.available_width() * 0.45).max(60.0);
-        ui.scope(|ui| {
-            ui.set_max_width(width);
-            ui.add(egui::Label::new(RichText::new(&name).strong().color(TEXT)).truncate())
-                .on_hover_text(&name);
-        });
-        if row.tab.is_some() {
-            widgets::pill(ui, |ui| ui.label(RichText::new("tab").size(10.0).color(MUTED)));
-        } else if row.headless {
-            widgets::pill(ui, |ui| ui.label(RichText::new("no window").size(10.0).color(MUTED)));
-        }
-        let summary = ui.add(egui::Label::new(RichText::new(&row.summary).small().color(MUTED)).truncate());
-        let summary = summary.on_hover_text(&row.summary);
-        if let Some(error) = &row.error {
-            summary.on_hover_text(error);
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(26.0);
-        let mut button = |ui: &mut Ui, label: &str, enabled: bool, tooltip: &str, choice: RowAction| {
-            if row_button(ui, label, enabled).on_hover_text(tooltip).clicked() {
-                action = Some(choice);
+    ui.add_enabled(!row.ended, Checkbox::without_text(checked));
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        let size = |width: f32| vec2(widgets::target(width, width + 8.0), widgets::target(24.0, 40.0));
+        let button = |ui: &mut Ui, label: &str, width: f32, enabled: bool, tip: &str, choice: RowAction| {
+            if widgets::button(ui, label, Kind::Normal, enabled, size(width), "")
+                .on_hover_text(tip)
+                .clicked()
+            {
+                action.set(Some(choice));
             }
         };
-        if row.ended {
-            button(ui, "Restart", true, "Launch it again as it was", RowAction::Restart);
-            button(ui, "Remove", true, "Take it off the list", RowAction::Close);
-            return;
-        }
-        match &row.script {
-            Some((_, true)) => button(ui, "■ Stop", true, "Stop its script", RowAction::Stop),
-            Some((name, false)) => button(ui, "▶ Start", row.logged_in, &format!("Start {name}"), RowAction::Start),
-            None => button(ui, "▶ Start", false, "No script loaded", RowAction::Start),
-        }
-        if row.logged_in {
-            button(ui, "Log out", true, "Log this account out", RowAction::Logout);
-        } else {
-            button(ui, "Log in", true, "Log in with the remembered login", RowAction::Login);
-        }
-        button(ui, "Gear", true, "Its gear: what's worn, equip, bank", RowAction::Gear);
-        if let Some(tab) = row.tab
-            && row_button(ui, "Show", tab != crate::turu::active_tab()).clicked()
-        {
-            crate::turu::request_tab(crate::turu::TabRequest::Select(tab));
-        }
-        ui.menu_button("⋯", |ui| {
-            let mut item = |ui: &mut Ui, label: RichText, choice: RowAction| {
-                if ui.button(label).clicked() {
-                    action = Some(choice);
-                    ui.close();
+        let menu = egui::Button::new("⋯").min_size(size(30.0));
+        egui::containers::menu::MenuButton::from_button(menu)
+            .ui(ui, |ui| {
+                touch_rows(ui);
+                ui.set_min_width(180.0);
+                let item = |ui: &mut Ui, label: RichText, enabled: bool, choice: RowAction| {
+                    if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                        action.set(Some(choice));
+                        ui.close();
+                    }
+                };
+                if row.ended {
+                    item(ui, RichText::new("Remove"), true, RowAction::Close);
+                    return;
                 }
-            };
-            item(ui, RichText::new("Relog"), RowAction::Relog);
-            if let Some(auto) = &row.auto {
-                item(ui, RichText::new(format!("Stop {auto}")), RowAction::StopAuto);
-            } else if row.logged_in && !row.script.as_ref().is_some_and(|(_, running)| *running) {
-                item(ui, RichText::new("Start Auto-Attack"), RowAction::AutoAttack);
+                if let Some(tab) = row.tab {
+                    let show = ui
+                        .add_enabled(tab != crate::turu::active_tab(), egui::Button::new("Show its tab"))
+                        .on_disabled_hover_text("It's the tab shown");
+                    if show.clicked() {
+                        crate::turu::request_tab(crate::turu::TabRequest::Select(tab));
+                        ui.close();
+                    }
+                }
+                if narrow {
+                    if row.logged_in {
+                        item(ui, RichText::new("Log out"), true, RowAction::Logout);
+                    } else {
+                        item(ui, RichText::new("Log in"), true, RowAction::Login);
+                    }
+                    item(ui, RichText::new("Gear…"), true, RowAction::Gear);
+                }
+                item(ui, RichText::new("Relog"), true, RowAction::Relog);
+                if let Some(auto) = &row.auto {
+                    item(ui, RichText::new(format!("Stop {auto}")), true, RowAction::StopAuto);
+                } else {
+                    let can = row.logged_in && !row.script.as_ref().is_some_and(|(_, running)| *running);
+                    item(ui, RichText::new("Start Auto-Attack"), can, RowAction::AutoAttack);
+                }
+                if row.tab.is_none() {
+                    item(ui, RichText::new("Logs…"), true, RowAction::Logs);
+                    ui.separator();
+                    item(ui, RichText::new("Restart"), true, RowAction::Restart);
+                    item(ui, RichText::new("Close").color(DANGER), true, RowAction::Close);
+                }
+            })
+            .0
+            .on_hover_text("More: relog, Auto-Attack, logs, restart, close");
+        if row.ended {
+            button(
+                ui,
+                "Restart",
+                72.0,
+                true,
+                "Launch it again as it was",
+                RowAction::Restart,
+            );
+        } else {
+            if !narrow {
+                button(
+                    ui,
+                    "Gear",
+                    52.0,
+                    true,
+                    "Its gear: what's worn, equip, bank",
+                    RowAction::Gear,
+                );
+                if row.logged_in {
+                    button(ui, "Log out", 68.0, true, "Log this account out", RowAction::Logout);
+                } else {
+                    button(
+                        ui,
+                        "Log in",
+                        68.0,
+                        true,
+                        "Log in with the remembered login",
+                        RowAction::Login,
+                    );
+                }
             }
-            if row.tab.is_none() {
-                item(ui, RichText::new("Logs…"), RowAction::Logs);
-                ui.separator();
-                item(ui, RichText::new("Restart"), RowAction::Restart);
-                item(ui, RichText::new("Close").color(DANGER), RowAction::Close);
+            match &row.script {
+                Some((_, true)) => button(ui, "■ Stop", 68.0, true, "Stop its script", RowAction::Stop),
+                Some((name, false)) => {
+                    let tip = if row.logged_in {
+                        format!("Start {name}")
+                    } else {
+                        "Log in first".to_owned()
+                    };
+                    button(ui, "▶ Start", 68.0, row.logged_in, &tip, RowAction::Start);
+                }
+                None => button(ui, "▶ Start", 68.0, false, "No script loaded", RowAction::Start),
             }
-        });
-        if let Some(auto) = &row.auto {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(auto).size(11.0).color(SUCCESS));
-            });
-        } else if let Some((name, running)) = &row.script {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let color = if *running { SUCCESS } else { MUTED };
-                let state = if *running { "running" } else { "loaded" };
-                ui.add(egui::Label::new(RichText::new(name).monospace().size(11.0).color(color)).truncate())
-                    .on_hover_text(format!("{name}: {state}"));
-            });
         }
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            // Long names and places stop at the buttons (hover shows them whole).
+            ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+            ui.vertical(|ui| {
+                ui.spacing_mut().interact_size.y = 16.0;
+                ui.spacing_mut().item_spacing.y = 3.0;
+                ui.horizontal(|ui| {
+                    widgets::dot(ui, row.color, 4.0);
+                    let name = row.label();
+                    ui.add(Label::new(RichText::new(&name).strong().color(TEXT)).truncate())
+                        .on_hover_text(&name);
+                    let kind = if row.tab.is_some() {
+                        Some("tab")
+                    } else if row.headless {
+                        Some("no window")
+                    } else {
+                        None
+                    };
+                    if let Some(kind) = kind {
+                        ui.label(RichText::new(kind).size(10.5).color(MUTED));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    // What it runs comes first: it's what a narrow row keeps.
+                    if let Some(auto) = &row.auto {
+                        ui.label(RichText::new(auto).size(11.0).color(SUCCESS));
+                        ui.label(RichText::new("·").size(11.0).color(MUTED));
+                    } else if let Some((name, running)) = &row.script {
+                        let color = if *running { SUCCESS } else { MUTED };
+                        let state = if *running { "running" } else { "loaded" };
+                        ui.label(RichText::new(name).monospace().size(11.0).color(color))
+                            .on_hover_text(format!("{name}: {state}"));
+                        ui.label(RichText::new("·").size(11.0).color(MUTED));
+                    }
+                    let color = if row.error.is_some() { DANGER } else { MUTED };
+                    let summary = ui.add(Label::new(RichText::new(&row.summary).size(11.0).color(color)).truncate());
+                    let summary = summary.on_hover_text(&row.summary);
+                    if let Some(error) = &row.error {
+                        summary.on_hover_text(error);
+                    }
+                });
+            });
+        });
     });
-    action
+    action.get()
 }
 
 /// The rows as Map Travel needs them: tabs read their own location, clients come from the hub.
@@ -1044,7 +1266,7 @@ mod tests {
                     .show(&ctx, |ui| {
                         for row in &rows {
                             let mut checked = false;
-                            assert_eq!(row_ui(ui, row, &mut checked), None);
+                            assert_eq!(row_ui(ui, row, &mut checked, false), None);
                         }
                     });
                 widths.push(shown.expect("the window is open").response.rect.width());

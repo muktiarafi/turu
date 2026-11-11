@@ -360,6 +360,15 @@ impl TuruUi {
             ctx.request_repaint();
         }
         self.army.show(ctx, &mut self.army_open);
+        // Army Control's Search… picks a script to load in its clients.
+        if let Some(answer) = self.army.take_script_search() {
+            let tab = self.active();
+            tab.script_repo.pick("the Army clients", answer);
+            tab.windows.script_repo = true;
+            let id = egui::Id::new(("turu_window", "Search Scripts"));
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+            ctx.request_repaint();
+        }
         self.army_queue.show(ctx, &mut self.army_queue_open);
         // Army Queue's script and options buttons open the active tab's windows.
         let (open_repo, options) = (
