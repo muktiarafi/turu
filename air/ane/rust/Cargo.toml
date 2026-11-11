@@ -1,6 +1,7 @@
 [package]
-# Turu's library inside the AIR native extension (docs/AIR_PROPOSAL.md). For spike A0 it holds
-# only the bridge benchmark; phase A1 puts the engine here (`AirFlashHost`).
+# Turu's library inside the AIR native extension (docs/AIR_PROPOSAL.md): the bot engine, with the
+# game in Adobe AIR instead of Ruffle (`AirFlashHost`), and the AS3 bytecode patcher. Empty on
+# other systems, so the workspace still builds there.
 name = "turu_air"
 authors.workspace = true
 edition.workspace = true
@@ -13,5 +14,23 @@ workspace = true
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
+[target.'cfg(target_os = "android")'.dependencies]
+turu_bot = { path = "../../../bot", default-features = false }
+turu_frontend = { path = "../../../frontend", default-features = false }
+turu_air_patch = { path = "../../../air_patch" }
 jni = { version = "0.22.4", default-features = false }
+android_logger = "0.15.1"
+log = "0.4"
+# The bot's messages, as `log` records for logcat.
+tracing = { workspace = true, features = ["log", "log-always"] }
+serde_json = { workspace = true }
+# TLS as the Ruffle build does it (android/Cargo.toml): reqwest's rustls without a crypto
+# provider, `ring` installed as the provider, and certificates checked against Android's trust
+# store by rustls-platform-verifier (initialised over JNI; its Kotlin part goes into the
+# extension's jar).
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-platform-verifier = "0.7.1"
+# rquickjs ships no QuickJS bindings for Android: generate them (air/ane/build.sh sets up
+# bindgen, as the Ruffle build's `cargoNdk` task does).
+rquickjs = { version = "0.14", features = ["bindgen"] }

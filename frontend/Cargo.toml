@@ -13,16 +13,18 @@ workspace = true
 
 [dependencies]
 turu_bot = { path = "../bot", default-features = false }
-ruffle_core = { path = "../ruffle/core" }
+# Ruffle's player and what drives it (the `ruffle` feature, on by default). Without it the crate
+# builds for a frontend whose game runs elsewhere (Adobe AIR: `air/ane/rust`, docs/AIR_PROPOSAL.md).
+ruffle_core = { path = "../ruffle/core", optional = true }
 # The windowless loop (`engine.rs`): its executor and dialog-less navigator. No TLS backend
 # here: each frontend picks one.
-ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }
-async-task = "4.7.1"
+ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"], optional = true }
+async-task = { version = "4.7.1", optional = true }
 # Several tabs' players on one thread (`players.rs`) swap the renderer's unsubmitted command
 # segments, as the core's thread-local state.
-ruffle_render_wgpu = { path = "../ruffle/render/wgpu" }
+ruffle_render_wgpu = { path = "../ruffle/render/wgpu", optional = true }
 # Grabber > GetMap Item IDs and the map pads read the map SWF's AS3 bytecode.
-swf = { path = "../ruffle/swf", default-features = false }
+swf = { path = "../ruffle/swf", default-features = false, features = ["flate2"] }
 egui = { workspace = true }
 # The web monitor's phone link as a QR code (Options > Application > Monitor).
 qrcode = { version = "0.14.1", default-features = false }
@@ -34,3 +36,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+
+[features]
+default = ["ruffle"]
+# The game in Ruffle: the player <-> bot bridge, the windowless loop, the tabs' players, the
+# socket capture.
+ruffle = ["dep:ruffle_core", "dep:ruffle_frontend_utils", "dep:async-task", "dep:ruffle_render_wgpu"]

@@ -154,10 +154,10 @@ fn makes_new_loader_an_air_loader() {
     ];
     let mut abc = abc_with(&LOADERS, &[2, 3], &ops, vec![]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
     assert!(report.has_air_loader);
     assert_eq!(report.swapped.len(), 1);
-    assert_eq!(report.game_problem(), None);
+    assert_eq!(report.problem(), None);
     let mut expected = ops.to_vec();
     expected[1] = Op::FindPropStrict {
         index: Index::new(2),
@@ -183,8 +183,8 @@ fn no_air_loader_no_swap() {
     ];
     let mut abc = abc_with(&LOADERS, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(!patch_abc(&mut abc, &mut report).unwrap());
-    assert!(report.game_problem().is_some());
+    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(report.problem().is_some());
 
     // Another package's Loader isn't flash.display's.
     let names = [
@@ -193,7 +193,7 @@ fn no_air_loader_no_swap() {
         ("types", "SwfLoaderPatch"),
     ];
     let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
-    assert!(!patch_abc(&mut abc, &mut report).unwrap());
+    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
 }
 
 #[test]
@@ -219,7 +219,7 @@ fn drops_allow_domain_and_keeps_branches_on_their_instructions() {
 
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
     assert_eq!(report.dropped.len(), 1);
     let patched = ops_of(&abc);
     assert_eq!(
@@ -273,7 +273,7 @@ fn a_used_result_becomes_undefined() {
         vec![],
     );
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
     assert_eq!(
         ops_of(&abc),
         [
@@ -319,7 +319,7 @@ fn moves_exception_ranges_and_switch_targets() {
     let names = [("flash.system", "Security"), ("", "allowDomain")];
     let mut abc = abc_with(&names, &[], &ops, vec![exception]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
 
     let body = &abc.method_bodies[0];
     let decoded = decode(&body.code).unwrap();
@@ -354,12 +354,12 @@ fn patches_the_real_game() {
         return;
     };
     let input = std::fs::read(&path).unwrap();
-    let (output, report) = patch_swf(&input).unwrap();
-    assert_eq!(report.game_problem(), None, "{report:#?}");
+    let (output, report) = patch_swf(&input, Target::Game).unwrap();
+    assert_eq!(report.problem(), None, "{report:#?}");
     assert!(!report.swapped.is_empty());
 
     // Patching it again finds nothing left to change, and every body decodes.
-    let (_, again) = patch_swf(&output).unwrap();
+    let (_, again) = patch_swf(&output, Target::Game).unwrap();
     assert_eq!(again.swapped, vec![]);
     assert_eq!(again.dropped, vec![]);
     let buf = swf::decompress_swf(&output[..]).unwrap();
@@ -382,4 +382,91 @@ fn patches_the_real_game() {
         input.len(),
         output.len()
     );
+}
+
+#[test]
+fn skua_routes_external_interface_and_loaders_through_the_host() {
+    let ops = [
+        Op::GetLex {
+            index: Index::new(1),
+        }, // ExternalInterface
+        Op::PushNull,
+        Op::PushNull,
+        Op::CallPropVoid {
+            index: Index::new(2),
+            num_args: 2,
+        }, // addCallback
+        Op::FindPropStrict {
+            index: Index::new(3),
+        },
+        Op::ConstructProp {
+            index: Index::new(3),
+            num_args: 0,
+        }, // new Loader()
+        Op::ReturnValue,
+    ];
+    let names = [
+        ("flash.external", "ExternalInterface"),
+        ("", "addCallback"),
+        ("flash.display", "Loader"),
+    ];
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    let mut report = Report {
+        target: Target::Skua,
+        ..Report::default()
+    };
+    assert!(patch_abc(&mut abc, Target::Skua, &mut report).unwrap());
+    let swapped: Vec<_> = report.swapped.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(swapped, ["ExternalInterface", "Loader"]);
+    assert_eq!(report.problem(), None);
+
+    let pool = &abc.constant_pool;
+    let name_of = |op: &Op| match op {
+        Op::GetLex { index } | Op::FindPropStrict { index } | Op::ConstructProp { index, .. } => {
+            let m = &pool.multinames[index.0 as usize - 1];
+            assert!(in_package(pool, m, ""), "{m:?} isn't in the host's package");
+            local_name(pool, m).unwrap().to_string()
+        }
+        other => panic!("{other:?}"),
+    };
+    let patched = ops_of(&abc);
+    assert_eq!(name_of(&patched[0]), HOST_EXTERNAL);
+    assert_eq!(name_of(&patched[4]), HOST_LOADER);
+    assert_eq!(name_of(&patched[5]), HOST_LOADER);
+    // The call itself is unchanged: the host's class has the same static methods.
+    assert_eq!(patched[3], ops[3]);
+}
+
+#[test]
+fn the_game_target_leaves_external_interface_alone() {
+    let ops = [
+        Op::GetLex {
+            index: Index::new(1),
+        },
+        Op::ReturnValue,
+    ];
+    let mut abc = abc_with(
+        &[("flash.external", "ExternalInterface")],
+        &[],
+        &ops,
+        vec![],
+    );
+    let mut report = Report::default();
+    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+}
+
+/// VibeSkua's skua.swf, as bundled (bot/assets).
+#[test]
+fn patches_the_real_skua() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../bot/assets/skua.swf");
+    let input = std::fs::read(path).unwrap();
+    let (output, report) = patch_swf(&input, Target::Skua).unwrap();
+    assert_eq!(report.problem(), None, "{report:#?}");
+    let count = |name: &str| report.swapped.iter().filter(|s| s.name == name).count();
+    // Externalizer's addCallback and call; Main's loadGame, injectScript and backgrounds.
+    assert_eq!(count("ExternalInterface"), 2, "{report:#?}");
+    assert_eq!(count("Loader"), 4, "{report:#?}");
+    assert_eq!(report.dropped.len(), 1, "{report:#?}");
+    let (_, again) = patch_swf(&output, Target::Skua).unwrap();
+    assert!(!again.changed(), "{again:#?}");
 }

@@ -204,6 +204,58 @@ emulator.)
 * Pets, the Book of Lore and char select (through `SwfLoaderPatch`).
 * Today's AIR SDK license terms (Wipro).
 
+## A1: the engine on AIR (started 2026-11-11, before the failing-phone runs)
+
+**As built:**
+* **skua.swf stays unchanged, patched at run time** (`turu_air_patch`, `Target::Skua`): its
+  `ExternalInterface` becomes the host's `TuruExternal` (same static `addCallback` and `call`),
+  each `new Loader()` the host's `TuruLoader`, and its `allowDomain` is dropped (6 swaps, 1 drop,
+  3 ms). No skua-air.swf to build or keep in step with VibeSkua: the "skua-air.swf" section above
+  is superseded. The game's client is patched at run time too (`Target::Game`, as skua loads it),
+  so a game update needs no new APK. Other SWFs (backgrounds, injected scripts) are patched as
+  assets: cleaned, not required to have the AIR mode.
+* **`turu_frontend` builds without Ruffle**: a `ruffle` feature (default on: the desktop and
+  Android builds are unchanged) gates `engine.rs`, `players.rs`, `capture.rs` and the Ruffle host,
+  now `turu/ruffle_host.rs` (re-exported, same paths). Startup flags, tabs, the bot, the API and
+  the monitor are shared. The crate's tests run without Ruffle (93 pass), which they couldn't
+  (`ruffle_core`'s Java build).
+* **`turu_air`** (`air/ane/rust`, `libturu_air.so`): `nativeStart` sets up logging, rustls
+  (`ring`, rustls-platform-verifier over JNI), the data folder (the app's external files folder,
+  as the Ruffle build's) and `turu-args.txt`'s flags, then the API and the monitor; client updates
+  are left out (they install the Ruffle build's APK). `AirFlashHost` sends each call as a status
+  event (`{"id","name","args"}`) and waits up to 20 s for `nativeReply`; a call from AIR's own
+  thread is refused. `nativeFlashCall` hands skua's calls to `Bot::on_flash_call`. `nativePatch`
+  patches over JNI and refuses a client without its AIR mode. `loaded_swf` (Grabber's map items,
+  the map pads) isn't there yet: `None`.
+* **The extension** (`air/ane`): Kotlin functions `startEngine`, `flashCall`, `reply`,
+  `patchSwf` (ByteArray in and out), the service; rustls-platform-verifier's Kotlin part comes
+  from the Ruffle build's module (`android/rustls-platform-verifier`, which now resolves its paths
+  from its own folder so another Gradle build can include it). The extension is 7.3 MB, the APK
+  39 MB (arm64).
+* **The host** (`air/spike/src`): `TuruAirHost` starts the service and the engine, loads the
+  patched skua.swf into a child domain at the stage's bottom (skua swaps itself for the game),
+  keeps its log strip on top. `TuruExternal` answers the engine's calls with `ExternalInterface`'s
+  stringification (as the Ruffle host's `from_external`). `TuruLoader` fetches, patches,
+  `loadBytes` with `allowCodeImport`, and sets the client's `params` (`sFilePath`, `isWeb`) on
+  `init`, before skua's `complete` puts it on the stage.
+
+**Checked on the emulator (2026-11-11):** skua.swf patched and loaded, `Externalizer::init done.`
+reached the bot, `requestLoadGame` -> `loadClient` -> the live client fetched, patched (277 ms) and
+loaded, `Game client loaded`. Logged in by hand; `/status` (`--api`) read the game (map, cell,
+level, HP). `AirSmokeTest.ts` (`air/spike`) loaded and started through the API: read the player,
+`bot.map.join("yulgar")`, then logged map, cell, HP and gold every 3 s. Pause held it, Resume went
+on, Stop ended it within a second. `/relogin`: "Relogin by IP successful" in 7 s, back on the same
+server.
+
+A trap for testing: a folder `adb` creates in the app's data folder (`files/scripts` pushed
+before the app made it) is invisible to the app (Android's storage layer goes by the creator),
+so its scripts aren't found and Search Scripts can't write there. Let the app create its folders
+(a first start does), then push into them.
+
+**Left for A1:** 6 hours screen-off on a phone (the "done when"); `loaded_swf`; Stop/Pause in the
+notification (the API does it now); scripts without adb (Search Scripts in the UI is A2); an
+in-game bench on a phone.
+
 ## Why consider it: what Ruffle costs on Android
 
 From `docs/ANDROID.md` and the crash reports so far:

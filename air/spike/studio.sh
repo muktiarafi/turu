@@ -29,7 +29,7 @@ open(p, "w").write(s)
 EOF
 rm -rf "$out/studio"
 "$AIR_HOME/bin/adt" -package -target android-studio "$out/studio" "$out/app.xml" \
-  -extdir "$out/ext" -C "$out" TuruAirHost.swf Game-air.swf -platformsdk "$ANDROID_HOME"
+  -extdir "$out/ext" -C "$out" TuruAirHost.swf skua.swf -platformsdk "$ANDROID_HOME"
 
 # The LAUNCHER category moves from AIR's activity to TuruLauncher.
 python3 - "$out/studio/app/src/main/AndroidManifest.xml" <<'EOF'

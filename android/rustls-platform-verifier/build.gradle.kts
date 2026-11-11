@@ -11,7 +11,9 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
-val upstreamDir = rootDir.resolve("vendor/rustls-platform-verifier")
+// From this module's folder, not the root's: the AIR extension's build (air/ane/android) includes
+// this module too.
+val upstreamDir = projectDir.resolve("../vendor/rustls-platform-verifier").normalize()
 val upstreamSources = upstreamDir.resolve("android/rustls-platform-verifier/src/main")
 
 android {
@@ -54,10 +56,10 @@ kotlin {
 
 val checkCargoLockVersion by tasks.registering {
     val crateName = "rustls-platform-verifier-android"
-    // The workspace's lock file, one folder up.
-    val lockFile = rootDir.resolve("../Cargo.lock")
+    // The workspace's lock file, two folders up.
+    val lockFile = projectDir.resolve("../../Cargo.lock").normalize()
     val crateManifest = upstreamDir.resolve("android-release-support/Cargo.toml")
-    val submodulePath = upstreamDir.relativeTo(rootDir)
+    val submodulePath = upstreamDir.relativeTo(projectDir.parentFile)
     inputs.file(lockFile)
     // Not `inputs.file`, so that a missing submodule gets the error message below.
     inputs.files(crateManifest)

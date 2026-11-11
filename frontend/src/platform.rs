@@ -134,7 +134,11 @@ pub trait Platform: Send + Sync {
     /// Options > Application, and saves the choice where the frontend reads it at start (the
     /// desktop: Mugetsu's `mugetsu-interpolation.txt`, also set by the game's right-click menu).
     fn set_frame_interpolation(&self, on: bool) {
+        #[cfg(feature = "ruffle")]
         ruffle_core::frame_interpolation::set_enabled(on);
+        // Ruffle's only: other clients draw the game themselves.
+        #[cfg(not(feature = "ruffle"))]
+        let _ = on;
     }
 
     /// Whether Safe Drawing ([`SAFE_DRAWING`]) is saved on for the next start, or None where

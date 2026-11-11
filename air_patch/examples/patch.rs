@@ -1,16 +1,24 @@
-//! Patches a client SWF for AIR and lists what changed:
-//! `cargo run -p turu_air_patch --example patch -- Game.swf Game-air.swf`.
+//! Patches a SWF for AIR and lists what changed:
+//! `cargo run -p turu_air_patch --example patch -- [--skua] Game.swf Game-air.swf` (`--skua` for
+//! VibeSkua's skua.swf, else AQW's client).
 
-use turu_air_patch::patch_swf;
+use turu_air_patch::{Target, patch_swf};
 
 fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let target = match args.iter().position(|a| a == "--skua") {
+        Some(i) => {
+            args.remove(i);
+            Target::Skua
+        }
+        None => Target::Game,
+    };
     let [input, output] = &args[..] else {
-        anyhow::bail!("usage: patch <in.swf> <out.swf>");
+        anyhow::bail!("usage: patch [--skua] <in.swf> <out.swf>");
     };
     let bytes = std::fs::read(input)?;
     let started = std::time::Instant::now();
-    let (patched, report) = patch_swf(&bytes)?;
+    let (patched, report) = patch_swf(&bytes, target)?;
     let took = started.elapsed();
     std::fs::write(output, &patched)?;
     for (what, sites) in [("swap", &report.swapped), ("drop", &report.dropped)] {
@@ -30,9 +38,9 @@ fn main() -> anyhow::Result<()> {
         bytes.len(),
         patched.len()
     );
-    match report.game_problem() {
-        Some(problem) => println!("not runnable as a game client: {problem}"),
-        None => println!("looks runnable as a game client"),
+    match report.problem() {
+        Some(problem) => println!("not runnable under AIR ({target:?}): {problem}"),
+        None => println!("looks runnable under AIR ({target:?})"),
     }
     Ok(())
 }

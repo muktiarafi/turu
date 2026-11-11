@@ -1,23 +1,28 @@
-//! AQW's client under Adobe AIR (docs/AIR_PROPOSAL.md).
+//! AQW's client and Turu's host SWF under Adobe AIR (docs/AIR_PROPOSAL.md).
 //!
-//! AQW's client has an AIR mode of its own (Artix's mobile app): `types.AirLoader`, a `Loader`
-//! that in AIR's application sandbox fetches a SWF's bytes, patches them (`SwfLoaderPatch`: each
-//! `new Loader()` in them becomes `new AirLoader()`) and loads them with `loadBytes` and
-//! `allowCodeImport`, so maps and assets share code with the game. The client builds most of its
-//! loaders as `AirLoader`s, and its `Security.allowDomain` call sits in a try/catch. Its server
-//! paths come from the host's `params.sFilePath`. A host such as skua-air.swf that loads the
-//! client with `loadBytes` therefore needs little more than this crate's two rules:
+//! AIR runs Turu's host in its application sandbox, which loads the SWFs below with `loadBytes`
+//! and `allowCodeImport` (so they share code with it) after this crate has rewritten their AS3
+//! bytecode. Two targets:
 //!
-//! * The client's remaining `new Loader()` (pets, mail images, the map popup's news, ...) become
-//!   `new AirLoader()`, as `SwfLoaderPatch` does to the SWFs it loads. A plain `Loader` would put a
-//!   web SWF in a remote sandbox, where the game can't read its classes (a pet's, for one).
-//! * `Security.allowDomain` and `allowInsecureDomain` calls are dropped (their arguments popped,
-//!   `undefined` pushed where the result is used): they throw in the application sandbox (#3207),
-//!   and the ones outside a try/catch would stop the code that makes them.
+//! * [`Target::Game`], AQW's client. It has an AIR mode of its own (Artix's mobile app):
+//!   `types.AirLoader`, a `Loader` that in AIR's application sandbox fetches a SWF's bytes,
+//!   patches them (`SwfLoaderPatch`: each `new Loader()` in them becomes `new AirLoader()`) and
+//!   loads them with `loadBytes`, so maps and assets share code with the game. The client builds
+//!   most of its loaders as `AirLoader`s; its remaining `new Loader()` (pets, mail images, the map
+//!   popup's news, ...) become `new AirLoader()` here, as `SwfLoaderPatch` does to the SWFs it
+//!   loads. Its server paths come from the host's `params.sFilePath`.
+//! * [`Target::Skua`], VibeSkua's `skua.swf`, unchanged otherwise: `ExternalInterface` (which
+//!   AIR on Android doesn't have) becomes the host's `TuruExternal` (same `addCallback` and
+//!   `call`, through Turu's native extension), and each `new Loader()` the host's `TuruLoader`
+//!   (fetches the bytes, patches the game, `loadBytes`).
 //!
-//! The rules match instructions, not method names or code shapes, so a client update that moves
-//! code around is still patched. [`Report`] lists what changed, and [`Report::game_problem`] says
-//! whether the result still has what AIR mode needs.
+//! For both, `Security.allowDomain` and `allowInsecureDomain` calls are dropped (their arguments
+//! popped, `undefined` pushed where the result is used): they throw in the application sandbox
+//! (#3207), and the ones outside a try/catch would stop the code that makes them.
+//!
+//! The rules match instructions, not method names or code shapes, so an update that moves code
+//! around is still patched. [`Report`] lists what changed, and [`Report::problem`] says whether
+//! the result still has what AIR mode needs.
 
 use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet};
@@ -33,6 +38,21 @@ const TAG_END: u16 = 0;
 const TAG_DO_ABC: u16 = 72;
 const TAG_DO_ABC2: u16 = 82;
 
+/// The host's classes that skua's `Loader` and `ExternalInterface` become (package `""`).
+pub const HOST_LOADER: &str = "TuruLoader";
+pub const HOST_EXTERNAL: &str = "TuruExternal";
+
+/// Which SWF is being patched: what its loaders become, and what it must have.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Target {
+    /// AQW's client (or a SWF it loads): `new Loader()` becomes its own `types.AirLoader`.
+    #[default]
+    Game,
+    /// `skua.swf`: `new Loader()` becomes [`HOST_LOADER`], `ExternalInterface`
+    /// [`HOST_EXTERNAL`].
+    Skua,
+}
+
 /// One patched instruction: the method it's in and the property it names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Site {
@@ -43,11 +63,13 @@ pub struct Site {
 /// What [`patch_swf`] found and changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Report {
+    pub target: Target,
     /// ABC blocks (DoAbc tags) read.
     pub abc_blocks: usize,
     /// Whether the client has its AIR loader (`AirLoader` and `SwfLoaderPatch`).
     pub has_air_loader: bool,
-    /// `new Loader()` made `new AirLoader()`.
+    /// `new Loader()` made the target's loader ("Loader"), and `ExternalInterface` made
+    /// [`HOST_EXTERNAL`] ("ExternalInterface").
     pub swapped: Vec<Site>,
     /// `allowDomain`/`allowInsecureDomain` calls dropped.
     pub dropped: Vec<Site>,
@@ -60,34 +82,42 @@ impl Report {
         !self.swapped.is_empty() || !self.dropped.is_empty()
     }
 
-    /// Why the patched client wouldn't run under AIR, or `None` if it should.
-    pub fn game_problem(&self) -> Option<String> {
-        if !self.has_air_loader {
-            return Some("the client has no AirLoader/SwfLoaderPatch (its AIR mode)".into());
-        }
+    /// Why the patched SWF wouldn't run under AIR, or `None` if it should.
+    pub fn problem(&self) -> Option<String> {
         if !self.undecodable.is_empty() {
             return Some(format!(
                 "{} methods couldn't be read",
                 self.undecodable.len()
             ));
         }
-        None
+        match self.target {
+            Target::Game if !self.has_air_loader => {
+                Some("the client has no AirLoader/SwfLoaderPatch (its AIR mode)".into())
+            }
+            Target::Skua if !self.swapped.iter().any(|s| s.name == "ExternalInterface") => {
+                Some("no ExternalInterface found to route through the extension".into())
+            }
+            _ => None,
+        }
     }
 }
 
-/// Patches a SWF (compressed or not). Returns the patched SWF, zlib-compressed, or the input
-/// unchanged when nothing needed patching, with what was done.
-pub fn patch_swf(input: &[u8]) -> Result<(Vec<u8>, Report)> {
+/// Patches a SWF (compressed or not) for `target`. Returns the patched SWF, zlib-compressed, or
+/// the input unchanged when nothing needed patching, with what was done.
+pub fn patch_swf(input: &[u8], target: Target) -> Result<(Vec<u8>, Report)> {
     let buf = swf::decompress_swf(input).context("not a SWF")?;
     let data = &buf.data;
-    let mut report = Report::default();
+    let mut report = Report {
+        target,
+        ..Report::default()
+    };
     let mut tags = Vec::with_capacity(data.len() + 4096);
     let mut pos = 0;
     while pos < data.len() {
         let (code, body_start, end) = tag_bounds(data, pos)?;
         let body = &data[body_start..end];
         let patched = match code {
-            TAG_DO_ABC => patch_abc_bytes(body, &mut report)?,
+            TAG_DO_ABC => patch_abc_bytes(body, target, &mut report)?,
             TAG_DO_ABC2 => {
                 // Flags (u32), then a null-terminated name, then the ABC.
                 let name_end = body
@@ -95,7 +125,7 @@ pub fn patch_swf(input: &[u8]) -> Result<(Vec<u8>, Report)> {
                     .and_then(|rest| rest.iter().position(|&b| b == 0))
                     .context("DoAbc2 tag without a name")?;
                 let abc_start = 4 + name_end + 1;
-                patch_abc_bytes(&body[abc_start..], &mut report)?
+                patch_abc_bytes(&body[abc_start..], target, &mut report)?
                     .map(|abc| [&body[..abc_start], &abc[..]].concat())
             }
             _ => None,
@@ -148,10 +178,10 @@ fn write_tag(out: &mut Vec<u8>, code: u16, body: &[u8]) {
 }
 
 /// Patches one ABC block: `Some(bytes)` if anything changed.
-fn patch_abc_bytes(bytes: &[u8], report: &mut Report) -> Result<Option<Vec<u8>>> {
+fn patch_abc_bytes(bytes: &[u8], target: Target, report: &mut Report) -> Result<Option<Vec<u8>>> {
     let mut abc = Reader::new(bytes).read().context("reading ABC")?;
     report.abc_blocks += 1;
-    if !patch_abc(&mut abc, report)? {
+    if !patch_abc(&mut abc, target, report)? {
         return Ok(None);
     }
     let mut out = Vec::with_capacity(bytes.len() + 1024);
@@ -159,8 +189,8 @@ fn patch_abc_bytes(bytes: &[u8], report: &mut Report) -> Result<Option<Vec<u8>>>
     Ok(Some(out))
 }
 
-/// Patches an ABC block in place. True if anything changed.
-pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
+/// Patches an ABC block in place for `target`. True if anything changed.
+pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Result<bool> {
     let pool = &abc.constant_pool;
     let class_named = |wanted: &str| {
         abc.instances
@@ -178,8 +208,10 @@ pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
         report.has_air_loader = true;
     }
 
-    // Multinames for flash.display's Loader, and for the calls to drop.
+    // Multinames for flash.display's Loader, flash.external's ExternalInterface, and the calls
+    // to drop.
     let mut loaders = HashSet::new();
+    let mut externals = HashSet::new();
     let mut drops = HashMap::new();
     for (i, multiname) in pool.multinames.iter().enumerate() {
         let index = i as u32 + 1;
@@ -187,14 +219,24 @@ pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
             Some("Loader") if in_package(pool, multiname, "flash.display") => {
                 loaders.insert(index);
             }
+            Some("ExternalInterface") if in_package(pool, multiname, "flash.external") => {
+                externals.insert(index);
+            }
             Some(name @ ("allowDomain" | "allowInsecureDomain")) => {
                 drops.insert(index, name.to_string());
             }
             _ => {}
         }
     }
-    let air_loader = air_loader.filter(|_| !loaders.is_empty());
-    if air_loader.is_none() && drops.is_empty() {
+    // What `new Loader()` and `ExternalInterface` become.
+    let (loader, external) = match target {
+        Target::Game => (air_loader.filter(|_| !loaders.is_empty()), None),
+        Target::Skua => (
+            (!loaders.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", HOST_LOADER)),
+            (!externals.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", HOST_EXTERNAL)),
+        ),
+    };
+    if loader.is_none() && external.is_none() && drops.is_empty() {
         return Ok(false);
     }
 
@@ -211,7 +253,7 @@ pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
         };
         // `findpropstrict Loader; constructprop Loader, 0` pairs, by the constructprop's index.
         let mut swaps = HashSet::new();
-        if air_loader.is_some() {
+        if loader.is_some() {
             for (i, pair) in ops.windows(2).enumerate() {
                 if let [
                     Decoded {
@@ -235,18 +277,36 @@ pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
                 }
             }
         }
-        let mut swapped = 0;
+        let mut swapped = Vec::new();
         let mut dropped = Vec::new();
         let code = relink(body.code.len(), &ops, &mut body.exceptions, |i, op| {
             if swaps.contains(&i) {
-                let index = air_loader?;
+                let index = loader?;
                 return Some(vec![match *op {
                     Op::FindPropStrict { .. } => Op::FindPropStrict { index },
                     _ => {
-                        swapped += 1;
+                        swapped.push("Loader");
                         Op::ConstructProp { index, num_args: 0 }
                     }
                 }]);
+            }
+            if let Some(index) = external {
+                let replaced = match *op {
+                    Op::GetLex { index: from } if externals.contains(&from.0) => {
+                        Some(Op::GetLex { index })
+                    }
+                    Op::FindPropStrict { index: from } if externals.contains(&from.0) => {
+                        Some(Op::FindPropStrict { index })
+                    }
+                    Op::FindProperty { index: from } if externals.contains(&from.0) => {
+                        Some(Op::FindProperty { index })
+                    }
+                    _ => None,
+                };
+                if let Some(op) = replaced {
+                    swapped.push("ExternalInterface");
+                    return Some(vec![op]);
+                }
             }
             let (index, num_args, void) = match *op {
                 Op::CallPropVoid { index, num_args } => (index, num_args, true),
@@ -270,10 +330,10 @@ pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
             // Room for the `undefined` pushed after a dropped call that had no arguments.
             body.max_stack += 1;
         }
-        for _ in 0..swapped {
+        for name in swapped {
             report.swapped.push(Site {
                 method: method.clone(),
-                name: "Loader".into(),
+                name: name.into(),
             });
         }
         for name in dropped {
@@ -285,6 +345,41 @@ pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
         changed = true;
     }
     Ok(changed)
+}
+
+/// `QName(PackageNamespace(package), name)` in the pool (added, with its strings and
+/// namespace, where missing).
+fn add_qname(pool: &mut ConstantPool, package: &str, name: &str) -> Index<Multiname> {
+    let package = add_string(pool, package);
+    let namespace = Namespace::Package(package);
+    let namespace = match pool.namespaces.iter().position(|ns| *ns == namespace) {
+        Some(i) => i as u32 + 1,
+        None => {
+            pool.namespaces.push(namespace);
+            pool.namespaces.len() as u32
+        }
+    };
+    let qname = Multiname::QName {
+        namespace: Index::new(namespace),
+        name: add_string(pool, name),
+    };
+    match pool.multinames.iter().position(|m| *m == qname) {
+        Some(i) => Index::new(i as u32 + 1),
+        None => {
+            pool.multinames.push(qname);
+            Index::new(pool.multinames.len() as u32)
+        }
+    }
+}
+
+fn add_string(pool: &mut ConstantPool, value: &str) -> Index<String> {
+    match pool.strings.iter().position(|s| s == value.as_bytes()) {
+        Some(i) => Index::new(i as u32 + 1),
+        None => {
+            pool.strings.push(value.as_bytes().to_vec());
+            Index::new(pool.strings.len() as u32)
+        }
+    }
 }
 
 fn string(pool: &ConstantPool, index: Index<String>) -> Option<&str> {

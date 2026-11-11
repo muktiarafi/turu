@@ -1,12 +1,12 @@
 package com.muktiarafi.turu.air
 
-import android.util.Log
+import android.content.Context
 import com.adobe.fre.FREContext
 
 /**
- * Turu's Rust library (`libturu_air.so`, crate `turu_air`) and the way back from it to AS3.
- * Rust calls [dispatch] from its own thread to send AIR a status event; AS3 answers through the
- * extension's `reply`, which lands in [nativeReply].
+ * Turu's engine (`libturu_air.so`, crate `turu_air`) and the way back from it to AS3. The engine
+ * calls the game by asking [dispatch] (from its own threads) to send AIR a status event; AS3
+ * answers through the extension's `reply`, which lands in [nativeReply].
  */
 object Bridge {
     init {
@@ -17,23 +17,24 @@ object Bridge {
     @Volatile
     var context: FREContext? = null
 
-    /** Times `calls` round trips Rust -> AS3 -> Rust; the summary comes as a "done" event. */
+    /** Starts the engine (once per process) with `filesDir` as its data folder. */
     @JvmStatic
-    external fun nativeBench(calls: Int)
+    external fun nativeStart(context: Context, filesDir: String)
 
-    /** AS3's answer to call `id`. */
+    /** skua.swf's `ExternalInterface.call(name, ...)`, its arguments as a JSON array. */
     @JvmStatic
-    external fun nativeReply(id: Int, value: String)
+    external fun nativeFlashCall(name: String, args: String)
+
+    /** AS3's answer to call `id`, and how long the callback took. */
+    @JvmStatic
+    external fun nativeReply(id: Long, value: String, runMicros: Int)
+
+    /** The SWF rewritten for AIR (target 0: the game's client, 1: skua.swf, 2: another SWF); null if it can't run there. */
+    @JvmStatic
+    external fun nativePatch(swf: ByteArray, target: Int): ByteArray?
 
     @JvmStatic
     fun dispatch(code: String, level: String) {
-        if (code == "done") {
-            Log.i("TuruAir", "bench: $level")
-        }
         context?.dispatchStatusEventAsync(code, level)
     }
-
-    /** A plain JNI call from Rust, to time against the round trips. */
-    @JvmStatic
-    fun echo(value: Int): Int = value
 }

@@ -7320,7 +7320,18 @@ dependencies = [
 name = "turu_air"
 version = "0.2.0"
 dependencies = [
+ "android_logger",
  "jni 0.22.4",
+ "log",
+ "reqwest",
+ "rquickjs",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde_json",
+ "tracing",
+ "turu_air_patch",
+ "turu_bot",
+ "turu_frontend",
 ]
 
 [[package]]

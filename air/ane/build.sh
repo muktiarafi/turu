@@ -11,16 +11,26 @@ export AIR_HOME ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 out=target/air-ane
 rm -rf "$out" && mkdir -p "$out/classes" "$out/Android-ARM64" "$out/default"
 
-# Kotlin: the library's classes plus the Kotlin standard library, in the one jar AIR takes.
+# Kotlin: the library's classes, rustls-platform-verifier's Kotlin part and the Kotlin standard
+# library, in the one jar AIR takes.
 android/gradlew -q -p air/ane/android assembleRelease aneLibs
 unzip -qo -p air/ane/android/build/outputs/aar/*-release.aar classes.jar > "$out/library-classes.jar"
-for jar in "$out/library-classes.jar" air/ane/android/build/ane-libs/*.jar; do
-  unzip -qo "$jar" -d "$out/classes" -x 'META-INF/MANIFEST.MF' 'META-INF/versions/*' 'module-info.class'
+unzip -qo -p android/rustls-platform-verifier/build/outputs/aar/*-release.aar classes.jar > "$out/verifier-classes.jar"
+for jar in "$out/library-classes.jar" "$out/verifier-classes.jar" air/ane/android/build/ane-libs/*.jar; do
+  unzip -qo "$jar" -d "$out/classes" -x 'META-INF/MANIFEST.MF' 'META-INF/versions/*' 'module-info.class' 2>/dev/null || true
 done
 "$AIR_JAVA_HOME/bin/jar" cf "$out/Android-ARM64/turu-air.jar" -C "$out/classes" .
 
-# Rust: libturu_air.so, which AIR packs from the platform's libs/<abi>.
-cargo ndk -t arm64-v8a -o "$out/jni" build -q --release -p turu_air
+# Rust: libturu_air.so, which AIR packs from the platform's libs/<abi>. rquickjs generates its
+# QuickJS bindings with bindgen: libclang (macOS: the Command Line Tools' unless LIBCLANG_PATH says
+# otherwise) and the NDK's headers, as the Ruffle build's `cargoNdk` task sets up.
+ndk=${ANDROID_NDK_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}
+case "$(uname)" in Darwin) host=darwin-x86_64 ;; *) host=linux-x86_64 ;; esac
+export ANDROID_NDK_HOME="$ndk" BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$ndk/toolchains/llvm/prebuilt/$host/sysroot"
+if [ "$host" = darwin-x86_64 ] && [ -z "${LIBCLANG_PATH:-}" ]; then
+  export LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib
+fi
+cargo ndk --platform 26 -t arm64-v8a -o "$out/jni" build -q --release -p turu_air
 mkdir -p "$out/Android-ARM64/libs/arm64-v8a"
 cp "$out/jni/arm64-v8a/libturu_air.so" "$out/Android-ARM64/libs/arm64-v8a/"
 

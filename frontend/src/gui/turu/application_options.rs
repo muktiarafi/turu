@@ -588,7 +588,10 @@ impl ApplicationOptionsWindow {
                                         }
                                     }
                                     Field::FrameInterpolation => {
+                                        #[cfg(feature = "ruffle")]
                                         let mut on = ruffle_core::frame_interpolation::enabled();
+                                        #[cfg(not(feature = "ruffle"))]
+                                        let mut on = false;
                                         if widgets::switch(ui, &mut on).changed() {
                                             crate::platform::platform().set_frame_interpolation(on);
                                         }

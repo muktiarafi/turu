@@ -4,8 +4,10 @@
 //!
 //! See docs/ARCHITECTURE.md.
 
+#[cfg(feature = "ruffle")]
 pub mod capture;
 pub mod crash_reports;
+#[cfg(feature = "ruffle")]
 pub mod engine;
 pub mod grid;
 pub mod gui;
@@ -13,6 +15,7 @@ pub mod map_items;
 pub mod map_pads;
 pub mod pacing;
 pub mod platform;
+#[cfg(feature = "ruffle")]
 pub mod players;
 pub mod process_memory;
 pub mod touch;

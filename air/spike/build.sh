@@ -1,6 +1,7 @@
 #!/bin/bash
-# Spike A0 (docs/AIR_PROPOSAL.md): builds an AIR APK that loads AQW's live client, patched by
-# turu_air_patch, and installs it on the connected device (adb). Needs:
+# Turu under Adobe AIR (docs/AIR_PROPOSAL.md): builds the APK (the host SWF, VibeSkua's
+# skua.swf, Turu's native extension with the engine) and installs it on the connected device
+# (adb). The engine patches skua.swf, and the live client as skua loads it, at run time. Needs:
 #   AIR_HOME      the AIR SDK (51.5+)
 #   AIR_JAVA_HOME a JDK 17 (AIR's Gradle doesn't run on newer ones)
 #   ANDROID_HOME  the Android SDK (default ~/Library/Android/sdk)
@@ -13,23 +14,20 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 out=target/air-spike
 mkdir -p "$out"
 
-# The live client, patched.
-sfile=$(curl -sf https://game.aq.com/game/api/data/gameversion | sed -E 's/.*"sFile":"([^"]+)".*/\1/')
-echo "client: $sfile"
-[ -f "$out/$sfile" ] || curl -sfo "$out/$sfile" "https://game.aq.com/game/gamefiles/$sfile"
-cargo run -q --release -p turu_air_patch --example patch -- "$out/$sfile" "$out/Game-air.swf" | tail -2
+# skua.swf as the Ruffle build bundles it.
+cp bot/assets/skua.swf "$out/skua.swf"
 
 # The native extension, the host, and the APK (JDK 17 from here on).
 air/ane/build.sh
 mkdir -p "$out/ext" && cp target/air-ane/com.muktiarafi.turu.air.ane "$out/ext/"
 export JAVA_HOME="$AIR_JAVA_HOME" PATH="$AIR_JAVA_HOME/bin:$PATH"
 "$AIR_HOME/bin/amxmlc" -swf-version=51 -external-library-path+=target/air-ane/TuruAirNative.swc \
-  -output "$out/TuruAirHost.swf" air/spike/src/TuruAirHost.as
+  -source-path+=air/spike/src -output "$out/TuruAirHost.swf" air/spike/src/TuruAirHost.as
 cp air/spike/app.xml "$out/app.xml"
 [ -f "$out/spike.p12" ] || "$AIR_HOME/bin/adt" -certificate -cn TuruAirSpike 2048-RSA "$out/spike.p12" spikepass
 "$AIR_HOME/bin/adt" -package -target apk-captive-runtime -arch armv8 \
   -storetype pkcs12 -keystore "$out/spike.p12" -storepass spikepass \
-  "$out/TuruAirSpike.apk" "$out/app.xml" -extdir "$out/ext" -C "$out" TuruAirHost.swf Game-air.swf
+  "$out/TuruAirSpike.apk" "$out/app.xml" -extdir "$out/ext" -C "$out" TuruAirHost.swf skua.swf
 ls -la "$out/TuruAirSpike.apk"
 if [ "${1:-}" != "--no-install" ]; then
   "$ANDROID_HOME/platform-tools/adb" install -r "$out/TuruAirSpike.apk"
