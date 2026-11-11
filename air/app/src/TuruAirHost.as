@@ -79,7 +79,7 @@ package {
                 say("ERROR: Turu's native extension is missing");
                 return;
             }
-            say("service started: " + native.startService("Turu (AIR)"));
+            say("service started: " + native.startService("Running"));
             TuruExternal.start(native);
             TuruLoader.gameParams = {sFilePath: URL + "gamefiles/", isWeb: false};
             say("engine started, data folder " + native.startEngine());

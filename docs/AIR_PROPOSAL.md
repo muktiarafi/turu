@@ -95,7 +95,7 @@ $799 a year up to $500 k
 ([PDF](https://airsdk.harman.com/assets/pdfs/Adobe%20AIR%20-%20Updated%20Pricing.pdf)). Read
 today's terms by hand before going further.
 
-**Under AIR (2026-11-09, emulator, Android 16 arm64, AIR SDK 51.5.1):** `air/spike/` is a bare
+**Under AIR (2026-11-09, emulator, Android 16 arm64, AIR SDK 51.5.1):** `air/spike/` (now `air/app/`) is a bare
 host (`TuruAirHost.as`, `app.xml`, `build.sh`). It loads the live client, patched by
 `turu_air_patch` and bundled as `app:/Game-air.swf`, with `loadBytes` and `allowCodeImport` into
 a child `ApplicationDomain`. `params` (with `sFilePath`) are set before the game reaches the
@@ -182,7 +182,7 @@ emulator.)
 * `adt -target android-studio` exports a plain Gradle project instead (AGP 8.9.1, Gradle 8.13;
   AIR's runtime as `AppEntry.jar`, `runtimeClasses.jar` and `jniLibs/<abi>/libCore.so`; our
   extension's jar and `libturu_air.so`; the SWFs as assets). Its manifest is ours to edit.
-  `air/spike/studio.sh` declares `TuruLauncher` (in the extension, Kotlin) with `MAIN`, exports,
+  `air/spike/studio.sh` (removed in A3, which chose two apps: see git history) declared `TuruLauncher` (in the extension, Kotlin) with `MAIN`, exports,
   moves the `LAUNCHER` category from `AIRAppEntry` to `TuruLauncher`, and builds with Gradle.
   On the emulator the launcher starts AIR's activity, and the game, the service and the bridge
   run as in the ADT build (1,000 round trips, median 1.55 ms).
@@ -232,7 +232,7 @@ emulator.)
   from the Ruffle build's module (`android/rustls-platform-verifier`, which now resolves its paths
   from its own folder so another Gradle build can include it). The extension is 7.3 MB, the APK
   39 MB (arm64).
-* **The host** (`air/spike/src`): `TuruAirHost` starts the service and the engine, loads the
+* **The host** (`air/app/src`): `TuruAirHost` starts the service and the engine, loads the
   patched skua.swf into a child domain at the stage's bottom (skua swaps itself for the game),
   keeps its log strip on top. `TuruExternal` answers the engine's calls with `ExternalInterface`'s
   stringification (as the Ruffle host's `from_external`). `TuruLoader` fetches, patches,
@@ -242,7 +242,7 @@ emulator.)
 **Checked on the emulator (2026-11-11):** skua.swf patched and loaded, `Externalizer::init done.`
 reached the bot, `requestLoadGame` -> `loadClient` -> the live client fetched, patched (277 ms) and
 loaded, `Game client loaded`. Logged in by hand; `/status` (`--api`) read the game (map, cell,
-level, HP). `AirSmokeTest.ts` (`air/spike`) loaded and started through the API: read the player,
+level, HP). `AirSmokeTest.ts` (`air/app`) loaded and started through the API: read the player,
 `bot.map.join("yulgar")`, then logged map, cell, HP and gold every 3 s. Pause held it, Resume went
 on, Stop ended it within a second. `/relogin`: "Relogin by IP successful" in 7 s, back on the same
 server.
@@ -324,6 +324,28 @@ watched from Turu's own windows on the phone.
 
 **Left for A2:** a tap on the game doesn't close an open egui menu (egui only sees the UI's
 touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause.
+
+## A3: Turu AIR, an app of its own (2026-11-11)
+
+Two apps, not one with a switch: **Turu AIR** next to Turu.
+* `air/app/` (was `air/spike/`): `app.xml` names it "Turu AIR", ID `com.muktiarafi.turuair`,
+  version 0.2.0; `build.sh` packages with `AIR_NOANDROIDFLAIR=true`, so the ID is that, not
+  `air.com.muktiarafi.turuair`. Its data folder is `Android/data/com.muktiarafi.turuair/files`,
+  apart from Turu's: settings, accounts and scripts aren't shared.
+* Its look: `turu_frontend`'s `air` feature (on in `turu_air`) makes the accent Adobe AIR-like red
+  (`#E0262D`, hover `#E84C52`, pressed `#BE1C22`) instead of Turu's violet, and the rail's open
+  item a dark red; the rail's logo tile follows the accent. The launcher icon is Turu's symbol in
+  that red (`air/app/icons`, rendered from `turu-air-symbol.svg` with macOS's QuickLook). The
+  danger red (`#EF4444`, Stop, Delete) is close to the accent there; it can move toward orange in
+  Turu AIR if they're taken for each other.
+* The notification's title is the app's name ("Turu AIR").
+* Signing: `AIR_KEYSTORE` and `AIR_KEYSTORE_PASSWORD` (PKCS#12); without them a development key in
+  `target/air-app/`. The one-APK experiment (`studio.sh`, `TuruLauncher`) is gone.
+
+**Left for A3:** the release workflow's job for Turu AIR (the AIR SDK in CI:
+`joshtynjala/setup-adobe-air-action` with `accept-license`, JDK 17, cargo-ndk, the keystore from
+the secrets), a release keystore of its own, Sentry for Turu AIR, docs (docs/ANDROID.md or one of
+its own), and the AIR SDK's license terms read.
 
 ## Why consider it: what Ruffle costs on Android
 

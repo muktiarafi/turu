@@ -192,8 +192,11 @@ fn bar_style(style: &mut Style) {
     w.open.fg_stroke = Stroke::new(1.0, Color32::WHITE);
 }
 
-/// An open menu or popup's button.
+/// An open menu or popup's button: a dark tint of the accent.
+#[cfg(not(feature = "air"))]
 const OPEN: Color32 = Color32::from_rgb(52, 48, 92);
+#[cfg(feature = "air")]
+const OPEN: Color32 = Color32::from_rgb(88, 30, 36);
 
 /// Menu drop-downs: full-width rows, about 44 points high on a touch screen.
 fn menu_style(style: &mut Style) {
@@ -1361,8 +1364,9 @@ const COMPACT_CHIP_NAME_WIDTH: f32 = 72.0;
 /// Less room than this, and the chip leaves the name out.
 const MIN_NAME_WIDTH: f32 = 28.0;
 
-/// The Turu symbol (`docs/logo/turu-symbol-small.svg`, the cut for small sizes): a violet
-/// tile with two closed eyes, drawn rather than loaded so it stays sharp at any scale.
+/// The Turu symbol (`docs/logo/turu-symbol-small.svg`, the cut for small sizes): a tile in the
+/// accent (violet; red in Turu AIR) with two closed eyes, drawn rather than loaded so it stays
+/// sharp at any scale.
 const SYMBOL_SIZE: f32 = 18.0;
 /// Between the symbol and the first menu.
 const SYMBOL_GAP: f32 = 6.0;

@@ -39,7 +39,7 @@ class TuruAirService : Service() {
     private fun notification(text: String): Notification {
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "Turu", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, appName(), NotificationManager.IMPORTANCE_LOW)
             )
             Notification.Builder(this, CHANNEL)
         } else {
@@ -51,11 +51,14 @@ class TuruAirService : Service() {
         }
         return builder
             .setSmallIcon(applicationInfo.icon)
-            .setContentTitle("Turu")
+            .setContentTitle(appName())
             .setContentText(text)
             .setOngoing(true)
             .build()
     }
+
+    /** The app's name, as the launcher shows it ("Turu AIR"). */
+    private fun appName(): String = applicationInfo.loadLabel(packageManager).toString()
 
     override fun onDestroy() {
         wakeLock?.takeIf { it.isHeld }?.release()

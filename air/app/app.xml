@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <application xmlns="http://ns.adobe.com/air/application/51.5">
-  <id>com.muktiarafi.turu.airspike</id>
-  <versionNumber>0.0.1</versionNumber>
-  <filename>TuruAirSpike</filename>
-  <name>Turu AIR Spike</name>
+  <!-- Its own app, next to Turu (com.muktiarafi.turu): built without AIR's "air." prefix
+       (AIR_NOANDROIDFLAIR, build.sh). -->
+  <id>com.muktiarafi.turuair</id>
+  <versionNumber>0.2.0</versionNumber>
+  <versionLabel>0.2.0</versionLabel>
+  <filename>TuruAir</filename>
+  <name>Turu AIR</name>
   <initialWindow>
     <content>TuruAirHost.swf</content>
     <aspectRatio>landscape</aspectRatio>
@@ -12,6 +15,16 @@
     <fullScreen>true</fullScreen>
     <softKeyboardBehavior>none</softKeyboardBehavior>
   </initialWindow>
+  <!-- Turu's symbol in red (icons/turu-air-symbol.svg). -->
+  <icon>
+    <image36x36>icons/icon-36.png</image36x36>
+    <image48x48>icons/icon-48.png</image48x48>
+    <image72x72>icons/icon-72.png</image72x72>
+    <image96x96>icons/icon-96.png</image96x96>
+    <image144x144>icons/icon-144.png</image144x144>
+    <image192x192>icons/icon-192.png</image192x192>
+    <image512x512>icons/icon-512.png</image512x512>
+  </icon>
   <android>
     <manifestAdditions><![CDATA[<manifest>
 <uses-permission android:name="android.permission.INTERNET"/>
