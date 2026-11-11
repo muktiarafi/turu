@@ -19,6 +19,8 @@ mod crash_uploads;
 #[cfg(target_os = "android")]
 mod host;
 #[cfg(target_os = "android")]
+mod notify;
+#[cfg(target_os = "android")]
 mod overlay;
 #[cfg(target_os = "android")]
 mod platform;

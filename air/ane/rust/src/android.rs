@@ -309,6 +309,8 @@ fn engine(root: &Path) {
     // At start and every 6 hours (Options > Application): a newer Turu Mas shows Update in the
     // bar, whose button downloads its APK for Android to install.
     turu::start_client_updates();
+    // The notification's state and buttons (`TuruAirService`).
+    crate::notify::start_updates();
 }
 
 fn read_args(file: &Path) -> Vec<OsString> {

@@ -81,6 +81,16 @@ object Bridge {
     @JvmStatic
     external fun nativeGameTyping(json: String)
 
+    /** The notification's buttons: "start", "pause" (or resume) and "stop" ([TuruAirService]). */
+    @JvmStatic
+    external fun nativeAction(action: String)
+
+    /** The script's state for the notification, every 2 s when it changed (`notify.rs`). */
+    @JvmStatic
+    fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean) {
+        TuruAirService.status(title, text, running, paused, startable)
+    }
+
     @JvmStatic
     fun dispatch(code: String, level: String) {
         context?.dispatchStatusEventAsync(code, level)
