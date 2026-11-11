@@ -427,10 +427,18 @@ jobs:
             "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
           cargo install cargo-ndk --version 4.1.2 --locked
           sudo apt-get update
-          sudo apt-get install -y libclang-dev
+          sudo apt-get install -y libclang-dev libc++1
           libclang=$(find /usr/lib/llvm-* -name 'libclang.so*' | sort -V | tail -1)
           echo "LIBCLANG_PATH=$(dirname "$libclang")" | tee -a "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" | tee -a "$GITHUB_ENV"
+          # The AIR SDK's Linux aapt (ADT runs it) loads the SDK's own lib64/libc++.so, which
+          # lacks a symbol it needs ("undefined symbol: ...basic_ostringstream..."; 51.5.1.1).
+          # Ubuntu's libc++ has it: a folder with just a `libc++.so` link to it, first on the
+          # library path, serves aapt and nothing else (no other tool here asks for that name).
+          mkdir -p "$RUNNER_TEMP/libcxx"
+          ln -sf /usr/lib/x86_64-linux-gnu/libc++.so.1 "$RUNNER_TEMP/libcxx/libc++.so"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/libcxx" | tee -a "$GITHUB_ENV"
+          LD_LIBRARY_PATH="$RUNNER_TEMP/libcxx" "$AIR_HOME/lib/android/bin/aapt" version
 
       # Turu Mas's own release key (PKCS#12), from the repository's secrets (docs/TURU_MAS.md). A
       # tag needs it, so every release updates in place; a run by hand without it is signed with
