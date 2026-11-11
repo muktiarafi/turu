@@ -38,6 +38,9 @@ egui-wgpu = { workspace = true }
 wgpu = { workspace = true }
 futures = { workspace = true }
 ndk = "0.9"
+# Crash reports (`crash_uploads.rs`, as the desktop's): over the reqwest above, so its rustls;
+# `debug-images` lists the loaded libraries, for Sentry to match frames to uploaded symbols.
+sentry = { version = "0.49.5", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "reqwest"] }
 # rquickjs ships no QuickJS bindings for Android: generate them (air/ane/build.sh sets up
 # bindgen, as the Ruffle build's `cargoNdk` task does).
 rquickjs = { version = "0.14", features = ["bindgen"] }

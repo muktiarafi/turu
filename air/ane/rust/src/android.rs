@@ -273,6 +273,7 @@ fn start_engine(root: PathBuf) {
     ENGINE.call_once(|| {
         turu_bot::paths::set_default_root(root.clone());
         let _ = CRASH_DIR.set(turu_bot::paths::Paths::new().crash_dir());
+        crate::crash_uploads::start();
         let spawned = std::thread::Builder::new()
             .name("Turu Engine".into())
             .spawn(move || engine(&root));
@@ -354,6 +355,8 @@ fn init_logging() {
                     ),
                 );
             }
+            // Sentry's hook ran before this one; a release build aborts after it.
+            crate::crash_uploads::flush();
         }));
     });
 }

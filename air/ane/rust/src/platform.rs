@@ -70,6 +70,14 @@ impl Platform for AirPlatform {
         false
     }
 
+    fn uploads_crash_reports(&self) -> bool {
+        crate::crash_uploads::available()
+    }
+
+    fn set_crash_uploads(&self, on: bool) {
+        crate::crash_uploads::set_enabled(on);
+    }
+
     fn shares_text(&self) -> bool {
         true
     }
