@@ -1,4 +1,5 @@
-//! Options > Game (VibeSkua's 612x720 window): a searchable list of the bot's options. Changes
+//! Options > Game (VibeSkua's 612x720 window): a searchable list of the bot's options, laid out
+//! as Application Options is (one column of [`widgets::setting_row`]s in section cards). Changes
 //! are written to `bot.options` at once (the engine re-applies them every 250 ms); Save keeps
 //! them in `options.json`.
 
@@ -60,12 +61,12 @@ impl Field {
     fn width(&self) -> f32 {
         match self {
             Field::Bool(_) => 48.0,
-            Field::Int(..) => 100.0,
+            Field::Int(..) => 96.0,
             // The number and its presets' ▾.
-            Field::Fps => 100.0 + 6.0 + widgets::target(24.0, 40.0),
+            Field::Fps => 96.0 + 6.0 + widgets::target(24.0, 40.0),
             Field::ReloadMap => 80.0,
             Field::Server | Field::Priority => 150.0,
-            Field::Text(..) => 210.0,
+            Field::Text(..) => 200.0,
         }
     }
 }
@@ -501,14 +502,11 @@ impl GameOptionsWindow {
             self.save_result = None;
             return;
         }
-        let mut window = super::window(ctx, "Game Options", [800.0, 720.0], 1).open(open);
-        // On a phone a floating window leaves the footer's buttons off screen: it fills the
-        // screen instead.
-        let area = super::window_area(ctx);
-        if widgets::touch() && (area.width() < 700.0 || area.height() < 760.0) {
-            window = window.sheet(ctx);
-        }
-        window.show(ctx, |ui| self.ui(ui));
+        // VibeSkua's size; on a phone a full-screen sheet (`super::window`), so the footer's
+        // buttons stay on screen.
+        super::window(ctx, "Game Options", [612.0, 720.0], 1)
+            .open(open)
+            .show(ctx, |ui| self.ui(ui));
     }
 
     /// Whether the list shows `entry`: the search finds it, and it differs from the saved
@@ -520,7 +518,7 @@ impl GameOptionsWindow {
     fn ui(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
 
-        ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
+        ui.spacing_mut().item_spacing = vec2(6.0, 10.0);
         let mut snapshot = bot.options.read().clone();
         let saved = self.saved_options(&bot);
         let differs = differing(&self.entries, &snapshot, &saved);
@@ -602,33 +600,20 @@ impl GameOptionsWindow {
                                 }
                             })
                         };
-                        // VibeSkua's two columns (a row of two options at a time), one when narrow.
-                        let two_columns = ui.available_width() >= TWO_COLUMNS_WIDTH;
+                        // One column, as Application Options: the controls line up at the right.
                         let mut changed = Vec::new();
                         for (i, run) in rows.chunk_by(|a, b| a.group == b.group).enumerate() {
                             let group = run[0].group;
                             if !group.is_empty() {
                                 if i > 0 {
-                                    ui.add_space(6.0);
+                                    ui.add_space(4.0);
                                 }
                                 ui.label(RichText::new(group).small().strong().color(MUTED));
                             }
-                            if !two_columns {
-                                for entry in run {
-                                    if row(ui, entry, mark(entry), &mut snapshot, &bot) {
-                                        changed.push(entry.label);
-                                    }
+                            for entry in run {
+                                if row(ui, entry, mark(entry), &mut snapshot, &bot) {
+                                    changed.push(entry.label);
                                 }
-                                continue;
-                            }
-                            for pair in run.chunks(2) {
-                                ui.columns(2, |columns| {
-                                    for (column, entry) in columns.iter_mut().zip(pair) {
-                                        if row(column, entry, mark(entry), &mut snapshot, &bot) {
-                                            changed.push(entry.label);
-                                        }
-                                    }
-                                });
                             }
                         }
                         self.edited.extend(changed);
@@ -642,6 +627,7 @@ impl GameOptionsWindow {
             self.confirm = None;
         }
         let top = ui.cursor().top();
+        ui.separator();
         self.footer(ui, &bot, live, saved);
         self.footer_height = Some(ui.min_rect().bottom() - top);
     }
@@ -661,12 +647,8 @@ impl GameOptionsWindow {
             for (section, count) in Section::ALL.into_iter().zip(counts) {
                 let selected = filter == Some(section);
                 // A section with nothing to show stays dimmed (unless it's the one shown).
-                let clicked = ui
-                    .add_enabled_ui(count > 0 || selected, |ui| {
-                        widgets::chip(ui, &format!("{}  {count}", section.chip()), selected)
-                    })
-                    .inner;
-                if clicked {
+                let label = format!("{}  {count}", section.chip());
+                if widgets::chip_enabled(ui, &label, selected, count > 0 || selected) {
                     filter = Some(section);
                 }
             }
@@ -794,7 +776,7 @@ impl GameOptionsWindow {
                 None => ("Changes apply now; Save keeps them for next time.".to_owned(), MUTED),
             },
         };
-        ui.label(RichText::new(text).small().color(color));
+        ui.add(egui::Label::new(RichText::new(text).small().color(color)).wrap());
 
         let size = vec2(80.0, widgets::target(28.0, 40.0));
         ui.horizontal(|ui| match asking {
@@ -1019,14 +1001,6 @@ fn matches(entry: &Entry, needle: &str) -> bool {
                 .any(|word| word.starts_with(needle)))
 }
 
-/// The narrowest a row's label and description get beside its control; narrower, the control
-/// goes under them.
-const MIN_TEXT_WIDTH: f32 = 160.0;
-
-/// From this wide a section shows its options in two columns (VibeSkua's `UniformGrid`); a phone
-/// gets one.
-const TWO_COLUMNS_WIDTH: f32 = 640.0;
-
 /// Why a row differs from `options.json`.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mark {
@@ -1036,9 +1010,10 @@ enum Mark {
     Outside,
 }
 
-/// One option's row: its label and description beside its control, or above it when the row is
-/// too narrow for both (a phone). An option that [requires](Entry::requires) another is indented,
-/// and dimmed while that one is off. Returns whether the control changed the option.
+/// One option's row ([`widgets::setting_row`]): its label, `mark` and description, with its
+/// control at the right (under them on a phone, when they'd be too narrow beside it). An option
+/// that [requires](Entry::requires) another is indented, and dimmed while that one is off.
+/// Returns whether the control changed the option.
 fn row(
     ui: &mut Ui,
     entry: &Entry,
@@ -1047,69 +1022,58 @@ fn row(
     bot: &std::sync::Arc<turu_bot::Bot>,
 ) -> bool {
     let mut changed = false;
-    ui.horizontal(|ui| {
-        if let Some(requires) = entry.requires {
-            ui.add_space(14.0);
-            if !requires(snapshot) {
-                ui.multiply_opacity(0.55);
-            }
+    // Some(whether to dim) for an option that requires another.
+    let dim = entry.requires.map(|requires| !requires(snapshot));
+    let mut draw = |ui: &mut Ui| {
+        widgets::setting_row(
+            ui,
+            |ui| title(ui, entry, mark),
+            entry.description,
+            entry.field.width(),
+            |ui| changed = control(ui, entry, snapshot, bot),
+        );
+    };
+    match dim {
+        Some(dim) => {
+            ui.indent(entry.label, |ui| {
+                if dim {
+                    ui.multiply_opacity(0.55);
+                }
+                draw(ui);
+            });
         }
-        ui.vertical(|ui| {
-            let text_width = ui.available_width() - entry.field.width() - 8.0;
-            if text_width >= MIN_TEXT_WIDTH {
-                ui.horizontal(|ui| {
-                    ui.set_min_height(28.0);
-                    ui.vertical(|ui| {
-                        ui.set_width(text_width);
-                        label(ui, entry, mark);
-                    });
-                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                        changed = control(ui, entry, snapshot, bot);
-                    });
-                });
-            } else {
-                label(ui, entry, mark);
-                ui.horizontal(|ui| {
-                    changed = control(ui, entry, snapshot, bot);
-                });
-            }
-        });
-    });
+        None => draw(ui),
+    }
     changed
 }
 
-/// An option's label and its description under it; `mark`, a tag after the label saying why it
-/// differs from options.json ("Edited" here, or "Changed outside" by something else).
-fn label(ui: &mut Ui, entry: &Entry, mark: Option<Mark>) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(entry.label).color(TEXT));
-        if let Some(mark) = mark {
-            let (text, color, why) = match mark {
-                Mark::Edited => (
-                    "Edited",
-                    ACCENT_HOVER,
-                    "You changed this here: it applies now, Save keeps it, Revert puts it back.",
-                ),
-                Mark::Outside => (
-                    "Changed outside",
-                    WARNING,
-                    "Changed outside this window, most likely by a script: it differs from options.json.",
-                ),
-            };
-            // Outlined on the card, not filled: on the grey pill the accent text would be
-            // under 4:1.
-            egui::Frame::new()
-                .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.6)))
-                .corner_radius(egui::CornerRadius::same(8))
-                .inner_margin(egui::Margin::symmetric(6, 1))
-                .show(ui, |ui| {
-                    ui.label(RichText::new(text).size(widgets::small_label_size()).color(color))
-                })
-                .inner
-                .on_hover_text(why);
-        }
-    });
-    ui.label(RichText::new(entry.description).small().color(MUTED));
+/// An option's label; `mark`, a tag after it saying why it differs from options.json ("Edited"
+/// here, or "Changed outside" by something else).
+fn title(ui: &mut Ui, entry: &Entry, mark: Option<Mark>) {
+    ui.label(RichText::new(entry.label).color(TEXT));
+    let Some(mark) = mark else { return };
+    let (text, color, why) = match mark {
+        Mark::Edited => (
+            "Edited",
+            ACCENT_HOVER,
+            "You changed this here: it applies now, Save keeps it, Revert puts it back.",
+        ),
+        Mark::Outside => (
+            "Changed outside",
+            WARNING,
+            "Changed outside this window, most likely by a script: it differs from options.json.",
+        ),
+    };
+    // Outlined on the card, not filled: on the grey pill the accent text would be under 4:1.
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.6)))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(6, 1))
+        .show(ui, |ui| {
+            ui.label(RichText::new(text).size(widgets::small_label_size()).color(color))
+        })
+        .inner
+        .on_hover_text(why);
 }
 
 /// Set FPS's ceiling: Ruffle runs up to 1000, but past the fastest phone and desktop displays

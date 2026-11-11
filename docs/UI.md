@@ -239,7 +239,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
 * **Message boxes** (`message_box.rs`): what a script shows with `bot.showMessageBox`, as an egui
   modal over the windows (caption, message, the buttons left to right, the last one primary).
   The script waits for the click; Escape or a click outside answers "closed", and Stop closes it.
-* **Game options** (`game_options.rs`, 800x720): search box, chips All/Visuals/Combat/Drops/
+* **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button), each with a one-line
   description under its label (search matches it; VibeSkua's window has none). Search also
@@ -250,8 +250,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   matches). Reload Map is enabled only in game. The descriptions
   say what Turu does: Hunt Buffer, Hunt Priority and Use Function Based Skills say Turu doesn't
   use them yet (their controls are greyed, as Application Options' "coming soon" rows: `UNUSED`),
-  and Safe Timings that only scripts read it. Each section's options sit two to a row
-  (VibeSkua's two columns) from 640 px wide, one per row on a phone. Edits are written to
+  and Safe Timings that only scripts read it. Options sit one per row, as in Application
+  Options (`widgets::setting_row`, shared by both): label and description on the left, the
+  control at the right edge, centred on them; when the text would be narrower than 150 px beside
+  it (a phone, Set FPS), the control goes under the text, still at the right. Edits are written to
   `bot.options` at once. Footer: a status line (unsaved changes, "Saved.", or Save's error), then
   Defaults / Revert (VibeSkua's Reset: reload `options.json`) / Save. The window remembers which
   options it changed since the last Save or Revert; what else differs from `options.json` was

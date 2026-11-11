@@ -6,7 +6,7 @@
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
-use egui::{Layout, RichText, ScrollArea, Ui, vec2};
+use egui::{RichText, ScrollArea, Ui, vec2};
 use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::options::BotOptions;
@@ -427,7 +427,7 @@ impl ApplicationOptionsWindow {
         // Out of `self` while the rows borrow it (Clear Flash Cache needs `&mut self`).
         let entries = std::mem::take(&mut self.entries);
 
-        ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
+        ui.spacing_mut().item_spacing = vec2(6.0, 10.0);
         let width = ui.available_width();
         widgets::text_box(ui, &mut self.search, "Search application options", width);
         let needle = self.search.trim().to_lowercase();
@@ -478,26 +478,15 @@ impl ApplicationOptionsWindow {
                         }
                         for i in rows {
                             let entry = &entries[i];
-                            let control_width = match entry.field {
-                                Field::Text(_) | Field::Secret(_) | Field::MonitorLinks | Field::PushKey => 230.0,
-                                _ => 130.0,
+                            let size = vec2(96.0, widgets::target(24.0, 40.0));
+                            let title = |ui: &mut Ui| {
+                                ui.label(RichText::new(entry.label).color(TEXT));
+                                if entry.restart {
+                                    ui.label(RichText::new("Restart required").small().color(MUTED));
+                                }
                             };
-                            ui.horizontal(|ui| {
-                                ui.set_min_height(28.0);
-                                ui.vertical(|ui| {
-                                    ui.set_width((ui.available_width() - control_width - 8.0).max(140.0));
-                                    ui.horizontal(|ui| {
-                                        ui.label(RichText::new(entry.label).color(TEXT));
-                                        if entry.restart {
-                                            ui.label(RichText::new("Restart required").small().color(MUTED));
-                                        }
-                                    });
-                                    if !entry.description.is_empty() {
-                                        ui.label(RichText::new(entry.description).small().color(MUTED));
-                                    }
-                                });
-                                let size = vec2(96.0, widgets::target(24.0, 40.0));
-                                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| match &entry.field {
+                            widgets::setting_row(ui, title, entry.description, control_width(&entry.field), |ui| {
+                                match &entry.field {
                                     Field::Bool(access) => {
                                         settings_changed |= widgets::switch(ui, access(&mut settings)).changed();
                                     }
@@ -611,7 +600,7 @@ impl ApplicationOptionsWindow {
                                             settings_changed = true;
                                         }
                                     }
-                                });
+                                }
                             });
                         }
                         if section == Section::Monitor && self.show_qr {
@@ -849,6 +838,22 @@ impl ApplicationOptionsWindow {
             Ok(()) => ("New key made: copy the link again for your devices.".into(), true),
             Err(e) => (format!("Couldn't make a new key: {e}"), false),
         });
+    }
+}
+
+/// The room `field`'s control takes at its row's right ([`widgets::setting_row`]).
+fn control_width(field: &Field) -> f32 {
+    match field {
+        Field::Text(_) | Field::Secret(_) => 220.0,
+        // Open, Copy Link, Copy Key / Copy Report Settings, Regenerate.
+        Field::MonitorLinks | Field::PushKey => 228.0,
+        Field::Bool(_)
+        | Field::Unused(_)
+        | Field::OptionBool(_)
+        | Field::FrameInterpolation
+        | Field::SafeDrawing
+        | Field::CrashReports => 48.0,
+        _ => 96.0,
     }
 }
 

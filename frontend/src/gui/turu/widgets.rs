@@ -275,13 +275,22 @@ pub fn count_badge(ui: &mut Ui, count: usize) {
 
 /// A section chip ("All", "Visuals", ...); returns whether it was clicked.
 pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
+    chip_enabled(ui, label, selected, true)
+}
+
+/// [`chip`], dimmed and not clickable unless `enabled` (a section with nothing to show). Drawn in
+/// place rather than in a disabled child `Ui`, which would keep a wrapping row of chips from
+/// wrapping.
+pub fn chip_enabled(ui: &mut Ui, label: &str, selected: bool, enabled: bool) -> bool {
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_owned(), FontId::proportional(12.0), TEXT);
     // 40 points high on a touch screen, as the nav bar's chip.
     let size = vec2(galley.size().x + 22.0, target(24.0, 40.0));
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let hovered = response.hovered() && ui.is_enabled();
+    let enabled = enabled && ui.is_enabled();
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    let hovered = response.hovered() && enabled;
     // The pressed accent: Turu's white 12-point text on ACCENT is about 4.0:1, on this 5.2:1.
     let fill = if selected {
         ACCENT_PRESSED
@@ -296,12 +305,18 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
         egui::Align2::CENTER_CENTER,
         label,
         FontId::proportional(12.0),
-        if selected { ON_ACCENT } else { TEXT },
+        if selected {
+            ON_ACCENT
+        } else if enabled {
+            TEXT
+        } else {
+            MUTED.gamma_multiply(0.7)
+        },
     );
     if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    response.clicked()
+    enabled && response.clicked()
 }
 
 /// Mugetsu's on/off switch. Returns the response; `changed()` is set when it was toggled.
@@ -497,6 +512,70 @@ pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respo
             .margin(Margin::symmetric(8, 5))
             .background_color(INSET),
     )
+}
+
+/// The narrowest an option's label and description get beside its control; narrower (a phone),
+/// the control goes on its own line under them.
+const SETTING_TEXT_MIN: f32 = 150.0;
+
+/// The room between an option's text and its control.
+const SETTING_GAP: f32 = 12.0;
+
+/// One option of an options window (Game, Application): `title` (the name, and any tags after
+/// it) with `description` under it on the left, and the control `control_width` wide on the
+/// right, centred on the text. When the row is too narrow for both, the control goes under the
+/// text, still at the right edge, so switches line up down the list either way. `control` is
+/// drawn right to left.
+pub fn setting_row(
+    ui: &mut Ui,
+    title: impl FnOnce(&mut Ui),
+    description: &str,
+    control_width: f32,
+    control: impl FnOnce(&mut Ui),
+) {
+    let width = ui.available_width();
+    let origin = ui.cursor().min;
+    let beside = width - control_width - SETTING_GAP >= SETTING_TEXT_MIN;
+    let text_width = if beside {
+        width - control_width - SETTING_GAP
+    } else {
+        width
+    };
+    let mut text = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(Rect::from_min_size(origin, vec2(text_width, f32::INFINITY)))
+            .layout(Layout::top_down(Align::Min)),
+    );
+    // The description belongs to its title: closer to it than to the next option.
+    text.spacing_mut().item_spacing.y = 2.0;
+    text.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        title(ui);
+    });
+    if !description.is_empty() {
+        text.label(RichText::new(description).small().color(MUTED));
+    }
+    let text_rect = text.min_rect();
+    let control_height = target(24.0, 40.0);
+    let control_rect = if beside {
+        Rect::from_min_size(
+            pos2(origin.x + width - control_width, origin.y),
+            vec2(control_width, text_rect.height().max(control_height)),
+        )
+    } else {
+        Rect::from_min_size(pos2(origin.x, text_rect.bottom() + 6.0), vec2(width, control_height))
+    };
+    let mut controls = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(control_rect)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    control(&mut controls);
+    ui.advance_cursor_after_rect(
+        text_rect
+            .union(controls.min_rect())
+            .union(Rect::from_min_size(origin, vec2(width, 0.0))),
+    );
 }
 
 /// A cached, scrollable, selectable list of log lines (one row per text line). With
