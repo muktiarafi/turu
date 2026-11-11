@@ -38,6 +38,7 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 <application android:usesCleartextTraffic="true">
   <service android:name="com.muktiarafi.turu.air.TuruAirService" android:exported="false" android:foregroundServiceType="specialUse">
     <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Runs a game client and its bot script while the app is in the background"/>

@@ -32,6 +32,7 @@ class TuruAirExtension : FREExtension {
                 val dir = activity.getExternalFilesDir(null) ?: activity.filesDir
                 Bridge.nativeStart(activity.applicationContext, dir.absolutePath)
                 Bridge.attachOverlay(activity)
+                Prompts.askOnce(activity)
                 FREObject.newObject(dir.absolutePath)
             },
             "flashCall" to FREFunction { _, args ->
