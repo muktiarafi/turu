@@ -12,10 +12,18 @@ fn encode(ops: &[Op]) -> Vec<u8> {
 
 /// An ABC block with one method whose body is `ops`. `names` are QNames as (package, name):
 /// multinames 1, 2, ... Classes are declared for each name in `classes` (by multiname index).
-fn abc_with(names: &[(&str, &str)], classes: &[u32], ops: &[Op], exceptions: Vec<Exception>) -> AbcFile {
+fn abc_with(
+    names: &[(&str, &str)],
+    classes: &[u32],
+    ops: &[Op],
+    exceptions: Vec<Exception>,
+) -> AbcFile {
     let mut strings: Vec<Vec<u8>> = Vec::new();
     let mut namespaces = Vec::new();
-    let string_index = |s: &str, strings: &mut Vec<Vec<u8>>| match strings.iter().position(|x| x == s.as_bytes()) {
+    let string_index = |s: &str, strings: &mut Vec<Vec<u8>>| match strings
+        .iter()
+        .position(|x| x == s.as_bytes())
+    {
         Some(i) => i as u32 + 1,
         None => {
             strings.push(s.as_bytes().to_vec());
@@ -126,15 +134,21 @@ const LOADERS: [(&str, &str); 3] = [
 fn makes_new_loader_an_air_loader() {
     let ops = [
         Op::GetLocal { index: 0 },
-        Op::FindPropStrict { index: Index::new(1) },
+        Op::FindPropStrict {
+            index: Index::new(1),
+        },
         Op::ConstructProp {
             index: Index::new(1),
             num_args: 0,
         },
-        Op::InitProperty { index: Index::new(1) },
+        Op::InitProperty {
+            index: Index::new(1),
+        },
         // Not a construction: a type check stays a Loader's.
         Op::GetLocal { index: 1 },
-        Op::GetLex { index: Index::new(1) },
+        Op::GetLex {
+            index: Index::new(1),
+        },
         Op::IsTypeLate,
         Op::ReturnValue,
     ];
@@ -145,7 +159,9 @@ fn makes_new_loader_an_air_loader() {
     assert_eq!(report.swapped.len(), 1);
     assert_eq!(report.game_problem(), None);
     let mut expected = ops.to_vec();
-    expected[1] = Op::FindPropStrict { index: Index::new(2) };
+    expected[1] = Op::FindPropStrict {
+        index: Index::new(2),
+    };
     expected[2] = Op::ConstructProp {
         index: Index::new(2),
         num_args: 0,
@@ -156,7 +172,9 @@ fn makes_new_loader_an_air_loader() {
 #[test]
 fn no_air_loader_no_swap() {
     let ops = [
-        Op::FindPropStrict { index: Index::new(1) },
+        Op::FindPropStrict {
+            index: Index::new(1),
+        },
         Op::ConstructProp {
             index: Index::new(1),
             num_args: 0,
@@ -169,7 +187,11 @@ fn no_air_loader_no_swap() {
     assert!(report.game_problem().is_some());
 
     // Another package's Loader isn't flash.display's.
-    let names = [("game", "Loader"), ("types", "AirLoader"), ("types", "SwfLoaderPatch")];
+    let names = [
+        ("game", "Loader"),
+        ("types", "AirLoader"),
+        ("types", "SwfLoaderPatch"),
+    ];
     let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
     assert!(!patch_abc(&mut abc, &mut report).unwrap());
 }
@@ -177,16 +199,18 @@ fn no_air_loader_no_swap() {
 #[test]
 fn drops_allow_domain_and_keeps_branches_on_their_instructions() {
     let ops = [
-        Op::GetLocal { index: 1 },           // 0
-        Op::IfFalse { offset: 10 },          // 1..5, to ReturnVoid
-        Op::GetLex { index: Index::new(1) }, // 5..7, Security
-        Op::PushNull,                        // 7
+        Op::GetLocal { index: 1 },  // 0
+        Op::IfFalse { offset: 10 }, // 1..5, to ReturnVoid
+        Op::GetLex {
+            index: Index::new(1),
+        }, // 5..7, Security
+        Op::PushNull,               // 7
         Op::CallPropVoid {
             index: Index::new(2),
             num_args: 1,
         }, // 8..11, allowDomain
-        Op::Jump { offset: -15 },            // 11..15, to GetLocal 1
-        Op::ReturnVoid,                      // 15
+        Op::Jump { offset: -15 },   // 11..15, to GetLocal 1
+        Op::ReturnVoid,             // 15
     ];
     let names = [("flash.system", "Security"), ("", "allowDomain")];
     let code = encode(&ops);
@@ -203,7 +227,9 @@ fn drops_allow_domain_and_keeps_branches_on_their_instructions() {
         [
             Op::GetLocal { index: 1 },
             Op::IfFalse { offset: 0 }, // checked below
-            Op::GetLex { index: Index::new(1) },
+            Op::GetLex {
+                index: Index::new(1)
+            },
             Op::PushNull,
             Op::Pop,
             Op::Pop,
@@ -212,11 +238,13 @@ fn drops_allow_domain_and_keeps_branches_on_their_instructions() {
         ]
         .iter()
         .zip(&patched)
-        .map(|(want, got)| if branch_offset(&mut want.clone()).is_some() {
-            got.clone()
-        } else {
-            want.clone()
-        })
+        .map(
+            |(want, got)| if branch_offset(&mut want.clone()).is_some() {
+                got.clone()
+            } else {
+                want.clone()
+            }
+        )
         .collect::<Vec<_>>()
     );
     let code = &abc.method_bodies[0].code;
@@ -228,7 +256,9 @@ fn drops_allow_domain_and_keeps_branches_on_their_instructions() {
 #[test]
 fn a_used_result_becomes_undefined() {
     let ops = [
-        Op::GetLex { index: Index::new(1) },
+        Op::GetLex {
+            index: Index::new(1),
+        },
         Op::PushNull,
         Op::CallProperty {
             index: Index::new(2),
@@ -247,7 +277,9 @@ fn a_used_result_becomes_undefined() {
     assert_eq!(
         ops_of(&abc),
         [
-            Op::GetLex { index: Index::new(1) },
+            Op::GetLex {
+                index: Index::new(1)
+            },
             Op::PushNull,
             Op::Pop,
             Op::Pop,
@@ -260,13 +292,15 @@ fn a_used_result_becomes_undefined() {
 #[test]
 fn moves_exception_ranges_and_switch_targets() {
     let ops = vec![
-        Op::GetLex { index: Index::new(1) }, // 0..2
-        Op::PushNull,                        // 2
+        Op::GetLex {
+            index: Index::new(1),
+        }, // 0..2
+        Op::PushNull, // 2
         Op::CallPropVoid {
             index: Index::new(2),
             num_args: 1,
         }, // 3..6
-        Op::GetLocal { index: 1 },           // 6
+        Op::GetLocal { index: 1 }, // 6
         Op::LookupSwitch(Box::new(LookupSwitch {
             // 7..15
             default_offset: 8,            // -> 15
@@ -295,7 +329,10 @@ fn moves_exception_ranges_and_switch_targets() {
             .position(|d| d.pos == pos as usize)
             .expect("an instruction start")
     };
-    let get_local_1 = decoded.iter().position(|d| d.op == Op::GetLocal { index: 1 }).unwrap();
+    let get_local_1 = decoded
+        .iter()
+        .position(|d| d.op == Op::GetLocal { index: 1 })
+        .unwrap();
     let switch = get_local_1 + 1;
     let Op::LookupSwitch(table) = &decoded[switch].op else {
         panic!("no switch")

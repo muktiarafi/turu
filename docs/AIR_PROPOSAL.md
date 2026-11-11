@@ -147,10 +147,29 @@ through the client's `AirLoader`), and stayed connected through screen off and b
 went wrong. This phone runs Turu's Ruffle build too (after the flicker fixes), so it says AIR
 works on a phone, not yet that it fixes the phones Ruffle fails on.
 
+**The bridge benchmark (2026-11-11, emulator, at the login screen): fast enough.** The design
+above, built: crate `turu_air` (`air/ane/rust`, `libturu_air.so` by cargo-ndk) on a thread of
+its own calls Kotlin's `Bridge.dispatch`, which sends AIR a status event ("call", id); the host
+answers on AIR's thread with a small JSON of game state (as `getGameObject` would) through the
+extension's `reply`, which Kotlin hands to `Bridge.nativeReply`; Rust waits on a channel.
+
+| Where | Round trips | Median | p95 | Max |
+|---|---|---|---|---|
+| On screen | 1,000 in 1,540 ms | 1.60 ms | 1.95 ms | 19 ms |
+| Off screen (foreground service) | 100 in 918 ms | 2.69 ms | 27.5 ms | 303 ms |
+
+A plain JNI call into Kotlin is 0.5 us, so the cost is AIR delivering the event, not JNI. AIR
+delivers status events right away, not once a frame (that would be ~42 ms at 24 fps): ~650 calls a
+second on screen. Off screen AIR slows the app, which shows in the tail. The Ruffle host's hop
+is cheaper, but VibeSkua's own ExternalInterface calls aren't free either; a script making tens of
+calls per action is fine. Bursts (`lnk*` reads of many objects) should batch, as skua's helpers
+already do. Packaging: an ANE's `Android-ARM64/libs/arm64-v8a/*.so` lands in the APK's
+`lib/arm64-v8a/` (900 KB here) and `System.loadLibrary` finds it.
+
 **Left for the spike:**
 * The phones that fail on Ruffle (Redmi 10, Infinix HOT 11S / Hot 30i): 50 map changes, an hour
   idle, memory curve. This decides go/no-go.
-* The bridge benchmark: Rust over JNI in the ANE, 1,000 `getGameObject` round trips.
+* The bridge benchmark in game (logged in, a busy map) and on a phone.
 * A longer background run (an hour, screen off) with a memory reading.
 * Pets, the Book of Lore and char select (through `SwfLoaderPatch`).
 * ADT with a custom launcher (one APK or two).

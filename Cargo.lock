@@ -7317,6 +7317,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "turu_air"
+version = "0.2.0"
+dependencies = [
+ "jni 0.22.4",
+]
+
+[[package]]
 name = "turu_air_patch"
 version = "0.2.0"
 dependencies = [

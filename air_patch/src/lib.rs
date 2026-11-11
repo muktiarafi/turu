@@ -22,7 +22,9 @@
 use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet};
 use swf::avm2::read::Reader;
-use swf::avm2::types::{AbcFile, ConstantPool, Exception, Index, Multiname, Namespace, Op, Trait, TraitKind};
+use swf::avm2::types::{
+    AbcFile, ConstantPool, Exception, Index, Multiname, Namespace, Op, Trait, TraitKind,
+};
 use swf::avm2::write::Writer;
 use swf::extensions::ReadSwfExt;
 use swf::{Compression, Header};
@@ -64,7 +66,10 @@ impl Report {
             return Some("the client has no AirLoader/SwfLoaderPatch (its AIR mode)".into());
         }
         if !self.undecodable.is_empty() {
-            return Some(format!("{} methods couldn't be read", self.undecodable.len()));
+            return Some(format!(
+                "{} methods couldn't be read",
+                self.undecodable.len()
+            ));
         }
         None
     }
@@ -90,7 +95,8 @@ pub fn patch_swf(input: &[u8]) -> Result<(Vec<u8>, Report)> {
                     .and_then(|rest| rest.iter().position(|&b| b == 0))
                     .context("DoAbc2 tag without a name")?;
                 let abc_start = 4 + name_end + 1;
-                patch_abc_bytes(&body[abc_start..], &mut report)?.map(|abc| [&body[..abc_start], &abc[..]].concat())
+                patch_abc_bytes(&body[abc_start..], &mut report)?
+                    .map(|abc| [&body[..abc_start], &abc[..]].concat())
             }
             _ => None,
         };
@@ -128,7 +134,9 @@ fn tag_bounds(data: &[u8], pos: usize) -> Result<(u16, usize, usize)> {
         length = u32::from_le_bytes([long[0], long[1], long[2], long[3]]) as usize;
         body_start = pos + 6;
     }
-    let end = body_start.checked_add(length).filter(|&end| end <= data.len());
+    let end = body_start
+        .checked_add(length)
+        .filter(|&end| end <= data.len());
     let end = end.with_context(|| format!("tag {code} at {pos} runs past the end"))?;
     Ok((code, body_start, end))
 }
@@ -155,12 +163,15 @@ fn patch_abc_bytes(bytes: &[u8], report: &mut Report) -> Result<Option<Vec<u8>>>
 pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
     let pool = &abc.constant_pool;
     let class_named = |wanted: &str| {
-        abc.instances.iter().map(|instance| instance.name).find(|name| {
-            pool.multinames
-                .get((name.0 as usize).wrapping_sub(1))
-                .and_then(|m| local_name(pool, m))
-                == Some(wanted)
-        })
+        abc.instances
+            .iter()
+            .map(|instance| instance.name)
+            .find(|name| {
+                pool.multinames
+                    .get((name.0 as usize).wrapping_sub(1))
+                    .and_then(|m| local_name(pool, m))
+                    == Some(wanted)
+            })
     };
     let air_loader = class_named("AirLoader");
     if air_loader.is_some() && class_named("SwfLoaderPatch").is_some() {
@@ -293,7 +304,8 @@ fn local_name<'a>(pool: &'a ConstantPool, multiname: &Multiname) -> Option<&'a s
 
 /// A QName in `package`, or a multiname whose namespace set includes it.
 fn in_package(pool: &ConstantPool, multiname: &Multiname, package: &str) -> bool {
-    let matches = |ns: &Index<Namespace>| match pool.namespaces.get((ns.0 as usize).wrapping_sub(1)) {
+    let matches = |ns: &Index<Namespace>| match pool.namespaces.get((ns.0 as usize).wrapping_sub(1))
+    {
         Some(Namespace::Package(name)) => string(pool, *name).unwrap_or("") == package,
         _ => false,
     };
@@ -356,7 +368,9 @@ fn decode(code: &[u8]) -> Result<Vec<Decoded>> {
     let mut ops = Vec::new();
     while !reader.as_slice().is_empty() {
         let pos = code.len() - reader.as_slice().len();
-        let op = reader.read_op().with_context(|| format!("instruction at {pos}"))?;
+        let op = reader
+            .read_op()
+            .with_context(|| format!("instruction at {pos}"))?;
         let len = code.len() - reader.as_slice().len() - pos;
         ops.push(Decoded { pos, len, op });
     }
@@ -451,7 +465,8 @@ fn relink(
             // Relative to the start of the instruction.
             let base_old = old.pos as i64;
             let base_new = new_pos[k] as i64;
-            switch.default_offset = i32::try_from(map(base_old + switch.default_offset as i64)? - base_new)?;
+            switch.default_offset =
+                i32::try_from(map(base_old + switch.default_offset as i64)? - base_new)?;
             for offset in switch.case_offsets.iter_mut() {
                 *offset = i32::try_from(map(base_old + *offset as i64)? - base_new)?;
             }
@@ -469,7 +484,10 @@ fn relink(
         writer.write_op(op)?;
     }
     if code.len() != new_len {
-        bail!("relinked code is {} bytes, laid out as {new_len}", code.len());
+        bail!(
+            "relinked code is {} bytes, laid out as {new_len}",
+            code.len()
+        );
     }
     Ok(Some(code))
 }

@@ -35,5 +35,21 @@ package com.muktiarafi.turu.air {
         public function stopService():Boolean {
             return context != null && context.call("stopService") === true;
         }
+
+        /**
+         * Times `calls` round trips Rust -> AS3 -> Rust. Each comes as a status event "call" (level:
+         * the id) to answer with `reply`; the summary as "done".
+         */
+        public function bench(calls:int):void {
+            if (context != null) {
+                context.call("bench", calls);
+            }
+        }
+
+        public function reply(id:int, value:String):void {
+            if (context != null) {
+                context.call("reply", id, value);
+            }
+        }
     }
 }

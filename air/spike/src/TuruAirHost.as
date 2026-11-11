@@ -11,6 +11,7 @@ package {
     import flash.events.Event;
     import flash.events.IOErrorEvent;
     import flash.events.SecurityErrorEvent;
+    import flash.events.StatusEvent;
     import flash.events.UncaughtErrorEvent;
     import flash.net.URLLoader;
     import flash.net.URLLoaderDataFormat;
@@ -22,11 +23,14 @@ package {
     import flash.text.TextFormat;
     import flash.utils.ByteArray;
     import flash.utils.getTimer;
+    import flash.utils.setTimeout;
 
     /**
      * Spike A0 (docs/AIR_PROPOSAL.md): loads AQW's client, patched by `turu_air_patch` and
      * bundled as app:/Game-air.swf, the way skua-air.swf would: `loadBytes` with
-     * `allowCodeImport`, params set before the game reaches the stage. No bot, no bridge.
+     * `allowCodeImport`, params set before the game reaches the stage. No bot yet: the bridge
+     * benchmark (Rust -> AS3 -> Rust through the extension) runs once the game is up, and again
+     * (shorter) each time the app goes to the background.
      * A log strip at the bottom shows what happened (release builds' trace goes nowhere).
      */
     [SWF(frameRate="24", backgroundColor="#000000", width="958", height="550")]
@@ -37,6 +41,8 @@ package {
         private var vars:Object;
         private var loader:Loader;
         private var started:int;
+        private var native:TuruAirNative;
+        private var game:*;
 
         public function TuruAirHost() {
             log = new TextField();
@@ -55,7 +61,8 @@ package {
             // Keep running off screen (AIR suspends a deactivated app otherwise).
             NativeApplication.nativeApplication.executeInBackground = true;
             NativeApplication.nativeApplication.systemIdleMode = SystemIdleMode.KEEP_AWAKE;
-            var native:TuruAirNative = new TuruAirNative();
+            native = new TuruAirNative();
+            native.addEventListener(StatusEvent.STATUS, onNative);
             say("native extension " + (native.available ? "loaded" : "missing") + ", service started: " + native.startService("Spike: AQW under AIR"));
             NativeApplication.nativeApplication.addEventListener(Event.ACTIVATE, onActivity);
             NativeApplication.nativeApplication.addEventListener(Event.DEACTIVATE, onActivity);
@@ -76,6 +83,25 @@ package {
 
         private function onActivity(event:Event):void {
             say(new Date().toTimeString().substr(0, 8) + " " + event.type);
+            if (event.type == Event.DEACTIVATE && game != null) {
+                say("bench in the background: 100 calls");
+                native.bench(100);
+            }
+        }
+
+        /** The bridge: a call to answer from the game (as getGameObject would), or a summary. */
+        private function onNative(event:StatusEvent):void {
+            if (event.code == "call") {
+                var value:String = JSON.stringify({
+                    world: game != null && game.world != null,
+                    connected: game != null && game.sfc != null && game.sfc.isConnected
+                });
+                native.reply(int(event.level), value);
+            } else if (event.code == "done") {
+                say(new Date().toTimeString().substr(0, 8) + " bench (" + stage.frameRate + " fps): " + event.level);
+            } else {
+                say("native " + event.code + ": " + event.level);
+            }
         }
 
         private function onFail(event:ErrorEvent):void {
@@ -125,6 +151,11 @@ package {
             stage.scaleMode = StageScaleMode.SHOW_ALL;
             stage.align = StageAlign.TOP;
             stage.addChildAt(game, 0);
+            this.game = game;
+            setTimeout(function():void {
+                say("bench: 1000 calls");
+                native.bench(1000);
+            }, 8000);
             say("client on stage: serverFilePath " + game.constructor.serverFilePath + ", serverGamePath " + game.constructor.serverGamePath);
         }
     }

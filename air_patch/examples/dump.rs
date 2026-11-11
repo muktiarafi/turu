@@ -14,7 +14,11 @@ fn string(abc: &AbcFile, i: u32) -> String {
 }
 
 fn ns(abc: &AbcFile, i: u32) -> String {
-    match abc.constant_pool.namespaces.get((i as usize).wrapping_sub(1)) {
+    match abc
+        .constant_pool
+        .namespaces
+        .get((i as usize).wrapping_sub(1))
+    {
         Some(Namespace::Package(s)) => format!("pkg({})", string(abc, s.0)),
         Some(Namespace::Private(_)) => "private".into(),
         Some(Namespace::Protected(_)) => "protected".into(),
@@ -25,19 +29,32 @@ fn ns(abc: &AbcFile, i: u32) -> String {
 }
 
 fn mn(abc: &AbcFile, i: u32) -> String {
-    match abc.constant_pool.multinames.get((i as usize).wrapping_sub(1)) {
+    match abc
+        .constant_pool
+        .multinames
+        .get((i as usize).wrapping_sub(1))
+    {
         Some(Multiname::QName { namespace, name } | Multiname::QNameA { namespace, name }) => {
             format!("{}::{}", ns(abc, namespace.0), string(abc, name.0))
         }
         Some(Multiname::Multiname { name, .. } | Multiname::MultinameA { name, .. }) => {
             format!("[set]::{}", string(abc, name.0))
         }
-        Some(Multiname::RTQName { name } | Multiname::RTQNameA { name }) => format!("rt::{}", string(abc, name.0)),
-        Some(Multiname::TypeName { base_type, parameters }) => {
+        Some(Multiname::RTQName { name } | Multiname::RTQNameA { name }) => {
+            format!("rt::{}", string(abc, name.0))
+        }
+        Some(Multiname::TypeName {
+            base_type,
+            parameters,
+        }) => {
             format!(
                 "{}<{}>",
                 mn(abc, base_type.0),
-                parameters.iter().map(|p| mn(abc, p.0)).collect::<Vec<_>>().join(",")
+                parameters
+                    .iter()
+                    .map(|p| mn(abc, p.0))
+                    .collect::<Vec<_>>()
+                    .join(",")
             )
         }
         Some(other) => format!("{other:?}"),
@@ -62,7 +79,9 @@ fn main() -> anyhow::Result<()> {
     let buf = swf::decompress_swf(&bytes[..])?;
     let parsed = swf::parse_swf(&buf)?;
     for tag in &parsed.tags {
-        let swf::Tag::DoAbc2(do_abc) = tag else { continue };
+        let swf::Tag::DoAbc2(do_abc) = tag else {
+            continue;
+        };
         let abc = Reader::new(do_abc.data).read()?;
         let mut names = std::collections::HashMap::new();
         for (inst, class) in abc.instances.iter().zip(&abc.classes) {
@@ -95,7 +114,10 @@ fn main() -> anyhow::Result<()> {
             if !name.contains(filter.as_str()) {
                 continue;
             }
-            println!("== {name} (max_stack {}, locals {})", body.max_stack, body.num_locals);
+            println!(
+                "== {name} (max_stack {}, locals {})",
+                body.max_stack, body.num_locals
+            );
             for e in &body.exceptions {
                 println!(
                     "  try {}..{} -> catch {} ({})",

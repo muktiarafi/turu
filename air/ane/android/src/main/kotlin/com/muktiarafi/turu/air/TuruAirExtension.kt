@@ -23,6 +23,18 @@ class TuruAirExtension : FREExtension {
         override fun getFunctions(): Map<String, FREFunction> = mapOf(
             "startService" to FREFunction { context, args -> service(context, true, args) },
             "stopService" to FREFunction { context, args -> service(context, false, args) },
+            "bench" to FREFunction { context, args ->
+                Bridge.context = context
+                Bridge.nativeBench(args?.firstOrNull()?.asInt ?: 1000)
+                null
+            },
+            "reply" to FREFunction { _, args ->
+                val id = args?.getOrNull(0)?.asInt
+                if (id != null) {
+                    Bridge.nativeReply(id, args.getOrNull(1)?.asString ?: "")
+                }
+                null
+            },
         )
 
         override fun dispose() {}
