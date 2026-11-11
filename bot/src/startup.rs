@@ -15,7 +15,7 @@ use std::time::Duration;
 pub struct Startup {
     pub username: Option<String>,
     pub password: Option<String>,
-    /// The server to log in on; "Twilly" when not given.
+    /// The server to log in on; "Twilly" when not given. Also the Relogin Server for the run.
     pub server: Option<String>,
     /// The script to load.
     pub script: Option<PathBuf>,
@@ -97,6 +97,12 @@ pub fn configure(bot: &Bot, mut startup: Startup) {
             username.unwrap_or_default(),
             password.unwrap_or_default(),
         );
+        // Turu: `--server` is also the Relogin Server for this run, so a drop brings you back
+        // to it (VibeSkua's auto-relogin goes to the saved Relogin Server, Twilly by default).
+        // Not saved: Game Options' Save writes it only if you save them yourself.
+        if let Some(server) = startup.server.as_deref().filter(|s| !s.trim().is_empty()) {
+            bot.options.write().relogin_server = server.trim().to_owned();
+        }
         *bot.startup.lock() = Some(startup);
     }
 }

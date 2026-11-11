@@ -520,6 +520,8 @@ fn startup_logs_in_once_the_game_has_loaded() {
         ("Alt".into(), "pw".into())
     );
     assert_eq!(arg(&game.calls_to("clickServer")[0], 0), "Artix");
+    // Relogins go back to it.
+    assert_eq!(bot.opts().relogin_server, "Artix");
     // Relogins use the same login.
     assert_eq!(
         turu_bot::api::servers::cached_username(&bot)

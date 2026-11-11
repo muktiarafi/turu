@@ -4,8 +4,7 @@ Run Turu on a Linux server, or any machine you don't sit at: no display, GPU or 
 It logs in, runs a script or a playlist, and you watch and steer it over HTTP. The same flags
 work on macOS and Windows.
 
-> **Status:** windowless mode loads AQW to the login screen and loads scripts and playlists;
-> a full login, farm and relogin without a window haven't been run in game yet
+> **Status:** windowless runs have logged in, farmed for hours and relogged after a drop
 > (`docs/STATUS.md`). Watch your first runs.
 
 ## Quick start
@@ -305,7 +304,7 @@ It also writes the samples to `<log>.csv`.
 |---|---|
 | `--headless` | No window. |
 | `--user <name>`, `--password <password>` | Log in once the game has loaded (password better in `TURU_PASSWORD`). |
-| `--server <name>` | The server to log in on (default Twilly). |
+| `--server <name>` | The server to log in on (default Twilly), and the one relogins go back to for this run (Relogin Server; not saved). |
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
