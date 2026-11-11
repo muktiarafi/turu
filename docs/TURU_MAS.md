@@ -2,9 +2,9 @@
 
 Turu Mas is Turu's second Android app: the same bot engine, scripts and windows, but AQW's client
 runs in the **Adobe AIR runtime** instead of Ruffle. It's an app of its own, next to Turu, in
-red. How it was built and measured: `docs/AIR_PROPOSAL.md` (spike A0, phases A1–A3).
+gold. How it was built and measured: `docs/AIR_PROPOSAL.md` (spike A0, phases A1–A3).
 
-The name: *mas* is Javanese for gold (and an older brother), with *turu*, sleep. It isn't
+The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence its gold. It isn't
 "Turu AIR" because the AIR SDK's license keeps Adobe's trademark out of an app's title (see
 "The AIR SDK's license" below). "Works with Adobe® AIR®" is the allowed way to say what it runs on.
 
@@ -29,8 +29,8 @@ The name: *mas* is Javanese for gold (and an older brother), with *turu*, sleep.
 | `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports (`crash_uploads.rs`). |
 | `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
-| `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`), `app.xml` (ID, name, manifest additions), icons, `build.sh` (the APK). |
-| `frontend/` (`air` feature) | the red accent; `turu_frontend` without its `ruffle` feature. |
+| `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). |
+| `frontend/` (`air` feature) | the gold accent (`theme.rs`: `ACCENT`, and `ON_ACCENT`, the dark text and icons on it); `turu_frontend` without its `ruffle` feature. |
 
 The code keeps "air" in its names (crate `turu_air`, package `com.muktiarafi.turu.air`, the
 `air` feature): they name the runtime, not the app.

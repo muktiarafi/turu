@@ -3,7 +3,7 @@
 
 use super::theme::{
     ACCENT, ACCENT_HOVER, ACCENT_PRESSED, CARD, DANGER, DANGER_HOVER, DANGER_PRESSED, EDGE, HOVER, INSET, MUTED,
-    RADIUS, SMALL_RADIUS, TEXT, TRACK,
+    ON_ACCENT, RADIUS, SMALL_RADIUS, TEXT, TRACK,
 };
 use egui::emath::TSTransform;
 use egui::epaint::PathStroke;
@@ -40,7 +40,7 @@ pub fn button(ui: &mut Ui, label: &str, kind: Kind, enabled: bool, size: Vec2, t
             let w = &mut ui.visuals_mut().widgets;
             let (base, hover, pressed, text) = match kind {
                 Kind::Normal => (TRACK, HOVER, ACCENT_PRESSED, TEXT),
-                Kind::Primary => (ACCENT, ACCENT_HOVER, ACCENT_PRESSED, Color32::WHITE),
+                Kind::Primary => (ACCENT, ACCENT_HOVER, ACCENT_PRESSED, ON_ACCENT),
                 Kind::Danger => (DANGER, DANGER_HOVER, DANGER_PRESSED, Color32::WHITE),
                 Kind::Outline => (Color32::TRANSPARENT, HOVER, TRACK, TEXT),
             };
@@ -48,7 +48,15 @@ pub fn button(ui: &mut Ui, label: &str, kind: Kind, enabled: bool, size: Vec2, t
             w.hovered.weak_bg_fill = hover;
             w.active.weak_bg_fill = pressed;
             w.inactive.fg_stroke.color = text;
-            w.hovered.fg_stroke.color = Color32::WHITE;
+            // Pressed, Normal and Primary fill with the accent.
+            if matches!(kind, Kind::Normal | Kind::Primary) {
+                w.active.fg_stroke.color = ON_ACCENT;
+            }
+            w.hovered.fg_stroke.color = if kind == Kind::Primary {
+                ON_ACCENT
+            } else {
+                Color32::WHITE
+            };
             if kind == Kind::Outline {
                 w.inactive.bg_stroke = Stroke::new(1.0, EDGE);
             }
@@ -274,7 +282,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
     let size = vec2(galley.size().x + 22.0, target(24.0, 40.0));
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let hovered = response.hovered() && ui.is_enabled();
-    // The pressed accent: white 12-point text on ACCENT is about 4.0:1, on this 5.2:1.
+    // The pressed accent: Turu's white 12-point text on ACCENT is about 4.0:1, on this 5.2:1.
     let fill = if selected {
         ACCENT_PRESSED
     } else if hovered {
@@ -288,7 +296,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> bool {
         egui::Align2::CENTER_CENTER,
         label,
         FontId::proportional(12.0),
-        if selected { Color32::WHITE } else { TEXT },
+        if selected { ON_ACCENT } else { TEXT },
     );
     if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

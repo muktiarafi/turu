@@ -20,7 +20,7 @@
     <!-- The free tier's splash screen (the SDK's license, section 4), dark as Turu. -->
     <splash>dark</splash>
   </initialWindow>
-  <!-- Turu's symbol in red (icons/turu-air-symbol.svg). -->
+  <!-- Turu's symbol in gold (icons/turu-air-symbol.svg). -->
   <icon>
     <image36x36>icons/icon-36.png</image36x36>
     <image48x48>icons/icon-48.png</image48x48>

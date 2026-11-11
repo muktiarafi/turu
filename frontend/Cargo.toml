@@ -42,5 +42,5 @@ default = ["ruffle"]
 # The game in Ruffle: the player <-> bot bridge, the windowless loop, the tabs' players, the
 # socket capture.
 ruffle = ["dep:ruffle_core", "dep:ruffle_frontend_utils", "dep:async-task", "dep:ruffle_render_wgpu"]
-# Turu Mas's look (air/app): a red accent instead of Turu's violet.
+# Turu Mas's look (air/app): a gold accent instead of Turu's violet.
 air = []

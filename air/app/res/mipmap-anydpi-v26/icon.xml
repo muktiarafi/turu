@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Turu Mas's launcher icon, as Turu's (android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)
-     in red: named "icon" to take the place of the PNGs ADT makes from app.xml's <icon> (mipmap/icon)
+     in gold: named "icon" to take the place of the PNGs ADT makes from app.xml's <icon> (mipmap/icon)
      on Android 8 and later, where a PNG icon sits on the launcher's white shape. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/turu_air_icon_background" />

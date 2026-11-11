@@ -1,5 +1,5 @@
 //! Turu's egui look: Mugetsu's dark palette (the right-click panel, `crate::gui::mugetsu`) with
-//! VibeSkua's status colours. Turu Mas (the `air` feature) has a red accent instead of the violet.
+//! VibeSkua's status colours. Turu Mas (the `air` feature) has a gold accent instead of the violet.
 
 #[cfg(not(feature = "air"))]
 use crate::gui::mugetsu::ACCENT as MUGETSU_ACCENT;
@@ -22,13 +22,21 @@ pub const ACCENT: Color32 = MUGETSU_ACCENT;
 pub const ACCENT_HOVER: Color32 = Color32::from_rgb(144, 129, 244);
 #[cfg(not(feature = "air"))]
 pub const ACCENT_PRESSED: Color32 = Color32::from_rgb(105, 90, 214);
-/// Turu Mas (the `air` feature) is red, so it isn't taken for Turu.
+/// Turu Mas (the `air` feature) is gold: *mas*, from *emas*, is Javanese for gold. A deeper,
+/// browner gold than [`WARNING`]'s amber, so the two aren't taken for each other.
 #[cfg(feature = "air")]
-pub const ACCENT: Color32 = Color32::from_rgb(0xE0, 0x26, 0x2D);
+pub const ACCENT: Color32 = Color32::from_rgb(0xD4, 0xA7, 0x2C);
 #[cfg(feature = "air")]
-pub const ACCENT_HOVER: Color32 = Color32::from_rgb(0xE8, 0x4C, 0x52);
+pub const ACCENT_HOVER: Color32 = Color32::from_rgb(0xE2, 0xBC, 0x52);
 #[cfg(feature = "air")]
-pub const ACCENT_PRESSED: Color32 = Color32::from_rgb(0xBE, 0x1C, 0x22);
+pub const ACCENT_PRESSED: Color32 = Color32::from_rgb(0xB5, 0x8A, 0x1C);
+/// Text and icons on an accent fill (Primary buttons, Start, badges, the logo's eyes): white on
+/// Turu's violet, the panel's near-black on Turu Mas's gold (white on gold reads at about 2:1,
+/// this at 8:1).
+#[cfg(not(feature = "air"))]
+pub const ON_ACCENT: Color32 = Color32::WHITE;
+#[cfg(feature = "air")]
+pub const ON_ACCENT: Color32 = PANEL;
 pub const TEXT: Color32 = MUGETSU_TEXT;
 pub const MUTED: Color32 = MUGETSU_MUTED;
 /// VibeSkua's status colours (`Colors.axaml`).
@@ -121,6 +129,7 @@ pub fn style() -> Style {
     w.active.bg_fill = ACCENT;
     w.active.weak_bg_fill = ACCENT_PRESSED;
     w.active.bg_stroke = Stroke::NONE;
+    // White, not `ON_ACCENT`: egui's strong text (headings) takes this colour too.
     w.active.fg_stroke = Stroke::new(1.5, Color32::WHITE);
     w.active.corner_radius = radius;
     w.active.expansion = 0.0;

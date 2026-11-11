@@ -331,7 +331,8 @@ touches); Turu's touch controls (joystick, skills) over AIR; the notification's 
 Renamed from "Turu AIR" the same day: the AIR SDK's license (section 14) keeps Adobe's trademark
 out of an app's title. The app is **Turu Mas** (`com.muktiarafi.turumas`); the code keeps "air"
 where it names the runtime. Its own doc: **docs/TURU_MAS.md** (build, release, signing, crash
-reports, the license). The text below is as written before the rename.
+reports, the license). Its accent and icon are now gold (*mas*, from *emas*, is gold), with dark
+text and eyes on it (`ON_ACCENT`). The text below is as written before the rename.
 
 Two apps, not one with a switch: **Turu AIR** next to Turu.
 * `air/app/` (was `air/spike/`): `app.xml` names it "Turu AIR", ID `com.muktiarafi.turuair`,

@@ -4,7 +4,8 @@
 
 use super::skills::SkillSets;
 use super::theme::{
-    ACCENT, ACCENT_HOVER, DANGER, DANGER_HOVER, EDGE, HOVER, MUTED, PANEL, SMALL_RADIUS, SUCCESS, TEXT, TRACK, WARNING,
+    ACCENT, ACCENT_HOVER, DANGER, DANGER_HOVER, EDGE, HOVER, MUTED, ON_ACCENT, PANEL, SMALL_RADIUS, SUCCESS, TEXT,
+    TRACK, WARNING,
 };
 use super::widgets::{self, Kind};
 use super::{Windows, auto, script_loader};
@@ -196,7 +197,7 @@ fn bar_style(style: &mut Style) {
 #[cfg(not(feature = "air"))]
 const OPEN: Color32 = Color32::from_rgb(52, 48, 92);
 #[cfg(feature = "air")]
-const OPEN: Color32 = Color32::from_rgb(88, 30, 36);
+const OPEN: Color32 = Color32::from_rgb(78, 62, 22);
 
 /// Menu drop-downs: full-width rows, about 44 points high on a touch screen.
 fn menu_style(style: &mut Style) {
@@ -1190,7 +1191,7 @@ fn run_cell(ui: &mut Ui, cell: RunCell, size: egui::Vec2, corners: CornerRadius)
     let hovered = enabled && response.hovered();
     let (fill, icon) = match cell {
         _ if !enabled => (TRACK, MUTED.gamma_multiply(0.6)),
-        RunCell::Start(_) | RunCell::Resume => (if hovered { ACCENT_HOVER } else { ACCENT }, Color32::WHITE),
+        RunCell::Start(_) | RunCell::Resume => (if hovered { ACCENT_HOVER } else { ACCENT }, ON_ACCENT),
         RunCell::Pause => (
             if hovered { HOVER } else { TRACK },
             if hovered { Color32::WHITE } else { TEXT },
@@ -1366,8 +1367,8 @@ const COMPACT_CHIP_NAME_WIDTH: f32 = 72.0;
 const MIN_NAME_WIDTH: f32 = 28.0;
 
 /// The Turu symbol (`docs/logo/turu-symbol-small.svg`, the cut for small sizes): a tile in the
-/// accent (violet; red in Turu Mas) with two closed eyes, drawn rather than loaded so it stays
-/// sharp at any scale.
+/// accent (violet; gold in Turu Mas) with two closed eyes (`ON_ACCENT`), drawn rather than
+/// loaded so it stays sharp at any scale.
 const SYMBOL_SIZE: f32 = 18.0;
 /// Between the symbol and the first menu.
 const SYMBOL_GAP: f32 = 6.0;
@@ -1391,9 +1392,9 @@ fn symbol(ui: &mut Ui, size: f32) -> egui::Response {
             })
             .collect();
         // Round ends, as the SVG's 14-radius caps.
-        painter.circle_filled(points[0], width / 2.0, Color32::WHITE);
-        painter.circle_filled(points[16], width / 2.0, Color32::WHITE);
-        painter.add(egui::Shape::line(points, Stroke::new(width, Color32::WHITE)));
+        painter.circle_filled(points[0], width / 2.0, ON_ACCENT);
+        painter.circle_filled(points[16], width / 2.0, ON_ACCENT);
+        painter.add(egui::Shape::line(points, Stroke::new(width, ON_ACCENT)));
     }
     response
 }
@@ -1759,14 +1760,12 @@ fn map_badge(ui: &Ui, chip: Rect, count: usize) {
     } else {
         count.to_string()
     };
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text, FontId::proportional(10.0), Color32::WHITE);
+    let galley = ui.painter().layout_no_wrap(text, FontId::proportional(10.0), ON_ACCENT);
     let size = vec2((galley.size().x + 8.0).max(16.0), 16.0);
     let rect = Rect::from_center_size(pos2(chip.right() - size.x / 2.0 - 2.0, chip.top() + 10.0), size);
     ui.painter().rect_filled(rect, size.y / 2.0, ACCENT);
     ui.painter()
-        .galley(rect.center() - galley.size() / 2.0, galley, Color32::WHITE);
+        .galley(rect.center() - galley.size() / 2.0, galley, ON_ACCENT);
 }
 
 /// The rail chip's list: the Script Loader, the scripts made for the map the tab is on
