@@ -459,8 +459,9 @@ jobs:
           CFG_RELEASE_CHANNEL: stable
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
           MAS_KEYSTORE_PASSWORD: ${{ secrets.MAS_KEYSTORE_PASSWORD }}
-          # Crash reports (`air/ane/rust/src/crash_uploads.rs`): without it the APK has none.
-          TURU_MAS_SENTRY_DSN: ${{ secrets.SENTRY_MAS_DSN }}
+          # Crash reports (`air/ane/rust/src/crash_uploads.rs`), to Turu's Android project:
+          # released as `turu-mas@<version>`, tagged `client: air`. Without it the APK has none.
+          TURU_MAS_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
       - name: Package
         run: |
@@ -475,15 +476,15 @@ jobs:
           path: turumas-${{ needs.version.outputs.version }}-android-arm64.apk
           if-no-files-found: error
 
-      # Skipped without SENTRY_AUTH_TOKEN or the SENTRY_MAS_PROJECT variable.
+      # To the Android project, as the crash reports. Skipped without SENTRY_AUTH_TOKEN.
       - name: Upload symbols to Sentry
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_MAS_PROJECT }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
           if [[ -z "$SENTRY_AUTH_TOKEN" || -z "$SENTRY_PROJECT" ]]; then
-            echo "No SENTRY_AUTH_TOKEN secret or SENTRY_MAS_PROJECT variable: symbols not uploaded"
+            echo "No SENTRY_AUTH_TOKEN secret or SENTRY_PROJECT variable: symbols not uploaded"
             exit 0
           fi
           npx -y @sentry/cli@3.8.1 debug-files upload target/air-ane/jni/arm64-v8a/libturu_air.so

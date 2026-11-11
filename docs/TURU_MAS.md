@@ -79,8 +79,9 @@ accepts the SDK's license; free tier), JDK 17 and 21, the NDK, cargo-ndk and lib
 |---|---|---|
 | `MAS_KEYSTORE` | secret | Turu Mas's release key (PKCS#12), base64. A tag build fails without it; a run by hand signs with a development key. |
 | `MAS_KEYSTORE_PASSWORD` | secret | Its password. |
-| `SENTRY_MAS_DSN` | secret | The Sentry project's DSN. Without it the APK sends no crash reports. |
-| `SENTRY_MAS_PROJECT` | variable | The Sentry project's slug, for uploading `libturu_air.so`'s symbols (with the `SENTRY_AUTH_TOKEN` secret and `SENTRY_ORG` variable Turu's jobs already use). |
+
+Crash reports and symbols need nothing more: the job uses Turu's Android Sentry project
+(`SENTRY_DSN`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`).
 
 The release key is Turu Mas's own, not Turu's (`turu-release.jks`): the two are separate apps.
 Make it once with a JDK 17's keytool and keep a copy somewhere safe (losing it means users
@@ -107,8 +108,9 @@ MAS_KEYSTORE_PASSWORD=... air/app/build.sh`.
 the same question at first start and the same switch (`sendCrashReports` in `settings.json`,
 through `Platform`). Sentry's own panic hook sends a Rust panic as it happens; Turu's hook then
 keeps it in the data folder's `crash/panic-<time>.txt` and waits (2 s at most) for the report to
-leave, as a release build aborts on a panic. Events are tagged `client: air`, released as
-`turu-mas@<version>`, with no IP address and no device name.
+leave, as a release build aborts on a panic. They go to Turu's Android project (the release
+job reuses its `SENTRY_DSN` secret and `SENTRY_PROJECT` variable): filter by release
+`turu-mas@<version>` or the tag `client: air`. No IP address and no device name.
 
 Not caught: crashes in AIR's runtime (Java or its own native code) and Android's exit reasons
 (low memory, a kill), which Turu's `CrashReports.kt` reports. They'd need the Kotlin side of
