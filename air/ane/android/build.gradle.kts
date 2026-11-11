@@ -10,9 +10,19 @@ android {
         minSdk = 26
     }
 
+    // Java 8 class files: ADT dexes the extension's jar with the AIR SDK's own d8 (1.2.52 in
+    // 51.5.1.1), which can't read Java 11's ("Compilation failed with an internal error",
+    // `IllegalArgumentException` in its class reader). The verifier's module and Kotlin's
+    // standard library, merged into the same jar, are Java 8 already.
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
     }
 }
 
