@@ -288,10 +288,37 @@ listed 1,800 scripts and downloaded them (Auto Update Scripts); its search box t
 the soft keyboard ("babysitter": 1 found); a tap on the game's username field reached AIR (the
 keyboard then served `AIRWindowSurfaceView`).
 
-**Left for A2:** the soft keyboard covers a low window (the Ruffle build pans the screen,
-`android/src/pan.rs`); a tap on the game doesn't close an open egui menu (egui only sees the UI's
-touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause; a
-hardware keyboard's keys into the UI.
+**First phone test (Galaxy S24 FE), and the fixes:**
+* *Crash on coming back from the background, idle or running a script.* Not reproduced on the
+  emulator; the likely cause, fixed: `surfaceDestroyed` handed the surface's loss to the drawing
+  thread and returned at once, and Android may free a surface once that returns, while a frame
+  could still be drawing into it. `set_window` now waits (up to 2 s) until the drawing thread has
+  let the old surface go. Panics now also go to the data folder's `crash/panic-<time>.txt`.
+* *The UI came back empty after the background* (emulator, found while checking the above): a
+  new egui renderer per surface lost egui's textures, which it uploads once ("Missing texture:
+  Managed(0)"). The renderer now lives with the GPU device, across surfaces.
+* *No typing in Search Scripts.* The overlay asked for a text editor, and some keyboards
+  (Samsung's) then send composing text, which a plain connection drops; Gboard happened to commit
+  text. Now `TYPE_NULL` (key events only, as the Ruffle build's `KeyInput`), with
+  `onKeyDown`/`onKeyMultiple` into egui, deletes as Backspace/Delete.
+* *No typing strip above the keyboard.* The Ruffle build's strip for the game's fields, now drawn
+  by the overlay (`GameTyping`): the host SWF reads AIR's `stage.focus` each frame (text, caret,
+  selection, password, `maxChars`) and sends it when it changes; the keyboard's height comes from
+  the window's insets. `softKeyboardBehavior` is `none` (AIR's pan moved the stage oddly). Turu's
+  own text boxes move above the keyboard as the Ruffle build's (`pan.rs`, ported).
+* *The rail under the notch.* The display cutout's left inset now widens the rail
+  (`set_rail_inset`, as the Ruffle build), and the game moves with it.
+* *Sound in the background.* The host sets `SoundMixer.soundTransform` to 0 on deactivate, 1 on
+  activate.
+* Also: the host's stage setup ran only on `ADDED_TO_STAGE`, which the main SWF may never get (it's
+  on the stage already): it now runs at once when there's a stage.
+
+Checked on the emulator: three trips to the background and back (same process, the UI drawn);
+the rail clear of an emulated camera hole; typing and Backspace in Search Scripts by key events;
+the strip showing the game's username field's text and caret over AIR's keyboard.
+
+**Left for A2:** a tap on the game doesn't close an open egui menu (egui only sees the UI's
+touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause.
 
 ## Why consider it: what Ruffle costs on Android
 

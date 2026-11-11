@@ -49,6 +49,10 @@ class TuruAirExtension : FREExtension {
                 null
             },
             "patchSwf" to FREFunction { _, args -> patch(args) },
+            "gameTyping" to FREFunction { _, args ->
+                Bridge.nativeGameTyping(args?.getOrNull(0)?.asString ?: "")
+                null
+            },
         )
 
         override fun dispose() {}

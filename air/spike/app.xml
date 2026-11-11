@@ -10,7 +10,7 @@
     <autoOrients>false</autoOrients>
     <renderMode>auto</renderMode>
     <fullScreen>true</fullScreen>
-    <softKeyboardBehavior>pan</softKeyboardBehavior>
+    <softKeyboardBehavior>none</softKeyboardBehavior>
   </initialWindow>
   <android>
     <manifestAdditions><![CDATA[<manifest>

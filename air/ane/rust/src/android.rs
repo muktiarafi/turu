@@ -14,6 +14,9 @@ use turu_frontend::turu;
 /// Setup lines (Turu's flags, one per line), as the Ruffle build's (docs/ANDROID.md).
 const ARGS_FILE: &str = "turu-args.txt";
 
+/// Where a panic's report goes (the data folder's `crash/`), once the engine has its folder.
+static CRASH_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 /// `Bridge.nativeStart(context, filesDir)`: starts the engine, once per process. Called on AIR's
 /// thread, which this records (a Flash call from it would wait for itself).
 #[unsafe(no_mangle)]
@@ -234,11 +237,42 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeKey<'local>(
     crate::overlay::input(vec![press(true), press(false)]);
 }
 
+/// `Bridge.nativeInsets(keyboard, cutoutLeft, cutoutRight)`: the window's insets changed: the soft
+/// keyboard's height and the display cutout's sides, in pixels.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeInsets<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    keyboard: jint,
+    cutout_left: jint,
+    cutout_right: jint,
+) {
+    crate::overlay::set_insets(keyboard as f32, (cutout_left as f32, cutout_right as f32));
+}
+
+/// `Bridge.nativeGameTyping(json)`: the game's focused text field, from the host SWF (an empty
+/// string: none).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeGameTyping<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    json: JString<'local>,
+) {
+    unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let json = json.try_to_string(env)?;
+            crate::overlay::set_game_typing(crate::overlay::GameTyping::from_json(&json));
+            Ok(())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
 /// Starts the engine thread once per process, with `root` as the data folder.
 fn start_engine(root: PathBuf) {
     static ENGINE: Once = Once::new();
     ENGINE.call_once(|| {
         turu_bot::paths::set_default_root(root.clone());
+        let _ = CRASH_DIR.set(turu_bot::paths::Paths::new().crash_dir());
         let spawned = std::thread::Builder::new()
             .name("Turu Engine".into())
             .spawn(move || engine(&root));
@@ -305,6 +339,21 @@ fn init_logging() {
             let thread = thread.name().unwrap_or("<unnamed>");
             let backtrace = std::backtrace::Backtrace::force_capture();
             log::error!("Panic on {thread}: {info}\n{backtrace}");
+            // As the Ruffle build's `panic-<time>.txt`: logcat's buffer is gone by the time
+            // someone says "it crashed".
+            if let Some(dir) = CRASH_DIR.get() {
+                let seconds = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                let _ = std::fs::create_dir_all(dir);
+                let _ = std::fs::write(
+                    dir.join(format!("panic-{seconds}.txt")),
+                    format!(
+                        "Turu {} (AIR)\nPanic on {thread}: {info}\n{backtrace}\n",
+                        turu::VERSION
+                    ),
+                );
+            }
         }));
     });
 }

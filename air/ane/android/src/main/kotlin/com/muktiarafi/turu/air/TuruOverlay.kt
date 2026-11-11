@@ -3,11 +3,13 @@ package com.muktiarafi.turu.air
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.PixelFormat
+import android.os.Build
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.WindowInsets
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -18,7 +20,10 @@ import android.view.inputmethod.InputConnection
  *
  * A finger is the UI's when it comes down on the rail or a window (the engine says,
  * `Bridge.nativeOnUi`); the others fall through to AIR's view below, as this view doesn't take
- * them. It's also the soft keyboard's target while one of the UI's text boxes has the focus.
+ * them. It's also the soft keyboard's target while one of the UI's text boxes has the focus: key
+ * events only ([InputType.TYPE_NULL], as the Ruffle build's `KeyInput`), which every keyboard sends
+ * (a plain text editor gets composing text from some, Samsung's among them, which this view
+ * doesn't keep). It passes the window's insets on: the keyboard's height and the display cutout.
  */
 @SuppressLint("ViewConstructor")
 class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Callback {
@@ -33,6 +38,26 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
+        setOnApplyWindowInsetsListener { view, insets ->
+            sendInsets(insets)
+            view.onApplyWindowInsets(insets)
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        requestApplyInsets()
+    }
+
+    private fun sendInsets(insets: WindowInsets) {
+        val keyboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (insets.isVisible(WindowInsets.Type.ime())) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
+        } else {
+            @Suppress("DEPRECATION")
+            insets.systemWindowInsetBottom
+        }
+        val cutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) insets.displayCutout else null
+        Bridge.nativeInsets(keyboard, cutout?.safeInsetLeft ?: 0, cutout?.safeInsetRight ?: 0)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
@@ -72,11 +97,14 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
 
     override fun onCheckIsTextEditor(): Boolean = true
 
-    /** Key events only (no suggestions), as the Ruffle build's `KeyInput` does. */
+    /** Key events only (no suggestions, no composing), as the Ruffle build's `KeyInput` does. */
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+        outAttrs.inputType = InputType.TYPE_NULL
+        // Landscape: no full-screen editor over the game.
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            EditorInfo.IME_ACTION_NONE
         return object : BaseInputConnection(this, false) {
+            // A keyboard that sends text anyway.
             override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
                 if (text.isNotEmpty()) {
                     Bridge.nativeText(text.toString())
@@ -85,28 +113,46 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
             }
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                repeat(beforeLength.coerceAtLeast(1)) { Bridge.nativeKey(0) }
+                repeat(beforeLength) { Bridge.nativeKey(0) }
+                repeat(afterLength) { Bridge.nativeKey(2) }
                 return true
             }
 
-            override fun sendKeyEvent(event: KeyEvent): Boolean {
-                if (event.action == KeyEvent.ACTION_DOWN) {
-                    when (event.keyCode) {
-                        KeyEvent.KEYCODE_DEL -> Bridge.nativeKey(0)
-                        KeyEvent.KEYCODE_ENTER -> Bridge.nativeKey(1)
-                        KeyEvent.KEYCODE_FORWARD_DEL -> Bridge.nativeKey(2)
-                        KeyEvent.KEYCODE_DPAD_LEFT -> Bridge.nativeKey(3)
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> Bridge.nativeKey(4)
-                        else -> event.unicodeChar.takeIf { it > 0 }?.let { Bridge.nativeText(it.toChar().toString()) }
-                    }
-                }
-                return true
-            }
+            override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
+                deleteSurroundingText(beforeLength, afterLength)
 
             override fun performEditorAction(actionCode: Int): Boolean {
                 Bridge.nativeKey(1)
                 return true
             }
         }
+    }
+
+    /** The keyboard's keys (soft, from the connection above, or hardware) into the UI's text box. */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DEL -> Bridge.nativeKey(0)
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> Bridge.nativeKey(1)
+            KeyEvent.KEYCODE_FORWARD_DEL -> Bridge.nativeKey(2)
+            KeyEvent.KEYCODE_DPAD_LEFT -> Bridge.nativeKey(3)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> Bridge.nativeKey(4)
+            else -> {
+                val char = event.unicodeChar
+                if (char <= 0) return super.onKeyDown(keyCode, event)
+                Bridge.nativeText(String(Character.toChars(char)))
+            }
+        }
+        return true
+    }
+
+    /** A keyboard's text sent as one event (`ACTION_MULTIPLE` with characters). */
+    override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent): Boolean {
+        val characters = event.characters
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN && !characters.isNullOrEmpty()) {
+            Bridge.nativeText(characters)
+            return true
+        }
+        repeat(repeatCount) { onKeyDown(keyCode, event) }
+        return true
     }
 }

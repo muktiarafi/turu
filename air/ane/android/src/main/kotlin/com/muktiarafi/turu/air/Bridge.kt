@@ -71,6 +71,14 @@ object Bridge {
     @JvmStatic
     external fun nativeKey(key: Int)
 
+    /** The window's insets: the soft keyboard's height and the display cutout's sides, pixels. */
+    @JvmStatic
+    external fun nativeInsets(keyboard: Int, cutoutLeft: Int, cutoutRight: Int)
+
+    /** The game's focused text field as JSON (from the host SWF); empty when there's none. */
+    @JvmStatic
+    external fun nativeGameTyping(json: String)
+
     @JvmStatic
     fun dispatch(code: String, level: String) {
         context?.dispatchStatusEventAsync(code, level)

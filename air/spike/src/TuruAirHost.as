@@ -11,6 +11,9 @@ package {
     import flash.events.Event;
     import flash.events.IOErrorEvent;
     import flash.events.UncaughtErrorEvent;
+    import flash.media.SoundMixer;
+    import flash.media.SoundTransform;
+    import flash.text.TextFieldType;
     import flash.net.URLLoader;
     import flash.net.URLLoaderDataFormat;
     import flash.net.URLRequest;
@@ -44,6 +47,8 @@ package {
         private var log:TextField;
         private var native:TuruAirNative;
         private var skua:Loader;
+        /** What was last sent of the game's focused text field (`gameTyping`). */
+        private var typing:String = "";
 
         public function TuruAirHost() {
             mouseEnabled = false;
@@ -68,7 +73,6 @@ package {
             NativeApplication.nativeApplication.systemIdleMode = SystemIdleMode.KEEP_AWAKE;
             NativeApplication.nativeApplication.addEventListener(Event.ACTIVATE, onActivity);
             NativeApplication.nativeApplication.addEventListener(Event.DEACTIVATE, onActivity);
-            addEventListener(Event.ADDED_TO_STAGE, onStage);
 
             native = new TuruAirNative();
             if (!native.available) {
@@ -79,6 +83,12 @@ package {
             TuruExternal.start(native);
             TuruLoader.gameParams = {sFilePath: URL + "gamefiles/", isWeb: false};
             say("engine started, data folder " + native.startEngine());
+            // The main SWF is on the stage already; added later only when loaded by another.
+            if (stage != null) {
+                onStage(null);
+            } else {
+                addEventListener(Event.ADDED_TO_STAGE, onStage);
+            }
 
             var bytes:URLLoader = new URLLoader();
             bytes.dataFormat = URLLoaderDataFormat.BINARY;
@@ -87,11 +97,12 @@ package {
             bytes.load(new URLRequest("app:/skua.swf"));
         }
 
-        private function onStage(event:Event):void {
+        private function onStage(event:Event = null):void {
             stage.scaleMode = StageScaleMode.SHOW_ALL;
             stage.align = StageAlign.TOP;
             // Stay above what skua puts on the stage (it swaps itself for the game).
             stage.addEventListener(Event.ADDED, keepOnTop);
+            addEventListener(Event.ENTER_FRAME, watchTyping);
         }
 
         private function keepOnTop(event:Event):void {
@@ -110,8 +121,33 @@ package {
             log.scrollV = log.maxScrollV;
         }
 
+        /** Silent off screen, as Turu's Ruffle build (the game keeps running there). */
         private function onActivity(event:Event):void {
             say(new Date().toTimeString().substr(0, 8) + " " + event.type);
+            SoundMixer.soundTransform = new SoundTransform(event.type == Event.ACTIVATE ? 1 : 0);
+        }
+
+        /**
+         * The game's focused text field, for the engine's strip above the soft keyboard (the
+         * keyboard covers the field; AIR doesn't pan the stage: `softKeyboardBehavior` none).
+         */
+        private function watchTyping(event:Event):void {
+            var field:TextField = stage.focus as TextField;
+            var now:String = "";
+            if (field != null && field.type == TextFieldType.INPUT) {
+                now = JSON.stringify({
+                    text: field.text,
+                    caret: field.caretIndex,
+                    selStart: field.selectionBeginIndex,
+                    selEnd: field.selectionEndIndex,
+                    password: field.displayAsPassword,
+                    max: field.maxChars
+                });
+            }
+            if (now != typing) {
+                typing = now;
+                native.gameTyping(now);
+            }
         }
 
         private function onFail(event:ErrorEvent):void {

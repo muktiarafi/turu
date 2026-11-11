@@ -65,6 +65,16 @@ package com.muktiarafi.turu.air {
             return context != null ? context.call("patchSwf", swf, target) as ByteArray : null;
         }
 
+        /**
+         * The game's focused text field for the strip above the soft keyboard, as JSON (`text`,
+         * `caret`, `selStart`, `selEnd`, `password`, `max`), or "" when there's none.
+         */
+        public function gameTyping(json:String):void {
+            if (context != null) {
+                context.call("gameTyping", json);
+            }
+        }
+
         public static const GAME:int = 0;
         public static const SKUA:int = 1;
         /** Another SWF the game or skua loads (a background, an injected script). */
