@@ -33,6 +33,12 @@ pub struct GameState {
     pub(crate) unanswered_turn_ins: HashMap<i64, TurnInSent>,
     /// The quest and time of the last `tryQuestComplete` sent.
     pub(crate) last_turn_in: Option<(i64, Instant)>,
+    /// When the last `acceptQuest` or `tryQuestComplete` was sent, by anyone (scripts, the
+    /// game, the registered-quest loop): `quests::accept` and `complete` keep `ActionDelay`
+    /// after it.
+    pub(crate) last_quest_packet: Option<Instant>,
+    /// When the last `getQuests` was sent: `quests::load` keeps `ActionDelay` after it.
+    pub(crate) last_get_quests: Option<Instant>,
     /// The last reads of `isLoggedIn` and of the avatar's `intState`, reused for a moment by
     /// every thread (`api::player::logged_in` and `state`).
     pub(crate) logged_in_read: Option<(Instant, bool)>,

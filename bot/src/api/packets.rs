@@ -366,6 +366,7 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
                     .filter(|(quest, _)| *quest != quest_id)
                     .map(|(quest, at)| (quest, now.duration_since(at)));
                 state.last_turn_in = Some((quest_id, now));
+                state.last_quest_packet = Some(now);
                 state
                     .unanswered_turn_ins
                     .insert(quest_id, TurnInSent { at: now, after })
@@ -379,9 +380,14 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
                 ));
             }
         }
+        "getQuests" => bot.state.lock().last_get_quests = Some(Instant::now()),
         "acceptQuest" => {
             let quest_id = part(4).parse().unwrap_or_default();
-            bot.state.lock().stats.quests_accepted += 1;
+            {
+                let mut state = bot.state.lock();
+                state.stats.quests_accepted += 1;
+                state.last_quest_packet = Some(Instant::now());
+            }
             bot.events.emit(BotEvent::QuestAccepted { quest_id });
         }
         // An auto-relogin's own logout.

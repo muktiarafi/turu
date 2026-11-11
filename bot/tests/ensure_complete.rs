@@ -19,6 +19,8 @@ struct FakeGame {
     bot: OnceLock<Weak<Bot>>,
     quest: Mutex<Quest>,
     calls: Mutex<Vec<String>>,
+    /// When each `world.tryQuestComplete` was called.
+    turn_ins_at: Mutex<Vec<std::time::Instant>>,
 }
 
 impl FakeGame {
@@ -51,6 +53,7 @@ impl FlashHost for FakeGame {
         let answer = match function.as_str() {
             "world.isQuestInProgress" => self.quest.lock().client_in_progress.to_string(),
             "world.tryQuestComplete" => {
+                self.turn_ins_at.lock().push(std::time::Instant::now());
                 let bot = self.bot();
                 bot.on_flash_call(
                     "packet",
@@ -157,4 +160,25 @@ fn an_answered_turn_in_needs_no_recovery() {
     let (bot, game) = setup(true);
     assert_eq!(ensure_complete(&bot), json!(true));
     assert_eq!(*game.calls.lock(), ["world.tryQuestComplete"]);
+}
+
+/// Turn-ins of quests one after another (CoreBots' `ensureCompleteQuests`) keep `ActionDelay`
+/// apart: the server drops one sent ~500 ms after the last ("Please slow down").
+#[test]
+fn turn_ins_keep_action_delay_apart() {
+    let (bot, game) = setup(true);
+    bot.options.write().action_delay = 300;
+    for _ in 0..3 {
+        *game.quest.lock() = Quest {
+            client_in_progress: true,
+            server_accepted: true,
+        };
+        assert_eq!(ensure_complete(&bot), json!(true));
+    }
+    let times = game.turn_ins_at.lock().clone();
+    assert_eq!(times.len(), 3);
+    for pair in times.windows(2) {
+        let gap = pair[1].duration_since(pair[0]);
+        assert!(gap >= std::time::Duration::from_millis(300), "{gap:?}");
+    }
 }

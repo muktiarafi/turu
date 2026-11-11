@@ -354,6 +354,15 @@ pub fn load(bot: &Bot, ids: &[i64]) -> BotResult<()> {
         return Ok(());
     }
     let ids = &ids[..];
+    // Turu: a `getQuests` sent ~300 ms after another (CoreStory's `preLoad` right after a
+    // quest's `ensureLoad`) is dropped ("Please slow down"); keep `ActionDelay` after the last.
+    let gap = Duration::from_millis(bot.opts().action_delay.max(0) as u64);
+    let last = bot.state.lock().last_get_quests;
+    if let Some(wait) = last.and_then(|at| gap.checked_sub(at.elapsed()))
+        && !wait.is_zero()
+    {
+        bot.sleep(wait.as_millis() as u64)?;
+    }
     let join = |ids: &[i64]| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
     if ids.len() < 30 {
         return bot
@@ -425,10 +434,27 @@ pub fn can_complete(bot: &Bot, id: i64) -> BotResult<bool> {
 // Accept and complete
 // ---------------------------------------------------------------------------------------
 
+/// Turu: waits until `ActionDelay` has passed since the last quest packet (`acceptQuest` or
+/// `tryQuestComplete`, whoever sent it). The game's own `world.lock` cooldowns let a turn-in go
+/// out ~20 ms after the previous one's reply, ~500 ms after that turn-in, and the server drops
+/// it ("Please slow down. Last action was too soon!"): CoreBots' `ensureCompleteQuests` (as in
+/// Swordhaven's rep farm) lost every quest after the first and waited a retry for each.
+fn space_quest_packet(bot: &Bot) -> BotResult<()> {
+    let gap = Duration::from_millis(bot.opts().action_delay.max(0) as u64);
+    let last = bot.state.lock().last_quest_packet;
+    if let Some(wait) = last.and_then(|at| gap.checked_sub(at.elapsed()))
+        && !wait.is_zero()
+    {
+        bot.sleep(wait.as_millis() as u64)?;
+    }
+    Ok(())
+}
+
 /// VibeSkua `Accept(id)`: waits for the `acceptQuest` cooldown, accepts and waits (14
 /// tries) until it's in progress.
 pub fn accept(bot: &Bot, id: i64) -> BotResult<bool> {
     wait::for_action_cooldown(bot, "acceptQuest", 40)?;
+    space_quest_packet(bot)?;
     bot.flash
         .call_game_function("world.acceptQuest", vec![id.into()])?;
     wait::for_quest_accept(bot, id, 14)?;
@@ -468,11 +494,22 @@ pub fn ensure_accept(bot: &Bot, id: i64) -> BotResult<bool> {
 /// turns it in and waits (10 tries) until it's no longer in progress.
 pub fn complete(bot: &Bot, id: i64, item_id: i64, special: bool) -> BotResult<bool> {
     wait::for_action_cooldown(bot, "tryQuestComplete", 40)?;
+    space_quest_packet(bot)?;
     bot.flash.call_game_function(
         "world.tryQuestComplete",
         vec![id.into(), item_id.into(), special.into()],
     )?;
     wait::for_quest_complete(bot, id, 10)?;
+    // Turu: the reply often takes longer than those 10 tries (0.5 s); wait for it rather than
+    // let `ensureComplete` send the turn-in again (a second packet the server drops, or answers
+    // for a quest already turned in).
+    if is_in_progress(bot, id)? && turn_in_unanswered(bot, id) {
+        wait::until(
+            bot,
+            || Ok(!turn_in_unanswered(bot, id) && !is_in_progress(bot, id)?),
+            10,
+        )?;
+    }
     Ok(!is_in_progress(bot, id)?)
 }
 

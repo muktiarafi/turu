@@ -525,6 +525,14 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   Unlike C#, the watcher and the manager also keep `ActionDelay` between their quest packets
   (a turn-in right after an accept, or the reverse, was still dropped now and then); a quest
   whose turn is too soon waits for the next run.
+- **Quest packets keep `ActionDelay` apart everywhere:** `quests.accept`/`complete` wait until
+  `ActionDelay` has passed since the last `acceptQuest` or `tryQuestComplete` anyone sent, and
+  `quests.load` since the last `getQuests`. The game's `world.lock` cooldowns let CoreBots'
+  `ensureCompleteQuests` (Swordhaven's rep farm) send each turn-in ~500 ms after the last, and
+  the server dropped every one after the first; CoreStory's `preLoad` sent its `getQuests` ~300 ms
+  after `checkCompletion`'s. `complete` also waits up to 1 s more for a late `ccqr` instead of
+  letting `ensureComplete` send the turn-in again. Checked live with KingsEcho (no "Please slow
+  down" in those spots); `bot/tests/ensure_complete.rs` covers the turn-in spacing.
 - **`ensureComplete` recovers a lost accept:** when none of its `questAcceptAndCompleteTries`
   turn-ins gets a `ccqr` while the quest still shows in progress, it abandons the quest, loads
   it, accepts it again (`ActionDelay * 2` apart) and tries one more round. A refused turn-in
