@@ -272,6 +272,8 @@ fn start_engine(root: PathBuf) {
     static ENGINE: Once = Once::new();
     ENGINE.call_once(|| {
         turu_bot::paths::set_default_root(root.clone());
+        // Client updates look for Turu Mas's APK, not Turu's, and name it.
+        turu_bot::updates::set_turu_mas();
         let _ = CRASH_DIR.set(turu_bot::paths::Paths::new().crash_dir());
         crate::crash_uploads::start();
         let spawned = std::thread::Builder::new()
@@ -304,6 +306,9 @@ fn engine(root: &Path) {
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
+    // At start and every 6 hours (Options > Application): a newer Turu Mas shows Update in the
+    // bar, whose button downloads its APK for Android to install.
+    turu::start_client_updates();
 }
 
 fn read_args(file: &Path) -> Vec<OsString> {

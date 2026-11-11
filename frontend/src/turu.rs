@@ -295,7 +295,12 @@ fn check_client_updates_now_blocking() {
         tracing::warn!("Couldn't check for Turu updates: {e}");
     }
     if let Some(release) = updates::record_check(result) {
-        let message = format!("Update available: Turu {} (you have {VERSION}): {}", release.version, release.html_url);
+        let message = format!(
+            "Update available: {} {} (you have {VERSION}): {}",
+            updates::app_name(),
+            release.version,
+            release.html_url
+        );
         tracing::info!("{message}");
         bot().log(format!("[Updates] {message}"));
     }

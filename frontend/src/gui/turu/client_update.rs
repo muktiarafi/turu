@@ -9,8 +9,14 @@ use egui::{Align, Context, Layout, RichText, Spinner, Ui, vec2};
 use std::time::Duration;
 use turu_bot::updates::{self, Install, Release};
 
-/// The window's title (and egui id).
-pub const TITLE: &str = "Update Turu";
+/// The window's title (and egui id): "Update Turu", or "Update Turu Mas".
+pub fn title() -> &'static str {
+    if updates::app_name() == "Turu Mas" {
+        "Update Turu Mas"
+    } else {
+        "Update Turu"
+    }
+}
 
 pub fn show(ctx: &Context, open: &mut bool) {
     if !*open {
@@ -21,7 +27,7 @@ pub fn show(ctx: &Context, open: &mut bool) {
         *open = false;
         return;
     };
-    super::window(ctx, TITLE, [400.0, 250.0], 2)
+    super::window(ctx, title(), [400.0, 250.0], 2)
         .open(open)
         .resizable(false)
         .show(ctx, |ui| contents(ui, &release, &state.install));
@@ -38,7 +44,7 @@ fn contents(ui: &mut Ui, release: &Release, install: &Install) {
     widgets::card(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.label(
-            RichText::new(format!("Turu {}", release.version))
+            RichText::new(format!("{} {}", updates::app_name(), release.version))
                 .size(17.0)
                 .strong()
                 .color(TEXT),

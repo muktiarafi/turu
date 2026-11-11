@@ -17,7 +17,8 @@
 //! * [`install`] (desktops): unpacks it ([`install::stage`]), swaps the program
 //!   ([`install::apply`]) and starts the new one ([`install::Relaunch`]).
 //!
-//! Android only notifies: its button opens the APK's URL.
+//! Android only notifies: its button opens the APK's URL. Turu Mas ([`set_turu_mas`]) looks for
+//! its own APK, not Turu's.
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// Turu's releases on GitHub (`TURU_RELEASES_URL` overrides it).
@@ -52,7 +54,25 @@ pub fn releases_url() -> String {
         .unwrap_or_else(|| DEFAULT_RELEASES_URL.to_owned())
 }
 
-/// A release package, as `release.yml` names them: `turu-<version>-<suffix>`.
+/// Whether this is Turu Mas (docs/TURU_MAS.md): its engine says so at start ([`set_turu_mas`]).
+static TURU_MAS: AtomicBool = AtomicBool::new(false);
+
+/// Called by Turu Mas's engine before its first check: its package is
+/// [`Target::TuruMasArm64`], and the windows name it [`app_name`].
+pub fn set_turu_mas() {
+    TURU_MAS.store(true, Ordering::Relaxed);
+}
+
+/// The app's name, as the update texts give it: "Turu", or "Turu Mas".
+pub fn app_name() -> &'static str {
+    if TURU_MAS.load(Ordering::Relaxed) {
+        "Turu Mas"
+    } else {
+        "Turu"
+    }
+}
+
+/// A release package, as `release.yml` names them: `<prefix><version>-<suffix>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
     LinuxX64,
@@ -60,13 +80,21 @@ pub enum Target {
     /// Both Macs: one universal `Turu.app`.
     MacOs,
     AndroidArm64,
+    /// Turu Mas, Android's other app: `turumas-<version>-android-arm64.apk`.
+    TuruMasArm64,
 }
 
 impl Target {
     /// This build's package; `None` where Turu ships none (Linux on ARM, say).
     pub fn current() -> Option<Self> {
         if cfg!(target_os = "android") {
-            cfg!(target_arch = "aarch64").then_some(Self::AndroidArm64)
+            cfg!(target_arch = "aarch64").then(|| {
+                if TURU_MAS.load(Ordering::Relaxed) {
+                    Self::TuruMasArm64
+                } else {
+                    Self::AndroidArm64
+                }
+            })
         } else if cfg!(target_os = "macos") {
             Some(Self::MacOs)
         } else if cfg!(all(windows, target_arch = "x86_64")) {
@@ -78,18 +106,27 @@ impl Target {
         }
     }
 
+    /// The package's name up to its version. Turu's own (`turu-`) never matches Turu Mas's
+    /// (`turumas-`), nor the other way round.
+    pub fn prefix(self) -> &'static str {
+        match self {
+            Self::TuruMasArm64 => "turumas-",
+            _ => "turu-",
+        }
+    }
+
     pub fn suffix(self) -> &'static str {
         match self {
             Self::LinuxX64 => "linux-x86_64.tar.gz",
             Self::WindowsX64 => "windows-x86_64.zip",
             Self::MacOs => "macos-universal.zip",
-            Self::AndroidArm64 => "android-arm64.apk",
+            Self::AndroidArm64 | Self::TuruMasArm64 => "android-arm64.apk",
         }
     }
 
     /// Whether Turu can replace itself with the package (else it only opens its URL).
     pub fn updates_in_place(self) -> bool {
-        self != Self::AndroidArm64
+        !matches!(self, Self::AndroidArm64 | Self::TuruMasArm64)
     }
 }
 
@@ -235,7 +272,7 @@ pub fn newest(
         };
         let package = target.and_then(|t| {
             let suffix = format!("-{}", t.suffix());
-            asset(&|name| name.starts_with("turu-") && name.ends_with(&suffix))
+            asset(&|name| name.starts_with(t.prefix()) && name.ends_with(&suffix))
         });
         Release {
             version: version.to_string(),
@@ -524,7 +561,9 @@ pub mod install {
                     .arg(dir))?;
                 dir.join("Turu.app")
             }
-            Target::AndroidArm64 => return Err("Android installs the APK itself".into()),
+            Target::AndroidArm64 | Target::TuruMasArm64 => {
+                return Err("Android installs the APK itself".into());
+            }
         };
         if !program.exists() {
             return Err(format!(
@@ -806,22 +845,34 @@ mod tests {
         }
         let none = newest(&json, "0.2.0", false, None).unwrap().unwrap();
         assert!(none.asset.is_none() && !none.installable());
-        // Turu Mas's APK (another app, release.yml's `turu-mas` job) is never Android's package,
-        // listed first or not.
-        let mut with_mas = release("v0.3.0", false, false);
-        with_mas["assets"].as_array_mut().unwrap().insert(
-            0,
-            serde_json::json!({ "name": "turumas-0.3.0-android-arm64.apk", "browser_download_url": "https://dl/mas", "size": 10 }),
-        );
-        let android = newest(
-            &list(&[with_mas]),
-            "0.2.0",
-            false,
-            Some(Target::AndroidArm64),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(android.asset.unwrap().name, "turu-0.3.0-android-arm64.apk");
+        // Turu and Turu Mas (two apps, release.yml's `android` and `turu-mas` jobs) each take
+        // their own APK, whichever is listed first.
+        for mas_first in [true, false] {
+            let mut with_mas = release("v0.3.0", false, false);
+            let mas = serde_json::json!({ "name": "turumas-0.3.0-android-arm64.apk", "browser_download_url": "https://dl/mas", "size": 10 });
+            let assets = with_mas["assets"].as_array_mut().unwrap();
+            if mas_first {
+                assets.insert(0, mas);
+            } else {
+                assets.push(mas);
+            }
+            let json = list(&[with_mas]);
+            for (target, name) in [
+                (Target::AndroidArm64, "turu-0.3.0-android-arm64.apk"),
+                (Target::TuruMasArm64, "turumas-0.3.0-android-arm64.apk"),
+            ] {
+                let release = newest(&json, "0.2.0", false, Some(target))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(release.asset.unwrap().name, name);
+                assert!(!target.updates_in_place());
+            }
+        }
+        // A release made before Turu Mas has no APK of its own: a link to the release page.
+        let old = newest(&json, "0.2.0", false, Some(Target::TuruMasArm64))
+            .unwrap()
+            .unwrap();
+        assert!(old.asset.is_none());
         // A release without this platform's package is still offered, as a link.
         let bare = serde_json::json!([{ "tag_name": "v0.3.0", "html_url": "u", "assets": [] }]);
         let bare = newest(

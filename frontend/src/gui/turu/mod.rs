@@ -607,7 +607,7 @@ mod tests {
             });
             let mut show: Show = Box::new(client_update::show);
             for screen in [vec2(1400.0, 1000.0), vec2(640.0, 420.0)] {
-                let (rect, area, overflow) = run(screen, client_update::TITLE, &mut show);
+                let (rect, area, overflow) = run(screen, client_update::title(), &mut show);
                 assert!(area.expand(1.0).contains_rect(rect), "{install:?} {screen:?}: {rect:?} outside {area:?}");
                 if screen.y >= 1000.0 {
                     assert!(overflow <= 0.5, "{install:?}: scrolls by {overflow}");

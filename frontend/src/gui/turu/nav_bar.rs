@@ -1046,7 +1046,8 @@ fn update_notice(ui: &mut Ui, windows: &mut Windows, compact: bool) {
         format!("Update {}", release.version)
     };
     let response = toggle_button(ui, &label, lead, windows.client_update).on_hover_text(format!(
-        "Update available: Turu {} (you have {})",
+        "Update available: {} {} (you have {})",
+        turu_bot::updates::app_name(),
         release.version,
         crate::turu::VERSION
     ));

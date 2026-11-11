@@ -902,18 +902,26 @@ fn report_status(ui: &mut Ui, settings: &AppSettings) {
 fn client_update_status(ui: &mut Ui) {
     let state = turu_bot::updates::state();
     let (text, color) = if state.checking {
-        ("Checking for a new Turu…".to_owned(), MUTED)
+        (format!("Checking for a new {}…", turu_bot::updates::app_name()), MUTED)
     } else if let Some(error) = &state.error {
-        (format!("Couldn't check for a new Turu: {error}"), DANGER)
+        (
+            format!("Couldn't check for a new {}: {error}", turu_bot::updates::app_name()),
+            DANGER,
+        )
     } else if let Some(release) = &state.available {
         (
-            format!("Turu {} is available: open Update in the bar", release.version),
+            format!(
+                "{} {} is available: open Update in the bar",
+                turu_bot::updates::app_name(),
+                release.version
+            ),
             SUCCESS,
         )
     } else if let Some(at) = state.checked_at {
         (
             format!(
-                "Turu {} is the newest (checked at {})",
+                "{} {} is the newest (checked at {})",
+                turu_bot::updates::app_name(),
                 crate::turu::VERSION,
                 at.format("%H:%M")
             ),

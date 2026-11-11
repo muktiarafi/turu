@@ -16,8 +16,11 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 * Its data folder is its own (`Android/data/com.muktiarafi.turumas/files`): settings, accounts
   and scripts aren't shared with Turu. Search Scripts downloads the scripts.
 * It starts with the AIR SDK's splash screen for about 1.6 s (the SDK's free tier).
-* One game client: no Army, no New Tab. No HotKeys or file dialogs. It doesn't update itself:
-  install the next release's APK over it (same signature, so data stays).
+* One game client: no Army, no New Tab. No HotKeys or file dialogs.
+* Updates: as Turu on Android, it checks the releases at start and every 6 hours (Options >
+  Application) and shows Update in the bar; the window's Download APK fetches Turu Mas's APK
+  for Android to install over it (same signature, so data stays). A release without a Turu Mas
+  APK (those before it) offers its release page instead.
 * Crash reports (Sentry) are sent only if you say yes at first start, as in Turu; change it in
   Options > Application. [PRIVACY.md](../PRIVACY.md) says what's sent.
 
@@ -64,6 +67,8 @@ The release workflow's `turu-mas` job (`.github/workflows/release.yml`) builds i
 with Turu's other packages and publishes `turumas-<version>-android-arm64.apk` in the same
 release. The name doesn't start with `turu-`: Turu's updater takes any
 `turu-*-android-arm64.apk` as Turu's own APK, and installed versions already work that way.
+Turu Mas's own updater looks for `turumas-*` (`turu_bot::updates`: the engine calls
+`set_turu_mas`, so `Target::current()` is `TuruMasArm64` and `app_name()` "Turu Mas").
 
 The job gets the AIR SDK with `joshtynjala/setup-adobe-air-action` (`accept-license: true`
 accepts the SDK's license; free tier), JDK 17 and 21, the NDK, cargo-ndk and libclang.
