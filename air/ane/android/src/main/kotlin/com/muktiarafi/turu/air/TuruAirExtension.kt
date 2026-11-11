@@ -31,6 +31,7 @@ class TuruAirExtension : FREExtension {
                 // The Ruffle build's data folder: shared storage, reachable with adb.
                 val dir = activity.getExternalFilesDir(null) ?: activity.filesDir
                 Bridge.nativeStart(activity.applicationContext, dir.absolutePath)
+                Bridge.attachOverlay(activity)
                 FREObject.newObject(dir.absolutePath)
             },
             "flashCall" to FREFunction { _, args ->

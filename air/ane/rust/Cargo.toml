@@ -31,6 +31,13 @@ serde_json = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-platform-verifier = "0.7.1"
+# Turu's windows over the game (`overlay.rs`), drawn as the Ruffle build draws them (keep equal to
+# its versions: `[workspace.dependencies]`).
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+wgpu = { workspace = true }
+futures = { workspace = true }
+ndk = "0.9"
 # rquickjs ships no QuickJS bindings for Android: generate them (air/ane/build.sh sets up
 # bindgen, as the Ruffle build's `cargoNdk` task does).
 rquickjs = { version = "0.14", features = ["bindgen"] }

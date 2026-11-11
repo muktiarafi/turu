@@ -256,6 +256,43 @@ so its scripts aren't found and Search Scripts can't write there. Let the app cr
 notification (the API does it now); scripts without adb (Search Scripts in the UI is A2); an
 in-game bench on a phone.
 
+## A2: Turu's windows over the game (2026-11-11)
+
+**As built:**
+* **`overlay.rs`** (crate `turu_air`): the nav rail and the bot windows (`TuruUi::show_bar` and
+  `show_windows`, the Ruffle build's code) drawn with wgpu of its own (Vulkan, else GL) into a
+  see-through surface (`CompositeAlphaMode::PreMultiplied` where offered), cleared to transparent,
+  on a thread of its own: at once after input, else when egui asks, at least every 200 ms (logs
+  change without input). egui's fonts as the Ruffle build's (Roboto, the symbols).
+* **`TuruOverlay`** (Kotlin): a `SurfaceView` over AIR's (`setZOrderOnTop`, translucent), in the
+  activity's content layout. At a finger's down it asks the engine (`nativeOnUi`: the rail and
+  bar, or a non-background egui layer, as the Ruffle build's `Screen::touch`); a gesture it doesn't
+  take falls through to AIR's view below. It's the soft keyboard's target while egui wants text
+  (`platform_output.ime`): `commitText`, deletes and Enter become egui events.
+* **The game right of the rail:** the engine sends the rail's and bar's size in pixels
+  (`gameInsets`) whenever they change (the rail hidden, a cutout); Kotlin sets them as AIR's view's
+  margins, and AIR's stage scales into what's left (`SHOW_ALL`).
+* **`AirPlatform`**: one client (no Army, no New Tab), touch-sized controls, no hotkeys, no file
+  dialogs yet; links and the share sheet through Kotlin, copy to the clipboard.
+* **HTTPS:** rustls-platform-verifier's Kotlin half fetches revocation lists over plain HTTP from
+  the CAs' hosts, which its module allows with a network security config (merged into the Ruffle
+  build's manifest). Without it every certificate came back "Revoked" (no Search Scripts). `app.xml`
+  sets `usesCleartextTraffic` for the AIR app for now; the verifier's own per-host config, as a
+  resource in the extension, is the tighter fix.
+* The host's log strip hides 20 s after skua loads (it covered the game's bar); an error shows it.
+* The APK is 56 MB (the engine with wgpu and egui: the extension's `.so` grew).
+
+**Checked on the emulator:** the rail drawn, the game moved right of it (AIR's view 2232 of 2400
+px: the 64-point rail at 2.625); Menu, Scripts, Search Scripts opened by touch; Search Scripts
+listed 1,800 scripts and downloaded them (Auto Update Scripts); its search box took typing through
+the soft keyboard ("babysitter": 1 found); a tap on the game's username field reached AIR (the
+keyboard then served `AIRWindowSurfaceView`).
+
+**Left for A2:** the soft keyboard covers a low window (the Ruffle build pans the screen,
+`android/src/pan.rs`); a tap on the game doesn't close an open egui menu (egui only sees the UI's
+touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause; a
+hardware keyboard's keys into the UI.
+
 ## Why consider it: what Ruffle costs on Android
 
 From `docs/ANDROID.md` and the crash reports so far:

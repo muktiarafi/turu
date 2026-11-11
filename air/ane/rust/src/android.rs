@@ -37,6 +37,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
                 log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
             }
             let root = PathBuf::from(files_dir.try_to_string(env)?);
+            turu_frontend::platform::set(Arc::new(crate::platform::AirPlatform));
             start_engine(root);
             Ok(())
         })
@@ -130,6 +131,107 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativePatch<'local>(
             }
         })
         .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// `Bridge.nativeSurface(surface, density)`: the overlay's surface came or changed (null: it
+/// went), at `density` pixels per point.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeSurface<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    surface: JObject<'local>,
+    density: jni::sys::jfloat,
+) {
+    unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let window = if surface.is_null() {
+                None
+            } else {
+                // SAFETY: `env` and `surface` are this call's, an android.view.Surface; the
+                // native window holds its own reference.
+                unsafe {
+                    ndk::native_window::NativeWindow::from_surface(
+                        env.get_raw().cast(),
+                        surface.as_raw().cast(),
+                    )
+                }
+            };
+            crate::overlay::set_window(window, density);
+            Ok(())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// `Bridge.nativeTouch(phase, x, y)`: a finger on the overlay's UI (0 down, 1 move, 2 up, 3
+/// cancelled), in pixels.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeTouch<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    phase: jint,
+    x: jni::sys::jfloat,
+    y: jni::sys::jfloat,
+) {
+    let phase = match phase {
+        0 => egui::TouchPhase::Start,
+        1 => egui::TouchPhase::Move,
+        2 => egui::TouchPhase::End,
+        _ => egui::TouchPhase::Cancel,
+    };
+    crate::overlay::touch(phase, x, y);
+}
+
+/// `Bridge.nativeOnUi(x, y)`: whether a finger coming down there is Turu's UI's (else AIR's).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeOnUi<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    x: jni::sys::jfloat,
+    y: jni::sys::jfloat,
+) -> jni::sys::jboolean {
+    crate::overlay::on_ui(x, y)
+}
+
+/// `Bridge.nativeText(text)`: the soft keyboard typed `text` into the UI's text box.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeText<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    text: JString<'local>,
+) {
+    unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let text = text.try_to_string(env)?;
+            crate::overlay::input(vec![egui::Event::Text(text)]);
+            Ok(())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// `Bridge.nativeKey(key)`: a key the UI's text box handles (0 Backspace, 1 Enter, 2 Delete,
+/// 3 left, 4 right).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeKey<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    key: jint,
+) {
+    let key = match key {
+        0 => egui::Key::Backspace,
+        1 => egui::Key::Enter,
+        2 => egui::Key::Delete,
+        3 => egui::Key::ArrowLeft,
+        4 => egui::Key::ArrowRight,
+        _ => return,
+    };
+    let press = |pressed| egui::Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    crate::overlay::input(vec![press(true), press(false)]);
 }
 
 /// Starts the engine thread once per process, with `root` as the data folder.

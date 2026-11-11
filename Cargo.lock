@@ -7321,8 +7321,12 @@ name = "turu_air"
 version = "0.2.0"
 dependencies = [
  "android_logger",
+ "egui",
+ "egui-wgpu",
+ "futures",
  "jni 0.22.4",
  "log",
+ "ndk",
  "reqwest",
  "rquickjs",
  "rustls",
@@ -7332,6 +7336,7 @@ dependencies = [
  "turu_air_patch",
  "turu_bot",
  "turu_frontend",
+ "wgpu",
 ]
 
 [[package]]

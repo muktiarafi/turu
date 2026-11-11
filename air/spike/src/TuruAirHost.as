@@ -20,13 +20,16 @@ package {
     import flash.text.TextField;
     import flash.text.TextFormat;
     import flash.utils.ByteArray;
+    import flash.utils.setTimeout;
 
     /**
      * Turu's host under Adobe AIR (docs/AIR_PROPOSAL.md): starts the foreground service and
      * Turu's engine (the native extension), then loads VibeSkua's skua.swf as the Ruffle build
      * does, patched by the engine for AIR (`turu_air_patch`): its `ExternalInterface` is
      * [TuruExternal] and its loaders [TuruLoader], so the engine drives it as it drives skua in
-     * Ruffle. A log strip at the bottom shows what happened (release builds' trace goes nowhere).
+     * Ruffle. A log strip at the bottom shows what happened at the start (release builds' trace goes
+     * nowhere), and errors after. Turu's windows are drawn over all this by the engine (the
+     * extension's overlay view).
      *
      * [TuruExternal] and [TuruLoader] are compiled into this SWF; skua, in a child application
      * domain, finds them by name.
@@ -100,6 +103,9 @@ package {
 
         private function say(text:String):void {
             trace("[TuruAir] " + text);
+            if (text.indexOf("ERROR") == 0 || text.indexOf("UNCAUGHT") == 0) {
+                log.visible = true;
+            }
             log.appendText(text + "\n");
             log.scrollV = log.maxScrollV;
         }
@@ -136,6 +142,10 @@ package {
         private function onSkua(event:Event):void {
             stage.addChildAt(skua.content, 0);
             say("skua.swf loaded");
+            // Turu's windows take over (the engine's overlay): the strip would cover the game's bar.
+            setTimeout(function():void {
+                log.visible = false;
+            }, 20000);
         }
     }
 }
