@@ -107,33 +107,65 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativePatch<'local>(
     unowned_env
         .with_env(|env| -> jni::errors::Result<JByteArray<'local>> {
             let input = env.convert_byte_array(&swf)?;
-            let strict = target != 2;
-            let target = match target {
-                1 => turu_air_patch::Target::Skua,
-                _ => turu_air_patch::Target::Game,
-            };
-            let started = std::time::Instant::now();
-            match turu_air_patch::patch_swf(&input, target) {
-                Ok((output, report)) => {
-                    tracing::info!(
-                        "Patched {target:?} for AIR in {:?}: {} swapped, {} dropped",
-                        started.elapsed(),
-                        report.swapped.len(),
-                        report.dropped.len()
-                    );
-                    if let Some(problem) = report.problem().filter(|_| strict) {
-                        tracing::error!("{target:?} can't run under AIR: {problem}");
-                        return Ok(JByteArray::default());
-                    }
-                    env.byte_array_from_slice(&output)
-                }
-                Err(e) => {
-                    tracing::error!("Couldn't patch {target:?} for AIR: {e:#}");
-                    Ok(JByteArray::default())
-                }
+            match patched(&input, target) {
+                Some(output) => env.byte_array_from_slice(&output),
+                None => Ok(JByteArray::default()),
             }
         })
         .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// What [`Java_com_muktiarafi_turu_air_Bridge_nativePatch`] answers: the patched SWF, from the
+/// data folder's `cache/airpatched` when this input was patched before, or `None` when it
+/// can't run under AIR. Only SWFs that can are kept.
+fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
+    static CACHE: std::sync::OnceLock<turu_air_patch::cache::PatchCache> =
+        std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| {
+        turu_air_patch::cache::PatchCache::new(turu_bot::paths::Paths::new().air_patched_dir())
+    });
+    let (kind, strict) = match target {
+        0 => ("game", true),
+        1 => ("skua", true),
+        _ => ("asset", false),
+    };
+    let started = std::time::Instant::now();
+    if let Some(output) = cache.get(input, kind) {
+        tracing::info!(
+            "Patched {kind} for AIR: kept from before, read in {:?}",
+            started.elapsed()
+        );
+        return Some(output);
+    }
+    let patch_target = match target {
+        1 => turu_air_patch::Target::Skua,
+        _ => turu_air_patch::Target::Game,
+    };
+    match turu_air_patch::patch_swf(input, patch_target) {
+        Ok((output, report)) => {
+            tracing::info!(
+                "Patched {kind} for AIR in {:?}: {} swapped, {} dropped",
+                started.elapsed(),
+                report.swapped.len(),
+                report.dropped.len()
+            );
+            if let Some(problem) = report.problem().filter(|_| strict) {
+                tracing::error!("{kind} can't run under AIR: {problem}");
+                return None;
+            }
+            if let Err(e) = cache.put(input, kind, &output) {
+                tracing::warn!(
+                    "Couldn't keep the patched {kind} in {}: {e}",
+                    cache.dir().display()
+                );
+            }
+            Some(output)
+        }
+        Err(e) => {
+            tracing::error!("Couldn't patch {kind} for AIR: {e:#}");
+            None
+        }
+    }
 }
 
 /// `Bridge.nativeSurface(surface, density)`: the overlay's surface came or changed (null: it

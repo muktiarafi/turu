@@ -57,6 +57,12 @@ impl Paths {
         self.root.join("cache").join("gamefiles")
     }
 
+    /// Turu Mas's SWFs patched for Adobe AIR (`turu_air_patch::cache`), so a start needn't
+    /// patch them again. Safe to delete.
+    pub fn air_patched_dir(&self) -> PathBuf {
+        self.root.join("cache").join("airpatched")
+    }
+
     /// Where client updates are downloaded and unpacked (`crate::updates`), emptied before each.
     pub fn updates_dir(&self) -> PathBuf {
         self.root.join("updates")

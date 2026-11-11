@@ -34,6 +34,8 @@ use swf::avm2::write::Writer;
 use swf::extensions::ReadSwfExt;
 use swf::{Compression, Header};
 
+pub mod cache;
+
 const TAG_END: u16 = 0;
 const TAG_DO_ABC: u16 = 72;
 const TAG_DO_ABC2: u16 = 82;
