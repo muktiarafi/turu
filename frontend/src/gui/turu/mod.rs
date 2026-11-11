@@ -288,7 +288,6 @@ impl TuruUi {
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
         grid_overlay::show(ctx);
-        crate::touch_controls::show(ctx);
         let tab = self.active();
         hotkeys::run_pressed(ctx, tab);
         let w = &mut tab.windows;

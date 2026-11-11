@@ -40,6 +40,8 @@
 </application>
 </manifest>]]></manifestAdditions>
   </android>
+  <!-- Android resources (res/): the adaptive launcher icon. build.sh writes the folder's path. -->
+  <resdir>@RES@</resdir>
   <extensions>
     <extensionID>com.muktiarafi.turu.air</extensionID>
   </extensions>

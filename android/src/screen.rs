@@ -97,9 +97,6 @@ pub struct Screen {
     /// The refresh rate last asked of the activity for the game's frame rate (Hz, 0: the system's
     /// choice); `None` until asked in this window.
     asked_refresh: Option<u32>,
-    /// The game's texture as egui knows it (for the touch controls' skill icons), and the size it
-    /// was registered at: the texture is made again when the game's area changes size.
-    game_picture: Option<(egui::TextureId, (u32, u32))>,
 }
 
 /// The GPU, set up without a window (the API `graphics` asks for), the blit the screen draws the
@@ -220,7 +217,6 @@ impl Screen {
             configured: false,
             retry_configure: Instant::now(),
             asked_refresh: None,
-            game_picture: None,
         };
         let mut screen = screen;
         screen.configure();
@@ -368,11 +364,6 @@ impl Screen {
                     .layer_id_at(pos)
                     .is_some_and(|layer| layer.order != egui::Order::Background);
                 let on_ui = y < top || x < left || on_layer;
-                // Turu's joystick and skill buttons take their fingers before egui and the game,
-                // so one can be held while another taps (`touch_controls`).
-                if !on_ui && turu_frontend::touch_controls::press(id, pos) {
-                    return;
-                }
                 match self.egui_finger {
                     Some(finger) if finger.on_ui || !on_ui => {}
                     other => {
@@ -394,11 +385,6 @@ impl Screen {
                 }
             }
             Touch::Move(id, x, y) => {
-                if turu_frontend::touch_controls::holds(id) {
-                    let pos = egui::pos2(x as f32 / self.pixels_per_point, y as f32 / self.pixels_per_point);
-                    turu_frontend::touch_controls::moved(id, pos);
-                    return;
-                }
                 if let Some(finger) = self.egui_finger.as_mut().filter(|finger| finger.id == id) {
                     finger.at = (x, y);
                     self.egui_touch(egui::TouchPhase::Move, (x, y));
@@ -414,10 +400,6 @@ impl Screen {
                 }
             }
             Touch::Up(id, x, y) => {
-                if turu_frontend::touch_controls::holds(id) {
-                    turu_frontend::touch_controls::release(id);
-                    return;
-                }
                 if self.egui_finger.is_some_and(|finger| finger.id == id) {
                     self.egui_finger = None;
                     self.egui_touch(egui::TouchPhase::End, (x, y));
@@ -434,7 +416,6 @@ impl Screen {
                 }
             }
             Touch::Cancel => {
-                turu_frontend::touch_controls::cancel();
                 if let Some(finger) = self.egui_finger.take() {
                     self.egui_touch(egui::TouchPhase::Cancel, finger.at);
                 }
@@ -549,40 +530,6 @@ impl Screen {
         }
     }
 
-    /// Lends the game's texture to egui, with the stage's place in it, so the touch controls' skill
-    /// buttons can show the action bar's icons (`touch_controls::set_game_picture`).
-    fn share_game_picture(&mut self, player: &mut Player) {
-        let Some(texture) = <dyn Any>::downcast_ref::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
-            .map(|r| r.target().texture.clone())
-        else {
-            turu_frontend::touch_controls::set_game_picture(None);
-            return;
-        };
-        let size = (texture.width(), texture.height());
-        let device = &self.descriptors.device;
-        let id = match self.game_picture {
-            Some((id, at)) if at == size => id,
-            Some((id, _)) => {
-                let view = texture.create_view(&Default::default());
-                self.egui_renderer
-                    .update_egui_texture_from_wgpu_texture(device, &view, wgpu::FilterMode::Linear, id);
-                id
-            }
-            None => {
-                let view = texture.create_view(&Default::default());
-                self.egui_renderer
-                    .register_native_texture(device, &view, wgpu::FilterMode::Linear)
-            }
-        };
-        self.game_picture = Some((id, size));
-        let m = player.mutate_with_update_context(|context| context.stage.view_matrix());
-        turu_frontend::touch_controls::set_game_picture(Some(turu_frontend::touch_controls::GamePicture {
-            texture: id,
-            size: [size.0 as f32, size.1 as f32],
-            stage_to_pixels: [m.a, m.b, m.c, m.d, m.tx.to_pixels() as f32, m.ty.to_pixels() as f32],
-        }));
-    }
-
     /// The display's refresh rate, from the activity (`ui::refresh_millihertz`).
     fn update_refresh_rate(&mut self) {
         let millihertz = crate::ui::refresh_millihertz();
@@ -671,7 +618,6 @@ impl Screen {
         let typing = (keyboard > 0.0 && !self.ui_typing)
             .then(|| Typing::read(player))
             .flatten();
-        self.share_game_picture(player);
         let ui = &mut self.ui;
         let output = self.egui.run_ui(raw_input, |root| {
             ui.show_bar(root);

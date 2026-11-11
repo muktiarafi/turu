@@ -338,6 +338,13 @@ Two apps, not one with a switch: **Turu AIR** next to Turu.
   that red (`air/app/icons`, rendered from `turu-air-symbol.svg` with macOS's QuickLook). The
   danger red (`#EF4444`, Stop, Delete) is close to the accent there; it can move toward orange in
   Turu AIR if they're taken for each other.
+* The launcher icon is adaptive, as Turu's: `air/app/res` (app.xml's `<resdir>`, a top-level
+  element; build.sh writes its absolute path) holds `mipmap-anydpi-v26/icon.xml`, Turu's vector
+  eyes on the red, named `icon` so it takes the place of the PNGs ADT makes (`mipmap/icon`) on
+  Android 8+. With the PNGs alone the launcher drew the tile on a light backdrop (a white shape, or
+  a pale tint on Pixel's).
+* Turu's own touch controls (joystick, action bar buttons) are removed from both apps: AQW's own
+  mobile controls do the same (docs/ANDROID.md).
 * The notification's title is the app's name ("Turu AIR").
 * Signing: `AIR_KEYSTORE` and `AIR_KEYSTORE_PASSWORD` (PKCS#12); without them a development key in
   `target/air-app/`. The one-APK experiment (`studio.sh`, `TuruLauncher`) is gone.

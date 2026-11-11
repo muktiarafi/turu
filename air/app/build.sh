@@ -27,7 +27,8 @@ mkdir -p "$out/ext" && cp target/air-ane/com.muktiarafi.turu.air.ane "$out/ext/"
 export JAVA_HOME="$AIR_JAVA_HOME" PATH="$AIR_JAVA_HOME/bin:$PATH"
 "$AIR_HOME/bin/amxmlc" -swf-version=51 -external-library-path+=target/air-ane/TuruAirNative.swc \
   -source-path+=air/app/src -output "$out/TuruAirHost.swf" air/app/src/TuruAirHost.as
-cp air/app/app.xml "$out/app.xml"
+# The Android resources' folder, as an absolute path (ADT's base for <resdir> isn't app.xml's).
+sed "s|@RES@|$PWD/air/app/res|" air/app/app.xml > "$out/app.xml"
 keystore=${AIR_KEYSTORE:-$out/dev.p12}
 password=${AIR_KEYSTORE_PASSWORD:-turuairdev}
 if [ -z "${AIR_KEYSTORE:-}" ] && [ ! -f "$keystore" ]; then

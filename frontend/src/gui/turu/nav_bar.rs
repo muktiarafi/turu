@@ -1646,19 +1646,6 @@ impl NavBar {
                     if item(ui, "Hide Side Bar") {
                         set_rail_hidden(true);
                     }
-                    // Turu's joystick and skill buttons over the game (`touch_controls`).
-                    let controls = crate::touch_controls::enabled();
-                    let label = if controls {
-                        "Hide Touch Controls"
-                    } else {
-                        "Show Touch Controls"
-                    };
-                    if item(ui, label) {
-                        crate::touch_controls::set_enabled(!controls);
-                    }
-                    if item(ui, "Edit Touch Controls") {
-                        crate::touch_controls::edit();
-                    }
                 });
             });
 

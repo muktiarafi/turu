@@ -79,29 +79,12 @@ How to build, run and check the Android app. The design and the plan are in
 > Loader moved it under Favourites; the notification read "turu_long loaded" with Start, which
 > started it (then Pause and Stop), and Stop brought Start back.
 >
-> **Touch controls (2026-11-08, checked on MuMu):** Menu > Show Touch
-> Controls puts Turu's own joystick and six action bar buttons (the game's keys 1 to 6: auto
-> attack, skills 1 to 4, potion) over the game, in game only and hidden while a script runs
-> (an option). Menu > Edit Touch Controls drags each one where it goes, sizes it (40 to 220 pt),
-> hides it, and sets their opacity; Reset brings the defaults back. The layout is kept in the
-> data folder's `touch-controls.json`, places as fractions of the game's area. The joystick
-> walks with `walkTo` to a point 140 stage pixels ahead in its direction every 200 ms while held,
-> and to where the avatar stands when let go; a button uses its slot as the key does
-> (`useSkill`). A skill button shows its slot's icon cut live from the game's own action bar
-> (`ui.mcInterface.actBar`, read every 3 s; the slots measured on AQW's interface: 41 x 41,
-> 45.35 stage pixels apart): the class's icons, with the game's cooldown shading. The screen
-> lends the game's texture to egui and the stage's matrix into it
-> (`Screen::share_game_picture`, `touch_controls::set_game_picture`). Each control has its own
-> opacity too (times the layout's), in the editor. The controls take their fingers in `Screen::touch` before egui and the game
-> (`turu_frontend::touch_controls`), so the joystick and a button work at once. AQW's own
-> mobile joystick and buttons (`liteAssets.mobile`) stay as they were: they can't be moved or
-> sized. On MuMu: the joystick walked right and up-left and stopped when let go; the attack
-> button killed a Dark Makai in `tercessuinotlim`; the editor moved button 6, sized it to
-> 162 pt and Reset put it back, all saved to `touch-controls.json`; the controls hid while
-> `turu_long` ran; the Void Highlord's icons showed in the buttons, lined up with the action
-> bar's, and button 1's own opacity at 0.18 made it faint. Not checked: the joystick and a button at once (adb taps one finger at a
-> time). The rail's Menu and the script chip's list now scroll: on MuMu both were taller than
-> the screen, which hid Hide Side Bar and the touch controls' items, and the chip list's top.
+> **Touch controls (2026-11-08, removed 2026-11-11):** Turu's own joystick and action bar
+> buttons over the game (Menu > Show / Edit Touch Controls, `touch-controls.json`) are gone:
+> AQW's own mobile joystick and buttons (`liteAssets.mobile`) do the same, in Turu and in Turu
+> AIR. A `touch-controls.json` left in the data folder is unused. The rail's Menu and the
+> script chip's list now scroll: on MuMu both were taller than the screen, which hid Hide Side
+> Bar, and the chip list's top.
 >
 > **Scripts for the map (2026-11-08):** joining a map puts a badge on the side bar's script
 > chip with how many scripts are made for it, and the chip's list has them under "On <map>"

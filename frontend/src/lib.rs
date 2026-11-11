@@ -19,5 +19,4 @@ pub mod platform;
 pub mod players;
 pub mod process_memory;
 pub mod touch;
-pub mod touch_controls;
 pub mod turu;
