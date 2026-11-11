@@ -47,6 +47,23 @@ pub const HOST_LOADER: &str = "TuruLoader";
 pub const HOST_EXTERNAL: &str = "TuruExternal";
 /// The host's `URLLoader` that `AirLoader`'s fetches become (package `""`).
 pub const HOST_URL_LOADER: &str = "TuruURLLoader";
+/// The host's class that finds a client's game on a stage several clients share (package `""`):
+/// `rootOf(x)` and `removeOwn(main)`.
+pub const HOST_STAGE: &str = "TuruStage";
+
+/// What [`patch_swf_with`] does beyond its [`Target`]'s rules.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Several clients share AIR's one stage. The game, skua and the SWFs the game loads find
+    /// the game as `stage.getChildAt(0)`; each `x.stage.getChildAt(0)` (and `stage`, through the
+    /// scope, then `getChildAt(0)`) becomes `TuruStage.rootOf(x)`, the game `x` belongs to.
+    /// In skua, its `stage.removeChildAt(0)` (itself, before it adds the game) becomes
+    /// `TuruStage.removeOwn(this)`.
+    pub shared_stage: bool,
+    /// skua's `ExternalInterface` becomes this host class instead of [`HOST_EXTERNAL`] (a
+    /// client the engine doesn't drive).
+    pub external: Option<&'static str>,
+}
 
 /// Which SWF is being patched: what its loaders become, and what it must have.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -82,11 +99,17 @@ pub struct Report {
     pub dropped: Vec<Site>,
     /// Method bodies whose bytecode couldn't be decoded, left as they were.
     pub undecodable: Vec<String>,
+    /// [`Options::shared_stage`]: `stage.getChildAt(0)` made `TuruStage.rootOf` ("getChildAt"),
+    /// skua's `removeChildAt(0)` made `TuruStage.removeOwn` ("removeChildAt").
+    pub stage_roots: Vec<Site>,
+    /// [`Options::shared_stage`]: `getChildAt(0)` right after a `stage` that wasn't rewritten (a
+    /// branch lands inside it), so it still finds stage child 0.
+    pub stage_missed: Vec<Site>,
 }
 
 impl Report {
     pub fn changed(&self) -> bool {
-        !self.swapped.is_empty() || !self.dropped.is_empty()
+        !self.swapped.is_empty() || !self.dropped.is_empty() || !self.stage_roots.is_empty()
     }
 
     /// Why the patched SWF wouldn't run under AIR, or `None` if it should.
@@ -112,6 +135,11 @@ impl Report {
 /// Patches a SWF (compressed or not) for `target`. Returns the patched SWF, zlib-compressed, or
 /// the input unchanged when nothing needed patching, with what was done.
 pub fn patch_swf(input: &[u8], target: Target) -> Result<(Vec<u8>, Report)> {
+    patch_swf_with(input, target, Options::default())
+}
+
+/// [`patch_swf`] with [`Options`].
+pub fn patch_swf_with(input: &[u8], target: Target, options: Options) -> Result<(Vec<u8>, Report)> {
     let buf = swf::decompress_swf(input).context("not a SWF")?;
     let data = &buf.data;
     let mut report = Report {
@@ -124,7 +152,7 @@ pub fn patch_swf(input: &[u8], target: Target) -> Result<(Vec<u8>, Report)> {
         let (code, body_start, end) = tag_bounds(data, pos)?;
         let body = &data[body_start..end];
         let patched = match code {
-            TAG_DO_ABC => patch_abc_bytes(body, target, &mut report)?,
+            TAG_DO_ABC => patch_abc_bytes(body, target, options, &mut report)?,
             TAG_DO_ABC2 => {
                 // Flags (u32), then a null-terminated name, then the ABC.
                 let name_end = body
@@ -132,7 +160,7 @@ pub fn patch_swf(input: &[u8], target: Target) -> Result<(Vec<u8>, Report)> {
                     .and_then(|rest| rest.iter().position(|&b| b == 0))
                     .context("DoAbc2 tag without a name")?;
                 let abc_start = 4 + name_end + 1;
-                patch_abc_bytes(&body[abc_start..], target, &mut report)?
+                patch_abc_bytes(&body[abc_start..], target, options, &mut report)?
                     .map(|abc| [&body[..abc_start], &abc[..]].concat())
             }
             _ => None,
@@ -185,10 +213,15 @@ fn write_tag(out: &mut Vec<u8>, code: u16, body: &[u8]) {
 }
 
 /// Patches one ABC block: `Some(bytes)` if anything changed.
-fn patch_abc_bytes(bytes: &[u8], target: Target, report: &mut Report) -> Result<Option<Vec<u8>>> {
+fn patch_abc_bytes(
+    bytes: &[u8],
+    target: Target,
+    options: Options,
+    report: &mut Report,
+) -> Result<Option<Vec<u8>>> {
     let mut abc = Reader::new(bytes).read().context("reading ABC")?;
     report.abc_blocks += 1;
-    if !patch_abc(&mut abc, target, report)? {
+    if !patch_abc_with(&mut abc, target, options, report)? {
         return Ok(None);
     }
     let mut out = Vec::with_capacity(bytes.len() + 1024);
@@ -198,6 +231,16 @@ fn patch_abc_bytes(bytes: &[u8], target: Target, report: &mut Report) -> Result<
 
 /// Patches an ABC block in place for `target`. True if anything changed.
 pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Result<bool> {
+    patch_abc_with(abc, target, Options::default(), report)
+}
+
+/// [`patch_abc`] with [`Options`].
+pub fn patch_abc_with(
+    abc: &mut AbcFile,
+    target: Target,
+    options: Options,
+    report: &mut Report,
+) -> Result<bool> {
     let pool = &abc.constant_pool;
     let class_named = |wanted: &str| {
         abc.instances
@@ -221,9 +264,27 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
     let mut url_loaders = HashSet::new();
     let mut externals = HashSet::new();
     let mut drops = HashMap::new();
+    // `stage`, `getChildAt` and `removeChildAt`, in any namespace ([`Options::shared_stage`]).
+    let mut stage_names = HashSet::new();
+    let mut get_child_at = HashSet::new();
+    let mut remove_child_at = HashSet::new();
+    // skua's `Main.stg`, the stage it keeps.
+    let mut skua_stage = HashSet::new();
     for (i, multiname) in pool.multinames.iter().enumerate() {
         let index = i as u32 + 1;
         match local_name(pool, multiname) {
+            Some("stage") => {
+                stage_names.insert(index);
+            }
+            Some("stg") if target == Target::Skua => {
+                skua_stage.insert(index);
+            }
+            Some("getChildAt") => {
+                get_child_at.insert(index);
+            }
+            Some("removeChildAt") if target == Target::Skua => {
+                remove_child_at.insert(index);
+            }
             Some("Loader") if in_package(pool, multiname, "flash.display") => {
                 loaders.insert(index);
             }
@@ -244,13 +305,36 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
         Target::Game => (air_loader.filter(|_| !loaders.is_empty()), None),
         Target::Skua => (
             (!loaders.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", HOST_LOADER)),
-            (!externals.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", HOST_EXTERNAL)),
+            (!externals.is_empty()).then(|| {
+                add_qname(
+                    &mut abc.constant_pool,
+                    "",
+                    options.external.unwrap_or(HOST_EXTERNAL),
+                )
+            }),
         ),
     };
     // What `new URLLoader()` in the client's `AirLoader` becomes.
     let url_loader = (target == Target::Game && air_loader.is_some() && !url_loaders.is_empty())
         .then(|| add_qname(&mut abc.constant_pool, "", HOST_URL_LOADER));
-    if loader.is_none() && external.is_none() && url_loader.is_none() && drops.is_empty() {
+    // `TuruStage`, `rootOf` and `removeOwn`, for a shared stage.
+    let stage_host = (options.shared_stage
+        && !stage_names.is_empty()
+        && (!get_child_at.is_empty() || !remove_child_at.is_empty()))
+    .then(|| {
+        let pool = &mut abc.constant_pool;
+        (
+            add_qname(pool, "", HOST_STAGE),
+            add_qname(pool, "", "rootOf"),
+            add_qname(pool, "", "removeOwn"),
+        )
+    });
+    if loader.is_none()
+        && external.is_none()
+        && url_loader.is_none()
+        && drops.is_empty()
+        && stage_host.is_none()
+    {
         return Ok(false);
     }
 
@@ -302,9 +386,86 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
                 }
             }
         }
+        // A shared stage: instructions replaced, by index, and what the report calls them.
+        let mut stage_edits: HashMap<usize, Vec<Op>> = HashMap::new();
+        let mut stage_sites = Vec::new();
+        let mut stage_missed = 0;
+        if let Some((stage_class, root_of, remove_own)) = stage_host {
+            let targets = jump_targets(&ops, &body.exceptions);
+            let inside = |i: usize| targets.contains(&ops[i].pos);
+            for i in 0..ops.len().saturating_sub(2) {
+                let zero = matches!(ops[i + 1].op, Op::PushByte { value: 0 });
+                // `x.stage` (or `stage` through the scope), `0`, `getChildAt(1 arg)`.
+                if let Op::CallProperty {
+                    index: call,
+                    num_args: 1,
+                } = ops[i + 2].op
+                    && zero
+                    && get_child_at.contains(&call.0)
+                {
+                    let receiver = match ops[i].op {
+                        Op::GetProperty { index } if stage_names.contains(&index.0) => Some(vec![]),
+                        // `getlex stage`: `findpropstrict` leaves the object that has it.
+                        Op::GetLex { index } if stage_names.contains(&index.0) => {
+                            Some(vec![Op::FindPropStrict { index }])
+                        }
+                        _ => None,
+                    };
+                    let Some(mut first) = receiver else { continue };
+                    if inside(i + 1) || inside(i + 2) {
+                        stage_missed += 1;
+                        continue;
+                    }
+                    // x, TuruStage -> TuruStage, x -> TuruStage.rootOf(x).
+                    first.extend([Op::GetLex { index: stage_class }, Op::Swap]);
+                    stage_edits.insert(i, first);
+                    stage_edits.insert(i + 1, vec![]);
+                    stage_edits.insert(
+                        i + 2,
+                        vec![Op::CallProperty {
+                            index: root_of,
+                            num_args: 1,
+                        }],
+                    );
+                    stage_sites.push("getChildAt");
+                }
+                // skua's `this.stg.removeChildAt(0)` (itself, before it adds the game; not the
+                // other `removeChildAt(0)`s): `TuruStage.removeOwn(this)`.
+                if let Op::CallPropVoid {
+                    index: call,
+                    num_args: 1,
+                } = ops[i + 2].op
+                    && zero
+                    && remove_child_at.contains(&call.0)
+                    && matches!(ops[i].op, Op::GetProperty { index } if skua_stage.contains(&index.0) || stage_names.contains(&index.0))
+                    && !inside(i + 1)
+                    && !inside(i + 2)
+                {
+                    stage_edits.insert(
+                        i + 1,
+                        vec![
+                            Op::Pop,
+                            Op::GetLex { index: stage_class },
+                            Op::GetLocal { index: 0 },
+                        ],
+                    );
+                    stage_edits.insert(
+                        i + 2,
+                        vec![Op::CallPropVoid {
+                            index: remove_own,
+                            num_args: 1,
+                        }],
+                    );
+                    stage_sites.push("removeChildAt");
+                }
+            }
+        }
         let mut swapped = Vec::new();
         let mut dropped = Vec::new();
         let code = relink(body.code.len(), &ops, &mut body.exceptions, |i, op| {
+            if let Some(replacement) = stage_edits.get(&i) {
+                return Some(replacement.clone());
+            }
             if let Some(&(index, name)) = swaps.get(&i) {
                 return Some(vec![match *op {
                     Op::FindPropStrict { .. } => Op::FindPropStrict { index },
@@ -346,10 +507,26 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
             Some(seq)
         })
         .with_context(|| format!("relinking {method}"))?;
+        for _ in 0..stage_missed {
+            report.stage_missed.push(Site {
+                method: method.clone(),
+                name: "getChildAt".into(),
+            });
+        }
         let Some(code) = code else {
             continue;
         };
         body.code = code;
+        if !stage_sites.is_empty() {
+            // The rewrites peak at the stack the originals did; one more in case.
+            body.max_stack += 1;
+        }
+        for name in stage_sites {
+            report.stage_roots.push(Site {
+                method: method.clone(),
+                name: name.into(),
+            });
+        }
         if !dropped.is_empty() {
             // Room for the `undefined` pushed after a dropped call that had no arguments.
             body.max_stack += 1;
@@ -500,6 +677,29 @@ fn encoded_len(op: &Op) -> Result<usize> {
     let mut out = Vec::new();
     Writer::new(&mut out).write_op(op)?;
     Ok(out.len())
+}
+
+/// Where branches, switches and exception ranges land: no edit may remove an instruction there.
+fn jump_targets(ops: &[Decoded], exceptions: &[Exception]) -> HashSet<usize> {
+    let mut targets = HashSet::new();
+    for decoded in ops {
+        let mut op = decoded.op.clone();
+        if let Some(offset) = branch_offset(&mut op) {
+            targets.insert((decoded.pos as i64 + decoded.len as i64 + *offset as i64) as usize);
+        } else if let Op::LookupSwitch(switch) = &decoded.op {
+            let base = decoded.pos as i64;
+            targets.insert((base + switch.default_offset as i64) as usize);
+            for offset in switch.case_offsets.iter() {
+                targets.insert((base + *offset as i64) as usize);
+            }
+        }
+    }
+    for exception in exceptions {
+        targets.insert(exception.from_offset as usize);
+        targets.insert(exception.to_offset as usize);
+        targets.insert(exception.target_offset as usize);
+    }
+    targets
 }
 
 fn branch_offset(op: &mut Op) -> Option<&mut i32> {

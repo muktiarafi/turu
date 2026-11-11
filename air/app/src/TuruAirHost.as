@@ -4,9 +4,15 @@ package {
     import flash.desktop.SystemIdleMode;
     import flash.display.DisplayObject;
     import flash.display.Loader;
+    import flash.display.LoaderInfo;
     import flash.display.Sprite;
     import flash.display.StageAlign;
     import flash.display.StageScaleMode;
+    import flash.events.MouseEvent;
+    import flash.events.TimerEvent;
+    import flash.text.TextFormat;
+    import flash.utils.Timer;
+    import flash.utils.getQualifiedClassName;
     import flash.events.ErrorEvent;
     import flash.events.Event;
     import flash.events.IOErrorEvent;
@@ -39,19 +45,34 @@ package {
         private static const URL:String = "https://game.aq.com/game/";
 
         // Compiled in for skua (found by name, never named here otherwise).
-        private static const HOST_CLASSES:Array = [TuruExternal, TuruLoader];
+        private static const HOST_CLASSES:Array = [TuruExternal, TuruLoader, TuruStage, TuruExternalMute];
+
+        /**
+         * Spike (docs/AIR_ARMY_SPIKE.md): game clients on the one stage. The first is the engine's;
+         * the others load after it, their skua talking to nobody ([TuruExternalMute]). Over 1, the
+         * stage is shared ([TuruStage]) and a button at the top switches the client on screen.
+         */
+        private static const CLIENTS:int = 1;
 
         /** What [say] got before the engine started, sent to it once it has. */
         private var early:Array = [];
         private var engineStarted:Boolean = false;
         private var native:TuruAirNative;
         private var skua:Loader;
+        /** Each client's skua loader, kept. */
+        private var skuas:Array = [];
+        /** skua.swf as read, patched once per client. */
+        private var skuaBytes:ByteArray;
+        /** Clients whose skua is loading or loaded. */
+        private var started:int = 0;
+        private var switcher:Sprite;
+        private var switcherLabel:TextField;
         /** What was last sent of the game's focused text field (`gameTyping`). */
         private var typing:String = "";
 
         public function TuruAirHost() {
             mouseEnabled = false;
-            mouseChildren = false;
+            mouseChildren = CLIENTS > 1;
             say("sandbox " + Security.sandboxType);
             loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaught);
 
@@ -95,6 +116,17 @@ package {
             stage.scaleMode = StageScaleMode.SHOW_ALL;
             stage.align = StageAlign.TOP;
             stage.addEventListener(Event.ADDED, keepGameFirst);
+            if (CLIENTS > 1) {
+                TuruStage.stage = stage;
+                stage.addEventListener(Event.ADDED, watchClients);
+                addSwitcher();
+                var report:Timer = new Timer(30000);
+                report.addEventListener(TimerEvent.TIMER, function(event:TimerEvent):void {
+                    say("shared stage: " + TuruStage.games.length + " games, " + stage.numChildren +
+                        " stage children, " + TuruStage.fallbacks + " rootOf fallbacks");
+                });
+                report.start();
+            }
             addEventListener(Event.ENTER_FRAME, watchTyping);
         }
 
@@ -164,14 +196,30 @@ package {
         }
 
         private function onSkuaBytes(event:Event):void {
-            var patched:ByteArray = native.patchSwf(URLLoader(event.target).data, TuruAirNative.SKUA);
+            skuaBytes = URLLoader(event.target).data;
+            loadSkua();
+        }
+
+        /** The next client's skua.swf (the engine's first). */
+        private function loadSkua():void {
+            var client:int = started++;
+            var target:int = TuruAirNative.SKUA;
+            if (CLIENTS > 1) {
+                target |= TuruAirNative.SHARED_STAGE;
+                if (client > 0) {
+                    target |= TuruAirNative.MUTE;
+                }
+            }
+            var patched:ByteArray = native.patchSwf(skuaBytes, target);
             if (patched == null) {
                 say("ERROR: skua.swf can't run under AIR");
                 return;
             }
+            say("loading client " + (client + 1) + " of " + CLIENTS);
             var context:LoaderContext = new LoaderContext(false, new ApplicationDomain(ApplicationDomain.currentDomain));
             context.allowCodeImport = true;
             skua = new Loader();
+            skuas.push(skua);
             skua.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaught);
             skua.contentLoaderInfo.addEventListener(Event.COMPLETE, onSkua);
             skua.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onFail);
@@ -180,8 +228,74 @@ package {
 
         /** skua at the stage's bottom: it replaces stage child 0 with the game once loaded. */
         private function onSkua(event:Event):void {
-            stage.addChildAt(skua.content, 0);
+            var content:DisplayObject = LoaderInfo(event.target).content;
+            if (CLIENTS > 1 && started > 1) {
+                // Under the host, over the other clients' games, until it swaps itself for its game.
+                stage.addChild(content);
+            } else {
+                stage.addChildAt(content, 0);
+            }
             say("skua.swf loaded");
+        }
+
+        /**
+         * Spike: a client's game reached the stage ([TuruLoader] listed it when it loaded). The
+         * next client loads once the one before is on the stage.
+         */
+        private function watchClients(event:Event):void {
+            var added:DisplayObject = event.target as DisplayObject;
+            if (added == null || added.parent != stage || added == this) {
+                return;
+            }
+            var client:int = TuruStage.games.indexOf(added);
+            if (client < 0) {
+                say("stage child: " + getQualifiedClassName(added) + " (" + stage.numChildren + " now)");
+                return;
+            }
+            say("client " + (client + 1) + "'s game on the stage");
+            // Its skua adds it before it's anyone's; settle the order once that's done.
+            addEventListener(Event.ENTER_FRAME, function settle(event:Event):void {
+                removeEventListener(Event.ENTER_FRAME, settle);
+                TuruStage.activate(TuruStage.active);
+                updateSwitcher();
+            });
+            if (client == started - 1 && started < CLIENTS) {
+                loadSkua();
+            }
+        }
+
+        private function addSwitcher():void {
+            switcher = new Sprite();
+            switcher.graphics.beginFill(0xD4A72C, 0.9);
+            switcher.graphics.drawRoundRect(0, 0, 72, 26, 10, 10);
+            switcher.graphics.endFill();
+            switcher.x = 958 / 2 - 36;
+            switcher.y = 2;
+            switcher.buttonMode = true;
+            switcherLabel = new TextField();
+            switcherLabel.defaultTextFormat = new TextFormat("_sans", 14, 0x1A1400, true, null, null, null, null, "center");
+            switcherLabel.width = 72;
+            switcherLabel.height = 26;
+            switcherLabel.y = 3;
+            switcherLabel.selectable = false;
+            switcherLabel.mouseEnabled = false;
+            switcher.addChild(switcherLabel);
+            switcher.addEventListener(MouseEvent.CLICK, function(event:MouseEvent):void {
+                if (TuruStage.games.length < 2) {
+                    return;
+                }
+                TuruStage.activate((TuruStage.active + 1) % TuruStage.games.length);
+                updateSwitcher();
+                say("client " + (TuruStage.active + 1) + " on screen; " + TuruStage.fallbacks + " rootOf fallbacks");
+            });
+            addChild(switcher);
+            updateSwitcher();
+        }
+
+        private function updateSwitcher():void {
+            if (switcherLabel != null) {
+                switcherLabel.text = "Client " + (TuruStage.active + 1) + "/" + Math.max(1, TuruStage.games.length);
+            }
         }
     }
 }

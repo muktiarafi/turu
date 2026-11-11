@@ -40,6 +40,9 @@ package {
                 var bytes:ByteArray = fetch.data;
                 if (isSwf(bytes)) {
                     var target:int = isClient() ? TuruAirNative.GAME : TuruAirNative.ASSET;
+                    if (TuruStage.stage != null) {
+                        target |= TuruAirNative.SHARED_STAGE;
+                    }
                     var patched:ByteArray = TuruExternal.native != null ? TuruExternal.native.patchSwf(bytes, target) : null;
                     if (patched == null) {
                         fail("can't run under AIR: " + url);
@@ -76,6 +79,10 @@ package {
         private function onInit(event:Event):void {
             if (!isClient()) {
                 return;
+            }
+            if (TuruStage.stage != null) {
+                // Spike: clients load one after another, so this is the next client's game.
+                TuruStage.games.push(content);
             }
             try {
                 var params:Object = Object(content).params;

@@ -525,3 +525,159 @@ fn patches_the_real_skua() {
     let (_, again) = patch_swf(&output, Target::Skua).unwrap();
     assert!(!again.changed(), "{again:#?}");
 }
+
+#[test]
+fn shared_stage_finds_each_clients_game() {
+    let ops = [
+        Op::GetLocal { index: 0 },
+        Op::GetProperty {
+            index: Index::new(1),
+        }, // this.stage
+        Op::PushByte { value: 0 },
+        Op::CallProperty {
+            index: Index::new(2),
+            num_args: 1,
+        }, // getChildAt(0)
+        Op::Pop,
+        Op::GetLex {
+            index: Index::new(1),
+        }, // stage, through the scope
+        Op::PushByte { value: 0 },
+        Op::CallProperty {
+            index: Index::new(2),
+            num_args: 1,
+        },
+        Op::ReturnValue,
+    ];
+    let names = [("", "stage"), ("", "getChildAt")];
+    let shared = Options {
+        shared_stage: true,
+        external: None,
+    };
+    // Without the option, nothing changes.
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    let mut report = Report::default();
+    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+
+    let mut report = Report::default();
+    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert_eq!(report.stage_roots.len(), 2);
+    assert_eq!(report.stage_missed, vec![]);
+    let pool = &abc.constant_pool;
+    let name = |index: &Index<Multiname>| {
+        local_name(pool, &pool.multinames[index.0 as usize - 1]).unwrap()
+    };
+    let got: Vec<String> = decode(&abc.method_bodies[0].code)
+        .unwrap()
+        .into_iter()
+        .map(|d| match d.op {
+            Op::GetLex { index } => format!("getlex {}", name(&index)),
+            Op::GetProperty { index } => format!("getproperty {}", name(&index)),
+            Op::FindPropStrict { index } => format!("findpropstrict {}", name(&index)),
+            Op::CallProperty { index, num_args } => format!("call {} {num_args}", name(&index)),
+            op => format!("{op:?}"),
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            "GetLocal { index: 0 }",
+            "getlex TuruStage",
+            "Swap",
+            "call rootOf 1",
+            "Pop",
+            "findpropstrict stage",
+            "getlex TuruStage",
+            "Swap",
+            "call rootOf 1",
+            "ReturnValue",
+        ]
+    );
+}
+
+#[test]
+fn shared_stage_leaves_a_site_a_branch_lands_in() {
+    let ops = [
+        Op::GetLocal { index: 0 },
+        Op::GetProperty {
+            index: Index::new(1),
+        },
+        Op::Jump { offset: 0 }, // lands on the next instruction: the `0`
+        Op::PushByte { value: 0 },
+        Op::CallProperty {
+            index: Index::new(2),
+            num_args: 1,
+        },
+        Op::ReturnValue,
+    ];
+    // The jump sits between `stage` and `0`, so the pattern isn't there; put it right after.
+    let ops = [
+        ops[0].clone(),
+        ops[2].clone(),
+        ops[1].clone(),
+        ops[3].clone(),
+        ops[4].clone(),
+        ops[5].clone(),
+    ];
+    let names = [("", "stage"), ("", "getChildAt")];
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    // Point the jump at the `0` (after `getproperty stage`, 2 bytes).
+    let decoded = decode(&abc.method_bodies[0].code).unwrap();
+    let jump_end = decoded[1].pos + decoded[1].len;
+    let zero = decoded[3].pos;
+    let mut ops = ops;
+    ops[1] = Op::Jump {
+        offset: (zero - jump_end) as i32,
+    };
+    abc.method_bodies[0].code = encode(&ops);
+    let mut report = Report::default();
+    let shared = Options {
+        shared_stage: true,
+        external: None,
+    };
+    assert!(!patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert_eq!(report.stage_missed.len(), 1);
+}
+
+/// AQW's SWFs on a shared stage: `TURU_STAGE_SWFS=/dir/with/swfs cargo test -p turu_air_patch
+/// shared_stage_real -- --nocapture`. Every `stage.getChildAt(0)` is rewritten, and the result
+/// patches to nothing more.
+#[test]
+fn shared_stage_real_swfs() {
+    let Ok(dir) = std::env::var("TURU_STAGE_SWFS") else {
+        eprintln!("TURU_STAGE_SWFS not set, skipped");
+        return;
+    };
+    let shared = Options {
+        shared_stage: true,
+        external: None,
+    };
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        let input = std::fs::read(&path).unwrap();
+        let target = if path.to_string_lossy().contains("skua") {
+            Target::Skua
+        } else {
+            Target::Game
+        };
+        let started = std::time::Instant::now();
+        let (output, report) = patch_swf_with(&input, target, shared).unwrap();
+        let took = started.elapsed();
+        let (_, again) = patch_swf_with(&output, target, shared).unwrap();
+        assert_eq!(again.stage_roots, vec![], "{}", path.display());
+        let removes = report
+            .stage_roots
+            .iter()
+            .filter(|s| s.name == "removeChildAt")
+            .count();
+        eprintln!(
+            "{}: {} roots, {removes} removes, {} missed, {} undecodable, {took:?}, {} -> {} bytes",
+            path.file_name().unwrap().to_string_lossy(),
+            report.stage_roots.len() - removes,
+            report.stage_missed.len(),
+            report.undecodable.len(),
+            input.len(),
+            output.len()
+        );
+    }
+}

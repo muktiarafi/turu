@@ -96,5 +96,9 @@ package com.muktiarafi.turu.air {
         public static const SKUA:int = 1;
         /** Another SWF the game or skua loads (a background, an injected script). */
         public static const ASSET:int = 2;
+        /** Or'd with a target (spike): several clients share the stage. */
+        public static const SHARED_STAGE:int = 0x10;
+        /** Or'd with `SKUA` (spike): its `ExternalInterface` goes nowhere. */
+        public static const MUTE:int = 0x20;
     }
 }

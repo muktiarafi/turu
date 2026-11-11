@@ -124,11 +124,26 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
     let cache = CACHE.get_or_init(|| {
         turu_air_patch::cache::PatchCache::new(turu_bot::paths::Paths::new().air_patched_dir())
     });
-    let (kind, strict) = match target {
-        0 => ("game", true),
-        1 => ("skua", true),
-        _ => ("asset", false),
+    // Spike (several clients): bit 0x10, the stage is shared; 0x20, skua's ExternalInterface
+    // goes nowhere (a client the engine doesn't drive).
+    let shared_stage = target & TARGET_SHARED_STAGE != 0;
+    if shared_stage {
+        SHARED_STAGE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    let options = turu_air_patch::Options {
+        shared_stage,
+        external: (target & TARGET_MUTE != 0).then_some("TuruExternalMute"),
     };
+    let (kind, strict) = match (target & 0xf, shared_stage, options.external.is_some()) {
+        (0, false, _) => ("game", true),
+        (0, true, _) => ("gameshared", true),
+        (1, false, _) => ("skua", true),
+        (1, true, false) => ("skuashared", true),
+        (1, true, true) => ("skuamute", true),
+        (_, false, _) => ("asset", false),
+        (_, true, _) => ("assetshared", false),
+    };
+    let target = target & 0xf;
     let started = std::time::Instant::now();
     if let Some(output) = cache.get(input, kind) {
         tracing::info!(
@@ -141,13 +156,15 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
         1 => turu_air_patch::Target::Skua,
         _ => turu_air_patch::Target::Game,
     };
-    match turu_air_patch::patch_swf(input, patch_target) {
+    match turu_air_patch::patch_swf_with(input, patch_target, options) {
         Ok((output, report)) => {
             tracing::info!(
-                "Patched {kind} for AIR in {:?}: {} swapped, {} dropped",
+                "Patched {kind} for AIR in {:?}: {} swapped, {} dropped, {} stage roots, {} missed",
                 started.elapsed(),
                 report.swapped.len(),
-                report.dropped.len()
+                report.dropped.len(),
+                report.stage_roots.len(),
+                report.stage_missed.len()
             );
             if let Some(problem) = report.problem().filter(|_| strict) {
                 tracing::error!("{kind} can't run under AIR: {problem}");
@@ -164,6 +181,44 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
         Err(e) => {
             tracing::error!("Couldn't patch {kind} for AIR: {e:#}");
             None
+        }
+    }
+}
+
+/// [`patched`]'s target bits (spike: several clients on one stage).
+const TARGET_SHARED_STAGE: jint = 0x10;
+const TARGET_MUTE: jint = 0x20;
+/// Whether the host shares the stage among clients (it asked for a shared-stage patch): then
+/// every SWF downloaded for the game is rewritten too, on the download's thread.
+static SHARED_STAGE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A downloaded SWF with its `stage.getChildAt(0)`s rewritten for a shared stage (spike).
+fn shared_stage_swf(url: &str, body: Vec<u8>) -> Vec<u8> {
+    if !SHARED_STAGE.load(std::sync::atomic::Ordering::Relaxed)
+        || !matches!(body.get(..3), Some(b"FWS" | b"CWS" | b"ZWS"))
+    {
+        return body;
+    }
+    let started = std::time::Instant::now();
+    let options = turu_air_patch::Options {
+        shared_stage: true,
+        external: None,
+    };
+    match turu_air_patch::patch_swf_with(&body, turu_air_patch::Target::Game, options) {
+        Ok((output, report)) => {
+            if !report.stage_roots.is_empty() || !report.stage_missed.is_empty() {
+                tracing::info!(
+                    "Shared stage: {url}: {} roots, {} missed, in {:?}",
+                    report.stage_roots.len(),
+                    report.stage_missed.len(),
+                    started.elapsed()
+                );
+            }
+            output
+        }
+        Err(e) => {
+            tracing::warn!("Shared stage: couldn't patch {url}: {e:#}");
+            body
         }
     }
 }
@@ -207,6 +262,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFetch<'local>(
                     }
                     let level = match result {
                         Ok(body) => {
+                            let body = shared_stage_swf(&url, body);
                             fetched().get_or_insert_default().insert(id, body);
                             id.to_string()
                         }
