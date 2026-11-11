@@ -361,7 +361,8 @@ pub fn load(bot: &Bot, ids: &[i64]) -> BotResult<()> {
     if let Some(wait) = last.and_then(|at| gap.checked_sub(at.elapsed()))
         && !wait.is_zero()
     {
-        bot.sleep(wait.as_millis() as u64)?;
+        // Rounded up: whole milliseconds cut short would send it up to 1 ms early.
+        bot.sleep(wait.as_micros().div_ceil(1000) as u64)?;
     }
     let join = |ids: &[i64]| ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
     if ids.len() < 30 {
@@ -445,7 +446,8 @@ fn space_quest_packet(bot: &Bot) -> BotResult<()> {
     if let Some(wait) = last.and_then(|at| gap.checked_sub(at.elapsed()))
         && !wait.is_zero()
     {
-        bot.sleep(wait.as_millis() as u64)?;
+        // Rounded up: whole milliseconds cut short would send it up to 1 ms early.
+        bot.sleep(wait.as_micros().div_ceil(1000) as u64)?;
     }
     Ok(())
 }
