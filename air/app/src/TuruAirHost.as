@@ -2,6 +2,7 @@ package {
     import com.muktiarafi.turu.air.TuruAirNative;
     import flash.desktop.NativeApplication;
     import flash.desktop.SystemIdleMode;
+    import flash.display.DisplayObject;
     import flash.display.Loader;
     import flash.display.Sprite;
     import flash.display.StageAlign;
@@ -93,7 +94,22 @@ package {
         private function onStage(event:Event = null):void {
             stage.scaleMode = StageScaleMode.SHOW_ALL;
             stage.align = StageAlign.TOP;
+            stage.addEventListener(Event.ADDED, keepGameFirst);
             addEventListener(Event.ENTER_FRAME, watchTyping);
+        }
+
+        /**
+         * Keeps this host above whatever else is on the stage, so the game is stage child 0. The
+         * game and skua find the game as `MovieClip(stage.getChildAt(0))` (CastBarMC, skua's
+         * ModalMC, ...), and skua puts the game on the stage with `addChild` once it has removed
+         * itself (child 0), which on its own would leave this host at 0 (a TypeError in the
+         * game's setup, then every game response failing: no gear colours, no menus).
+         */
+        private function keepGameFirst(event:Event):void {
+            if (event.target is DisplayObject && DisplayObject(event.target).parent == stage &&
+                event.target != this && stage.getChildIndex(this) != stage.numChildren - 1) {
+                stage.setChildIndex(this, stage.numChildren - 1);
+            }
         }
 
         /**
