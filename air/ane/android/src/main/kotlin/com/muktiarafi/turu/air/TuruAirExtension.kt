@@ -50,6 +50,18 @@ class TuruAirExtension : FREExtension {
                 null
             },
             "patchSwf" to FREFunction { _, args -> patch(args) },
+            "fetch" to FREFunction { _, args ->
+                val id = args?.getOrNull(0)?.asDouble?.toLong()
+                val url = args?.getOrNull(1)?.asString
+                if (id != null && url != null) {
+                    Bridge.nativeFetch(id, url)
+                }
+                null
+            },
+            "fetchResult" to FREFunction { _, args ->
+                val id = args?.getOrNull(0)?.asDouble?.toLong()
+                id?.let { Bridge.nativeFetchResult(it) }?.let(::byteArray)
+            },
             "gameTyping" to FREFunction { _, args ->
                 Bridge.nativeGameTyping(args?.getOrNull(0)?.asString ?: "")
                 null
@@ -70,20 +82,23 @@ class TuruAirExtension : FREExtension {
             } finally {
                 input.release()
             }
-            Bridge.nativePatch(bytes, args.getOrNull(1)?.asInt ?: 0)?.let { output ->
-                val result = FREByteArray.newByteArray()
-                result.setProperty("length", FREObject.newObject(output.size))
-                result.acquire()
-                try {
-                    result.bytes.put(output)
-                } finally {
-                    result.release()
-                }
-                result
-            }
+            Bridge.nativePatch(bytes, args.getOrNull(1)?.asInt ?: 0)?.let(::byteArray)
         } catch (e: Exception) {
             Log.e("TuruAir", "patchSwf failed", e)
             null
+        }
+
+        /** `bytes` as a new AS3 ByteArray. */
+        fun byteArray(bytes: ByteArray): FREByteArray {
+            val result = FREByteArray.newByteArray()
+            result.setProperty("length", FREObject.newObject(bytes.size))
+            result.acquire()
+            try {
+                result.bytes.put(bytes)
+            } finally {
+                result.release()
+            }
+            return result
         }
 
         /** Starts the service (with the notification's text, the first argument) or stops it. */

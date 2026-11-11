@@ -10,7 +10,9 @@
 //!   loads them with `loadBytes`, so maps and assets share code with the game. The client builds
 //!   most of its loaders as `AirLoader`s; its remaining `new Loader()` (pets, mail images, the map
 //!   popup's news, ...) become `new AirLoader()` here, as `SwfLoaderPatch` does to the SWFs it
-//!   loads. Its server paths come from the host's `params.sFilePath`.
+//!   loads. Its server paths come from the host's `params.sFilePath`. `AirLoader`'s own
+//!   `new URLLoader()` becomes the host's `TuruURLLoader` (a `URLLoader` that fetches the game's
+//!   files through Turu's disk cache; AIR keeps none).
 //! * [`Target::Skua`], VibeSkua's `skua.swf`, unchanged otherwise: `ExternalInterface` (which
 //!   AIR on Android doesn't have) becomes the host's `TuruExternal` (same `addCallback` and
 //!   `call`, through Turu's native extension), and each `new Loader()` the host's `TuruLoader`
@@ -43,6 +45,8 @@ const TAG_DO_ABC2: u16 = 82;
 /// The host's classes that skua's `Loader` and `ExternalInterface` become (package `""`).
 pub const HOST_LOADER: &str = "TuruLoader";
 pub const HOST_EXTERNAL: &str = "TuruExternal";
+/// The host's `URLLoader` that `AirLoader`'s fetches become (package `""`).
+pub const HOST_URL_LOADER: &str = "TuruURLLoader";
 
 /// Which SWF is being patched: what its loaders become, and what it must have.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -70,8 +74,9 @@ pub struct Report {
     pub abc_blocks: usize,
     /// Whether the client has its AIR loader (`AirLoader` and `SwfLoaderPatch`).
     pub has_air_loader: bool,
-    /// `new Loader()` made the target's loader ("Loader"), and `ExternalInterface` made
-    /// [`HOST_EXTERNAL`] ("ExternalInterface").
+    /// `new Loader()` made the target's loader ("Loader"), `ExternalInterface` made
+    /// [`HOST_EXTERNAL`] ("ExternalInterface"), and `AirLoader`'s `new URLLoader()` made
+    /// [`HOST_URL_LOADER`] ("URLLoader").
     pub swapped: Vec<Site>,
     /// `allowDomain`/`allowInsecureDomain` calls dropped.
     pub dropped: Vec<Site>,
@@ -210,9 +215,10 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
         report.has_air_loader = true;
     }
 
-    // Multinames for flash.display's Loader, flash.external's ExternalInterface, and the calls
-    // to drop.
+    // Multinames for flash.display's Loader, flash.net's URLLoader, flash.external's
+    // ExternalInterface, and the calls to drop.
     let mut loaders = HashSet::new();
+    let mut url_loaders = HashSet::new();
     let mut externals = HashSet::new();
     let mut drops = HashMap::new();
     for (i, multiname) in pool.multinames.iter().enumerate() {
@@ -220,6 +226,9 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
         match local_name(pool, multiname) {
             Some("Loader") if in_package(pool, multiname, "flash.display") => {
                 loaders.insert(index);
+            }
+            Some("URLLoader") if in_package(pool, multiname, "flash.net") => {
+                url_loaders.insert(index);
             }
             Some("ExternalInterface") if in_package(pool, multiname, "flash.external") => {
                 externals.insert(index);
@@ -238,7 +247,10 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
             (!externals.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", HOST_EXTERNAL)),
         ),
     };
-    if loader.is_none() && external.is_none() && drops.is_empty() {
+    // What `new URLLoader()` in the client's `AirLoader` becomes.
+    let url_loader = (target == Target::Game && air_loader.is_some() && !url_loaders.is_empty())
+        .then(|| add_qname(&mut abc.constant_pool, "", HOST_URL_LOADER));
+    if loader.is_none() && external.is_none() && url_loader.is_none() && drops.is_empty() {
         return Ok(false);
     }
 
@@ -253,9 +265,20 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
             report.undecodable.push(method);
             continue;
         };
-        // `findpropstrict Loader; constructprop Loader, 0` pairs, by the constructprop's index.
-        let mut swaps = HashSet::new();
-        if loader.is_some() {
+        // `findpropstrict Loader; constructprop Loader, 0` pairs (and URLLoader's in AirLoader):
+        // both instructions' positions, with what they construct instead and the report's name.
+        let mut swaps = HashMap::new();
+        let in_air_loader = method.starts_with("AirLoader/");
+        let kinds = [
+            (&loaders, loader, "Loader"),
+            (
+                &url_loaders,
+                url_loader.filter(|_| in_air_loader),
+                "URLLoader",
+            ),
+        ];
+        for (names, to, name) in kinds {
+            let Some(to) = to else { continue };
             for (i, pair) in ops.windows(2).enumerate() {
                 if let [
                     Decoded {
@@ -271,23 +294,22 @@ pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Resu
                         ..
                     },
                 ] = pair
-                    && loaders.contains(&find.0)
-                    && loaders.contains(&construct.0)
+                    && names.contains(&find.0)
+                    && names.contains(&construct.0)
                 {
-                    swaps.insert(i);
-                    swaps.insert(i + 1);
+                    swaps.insert(i, (to, name));
+                    swaps.insert(i + 1, (to, name));
                 }
             }
         }
         let mut swapped = Vec::new();
         let mut dropped = Vec::new();
         let code = relink(body.code.len(), &ops, &mut body.exceptions, |i, op| {
-            if swaps.contains(&i) {
-                let index = loader?;
+            if let Some(&(index, name)) = swaps.get(&i) {
                 return Some(vec![match *op {
                     Op::FindPropStrict { .. } => Op::FindPropStrict { index },
                     _ => {
-                        swapped.push("Loader");
+                        swapped.push(name);
                         Op::ConstructProp { index, num_args: 0 }
                     }
                 }]);

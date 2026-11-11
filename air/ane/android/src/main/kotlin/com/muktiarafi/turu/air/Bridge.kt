@@ -53,6 +53,14 @@ object Bridge {
     @JvmStatic
     external fun nativePatch(swf: ByteArray, target: Int): ByteArray?
 
+    /** Downloads a game file through Turu's disk cache; a status event "fetched" says when. */
+    @JvmStatic
+    external fun nativeFetch(id: Long, url: String)
+
+    /** The bytes of download `id`, once; null if there are none. */
+    @JvmStatic
+    external fun nativeFetchResult(id: Long): ByteArray?
+
     /** The overlay's surface came or changed (null: it went). */
     @JvmStatic
     external fun nativeSurface(surface: android.view.Surface?, density: Float)

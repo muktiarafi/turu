@@ -169,6 +169,61 @@ fn makes_new_loader_an_air_loader() {
     assert_eq!(ops_of(&abc), expected);
 }
 
+/// `AirLoader`'s fetch becomes the host's `TuruURLLoader`; a `URLLoader` elsewhere stays.
+#[test]
+fn air_loader_fetches_through_the_host() {
+    let ops = [
+        Op::FindPropStrict {
+            index: Index::new(4),
+        },
+        Op::ConstructProp {
+            index: Index::new(4),
+            num_args: 0,
+        },
+        Op::ReturnValue,
+    ];
+    let names = [
+        ("flash.display", "Loader"),
+        ("types", "SwfLoaderPatch"),
+        ("types", "AirLoader"),
+        ("flash.net", "URLLoader"),
+    ];
+    // The method is the last class's (`abc_with`): AirLoader's.
+    let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
+    let mut report = Report::default();
+    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert_eq!(report.problem(), None);
+    assert_eq!(report.swapped.len(), 1);
+    assert_eq!(report.swapped[0].name, "URLLoader");
+    let host = abc
+        .constant_pool
+        .multinames
+        .iter()
+        .position(|m| local_name(&abc.constant_pool, m) == Some(HOST_URL_LOADER))
+        .expect("TuruURLLoader added") as u32
+        + 1;
+    assert_eq!(
+        ops_of(&abc)[..2],
+        [
+            Op::FindPropStrict {
+                index: Index::new(host),
+            },
+            Op::ConstructProp {
+                index: Index::new(host),
+                num_args: 0,
+            },
+        ]
+    );
+
+    // In another class (here SwfLoaderPatch's method), or for skua, it stays a URLLoader.
+    let mut abc = abc_with(&names, &[3, 2], &ops, vec![]);
+    let mut report = Report::default();
+    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
+    let mut report = Report::default();
+    assert!(!patch_abc(&mut abc, Target::Skua, &mut report).unwrap());
+}
+
 #[test]
 fn no_air_loader_no_swap() {
     let ops = [

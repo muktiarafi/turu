@@ -168,6 +168,87 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
     }
 }
 
+/// Downloads [`Java_com_muktiarafi_turu_air_Bridge_nativeFetch`] finished, by id, until AS3
+/// takes them ([`Java_com_muktiarafi_turu_air_Bridge_nativeFetchResult`]).
+static FETCHED: std::sync::Mutex<Option<std::collections::HashMap<i64, Vec<u8>>>> =
+    std::sync::Mutex::new(None);
+
+fn fetched() -> std::sync::MutexGuard<'static, Option<std::collections::HashMap<i64, Vec<u8>>>> {
+    FETCHED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// `Bridge.nativeFetch(id, url)`: downloads a game file through Turu's disk cache
+/// (`turu_frontend::game_files::fetch`; AIR's own downloads keep nothing), for the host's
+/// `TuruURLLoader`. Returns at once; when done, a status event "fetched" with level `"<id>"`, or
+/// `"<id> <why>"` when it failed, and the bytes wait for `nativeFetchResult(id)`.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFetch<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jni::sys::jlong,
+    url: JString<'local>,
+) {
+    unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let url = url.try_to_string(env)?;
+            // Downloads under way: when the last of a batch (a map's files) ends, the log says
+            // what the cache has done so far.
+            static IN_FLIGHT: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            IN_FLIGHT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let spawned = std::thread::Builder::new()
+                .name("Turu Fetch".into())
+                .spawn(move || {
+                    let result = turu_frontend::game_files::fetch(&url);
+                    if IN_FLIGHT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1
+                        && let Some(summary) = turu_frontend::game_files::summary()
+                    {
+                        tracing::info!("Game files: {summary}");
+                    }
+                    let level = match result {
+                        Ok(body) => {
+                            fetched().get_or_insert_default().insert(id, body);
+                            id.to_string()
+                        }
+                        Err(why) => format!("{id} {why}"),
+                    };
+                    let Some((vm, class)) = BRIDGE.get() else {
+                        return;
+                    };
+                    let sent = attach(vm, |env: &mut jni::Env| {
+                        crate::host::dispatch(env, class, "fetched", &level)
+                    });
+                    if let Err(e) = sent {
+                        fetched().get_or_insert_default().remove(&id);
+                        tracing::warn!("Couldn't tell AIR {url} was fetched: {e}");
+                    }
+                });
+            if let Err(e) = spawned {
+                IN_FLIGHT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                tracing::warn!("Couldn't start a download: {e}");
+            }
+            Ok(())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// `Bridge.nativeFetchResult(id)`: the bytes of download `id`, once (null if there are none).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFetchResult<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jni::sys::jlong,
+) -> JByteArray<'local> {
+    unowned_env
+        .with_env(|env| -> jni::errors::Result<JByteArray<'local>> {
+            match fetched().get_or_insert_default().remove(&id) {
+                Some(body) => env.byte_array_from_slice(&body),
+                None => Ok(JByteArray::default()),
+            }
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
 /// `Bridge.nativeSurface(surface, density)`: the overlay's surface came or changed (null: it
 /// went), at `density` pixels per point.
 #[unsafe(no_mangle)]

@@ -489,10 +489,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Player used the browser's), so every start downloaded the game's assets again (8 MB) and
   every map join its map, monsters and gear. AQW's CDN marks those files `Cache-Control:
   public, max-age=2678400` (31 days) with an `ETag`. ruffle-aqw's navigator now keeps them
-  (`frontend-utils/src/backends/navigator/cache.rs`, `HttpCache`; Turu's one cache per process:
+  (`HttpCache`, crate `ruffle_http_cache` in ruffle-aqw's `http-cache/`; Turu's one cache per process:
   `turu_frontend::game_files`, in `<data>/cache/gamefiles`, shared by every tab and client) by
   a browser's rules: only a plain `GET` answered `200` with a `max-age` of an hour or more and
-  a validator, no `Set-Cookie`, no `Vary` beyond `Accept-Encoding` (the game's API answers,
+  a validator, no `Set-Cookie` unless it's `public` (Cloudflare's `__cflb` comes on a client's
+  first request), no `Vary` beyond `Accept-Encoding` (the game's API answers,
   `max-age=2` and `Vary: *`, never are). A file is one entry whatever its query string: asked
   for with the query it was stored with, while fresh, it comes from disk with no request; with
   another query (`?v=5.32` after a game update, skua.swf's `?ver=<random>` on the game client)
@@ -511,6 +512,17 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   to in battlegrounde 17.1, 19.2 and 16.9 s (server round trips and the script's setup, not
   files). farmrun's network bytes are only good for the first minutes: `nettop` stops counting
   a connection once it closes.
+- **Turu Mas uses the same cache:** AIR on Android keeps none of its downloads, so each start
+  fetched the game again. The client's `AirLoader` (maps, monsters, gear, the assets file) and
+  the host's `TuruLoader` (the client) now load through `TuruURLLoader` (`air/app/src`; for
+  `AirLoader`, `turu_air_patch` turns its `new URLLoader()` into one), which hands a binary
+  `GET` under `/gamefiles/` to the engine (`turu_frontend::game_files::fetch`, the navigator's
+  rules) and falls back to AIR's download when that fails. The patched SWFs are kept too
+  (`<data>/cache/airpatched`, `turu_air_patch::cache`). Checked on an emulator up to the login
+  screen (2026-11-12): the second start read the title screen from disk and the client after
+  a `304` (2.8 MB not downloaded), and read the patched client in 25 ms instead of patching it
+  (~0.45 s); from skua.swf loaded to the client patched, 4.5 s on the first start, 2.2 s on the
+  second. Not checked in game yet (maps and gear after a login).
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.

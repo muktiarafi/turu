@@ -33,7 +33,8 @@ package {
 
         override public function load(request:URLRequest, context:LoaderContext = null):void {
             url = request.url;
-            var fetch:URLLoader = new URLLoader();
+            // Through Turu's disk cache (the game's client, ~3 MB, at every start otherwise).
+            var fetch:URLLoader = new TuruURLLoader();
             fetch.dataFormat = URLLoaderDataFormat.BINARY;
             fetch.addEventListener(Event.COMPLETE, function(event:Event):void {
                 var bytes:ByteArray = fetch.data;

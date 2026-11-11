@@ -9,7 +9,6 @@ pub mod capture;
 pub mod crash_reports;
 #[cfg(feature = "ruffle")]
 pub mod engine;
-#[cfg(feature = "ruffle")]
 pub mod game_files;
 pub mod grid;
 pub mod gui;

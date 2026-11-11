@@ -66,6 +66,23 @@ package com.muktiarafi.turu.air {
         }
 
         /**
+         * Downloads `url` (a game file) through Turu's disk cache. Answers with a status event
+         * "fetched", level `"<id>"` (then [fetchResult] has the bytes) or `"<id> <why>"`.
+         */
+        public function fetch(id:Number, url:String):Boolean {
+            if (context == null) {
+                return false;
+            }
+            context.call("fetch", id, url);
+            return true;
+        }
+
+        /** The bytes of download `id`, once; null if there are none. */
+        public function fetchResult(id:Number):ByteArray {
+            return context != null ? context.call("fetchResult", id) as ByteArray : null;
+        }
+
+        /**
          * The game's focused text field for the strip above the soft keyboard, as JSON (`text`,
          * `caret`, `selStart`, `selEnd`, `password`, `max`), or "" when there's none.
          */

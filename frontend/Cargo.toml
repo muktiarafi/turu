@@ -36,6 +36,10 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+# The disk cache for the game's files (`game_files.rs`), with or without Ruffle, and Turu Mas's
+# downloads through it. reqwest's TLS backend is the frontend's choice.
+ruffle_http_cache = { path = "../ruffle/http-cache" }
+reqwest = { workspace = true, features = ["blocking", "cookies"] }
 
 [features]
 default = ["ruffle"]
