@@ -39,7 +39,9 @@ impl Pending {
         self.open(ctx, |answer| platform().save_file(dialog, answer));
     }
 
-    fn open(&mut self, ctx: &egui::Context, show: impl FnOnce(crate::platform::Answer) -> bool) {
+    /// Waits for an answer `show` hands on (a dialog, or a window that picks: Search Scripts'
+    /// pick mode); `show` says whether it was shown.
+    pub fn open(&mut self, ctx: &egui::Context, show: impl FnOnce(crate::platform::Answer) -> bool) {
         if self.is_open() {
             return;
         }

@@ -350,6 +350,15 @@ impl TuruUi {
         self.army_open |= army;
         self.army_queue_open |= army_queue;
         self.accounts.show(ctx, &mut self.accounts_open);
+        // Accounts' Search… picks the launch script in the active tab's Search Scripts.
+        if let Some(answer) = self.accounts.take_script_search() {
+            let tab = self.active();
+            tab.script_repo.pick("launched accounts", answer);
+            tab.windows.script_repo = true;
+            let id = egui::Id::new(("turu_window", "Search Scripts"));
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+            ctx.request_repaint();
+        }
         self.army.show(ctx, &mut self.army_open);
         self.army_queue.show(ctx, &mut self.army_queue_open);
         // Army Queue's script and options buttons open the active tab's windows.

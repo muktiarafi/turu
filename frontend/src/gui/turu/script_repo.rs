@@ -123,6 +123,20 @@ pub struct ScriptRepoWindow {
     /// The scripts there are to search (libraries left out), for the search box's hint.
     total: usize,
     vscode: Option<Option<PathBuf>>,
+    /// Opened to choose a script for another window ([`Self::pick`]).
+    pick: Option<Pick>,
+    /// A script was picked: the window closes once its download is done.
+    picked: bool,
+    /// Closes the window after this frame (a ready script was picked, or Cancel).
+    close: bool,
+}
+
+/// Search Scripts opened to choose a script for another window (Accounts' launch script): the
+/// rows' Pick hands the script's local path back, downloading it first when needed.
+struct Pick {
+    /// Who the script is for, on the banner ("launched accounts").
+    purpose: &'static str,
+    answer: crate::platform::Answer,
 }
 
 /// What the rows may do now, before asking whether a script is ready ([`Rules::for_row`]).
@@ -141,6 +155,9 @@ struct Rules {
 
 /// What one row's buttons may do, and why not.
 struct Allowed {
+    /// Pick (in [`ScriptRepoWindow::pick`]'s mode): a script that needs a download waits
+    /// while a task runs.
+    pick: bool,
     start: bool,
     load: bool,
     queue: bool,
@@ -159,6 +176,7 @@ impl Rules {
             self.reason.clone()
         };
         Allowed {
+            pick: can_run,
             start: self.start && can_run,
             load: self.load && can_run,
             queue: self.queue,
@@ -205,7 +223,16 @@ impl ScriptRepoWindow {
         {
             self.open_loader = true;
         }
+        // The picked script is downloaded (or its download failed, which the bottom bar says).
+        if self.picked && snapshot.busy.is_none() {
+            self.picked = false;
+            if !snapshot.failed {
+                *open = false;
+            }
+        }
         if !*open {
+            // Closed without a pick: the asking window gets no script.
+            self.pick = None;
             return;
         }
         // On a phone it's the only way to get a script, and a floating window there leaves
@@ -216,6 +243,9 @@ impl ScriptRepoWindow {
             window = window.sheet(ctx);
         }
         window.show(ctx, |ui| self.ui(ui, &snapshot));
+        if std::mem::take(&mut self.close) {
+            *open = false;
+        }
         if self.confirm_reset {
             self.reset_modal(ctx);
         }
@@ -225,6 +255,66 @@ impl ScriptRepoWindow {
         if snapshot.busy.is_some() {
             ctx.request_repaint_after(Duration::from_millis(150));
         }
+    }
+
+    /// Opens the window's pick mode: the rows offer Pick, which calls `answer` with the
+    /// script's local path (downloaded first if needed) and closes the window. Closing it
+    /// without a pick drops `answer`. The caller opens the window.
+    pub fn pick(&mut self, purpose: &'static str, answer: crate::platform::Answer) {
+        self.pick = Some(Pick { purpose, answer });
+        self.picked = false;
+    }
+
+    /// Hands the script at `path` to the window that asked ([`Self::pick`]): at once when it's
+    /// ready, else once the repo's task has downloaded it.
+    fn pick_script(&mut self, path: &str) {
+        let repo = crate::turu::script_repo();
+        let Some(pick) = self.pick.take() else {
+            return;
+        };
+        if let Some(local) = repo.ready(path) {
+            (pick.answer)(Some(local));
+            self.close = true;
+            return;
+        }
+        if repo.is_busy() {
+            self.pick = Some(pick);
+            return;
+        }
+        let owned = path.to_owned();
+        let answer = pick.answer;
+        let spawned = repo.spawn("Download", move |repo| {
+            let local = repo.ensure(&owned)?;
+            answer(Some(local));
+            Ok(format!("Picked {owned}."))
+        });
+        if spawned {
+            self.working = Some((path.to_owned(), false));
+            self.picked = true;
+        }
+    }
+
+    /// Pick mode's banner: what the script is for, and Cancel.
+    fn pick_banner(&mut self, ui: &mut Ui) {
+        let Some(pick) = &self.pick else {
+            return;
+        };
+        let text = format!("Pick the script for {}", pick.purpose);
+        widgets::card(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let size = vec2(80.0, widgets::target(24.0, 40.0));
+                    if widgets::button(ui, "Cancel", Kind::Normal, true, size, "").clicked() {
+                        self.pick = None;
+                        self.close = true;
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(egui::Label::new(RichText::new(text).strong()).truncate());
+                    });
+                });
+            });
+        });
     }
 
     /// Whether a Start from this window just worked, so the Script Loader should open.
@@ -238,6 +328,7 @@ impl ScriptRepoWindow {
         }
         self.refilter(snapshot);
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
+        self.pick_banner(ui);
         let touch = widgets::touch();
         let header = Header::pick(ui.available_width(), ui.available_height());
         // The rows keep Start and the menu on a touch screen too (no hover for the rest).
@@ -307,7 +398,11 @@ impl ScriptRepoWindow {
         {
             let path = entries[top].info.path.clone();
             let allowed = rules.for_row(&path);
-            if start && allowed.start {
+            if self.pick.is_some() {
+                if allowed.pick {
+                    self.pick_script(&path);
+                }
+            } else if start && allowed.start {
                 self.run(&path, Work::Start);
             } else if !start && allowed.load {
                 self.run(&path, Work::Load);
@@ -610,6 +705,10 @@ impl ScriptRepoWindow {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), egui::Sense::hover());
         let lead = top_hit || ui.rect_contains_pointer(rect);
         let working = self.working.as_ref().is_some_and(|(path, _)| *path == info.path);
+        // Picking, a row has Pick and the menu only (without Load and Queue).
+        let picking = self.pick.is_some();
+        let menu_actions = narrow && !picking;
+        let narrow = narrow || picking;
         let button_height = widgets::target(28.0, 48.0);
         let menu_width = widgets::target(30.0, 48.0);
         let spinner = if working { 24.0 } else { 0.0 };
@@ -636,7 +735,37 @@ impl ScriptRepoWindow {
                 },
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                self.row_menu(ui, entry, allowed, narrow, compact, vec2(menu_width, button_height));
+                self.row_menu(
+                    ui,
+                    entry,
+                    allowed,
+                    menu_actions,
+                    compact,
+                    vec2(menu_width, button_height),
+                );
+                if picking {
+                    let kind = if lead { Kind::Primary } else { Kind::Normal };
+                    let pick = widgets::button(
+                        ui,
+                        "Pick",
+                        kind,
+                        allowed.pick,
+                        vec2(64.0, button_height),
+                        &allowed.run_tip,
+                    )
+                    .on_hover_text(if top_hit {
+                        "Use this script (Enter); it's downloaded first if needed"
+                    } else {
+                        "Use this script; it's downloaded first if needed"
+                    });
+                    if pick.clicked() {
+                        self.pick_script(&info.path);
+                    }
+                    if working {
+                        ui.spinner();
+                    }
+                    return;
+                }
                 if !narrow {
                     if widgets::button(
                         ui,
