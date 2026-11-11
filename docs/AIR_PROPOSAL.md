@@ -317,6 +317,11 @@ Checked on the emulator: three trips to the background and back (same process, t
 the rail clear of an emulated camera hole; typing and Backspace in Search Scripts by key events;
 the strip showing the game's username field's text and caret over AIR's keyboard.
 
+**Confirmed on the Galaxy S24 FE (2026-11-11):** all five fixed (no crash coming back from the
+background, idle or running; typing in Search Scripts; the strip above the keyboard; the rail
+clear of the notch; silent in the background), and a script farmed correctly, found, started and
+watched from Turu's own windows on the phone.
+
 **Left for A2:** a tap on the game doesn't close an open egui menu (egui only sees the UI's
 touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause.
 
