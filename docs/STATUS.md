@@ -503,7 +503,14 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   the login screen only (2026-11-12, debug build, headless): the second start took the title
   screen from disk and the game client after a `304` (2.8 MB not downloaded; from start to the
   client loaded: 1.6 s on the first run, 0.9 s on the second, 1.9 s with the cache off, one run
-  each). Not measured in game: the assets file after a login, and map joins.
+  each). In game (2026-11-12, debug build, headless, GoldFarm on twig, `tools/farmrun/run.sh`, one
+  run each: cache off, empty, full): with the cache full, the start fetched 0.17 MB in its first
+  30 s instead of 15.75 MB (`game files:` 38 from disk, 1 after a `304`, 7 downloaded; 14.9 MB
+  not downloaded), and the map came 0.01 s after the join instead of 0.10 s. Times hardly
+  moved on a fast connection: login to world loaded 5.0 s off, 6.4 s empty, 4.7 s full; start
+  to in battlegrounde 17.1, 19.2 and 16.9 s (server round trips and the script's setup, not
+  files). farmrun's network bytes are only good for the first minutes: `nettop` stops counting
+  a connection once it closes.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
