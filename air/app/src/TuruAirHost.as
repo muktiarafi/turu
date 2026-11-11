@@ -2,7 +2,6 @@ package {
     import com.muktiarafi.turu.air.TuruAirNative;
     import flash.desktop.NativeApplication;
     import flash.desktop.SystemIdleMode;
-    import flash.display.DisplayObject;
     import flash.display.Loader;
     import flash.display.Sprite;
     import flash.display.StageAlign;
@@ -21,18 +20,15 @@ package {
     import flash.system.LoaderContext;
     import flash.system.Security;
     import flash.text.TextField;
-    import flash.text.TextFormat;
     import flash.utils.ByteArray;
-    import flash.utils.setTimeout;
 
     /**
      * Turu's host under Adobe AIR (docs/AIR_PROPOSAL.md): starts the foreground service and
      * Turu's engine (the native extension), then loads VibeSkua's skua.swf as the Ruffle build
      * does, patched by the engine for AIR (`turu_air_patch`): its `ExternalInterface` is
      * [TuruExternal] and its loaders [TuruLoader], so the engine drives it as it drives skua in
-     * Ruffle. A log strip at the bottom shows what happened at the start (release builds' trace goes
-     * nowhere), and errors after. Turu's windows are drawn over all this by the engine (the
-     * extension's overlay view).
+     * Ruffle. It draws nothing itself: its start and its errors go to Turu's Debug log ([say]), and
+     * Turu's windows are drawn over the game by the engine (the extension's overlay view).
      *
      * [TuruExternal] and [TuruLoader] are compiled into this SWF; skua, in a child application
      * domain, finds them by name.
@@ -44,7 +40,9 @@ package {
         // Compiled in for skua (found by name, never named here otherwise).
         private static const HOST_CLASSES:Array = [TuruExternal, TuruLoader];
 
-        private var log:TextField;
+        /** What [say] got before the engine started, sent to it once it has. */
+        private var early:Array = [];
+        private var engineStarted:Boolean = false;
         private var native:TuruAirNative;
         private var skua:Loader;
         /** What was last sent of the game's focused text field (`gameTyping`). */
@@ -53,17 +51,6 @@ package {
         public function TuruAirHost() {
             mouseEnabled = false;
             mouseChildren = false;
-            log = new TextField();
-            log.defaultTextFormat = new TextFormat("_sans", 11, 0x00ff00);
-            log.background = true;
-            log.backgroundColor = 0x000000;
-            log.alpha = 0.8;
-            log.width = 958;
-            log.height = 90;
-            log.y = 550 - 90;
-            log.multiline = true;
-            log.wordWrap = true;
-            addChild(log);
             say("sandbox " + Security.sandboxType);
             loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaught);
 
@@ -82,7 +69,13 @@ package {
             say("service started: " + native.startService("Running"));
             TuruExternal.start(native);
             TuruLoader.gameParams = {sFilePath: URL + "gamefiles/", isWeb: false};
-            say("engine started, data folder " + native.startEngine());
+            var folder:String = native.startEngine();
+            engineStarted = true;
+            for each (var line:String in early) {
+                say(line);
+            }
+            early = null;
+            say("engine started, data folder " + folder);
             // The main SWF is on the stage already; added later only when loaded by another.
             if (stage != null) {
                 onStage(null);
@@ -100,25 +93,20 @@ package {
         private function onStage(event:Event = null):void {
             stage.scaleMode = StageScaleMode.SHOW_ALL;
             stage.align = StageAlign.TOP;
-            // Stay above what skua puts on the stage (it swaps itself for the game).
-            stage.addEventListener(Event.ADDED, keepOnTop);
             addEventListener(Event.ENTER_FRAME, watchTyping);
         }
 
-        private function keepOnTop(event:Event):void {
-            var added:DisplayObject = event.target as DisplayObject;
-            if (added != null && added.parent == stage && stage.getChildIndex(this) != stage.numChildren - 1) {
-                stage.setChildIndex(this, stage.numChildren - 1);
-            }
-        }
-
+        /**
+         * A line for Turu's Debug log (Diagnostics > Logs) and logcat (tag turu), through the engine
+         * (`hostLog`): release builds' trace goes nowhere. Kept until the engine has started.
+         */
         private function say(text:String):void {
             trace("[TuruAir] " + text);
-            if (text.indexOf("ERROR") == 0 || text.indexOf("UNCAUGHT") == 0) {
-                log.visible = true;
+            if (!engineStarted) {
+                early.push(text);
+                return;
             }
-            log.appendText(text + "\n");
-            log.scrollV = log.maxScrollV;
+            native.flashCall("hostLog", JSON.stringify([text]));
         }
 
         /** Silent off screen, as Turu's Ruffle build (the game keeps running there). */
@@ -162,7 +150,7 @@ package {
         private function onSkuaBytes(event:Event):void {
             var patched:ByteArray = native.patchSwf(URLLoader(event.target).data, TuruAirNative.SKUA);
             if (patched == null) {
-                say("ERROR: skua.swf can't run under AIR (see logcat, tag turu)");
+                say("ERROR: skua.swf can't run under AIR");
                 return;
             }
             var context:LoaderContext = new LoaderContext(false, new ApplicationDomain(ApplicationDomain.currentDomain));
@@ -178,10 +166,6 @@ package {
         private function onSkua(event:Event):void {
             stage.addChildAt(skua.content, 0);
             say("skua.swf loaded");
-            // Turu's windows take over (the engine's overlay): the strip would cover the game's bar.
-            setTimeout(function():void {
-                log.visible = false;
-            }, 20000);
         }
     }
 }
