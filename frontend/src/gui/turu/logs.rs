@@ -318,6 +318,9 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
     }
 }
 
+/// What Turu sends and where (`PRIVACY.md`).
+pub const PRIVACY_POLICY_URL: &str = "https://github.com/muktiarafi/turu/blob/main/PRIVACY.md";
+
 /// "Send crash reports automatically?", once: where the build can send them
 /// (`Platform::uploads_crash_reports`) and the user hasn't answered (`send_crash_reports`). After
 /// the crash notice, and never over a script's message box. Closing it without an answer asks
@@ -352,6 +355,11 @@ pub fn show_crash_upload_question(ctx: &Context) {
                 .size(widgets::small_label_size() + 1.0)
                 .color(MUTED),
             );
+            // The AIR SDK's license (section 6.4) wants the policy linked in the app: Turu Mas.
+            ui.add_space(6.0);
+            if ui.link("Privacy policy").clicked() {
+                crate::platform::platform().open_url(PRIVACY_POLICY_URL);
+            }
         },
         ["Don't send", "Send reports"],
     );

@@ -806,6 +806,22 @@ mod tests {
         }
         let none = newest(&json, "0.2.0", false, None).unwrap().unwrap();
         assert!(none.asset.is_none() && !none.installable());
+        // Turu Mas's APK (another app, release.yml's `turu-mas` job) is never Android's package,
+        // listed first or not.
+        let mut with_mas = release("v0.3.0", false, false);
+        with_mas["assets"].as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({ "name": "turumas-0.3.0-android-arm64.apk", "browser_download_url": "https://dl/mas", "size": 10 }),
+        );
+        let android = newest(
+            &list(&[with_mas]),
+            "0.2.0",
+            false,
+            Some(Target::AndroidArm64),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(android.asset.unwrap().name, "turu-0.3.0-android-arm64.apk");
         // A release without this platform's package is still offered, as a link.
         let bare = serde_json::json!([{ "tag_name": "v0.3.0", "html_url": "u", "assets": [] }]);
         let bare = newest(

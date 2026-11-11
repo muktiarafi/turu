@@ -1,5 +1,5 @@
 //! Turu's egui look: Mugetsu's dark palette (the right-click panel, `crate::gui::mugetsu`) with
-//! VibeSkua's status colours. Turu AIR (the `air` feature) has a red accent instead of the violet.
+//! VibeSkua's status colours. Turu Mas (the `air` feature) has a red accent instead of the violet.
 
 #[cfg(not(feature = "air"))]
 use crate::gui::mugetsu::ACCENT as MUGETSU_ACCENT;
@@ -22,7 +22,7 @@ pub const ACCENT: Color32 = MUGETSU_ACCENT;
 pub const ACCENT_HOVER: Color32 = Color32::from_rgb(144, 129, 244);
 #[cfg(not(feature = "air"))]
 pub const ACCENT_PRESSED: Color32 = Color32::from_rgb(105, 90, 214);
-/// Turu AIR (the `air` feature) is red, as Adobe AIR's logo, so it isn't taken for Turu.
+/// Turu Mas (the `air` feature) is red, so it isn't taken for Turu.
 #[cfg(feature = "air")]
 pub const ACCENT: Color32 = Color32::from_rgb(0xE0, 0x26, 0x2D);
 #[cfg(feature = "air")]

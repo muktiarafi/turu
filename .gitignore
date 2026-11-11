@@ -3,6 +3,8 @@
 .DS_Store
 # Android startup flags (docs/ANDROID.md): they hold a password.
 /turu-args.txt
-# Android signing keys (docs/ANDROID.md, Releases): keep them out of the repository.
+# Android signing keys (docs/ANDROID.md, Releases; Turu Mas's .p12, docs/TURU_MAS.md): keep them out
+# of the repository.
 *.jks
 *.keystore
+*.p12

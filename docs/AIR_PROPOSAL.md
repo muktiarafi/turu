@@ -93,7 +93,8 @@ aren't needed for today's client.
 read are Harman's January 2020 ones: free under $50 k a year, with a splash screen; Professional
 $799 a year up to $500 k
 ([PDF](https://airsdk.harman.com/assets/pdfs/Adobe%20AIR%20-%20Updated%20Pricing.pdf)). Read
-today's terms by hand before going further.
+today's terms by hand before going further. (Read 2026-11-11: the free tier unchanged, plus Basic
+at $199 a year to $100 k and Enterprise at $1,199; docs/TURU_MAS.md, "The AIR SDK's license".)
 
 **Under AIR (2026-11-09, emulator, Android 16 arm64, AIR SDK 51.5.1):** `air/spike/` (now `air/app/`) is a bare
 host (`TuruAirHost.as`, `app.xml`, `build.sh`). It loads the live client, patched by
@@ -202,7 +203,7 @@ emulator.)
 * The bridge benchmark in game (logged in, a busy map) and on a phone.
 * A longer background run (an hour, screen off) with a memory reading.
 * Pets, the Book of Lore and char select (through `SwfLoaderPatch`).
-* Today's AIR SDK license terms (Wipro).
+* ~~Today's AIR SDK license terms (Wipro).~~ Read: docs/TURU_MAS.md.
 
 ## A1: the engine on AIR (started 2026-11-11, before the failing-phone runs)
 
@@ -325,7 +326,12 @@ watched from Turu's own windows on the phone.
 **Left for A2:** a tap on the game doesn't close an open egui menu (egui only sees the UI's
 touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause.
 
-## A3: Turu AIR, an app of its own (2026-11-11)
+## A3: Turu Mas, an app of its own (2026-11-11)
+
+Renamed from "Turu AIR" the same day: the AIR SDK's license (section 14) keeps Adobe's trademark
+out of an app's title. The app is **Turu Mas** (`com.muktiarafi.turumas`); the code keeps "air"
+where it names the runtime. Its own doc: **docs/TURU_MAS.md** (build, release, signing, crash
+reports, the license). The text below is as written before the rename.
 
 Two apps, not one with a switch: **Turu AIR** next to Turu.
 * `air/app/` (was `air/spike/`): `app.xml` names it "Turu AIR", ID `com.muktiarafi.turuair`,
@@ -349,10 +355,13 @@ Two apps, not one with a switch: **Turu AIR** next to Turu.
 * Signing: `AIR_KEYSTORE` and `AIR_KEYSTORE_PASSWORD` (PKCS#12); without them a development key in
   `target/air-app/`. The one-APK experiment (`studio.sh`, `TuruLauncher`) is gone.
 
-**Left for A3:** the release workflow's job for Turu AIR (the AIR SDK in CI:
-`joshtynjala/setup-adobe-air-action` with `accept-license`, JDK 17, cargo-ndk, the keystore from
-the secrets), a release keystore of its own, Sentry for Turu AIR, docs (docs/ANDROID.md or one of
-its own), and the AIR SDK's license terms read.
+**Done for A3 (2026-11-11, as Turu Mas):** the release workflow's `turu-mas` job (the AIR SDK
+through `joshtynjala/setup-adobe-air-action` with `accept-license`, JDK 17 and 21, cargo-ndk, the
+key from the `MAS_KEYSTORE` secrets; `turumas-<version>-android-arm64.apk`, out of Turu's
+updater's way), version codes as Turu's, Sentry for Rust panics (`crash_uploads.rs`, symbols
+uploaded), PRIVACY.md (the license asks for one), docs/TURU_MAS.md, and the license read (its
+"The AIR SDK's license"). **Left:** the release key itself and the secrets (by hand), the job's
+first run in CI, the GPL question (docs/TURU_MAS.md, "Open question").
 
 ## Why consider it: what Ruffle costs on Android
 

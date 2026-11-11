@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag such as `v0.1.0-alpha.1` builds Turu for every platform (Linux, Windows, macOS and
-# Android) and publishes a GitHub release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
+# Android) and Turu Mas (Android, on Adobe AIR), and publishes a GitHub release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
 # Running it by hand (Actions > Release > Run workflow) only builds; the packages are kept as
 # workflow artifacts.
 on:
@@ -379,10 +379,126 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  # Turu Mas (docs/TURU_MAS.md): Turu's engine and windows over AQW's client in the Adobe AIR
+  # runtime, its own Android app. Its APK is `turumas-*`, not `turu-*`: Turu's updater takes any
+  # `turu-*-android-arm64.apk` as its own.
+  turu-mas:
+    name: Build Turu Mas android-arm64
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      NDK_VERSION: 27.3.13750724
+    steps:
+      - uses: actions/checkout@v7
+
+      # Cargo resolves the workspace's patches in ruffle/; rustls-platform-verifier's Kotlin half
+      # goes into the extension's jar.
+      - run: git submodule update --init --depth 1 ruffle android/vendor/rustls-platform-verifier
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      # JDK 21 for Gradle (the extension's Kotlin); JDK 17 for AIR's tools (ADT packages with a
+      # Gradle that doesn't run on newer ones): `AIR_JAVA_HOME` below.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            21
+
+      # Downloading the AIR SDK accepts its license (docs/TURU_MAS.md, "The AIR SDK's license"):
+      # free tier, so the app starts with the SDK's splash screen. Sets AIR_HOME.
+      - uses: joshtynjala/setup-adobe-air-action@v2
+        with:
+          air-version: "51.5.1.1"
+          accept-license: true
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: turu-mas-android-arm64
+
+      - name: Install the Android SDK parts, cargo-ndk and libclang
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
+          cargo install cargo-ndk --version 4.1.2 --locked
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+          libclang=$(find /usr/lib/llvm-* -name 'libclang.so*' | sort -V | tail -1)
+          echo "LIBCLANG_PATH=$(dirname "$libclang")" | tee -a "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" | tee -a "$GITHUB_ENV"
+
+      # Turu Mas's own release key (PKCS#12), from the repository's secrets (docs/TURU_MAS.md). A
+      # tag needs it, so every release updates in place; a run by hand without it is signed with
+      # a development key made on the spot.
+      - name: Set up signing
+        env:
+          KEYSTORE: ${{ secrets.MAS_KEYSTORE }}
+        run: |
+          if [[ -z "$KEYSTORE" ]]; then
+            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+              echo "::error::The MAS_KEYSTORE secret is missing; a release APK must be signed with it"
+              exit 1
+            fi
+            echo "::warning::No MAS_KEYSTORE secret: the APK is signed with a development key"
+            exit 0
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/turu-mas.p12"
+          echo "MAS_KEYSTORE=$RUNNER_TEMP/turu-mas.p12" >> "$GITHUB_ENV"
+
+      # Line tables in the library (for Sentry to read crash reports' frames); the APK's copy is
+      # stripped of them by air/ane/build.sh.
+      - name: Build
+        run: AIR_JAVA_HOME="$JAVA_HOME_17_X64" air/app/build.sh --no-install
+        env:
+          TURU_VERSION: ${{ needs.version.outputs.version }}
+          CFG_RELEASE_CHANNEL: stable
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+          MAS_KEYSTORE_PASSWORD: ${{ secrets.MAS_KEYSTORE_PASSWORD }}
+          # Crash reports (`air/ane/rust/src/crash_uploads.rs`): without it the APK has none.
+          TURU_MAS_SENTRY_DSN: ${{ secrets.SENTRY_MAS_DSN }}
+
+      - name: Package
+        run: |
+          cp target/air-app/TuruMas.apk "turumas-$VERSION-android-arm64.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "turumas-$VERSION-android-arm64.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "turumas-$VERSION-android-arm64.apk" | head -1
+
+      # The artifact's name starts with `turu-` so the release job collects it.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: turu-mas-android-arm64
+          path: turumas-${{ needs.version.outputs.version }}-android-arm64.apk
+          if-no-files-found: error
+
+      # Skipped without SENTRY_AUTH_TOKEN or the SENTRY_MAS_PROJECT variable.
+      - name: Upload symbols to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_MAS_PROJECT }}
+        run: |
+          if [[ -z "$SENTRY_AUTH_TOKEN" || -z "$SENTRY_PROJECT" ]]; then
+            echo "No SENTRY_AUTH_TOKEN secret or SENTRY_MAS_PROJECT variable: symbols not uploaded"
+            exit 0
+          fi
+          npx -y @sentry/cli@3.8.1 debug-files upload target/air-ane/jni/arm64-v8a/libturu_air.so
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: symbols-turu-mas-android-arm64
+          path: target/air-ane/jni/arm64-v8a/libturu_air.so
+          if-no-files-found: error
+          retention-days: 90
+
   release:
     name: Publish release
     if: github.ref_type == 'tag'
-    needs: [version, test, build, macos-app, android]
+    needs: [version, test, build, macos-app, android, turu-mas]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

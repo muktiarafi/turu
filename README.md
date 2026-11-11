@@ -22,8 +22,10 @@ Beta builds for Windows, macOS, Linux and Android (arm64, 8+) are on
 - **macOS:** the app isn't notarized. If it won't open, allow it in System Settings > Privacy &
   Security, or run `xattr -dr com.apple.quarantine Turu.app`.
 - **Android:** no Army, Butler or HotKeys yet ([docs/ANDROID.md](docs/ANDROID.md)).
+- **Turu Mas** (`turumas-*.apk`): Turu for Android with the game in the Adobe® AIR® runtime
+  instead of Ruffle, an app of its own ([docs/TURU_MAS.md](docs/TURU_MAS.md)).
 - **Crash reports** (Sentry) are sent only if you say yes at first start; change it in Options >
-  Application.
+  Application. [PRIVACY.md](PRIVACY.md) says what Turu sends.
 
 ## Use
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Turu AIR's red, the UI accent (frontend/src/gui/turu/theme.rs, the `air` feature). -->
+    <!-- Turu Mas's red, the UI accent (frontend/src/gui/turu/theme.rs, the `air` feature). -->
     <color name="turu_air_icon_background">#E0262D</color>
 </resources>

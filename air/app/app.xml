@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <application xmlns="http://ns.adobe.com/air/application/51.5">
-  <!-- Its own app, next to Turu (com.muktiarafi.turu): built without AIR's "air." prefix
-       (AIR_NOANDROIDFLAIR, build.sh). -->
-  <id>com.muktiarafi.turuair</id>
-  <versionNumber>0.2.0</versionNumber>
-  <versionLabel>0.2.0</versionLabel>
-  <filename>TuruAir</filename>
-  <name>Turu AIR</name>
+  <!-- Turu Mas, its own app next to Turu (com.muktiarafi.turu): built without AIR's "air."
+       prefix (AIR_NOANDROIDFLAIR, build.sh). Not "AIR" in its name: the SDK's license (section 14)
+       keeps Adobe's trademark out of an app's title. -->
+  <id>com.muktiarafi.turumas</id>
+  <!-- build.sh writes the version: Turu's (the release tag), and as versionNumber the same version
+       code Turu's Gradle build gives it (AIR's code is major * 1,000,000 + minor * 1,000 + patch). -->
+  <versionNumber>@VERSION_NUMBER@</versionNumber>
+  <versionLabel>@VERSION@</versionLabel>
+  <filename>TuruMas</filename>
+  <name>Turu Mas</name>
   <initialWindow>
     <content>TuruAirHost.swf</content>
     <aspectRatio>landscape</aspectRatio>
@@ -14,6 +17,8 @@
     <renderMode>auto</renderMode>
     <fullScreen>true</fullScreen>
     <softKeyboardBehavior>none</softKeyboardBehavior>
+    <!-- The free tier's splash screen (the SDK's license, section 4), dark as Turu. -->
+    <splash>dark</splash>
   </initialWindow>
   <!-- Turu's symbol in red (icons/turu-air-symbol.svg). -->
   <icon>

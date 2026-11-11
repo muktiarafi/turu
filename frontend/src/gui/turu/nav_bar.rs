@@ -1365,7 +1365,7 @@ const COMPACT_CHIP_NAME_WIDTH: f32 = 72.0;
 const MIN_NAME_WIDTH: f32 = 28.0;
 
 /// The Turu symbol (`docs/logo/turu-symbol-small.svg`, the cut for small sizes): a tile in the
-/// accent (violet; red in Turu AIR) with two closed eyes, drawn rather than loaded so it stays
+/// accent (violet; red in Turu Mas) with two closed eyes, drawn rather than loaded so it stays
 /// sharp at any scale.
 const SYMBOL_SIZE: f32 = 18.0;
 /// Between the symbol and the first menu.

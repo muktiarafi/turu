@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Turu's AIR native extension (target/air-ane/com.muktiarafi.turu.air.ane and its .swc).
+# Builds Turu Mas's AIR native extension (target/air-ane/com.muktiarafi.turu.air.ane and its .swc).
 # Needs AIR_HOME (AIR SDK 51.5+), AIR_JAVA_HOME (a JDK 17, for AIR's tools), ANDROID_HOME
 # (Android SDK with the NDK) and cargo-ndk. The Kotlin side builds with Turu's Gradle wrapper and
 # the default JDK; the Rust side (crate turu_air) with cargo-ndk.
@@ -31,8 +31,11 @@ if [ "$host" = darwin-x86_64 ] && [ -z "${LIBCLANG_PATH:-}" ]; then
   export LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib
 fi
 cargo ndk --platform 26 -t arm64-v8a -o "$out/jni" build -q --release -p turu_air
+# The APK's copy without debug info (its symbol table stays, for panics' backtraces); the one in
+# $out/jni keeps it, for Sentry (the release workflow uploads it: built with line tables there).
 mkdir -p "$out/Android-ARM64/libs/arm64-v8a"
-cp "$out/jni/arm64-v8a/libturu_air.so" "$out/Android-ARM64/libs/arm64-v8a/"
+"$ndk/toolchains/llvm/prebuilt/$host/bin/llvm-strip" --strip-debug \
+  -o "$out/Android-ARM64/libs/arm64-v8a/libturu_air.so" "$out/jni/arm64-v8a/libturu_air.so"
 
 # AS3, and the ANE (JDK 17 from here on).
 export JAVA_HOME="$AIR_JAVA_HOME" PATH="$AIR_JAVA_HOME/bin:$PATH"

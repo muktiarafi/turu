@@ -333,7 +333,7 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             }
         }
         "debug" => bot.logs.debug.push(format!("[skua] {}", arg_str(0))),
-        // Turu AIR's host SWF (air/app): its start and its errors (the Debug log reaches the app's
+        // Turu Mas's host SWF (air/app): its start and its errors (the Debug log reaches the app's
         // log too).
         "hostLog" => bot.logs.debug.push(format!("[AIR host] {}", arg_str(0))),
         other => tracing::debug!("Unhandled Flash call {other}: {args:?}"),

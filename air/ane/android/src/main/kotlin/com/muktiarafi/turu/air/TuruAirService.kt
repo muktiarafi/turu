@@ -57,7 +57,7 @@ class TuruAirService : Service() {
             .build()
     }
 
-    /** The app's name, as the launcher shows it ("Turu AIR"). */
+    /** The app's name, as the launcher shows it ("Turu Mas"). */
     private fun appName(): String = applicationInfo.loadLabel(packageManager).toString()
 
     override fun onDestroy() {

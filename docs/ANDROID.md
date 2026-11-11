@@ -82,7 +82,7 @@ How to build, run and check the Android app. The design and the plan are in
 > **Touch controls (2026-11-08, removed 2026-11-11):** Turu's own joystick and action bar
 > buttons over the game (Menu > Show / Edit Touch Controls, `touch-controls.json`) are gone:
 > AQW's own mobile joystick and buttons (`liteAssets.mobile`) do the same, in Turu and in Turu
-> AIR. A `touch-controls.json` left in the data folder is unused. The rail's Menu and the
+> Mas (docs/TURU_MAS.md). A `touch-controls.json` left in the data folder is unused. The rail's Menu and the
 > script chip's list now scroll: on MuMu both were taller than the screen, which hid Hide Side
 > Bar, and the chip list's top.
 >
