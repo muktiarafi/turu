@@ -976,7 +976,15 @@ export interface ScriptOption {
     defaultValue: boolean | number | string;
     /** For a `"choice"`: the names it can take (VibeSkua: the enum's members). */
     choices?: string[];
+    /**
+     * For a `"text"` that holds an item's name (see {@link option.item}): the window lets the user
+     * pick it from their wearable items of this slot (`"any"`: all of them), or type it.
+     */
+    item?: ScriptOptionItem;
 }
+
+/** The items an {@link option.item} offers: the account's wearable items of one slot, or all of them. */
+export type ScriptOptionItem = "any" | "class" | "weapon" | "armor" | "helm" | "cape" | "pet" | "necklace";
 
 /** A named list of options (one entry of VibeSkua's `MultiOptions`). */
 export interface ScriptOptionGroup {
@@ -1012,6 +1020,17 @@ export const option = {
     /** A text box. */
     text(name: string, displayName: string, description: string, defaultValue = ""): ScriptOption {
         return { name, displayName, description, kind: "text", defaultValue };
+    },
+    /**
+     * An item's name, picked from the account's inventory and bank (their wearable items of
+     * `slot`) or typed. A text option underneath: `bot.config.get<string>` returns the name, and
+     * the options file stores it as VibeSkua's `Option<string>` would.
+     *
+     * @example
+     * option.item("ForgeHelm", "Helm: Forge", "Your Forge helm", "helm")
+     */
+    item(name: string, displayName: string, description: string, slot: ScriptOptionItem = "any", defaultValue = ""): ScriptOption {
+        return { name, displayName, description, kind: "text", defaultValue, item: slot };
     },
     /**
      * One of a list of names, picked from a drop-down (VibeSkua's enum options, `Option<MyEnum>`).

@@ -8,6 +8,7 @@
 //! copied over.
 
 use super::loader::{ScriptLoader, ScriptResolver, normalize};
+use crate::gear::Slot;
 use rquickjs::{CatchResultExt, Context, Function, Module, Object, Runtime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -51,6 +52,41 @@ pub struct OptionDecl {
     /// The names a `Choice` can take (VibeSkua: the enum's members). Shown with `_` as spaces.
     #[serde(default)]
     pub choices: Vec<String>,
+    /// For a `Text` holding an item's name (`option.item(...)`): what the window offers to pick it
+    /// from, among the account's items. The value is still the name, typed or picked.
+    #[serde(default)]
+    pub item: Option<ItemPick>,
+}
+
+/// The items an item option (`option.item`) offers: the account's wearable items, all of them or
+/// those of one slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ItemPick {
+    Any,
+    Class,
+    Weapon,
+    Armor,
+    Helm,
+    Cape,
+    Pet,
+    Necklace,
+}
+
+impl ItemPick {
+    /// The slot it keeps to; `None` for any wearable item.
+    pub fn slot(self) -> Option<Slot> {
+        Some(match self {
+            Self::Any => return None,
+            Self::Class => Slot::Class,
+            Self::Weapon => Slot::Weapon,
+            Self::Armor => Slot::Armor,
+            Self::Helm => Slot::Helm,
+            Self::Cape => Slot::Cape,
+            Self::Pet => Slot::Pet,
+            Self::Necklace => Slot::Necklace,
+        })
+    }
 }
 
 impl OptionDecl {
@@ -139,6 +175,12 @@ impl Declaration {
                 }
                 if option.kind == Kind::Choice && option.choices.is_empty() {
                     return Err(format!("\"{}\" has no choices", option.name));
+                }
+                if option.item.is_some() && option.kind != Kind::Text {
+                    return Err(format!(
+                        "\"{}\" picks an item, so it must be a text option",
+                        option.name
+                    ));
                 }
                 if !option.accepts(&option.default_value) {
                     return Err(format!(
@@ -302,7 +344,7 @@ impl ScriptOptions {
     /// The options and their values as JSON, for the control API and the web monitor:
     /// `storage`, `file` (`options/<storage>.cfg`), `saved` (whether that file exists),
     /// `dontPreconfigure`, and `categories`, [`MAIN`] first, each with its `options` (`name`,
-    /// `displayName`, `description`, `kind`, `default`, `choices`, `value`).
+    /// `displayName`, `description`, `kind`, `default`, `choices`, `item`, `value`).
     pub fn to_json(&self) -> Value {
         let categories: Vec<Value> = self
             .decl
@@ -319,6 +361,7 @@ impl ScriptOptions {
                             "kind": o.kind,
                             "default": o.default_value,
                             "choices": o.choices,
+                            "item": o.item,
                             "value": self.get_in(category, &o.name),
                         })
                     })
@@ -626,6 +669,27 @@ mod tests {
         assert!(decl.check().unwrap_err().contains("Pet"));
         decl.options[0].choices.clear();
         assert!(decl.check().unwrap_err().contains("no choices"));
+    }
+
+    #[test]
+    fn item_options_are_text_and_read_their_slot() {
+        let decl = declaration_of(
+            r#"{"storage": "Gaol", "options": [
+                {"name": "Helm", "displayName": "Helm", "description": "", "kind": "text", "defaultValue": "", "item": "helm"},
+                {"name": "Any", "displayName": "Any", "description": "", "kind": "text", "defaultValue": "", "item": "any"}
+            ]}"#,
+        );
+        assert!(decl.check().is_ok());
+        assert_eq!(
+            decl.options[0].item.and_then(ItemPick::slot),
+            Some(Slot::Helm)
+        );
+        assert_eq!(decl.options[1].item, Some(ItemPick::Any));
+        assert_eq!(decl.options[1].item.and_then(ItemPick::slot), None);
+        let mut bad = decl.clone();
+        bad.options[0].kind = Kind::Bool;
+        bad.options[0].default_value = json!(false);
+        assert!(bad.check().unwrap_err().contains("text option"));
     }
 
     #[test]

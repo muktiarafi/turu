@@ -153,6 +153,14 @@ export default function main(): void {
   // ...
   if (bot.config.get<PetChoice>("PetChoice") === PetChoice.Dragon_Pet) { /* ... */ }
   ```
+- **Items** (`option.item(name, displayName, description, slot)`): a text option holding an
+  item's name, which the window lets the user pick from their wearable items of `slot` (`"helm"`,
+  `"weapon"`, `"cape"`, ..., or `"any"`) in the inventory and bank, or type. `bot.config.get<string>`
+  returns the name, and the options file stores it as a text option:
+
+  ```ts
+  option.item("ForgeHelm", "Helm: Forge", "Your helm with the Forge enhancement", "helm"),
+  ```
 - **Option groups** (VibeSkua `MultiOptions`): pass them as the fourth argument of
   `defineScriptOptions`, keyed by the group's name. They show after the other options under that
   name (`_` as spaces) and are saved as `Group:Name=Value` lines. Read and write them with
