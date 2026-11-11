@@ -522,7 +522,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   screen (2026-11-12): the second start read the title screen from disk and the client after
   a `304` (2.8 MB not downloaded), and read the patched client in 25 ms instead of patching it
   (~0.45 s); from skua.swf loaded to the client patched, 4.5 s on the first start, 2.2 s on the
-  second. Not checked in game yet (maps and gear after a login).
+  second. In game (same day, emulator, login to Battleon on Twig, the device's received bytes,
+  two runs each): from start to the title screen 3.3 MB with the cache empty, 0.3 MB full;
+  from Login to 30 s in Battleon 11.8 MB empty, 2.2 MB full (the rest: the socket and gear of
+  players not seen before), with the map, gear and players drawn. Turu's logcat lines stop
+  once logged in, so the `Game files:` lines show only up to the login screen.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
