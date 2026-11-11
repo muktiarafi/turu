@@ -1,11 +1,13 @@
 package com.muktiarafi.turu.air
 
 import android.app.Activity
+import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
@@ -84,17 +86,53 @@ object Bridge {
         context?.dispatchStatusEventAsync(code, level)
     }
 
-    /** Puts [TuruOverlay] over AIR's view (once). */
+    /** Whether [attachOverlay] follows AIR's activities (registered once per process). */
+    private var following = false
+
+    /**
+     * Puts [TuruOverlay] over AIR's view, once per activity. The process can outlive its activity:
+     * swiped out of the recent apps, the app keeps running (the foreground service), and opening
+     * it again makes a new activity of AIR's class, while AS3 (and so `startEngine`) goes on as it
+     * was. So the first call follows that class's activities from then on: each new one gets an
+     * overlay of its own (the old one went with the old activity), and becomes [activity].
+     */
     fun attachOverlay(activity: Activity) {
         this.activity = activity
+        if (!following) {
+            following = true
+            follow(activity)
+        }
         activity.runOnUiThread {
-            if (overlay != null) return@runOnUiThread
+            if (overlay?.context === activity) return@runOnUiThread
             val content = activity.findViewById<ViewGroup>(android.R.id.content)
             airView = content.getChildAt(0)
             val view = TuruOverlay(activity)
             content.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             overlay = view
         }
+    }
+
+    private fun follow(first: Activity) {
+        val air = first.javaClass
+        first.application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(a: Activity) {
+                if (a.javaClass == air && overlay?.context !== a) attachOverlay(a)
+            }
+
+            override fun onActivityDestroyed(a: Activity) {
+                if (overlay?.context === a) {
+                    overlay = null
+                    airView = null
+                }
+                if (activity === a) activity = null
+            }
+
+            override fun onActivityCreated(a: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, outState: Bundle) {}
+        })
     }
 
     /** The game's place: `left` pixels right of the screen's edge (the rail), `top` below its top. */

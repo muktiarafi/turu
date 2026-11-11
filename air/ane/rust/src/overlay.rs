@@ -262,6 +262,9 @@ fn run() {
             let mut shared = shared();
             shared.applied = target_for;
             APPLIED.notify_all();
+            // A new view may be in a new activity (the app swiped away and opened again, the
+            // process kept by the service), whose game view has no margins yet: send them again.
+            sent_insets = (u32::MAX, u32::MAX);
         }
         let (Some(gpu), Some(target)) = (gpu.as_mut(), target.as_mut()) else {
             next = Instant::now() + IDLE_FRAME;
