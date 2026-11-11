@@ -77,6 +77,11 @@ impl Platform for AndroidPlatform {
         true
     }
 
+    // A phone's screen is too small for the tiles (the engine ignores `TabRequest::Grid`).
+    fn has_grid_view(&self) -> bool {
+        false
+    }
+
     fn shares_text(&self) -> bool {
         true
     }

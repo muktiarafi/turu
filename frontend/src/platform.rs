@@ -92,6 +92,12 @@ pub trait Platform: Send + Sync {
         false
     }
 
+    /// Whether Grid View (every tab at once) is offered: the nav bar's Grid. Where it's false
+    /// the button is hidden and the frontend ignores `TabRequest::Grid`.
+    fn has_grid_view(&self) -> bool {
+        true
+    }
+
     /// Whether the screen is touched rather than pointed at: no hover, so tooltips never show,
     /// and controls need finger-sized targets (48 points, Android's minimum).
     fn is_touch(&self) -> bool {

@@ -1057,9 +1057,10 @@ fn update_notice(ui: &mut Ui, windows: &mut Windows, compact: bool) {
     }
 }
 
-/// Grid View (VibeSkua's tabbed host's): every tab at once, with two tabs or more.
+/// Grid View (VibeSkua's tabbed host's): every tab at once, with two tabs or more, where the
+/// platform offers it (not on a phone).
 fn grid_toggle(ui: &mut Ui) {
-    if crate::turu::tabs().len() < 2 {
+    if !crate::platform::platform().has_grid_view() || crate::turu::tabs().len() < 2 {
         return;
     }
     let on = crate::grid::on();
