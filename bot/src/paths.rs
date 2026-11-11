@@ -51,6 +51,12 @@ impl Paths {
         self.root.join("crash")
     }
 
+    /// The files the game downloaded, kept for as long as AQW's servers allow
+    /// (`turu_frontend::game_files`). Safe to delete.
+    pub fn game_files_cache_dir(&self) -> PathBuf {
+        self.root.join("cache").join("gamefiles")
+    }
+
     /// Where client updates are downloaded and unpacked (`crate::updates`), emptied before each.
     pub fn updates_dir(&self) -> PathBuf {
         self.root.join("updates")

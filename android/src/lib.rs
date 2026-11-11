@@ -780,7 +780,8 @@ fn build_player(
         SocketMode::Allow,
         Rc::new(content),
         NoDialogs,
-    );
+    )
+    .with_http_cache(turu_frontend::game_files::cache());
     let navigator = turu_frontend::capture::CaptureNavigator::new(navigator, Some(bot.capture.clone()));
     let mut builder = PlayerBuilder::new()
         .with_navigator(navigator)

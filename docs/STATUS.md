@@ -485,6 +485,25 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   pointer put on the stage and taken off in turns (2026-11-10, release build, window covered),
   game ticks: 0MaxBags farm 49 ms/s with the pointer away, 121 with it over the game, 62 with
   the fix; Yulgar 14, 62 and 20.
+- **Game files are cached:** Ruffle's desktop navigator has no HTTP cache (in a browser, Flash
+  Player used the browser's), so every start downloaded the game's assets again (8 MB) and
+  every map join its map, monsters and gear. AQW's CDN marks those files `Cache-Control:
+  public, max-age=2678400` (31 days) with an `ETag`. ruffle-aqw's navigator now keeps them
+  (`frontend-utils/src/backends/navigator/cache.rs`, `HttpCache`; Turu's one cache per process:
+  `turu_frontend::game_files`, in `<data>/cache/gamefiles`, shared by every tab and client) by
+  a browser's rules: only a plain `GET` answered `200` with a `max-age` of an hour or more and
+  a validator, no `Set-Cookie`, no `Vary` beyond `Accept-Encoding` (the game's API answers,
+  `max-age=2` and `Vary: *`, never are). A file is one entry whatever its query string: asked
+  for with the query it was stored with, while fresh, it comes from disk with no request; with
+  another query (`?v=5.32` after a game update, skua.swf's `?ver=<random>` on the game client)
+  or once stale, the server is asked with `If-None-Match` and answers `304` without a body when
+  nothing changed. With the network down, a cached file is used. The folder stays under 1 GB
+  (`TURU_HTTP_CACHE_MB`), dropping the files used longest ago; `TURU_HTTP_CACHE=0` turns it
+  off. The perf log's `game files:` line has the counts. Checked against the live servers up to
+  the login screen only (2026-11-12, debug build, headless): the second start took the title
+  screen from disk and the game client after a `304` (2.8 MB not downloaded; from start to the
+  client loaded: 1.6 s on the first run, 0.9 s on the second, 1.9 s with the cache off, one run
+  each). Not measured in game: the assets file after a login, and map joins.
 
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.

@@ -237,7 +237,9 @@ impl ActivePlayer {
                 initial_allow_list,
                 opt.filesystem_access_mode,
             ),
-        );
+        )
+        // Turu: the game's files come from the disk cache when AQW's servers allow it.
+        .with_http_cache(turu_frontend::game_files::cache());
         // Turu: the tab's game socket goes through its Interceptor capture.
         let navigator = crate::capture::CaptureNavigator::new(
             navigator,

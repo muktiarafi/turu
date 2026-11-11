@@ -81,6 +81,10 @@ fn log_memory(player: &mut Player) {
     tracing::info!(target: "turu_perf", "memory census: {}", player.aqw_movie_census(8));
     // Turu: what costs the most while loaded (a map, a monster, gear; images with their pixels).
     tracing::info!(target: "turu_perf", "memory biggest: {}", player.aqw_movie_sizes(8));
+    // Turu: what the disk cache spared the network, since the start.
+    if let Some(summary) = turu_frontend::game_files::summary() {
+        tracing::info!(target: "turu_perf", "game files: {summary}");
+    }
     // Turu: `TURU_RETAIN_URL=<part of a URL>`: every 5th reading, what keeps the `LoaderInfo`s
     // of those movies alive (walks the whole heap: a short pause).
     static READINGS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -114,7 +118,8 @@ fn build_player(
         SocketMode::Allow,
         Rc::new(content),
         NoDialogs,
-    );
+    )
+    .with_http_cache(turu_frontend::game_files::cache());
     let navigator = crate::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));
     let player = PlayerBuilder::new()
         .with_navigator(navigator)

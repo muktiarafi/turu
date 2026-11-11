@@ -189,6 +189,10 @@ impl PerfStats {
         );
         // Turu: what AS3 gotos cost (each runs a frame's construction and scripts over the stage).
         tracing::info!(target: "ruffle_aqw_perf", "gotos: {}", ruffle_core::take_goto_stats());
+        // Turu: what the disk cache spared the network, since the start.
+        if let Some(summary) = turu_frontend::game_files::summary() {
+            tracing::info!(target: "ruffle_aqw_perf", "game files: {summary}");
+        }
         crate::heap_census::report();
         // `RUFFLE_RETENTION_TEST=<class>` runs one report at startup, to check the tool itself.
         if self.windows_logged == 1

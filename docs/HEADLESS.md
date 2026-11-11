@@ -326,6 +326,8 @@ It also writes the samples to `<log>.csv`.
 | `TURU_RETAIN_URL` | Without a window, with `TURU_PERF_LOG`: what keeps the `LoaderInfo`s of movies whose URL contains this alive, every 5th memory reading. |
 | `TURU_CACHE_CENSUS` | With a window and `TURU_PERF_LOG`: every window, a `cache census:` line: the live cacheAsBitmap textures, how many of them objects on the stage and orphans hold, and the classes holding the most. |
 | `TURU_PACKET_LOG` | Set: every packet the client sends goes to the log too (`turu::packet` lines), as Diagnostics > Logger does with a window. `tools/farmrun/summarize.py` then shows which packets came before each "Please slow down". |
+| `TURU_HTTP_CACHE` | `0`: don't keep the game's files on disk (`<data>/cache/gamefiles`); every one is downloaded again. |
+| `TURU_HTTP_CACHE_MB` | How large that folder may grow (default 1024); the files used longest ago go first. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
 | `TURU_TEST_PANIC` | Set: panic 10 s after the start, to test crash reports (`sendCrashReports: true` in `settings.json` sends them; there is no question without a window). |
 | `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |
