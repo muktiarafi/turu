@@ -163,8 +163,38 @@ delivers status events right away, not once a frame (that would be ~42 ms at 24 
 second on screen. Off screen AIR slows the app, which shows in the tail. The Ruffle host's hop
 is cheaper, but VibeSkua's own ExternalInterface calls aren't free either; a script making tens of
 calls per action is fine. Bursts (`lnk*` reads of many objects) should batch, as skua's helpers
-already do. Packaging: an ANE's `Android-ARM64/libs/arm64-v8a/*.so` lands in the APK's
+already do.
+
+On the S24 FE the 1,000-call run overlapped logging in and battleon loading: 1,000 in 32.6 s,
+median 1.64 ms, p95 87.6 ms, max 261 ms. A call is answered between the game's frames, on AIR's
+thread, so while it loads a character and a map (or draws a heavy frame) calls wait; the Ruffle
+host has the same rule (its calls wait for the player's event loop). In battleon, off screen: 100
+in 1.03 s, median 2.04 ms, p95 63 ms, max 98 ms. Judged good enough to go on; an idle in-game
+run on screen, side by side with Ruffle on the same phone, would settle it. Packaging: an ANE's `Android-ARM64/libs/arm64-v8a/*.so` lands in the APK's
 `lib/arm64-v8a/` (900 KB here) and `System.loadLibrary` finds it.
+
+**One APK or two: one is possible, though not through ADT's APK targets.** (2026-11-11,
+emulator.)
+* ADT refuses a `LAUNCHER` category in `app.xml`'s manifest additions ("error 404: Android
+  attribute android:name is not allowed to be overridden", and the same for `android:exported`),
+  and refuses any entry for its own `AIRAppEntry`. An activity with `MAIN` only, or no filter,
+  is accepted.
+* `adt -target android-studio` exports a plain Gradle project instead (AGP 8.9.1, Gradle 8.13;
+  AIR's runtime as `AppEntry.jar`, `runtimeClasses.jar` and `jniLibs/<abi>/libCore.so`; our
+  extension's jar and `libturu_air.so`; the SWFs as assets). Its manifest is ours to edit.
+  `air/spike/studio.sh` declares `TuruLauncher` (in the extension, Kotlin) with `MAIN`, exports,
+  moves the `LAUNCHER` category from `AIRAppEntry` to `TuruLauncher`, and builds with Gradle.
+  On the emulator the launcher starts AIR's activity, and the game, the service and the bridge
+  run as in the ADT build (1,000 round trips, median 1.55 ms).
+* `AIR_NOANDROIDFLAIR=true` drops the `air.` prefix: the app ID is `app.xml`'s `<id>` as is
+  (`com.muktiarafi.turu.airspike` here), so an AIR build can carry `com.muktiarafi.turu` and
+  update today's app.
+* So the one-app design works by folding the exported project into Turu's Gradle build:
+  `TuruLauncher` starts Ruffle's `TuruActivity` or AIR's `AIRAppEntry` by the user's choice.
+  The export carries AIR's native runtime for four ABIs (88 MB debug APK); an `abiFilters` to
+  arm64 cuts that, as Turu's build already does. The export's Gradle and AGP lag Turu's (8.13 and
+  8.9.1 vs 9.8 and 9.5): folding in means taking its libraries and manifest entries, not its
+  build files.
 
 **Left for the spike:**
 * The phones that fail on Ruffle (Redmi 10, Infinix HOT 11S / Hot 30i): 50 map changes, an hour
@@ -172,7 +202,6 @@ already do. Packaging: an ANE's `Android-ARM64/libs/arm64-v8a/*.so` lands in the
 * The bridge benchmark in game (logged in, a busy map) and on a phone.
 * A longer background run (an hour, screen off) with a memory reading.
 * Pets, the Book of Lore and char select (through `SwfLoaderPatch`).
-* ADT with a custom launcher (one APK or two).
 * Today's AIR SDK license terms (Wipro).
 
 ## Why consider it: what Ruffle costs on Android
