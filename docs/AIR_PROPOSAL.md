@@ -1,7 +1,7 @@
 # Proposal: Adobe AIR as a second game client on Android
 
 Status: proposal; spike A0 started (the patcher, see "Spike A0" below). Written 2026-11-07 against Turu `5263a0a17` (0.2.0-beta.2 on
-Android), `../you-mad-bro` `c7be9c4` and VibeSkua's `Skua.AS3`.
+Android) and VibeSkua's `Skua.AS3`.
 
 Read `docs/ARCHITECTURE.md` (the Flash bridge, `FlashHost`) and `docs/ANDROID_HANDOVER.md`
 first.
@@ -12,21 +12,17 @@ first.
   only through `FlashHost::call` and `Bot::on_flash_call`, and `skua.swf` reaches the bot only
   through its `Externalizer` class (`addCallback` and `call`, 159 lines). Swap both ends of that
   bridge and the scripts, the API and the background loops run as they do now.
-* **But it isn't a drop-in "other player".** You Mad Bro runs on **Adobe AIR** (Harman AIR 51,
-  captive runtime), not on a Flash Player you can embed. AIR brings its own activity, its own
+* **But it isn't a drop-in "other player".** **Adobe AIR** (Harman AIR 51, captive runtime)
+  isn't a Flash Player you can embed. AIR brings its own activity, its own
   APK packaging (ADT), and the AIR application sandbox. Three things follow:
   1. AIR on Android has **no `ExternalInterface`**. The bridge becomes an AIR Native Extension
      (ANE) that loads Turu's Rust library.
   2. The AIR sandbox **rejects AQW's client as shipped**: `Security.allowDomain` throws (#3207),
      and maps loaded with `Loader.load` can't share code with the game. The game SWF has to be
-     **bytecode-patched**. You Mad Bro does this at build time and ships a patched `Game.swf` in
-     the APK. Turu should patch at run time, in Rust, so a game update doesn't need a new APK.
+     **bytecode-patched**. Patched at build time, a frozen `Game.swf` would ship in the APK;
+     Turu should patch at run time, in Rust, so a game update doesn't need a new APK.
   3. Turu's egui windows are drawn in the same wgpu surface as Ruffle's game today. Under AIR,
      AIR owns the screen, so the UI needs an **overlay view** of its own.
-* **Don't copy You Mad Bro's code.** The repository has **no license file**, so legally it is
-  all-rights-reserved. Use it as a map of *what* to patch and *which* Android settings work
-  (it farms 24/7 in the background on AIR), and write Turu's code ourselves. Or ask its author
-  for permission.
 * **Recommendation: a two-week spike first, with a go/no-go at the end.** Patch `Game.swf` with
   Rust, load it under AIR with a modified skua, log in, and run for an hour on the phones that
   fail on Ruffle today (Redmi 10, Infinix HOT 11S / Hot 30i). If AIR draws correctly and stays
@@ -57,9 +53,8 @@ this machine).
 * `Security.allowDomain("*.aq.com")` in `Game`'s constructor sits in a try/catch, so it's harmless.
 * `Mobile.isAIR` and `Mobile.isTouchDevice` exist (the mobile touch UI, `liteAssets.mobile`).
 
-You Mad Bro doesn't use any of this. Its patcher (written against an older client, or ignoring
-this mode) redirects `World.loadMap` and the others to its own loader. Most of its ~1,900 lines
-aren't needed for today's client.
+So nothing has to redirect `World.loadMap` and the others: they already load through
+`AirLoader`.
 
 **What `turu_air_patch` changes in `Game4000r8.swf`** (0.2 s, 2.81 MB to 2.83 MB):
 
@@ -82,7 +77,7 @@ aren't needed for today's client.
 
 * No hook class and no load redirection in skua-air.swf. Its changes shrink to: load the game with
   `loadBytes` and `allowCodeImport` (bytes from `turu_air_patch`), set `params.sFilePath` (and
-  `isWeb = false`, as You Mad Bro does), and drop its own `Security.allowDomain('*')`. Map
+  `isWeb = false`), and drop its own `Security.allowDomain('*')`. Map
   unloading (`unloadAndStop`, a GC nudge) is still ours to add if AIR's memory grows like
   Ruffle's: check in the spike.
 * The patch is small enough that a future client might need none. If Artix removes the AIR mode,
@@ -373,30 +368,13 @@ From `docs/ANDROID.md` and the crash reports so far:
 | GPU out of memory, wgpu panics (`Globals::new`) | Redmi 10 (Mali-G52, 4 GB), Infinix HOT 11S | Probably. AIR's renderer is Adobe's own, tuned on phones for a decade, with no wgpu/Mugetsu atlas layer. Spike measures it. |
 | Garbage drawing, no error | Infinix Hot 30i (PowerVR GE8320) | Probably. AIR draws the real Flash player's way. |
 | OpenGL ES draws only parts of the game | every GLES device | Yes. Not a concern under AIR. |
-| Process aborted at 1.9 GB RSS after 27 min | Pixel 8 | Unknown. AIR has its own GC, and AQW keeps every SWF it loaded under any player. You Mad Bro unloads each map (`unloadAndStop`, its own `ApplicationDomain`) and calls `System.gc()` every 90 s. Turu would do the same. |
+| Process aborted at 1.9 GB RSS after 27 min | Pixel 8 | Unknown. AIR has its own GC, and AQW keeps every SWF it loaded under any player. Unloading each map (`unloadAndStop`, its own `ApplicationDomain`) and a periodic `System.gc()` would keep it down. |
 | ColorOS kill for CPU use | OPPO A9 2020 | No. That's the phone maker's battery manager, whatever the player. AIR may use less CPU, so it may help. |
 | Soft keyboard, typing strip, `TextControl`, touch routing for the joystick | all | Mostly. AIR handles Flash text fields, the IME and multitouch natively. |
 | Ruffle's AVM2 gaps (a game feature that misbehaves) | case by case | Yes. AIR is the reference implementation. |
 
 What AIR doesn't fix: background network limits, Doze, vendor battery managers, AQW's own
 memory growth. The foreground service, wake lock and relogin logic stay.
-
-## What You Mad Bro is
-
-| | You Mad Bro |
-|---|---|
-| Runtime | Harman AIR SDK 51.1+, captive runtime in the APK, arm64 only. `app.xml` with `renderMode auto`, landscape, full screen. |
-| Client | `Loader.swf` (~10 k lines of AS3: `loader/src`). Its own bot engine (command list, AutoBattle, AutoQuest), UI in AS3. |
-| Game | `Game.swf` downloaded **at build time**, disassembled with RABCDAsm, patched by regex on the assembly (`patcher/Patcher.java`, ~1,900 lines), reassembled, shipped in `app:/gamefiles/`. Same for `spiderbook3.swf`, `Map-UI_r38.swf`, `charselect.swf`. |
-| Patches that make AQW run under AIR | strip `Security.allowDomain` (throws #3207 in the app sandbox); hard-code `serverFilePath`/`serverGamePath` (they come from `loaderInfo.url`, which is `app:/`); route `World.loadMap`, `loadNextWith`, `loadNextHouseItem(B)` to `queueLoadViaBytes`/`loadMapViaBytes` (URLLoader, then `loadBytes` with `allowCodeImport`, each map in its own child `ApplicationDomain`); raise `maxstack` where it adds calls. |
-| Patches for its bot or UI (not needed by Turu) | `SmartFoxClient.handleMessage` public; hero menu; `mcPopup`; world map; char select; quest reward preview. |
-| Android side | One ANE (`com.aqw.battery`, Java): foreground service (`specialUse|dataSync`), wake lock, Wi-Fi lock, battery-optimization prompt, notifications, Picture-in-Picture, SAF file picker. |
-| Build | AIR SDK + JDK 17 + D compiler + RABCDAsm; GitHub Actions with `joshtynjala/setup-adobe-air-action`. |
-| License | **None in the repository.** |
-
-The lesson for Turu is that AQW runs under AIR on Android with a handful of loader patches, and
-it keeps running in the background. Its approach of shipping a frozen patched client, though,
-means every AQW client update needs a new APK.
 
 ## Architecture
 
@@ -470,9 +448,9 @@ ABC bytecode. A new module (`bot/src/air_patch.rs`, or its own small crate) woul
   changed its client), refuse with a clear message ("this game version isn't supported in AIR
   mode yet; switch to Ruffle") instead of loading a half-patched client.
 
-Patched SWFs are cached in the data folder by game version (`gameversion`'s `sFile`). This
-replaces You Mad Bro's D + Java + RABCDAsm toolchain with code we own and test
-(`cargo test` with a saved `Game.swf`), and a game update needs no release.
+Patched SWFs are cached in the data folder by game version (`gameversion`'s `sFile`). This keeps
+the patcher in code we own and test (`cargo test` with a saved `Game.swf`), and a game update
+needs no release.
 
 ### The UI over AIR
 
@@ -517,7 +495,7 @@ Turu activity for the bot windows (switch between the game and Turu, as with any
 | Frame interpolation, Safe Drawing, GPU memory trims, Graphics API choice | None | Ruffle only. AIR has `renderMode` (auto/gpu/cpu/direct) and Stage quality instead. |
 | Tabs, Army in tabs, Butler (proposal phase 5) | Not in AIR mode | One AIR app runs one root SWF, and skua is a singleton (`Main.instance`). |
 | Restart without a window after a kill | Worse | The service can restart Turu's engine, but the game needs AIR's activity, and Android 10+ restricts starting activities from the background. After a kill: a notification "tap to resume". |
-| Picture-in-Picture | New, possible | You Mad Bro shows it works with AIR (it patches the AIR SDK's template). |
+| Picture-in-Picture | New, possible | Would need a change to AIR's activity template. |
 
 ## Risks
 
@@ -525,7 +503,6 @@ Turu activity for the bot windows (switch between the game and Turu, as with any
 |---|---|
 | **Harman's license.** Harman's January 2020 pricing put the free tier under $50 k a year in income, with a splash screen injected at start; paid tiers remove it. Those terms may have changed since. | Read today's terms before the spike ends. A Harman splash screen in a free tool may be fine. |
 | **GPL-3.0 and a proprietary runtime in one process.** Turu's library would run inside AIR's process, next to closed code. | Turu's own code can carry an additional permission (GPL section 7) for linking with the AIR runtime. Check that nothing GPL from third parties is in `turu_air` (Ruffle is MIT/Apache; check Mugetsu's terms for anything that would come along). Get a clear answer before shipping. |
-| **You Mad Bro has no license.** | Read it for knowledge, write our own patcher and loader. Credit it in docs. Ask the author if we want any of its code. |
 | AQW changes its client, the patch sites move. | Pattern-based finding, clear refusal, Ruffle still there. Tests run against each new `Game.swf` (a CI job can fetch the current version daily and try the patcher). |
 | AIR also runs out of memory or is slow on 4 GB phones. | That's what the spike measures, on those phones, before any other work. |
 | ANE call round trips are slower than Ruffle's event-loop hop (the bot makes hundreds of calls a second at times). | Spike benchmark: 1,000 `getGameObject` calls. Fallbacks: batch calls (`lnk*`/`fc*` already exist in skua), the socket bridge. |
@@ -533,7 +510,7 @@ Turu activity for the bot windows (switch between the game and Turu, as with any
 | Two clients to support. | The bot and UI are shared. Only the host, the loader and the patcher differ. AIR mode can stay labelled experimental until it has a crash-free record. |
 | Harman drops or changes Android AIR. | Ruffle stays the default and the fallback. AIR is optional. |
 | Play Store rules (16 KB pages, target SDK) need a recent AIR SDK. | Turu ships APKs from GitHub releases. Check the AIR SDK's Android target before shipping. |
-| Artix treats AIR clients differently. | You Mad Bro sets `isWeb = false` and works. Behave as it does, and as Turu does today. |
+| Artix treats AIR clients differently. | Set `isWeb = false` and behave as Turu does today. |
 
 ## Plan
 
@@ -555,5 +532,4 @@ alternative, rather than the reverse.
 2. One app with a switch, or two apps? (After the spike's ADT check.)
 3. Harman's terms and the splash screen: acceptable for Turu?
 4. Add a GPL linking permission for the AIR runtime to Turu's license?
-5. Ask You Mad Bro's author about reuse, or write everything ourselves?
-6. If AIR is clearly more stable: which client is the default on Android?
+5. If AIR is clearly more stable: which client is the default on Android?
