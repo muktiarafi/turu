@@ -141,12 +141,20 @@ line in logcat, same process, still in battleon with the other players (6 in the
 disconnect. 226-246 MB PSS while off screen, CPU ~0% (AIR slows a deactivated app; a bot script
 will need to check it keeps its pace).
 
-**Left for the spike:** a longer background run (an hour, screen off);
-pets, the Book of Lore and char select (through `SwfLoaderPatch`) (maps, pets, the Book of Lore, char select through
-`SwfLoaderPatch`); download the AIR SDK (accept its license; JDK 17); build skua-air.swf as
-above; a bare AIR app that loads the patched client; log in; then the device runs (Redmi 10,
-Infinix: 50 map changes, an hour idle, memory curve); the bridge benchmark (minimal ANE); ADT with
-a custom launcher.
+**First real phone (2026-11-11): Samsung Galaxy S24 FE** (Exynos 2400e, Xclipse 940), the spike
+APK from `air-spike` rebased on main. Logged in, changed maps, went to a house (house items load
+through the client's `AirLoader`), and stayed connected through screen off and back. Nothing
+went wrong. This phone runs Turu's Ruffle build too (after the flicker fixes), so it says AIR
+works on a phone, not yet that it fixes the phones Ruffle fails on.
+
+**Left for the spike:**
+* The phones that fail on Ruffle (Redmi 10, Infinix HOT 11S / Hot 30i): 50 map changes, an hour
+  idle, memory curve. This decides go/no-go.
+* The bridge benchmark: Rust over JNI in the ANE, 1,000 `getGameObject` round trips.
+* A longer background run (an hour, screen off) with a memory reading.
+* Pets, the Book of Lore and char select (through `SwfLoaderPatch`).
+* ADT with a custom launcher (one APK or two).
+* Today's AIR SDK license terms (Wipro).
 
 ## Why consider it: what Ruffle costs on Android
 
