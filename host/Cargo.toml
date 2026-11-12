@@ -1,0 +1,19 @@
+[package]
+# Builds bot/assets/turu.swf, Turu's host SWF, from as3/ with Ruffle's asc.jar
+# (docs/HOST_SWF_PROPOSAL.md). Needs Java; `cargo run -p turu_host`, or `-- --check` in CI.
+name = "turu_host"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+asc = { path = "../ruffle/tools/asc" }
+build_playerglobal = { path = "../ruffle/core/build_playerglobal" }
+swf = { path = "../ruffle/swf", default-features = false, features = ["flate2"] }
+tempfile = { workspace = true }

@@ -22,6 +22,9 @@ ruffle/                  submodule: muktiarafi/ruffle-aqw (branch `aqw`), Ruffle
                          wgpu-core, wgpu-hal, gc-arena, lyon_*, and egui-wgpu, whose renderer skips
                          a frame's meshes when the GPU has no staging buffer instead of panicking)
                          are wired up in the root Cargo.toml
+host/                    crate `turu_host`: Turu's own host SWF (docs/HOST_SWF_PROPOSAL.md), its AS3
+                         (as3/, package turu.host) and its build with Ruffle's asc.jar: `cargo run -p
+                         turu_host` writes bot/assets/turu.swf (not used yet), `-- --check` (CI) checks it
 bot/                     crate `turu_bot`: the bot engine (no dependency on the app or ruffle_core)
   assets/skua.swf        VibeSkua's AS3 host SWF (Skua.AS3/skua/bin/skua.swf), embedded with include_bytes!
   js/                    TypeScript runtime that ships inside the binary (module "turu")

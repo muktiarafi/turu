@@ -7444,6 +7444,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "turu_host"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "asc",
+ "build_playerglobal",
+ "swf 0.3.0",
+ "tempfile",
+]
+
+[[package]]
 name = "type-map"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -107,6 +107,43 @@ jobs:
           cargo clippy --locked -p turu_bot -p turu_frontend -p turu --all-targets \
             --no-default-features --features "$FEATURES" -- -A clippy::redundant_clone
 
+  # bot/assets/turu.swf, Turu's host SWF, is built from host/as3 (turu_host) and committed, so a
+  # Rust-only build needs no Java: check it is what the source builds.
+  host:
+    name: Host SWF
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: git submodule update --init --depth 1 ruffle
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # asc.jar compiles the host SWF and Ruffle's playerglobal.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-host
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check formatting
+        run: cargo fmt -p turu_host --check
+
+      - name: Clippy
+        run: cargo clippy --locked -p turu_host --all-targets
+
+      - name: Test the build
+        run: cargo test --locked -p turu_host
+
+      - name: Check turu.swf is built from host/as3
+        run: cargo run --locked -p turu_host -- --check
+
   test:
     name: Test
     runs-on: ubuntu-24.04
