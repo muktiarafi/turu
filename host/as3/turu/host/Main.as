@@ -75,6 +75,7 @@ public class Main extends MovieClip {
             // AIR's application sandbox throws.
         }
         patchTrim();
+        // The client's errors too: they pass up through its Loader to this SWF's.
         loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaughtError);
         host = new ExternalHost(stageRef);
         packets = new Packets(host);
@@ -213,7 +214,6 @@ public class Main extends MovieClip {
         loader.contentLoaderInfo.addEventListener(Event.INIT, onClientInit);
         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, onClientLoaded);
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onClientFailed);
-        loader.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaughtError);
         host.load(loader, GAME_URL + "gamefiles/" + vars.sFile + "?ver=" + Math.random());
     }
 
