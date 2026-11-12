@@ -302,8 +302,8 @@ fn run() {
         if let Some(viewport) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
             viewport.native_pixels_per_point = Some(ppp);
         }
-        // The rail grows by a cutout on its side (a punch-hole camera, held sideways).
-        turu_frontend::gui::set_rail_inset(cutout.0 / ppp);
+        // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
+        turu_frontend::gui::set_cutout(cutout.0 / ppp, cutout.1 / ppp);
         let keyboard = keyboard / ppp;
         let cutout = (cutout.0 / ppp, cutout.1 / ppp);
         let game_typing = game_typing.filter(|_| keyboard > 0.0 && !ui_typing);

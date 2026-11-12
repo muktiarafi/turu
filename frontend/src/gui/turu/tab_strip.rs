@@ -17,9 +17,13 @@ pub struct TabStrip;
 
 impl TabStrip {
     pub fn show(&self, ui: &mut Ui) {
+        // The track runs under a display cutout, edge to edge; the tabs (and the scroll that
+        // clips them) stay clear of it, 6 points in from where it ends.
+        let (cutout_left, cutout_right) = crate::gui::cutout();
+        let side = |cutout: f32| (6.0 + cutout.ceil()).min(i8::MAX as f32) as i8;
         let frame = Frame::new().fill(TRACK).inner_margin(Margin {
-            left: 6,
-            right: 6,
+            left: side(cutout_left),
+            right: side(cutout_right),
             top: 3,
             bottom: 0,
         });

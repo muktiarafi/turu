@@ -606,8 +606,12 @@ impl Screen {
         if self.surface.is_none() || ruffle_render_wgpu::device_lost().is_some() {
             return;
         }
-        // The rail grows by a cutout on its side (a punch-hole camera, held sideways).
-        turu_frontend::gui::set_rail_inset(crate::ui::cutout().0 as f32 / self.pixels_per_point);
+        // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
+        let (cutout_left, cutout_right) = crate::ui::cutout();
+        turu_frontend::gui::set_cutout(
+            cutout_left as f32 / self.pixels_per_point,
+            cutout_right as f32 / self.pixels_per_point,
+        );
         let movie_size = self.movie_area();
         if movie_size != self.movie_size {
             self.movie_size = movie_size;

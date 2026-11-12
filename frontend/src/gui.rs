@@ -42,18 +42,29 @@ pub fn nav_rail() -> bool {
 /// The rail's width, without the display cutout's inset.
 pub const RAIL_WIDTH: u32 = 64;
 
-/// How far a display cutout reaches into the rail's side of the screen, in points (as an `f32`'s
-/// bits); the rail grows by it so its content stays clear of the camera.
-static RAIL_INSET: AtomicU32 = AtomicU32::new(0);
+/// How far a display cutout (a punch-hole camera, the phone held sideways) reaches in from the
+/// screen's left and right edges, in points (as `f32`s' bits). The rail grows by the left one so
+/// its content stays clear of the camera; the tab strip keeps its tabs clear of both.
+static CUTOUT_LEFT: AtomicU32 = AtomicU32::new(0);
+static CUTOUT_RIGHT: AtomicU32 = AtomicU32::new(0);
 
-/// The display cutout on the rail's (left) side, in points: the frontend says, each frame.
-pub fn set_rail_inset(points: f32) {
-    RAIL_INSET.store(points.max(0.0).to_bits(), Ordering::Relaxed);
+/// The display cutout's left and right insets, in points: the frontend says, each frame.
+pub fn set_cutout(left: f32, right: f32) {
+    CUTOUT_LEFT.store(left.max(0.0).to_bits(), Ordering::Relaxed);
+    CUTOUT_RIGHT.store(right.max(0.0).to_bits(), Ordering::Relaxed);
 }
 
-/// The display cutout on the rail's side, in points.
+/// The display cutout's (left, right) insets, in points.
+pub fn cutout() -> (f32, f32) {
+    (
+        f32::from_bits(CUTOUT_LEFT.load(Ordering::Relaxed)),
+        f32::from_bits(CUTOUT_RIGHT.load(Ordering::Relaxed)),
+    )
+}
+
+/// The display cutout on the rail's (left) side, in points.
 pub fn rail_inset() -> f32 {
-    f32::from_bits(RAIL_INSET.load(Ordering::Relaxed))
+    cutout().0
 }
 
 /// Whether the rail is hidden (its logo, or Menu > Hide Side Bar): the game takes the whole
