@@ -4,14 +4,17 @@
 //! tab is `turu-args.txt`'s (phase 4's restart). The file is written when a tab opens or closes
 //! and when what it holds changes (the notification thread looks every 2 s); never a password:
 //! a reopened tab logs in with the account's saved one, if any, else at the login screen.
+//!
+//! Turu's Android app (`android/`) and Turu Mas (`air/`) both keep their tabs here, each in its
+//! own data folder.
 
+use crate::turu::{self, TabRequest};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use turu_bot::Bot;
 use turu_bot::startup::Startup;
-use turu_frontend::turu::{self, TabRequest};
 
 const FILE: &str = "android-tabs.json";
 
@@ -55,7 +58,10 @@ pub fn reopen() {
             username,
             server: string("server"),
             script: string("script").map(PathBuf::from),
-            run_script: entry.get("runScript").and_then(Value::as_bool).unwrap_or(false),
+            run_script: entry
+                .get("runScript")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             ..Default::default()
         };
         tracing::info!(
@@ -81,7 +87,11 @@ pub fn save() {
     if !READ.load(Ordering::Relaxed) {
         return;
     }
-    let entries: Vec<Value> = turu::tabs().iter().skip(1).map(|(_, bot)| entry(bot)).collect();
+    let entries: Vec<Value> = turu::tabs()
+        .iter()
+        .skip(1)
+        .map(|(_, bot)| entry(bot))
+        .collect();
     let text = serde_json::to_string_pretty(&entries).unwrap_or_default();
     let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
     if written.as_deref() == Some(text.as_str()) {

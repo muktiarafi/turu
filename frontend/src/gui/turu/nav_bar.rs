@@ -345,7 +345,9 @@ impl NavBar {
     /// or beside it on the rail.
     fn bank_note(&self, ui: &Ui, anchor: Option<&Response>, align: RectAlign) {
         let mut bank = lock(&self.bank);
-        let Some((why, at)) = &bank.failed else { return };
+        let Some((why, at)) = &bank.failed else {
+            return;
+        };
         let Some(left) = BANK_NOTE_FOR.checked_sub(at.elapsed()) else {
             bank.failed = None;
             return;
@@ -1038,7 +1040,9 @@ fn close_on_click_outside(ctx: &egui::Context, open: &mut bool, popup: Option<eg
 /// spinner while it downloads, a green dot once it waits for Turu to quit.
 fn update_notice(ui: &mut Ui, windows: &mut Windows, compact: bool) {
     let state = turu_bot::updates::state();
-    let Some(release) = &state.available else { return };
+    let Some(release) = &state.available else {
+        return;
+    };
     let lead = update_lead(&state.install);
     let label = if compact {
         "Update".to_owned()
@@ -1163,7 +1167,9 @@ impl RunCell {
             Self::Pause => "Pause the script".to_owned(),
             Self::Resume => "Resume the script".to_owned(),
             Self::Stop => format!("Stop the script{key}"),
-            Self::ForceStop(true) => format!("Force Stop: interrupts the script's stopping steps{key}"),
+            Self::ForceStop(true) => {
+                format!("Force Stop: interrupts the script's stopping steps{key}")
+            }
             Self::ForceStop(false) => script_loader::FORCE_STOP_WAIT.to_owned(),
         }
     }
@@ -1605,7 +1611,8 @@ impl NavBar {
         let status = bot.scripts.status();
         let cells = run_cells(&bot, status);
         let update = turu_bot::updates::state();
-        let grid = crate::turu::tabs().len() > 1;
+        // As the bar's button: phones have no Grid View (`Platform::has_grid_view`).
+        let grid = crate::platform::platform().has_grid_view() && crate::turu::tabs().len() > 1;
         let fit = rail_fit(ui.available_height(), update.available.is_some(), grid);
 
         if fit.symbol {

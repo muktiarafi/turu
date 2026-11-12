@@ -1,6 +1,6 @@
 //! Kotlin's `Bridge` natives, and the engine's start.
 
-use crate::host::{AIR_THREAD, AirFlashHost, BRIDGE};
+use crate::host::{AIR_THREAD, BRIDGE};
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JByteArray, JClass, JObject, JString};
 use jni::sys::jint;
@@ -47,14 +47,16 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
-/// `Bridge.nativeFlashCall(name, args)`: `skua.swf`'s `ExternalInterface.call(name, ...)`, its
-/// arguments as a JSON array. On AIR's thread: hands the call to the bot, which never waits here.
+/// `Bridge.nativeFlashCall(name, args, client)`: client `client`'s `skua.swf` called
+/// `ExternalInterface.call(name, ...)`, its arguments as a JSON array (-1: the host SWF itself).
+/// On AIR's thread: hands the call to that tab's bot, which never waits here.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFlashCall<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _class: JClass<'local>,
     name: JString<'local>,
     args: JString<'local>,
+    client: jint,
 ) {
     unowned_env
         .with_env(|env| -> jni::errors::Result<()> {
@@ -68,7 +70,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFlashCall<'local>(
                     Vec::new()
                 }
             };
-            turu::bot().on_flash_call(&name, args);
+            let bot = u8::try_from(client)
+                .ok()
+                .and_then(crate::clients::bot)
+                .unwrap_or_else(turu::bot);
+            bot.on_flash_call(&name, args);
             Ok(())
         })
         .resolve::<ThrowRuntimeExAndDefault>()
@@ -124,25 +130,28 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
     let cache = CACHE.get_or_init(|| {
         turu_air_patch::cache::PatchCache::new(turu_bot::paths::Paths::new().air_patched_dir())
     });
-    // Spike (several clients): bit 0x10, the stage is shared; 0x20, skua's ExternalInterface
-    // goes nowhere (a client the engine doesn't drive).
+    // Bit 0x10: the clients (tabs) share the stage. Bits 8 and up: skua's client, plus one.
     let shared_stage = target & TARGET_SHARED_STAGE != 0;
     if shared_stage {
         SHARED_STAGE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
+    let client = u8::try_from(target >> 8)
+        .ok()
+        .and_then(|n| n.checked_sub(1));
     let options = turu_air_patch::Options {
         shared_stage,
-        external: (target & TARGET_MUTE != 0).then_some("TuruExternalMute"),
+        client,
     };
-    let (kind, strict) = match (target & 0xf, shared_stage, options.external.is_some()) {
-        (0, false, _) => ("game", true),
-        (0, true, _) => ("gameshared", true),
-        (1, false, _) => ("skua", true),
-        (1, true, false) => ("skuashared", true),
-        (1, true, true) => ("skuamute", true),
-        (_, false, _) => ("asset", false),
-        (_, true, _) => ("assetshared", false),
+    let kind = match (target & 0xf, shared_stage) {
+        (0, false) => "game".to_owned(),
+        (0, true) => "gameshared".to_owned(),
+        (1, false) => "skua".to_owned(),
+        (1, true) => format!("skua{}", client.map(|n| n.to_string()).unwrap_or_default()),
+        (_, false) => "asset".to_owned(),
+        (_, true) => "assetshared".to_owned(),
     };
+    let kind = kind.as_str();
+    let strict = target & 0xf < 2;
     let target = target & 0xf;
     let started = std::time::Instant::now();
     if let Some(output) = cache.get(input, kind) {
@@ -185,14 +194,13 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
     }
 }
 
-/// [`patched`]'s target bits (spike: several clients on one stage).
+/// [`patched`]'s target bit: the tabs' clients share AIR's one stage.
 const TARGET_SHARED_STAGE: jint = 0x10;
-const TARGET_MUTE: jint = 0x20;
 /// Whether the host shares the stage among clients (it asked for a shared-stage patch): then
 /// every SWF downloaded for the game is rewritten too, on the download's thread.
 static SHARED_STAGE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// A downloaded SWF with its `stage.getChildAt(0)`s rewritten for a shared stage (spike).
+/// A downloaded SWF with its `stage.getChildAt(0)`s rewritten for a shared stage.
 fn shared_stage_swf(url: &str, body: Vec<u8>) -> Vec<u8> {
     if !SHARED_STAGE.load(std::sync::atomic::Ordering::Relaxed)
         || !matches!(body.get(..3), Some(b"FWS" | b"CWS" | b"ZWS"))
@@ -202,7 +210,7 @@ fn shared_stage_swf(url: &str, body: Vec<u8>) -> Vec<u8> {
     let started = std::time::Instant::now();
     let options = turu_air_patch::Options {
         shared_stage: true,
-        external: None,
+        client: None,
     };
     match turu_air_patch::patch_swf_with(&body, turu_air_patch::Target::Game, options) {
         Ok((output, report)) => {
@@ -470,8 +478,10 @@ fn engine(root: &Path) {
             args.len()
         );
     }
-    // Before skua.swf's first call (`requestLoadGame`), which asks the bot to load the client.
-    turu::bot().set_host(Some(Arc::new(AirFlashHost)));
+    // Before skua.swf's first call (`requestLoadGame`), which asks the bot to load the client:
+    // the first tab is client 0, which the host SWF loads at start. The others open and close
+    // through tab requests (`clients`).
+    crate::clients::start();
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();

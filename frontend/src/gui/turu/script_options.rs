@@ -183,7 +183,9 @@ impl ScriptOptionsWindow {
         let Some(draft) = draft.as_mut() else {
             // Nothing to edit: no script is loaded, or the loaded one declares no options.
             let message = match bot.scripts.options() {
-                ScriptOptionsState::Failed(e) => format!("The script's options couldn't be read: {e}"),
+                ScriptOptionsState::Failed(e) => {
+                    format!("The script's options couldn't be read: {e}")
+                }
                 _ => "The loaded script declares no options.".into(),
             };
             ui.label(RichText::new(message).color(MUTED));

@@ -54,7 +54,9 @@ pub fn answer_flash_call(call: TuruFlashCall, player: Option<&mut Player>) {
         Request::LoadedMovie { path, reply } => {
             let suffix = format!("/{}", path.trim_start_matches('/'));
             let movie = player.and_then(|player| {
-                player.loaded_movie(|url| url::Url::parse(url).is_ok_and(|url| url.path().ends_with(&suffix)))
+                player.loaded_movie(|url| {
+                    url::Url::parse(url).is_ok_and(|url| url.path().ends_with(&suffix))
+                })
             });
             let _ = reply.send(movie);
         }
@@ -83,7 +85,11 @@ impl FlashHost for TuruFlashHost {
         self.call_timed(name, args).map(|(reply, _)| reply)
     }
 
-    fn call_timed(&self, name: &str, args: Vec<FlashArg>) -> Result<(String, Option<Duration>), HostError> {
+    fn call_timed(
+        &self,
+        name: &str,
+        args: Vec<FlashArg>,
+    ) -> Result<(String, Option<Duration>), HostError> {
         if MAIN_THREAD.get() == Some(&std::thread::current().id()) {
             tracing::error!("Flash call {name} from the UI thread; use turu::spawn_action");
             return Err(HostError::Closed);
@@ -94,7 +100,10 @@ impl FlashHost for TuruFlashHost {
             args: args.into_iter().map(to_external).collect(),
             reply,
         };
-        if !(self.send)(TuruFlashCall { tab: self.tab, request }) {
+        if !(self.send)(TuruFlashCall {
+            tab: self.tab,
+            request,
+        }) {
             return Err(HostError::Closed);
         }
         match answer.recv_timeout(CALL_TIMEOUT) {
@@ -116,7 +125,10 @@ impl FlashHost for TuruFlashHost {
             path: path.to_owned(),
             reply,
         };
-        if !(self.send)(TuruFlashCall { tab: self.tab, request }) {
+        if !(self.send)(TuruFlashCall {
+            tab: self.tab,
+            request,
+        }) {
             return None;
         }
         let movie = answer.recv_timeout(CALL_TIMEOUT).ok()??;
@@ -131,7 +143,9 @@ fn to_external(arg: FlashArg) -> ExternalValue {
         FlashArg::Number(n) => ExternalValue::Number(n),
         FlashArg::String(s) => ExternalValue::String(s),
         FlashArg::List(items) => ExternalValue::List(items.into_iter().map(to_external).collect()),
-        FlashArg::Object(map) => ExternalValue::Object(map.into_iter().map(|(k, v)| (k, to_external(v))).collect()),
+        FlashArg::Object(map) => {
+            ExternalValue::Object(map.into_iter().map(|(k, v)| (k, to_external(v))).collect())
+        }
     }
 }
 
@@ -175,7 +189,12 @@ pub struct TuruExternalInterface {
 }
 
 impl ExternalInterfaceProvider for TuruExternalInterface {
-    fn call_method(&self, _context: &mut UpdateContext<'_>, name: &str, args: &[ExternalValue]) -> ExternalValue {
+    fn call_method(
+        &self,
+        _context: &mut UpdateContext<'_>,
+        name: &str,
+        args: &[ExternalValue],
+    ) -> ExternalValue {
         let args = args.iter().cloned().map(to_json).collect();
         self.bot.on_flash_call(name, args);
         ExternalValue::Undefined

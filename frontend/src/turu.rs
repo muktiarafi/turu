@@ -21,9 +21,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::ThreadId;
 use std::time::Duration;
+use turu_bot::Bot;
 use turu_bot::events::BotEvent;
 use turu_bot::startup::Startup;
-use turu_bot::Bot;
 
 #[cfg(feature = "ruffle")]
 mod ruffle_host;
@@ -112,12 +112,19 @@ pub fn active_tab() -> TabId {
 
 /// Every tab and its bot, in order.
 pub fn tabs() -> Vec<(TabId, Arc<Bot>)> {
-    tabs_lock().as_ref().expect("made by tabs_lock").list.clone()
+    tabs_lock()
+        .as_ref()
+        .expect("made by tabs_lock")
+        .list
+        .clone()
 }
 
 /// The tab's bot; `None` once it was closed.
 pub fn tab_bot(tab: TabId) -> Option<Arc<Bot>> {
-    tabs().into_iter().find(|(id, _)| *id == tab).map(|(_, bot)| bot)
+    tabs()
+        .into_iter()
+        .find(|(id, _)| *id == tab)
+        .map(|(_, bot)| bot)
 }
 
 /// Adds a tab with a new bot (its player is the event loop's job: [`request_tab`]). With a
@@ -165,8 +172,19 @@ pub fn close_butlers() {
     }
 }
 
+/// Whether hidden tabs' games are slowed ([`set_active_tab`]); see [`set_hidden_tabs_slowed`].
+static HIDDEN_TABS_SLOWED: AtomicBool = AtomicBool::new(true);
+
+/// Whether [`set_active_tab`] slows the other tabs' games. Turu Mas turns it off: its tabs share
+/// AIR's one stage, whose frame rate is every client's, so slowing a hidden one would slow the
+/// one on screen too.
+pub fn set_hidden_tabs_slowed(slowed: bool) {
+    HIDDEN_TABS_SLOWED.store(slowed, Ordering::Relaxed);
+}
+
 /// Makes the tab the active one; false when there's no such tab. The others' games slow down
-/// once in game (VibeSkua's tabbed host throttles hidden tabs: `options::apply`).
+/// once in game (VibeSkua's tabbed host throttles hidden tabs: `options::apply`), unless
+/// [`set_hidden_tabs_slowed`] says not to.
 pub fn set_active_tab(tab: TabId) -> bool {
     let mut tabs = tabs_lock();
     let tabs = tabs.as_mut().expect("made by tabs_lock");
@@ -174,8 +192,9 @@ pub fn set_active_tab(tab: TabId) -> bool {
         return false;
     }
     tabs.active = tab;
+    let slowed = HIDDEN_TABS_SLOWED.load(Ordering::Relaxed);
     for (id, bot) in &tabs.list {
-        bot.state.lock().hidden_tab = *id != tab;
+        bot.state.lock().hidden_tab = slowed && *id != tab;
     }
     true
 }
@@ -211,11 +230,17 @@ pub fn request_tab(request: TabRequest) -> bool {
 /// while its Streamer Mode is on.
 pub fn tab_label(bot: &Bot) -> String {
     if bot.opts().streamer_mode {
-        let tab = tabs().iter().position(|(_, b)| std::ptr::eq(Arc::as_ptr(b), bot));
+        let tab = tabs()
+            .iter()
+            .position(|(_, b)| std::ptr::eq(Arc::as_ptr(b), bot));
         return tab.map_or_else(|| "Tab".into(), |i| format!("Tab {}", i + 1));
     }
     let state = bot.state.lock();
-    if let Some(name) = state.username.as_deref().filter(|n| state.in_game && !n.trim().is_empty()) {
+    if let Some(name) = state
+        .username
+        .as_deref()
+        .filter(|n| state.in_game && !n.trim().is_empty())
+    {
         return name.to_owned();
     }
     drop(state);
@@ -226,7 +251,10 @@ pub fn tab_label(bot: &Bot) -> String {
 /// folder).
 pub fn script_repo() -> &'static Arc<turu_bot::repo::ScriptRepo> {
     SCRIPT_REPO.get_or_init(|| {
-        turu_bot::repo::ScriptRepo::new(bot().paths.clone(), Box::new(turu_bot::repo::GitHub::from_env()))
+        turu_bot::repo::ScriptRepo::new(
+            bot().paths.clone(),
+            Box::new(turu_bot::repo::GitHub::from_env()),
+        )
     })
 }
 
@@ -262,14 +290,16 @@ pub fn start_client_updates() {
     }
     STARTED.call_once(|| {
         turu_bot::updates::set_installer(Box::new(|| install_update(false)));
-        let spawned = std::thread::Builder::new().name("Turu Client Updates".into()).spawn(|| {
-            loop {
-                if bot().settings.read().check_client_updates {
-                    check_client_updates_now_blocking();
+        let spawned = std::thread::Builder::new()
+            .name("Turu Client Updates".into())
+            .spawn(|| {
+                loop {
+                    if bot().settings.read().check_client_updates {
+                        check_client_updates_now_blocking();
+                    }
+                    std::thread::sleep(turu_bot::updates::CHECK_EVERY);
                 }
-                std::thread::sleep(turu_bot::updates::CHECK_EVERY);
-            }
-        });
+            });
         if let Err(e) = spawned {
             tracing::error!("Couldn't start the client update checks: {e}");
         }
@@ -289,8 +319,14 @@ fn check_client_updates_now_blocking() {
     if !started {
         return;
     }
-    let prereleases = updates::wants_prereleases(bot().settings.read().check_client_prereleases, VERSION);
-    let result = updates::check(&updates::Http::for_checks(), &updates::releases_url(), VERSION, prereleases);
+    let prereleases =
+        updates::wants_prereleases(bot().settings.read().check_client_prereleases, VERSION);
+    let result = updates::check(
+        &updates::Http::for_checks(),
+        &updates::releases_url(),
+        VERSION,
+        prereleases,
+    );
     if let Err(e) = &result {
         tracing::warn!("Couldn't check for Turu updates: {e}");
     }
@@ -314,7 +350,9 @@ pub fn launched_by_army() -> bool {
 
 /// Whether a tab runs a script: Download & restart waits (Update when I quit doesn't).
 pub fn any_script_running() -> bool {
-    tabs().iter().any(|(_, bot)| bot.scripts.status().is_active())
+    tabs()
+        .iter()
+        .any(|(_, bot)| bot.scripts.status().is_active())
 }
 
 /// An update unpacked by Update when I quit, put in place by [`apply_pending_update`].
@@ -340,7 +378,10 @@ pub fn install_update(on_quit: bool) -> Result<String, String> {
             .filter(|t| t.updates_in_place())
             .ok_or("Turu can't update itself on this platform")?;
         if !release.installable() {
-            return Err(format!("Turu {} has no package for this platform", release.version));
+            return Err(format!(
+                "Turu {} has no package for this platform",
+                release.version
+            ));
         }
         let busy = updates::update_state(|s| {
             let busy = matches!(s.install, Install::Busy(_));
@@ -353,51 +394,62 @@ pub fn install_update(on_quit: bool) -> Result<String, String> {
             return Err("an update is being installed already".into());
         }
         let version = release.version.clone();
-        let spawned = std::thread::Builder::new().name("Turu Client Update".into()).spawn(move || {
-            let set = |install: Install| updates::update_state(|s| s.install = install);
-            let dir = bot().paths.updates_dir();
-            let staged = updates::download(&updates::Http::for_downloads(), &release, &dir).and_then(|archive| {
-                set(Install::Busy(format!("Unpacking Turu {}…", release.version)));
-                updates::install::stage(&archive, &dir.join("staged"), target)
-            });
-            let staged = match staged {
-                Ok(staged) => staged,
-                Err(e) => {
-                    tracing::error!("Couldn't update Turu: {e}");
-                    set(Install::Failed(e));
+        let spawned = std::thread::Builder::new()
+            .name("Turu Client Update".into())
+            .spawn(move || {
+                let set = |install: Install| updates::update_state(|s| s.install = install);
+                let dir = bot().paths.updates_dir();
+                let staged = updates::download(&updates::Http::for_downloads(), &release, &dir)
+                    .and_then(|archive| {
+                        set(Install::Busy(format!(
+                            "Unpacking Turu {}…",
+                            release.version
+                        )));
+                        updates::install::stage(&archive, &dir.join("staged"), target)
+                    });
+                let staged = match staged {
+                    Ok(staged) => staged,
+                    Err(e) => {
+                        tracing::error!("Couldn't update Turu: {e}");
+                        set(Install::Failed(e));
+                        return;
+                    }
+                };
+                if on_quit {
+                    tracing::info!("Turu {} will be installed when Turu quits", release.version);
+                    *PENDING_UPDATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(staged);
+                    set(Install::OnQuit(release.version));
                     return;
                 }
-            };
-            if on_quit {
-                tracing::info!("Turu {} will be installed when Turu quits", release.version);
-                *PENDING_UPDATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(staged);
-                set(Install::OnQuit(release.version));
-                return;
-            }
-            set(Install::Busy(format!("Installing Turu {}…", release.version)));
-            match updates::install::apply(&staged) {
-                Ok(relaunch) => {
-                    tracing::info!("Installed Turu {}; restarting", release.version);
-                    close_butlers();
-                    if headless() {
-                        // `Restart=on-failure` restarts it (docs/HEADLESS.md).
-                        std::process::exit(75);
-                    }
-                    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-                    match relaunch.spawn(&args) {
-                        Ok(()) => std::process::exit(0),
-                        Err(e) => {
-                            tracing::error!("{e}");
-                            set(Install::Failed(format!("Installed, but {e}: start Turu again")));
+                set(Install::Busy(format!(
+                    "Installing Turu {}…",
+                    release.version
+                )));
+                match updates::install::apply(&staged) {
+                    Ok(relaunch) => {
+                        tracing::info!("Installed Turu {}; restarting", release.version);
+                        close_butlers();
+                        if headless() {
+                            // `Restart=on-failure` restarts it (docs/HEADLESS.md).
+                            std::process::exit(75);
+                        }
+                        let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+                        match relaunch.spawn(&args) {
+                            Ok(()) => std::process::exit(0),
+                            Err(e) => {
+                                tracing::error!("{e}");
+                                set(Install::Failed(format!(
+                                    "Installed, but {e}: start Turu again"
+                                )));
+                            }
                         }
                     }
+                    Err(e) => {
+                        tracing::error!("Couldn't install Turu {}: {e}", release.version);
+                        set(Install::Failed(e));
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("Couldn't install Turu {}: {e}", release.version);
-                    set(Install::Failed(e));
-                }
-            }
-        });
+            });
         if let Err(e) = spawned {
             updates::update_state(|s| s.install = Install::Failed(e.to_string()));
             return Err(e.to_string());
@@ -409,7 +461,11 @@ pub fn install_update(on_quit: bool) -> Result<String, String> {
 /// Puts an update kept by Update when I quit in place; the app calls it once its window closed.
 pub fn apply_pending_update() {
     #[cfg(not(target_os = "android"))]
-    if let Some(staged) = PENDING_UPDATE.lock().unwrap_or_else(|e| e.into_inner()).take() {
+    if let Some(staged) = PENDING_UPDATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+    {
         match turu_bot::updates::install::apply(&staged) {
             Ok(_) => tracing::info!("Installed the update: it starts next time"),
             Err(e) => tracing::error!("Couldn't install the update: {e}"),
@@ -425,18 +481,30 @@ fn start_skill_set_updates() {
         return;
     }
     let settings = bot().settings.read().clone();
-    if !settings.check_advance_skill_sets_updates || !settings.auto_update_advance_skill_sets_updates {
+    if !settings.check_advance_skill_sets_updates
+        || !settings.auto_update_advance_skill_sets_updates
+    {
         return;
     }
-    let spawned = std::thread::Builder::new().name("turu-skill-sets".into()).spawn(move || {
-        let paths = &bot().paths;
-        match turu_bot::skills::startup_skill_sets(paths, &settings, turu_bot::skills::download_skill_sets) {
-            Ok(Some(0)) => tracing::info!("Skill sets: up to date"),
-            Ok(Some(added)) => tracing::info!("Skill sets: added {added} from the community sets"),
-            Ok(None) => {}
-            Err(e) => tracing::warn!("Skill sets: couldn't update them, keeping the local ones: {e}"),
-        }
-    });
+    let spawned = std::thread::Builder::new()
+        .name("turu-skill-sets".into())
+        .spawn(move || {
+            let paths = &bot().paths;
+            match turu_bot::skills::startup_skill_sets(
+                paths,
+                &settings,
+                turu_bot::skills::download_skill_sets,
+            ) {
+                Ok(Some(0)) => tracing::info!("Skill sets: up to date"),
+                Ok(Some(added)) => {
+                    tracing::info!("Skill sets: added {added} from the community sets")
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("Skill sets: couldn't update them, keeping the local ones: {e}")
+                }
+            }
+        });
     if let Err(e) = spawned {
         tracing::warn!("Skill sets: couldn't start the update: {e}");
     }
@@ -445,7 +513,8 @@ fn start_skill_set_updates() {
 /// The accounts this client launched (Army > Accounts), each in its own `turu` process.
 pub fn army() -> &'static Arc<turu_bot::army::Army> {
     ARMY.get_or_init(|| {
-        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(APP_NAME.to_lowercase()));
+        let exe =
+            std::env::current_exe().unwrap_or_else(|_| PathBuf::from(APP_NAME.to_lowercase()));
         let army = turu_bot::army::Army::new(exe);
         army.set_hub(monitor_hub().clone());
         army
@@ -509,8 +578,8 @@ pub fn init_main_thread() {
 /// The URL Turu starts with: VibeSkua's `skua.swf`, written to the data directory.
 pub fn skua_swf_url() -> anyhow::Result<String> {
     let path = bot().paths.write_skua_swf()?;
-    let url =
-        url::Url::from_file_path(&path).map_err(|()| anyhow::anyhow!("bad path for skua.swf: {}", path.display()))?;
+    let url = url::Url::from_file_path(&path)
+        .map_err(|()| anyhow::anyhow!("bad path for skua.swf: {}", path.display()))?;
     Ok(url.to_string())
 }
 
@@ -559,12 +628,16 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     if let Some(addr) = monitor.as_deref().filter(|a| !a.is_empty())
         && addr.parse::<std::net::SocketAddr>().is_err()
     {
-        tracing::warn!("--monitor={addr}: expected an address like 0.0.0.0:8790; using the settings' port");
+        tracing::warn!(
+            "--monitor={addr}: expected an address like 0.0.0.0:8790; using the settings' port"
+        );
     }
     *MONITOR_FLAG.lock().unwrap_or_else(|e| e.into_inner()) = monitor;
     *REPORT_FLAG.lock().unwrap_or_else(|e| e.into_inner()) = report_to;
     if startup.password.is_none() {
-        startup.password = std::env::var("TURU_PASSWORD").ok().filter(|p| !p.is_empty());
+        startup.password = std::env::var("TURU_PASSWORD")
+            .ok()
+            .filter(|p| !p.is_empty());
     }
     if exit_on_stop {
         exit_on_script_stop(startup.playlist.is_some());
@@ -633,7 +706,9 @@ fn repo_path(scripts: &Path, given: &str) -> Option<String> {
     if !scripts.join(&with_ts).is_file() && (given.is_file() || with_ts.is_file()) {
         return None;
     }
-    let path = turu_bot::script::normalize(&with_ts).to_string_lossy().replace('\\', "/");
+    let path = turu_bot::script::normalize(&with_ts)
+        .to_string_lossy()
+        .replace('\\', "/");
     Some(path.trim_start_matches('/').to_owned())
 }
 
@@ -650,7 +725,10 @@ pub fn start_api() {
             return;
         }
     };
-    let token = match std::env::var("TURU_API_TOKEN").ok().filter(|t| !t.trim().is_empty()) {
+    let token = match std::env::var("TURU_API_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+    {
         Some(token) => {
             tracing::info!("Control API token: from TURU_API_TOKEN");
             Ok(token.trim().to_owned())
@@ -666,7 +744,9 @@ pub fn start_api() {
         Ok(local) => {
             tracing::info!("Control API on http://{local}");
             if !local.ip().is_loopback() {
-                tracing::warn!("The control API is reachable from other computers: keep the token secret");
+                tracing::warn!(
+                    "The control API is reachable from other computers: keep the token secret"
+                );
             }
         }
         Err(e) => tracing::error!("Control API: {e}"),
@@ -679,7 +759,11 @@ pub type ThreadReport = Box<dyn FnMut(f64) -> String + Send>;
 
 /// `TURU_PERF_LOG`'s period (1 s at least), when it's set.
 pub fn perf_log_every() -> Option<Duration> {
-    let seconds = std::env::var("TURU_PERF_LOG").ok()?.trim().parse::<f64>().ok()?;
+    let seconds = std::env::var("TURU_PERF_LOG")
+        .ok()?
+        .trim()
+        .parse::<f64>()
+        .ok()?;
     Some(Duration::from_secs_f64(seconds.max(1.0)))
 }
 
@@ -691,8 +775,14 @@ pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
         return;
     };
     // Turu: the 12 busiest calls hid half a stuck script's calls.
-    let rows = std::env::var("TURU_PERF_LOG_ROWS").ok().and_then(|s| s.trim().parse::<usize>().ok()).unwrap_or(12);
-    tracing::info!("Logging Flash calls and ticks every {} s (TURU_PERF_LOG)", every.as_secs_f64());
+    let rows = std::env::var("TURU_PERF_LOG_ROWS")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(12);
+    tracing::info!(
+        "Logging Flash calls and ticks every {} s (TURU_PERF_LOG)",
+        every.as_secs_f64()
+    );
     let spawned = std::thread::Builder::new().name("Turu Perf Log".into()).spawn(move || {
         let mut last: HashMap<TabId, turu_bot::perf::PerfSnapshot> = HashMap::new();
         loop {
@@ -732,7 +822,10 @@ pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
 pub fn grid_test_fps() -> Option<i32> {
     static FPS: OnceLock<Option<i32>> = OnceLock::new();
     *FPS.get_or_init(|| {
-        std::env::var("TURU_GRID_TEST").ok().and_then(|s| s.trim().parse::<i32>().ok()).filter(|f| *f > 0)
+        std::env::var("TURU_GRID_TEST")
+            .ok()
+            .and_then(|s| s.trim().parse::<i32>().ok())
+            .filter(|f| *f > 0)
     })
 }
 
@@ -740,7 +833,9 @@ pub fn grid_test_fps() -> Option<i32> {
 pub fn start_grid_test() {
     if let Some(fps) = grid_test_fps() {
         turu_bot::api::options::set_hidden_tab_fps(fps);
-        tracing::info!("Grid test (TURU_GRID_TEST): hidden tabs run at {fps} FPS and draw every frame");
+        tracing::info!(
+            "Grid test (TURU_GRID_TEST): hidden tabs run at {fps} FPS and draw every frame"
+        );
     }
 }
 
@@ -798,7 +893,9 @@ pub enum ReportState {
 pub fn report_state() -> ReportState {
     let monitor = monitor_lock();
     match (&monitor.reporter, &monitor.reporting, &monitor.report_error) {
-        (Some(reporter), Some(to), _) => ReportState::Reporting(to.machine.clone(), reporter.status()),
+        (Some(reporter), Some(to), _) => {
+            ReportState::Reporting(to.machine.clone(), reporter.status())
+        }
         (_, _, Some(error)) => ReportState::Failed(error.clone()),
         _ => ReportState::Off,
     }
@@ -829,16 +926,19 @@ pub fn apply_monitor(settings: &turu_bot::settings::AppSettings) {
         monitor.generation
     };
     let settings = settings.clone();
-    let _ = std::thread::Builder::new().name("Turu Monitor Apply".into()).spawn(move || {
-        std::thread::sleep(Duration::from_millis(500));
-        apply_monitor_now(&settings, generation);
-    });
+    let _ = std::thread::Builder::new()
+        .name("Turu Monitor Apply".into())
+        .spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            apply_monitor_now(&settings, generation);
+        });
 }
 
 /// The settings with `--monitor`, `--report-to` and `TURU_MONITOR_PUSH_KEY` applied.
 fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::settings::AppSettings {
     let mut settings = settings.clone();
-    let flag = |slot: &Mutex<Option<String>>| slot.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let flag =
+        |slot: &Mutex<Option<String>>| slot.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if let Some(addr) = flag(&MONITOR_FLAG) {
         settings.monitor_enabled = true;
         if let Ok(addr) = addr.parse::<std::net::SocketAddr>() {
@@ -849,7 +949,10 @@ fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::set
     if let Some(url) = flag(&REPORT_FLAG) {
         settings.monitor_report_to = url;
     }
-    if let Some(key) = std::env::var("TURU_MONITOR_PUSH_KEY").ok().filter(|k| !k.trim().is_empty()) {
+    if let Some(key) = std::env::var("TURU_MONITOR_PUSH_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty())
+    {
         settings.monitor_report_key = key;
     }
     settings
@@ -882,7 +985,9 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
     if report != monitor.reporting {
         // Stopping waits for the report in flight: not while holding the lock.
         if let Some(old) = monitor.reporter.take() {
-            let _ = std::thread::Builder::new().name("Turu Monitor Report Stop".into()).spawn(move || drop(old));
+            let _ = std::thread::Builder::new()
+                .name("Turu Monitor Report Stop".into())
+                .spawn(move || drop(old));
         }
         monitor.report_error = None;
         monitor.reporting.clone_from(&report);
@@ -902,7 +1007,9 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
 
     // The server.
     let port = u16::try_from(settings.monitor_port).unwrap_or(turu_bot::monitor::DEFAULT_PORT);
-    let wanted = settings.monitor_enabled.then_some((settings.monitor_allow_other_devices, port));
+    let wanted = settings
+        .monitor_enabled
+        .then_some((settings.monitor_allow_other_devices, port));
     if wanted == monitor.running && (monitor.server.is_some() || wanted.is_none()) {
         if let Some(server) = &monitor.server {
             server.set_allow_control(settings.monitor_allow_control);
@@ -933,7 +1040,14 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
     };
     let hub = monitor_hub().clone();
     let control = settings.monitor_allow_control;
-    match Server::start((ip, port).into(), key, push_key, hub, VERSION.into(), control) {
+    match Server::start(
+        (ip, port).into(),
+        key,
+        push_key,
+        hub,
+        VERSION.into(),
+        control,
+    ) {
         Ok(server) => {
             tracing::info!("Web monitor on http://{}", server.addr());
             monitor.server = Some(server);
@@ -970,7 +1084,11 @@ pub fn monitor_key() -> Result<String, String> {
 /// The key other machines report with (Copy Report Settings).
 pub fn monitor_push_key() -> Result<String, String> {
     let mut monitor = monitor_lock();
-    loaded_key(&mut monitor.push_key, turu_bot::monitor::server::load_push_key).map(|k| k.get())
+    loaded_key(
+        &mut monitor.push_key,
+        turu_bot::monitor::server::load_push_key,
+    )
+    .map(|k| k.get())
 }
 
 /// A new key: devices given the old one are cut off at their next request.
@@ -1087,18 +1205,20 @@ fn exit_on_script_stop(playlist: bool) {
     let first = bot();
     if playlist {
         let watched = Arc::downgrade(&first);
-        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(move || {
-            let mut started = false;
-            loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let Some(bot) = watched.upgrade() else { return };
-                if bot.scheduler.is_running() {
-                    started = true;
-                } else if started && !bot.scripts.is_running() && !bot.servers.is_relogging() {
-                    exit_after_stop(&bot);
+        let _ = std::thread::Builder::new()
+            .name("Turu Exit".into())
+            .spawn(move || {
+                let mut started = false;
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                    let Some(bot) = watched.upgrade() else { return };
+                    if bot.scheduler.is_running() {
+                        started = true;
+                    } else if started && !bot.scripts.is_running() && !bot.servers.is_relogging() {
+                        exit_after_stop(&bot);
+                    }
                 }
-            }
-        });
+            });
         return;
     }
     let watched = Arc::downgrade(&first);
@@ -1107,7 +1227,9 @@ fn exit_on_script_stop(playlist: bool) {
         if !matches!(event, BotEvent::ScriptStopped) || bot.servers.is_relogging() {
             return;
         }
-        let _ = std::thread::Builder::new().name("Turu Exit".into()).spawn(move || exit_after_stop(&bot));
+        let _ = std::thread::Builder::new()
+            .name("Turu Exit".into())
+            .spawn(move || exit_after_stop(&bot));
     });
 }
 
@@ -1126,7 +1248,10 @@ fn exit_after_stop(bot: &Arc<Bot>) {
 
 /// Runs a bot action for the active tab off the UI thread (bot calls block until the player
 /// answers, and the player is driven by the UI thread).
-pub fn spawn_action(name: &str, action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult<()> + Send + 'static) {
+pub fn spawn_action(
+    name: &str,
+    action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult<()> + Send + 'static,
+) {
     spawn_action_for(bot(), name, action);
 }
 
@@ -1137,11 +1262,13 @@ pub fn spawn_action_for(
     action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult<()> + Send + 'static,
 ) {
     let label = name.to_owned();
-    let spawned = std::thread::Builder::new().name(format!("Turu {name}")).spawn(move || {
-        if let Err(e) = action(&bot) {
-            bot.logs.debug.push(format!("{label}: {e}"));
-        }
-    });
+    let spawned = std::thread::Builder::new()
+        .name(format!("Turu {name}"))
+        .spawn(move || {
+            if let Err(e) = action(&bot) {
+                bot.logs.debug.push(format!("{label}: {e}"));
+            }
+        });
     if let Err(e) = spawned {
         tracing::error!("Couldn't start {name}: {e}");
     }
@@ -1153,16 +1280,28 @@ mod tests {
 
     #[test]
     fn takes_the_monitor_flags() {
-        let mut args: Vec<OsString> = ["turu", "--monitor", "--report-to", "http://pc:8790", "x.swf"]
-            .into_iter()
-            .map(Into::into)
-            .collect();
+        let mut args: Vec<OsString> = [
+            "turu",
+            "--monitor",
+            "--report-to",
+            "http://pc:8790",
+            "x.swf",
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect();
         let flags = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "x.swf"]);
         assert_eq!(flags.monitor.as_deref(), Some(""));
         assert_eq!(flags.report_to.as_deref(), Some("http://pc:8790"));
-        let mut args: Vec<OsString> = ["turu", "--monitor=0.0.0.0:9000"].into_iter().map(Into::into).collect();
-        assert_eq!(parse_startup_args(&mut args).monitor.as_deref(), Some("0.0.0.0:9000"));
+        let mut args: Vec<OsString> = ["turu", "--monitor=0.0.0.0:9000"]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(
+            parse_startup_args(&mut args).monitor.as_deref(),
+            Some("0.0.0.0:9000")
+        );
     }
 
     #[test]

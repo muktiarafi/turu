@@ -1,7 +1,7 @@
 //! [`AirFlashHost`]: the bot's calls into `skua.swf`, through AIR.
 //!
 //! A bot thread can't run AS3: AIR runs it on its own thread. So a call becomes a status event
-//! ("call", with `{"id", "name", "args"}` as JSON) that Kotlin's `Bridge.dispatch` sends; the host
+//! ("call", with `{"id", "client", "name", "args"}` as JSON) that Kotlin's `Bridge.dispatch` sends; the host
 //! SWF runs the callback on AIR's thread and answers with the extension's `reply`, which lands in
 //! [`answer`] here; the calling thread waits for it, as the Ruffle host waits on its event loop.
 
@@ -33,7 +33,10 @@ fn pending() -> std::sync::MutexGuard<'static, Option<Pending>> {
     PENDING.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-pub(crate) struct AirFlashHost;
+/// One game client's skua (a tab's): `client` is its number in the host SWF.
+pub(crate) struct AirFlashHost {
+    pub client: u8,
+}
 
 impl FlashHost for AirFlashHost {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
@@ -57,6 +60,7 @@ impl FlashHost for AirFlashHost {
         pending().get_or_insert_default().insert(id, reply);
         let request = serde_json::json!({
             "id": id,
+            "client": self.client,
             "name": name,
             "args": args.into_iter().map(to_json).collect::<Vec<_>>(),
         });

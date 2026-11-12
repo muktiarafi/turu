@@ -34,7 +34,9 @@ pub enum EngineEvent {
 
 /// The tab's Flash host: its calls go to the loop through `sender`.
 pub fn flash_host(sender: Sender<EngineEvent>, tab: TabId) -> turu::TuruFlashHost {
-    turu::TuruFlashHost::new(tab, move |call| sender.send(EngineEvent::TuruFlashCall(call)).is_ok())
+    turu::TuruFlashHost::new(tab, move |call| {
+        sender.send(EngineEvent::TuruFlashCall(call)).is_ok()
+    })
 }
 
 /// Ticks the players when a frame is due and handles events in between, until every sender is
@@ -86,7 +88,8 @@ pub fn run_loop_paced<E>(
                 let frames_before = player.frames_run();
                 player.tick(FloatDuration::from_std(now.duration_since(time)));
                 let took = now.elapsed();
-                let frame_ms = (player.frames_run() != frames_before).then_some(took.as_secs_f64() * 1000.0);
+                let frame_ms =
+                    (player.frames_run() != frames_before).then_some(took.as_secs_f64() * 1000.0);
                 let next_step = step(&mut player, Step::Ticked { frame_ms });
                 let next_frame = now + player.time_til_next_frame();
                 drop(player);
@@ -109,7 +112,11 @@ pub fn run_loop_paced<E>(
                 Ok(EngineEvent::TaskPoll(task)) => {
                     // A closed tab's futures are dropped (which cancels them).
                     let tab = *task.metadata();
-                    if let Some(i) = players.slots().iter().position(|slot| slot.tab() == Some(tab)) {
+                    if let Some(i) = players
+                        .slots()
+                        .iter()
+                        .position(|slot| slot.tab() == Some(tab))
+                    {
                         players.run_for(i, || task.run());
                     }
                 }

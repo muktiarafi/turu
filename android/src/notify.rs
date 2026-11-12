@@ -174,20 +174,22 @@ fn status() -> Status {
 
 /// Sends the bot's state to the service every 2 s, when it changed.
 fn start_updates() {
-    let spawned = std::thread::Builder::new().name("Turu Notify".into()).spawn(|| {
-        let mut shown: Option<Status> = None;
-        loop {
-            crate::tabs::save();
-            let now = status();
-            if shown.as_ref() != Some(&now) {
-                match send(&now) {
-                    Ok(()) => shown = Some(now),
-                    Err(e) => tracing::warn!("Couldn't update the notification: {e}"),
+    let spawned = std::thread::Builder::new()
+        .name("Turu Notify".into())
+        .spawn(|| {
+            let mut shown: Option<Status> = None;
+            loop {
+                turu_frontend::saved_tabs::save();
+                let now = status();
+                if shown.as_ref() != Some(&now) {
+                    match send(&now) {
+                        Ok(()) => shown = Some(now),
+                        Err(e) => tracing::warn!("Couldn't update the notification: {e}"),
+                    }
                 }
+                std::thread::sleep(Duration::from_secs(2));
             }
-            std::thread::sleep(Duration::from_secs(2));
-        }
-    });
+        });
     if let Err(e) = spawned {
         tracing::error!("Couldn't start the notification updates: {e}");
     }
@@ -195,7 +197,9 @@ fn start_updates() {
 
 /// Runs `work` with `TuruService`'s class on this thread (attached to the JVM); `None` before the
 /// service started the engine or when the call failed.
-pub(crate) fn with_service<T>(work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>) -> Option<T> {
+pub(crate) fn with_service<T>(
+    work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>,
+) -> Option<T> {
     let (vm, class) = SERVICE.get()?;
     crate::attach(vm, |env: &mut Env| work(env, class))
         .inspect_err(|e| tracing::warn!("A call to TuruService failed: {e}"))

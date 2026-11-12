@@ -59,11 +59,11 @@ class TuruAirService : Service() {
         }
     }
 
-    /** Shows [shown], and holds the wake lock while the script runs (the screen may go off). */
+    /** Shows [shown], and holds the wake lock while a tab's script runs (the screen may go off). */
     private fun apply() {
-        if (shown.running && !wakeLock.isHeld) {
+        if (shown.awake && !wakeLock.isHeld) {
             wakeLock.acquire()
-        } else if (!shown.running && wakeLock.isHeld) {
+        } else if (!shown.awake && wakeLock.isHeld) {
             wakeLock.release()
         }
         getSystemService(NotificationManager::class.java).notify(ID, build())
@@ -123,6 +123,8 @@ class TuruAirService : Service() {
         val running: Boolean = false,
         val paused: Boolean = false,
         val startable: Boolean = false,
+        /** Some tab's script runs: the wake lock is held. */
+        val awake: Boolean = false,
     )
 
     companion object {
@@ -142,8 +144,8 @@ class TuruAirService : Service() {
         private val main = Handler(Looper.getMainLooper())
 
         /** The engine's state (any thread): shown on the main thread. */
-        fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean) {
-            shown = Shown(title, text, running, paused, startable)
+        fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
+            shown = Shown(title, text, running, paused, startable, awake)
             main.post { instance?.apply() }
         }
     }

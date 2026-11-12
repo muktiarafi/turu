@@ -78,7 +78,18 @@ What's left is ordinary engineering (below), not unknowns. Not covered: a real p
 ones, where two clients may not fit), hours of play, and a script running on client 1 while
 client 2 also plays.
 
-## To make it Army and Butler
+## Built (2026-11-12)
+
+Tabs with a bot each, Army and Butler, as described in docs/TURU_MAS.md ("Tabs"); the spike's
+second muted client and its switch button are gone. Checked on the emulator at the login
+screen: New Tab, switching, closing (the client unloaded), a tab opened again on the freed
+client number, and the second tab reopened from `android-tabs.json` after a restart. In game,
+with two accounts: each tab's bot follows its own account (the log's `[dod]` and `[ghole]`, the
+tab names), the game fits the view below the tab strip (`fit`: 0.903x), taps land (the login
+field, the inventory), Butler on one tab lists the other's account and follows it (same room
+found from its state file), and Army Control lists both tabs.
+
+## To make it Army and Butler (the plan)
 
 1. **A bot per client.** Client IDs through the bridge: `AirFlashHost` (one per client),
    the status events and `reply`, `TuruExternal`'s callbacks and `TuruLoader` per client (skua

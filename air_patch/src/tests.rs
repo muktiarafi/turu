@@ -552,7 +552,7 @@ fn shared_stage_finds_each_clients_game() {
     let names = [("", "stage"), ("", "getChildAt")];
     let shared = Options {
         shared_stage: true,
-        external: None,
+        client: None,
     };
     // Without the option, nothing changes.
     let mut abc = abc_with(&names, &[], &ops, vec![]);
@@ -633,7 +633,7 @@ fn shared_stage_leaves_a_site_a_branch_lands_in() {
     let mut report = Report::default();
     let shared = Options {
         shared_stage: true,
-        external: None,
+        client: None,
     };
     assert!(!patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
     assert_eq!(report.stage_missed.len(), 1);
@@ -650,7 +650,7 @@ fn shared_stage_real_swfs() {
     };
     let shared = Options {
         shared_stage: true,
-        external: None,
+        client: None,
     };
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
@@ -680,4 +680,95 @@ fn shared_stage_real_swfs() {
             output.len()
         );
     }
+}
+
+#[test]
+fn a_numbered_client_gets_its_own_host_classes() {
+    let ops = [
+        Op::GetLex {
+            index: Index::new(1),
+        }, // ExternalInterface
+        Op::Pop,
+        Op::FindPropStrict {
+            index: Index::new(2),
+        },
+        Op::ConstructProp {
+            index: Index::new(2),
+            num_args: 0,
+        }, // new Loader()
+        Op::ReturnValue,
+    ];
+    let names = [
+        ("flash.external", "ExternalInterface"),
+        ("flash.display", "Loader"),
+    ];
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    let mut report = Report {
+        target: Target::Skua,
+        ..Report::default()
+    };
+    let options = Options {
+        shared_stage: false,
+        client: Some(2),
+    };
+    assert!(patch_abc_with(&mut abc, Target::Skua, options, &mut report).unwrap());
+    let pool = &abc.constant_pool;
+    let named: Vec<&str> = decode(&abc.method_bodies[0].code)
+        .unwrap()
+        .into_iter()
+        .filter_map(|d| match d.op {
+            Op::GetLex { index } | Op::FindPropStrict { index } => {
+                local_name(pool, &pool.multinames[index.0 as usize - 1])
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(named, ["TuruExternal2", "TuruLoader2"]);
+}
+
+#[test]
+fn shared_stage_reads_the_mouse_from_the_game() {
+    let ops = [
+        Op::GetLocal { index: 0 },
+        Op::GetProperty {
+            index: Index::new(1),
+        }, // this.stage
+        Op::GetProperty {
+            index: Index::new(2),
+        }, // .mouseX
+        Op::ReturnValue,
+    ];
+    let names = [("", "stage"), ("", "mouseX")];
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    let mut report = Report::default();
+    let shared = Options {
+        shared_stage: true,
+        client: None,
+    };
+    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert_eq!(report.stage_roots.len(), 1);
+    let pool = &abc.constant_pool;
+    let got: Vec<String> = decode(&abc.method_bodies[0].code)
+        .unwrap()
+        .into_iter()
+        .map(|d| match d.op {
+            Op::GetLex { index } | Op::GetProperty { index } | Op::CallProperty { index, .. } => {
+                local_name(pool, &pool.multinames[index.0 as usize - 1])
+                    .unwrap()
+                    .to_owned()
+            }
+            op => format!("{op:?}"),
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            "GetLocal { index: 0 }",
+            "TuruStage",
+            "Swap",
+            "rootOf",
+            "mouseX",
+            "ReturnValue"
+        ]
+    );
 }

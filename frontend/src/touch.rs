@@ -222,7 +222,10 @@ mod tests {
         t.up(0, 100.0, 400.0);
         // Finger 1 is still down, but it was a tap: it only moves the mouse.
         assert_eq!(t.moved(1, 950.0, 300.0), [Move(950.0, 300.0)]);
-        assert_eq!(t.down(2, 500.0, 500.0), [Move(500.0, 500.0), Down(500.0, 500.0)]);
+        assert_eq!(
+            t.down(2, 500.0, 500.0),
+            [Move(500.0, 500.0), Down(500.0, 500.0)]
+        );
     }
 
     #[test]

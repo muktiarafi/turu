@@ -86,7 +86,10 @@ pub fn save_file(dialog: &FileDialog, answer: Answer) -> bool {
 }
 
 /// Waits for the activity's answer to the dialog `call` shows.
-fn show(dialog: Waiting, call: impl FnOnce(&mut jni::Env, &JObject) -> jni::errors::Result<()>) -> bool {
+fn show(
+    dialog: Waiting,
+    call: impl FnOnce(&mut jni::Env, &JObject) -> jni::errors::Result<()>,
+) -> bool {
     let Some(app) = crate::app() else {
         tracing::info!("No file dialog without the app on screen");
         return false;
@@ -168,48 +171,53 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeDocumentCreated<'l
 
 /// Copies `path` into the document `uri` once the window has written it, on a thread of its own.
 fn write_when_saved(uri: String, path: PathBuf) {
-    let spawned = std::thread::Builder::new().name("Turu Save".into()).spawn(move || {
-        let started = Instant::now();
-        let mut last = None;
-        loop {
-            std::thread::sleep(Duration::from_millis(400));
-            match std::fs::metadata(&path) {
-                Ok(metadata) => {
-                    let now = (metadata.len(), metadata.modified().ok());
-                    if last == Some(now) {
-                        break;
+    let spawned = std::thread::Builder::new()
+        .name("Turu Save".into())
+        .spawn(move || {
+            let started = Instant::now();
+            let mut last = None;
+            loop {
+                std::thread::sleep(Duration::from_millis(400));
+                match std::fs::metadata(&path) {
+                    Ok(metadata) => {
+                        let now = (metadata.len(), metadata.modified().ok());
+                        if last == Some(now) {
+                            break;
+                        }
+                        last = Some(now);
                     }
-                    last = Some(now);
-                }
-                Err(_) if started.elapsed() > SAVE_TIMEOUT => {
-                    tracing::warn!("Nothing was written to save in {uri}");
-                    if let Some(folder) = path.parent() {
-                        let _ = std::fs::remove_dir(folder);
+                    Err(_) if started.elapsed() > SAVE_TIMEOUT => {
+                        tracing::warn!("Nothing was written to save in {uri}");
+                        if let Some(folder) = path.parent() {
+                            let _ = std::fs::remove_dir(folder);
+                        }
+                        return;
                     }
-                    return;
+                    Err(_) => {}
                 }
-                Err(_) => {}
             }
-        }
-        let path_text = path.to_string_lossy().into_owned();
-        let result = crate::storage::with_storage(|env, class| {
-            let uri = env.new_string(&uri)?;
-            let path = env.new_string(&path_text)?;
-            let error = env
-                .call_static_method(
-                    class,
-                    jni_str!("writeDocument"),
-                    jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
-                    &[JValue::Object(&uri), JValue::Object(&path)],
-                )?
-                .l()?;
-            crate::storage::optional_string(env, error)
+            let path_text = path.to_string_lossy().into_owned();
+            let result = crate::storage::with_storage(|env, class| {
+                let uri = env.new_string(&uri)?;
+                let path = env.new_string(&path_text)?;
+                let error = env
+                    .call_static_method(
+                        class,
+                        jni_str!("writeDocument"),
+                        jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
+                        &[JValue::Object(&uri), JValue::Object(&path)],
+                    )?
+                    .l()?;
+                crate::storage::optional_string(env, error)
+            });
+            match result {
+                Ok(None) => tracing::info!(
+                    "Saved {}",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                ),
+                Ok(Some(e)) | Err(e) => tracing::error!("Couldn't save {}: {e}", path.display()),
+            }
         });
-        match result {
-            Ok(None) => tracing::info!("Saved {}", path.file_name().unwrap_or_default().to_string_lossy()),
-            Ok(Some(e)) | Err(e) => tracing::error!("Couldn't save {}: {e}", path.display()),
-        }
-    });
     if let Err(e) = spawned {
         tracing::error!("Couldn't start saving the file: {e}");
     }

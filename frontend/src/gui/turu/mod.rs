@@ -22,19 +22,20 @@ mod files;
 mod game_options;
 mod gear;
 mod grabber;
+mod grid_overlay;
 mod hotkeys;
 mod hotkeys_window;
 mod interceptor;
 mod junk_items;
-mod loadouts;
 mod loader;
+mod loadouts;
 mod logs;
 mod message_box;
 mod nav_bar;
+mod notifications;
+mod notify_drop;
 mod packet_filters;
 mod packet_logger;
-mod notify_drop;
-mod notifications;
 mod runtime;
 mod scheduler;
 mod script_loader;
@@ -44,7 +45,6 @@ mod skills;
 mod spammer;
 mod stats;
 mod tab_strip;
-mod grid_overlay;
 pub mod theme;
 mod widgets;
 
@@ -125,7 +125,11 @@ fn window<'a>(ctx: &Context, title: &'a str, size: [f32; 2], slot: u32) -> ToolW
             .resizable(true),
         sheet: false,
     };
-    if phone_sheet(ctx, size) { window.sheet(ctx) } else { window }
+    if phone_sheet(ctx, size) {
+        window.sheet(ctx)
+    } else {
+        window
+    }
 }
 
 /// Whether a window of `size` is a full-screen sheet: on a touch screen whose window area can't
@@ -269,7 +273,8 @@ impl TuruUi {
     /// The active tab's windows (made the first time), dropping those of closed tabs.
     fn active(&mut self) -> &mut TabUi {
         let tabs = crate::turu::tabs();
-        self.tabs.retain(|id, _| tabs.iter().any(|(tab, _)| tab == id));
+        self.tabs
+            .retain(|id, _| tabs.iter().any(|(tab, _)| tab == id));
         self.tabs.entry(crate::turu::active_tab()).or_default()
     }
 
@@ -314,7 +319,8 @@ impl TuruUi {
             ctx.request_repaint();
         }
         tab.game_options.show(ctx, &mut w.game_options);
-        tab.application_options.show(ctx, &mut w.application_options);
+        tab.application_options
+            .show(ctx, &mut w.application_options);
         tab.core_bots.show(ctx, &mut w.core_bots);
         tab.hotkeys.show(ctx, &mut w.hotkeys);
         tab.current_drops.show(ctx, &mut w.current_drops);
@@ -481,29 +487,40 @@ mod tests {
         vec![
             (
                 "Script Options",
-                boxed(script_options::ScriptOptionsWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(script_options::ScriptOptionsWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Search Scripts",
-                boxed(script_repo::ScriptRepoWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(script_repo::ScriptRepoWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Scheduler",
-                boxed(scheduler::SchedulerWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(scheduler::SchedulerWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Game Options",
-                boxed(game_options::GameOptionsWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(game_options::GameOptionsWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "HotKeys",
-                boxed(hotkeys_window::HotKeysWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(hotkeys_window::HotKeysWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Application Options",
-                boxed(application_options::ApplicationOptionsWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(
+                    application_options::ApplicationOptionsWindow::default(),
+                    |w, c, o| w.show(c, o),
+                ),
             ),
             (
                 "CoreBots Options",
@@ -511,34 +528,53 @@ mod tests {
             ),
             (
                 "Current Drops",
-                boxed(current_drops::CurrentDrops::default(), |w, c, o| w.show(c, o)),
+                boxed(current_drops::CurrentDrops::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
-            ("Loader", boxed(loader::LoaderWindow::default(), |w, c, o| w.show(c, o))),
-            ("Grabber", boxed(grabber::GrabberWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                "Loader",
+                boxed(loader::LoaderWindow::default(), |w, c, o| w.show(c, o)),
+            ),
+            (
+                "Grabber",
+                boxed(grabber::GrabberWindow::default(), |w, c, o| w.show(c, o)),
+            ),
             (
                 "Junk Items",
-                boxed(junk_items::JunkItemsWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(junk_items::JunkItemsWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Fast Travel",
-                boxed(fast_travel::FastTravelWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(fast_travel::FastTravelWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Army Queue",
-                boxed(army_queue::ArmyQueueWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(army_queue::ArmyQueueWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Loadouts Manager",
                 boxed(loadouts::LoadoutsWindow::default(), |w, c, o| w.show(c, o)),
             ),
-            ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                "Stats",
+                boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o)),
+            ),
             (
                 "Runtime",
                 boxed(runtime::RuntimeWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 notify_drop::TITLE,
-                boxed(notify_drop::NotifyDropWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(notify_drop::NotifyDropWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Advanced Skills",
@@ -554,16 +590,26 @@ mod tests {
             ),
             (
                 "Interceptor",
-                boxed(interceptor::InterceptorWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(interceptor::InterceptorWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
-            ("Butler", boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o))),
+            (
+                "Butler",
+                boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o)),
+            ),
             (
                 notifications::TITLE,
-                boxed(notifications::NotificationCenterWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(
+                    notifications::NotificationCenterWindow::default(),
+                    |w, c, o| w.show(c, o),
+                ),
             ),
             (
                 "Cosmetics & Outfits",
-                boxed(cosmetics::CosmeticsWindow::default(), |w, c, o| w.show(c, o)),
+                boxed(cosmetics::CosmeticsWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
         ]
     }
@@ -626,7 +672,10 @@ mod tests {
             let mut show: Show = Box::new(client_update::show);
             for screen in [vec2(1400.0, 1000.0), vec2(640.0, 420.0)] {
                 let (rect, area, overflow) = run(screen, client_update::title(), &mut show);
-                assert!(area.expand(1.0).contains_rect(rect), "{install:?} {screen:?}: {rect:?} outside {area:?}");
+                assert!(
+                    area.expand(1.0).contains_rect(rect),
+                    "{install:?} {screen:?}: {rect:?} outside {area:?}"
+                );
                 if screen.y >= 1000.0 {
                     assert!(overflow <= 0.5, "{install:?}: scrolls by {overflow}");
                 }
@@ -638,12 +687,19 @@ mod tests {
     /// Butler with its settings and debug log open (it scrolls then) stays on screen.
     #[test]
     fn butler_settings_and_log_render() {
-        crate::turu::bot().butler.record("Follower", "AntiLag ON", turu_bot::butler::Level::Success);
+        crate::turu::bot().butler.record(
+            "Follower",
+            "AntiLag ON",
+            turu_bot::butler::Level::Success,
+        );
         let mut window = butler::ButlerWindow::expanded();
         let mut show: Show = Box::new(move |ctx, open| window.show(ctx, open));
         for screen in [vec2(1400.0, 1000.0), vec2(640.0, 420.0)] {
             let (rect, area, _) = run(screen, "Butler", &mut show);
-            assert!(area.expand(1.0).contains_rect(rect), "{screen:?}: {rect:?} outside {area:?}");
+            assert!(
+                area.expand(1.0).contains_rect(rect),
+                "{screen:?}: {rect:?} outside {area:?}"
+            );
         }
     }
 
@@ -662,13 +718,16 @@ mod tests {
         output.textures_delta.clear();
         let font = egui::FontId::proportional(13.0);
         let uv = |c: char| {
-            let galley = ctx.fonts_mut(|f| f.layout_no_wrap(c.to_string(), font.clone(), egui::Color32::WHITE));
+            let galley = ctx
+                .fonts_mut(|f| f.layout_no_wrap(c.to_string(), font.clone(), egui::Color32::WHITE));
             galley.rows[0].glyphs[0].uv_rect
         };
         let replacement = uv('\u{FFFF}');
         assert_eq!(replacement, uv('◻'), "an unknown character draws ◻");
-        let missing: Vec<char> =
-            "«·»×–—…‹›←↑→↓≤≥⋮⋯■▶▾★♡♥⚙✕⟳".chars().filter(|&c| uv(c) == replacement).collect();
+        let missing: Vec<char> = "«·»×–—…‹›←↑→↓≤≥⋮⋯■▶▾★♡♥⚙✕⟳"
+            .chars()
+            .filter(|&c| uv(c) == replacement)
+            .collect();
         assert!(missing.is_empty(), "missing glyphs: {missing:?}");
     }
 
@@ -685,7 +744,9 @@ mod tests {
                     failures.push(format!("{screen:?} {title}: {rect:?} outside {area:?}"));
                 }
                 if screen.y >= 1000.0 && overflow > 0.5 {
-                    failures.push(format!("{title} scrolls at its default size: {overflow} too tall"));
+                    failures.push(format!(
+                        "{title} scrolls at its default size: {overflow} too tall"
+                    ));
                 }
             }
         }

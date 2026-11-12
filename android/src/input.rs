@@ -31,7 +31,11 @@ pub enum Touch {
 pub fn motion(event: &MotionEvent) -> Vec<Touch> {
     let changed = || {
         let pointer = event.pointer_at_index(event.pointer_index());
-        (pointer.pointer_id(), f64::from(pointer.x()), f64::from(pointer.y()))
+        (
+            pointer.pointer_id(),
+            f64::from(pointer.x()),
+            f64::from(pointer.y()),
+        )
     };
     match event.action() {
         MotionAction::Down | MotionAction::PointerDown => {
@@ -45,7 +49,13 @@ pub fn motion(event: &MotionEvent) -> Vec<Touch> {
         MotionAction::Cancel => vec![Touch::Cancel],
         MotionAction::Move | MotionAction::HoverMove => event
             .pointers()
-            .map(|pointer| Touch::Move(pointer.pointer_id(), f64::from(pointer.x()), f64::from(pointer.y())))
+            .map(|pointer| {
+                Touch::Move(
+                    pointer.pointer_id(),
+                    f64::from(pointer.x()),
+                    f64::from(pointer.y()),
+                )
+            })
             .collect(),
         // A mouse button comes with a Down or an Up too.
         _ => Vec::new(),
@@ -78,7 +88,12 @@ pub fn player_event(mouse: Mouse, left: f64, top: f64) -> PlayerEvent {
 /// egui-winit sends them). Without the touch, egui takes the screen for a mouse's and scrolls
 /// nothing on a drag (`ScrollArea`'s drag-to-scroll is on touch screens only). egui follows one
 /// finger at a time (`Screen::touch`), so it's always touch 0, as it's the one mouse.
-pub fn egui_events(phase: egui::TouchPhase, x: f64, y: f64, pixels_per_point: f32) -> Vec<egui::Event> {
+pub fn egui_events(
+    phase: egui::TouchPhase,
+    x: f64,
+    y: f64,
+    pixels_per_point: f32,
+) -> Vec<egui::Event> {
     let pos = egui::pos2(x as f32 / pixels_per_point, y as f32 / pixels_per_point);
     let button = |pressed| egui::Event::PointerButton {
         pos,
@@ -96,7 +111,9 @@ pub fn egui_events(phase: egui::TouchPhase, x: f64, y: f64, pixels_per_point: f3
     match phase {
         egui::TouchPhase::Start => vec![touch, egui::Event::PointerMoved(pos), button(true)],
         egui::TouchPhase::Move => vec![touch, egui::Event::PointerMoved(pos)],
-        egui::TouchPhase::End | egui::TouchPhase::Cancel => vec![touch, button(false), egui::Event::PointerGone],
+        egui::TouchPhase::End | egui::TouchPhase::Cancel => {
+            vec![touch, button(false), egui::Event::PointerGone]
+        }
     }
 }
 
@@ -155,7 +172,9 @@ impl Key {
 /// egui's key for a Ruffle logical key: named keys, letters, digits and function keys.
 fn egui_key(key: &LogicalKey) -> Option<egui::Key> {
     let named = match key {
-        LogicalKey::Character(c) => return egui::Key::from_name(&c.to_ascii_uppercase().to_string()),
+        LogicalKey::Character(c) => {
+            return egui::Key::from_name(&c.to_ascii_uppercase().to_string());
+        }
         LogicalKey::Named(named) => named,
         _ => return None,
     };
@@ -255,10 +274,30 @@ fn text_control(key: LogicalKey, shift: bool, ctrl: bool) -> Option<TextControlC
         NamedKey::Enter => return Some(C::Enter),
         NamedKey::Backspace => return Some(if ctrl { C::BackspaceWord } else { C::Backspace }),
         NamedKey::Delete => return Some(if ctrl { C::DeleteWord } else { C::Delete }),
-        NamedKey::ArrowLeft => [C::MoveLeft, C::SelectLeft, C::MoveLeftWord, C::SelectLeftWord],
-        NamedKey::ArrowRight => [C::MoveRight, C::SelectRight, C::MoveRightWord, C::SelectRightWord],
-        NamedKey::Home => [C::MoveLeftLine, C::SelectLeftLine, C::MoveLeftDocument, C::SelectLeftDocument],
-        NamedKey::End => [C::MoveRightLine, C::SelectRightLine, C::MoveRightDocument, C::SelectRightDocument],
+        NamedKey::ArrowLeft => [
+            C::MoveLeft,
+            C::SelectLeft,
+            C::MoveLeftWord,
+            C::SelectLeftWord,
+        ],
+        NamedKey::ArrowRight => [
+            C::MoveRight,
+            C::SelectRight,
+            C::MoveRightWord,
+            C::SelectRightWord,
+        ],
+        NamedKey::Home => [
+            C::MoveLeftLine,
+            C::SelectLeftLine,
+            C::MoveLeftDocument,
+            C::SelectLeftDocument,
+        ],
+        NamedKey::End => [
+            C::MoveRightLine,
+            C::SelectRightLine,
+            C::MoveRightDocument,
+            C::SelectRightDocument,
+        ],
         _ => return None,
     };
     Some(match (ctrl, shift) {

@@ -19,5 +19,6 @@ pub mod platform;
 #[cfg(feature = "ruffle")]
 pub mod players;
 pub mod process_memory;
+pub mod saved_tabs;
 pub mod touch;
 pub mod turu;

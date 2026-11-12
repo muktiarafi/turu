@@ -864,7 +864,9 @@ pub fn from_strings(lines: &[String]) -> Vec<Binding> {
     let mut bindings: Vec<Binding> = Vec::new();
     for line in lines {
         let (name, gesture) = line.split_once('|').unwrap_or((line, ""));
-        let Some(action) = find(name.trim()) else { continue };
+        let Some(action) = find(name.trim()) else {
+            continue;
+        };
         if bindings.iter().any(|b| b.action == action.id) {
             continue;
         }

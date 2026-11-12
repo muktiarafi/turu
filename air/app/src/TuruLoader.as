@@ -25,6 +25,8 @@ package {
         public static var gameParams:Object = {};
 
         private var url:String;
+        /** The game client whose skua made this loader ([TuruLoader0] ...), or -1. */
+        protected var client:int = -1;
 
         public function TuruLoader() {
             super();
@@ -80,9 +82,8 @@ package {
             if (!isClient()) {
                 return;
             }
-            if (TuruStage.stage != null) {
-                // Spike: clients load one after another, so this is the next client's game.
-                TuruStage.games.push(content);
+            if (client >= 0) {
+                TuruStage.setGame(client, content, this);
             }
             try {
                 var params:Object = Object(content).params;

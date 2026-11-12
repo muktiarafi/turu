@@ -123,18 +123,30 @@ pub(crate) fn prepare(args: &mut Vec<OsString>) {
     let has = |flags: &[&str]| {
         args.iter().any(|arg| {
             arg.to_str().is_some_and(|arg| {
-                flags
-                    .iter()
-                    .any(|flag| arg == *flag || arg.strip_prefix(flag).is_some_and(|rest| rest.starts_with('=')))
+                flags.iter().any(|flag| {
+                    arg == *flag
+                        || arg
+                            .strip_prefix(flag)
+                            .is_some_and(|rest| rest.starts_with('='))
+                })
             })
         })
     };
-    if has(&["--run-script", "--load-script", "--run-playlist", "--load-playlist"]) {
+    if has(&[
+        "--run-script",
+        "--load-script",
+        "--run-playlist",
+        "--load-playlist",
+    ]) {
         tracing::info!("Restarted after Android stopped Turu: running turu-args.txt's script");
         return;
     }
     if !has(&["--user"]) {
-        match record.username.as_deref().and_then(|u| Some((u, saved_password(u)?))) {
+        match record
+            .username
+            .as_deref()
+            .and_then(|u| Some((u, saved_password(u)?)))
+        {
             Some((username, password)) => {
                 args.extend(["--user", username, "--password", &password].map(OsString::from));
                 if let Some(server) = &record.server {
@@ -151,7 +163,10 @@ pub(crate) fn prepare(args: &mut Vec<OsString>) {
         "Restarted after Android stopped Turu: running {} again",
         record.script.display()
     );
-    args.extend([OsString::from("--run-script"), record.script.into_os_string()]);
+    args.extend([
+        OsString::from("--run-script"),
+        record.script.into_os_string(),
+    ]);
     *STORAGE.lock().unwrap_or_else(|e| e.into_inner()) = record.storage;
 }
 
@@ -164,25 +179,27 @@ pub(crate) fn start() {
             bot.scripts.load_with_storage(&script, Some(&storage));
         }
     }
-    let spawned = std::thread::Builder::new().name("Turu Restart".into()).spawn(|| {
-        let mut running = false;
-        loop {
-            std::thread::sleep(Duration::from_secs(2));
-            let bot = turu::bot();
-            // A playlist's scripts come and go: the Scheduler isn't brought back.
-            let now = bot.scripts.is_running() && !bot.scheduler.is_running();
-            if now && !running {
-                remember(&bot);
-            } else if !now && running {
-                if bot.servers.is_relogging() {
-                    // Auto-relogin stopped it to start it again.
-                    continue;
+    let spawned = std::thread::Builder::new()
+        .name("Turu Restart".into())
+        .spawn(|| {
+            let mut running = false;
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let bot = turu::bot();
+                // A playlist's scripts come and go: the Scheduler isn't brought back.
+                let now = bot.scripts.is_running() && !bot.scheduler.is_running();
+                if now && !running {
+                    remember(&bot);
+                } else if !now && running {
+                    if bot.servers.is_relogging() {
+                        // Auto-relogin stopped it to start it again.
+                        continue;
+                    }
+                    forget();
                 }
-                forget();
+                running = now;
             }
-            running = now;
-        }
-    });
+        });
     if let Err(e) = spawned {
         tracing::error!("Couldn't start watching the script for restarts: {e}");
     }
@@ -194,7 +211,10 @@ fn remember(bot: &Bot) {
         return;
     };
     let storage = match bot.scripts.options() {
-        ScriptOptionsState::Loaded(options) => options.path().file_stem().map(|s| s.to_string_lossy().into_owned()),
+        ScriptOptionsState::Loaded(options) => options
+            .path()
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned()),
         _ => None,
     };
     let username = turu_bot::api::servers::cached_username(bot).ok().flatten();

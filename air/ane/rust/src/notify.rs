@@ -1,7 +1,8 @@
 //! Turu Mas's notification (`TuruAirService.kt`, through Kotlin's `Bridge`), as Turu's Android
 //! app has it (`android/src/notify.rs`): the loaded script's state, Pause and Stop while it runs,
-//! Start while it's loaded and stopped, and the wake lock held only while it runs. A thread here
-//! sends the state every 2 s, when it changed. Turu Mas has one client, so one line.
+//! Start while it's loaded and stopped (the active tab's), a line per tab with several, and the
+//! wake lock held only while some tab's script runs. A thread here sends the state every 2 s,
+//! when it changed, and keeps `android-tabs.json` up to date.
 
 use crate::host::BRIDGE;
 use jni::errors::ThrowRuntimeExAndDefault;
@@ -67,27 +68,58 @@ struct Status {
     running: bool,
     paused: bool,
     startable: bool,
+    /// Some tab's script runs: the wake lock is held.
+    awake: bool,
+}
+
+/// The tab's script's name, while one is loaded.
+fn script_name(bot: &Bot) -> Option<String> {
+    bot.scripts
+        .loaded()
+        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
+}
+
+/// One tab's line, as Turu's Android app has it: "Name is farming", ... With one tab the name is
+/// left out of the logged-out states ("Not logged in").
+fn tab_line(bot: &Bot, named: bool) -> String {
+    let who = turu::tab_label(bot);
+    let (state, alone) = match (bot.state.lock().in_game, bot.scripts.is_running()) {
+        (true, true) => return format!("{who} is farming"),
+        (true, false) => return format!("{who} is in game, no script running"),
+        (false, _) if bot.servers.is_relogging() => ("logging back in", "Logging back in"),
+        (false, _) => ("not logged in", "Not logged in"),
+    };
+    if named {
+        format!("{who}: {state}")
+    } else {
+        alone.to_owned()
+    }
 }
 
 fn status() -> Status {
     let bot = turu::bot();
+    let tabs = turu::tabs();
     let running = bot.scripts.is_running();
     let paused = running && bot.control.is_paused();
-    let name = bot
-        .scripts
-        .loaded()
-        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
-    let title = match (name, running) {
+    let title = match (script_name(&bot), running) {
         (Some(name), true) => format!("{name} {}", if paused { "paused" } else { "running" }),
         (Some(name), false) => format!("{name} loaded"),
         _ => "Turu Mas".to_owned(),
     };
-    let who = turu::tab_label(&bot);
-    let text = match (bot.state.lock().in_game, running) {
-        (true, true) => format!("{who} is farming"),
-        (true, false) => format!("{who} is in game, no script running"),
-        (false, _) if bot.servers.is_relogging() => "Logging back in".to_owned(),
-        (false, _) => "Not logged in".to_owned(),
+    let text = if tabs.len() > 1 {
+        // A line per tab, the active one marked: "▶ Name is farming (GoldFarm)".
+        tabs.iter()
+            .map(|(_, tab)| {
+                let mark = if Arc::ptr_eq(tab, &bot) { "▶ " } else { "" };
+                let script = script_name(tab)
+                    .filter(|_| tab.scripts.is_running())
+                    .map_or_else(String::new, |name| format!(" ({name})"));
+                format!("{mark}{}{script}", tab_line(tab, true))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        tab_line(&bot, false)
     };
     Status {
         title,
@@ -95,6 +127,7 @@ fn status() -> Status {
         running,
         paused,
         startable: can_start(&bot),
+        awake: tabs.iter().any(|(_, tab)| tab.scripts.is_running()),
     }
 }
 
@@ -105,6 +138,7 @@ pub(crate) fn start_updates() {
         .spawn(|| {
             let mut shown: Option<Status> = None;
             loop {
+                turu_frontend::saved_tabs::save();
                 let now = status();
                 if shown.as_ref() != Some(&now) {
                     match send(&now) {
@@ -121,7 +155,7 @@ pub(crate) fn start_updates() {
     }
 }
 
-/// `Bridge.status(title, text, running, paused, startable)`; false before Kotlin's `Bridge` is
+/// `Bridge.status(title, text, running, paused, startable, awake)`; false before Kotlin's `Bridge` is
 /// known.
 fn send(status: &Status) -> jni::errors::Result<bool> {
     let Some((vm, class)) = BRIDGE.get() else {
@@ -133,13 +167,14 @@ fn send(status: &Status) -> jni::errors::Result<bool> {
         env.call_static_method(
             class,
             jni_str!("status"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZ)V"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZZ)V"),
             &[
                 JValue::Object(&title),
                 JValue::Object(&text),
                 JValue::Bool(status.running),
                 JValue::Bool(status.paused),
                 JValue::Bool(status.startable),
+                JValue::Bool(status.awake),
             ],
         )?;
         Ok(true)

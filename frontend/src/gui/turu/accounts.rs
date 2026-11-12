@@ -775,7 +775,9 @@ impl AccountsWindow {
                 control(ui);
             });
         };
-        let combo_width = |ui: &Ui| if stacked { ui.available_width() - 24.0 } else { 150.0 };
+        let combo_width = |ui: &Ui| {
+            if stacked { ui.available_width() - 24.0 } else { 150.0 }
+        };
         let mut server_and_where = |ui: &mut Ui| {
             labeled(ui, "Server", &mut |ui| {
                 let bot = crate::turu::bot();

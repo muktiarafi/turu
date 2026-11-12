@@ -146,7 +146,9 @@ impl HotKeysWindow {
                 _ => None,
             }
         });
-        let Some((key, modifiers)) = press else { return };
+        let Some((key, modifiers)) = press else {
+            return;
+        };
         self.stop_capture();
         let title = bindings[index].action().title;
         if key == Key::Escape {

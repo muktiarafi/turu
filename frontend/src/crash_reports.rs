@@ -56,7 +56,11 @@ pub fn list_in(dir: &Path) -> Vec<Report> {
             })
         })
         .collect();
-    reports.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| b.name.cmp(&a.name)));
+    reports.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| b.name.cmp(&a.name))
+    });
     reports
 }
 
@@ -106,7 +110,11 @@ pub fn shareable(text: &str, max_bytes: usize) -> String {
         end -= 1;
     }
     let end = text[..end].rfind('\n').unwrap_or(end);
-    format!("{}\n... ({} more bytes in the file)\n", &text[..end], text.len() - end)
+    format!(
+        "{}\n... ({} more bytes in the file)\n",
+        &text[..end],
+        text.len() - end
+    )
 }
 
 #[cfg(test)]

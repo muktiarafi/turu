@@ -92,7 +92,11 @@ impl Pacing {
         let due = self.picture_due + interval;
         if started + self.refresh_interval / 2 >= due {
             // Keep the rhythm, unless it fell more than a picture behind.
-            self.picture_due = if started < due + interval { due } else { started };
+            self.picture_due = if started < due + interval {
+                due
+            } else {
+                started
+            };
             true
         } else {
             false
@@ -111,7 +115,11 @@ impl Pacing {
         // of drawing once per frame), as after a room has loaded.
         let refresh_hz = 1.0 / self.refresh_interval.as_secs_f64();
         let spare_ms = (650.0 - self.frame_cost_ms * frame_rate).max(100.0);
-        let divisor_for = |cost_ms: f64| (refresh_hz * cost_ms.max(0.5) / spare_ms).ceil().clamp(1.0, 16.0) as u32;
+        let divisor_for = |cost_ms: f64| {
+            (refresh_hz * cost_ms.max(0.5) / spare_ms)
+                .ceil()
+                .clamp(1.0, 16.0) as u32
+        };
         let needed = divisor_for(self.draw_cost_ms);
         let lasted = |since: &mut Option<Instant>, wanted: bool, secs: f64| {
             if !wanted {
@@ -121,7 +129,8 @@ impl Pacing {
             now.duration_since(*since.get_or_insert(now)).as_secs_f64() >= secs
         };
         let affordable = divisor_for(self.draw_cost_ms * 1.3);
-        let once_per_frame = (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
+        let once_per_frame =
+            (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
         let big_step = once_per_frame || affordable * 2 <= self.draw_divisor;
         if lasted(&mut self.divisor_up_since, needed > self.draw_divisor, 0.5)
             || lasted(

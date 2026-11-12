@@ -98,7 +98,9 @@ impl<E> Slot<E> {
             player,
             thread_state: RefCell::default(),
             hidden_tick: Cell::new(None),
-            perf: tab.and_then(turu::tab_bot).map(|bot| bot.flash.perf().clone()),
+            perf: tab
+                .and_then(turu::tab_bot)
+                .map(|bot| bot.flash.perf().clone()),
             extra,
         }
     }
@@ -111,7 +113,10 @@ impl<E> Slot<E> {
     fn lock(&self, active: bool) -> TabPlayer<'_> {
         TabPlayer {
             _swapped: (!active).then(|| SwappedIn::new(&self.thread_state)),
-            player: self.player.try_lock().expect("Player lock must be available"),
+            player: self
+                .player
+                .try_lock()
+                .expect("Player lock must be available"),
         }
     }
 
@@ -256,7 +261,8 @@ impl<E> Players<E> {
     /// player's state is swapped in while its guard lives.
     pub fn all(&self) -> impl Iterator<Item = (bool, TabPlayer<'_>)> {
         let active = self.active;
-        let order = std::iter::once(active).chain((0..self.slots.len()).filter(move |i| *i != active));
+        let order =
+            std::iter::once(active).chain((0..self.slots.len()).filter(move |i| *i != active));
         order.filter_map(move |i| Some((i == active, self.slots.get(i)?.lock(i == active))))
     }
 
@@ -285,13 +291,21 @@ impl<E> Players<E> {
     pub fn get(&self) -> Option<MutexGuard<'_, Player>> {
         // A lock that fails is a fatal error, not a lack of player.
         let slot = self.slots.get(self.active)?;
-        Some(slot.player.try_lock().expect("Player lock must be available"))
+        Some(
+            slot.player
+                .try_lock()
+                .expect("Player lock must be available"),
+        )
     }
 
     /// Runs `work` with the thread-local state of the player at `index` (a future of its).
     pub fn run_for<R>(&self, index: usize, work: impl FnOnce() -> R) -> R {
         let _swapped = (index != self.active)
-            .then(|| self.slots.get(index).map(|slot| SwappedIn::new(&slot.thread_state)))
+            .then(|| {
+                self.slots
+                    .get(index)
+                    .map(|slot| SwappedIn::new(&slot.thread_state))
+            })
             .flatten();
         work()
     }

@@ -19,7 +19,12 @@ thread_local! {
 
 /// After a UI frame: `ime` is the frame's IME output (the focused text field), `height` the
 /// screen's height and `keyboard` the keyboard's, in points. The move shows from the next frame.
-pub(crate) fn follow_text_field(ctx: &Context, ime: Option<&IMEOutput>, height: f32, keyboard: f32) {
+pub(crate) fn follow_text_field(
+    ctx: &Context,
+    ime: Option<&IMEOutput>,
+    height: f32,
+    keyboard: f32,
+) {
     let before = PANNED.get();
     let wanted = ime.filter(|_| keyboard > 0.0).and_then(|ime| {
         let layer = ctx.layer_id_at(ime.rect.center())?;

@@ -122,7 +122,8 @@ pub fn init() {
     ruffle_render_wgpu::set_memory_pressure(true);
     WATCH.with_borrow_mut(|watch| {
         // Android's SELinux policy may not let apps read it.
-        let max_maps = process_memory::max_map_count().map_or_else(String::new, |n| format!("; at most {n} maps"));
+        let max_maps = process_memory::max_map_count()
+            .map_or_else(String::new, |n| format!("; at most {n} maps"));
         watch.log.header = format!(
             "Turu {} memory, process {}, started {}{max_maps}\n",
             turu::VERSION,
@@ -137,7 +138,11 @@ pub fn init() {
 pub fn tick(player: &mut Player) {
     WATCH.with_borrow_mut(|watch| {
         let now = Instant::now();
-        if watch.log.last.is_none_or(|last| now.duration_since(last) >= LOG_EVERY) {
+        if watch
+            .log
+            .last
+            .is_none_or(|last| now.duration_since(last) >= LOG_EVERY)
+        {
             log_memory(&mut watch.log, now);
         }
         if now.duration_since(watch.last_sweep) >= SWEEP_EVERY {
@@ -176,7 +181,11 @@ pub fn tick(player: &mut Player) {
                 total >> 20
             );
         }
-        if low && watch.last_trim.is_none_or(|t| now.duration_since(t) >= TRIM_EVERY) {
+        if low
+            && watch
+                .last_trim
+                .is_none_or(|t| now.duration_since(t) >= TRIM_EVERY)
+        {
             watch.last_trim = Some(now);
             trim(player, "the phone is low on memory");
         }
@@ -194,12 +203,18 @@ fn check_own_budget(watch: &mut Watch, player: &mut Player, phone_memory: u64, n
     if over.is_some() != watch.over {
         watch.over = over.is_some();
         match &over {
-            Some(why) => tracing::warn!(target: "ruffle_aqw_perf", "Turu is over its memory budget: {why}"),
-            None => tracing::warn!(target: "ruffle_aqw_perf", "Turu is back within its memory budget: {reading}"),
+            Some(why) => {
+                tracing::warn!(target: "ruffle_aqw_perf", "Turu is over its memory budget: {why}")
+            }
+            None => {
+                tracing::warn!(target: "ruffle_aqw_perf", "Turu is back within its memory budget: {reading}")
+            }
         }
     }
     if let Some(why) = over
-        && watch.last_own_trim.is_none_or(|t| now.duration_since(t) >= OWN_TRIM_EVERY)
+        && watch
+            .last_own_trim
+            .is_none_or(|t| now.duration_since(t) >= OWN_TRIM_EVERY)
     {
         watch.last_own_trim = Some(now);
         trim(player, &why);
@@ -215,7 +230,9 @@ fn release_finished_gpu_work(player: &mut Player) {
     if ruffle_render_wgpu::device_lost().is_some() {
         return;
     }
-    if let Some(renderer) = <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut()) {
+    if let Some(renderer) =
+        <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
+    {
         let _ = renderer.descriptors().device.poll(wgpu::PollType::Poll);
     }
 }
@@ -225,7 +242,9 @@ fn release_finished_gpu_work(player: &mut Player) {
 /// in the log, the debug log, the notification, and to Sentry as a warning of its own (a lost
 /// device used to abort in `Device::poll`, Sentry TURU-ANDROID-7 on beta.6: a Redmi 10 2022).
 fn gpu_lost(why: &str) {
-    tracing::error!("The GPU stopped working ({why}); the game goes on without a picture until Turu restarts");
+    tracing::error!(
+        "The GPU stopped working ({why}); the game goes on without a picture until Turu restarts"
+    );
     turu::bot().logs.debug.push(format!(
         "Graphics: the GPU stopped working ({why}); restart Turu to see the game"
     ));
@@ -236,7 +255,9 @@ fn gpu_lost(why: &str) {
 /// for [`TRIM_UNUSED_SECS`]. On the engine thread.
 pub fn trim(player: &mut Player, why: &str) {
     let shapes = ruffle_core::evict_unused_shapes(TRIM_UNUSED_SECS);
-    if let Some(renderer) = <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut()) {
+    if let Some(renderer) =
+        <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
+    {
         renderer.aqw_trim_memory();
     }
     tracing::info!(
@@ -262,23 +283,40 @@ fn log_memory(log: &mut MemoryLog, now: Instant) {
         Some((then, before, before_threads)) => {
             let elapsed = now.duration_since(*then);
             process_memory::cpu_percent(before, &reading, elapsed).map(|percent| {
-                let busiest = process_memory::busiest_threads(before_threads, &threads, elapsed, BUSIEST_THREADS);
+                let busiest = process_memory::busiest_threads(
+                    before_threads,
+                    &threads,
+                    elapsed,
+                    BUSIEST_THREADS,
+                );
                 if busiest.is_empty() {
                     format!("CPU {percent:.0}% of a core, ")
                 } else {
-                    format!("CPU {percent:.0}% of a core ({}), ", process_memory::format_threads(&busiest))
+                    format!(
+                        "CPU {percent:.0}% of a core ({}), ",
+                        process_memory::format_threads(&busiest)
+                    )
                 }
             })
         }
-        None => reading.cpu_time.map(|time| format!("CPU {:.1} s so far, ", time.as_secs_f64())),
+        None => reading
+            .cpu_time
+            .map(|time| format!("CPU {:.1} s so far, ", time.as_secs_f64())),
     }
     .unwrap_or_default();
-    let mut line = format!("{} up {up} min: {cpu}{reading}", chrono::Local::now().format("%H:%M:%S"));
+    let mut line = format!(
+        "{} up {up} min: {cpu}{reading}",
+        chrono::Local::now().format("%H:%M:%S")
+    );
     tracing::info!("Memory: {cpu}{reading}");
     if detail {
-        let largest = process_memory::format_mappings(&process_memory::largest_mappings(LARGEST_MAPPINGS));
+        let largest =
+            process_memory::format_mappings(&process_memory::largest_mappings(LARGEST_MAPPINGS));
         tracing::info!("Largest mappings: {largest}");
-        crate::notify::breadcrumb("memory", &format!("up {up} min: {cpu}{reading}; largest: {largest}"));
+        crate::notify::breadcrumb(
+            "memory",
+            &format!("up {up} min: {cpu}{reading}; largest: {largest}"),
+        );
         line.push_str("\n    largest: ");
         line.push_str(&largest);
     }
@@ -329,7 +367,9 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeTrimMemory(
     _class: jni::objects::JClass<'_>,
     level: jni::sys::jint,
 ) {
-    crate::run_on_engine(move |player| trim(player, &format!("Android asked (trim level {level})")));
+    crate::run_on_engine(move |player| {
+        trim(player, &format!("Android asked (trim level {level})"))
+    });
 }
 
 #[cfg(test)]

@@ -951,7 +951,9 @@ impl LoadoutsWindow {
 
     /// VibeSkua `DeleteLoadout`'s question.
     fn delete_dialog(&mut self, ctx: &Context) {
-        let Some(index) = self.confirm_delete else { return };
+        let Some(index) = self.confirm_delete else {
+            return;
+        };
         let Some(name) = self.list.get(index).map(|l| l.name.clone()) else {
             self.confirm_delete = None;
             return;

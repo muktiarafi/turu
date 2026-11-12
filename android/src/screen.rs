@@ -19,7 +19,9 @@ use ndk::native_window::NativeWindow;
 use ruffle_core::Player;
 use ruffle_core::events::TouchPhase;
 use ruffle_render::backend::ViewportDimensions;
-use ruffle_render_wgpu::backend::{WgpuRenderBackend, create_wgpu_instance, request_adapter_and_device};
+use ruffle_render_wgpu::backend::{
+    WgpuRenderBackend, create_wgpu_instance, request_adapter_and_device,
+};
 use ruffle_render_wgpu::descriptors::Descriptors;
 use ruffle_render_wgpu::target::{RenderTarget, RenderTargetFrame};
 use std::any::Any;
@@ -101,7 +103,10 @@ pub struct Screen {
 
 /// The GPU, set up without a window (the API `graphics` asks for), the blit the screen draws the
 /// game with, and the renderer the player draws with, at `size`. None when no API works.
-pub fn gpu(graphics: Graphics, size: (u32, u32)) -> Option<(Arc<Descriptors>, Arc<Blit>, WgpuRenderBackend<MovieTexture>)> {
+pub fn gpu(
+    graphics: Graphics,
+    size: (u32, u32),
+) -> Option<(Arc<Descriptors>, Arc<Blit>, WgpuRenderBackend<MovieTexture>)> {
     let tries: &[wgpu::Backends] = match graphics {
         Graphics::Auto => &[wgpu::Backends::VULKAN, wgpu::Backends::GL],
         Graphics::Vulkan => &[wgpu::Backends::VULKAN],
@@ -133,7 +138,10 @@ pub fn gpu(graphics: Graphics, size: (u32, u32)) -> Option<(Arc<Descriptors>, Ar
                 Some(Arc::new(Descriptors::new(instance, adapter, device, queue)))
             }
             Err(e) => {
-                turu::bot().logs.debug.push(format!("Graphics: {backend:?} failed: {e}"));
+                turu::bot()
+                    .logs
+                    .debug
+                    .push(format!("Graphics: {backend:?} failed: {e}"));
                 None
             }
         }
@@ -163,9 +171,18 @@ struct EguiFinger {
 
 impl Screen {
     /// The screen in `window`, on the GPU [`gpu`] set up. None when the window can't be drawn in.
-    pub fn new(descriptors: Arc<Descriptors>, blit: Arc<Blit>, window: &NativeWindow, pixels_per_point: f32) -> Option<Self> {
+    pub fn new(
+        descriptors: Arc<Descriptors>,
+        blit: Arc<Blit>,
+        window: &NativeWindow,
+        pixels_per_point: f32,
+    ) -> Option<Self> {
         // SAFETY: the window stays valid until `detach`, which drops the surface first.
-        let surface = match unsafe { descriptors.wgpu_instance.create_surface_unsafe(crate::surface_target(window)) } {
+        let surface = match unsafe {
+            descriptors
+                .wgpu_instance
+                .create_surface_unsafe(crate::surface_target(window))
+        } {
             Ok(surface) => surface,
             Err(e) => {
                 tracing::error!("Couldn't draw in the window: {e}");
@@ -173,10 +190,13 @@ impl Screen {
             }
         };
         let formats = surface.get_capabilities(&descriptors.adapter).formats;
-        let format = [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm]
-            .into_iter()
-            .find(|f| formats.contains(f))
-            .or_else(|| formats.first().copied())?;
+        let format = [
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Bgra8Unorm,
+        ]
+        .into_iter()
+        .find(|f| formats.contains(f))
+        .or_else(|| formats.first().copied())?;
         let pipeline = blit.pipeline(&descriptors.device, format);
         let egui = egui::Context::default();
         egui.set_fonts(system_fonts());
@@ -316,7 +336,13 @@ impl Screen {
         if size == self.size {
             return;
         }
-        tracing::info!("window now {}x{} (was {}x{})", size.0, size.1, self.size.0, self.size.1);
+        tracing::info!(
+            "window now {}x{} (was {}x{})",
+            size.0,
+            size.1,
+            self.size.0,
+            self.size.1
+        );
         self.size = size;
         self.configure();
         if self.surface.is_some() {
@@ -358,7 +384,10 @@ impl Screen {
         let left = f64::from(self.left());
         let mouse = match touch {
             Touch::Down(id, x, y) => {
-                let pos = egui::pos2(x as f32 / self.pixels_per_point, y as f32 / self.pixels_per_point);
+                let pos = egui::pos2(
+                    x as f32 / self.pixels_per_point,
+                    y as f32 / self.pixels_per_point,
+                );
                 let on_layer = self
                     .egui
                     .layer_id_at(pos)
@@ -370,14 +399,20 @@ impl Screen {
                         if let Some(finger) = other {
                             self.egui_touch(egui::TouchPhase::End, finger.at);
                         }
-                        self.egui_finger = Some(EguiFinger { id, on_ui, at: (x, y) });
+                        self.egui_finger = Some(EguiFinger {
+                            id,
+                            on_ui,
+                            at: (x, y),
+                        });
                         self.egui_touch(egui::TouchPhase::Start, (x, y));
                     }
                 }
                 if on_ui {
                     self.ui_fingers.push(id);
                     Vec::new()
-                } else if self.game_touches.holding() && player.handle_touch(TouchPhase::Begin, id, x - left, y - top) {
+                } else if self.game_touches.holding()
+                    && player.handle_touch(TouchPhase::Begin, id, x - left, y - top)
+                {
                     self.touch_points.push((id, (x, y)));
                     Vec::new()
                 } else {
@@ -389,7 +424,11 @@ impl Screen {
                     finger.at = (x, y);
                     self.egui_touch(egui::TouchPhase::Move, (x, y));
                 }
-                if let Some((_, at)) = self.touch_points.iter_mut().find(|(finger, _)| *finger == id) {
+                if let Some((_, at)) = self
+                    .touch_points
+                    .iter_mut()
+                    .find(|(finger, _)| *finger == id)
+                {
                     *at = (x, y);
                     player.handle_touch(TouchPhase::Move, id, x - left, y - top);
                     Vec::new()
@@ -404,7 +443,11 @@ impl Screen {
                     self.egui_finger = None;
                     self.egui_touch(egui::TouchPhase::End, (x, y));
                 }
-                if let Some(i) = self.touch_points.iter().position(|&(finger, _)| finger == id) {
+                if let Some(i) = self
+                    .touch_points
+                    .iter()
+                    .position(|&(finger, _)| finger == id)
+                {
                     self.touch_points.swap_remove(i);
                     player.handle_touch(TouchPhase::End, id, x - left, y - top);
                     Vec::new()
@@ -432,7 +475,8 @@ impl Screen {
     }
 
     fn egui_touch(&mut self, phase: egui::TouchPhase, (x, y): (f64, f64)) {
-        self.events.extend(input::egui_events(phase, x, y, self.pixels_per_point));
+        self.events
+            .extend(input::egui_events(phase, x, y, self.pixels_per_point));
     }
 
     /// A key: the UI's while a text box of it has the focus, else the game's (and HotKeys'). A game text field
@@ -444,7 +488,9 @@ impl Screen {
         }
         // Turu's HotKeys see the press too (no text: nothing types into a window).
         self.events.extend(key.egui_key_events());
-        let full = key.typed.is_some() && key.control.is_none() && Typing::read(player).is_some_and(|t| t.is_full());
+        let full = key.typed.is_some()
+            && key.control.is_none()
+            && Typing::read(player).is_some_and(|t| t.is_full());
         for event in key.player_events() {
             if !(full && matches!(event, ruffle_core::PlayerEvent::TextInput { .. })) {
                 player.handle_event(event);
@@ -458,7 +504,10 @@ impl Screen {
     /// (presenting waits for vsync), with a new in-between picture when [`Pacing`] says one is
     /// due; ticks only plan (as the desktop's `pace_interpolation`).
     pub fn step(&mut self, player: &mut Player, step: Step) -> Option<Instant> {
-        if let Step::Ticked { frame_ms: Some(frame_ms) } = step {
+        if let Step::Ticked {
+            frame_ms: Some(frame_ms),
+        } = step
+        {
             self.pacing.record_frame(frame_ms);
         }
         if self.surface.is_none() {
@@ -470,9 +519,9 @@ impl Screen {
             && player.is_playing()
             && !turu::headless_mode()
             && {
-            self.update_refresh_rate();
-            self.pacing.plan(Instant::now(), player.frame_rate())
-        };
+                self.update_refresh_rate();
+                self.pacing.plan(Instant::now(), player.frame_rate())
+            };
         match (step, interpolating) {
             (Step::Ticked { .. }, false) => {
                 // Faster than the display (Set FPS above its refresh rate): presenting each tick
@@ -493,7 +542,9 @@ impl Screen {
             }
             // Turned off, or the movie stopped, since the last draw was asked for.
             (Step::Due, false) => None,
-            (Step::Ticked { .. }, true) => Some(self.draw_started + self.pacing.refresh_interval() / 2),
+            (Step::Ticked { .. }, true) => {
+                Some(self.draw_started + self.pacing.refresh_interval() / 2)
+            }
             (Step::Due, true) => {
                 let started = Instant::now();
                 let new_picture = self.pacing.new_picture_due(started);
@@ -516,14 +567,19 @@ impl Screen {
     fn behind(&self, player: &Player) -> bool {
         player.is_playing()
             && self.draw_started.elapsed() < MAX_DRAW_GAP
-            && player.time_til_next_frame() * 2 < Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0))
+            && player.time_til_next_frame() * 2
+                < Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0))
     }
 
     /// A game running faster than 60 FPS (Options > Game > Set FPS) asks the activity for a display
     /// mode that keeps up with it: many 90 and 120 Hz phones hold an app at 60 Hz unless it asks.
     /// At 60 or less the system chooses again (saving battery).
     fn prefer_refresh_rate(&mut self, frame_rate: f64) {
-        let want = if frame_rate > 61.0 { frame_rate.round() as u32 } else { 0 };
+        let want = if frame_rate > 61.0 {
+            frame_rate.round() as u32
+        } else {
+            0
+        };
         if self.asked_refresh != Some(want) {
             self.asked_refresh = Some(want);
             crate::ui::prefer_refresh_rate(want);
@@ -587,7 +643,8 @@ impl Screen {
         let acquired = surface.get_current_texture();
         crate::frame_perf::add(crate::frame_perf::Phase::Acquire, acquire_started.elapsed());
         let frame = match acquired {
-            wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                 self.configure();
                 return;
@@ -655,9 +712,9 @@ impl Screen {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Turu screen"),
         });
-        let mut buffers = self
-            .egui_renderer
-            .update_buffers(device, queue, &mut encoder, &primitives, &screen);
+        let mut buffers =
+            self.egui_renderer
+                .update_buffers(device, queue, &mut encoder, &primitives, &screen);
         {
             let view = frame.texture.create_view(&Default::default());
             let mut pass = encoder
@@ -676,7 +733,8 @@ impl Screen {
                 })
                 .forget_lifetime();
             if let Some(movie) =
-                <dyn Any>::downcast_ref::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut()).map(|r| r.target())
+                <dyn Any>::downcast_ref::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
+                    .map(|r| r.target())
             {
                 let top = self.top();
                 pass.set_viewport(
@@ -745,7 +803,10 @@ impl Typing {
             }
             let text = field.text();
             // Positions in the field are in its code units; the strip counts characters.
-            let chars_to = |at: usize| text.slice(..at.min(text.len())).map_or(0, |before| before.chars().count());
+            let chars_to = |at: usize| {
+                text.slice(..at.min(text.len()))
+                    .map_or(0, |before| before.chars().count())
+            };
             let selection = field.selection();
             let caret = chars_to(selection.map_or(text.len(), |s| s.to()));
             let selected = selection
@@ -757,7 +818,12 @@ impl Typing {
             } else {
                 text.to_utf8_lossy().replace(['\r', '\n'], " ")
             };
-            Some(Self { text, caret, length, selected })
+            Some(Self {
+                text,
+                caret,
+                length,
+                selected,
+            })
         })
     }
 
@@ -770,7 +836,10 @@ impl Typing {
         let bottom = (screen.bottom() - keyboard).max(screen.top() + Self::HEIGHT);
         let rect = egui::Rect::from_min_max(
             egui::pos2(screen.left() + cutout.0, bottom - Self::HEIGHT),
-            egui::pos2((screen.right() - cutout.1).max(screen.left() + cutout.0), bottom),
+            egui::pos2(
+                (screen.right() - cutout.1).max(screen.left() + cutout.0),
+                bottom,
+            ),
         );
         // An area of its own, above the windows: a touch on it stays off the game, so the field keeps the focus.
         egui::Area::new(egui::Id::new("turu_typing"))
@@ -784,21 +853,36 @@ impl Typing {
                 let mut inner = rect.shrink2(egui::vec2(16.0, 8.0));
                 // The count on the right, red at the limit.
                 let count = format!("{}/{}", self.length, Self::MAX_CHARS);
-                let color = if self.length >= Self::MAX_CHARS { DANGER } else { MUTED };
+                let color = if self.length >= Self::MAX_CHARS {
+                    DANGER
+                } else {
+                    MUTED
+                };
                 let count = painter.layout_no_wrap(count, egui::FontId::proportional(13.0), color);
-                let count_at = egui::pos2(inner.right() - count.size().x, inner.center().y - count.size().y / 2.0);
+                let count_at = egui::pos2(
+                    inner.right() - count.size().x,
+                    inner.center().y - count.size().y / 2.0,
+                );
                 inner.max.x -= count.size().x + 16.0;
                 painter.galley(count_at, count, color);
                 let font = egui::FontId::proportional(18.0);
                 if self.text.is_empty() {
                     let galley = painter.layout_no_wrap("Typing in the game".into(), font, MUTED);
-                    let at = egui::pos2(inner.left() + 4.0, inner.center().y - galley.size().y / 2.0);
+                    let at =
+                        egui::pos2(inner.left() + 4.0, inner.center().y - galley.size().y / 2.0);
                     painter.galley(at, galley, MUTED);
-                    painter.vline(inner.left(), inner.y_range(), egui::Stroke::new(2.0, ACCENT));
+                    painter.vline(
+                        inner.left(),
+                        inner.y_range(),
+                        egui::Stroke::new(2.0, ACCENT),
+                    );
                     return;
                 }
                 let galley = painter.layout_no_wrap(self.text.clone(), font, TEXT);
-                let caret = galley.pos_from_cursor(egui::text::CCursor::new(self.caret)).min.x;
+                let caret = galley
+                    .pos_from_cursor(egui::text::CCursor::new(self.caret))
+                    .min
+                    .x;
                 // Scrolled so the caret is in sight, as the field itself scrolls.
                 let shift = (caret - inner.width() + 4.0).max(0.0);
                 let left = inner.left() - shift;
@@ -808,8 +892,16 @@ impl Typing {
                     let selection = egui::Rect::from_x_y_ranges(x(start)..=x(end), inner.y_range());
                     clipped.rect_filled(selection, 2.0, ACCENT.gamma_multiply(0.35));
                 }
-                clipped.galley(egui::pos2(left, inner.center().y - galley.size().y / 2.0), galley, TEXT);
-                clipped.vline(left + caret, inner.y_range(), egui::Stroke::new(2.0, ACCENT));
+                clipped.galley(
+                    egui::pos2(left, inner.center().y - galley.size().y / 2.0),
+                    galley,
+                    TEXT,
+                );
+                clipped.vline(
+                    left + caret,
+                    inner.y_range(),
+                    egui::Stroke::new(2.0, ACCENT),
+                );
             });
     }
 }
@@ -818,7 +910,11 @@ impl Typing {
 /// `load_system_fonts` adds the system's. Each group is the first of its files that's there.
 fn system_fonts() -> egui::FontDefinitions {
     const GROUPS: [&[&str]; 2] = [
-        &["RobotoStatic-Regular.ttf", "Roboto-Regular.ttf", "DroidSans.ttf"],
+        &[
+            "RobotoStatic-Regular.ttf",
+            "Roboto-Regular.ttf",
+            "DroidSans.ttf",
+        ],
         &["NotoSansSymbols-Regular-Subsetted.ttf"],
     ];
     let mut fonts = egui::FontDefinitions::default();
@@ -831,8 +927,14 @@ fn system_fonts() -> egui::FontDefinitions {
             tracing::warn!("No system font of {files:?}");
             continue;
         };
-        fonts.font_data.insert(file.to_owned(), Arc::new(egui::FontData::from_owned(data)));
-        fonts.families.entry(egui::FontFamily::Proportional).or_default().push(file.to_owned());
+        fonts
+            .font_data
+            .insert(file.to_owned(), Arc::new(egui::FontData::from_owned(data)));
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .push(file.to_owned());
     }
     turu_frontend::gui::turu::theme::add_symbol_font(&mut fonts);
     fonts
@@ -851,7 +953,9 @@ impl Blit {
     fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Turu blit"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../../app/src/gui/blit.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "../../app/src/gui/blit.wgsl"
+            ))),
         });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
@@ -942,7 +1046,12 @@ impl Blit {
         })
     }
 
-    fn draw(&self, pipeline: &wgpu::RenderPipeline, bind_group: &wgpu::BindGroup, pass: &mut wgpu::RenderPass<'static>) {
+    fn draw(
+        &self,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+        pass: &mut wgpu::RenderPass<'static>,
+    ) {
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertices.slice(..));

@@ -57,12 +57,15 @@ pub struct Options {
     /// Several clients share AIR's one stage. The game, skua and the SWFs the game loads find
     /// the game as `stage.getChildAt(0)`; each `x.stage.getChildAt(0)` (and `stage`, through the
     /// scope, then `getChildAt(0)`) becomes `TuruStage.rootOf(x)`, the game `x` belongs to.
-    /// In skua, its `stage.removeChildAt(0)` (itself, before it adds the game) becomes
-    /// `TuruStage.removeOwn(this)`.
+    /// `x.stage.mouseX` and `mouseY` become `TuruStage.rootOf(x).mouseX` (the host scales each
+    /// game to fit AIR's view). In skua, its `stage.removeChildAt(0)` (itself, before it adds the
+    /// game) becomes `TuruStage.removeOwn(this)`.
     pub shared_stage: bool,
-    /// skua's `ExternalInterface` becomes this host class instead of [`HOST_EXTERNAL`] (a
-    /// client the engine doesn't drive).
-    pub external: Option<&'static str>,
+    /// Which of the host's game clients this skua is: its `ExternalInterface` and `new
+    /// Loader()` become that client's own host classes, [`HOST_EXTERNAL`] and [`HOST_LOADER`]
+    /// with the number after them (`TuruExternal1`, `TuruLoader1`), so the host knows whose
+    /// calls and game they are. `None`: the classes without a number.
+    pub client: Option<u8>,
 }
 
 /// Which SWF is being patched: what its loaders become, and what it must have.
@@ -100,7 +103,8 @@ pub struct Report {
     /// Method bodies whose bytecode couldn't be decoded, left as they were.
     pub undecodable: Vec<String>,
     /// [`Options::shared_stage`]: `stage.getChildAt(0)` made `TuruStage.rootOf` ("getChildAt"),
-    /// skua's `removeChildAt(0)` made `TuruStage.removeOwn` ("removeChildAt").
+    /// `stage.mouseX`/`mouseY` the game's own ("mouse"), skua's `removeChildAt(0)` made
+    /// `TuruStage.removeOwn` ("removeChildAt").
     pub stage_roots: Vec<Site>,
     /// [`Options::shared_stage`]: `getChildAt(0)` right after a `stage` that wasn't rewritten (a
     /// branch lands inside it), so it still finds stage child 0.
@@ -264,9 +268,11 @@ pub fn patch_abc_with(
     let mut url_loaders = HashSet::new();
     let mut externals = HashSet::new();
     let mut drops = HashMap::new();
-    // `stage`, `getChildAt` and `removeChildAt`, in any namespace ([`Options::shared_stage`]).
+    // `stage`, `getChildAt`, `removeChildAt`, `mouseX` and `mouseY`, in any namespace
+    // ([`Options::shared_stage`]).
     let mut stage_names = HashSet::new();
     let mut get_child_at = HashSet::new();
+    let mut mouse = HashSet::new();
     let mut remove_child_at = HashSet::new();
     // skua's `Main.stg`, the stage it keeps.
     let mut skua_stage = HashSet::new();
@@ -281,6 +287,9 @@ pub fn patch_abc_with(
             }
             Some("getChildAt") => {
                 get_child_at.insert(index);
+            }
+            Some("mouseX" | "mouseY") => {
+                mouse.insert(index);
             }
             Some("removeChildAt") if target == Target::Skua => {
                 remove_child_at.insert(index);
@@ -303,16 +312,16 @@ pub fn patch_abc_with(
     // What `new Loader()` and `ExternalInterface` become.
     let (loader, external) = match target {
         Target::Game => (air_loader.filter(|_| !loaders.is_empty()), None),
-        Target::Skua => (
-            (!loaders.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", HOST_LOADER)),
-            (!externals.is_empty()).then(|| {
-                add_qname(
-                    &mut abc.constant_pool,
-                    "",
-                    options.external.unwrap_or(HOST_EXTERNAL),
-                )
-            }),
-        ),
+        Target::Skua => {
+            let client = options.client.map(|n| n.to_string()).unwrap_or_default();
+            let host_loader = format!("{HOST_LOADER}{client}");
+            let host_external = format!("{HOST_EXTERNAL}{client}");
+            (
+                (!loaders.is_empty()).then(|| add_qname(&mut abc.constant_pool, "", &host_loader)),
+                (!externals.is_empty())
+                    .then(|| add_qname(&mut abc.constant_pool, "", &host_external)),
+            )
+        }
     };
     // What `new URLLoader()` in the client's `AirLoader` becomes.
     let url_loader = (target == Target::Game && air_loader.is_some() && !url_loaders.is_empty())
@@ -320,7 +329,7 @@ pub fn patch_abc_with(
     // `TuruStage`, `rootOf` and `removeOwn`, for a shared stage.
     let stage_host = (options.shared_stage
         && !stage_names.is_empty()
-        && (!get_child_at.is_empty() || !remove_child_at.is_empty()))
+        && (!get_child_at.is_empty() || !remove_child_at.is_empty() || !mouse.is_empty()))
     .then(|| {
         let pool = &mut abc.constant_pool;
         (
@@ -393,7 +402,42 @@ pub fn patch_abc_with(
         if let Some((stage_class, root_of, remove_own)) = stage_host {
             let targets = jump_targets(&ops, &body.exceptions);
             let inside = |i: usize| targets.contains(&ops[i].pos);
-            for i in 0..ops.len().saturating_sub(2) {
+            // `x.stage` (`getproperty stage`), or `stage` through the scope (`getlex stage`, where
+            // `findpropstrict` leaves the object that has it): what puts `x` on the stack.
+            let receiver = |op: &Op| match *op {
+                Op::GetProperty { index } if stage_names.contains(&index.0) => Some(vec![]),
+                Op::GetLex { index } if stage_names.contains(&index.0) => {
+                    Some(vec![Op::FindPropStrict { index }])
+                }
+                _ => None,
+            };
+            for i in 0..ops.len().saturating_sub(1) {
+                // `x.stage.mouseX` (or `mouseY`): `TuruStage.rootOf(x).mouseX`, the game's own,
+                // which is what the stage's was before the host scaled the games to fit AIR's
+                // view (`TuruAirHost.fit`).
+                if let Op::GetProperty { index: prop } = ops[i + 1].op
+                    && mouse.contains(&prop.0)
+                    && let Some(mut first) = receiver(&ops[i].op)
+                {
+                    if inside(i + 1) {
+                        stage_missed += 1;
+                    } else {
+                        first.extend([
+                            Op::GetLex { index: stage_class },
+                            Op::Swap,
+                            Op::CallProperty {
+                                index: root_of,
+                                num_args: 1,
+                            },
+                        ]);
+                        stage_edits.insert(i, first);
+                        stage_sites.push("mouse");
+                    }
+                    continue;
+                }
+                if i + 2 >= ops.len() {
+                    continue;
+                }
                 let zero = matches!(ops[i + 1].op, Op::PushByte { value: 0 });
                 // `x.stage` (or `stage` through the scope), `0`, `getChildAt(1 arg)`.
                 if let Op::CallProperty {
@@ -403,15 +447,9 @@ pub fn patch_abc_with(
                     && zero
                     && get_child_at.contains(&call.0)
                 {
-                    let receiver = match ops[i].op {
-                        Op::GetProperty { index } if stage_names.contains(&index.0) => Some(vec![]),
-                        // `getlex stage`: `findpropstrict` leaves the object that has it.
-                        Op::GetLex { index } if stage_names.contains(&index.0) => {
-                            Some(vec![Op::FindPropStrict { index }])
-                        }
-                        _ => None,
+                    let Some(mut first) = receiver(&ops[i].op) else {
+                        continue;
                     };
-                    let Some(mut first) = receiver else { continue };
                     if inside(i + 1) || inside(i + 2) {
                         stage_missed += 1;
                         continue;

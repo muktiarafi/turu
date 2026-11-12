@@ -54,7 +54,11 @@ impl MapCells {
         let mut reached: Vec<(&str, &str)> = vec![(from, "")];
         let mut queue = VecDeque::from([from]);
         while let Some(cell) = queue.pop_front() {
-            for door in self.doors.iter().filter(|d| d.cell.eq_ignore_ascii_case(cell)) {
+            for door in self
+                .doors
+                .iter()
+                .filter(|d| d.cell.eq_ignore_ascii_case(cell))
+            {
                 if reached
                     .iter()
                     .any(|(known, _)| known.eq_ignore_ascii_case(&door.to_cell))
@@ -125,7 +129,8 @@ pub fn scan(swf_data: &[u8]) -> Result<MapCells, String> {
                 let name = place.name.map(|n| n.to_string_lossy(swf::UTF_8));
                 match place.action {
                     swf::PlaceObjectAction::Place(id) | swf::PlaceObjectAction::Replace(id) => {
-                        let name = name.or_else(|| display.get(&place.depth).and_then(|(_, n)| n.clone()));
+                        let name =
+                            name.or_else(|| display.get(&place.depth).and_then(|(_, n)| n.clone()));
                         display.insert(place.depth, (id, name));
                     }
                     swf::PlaceObjectAction::Modify => {
@@ -152,7 +157,9 @@ pub fn scan(swf_data: &[u8]) -> Result<MapCells, String> {
                 let mut shown: Vec<(u16, &String)> = display
                     .iter()
                     .filter(|(_, (id, _))| pad_symbols.contains(id))
-                    .filter_map(|(depth, (_, name))| Some((*depth, name.as_ref().filter(|n| !n.is_empty())?)))
+                    .filter_map(|(depth, (_, name))| {
+                        Some((*depth, name.as_ref().filter(|n| !n.is_empty())?))
+                    })
                     .collect();
                 shown.sort();
                 for (_, name) in shown {
@@ -270,7 +277,9 @@ fn is_pad_class(class: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swf::{FrameLabel, PlaceObject, PlaceObjectAction, RemoveObject, SwfStr, SymbolClassLink, Tag};
+    use swf::{
+        FrameLabel, PlaceObject, PlaceObjectAction, RemoveObject, SwfStr, SymbolClassLink, Tag,
+    };
 
     fn place(depth: u16, action: PlaceObjectAction, name: Option<&'static str>) -> Tag<'static> {
         Tag::PlaceObject(Box::new(PlaceObject {
@@ -415,7 +424,9 @@ mod tests {
             }],
         };
         let mut bytes = Vec::new();
-        swf::avm2::write::Writer::new(&mut bytes).write(file).unwrap();
+        swf::avm2::write::Writer::new(&mut bytes)
+            .write(file)
+            .unwrap();
         bytes
     }
 
@@ -426,7 +437,8 @@ mod tests {
         // __id0_.tCell = "r2"; __id0_.tPad = "Left"; __id1_.tCell = "Enter"; __id1_.tPad = "Right";
         // __id1_.altCell = "r3" (no pad); __id1_.intValue = "x" (not a door parameter).
         const NAMES: [&str; 12] = [
-            "__id0_", "__id1_", "tCell", "tPad", "altCell", "intValue", "r2", "Left", "Enter", "Right", "r3", "x",
+            "__id0_", "__id1_", "tCell", "tPad", "altCell", "intValue", "r2", "Left", "Enter",
+            "Right", "r3", "x",
         ];
         let set = |object: u32, property: u32, value: u32| {
             [
@@ -516,10 +528,19 @@ mod tests {
         assert_eq!(map.arrival_pad("r4", "r2"), None);
         assert_eq!(map.arrival_pad("r2", "r2"), None);
 
-        assert_eq!(map.jump_pad("r2", Some("r3"), "Left").as_deref(), Some("Right"));
-        assert_eq!(map.jump_pad("Enter", Some("r2"), "").as_deref(), Some("Right"));
+        assert_eq!(
+            map.jump_pad("r2", Some("r3"), "Left").as_deref(),
+            Some("Right")
+        );
+        assert_eq!(
+            map.jump_pad("Enter", Some("r2"), "").as_deref(),
+            Some("Right")
+        );
         // No walk, or no origin: the usual choice.
-        assert_eq!(map.jump_pad("r4", Some("r2"), "Down").as_deref(), Some("Down"));
+        assert_eq!(
+            map.jump_pad("r4", Some("r2"), "Down").as_deref(),
+            Some("Down")
+        );
         assert_eq!(map.jump_pad("Enter", None, "").as_deref(), Some("Spawn"));
         assert_eq!(map.jump_pad("r5", Some("r2"), ""), None);
     }
@@ -528,7 +549,10 @@ mod tests {
     fn picks_a_pad_the_cell_has() {
         let pads = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(pick(&pads(&["Spawn", "Left"]), "Enter", "Right"), "Spawn");
-        assert_eq!(pick(&pads(&["Center", "Right", "Left"]), "r2", "Right"), "Right");
+        assert_eq!(
+            pick(&pads(&["Center", "Right", "Left"]), "r2", "Right"),
+            "Right"
+        );
         assert_eq!(pick(&pads(&["Center", "Right", "Left"]), "r2", ""), "Left");
         assert_eq!(pick(&pads(&["Bottom", "Top"]), "Slugfit", "Left"), "Bottom");
     }
@@ -542,7 +566,10 @@ mod tests {
         let data = std::fs::read(path).unwrap();
         let map = scan(&data).unwrap();
         let loaded = swf::decompress_swf(&data[..]).unwrap();
-        assert_eq!(scan(&swf_file(&loaded.header, &loaded.data).unwrap()).unwrap(), map);
+        assert_eq!(
+            scan(&swf_file(&loaded.header, &loaded.data).unwrap()).unwrap(),
+            map
+        );
         for (cell, pads) in &map.cells {
             let doors: Vec<String> = map
                 .doors

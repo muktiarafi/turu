@@ -5,8 +5,8 @@
 
 use ndk::audio::{AudioDirection, AudioFormat, AudioStream, AudioStreamBuilder, AudioStreamState};
 use ruffle_core::backend::audio::{
-    AudioBackend, AudioMixer, DecodeError, RegisterError, SoundHandle, SoundInstanceHandle, SoundStreamInfo,
-    SoundTransform, swf,
+    AudioBackend, AudioMixer, DecodeError, RegisterError, SoundHandle, SoundInstanceHandle,
+    SoundStreamInfo, SoundTransform, swf,
 };
 use ruffle_core::impl_audio_mixer_backend;
 
@@ -42,7 +42,9 @@ impl AAudioAudioBackend {
             .performance_mode(ndk::audio::AudioPerformanceMode::LowLatency)
             .data_callback(Box::new(move |_stream, data, frames| {
                 // SAFETY: AAudio hands a buffer of `frames` stereo f32 frames.
-                let samples = unsafe { std::slice::from_raw_parts_mut(data.cast::<f32>(), frames as usize * 2) };
+                let samples = unsafe {
+                    std::slice::from_raw_parts_mut(data.cast::<f32>(), frames as usize * 2)
+                };
                 proxy.mix(samples);
                 ndk::audio::AudioCallbackResult::Continue
             }))
@@ -109,7 +111,8 @@ fn play_beep() -> Result<(), Error> {
         .sample_rate(RATE as i32)
         .data_callback(Box::new(move |_stream, data, frames| {
             // SAFETY: AAudio hands a buffer of `frames` mono f32 frames.
-            let samples = unsafe { std::slice::from_raw_parts_mut(data.cast::<f32>(), frames as usize) };
+            let samples =
+                unsafe { std::slice::from_raw_parts_mut(data.cast::<f32>(), frames as usize) };
             let mut frame = counter.load(Ordering::Relaxed);
             for sample in samples {
                 *sample = beep_sample(frame, RATE);

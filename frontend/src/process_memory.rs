@@ -123,7 +123,12 @@ pub fn parse_thread_stat(tid: u32, stat: &str) -> Option<ThreadCpu> {
 /// names with their share of a core in percent, busiest first, threads of one name added up (a
 /// pool's workers, the GPU driver's), and none under 1%. A thread not there before started since,
 /// so all its time counts; one whose time went down is a new thread with an old one's id.
-pub fn busiest_threads(before: &[ThreadCpu], now: &[ThreadCpu], elapsed: Duration, n: usize) -> Vec<(String, f64)> {
+pub fn busiest_threads(
+    before: &[ThreadCpu],
+    now: &[ThreadCpu],
+    elapsed: Duration,
+    n: usize,
+) -> Vec<(String, f64)> {
     if elapsed.is_zero() {
         return Vec::new();
     }
@@ -259,22 +264,31 @@ fn field_kb(text: &str, name: &str) -> Option<u64> {
 
 /// Groups `maps` lines by name (anonymous ones without a name as `[anon]`), largest first.
 pub fn group_mappings(maps: impl BufRead, n: usize) -> Vec<(String, u64, u64)> {
-    let mut groups: std::collections::HashMap<String, (u64, u64)> = std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<String, (u64, u64)> =
+        std::collections::HashMap::new();
     for line in maps.lines().map_while(Result::ok) {
         // start-end perms offset dev inode [name]
         let mut fields = line.splitn(6, ' ');
         let Some((start, end)) = fields.next().and_then(|range| range.split_once('-')) else {
             continue;
         };
-        let (Ok(start), Ok(end)) = (u64::from_str_radix(start, 16), u64::from_str_radix(end, 16)) else {
+        let (Ok(start), Ok(end)) = (u64::from_str_radix(start, 16), u64::from_str_radix(end, 16))
+        else {
             continue;
         };
-        let name = fields.nth(4).map(str::trim).filter(|name| !name.is_empty()).unwrap_or("[anon]");
+        let name = fields
+            .nth(4)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("[anon]");
         let group = groups.entry(name.to_owned()).or_default();
         group.0 += end.saturating_sub(start);
         group.1 += 1;
     }
-    let mut groups: Vec<_> = groups.into_iter().map(|(name, (size, count))| (name, size, count)).collect();
+    let mut groups: Vec<_> = groups
+        .into_iter()
+        .map(|(name, (size, count))| (name, size, count))
+        .collect();
     groups.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     groups.truncate(n);
     groups
@@ -328,17 +342,24 @@ mod tests {
     #[test]
     fn reads_cpu_time_after_the_name() {
         // A name with a space and a parenthesis; utime 1234, stime 566 ticks.
-        let stat = "4043 (Turu (x) y) S 1 4043 0 0 -1 4194624 9000 0 0 0 1234 566 0 0 20 0 60 0 100 0";
+        let stat =
+            "4043 (Turu (x) y) S 1 4043 0 0 -1 4194624 9000 0 0 0 1234 566 0 0 20 0 60 0 100 0";
         assert_eq!(parse_cpu_time(stat), Some(Duration::from_secs(18)));
         assert_eq!(parse_cpu_time("4043 (turu) S 1"), None);
     }
 
     #[test]
     fn gives_the_share_of_a_core_between_two_readings() {
-        let at = |secs| Reading { cpu_time: Some(Duration::from_secs(secs)), ..Default::default() };
+        let at = |secs| Reading {
+            cpu_time: Some(Duration::from_secs(secs)),
+            ..Default::default()
+        };
         let percent = cpu_percent(&at(10), &at(19), Duration::from_secs(60)).unwrap();
         assert!((percent - 15.0).abs() < 1e-9);
-        assert_eq!(cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)), None);
+        assert_eq!(
+            cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)),
+            None
+        );
         assert_eq!(cpu_percent(&at(10), &at(19), Duration::ZERO), None);
     }
 
@@ -353,7 +374,11 @@ mod tests {
 
     #[test]
     fn names_the_busiest_threads_between_two_readings() {
-        let thread = |tid, name: &str, secs| ThreadCpu { tid, name: name.into(), time: Duration::from_secs(secs) };
+        let thread = |tid, name: &str, secs| ThreadCpu {
+            tid,
+            name: name.into(),
+            time: Duration::from_secs(secs),
+        };
         let before = [
             thread(1, "Turu Engine", 100),
             thread(2, "Script Thread", 10),
@@ -363,24 +388,31 @@ mod tests {
             thread(9, "gone", 70),
         ];
         let now = [
-            thread(1, "Turu Engine", 136), // 36 s: 60%
+            thread(1, "Turu Engine", 136),  // 36 s: 60%
             thread(2, "Script Thread", 22), // 12 s: 20%
-            thread(3, "pool", 8),          // 3 s and
-            thread(4, "pool", 6),          // 1 s: 4 s, 6.7%
-            thread(5, "idle", 50),         // nothing
-            thread(6, "new", 3),           // started since: 3 s, 5%
-            thread(9, "reused", 2),        // a new thread on an old id: 2 s, 3.3%
+            thread(3, "pool", 8),           // 3 s and
+            thread(4, "pool", 6),           // 1 s: 4 s, 6.7%
+            thread(5, "idle", 50),          // nothing
+            thread(6, "new", 3),            // started since: 3 s, 5%
+            thread(9, "reused", 2),         // a new thread on an old id: 2 s, 3.3%
         ];
         let busiest = busiest_threads(&before, &now, Duration::from_secs(60), 4);
         let names: Vec<_> = busiest.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["Turu Engine", "Script Thread", "pool", "new"]);
-        assert_eq!(format_threads(&busiest), "Turu Engine 60%, Script Thread 20%, pool 7%, new 5%");
+        assert_eq!(
+            format_threads(&busiest),
+            "Turu Engine 60%, Script Thread 20%, pool 7%, new 5%"
+        );
         assert!(busiest_threads(&before, &now, Duration::ZERO, 4).is_empty());
     }
 
     #[test]
     fn says_when_turu_is_over_its_own_budget() {
-        let with = |rss_mb: u64, maps| Reading { rss: rss_mb * MB, maps, ..Default::default() };
+        let with = |rss_mb: u64, maps| Reading {
+            rss: rss_mb * MB,
+            maps,
+            ..Default::default()
+        };
         // A Pixel 8 (7572 MB): 20% is 1514 MB.
         assert_eq!(
             over_budget(&with(1895, Some(9000)), 7572 * MB).as_deref(),
@@ -419,6 +451,13 @@ not a mapping
             format_mappings(&groups[..2]),
             "[anon:scudo:primary] 512 MB in 2 maps, /dev/mali0 1 MB in 1 maps"
         );
-        assert_eq!(group_mappings("7200000000-7200001000 rw-p 00000000 00:00 0\n".as_bytes(), 5)[0].0, "[anon]");
+        assert_eq!(
+            group_mappings(
+                "7200000000-7200001000 rw-p 00000000 00:00 0\n".as_bytes(),
+                5
+            )[0]
+            .0,
+            "[anon]"
+        );
     }
 }

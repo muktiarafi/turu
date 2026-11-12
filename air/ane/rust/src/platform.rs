@@ -1,6 +1,7 @@
 //! What the bot windows can do under AIR (`turu_frontend::platform::Platform`): links and the share
-//! sheet through Kotlin's `Bridge`; one game client (AIR runs one root SWF), so no Army or tabs;
-//! no file dialogs yet (scripts come from Search Scripts).
+//! sheet through Kotlin's `Bridge`; tabs (game clients sharing AIR's one stage: `clients`), Army
+//! and Butler in tabs, under the Tab Limit, without Grid View; no file dialogs yet (scripts come
+//! from Search Scripts).
 
 use crate::host::BRIDGE;
 use jni::objects::JValue;
@@ -59,6 +60,15 @@ impl Platform for AirPlatform {
     }
 
     fn has_army(&self) -> bool {
+        true
+    }
+
+    fn limits_tabs(&self) -> bool {
+        true
+    }
+
+    // A phone's screen is too small for the tiles (`clients` ignores `TabRequest::Grid`).
+    fn has_grid_view(&self) -> bool {
         false
     }
 

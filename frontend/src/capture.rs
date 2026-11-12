@@ -66,7 +66,9 @@ impl<N: NavigatorBackend> NavigatorBackend for CaptureNavigator<N> {
         sender: Sender<SocketAction>,
     ) {
         let Some(capture) = self.capture.clone() else {
-            return self.inner.connect_socket(host, port, timeout, handle, receiver, sender);
+            return self
+                .inner
+                .connect_socket(host, port, timeout, handle, receiver, sender);
         };
         let (to_server, server_rx) = async_channel::unbounded();
         let (server_tx, from_server) = async_channel::unbounded();

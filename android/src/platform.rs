@@ -37,7 +37,10 @@ impl Platform for AndroidPlatform {
     }
 
     fn open_folder(&self, folder: &Path) {
-        tracing::info!("The folder is {} (on the phone's storage)", folder.display());
+        tracing::info!(
+            "The folder is {} (on the phone's storage)",
+            folder.display()
+        );
     }
 
     fn open_file(&self, path: &Path) {
@@ -55,16 +58,27 @@ impl Platform for AndroidPlatform {
     fn set_frame_interpolation(&self, on: bool) {
         ruffle_core::frame_interpolation::set_enabled(on);
         crate::save_interpolation(on);
-        tracing::info!("Frame interpolation turned {}", if on { "on" } else { "off" });
+        tracing::info!(
+            "Frame interpolation turned {}",
+            if on { "on" } else { "off" }
+        );
     }
 
     fn safe_drawing(&self) -> Option<bool> {
-        Some(turu_bot::paths::Paths::new().root.join(crate::SAFE_DRAWING_FILE).exists())
+        Some(
+            turu_bot::paths::Paths::new()
+                .root
+                .join(crate::SAFE_DRAWING_FILE)
+                .exists(),
+        )
     }
 
     fn set_safe_drawing(&self, on: bool) {
         crate::save_switch(crate::SAFE_DRAWING_FILE, on);
-        tracing::info!("Safe Drawing turned {} for the next start", if on { "on" } else { "off" });
+        tracing::info!(
+            "Safe Drawing turned {} for the next start",
+            if on { "on" } else { "off" }
+        );
     }
 
     // The app's executable is Android's app_process, not a `turu` Army could start.
@@ -93,8 +107,13 @@ impl Platform for AndroidPlatform {
             return *available;
         }
         let Some(available) = crate::notify::with_service(|env, class| {
-            env.call_static_method(class, jni_str!("crashUploadsAvailable"), jni_sig!("()Z"), &[])?
-                .z()
+            env.call_static_method(
+                class,
+                jni_str!("crashUploadsAvailable"),
+                jni_sig!("()Z"),
+                &[],
+            )?
+            .z()
         }) else {
             return false;
         };
@@ -193,7 +212,9 @@ fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()>
             .call_static_method(
                 jni_str!("android/content/Intent"),
                 jni_str!("createChooser"),
-                jni_sig!("(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;"),
+                jni_sig!(
+                    "(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;"
+                ),
                 &[JValue::Object(&send), JValue::Object(&JObject::null())],
             )?
             .l()?;
@@ -225,7 +246,9 @@ fn copy(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
             .call_static_method(
                 jni_str!("android/content/ClipData"),
                 jni_str!("newPlainText"),
-                jni_sig!("(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"),
+                jni_sig!(
+                    "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"
+                ),
                 &[JValue::Object(&label), JValue::Object(&text)],
             )?
             .l()?;

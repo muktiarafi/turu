@@ -8,8 +8,12 @@ package {
      * `turu_air_patch` makes skua's `ExternalInterface` this class, which has the same
      * `addCallback` and `call`, through Turu's native extension.
      *
+     * Each game client (tab) has its own skua, patched to call `TuruExternal<n>` (`TuruExternal0`,
+     * ...), which hand their calls here with the client's number; the engine's calls name the
+     * client too, so each tab's bot talks to its own skua.
+     *
      * * `addCallback(name, fn)` keeps skua's callbacks; the engine's calls into skua arrive as
-     *   status events ("call", `{"id", "name", "args"}`), run here on AIR's thread, and the result
+     *   status events ("call", `{"id", "client", "name", "args"}`), run here on AIR's thread, and the result
      *   goes back with `reply`, stringified as the Ruffle host does (`ExternalInterface`'s rules:
      *   booleans "true"/"false", null/undefined "null", whole numbers without a point, other
      *   values JSON).
@@ -17,7 +21,8 @@ package {
      */
     public class TuruExternal {
         public static var native:TuruAirNative;
-        private static var callbacks:Object = {};
+        /** Each client's callbacks, by name. */
+        private static var callbacks:Array = [];
 
         public static function get available():Boolean {
             return native != null && native.available;
@@ -28,11 +33,16 @@ package {
             native.addEventListener(StatusEvent.STATUS, onStatus);
         }
 
-        public static function addCallback(name:String, fn:Function):void {
-            callbacks[name] = fn;
+        /** Client `client`'s skua's `ExternalInterface.addCallback`. */
+        public static function addCallbackFor(client:int, name:String, fn:Function):void {
+            if (callbacks[client] == null) {
+                callbacks[client] = {};
+            }
+            callbacks[client][name] = fn;
         }
 
-        public static function call(name:String, ...rest):* {
+        /** Client `client`'s skua's `ExternalInterface.call` (-1: the host's own). */
+        public static function callFrom(client:int, name:String, rest:Array):* {
             var args:String;
             try {
                 args = JSON.stringify(rest);
@@ -40,9 +50,14 @@ package {
                 args = "[]";
             }
             if (native != null) {
-                native.flashCall(name, args);
+                native.flashCall(name, args, client);
             }
             return null;
+        }
+
+        /** Forgets client `client`'s callbacks (its tab closed). */
+        public static function forget(client:int):void {
+            callbacks[client] = null;
         }
 
         private static function onStatus(event:StatusEvent):void {
@@ -55,7 +70,8 @@ package {
             } catch (e:Error) {
                 return;
             }
-            var fn:Function = callbacks[request.name];
+            var own:Object = callbacks[int(request.client)];
+            var fn:Function = own != null ? own[request.name] : null;
             var started:int = getTimer();
             var result:* = null;
             if (fn != null) {

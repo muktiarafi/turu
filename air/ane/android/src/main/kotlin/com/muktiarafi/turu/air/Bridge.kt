@@ -41,9 +41,9 @@ object Bridge {
     @JvmStatic
     external fun nativeStart(context: Context, filesDir: String)
 
-    /** skua.swf's `ExternalInterface.call(name, ...)`, its arguments as a JSON array. */
+    /** Client `client`.s skua.swf called `ExternalInterface.call(name, ...)` (args as a JSON array; -1: the host SWF). */
     @JvmStatic
-    external fun nativeFlashCall(name: String, args: String)
+    external fun nativeFlashCall(name: String, args: String, client: Int)
 
     /** AS3's answer to call `id`, and how long the callback took. */
     @JvmStatic
@@ -95,8 +95,8 @@ object Bridge {
 
     /** The script's state for the notification, every 2 s when it changed (`notify.rs`). */
     @JvmStatic
-    fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean) {
-        TuruAirService.status(title, text, running, paused, startable)
+    fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
+        TuruAirService.status(title, text, running, paused, startable, awake)
     }
 
     @JvmStatic
@@ -123,7 +123,17 @@ object Bridge {
         activity.runOnUiThread {
             if (overlay?.context === activity) return@runOnUiThread
             val content = activity.findViewById<ViewGroup>(android.R.id.content)
-            airView = content.getChildAt(0)
+            val air = content.getChildAt(0)
+            airView = air
+            // The host SWF fits the games to this size itself (status event "layout": "width
+            // height"): AIR keeps the screen's size for its stage when its view gets shorter (as
+            // for a soft keyboard), which the tab strip's margin does.
+            air.addOnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    dispatch("layout", "${v.width} ${v.height}")
+                }
+            }
+            air.post { dispatch("layout", "${air.width} ${air.height}") }
             val view = TuruOverlay(activity)
             content.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             overlay = view

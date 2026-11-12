@@ -16,7 +16,10 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 * Its data folder is its own (`Android/data/com.muktiarafi.turumas/files`): settings, accounts
   and scripts aren't shared with Turu. Search Scripts downloads the scripts.
 * It starts with the AIR SDK's splash screen for about 1.6 s (the SDK's free tier).
-* One game client: no Army, no New Tab. No HotKeys or file dialogs.
+* Tabs, Army and Butler as in Turu on Android: the tab strip's "+", Army > New Tab, Army >
+  Accounts ("In a tab") and Army Control, up to Options > Application > Tab Limit (default 2,
+  at most 4; about 200 MB a client), reopened after Android stops the app
+  (`android-tabs.json`). No Grid View. No HotKeys or file dialogs.
 * Updates: as Turu on Android, it checks the releases at start and every 6 hours (Options >
   Application) and shows Update in the bar; the window's Download APK fetches Turu Mas's APK
   for Android to install over it (same signature, so data stays). A release without a Turu Mas
@@ -33,6 +36,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 | `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
 | `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). |
+| `air/ane/rust/src/clients.rs`, `air/app/src/TuruStage.as` | Tabs: game clients 0-3 on AIR's one stage, each with its own bot (below). |
 | `frontend/` (`air` feature) | the gold accent (`theme.rs`: `ACCENT`, and `ON_ACCENT`, the dark text and icons on it); `turu_frontend` without its `ruffle` feature. |
 
 The code keeps "air" in its names (crate `turu_air`, package `com.muktiarafi.turu.air`, the
@@ -155,7 +159,42 @@ Mas combined with the Adobe AIR runtime and SDK components that ADT packages int
 those components being covered by this License." Not added yet: the license is the author's
 call (decision 4 in docs/AIR_PROPOSAL.md).
 
+## Tabs
+
+AIR runs one root SWF on one stage, so Turu Mas's tabs are game clients side by side on that
+stage, not players of their own as in Ruffle. How it was found to work: docs/AIR_ARMY_SPIKE.md.
+
+* **Whose game.** AQW's client and nearly every SWF it loads find the game as
+  `stage.getChildAt(0)`. `turu_air_patch`'s `Options::shared_stage` rewrites each of those to
+  `TuruStage.rootOf(x)`, the game `x` belongs to: in skua.swf and the client when they're patched,
+  and in every other SWF as the engine downloads it (`shared_stage_swf`, on the download thread).
+  The tab on screen has its game at stage child 0 and the others hidden (`visible`, so AIR doesn't
+  draw them). Every 60 s the Debug log says if any call couldn't tell its tab (none so far).
+* **Whose calls.** Client `n`'s skua.swf is patched (`Options::client`) to use `TuruExternal<n>`
+  and `TuruLoader<n>` (the host SWF has 0 to 3). Its calls reach the engine with `n`
+  (`nativeFlashCall`), which hands them to that tab's bot (`clients::bot`); the bot's calls name
+  `n` too (`AirFlashHost { client }`), so they run its skua's callbacks.
+* **Opening and closing.** `clients.rs` serves the UI's tab requests: a new tab gets a free client
+  number and a bot, and the host SWF loads a skua for it (status event "tab", `open`); `select`
+  shows it; `close` disconnects its game and unloads its SWFs (`unloadAndStop`). Client 0, the
+  first tab, loads at start.
+* **Fitting the view.** With several tabs the tab strip pushes AIR's view down, and AIR keeps
+  its stage at the screen's size when its view gets shorter (as for a soft keyboard), so the game
+  would run off the bottom and right. Kotlin reports the view's size (status event "layout"); the
+  host reads AIR's own size (the stage in `NO_SCALE` for a moment, the resize kept from the
+  games) and scales and moves each game to fit (`TuruAirHost.fit`, `TuruStage.place`: 0.903x on
+  a 2400x1080 screen). For the game's code that reads the stage's mouse, `stage.mouseX` and
+  `mouseY` are rewritten to the game's own. With one tab nothing moves.
+* **No hidden-tab slowdown.** Ruffle slows a hidden tab's game to 2 FPS with `stage.frameRate`;
+  on AIR that's every client's rate, so Turu Mas doesn't (`turu::set_hidden_tabs_slowed(false)`).
+  Hidden games aren't drawn, and AIR slows the whole app off screen.
+
 ## Known gaps
+
+* Tabs: a hidden tab's game still hears the keyboard (the stage's key listeners are every
+  client's) and plays its sounds (`SoundMixer` is global); the 13 places where the client adds
+  a popup straight to the stage put it over whichever tab is shown, and with several tabs, at
+  the stage's scale rather than the fitted game's.
 
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 

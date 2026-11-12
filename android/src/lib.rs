@@ -16,17 +16,17 @@
 #![cfg(target_os = "android")]
 
 mod audio;
+mod frame_perf;
 mod input;
 mod memory;
 mod notify;
 mod pan;
 mod platform;
-mod frame_perf;
 mod restart;
 mod saf;
 mod screen;
 mod storage;
-mod tabs;
+use turu_frontend::saved_tabs as tabs;
 mod ui;
 
 use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
@@ -40,15 +40,15 @@ use ruffle_core::{LoadBehavior, Player, PlayerBuilder, PlayerEvent};
 use ruffle_frontend_utils::backends::navigator::ExternalNavigatorBackend;
 use ruffle_frontend_utils::backends::storage::DiskStorageBackend;
 use ruffle_frontend_utils::content::{ContentDescriptor, PlayingContent};
+use ruffle_render::backend::ViewportDimensions;
 use ruffle_render::quality::StageQuality;
 use ruffle_render_wgpu::backend::WgpuRenderBackend;
-use ruffle_render::backend::ViewportDimensions;
 use ruffle_render_wgpu::descriptors::Descriptors;
 use screen::{Blit, Graphics, MovieTexture, SCREEN, Screen};
 use std::any::Any;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Sender, channel, sync_channel};
@@ -107,7 +107,9 @@ fn android_main(app: AndroidApp) {
             }
             PollEvent::Main(MainEvent::TerminateWindow { .. }) => detach_surface(),
             PollEvent::Main(
-                MainEvent::WindowResized { .. } | MainEvent::ConfigChanged { .. } | MainEvent::ContentRectChanged { .. },
+                MainEvent::WindowResized { .. }
+                | MainEvent::ConfigChanged { .. }
+                | MainEvent::ContentRectChanged { .. },
             ) => {
                 run_on_engine(resize);
             }
@@ -225,7 +227,8 @@ fn attach_surface(player: &mut Player) {
         None => {
             let gpu = GPU.with_borrow(Clone::clone);
             let density = app().as_ref().map_or(1.0, density) as f32;
-            *screen = gpu.and_then(|(descriptors, blit)| Screen::new(descriptors, blit, &window, density));
+            *screen = gpu
+                .and_then(|(descriptors, blit)| Screen::new(descriptors, blit, &window, density));
             screen.is_some()
         }
     });
@@ -253,7 +256,11 @@ fn forward_input(app: &AndroidApp) {
                 return InputStatus::Unhandled;
             }
             run_on_engine(move |player| {
-                with_screen(|screen| touches.into_iter().for_each(|touch| screen.touch(player, touch)))
+                with_screen(|screen| {
+                    touches
+                        .into_iter()
+                        .for_each(|touch| screen.touch(player, touch))
+                })
             });
             InputStatus::Handled
         }
@@ -269,7 +276,9 @@ fn forward_input(app: &AndroidApp) {
 }
 
 fn density(app: &AndroidApp) -> f64 {
-    app.config().density().map_or(1.0, |dpi| f64::from(dpi) / 160.0)
+    app.config()
+        .density()
+        .map_or(1.0, |dpi| f64::from(dpi) / 160.0)
 }
 
 pub(crate) fn window_size(window: &NativeWindow) -> (u32, u32) {
@@ -358,7 +367,11 @@ static CRASH_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// `crash/panic-<time>.txt`, written now: a release build aborts right after the hook, and
 /// logcat's buffer is gone by the time anyone looks (`turu_frontend::crash_reports`).
-fn write_panic_report(thread: &str, info: &std::panic::PanicHookInfo, backtrace: &std::backtrace::Backtrace) {
+fn write_panic_report(
+    thread: &str,
+    info: &std::panic::PanicHookInfo,
+    backtrace: &std::backtrace::Backtrace,
+) {
     let Some(dir) = CRASH_DIR.get() else {
         return;
     };
@@ -371,7 +384,10 @@ fn write_panic_report(thread: &str, info: &std::panic::PanicHookInfo, backtrace:
         now.to_rfc3339(),
     );
     let _ = std::fs::create_dir_all(dir);
-    let _ = std::fs::write(dir.join(format!("panic-{}.txt", now.format("%F_%H-%M-%S"))), report);
+    let _ = std::fs::write(
+        dir.join(format!("panic-{}.txt", now.format("%F_%H-%M-%S"))),
+        report,
+    );
 }
 
 /// Runs `work` on this thread attached to the JavaVM, under the thread's own name. A thread
@@ -379,11 +395,16 @@ fn write_panic_report(thread: &str, info: &std::panic::PanicHookInfo, backtrace:
 /// engine's calls into Java (breadcrumbs, the notification, the GPU-lost notice) renamed "Turu
 /// Engine", and the memory log's busiest threads said "Thread-3" (Sentry TURU-ANDROID-B). The
 /// name counts on the first attach, which stays for the thread's life.
-pub(crate) fn attach<T, E>(vm: &JavaVM, work: impl FnOnce(&mut jni::Env) -> Result<T, E>) -> Result<T, E>
+pub(crate) fn attach<T, E>(
+    vm: &JavaVM,
+    work: impl FnOnce(&mut jni::Env) -> Result<T, E>,
+) -> Result<T, E>
 where
     E: From<jni::errors::Error>,
 {
-    let name = std::thread::current().name().map(jni::strings::JNIString::from);
+    let name = std::thread::current()
+        .name()
+        .map(jni::strings::JNIString::from);
     vm.attach_current_thread_with_config(
         || match &name {
             Some(name) => jni::AttachConfig::new().thread_name(name),
@@ -441,7 +462,9 @@ fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
     while let Some(arg) = iter.next() {
         let value = match arg.to_str() {
             Some("--graphics") => iter.next().and_then(|v| v.into_string().ok()),
-            Some(text) if text.starts_with("--graphics=") => Some(text["--graphics=".len()..].to_owned()),
+            Some(text) if text.starts_with("--graphics=") => {
+                Some(text["--graphics=".len()..].to_owned())
+            }
             _ => {
                 rest.push(arg);
                 continue;
@@ -485,19 +508,28 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // The UI runs here too: a Flash call from this thread would wait for itself.
     turu::init_main_thread();
     turu_frontend::platform::set(Arc::new(platform::AndroidPlatform));
-    tracing::info!("Turu {} on Android; data folder {}", turu::VERSION, root.display());
+    tracing::info!(
+        "Turu {} on Android; data folder {}",
+        turu::VERSION,
+        root.display()
+    );
 
     let args_file = root.join(ARGS_FILE);
     let mut args = read_args(&args_file);
     let graphics = take_graphics(&mut args);
-    let safe_drawing = take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
+    let safe_drawing =
+        take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
-    let mut test_gpu_loss = take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
+    let mut test_gpu_loss =
+        take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
     restart::prepare(&mut args);
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
-        tracing::warn!("{ARGS_FILE}: {} arguments aren't Turu's flags; ignored", args.len());
+        tracing::warn!(
+            "{ARGS_FILE}: {} arguments aren't Turu's flags; ignored",
+            args.len()
+        );
     }
     // AQW (since its 2026-10-10 update) uses Flash APIs newer than its loader's SWF version.
     ruffle_core::set_show_all_apis(true);
@@ -557,7 +589,10 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             .push("Safe Drawing: Mugetsu's drawing speed-ups are off");
     }
     GPU.set(Some((descriptors, blit)));
-    let sender = ENGINE_TX.get().expect("set before the thread started").clone();
+    let sender = ENGINE_TX
+        .get()
+        .expect("set before the thread started")
+        .clone();
     // The first tab; the UI's "+", Army > Accounts and Army Control open and select more.
     let tab = turu::active_tab();
     let bot = turu::bot();
@@ -598,14 +633,21 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
                 if test_gpu_loss.is_some_and(|at| Instant::now() >= at) {
                     test_gpu_loss = None;
                     tracing::warn!("--test-gpu-loss: destroying the GPU device");
-                    GPU.with_borrow(|gpu| gpu.as_ref().map(|(descriptors, _)| descriptors.device.destroy()));
+                    GPU.with_borrow(|gpu| {
+                        gpu.as_ref()
+                            .map(|(descriptors, _)| descriptors.device.destroy())
+                    });
                 }
                 memory::tick(player);
-                if let Some(audio) = <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut()) {
+                if let Some(audio) =
+                    <dyn Any>::downcast_mut::<audio::AAudioAudioBackend>(player.audio_mut())
+                {
                     audio.recreate_stream_if_needed();
                 }
             }
-            SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)))
+            SCREEN.with_borrow_mut(|screen| {
+                screen.as_mut().and_then(|screen| screen.step(player, step))
+            })
         },
         |players, request| {
             tab_request(players, request, root, &movie_url, &sender);
@@ -640,7 +682,12 @@ fn tab_request(
             }
             let Some(renderer) = GPU.with_borrow(|gpu| {
                 let (descriptors, blit) = gpu.as_ref()?;
-                let target = MovieTexture::new(blit.clone(), &descriptors.device, engine::STAGE.0, engine::STAGE.1);
+                let target = MovieTexture::new(
+                    blit.clone(),
+                    &descriptors.device,
+                    engine::STAGE.0,
+                    engine::STAGE.1,
+                );
                 WgpuRenderBackend::new(descriptors.clone(), target)
                     .inspect_err(|e| tracing::error!("Couldn't make the new tab's renderer: {e}"))
                     .ok()
@@ -782,12 +829,15 @@ fn build_player(
         NoDialogs,
     )
     .with_http_cache(turu_frontend::game_files::cache());
-    let navigator = turu_frontend::capture::CaptureNavigator::new(navigator, Some(bot.capture.clone()));
+    let navigator =
+        turu_frontend::capture::CaptureNavigator::new(navigator, Some(bot.capture.clone()));
     let mut builder = PlayerBuilder::new()
         .with_navigator(navigator)
         .with_renderer(renderer)
         .with_ui(ui::AndroidUiBackend::new())
-        .with_storage(Box::new(DiskStorageBackend::new(root.join("SharedObjects"))))
+        .with_storage(Box::new(DiskStorageBackend::new(
+            root.join("SharedObjects"),
+        )))
         .with_external_interface(Box::new(turu::TuruExternalInterface { bot: bot.clone() }))
         .with_autoplay(true)
         .with_letterbox(Letterbox::On)

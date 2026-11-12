@@ -30,14 +30,19 @@ pub extern "C" fn Java_com_muktiarafi_turu_Storage_nativeInit<'local>(
 
 /// Runs `work` with `Storage`'s class on this thread (attached to the JVM). A Java exception
 /// comes back as its error.
-pub(crate) fn with_storage<T>(work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>) -> Result<T, String> {
+pub(crate) fn with_storage<T>(
+    work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>,
+) -> Result<T, String> {
     let (vm, class) = STORAGE.get().ok_or("Android's storage isn't set up yet")?;
     vm.attach_current_thread(|env: &mut Env| work(env, class))
         .map_err(|e| e.to_string())
 }
 
 /// A `String` a Java method returned; `None` for null.
-pub(crate) fn optional_string(env: &mut Env, object: JObject) -> jni::errors::Result<Option<String>> {
+pub(crate) fn optional_string(
+    env: &mut Env,
+    object: JObject,
+) -> jni::errors::Result<Option<String>> {
     if object.is_null() {
         return Ok(None);
     }

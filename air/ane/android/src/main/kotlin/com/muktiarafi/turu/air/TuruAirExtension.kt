@@ -38,7 +38,8 @@ class TuruAirExtension : FREExtension {
             "flashCall" to FREFunction { _, args ->
                 val name = args?.getOrNull(0)?.asString
                 if (name != null) {
-                    Bridge.nativeFlashCall(name, args.getOrNull(1)?.asString ?: "[]")
+                    // The client whose skua called (-1: the host SWF).
+                    Bridge.nativeFlashCall(name, args.getOrNull(1)?.asString ?: "[]", args.getOrNull(2)?.asInt ?: -1)
                 }
                 null
             },

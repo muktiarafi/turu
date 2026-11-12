@@ -22,8 +22,10 @@ impl FileDialog {
     }
 
     pub fn add_filter(mut self, name: impl Into<String>, extensions: &[&str]) -> Self {
-        self.filters
-            .push((name.into(), extensions.iter().map(|e| (*e).to_owned()).collect()));
+        self.filters.push((
+            name.into(),
+            extensions.iter().map(|e| (*e).to_owned()).collect(),
+        ));
         self
     }
 

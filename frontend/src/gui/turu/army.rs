@@ -1155,7 +1155,9 @@ fn outcome_line(name: &str, label: &str, result: Result<Value, String>) -> Strin
                 Ok(report) if label.starts_with("Equip ") => {
                     format!("{name}: {label}: {}", report.summary())
                 }
-                _ if defaults => format!("{name}: {label}: done, with the default Script Options (none saved)"),
+                _ if defaults => {
+                    format!("{name}: {label}: done, with the default Script Options (none saved)")
+                }
                 _ => format!("{name}: {label}: done"),
             }
         }

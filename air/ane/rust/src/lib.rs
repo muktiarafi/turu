@@ -6,7 +6,8 @@
 //! * [`host::AirFlashHost`] lets bot threads call `skua.swf`'s callbacks: each call goes to AIR's
 //!   thread as a status event, and the answer comes back through `nativeReply`.
 //! * `nativeFlashCall` receives `skua.swf`'s `ExternalInterface.call(...)`s (`TuruExternal` in
-//!   the host SWF), on AIR's thread.
+//!   the host SWF), on AIR's thread, for the tab whose client made them.
+//! * [`clients`] runs the tabs: one game client each, all on AIR's one stage.
 //! * [`overlay`] draws Turu's nav rail and bot windows over the game (`nativeSurface`,
 //!   `nativeTouch`, `nativeOnUi`, `nativeText`).
 //! * `nativePatch` rewrites a SWF's bytecode for AIR (`turu_air_patch`): skua.swf, and the
@@ -14,6 +15,8 @@
 
 #[cfg(target_os = "android")]
 mod android;
+#[cfg(target_os = "android")]
+mod clients;
 #[cfg(target_os = "android")]
 mod crash_uploads;
 #[cfg(target_os = "android")]

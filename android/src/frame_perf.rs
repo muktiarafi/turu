@@ -127,7 +127,11 @@ impl Snapshot {
             .map(|(name, n)| {
                 format!(
                     "{name} {:.1}",
-                    if renders > 0 { n as f64 / renders as f64 } else { 0.0 }
+                    if renders > 0 {
+                        n as f64 / renders as f64
+                    } else {
+                        0.0
+                    }
                 )
             })
             .collect::<Vec<_>>()

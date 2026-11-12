@@ -7,8 +7,8 @@ use jni::EnvUnowned;
 use jni::objects::JClass;
 use jni::sys::{jfloat, jint};
 use ruffle_core::backend::ui::{
-    DialogResultFuture, FileFilter, FontDefinition, FullscreenError, LanguageIdentifier, MouseCursor,
-    MultiDialogResultFuture, NullUiBackend, UiBackend,
+    DialogResultFuture, FileFilter, FontDefinition, FullscreenError, LanguageIdentifier,
+    MouseCursor, MultiDialogResultFuture, NullUiBackend, UiBackend,
 };
 use ruffle_core::font::FontQuery;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -53,7 +53,10 @@ pub fn soft_keyboard(show: bool) {
         Ok(())
     });
     if let Err(e) = result {
-        tracing::warn!("Couldn't {} the soft keyboard: {e}", if show { "show" } else { "hide" });
+        tracing::warn!(
+            "Couldn't {} the soft keyboard: {e}",
+            if show { "show" } else { "hide" }
+        );
     }
 }
 
@@ -79,7 +82,10 @@ pub fn prefer_refresh_rate(hz: u32) {
 
 /// The display cutout's (left, right) insets in window pixels.
 pub fn cutout() -> (u32, u32) {
-    (CUTOUT_LEFT.load(Ordering::Relaxed), CUTOUT_RIGHT.load(Ordering::Relaxed))
+    (
+        CUTOUT_LEFT.load(Ordering::Relaxed),
+        CUTOUT_RIGHT.load(Ordering::Relaxed),
+    )
 }
 
 /// `TuruActivity.nativeCutout(left, right)`: the window's insets changed (Android 9+).
@@ -185,7 +191,11 @@ impl UiBackend for AndroidUiBackend {
         self.inner.load_device_font(query, register);
     }
 
-    fn sort_device_fonts(&self, query: &FontQuery, register: &mut dyn FnMut(FontDefinition)) -> Vec<FontQuery> {
+    fn sort_device_fonts(
+        &self,
+        query: &FontQuery,
+        register: &mut dyn FnMut(FontDefinition),
+    ) -> Vec<FontQuery> {
         self.inner.sort_device_fonts(query, register)
     }
 
@@ -193,11 +203,18 @@ impl UiBackend for AndroidUiBackend {
         self.inner.display_file_open_dialog(filters)
     }
 
-    fn display_file_open_dialog_multiple(&mut self, filters: Vec<FileFilter>) -> Option<MultiDialogResultFuture> {
+    fn display_file_open_dialog_multiple(
+        &mut self,
+        filters: Vec<FileFilter>,
+    ) -> Option<MultiDialogResultFuture> {
         self.inner.display_file_open_dialog_multiple(filters)
     }
 
-    fn display_file_save_dialog(&mut self, file_name: String, title: String) -> Option<DialogResultFuture> {
+    fn display_file_save_dialog(
+        &mut self,
+        file_name: String,
+        title: String,
+    ) -> Option<DialogResultFuture> {
         self.inner.display_file_save_dialog(file_name, title)
     }
 
