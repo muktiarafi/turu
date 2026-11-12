@@ -20,6 +20,8 @@ unzip -qo -p android/rustls-platform-verifier/build/outputs/aar/*-release.aar cl
 for jar in "$out/library-classes.jar" "$out/verifier-classes.jar" air/ane/android/build/ane-libs/*.jar; do
   unzip -qo "$jar" -d "$out/classes" -x 'META-INF/MANIFEST.MF' 'META-INF/versions/*' 'module-info.class' 2>/dev/null || true
 done
+# The AIR SDK's own d8 crashes on Sentry's MethodParameters entries without names: off with them.
+python3 air/ane/strip-parameters.py "$out/classes"
 "$AIR_JAVA_HOME/bin/jar" cf "$out/Android-ARM64/turu-air.jar" -C "$out/classes" .
 
 # Rust: libturu_air.so, which AIR packs from the platform's libs/<abi>. rquickjs generates its

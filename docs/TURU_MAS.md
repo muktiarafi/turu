@@ -132,6 +132,12 @@ report attached.
 task collects what it needs at run time (Sentry, the AndroidX parts it uses, Kotlin's standard
 library: Java 8 class files, which the AIR SDK's old d8 can read) and Sentry's `libsentry.so` and
 `libsentry-android.so`; `air/ane/build.sh` merges and packs them (about 1.7 MB more in the APK).
+On Linux (the release job) ADT packages its "legacy" way, dexing with the AIR SDK's own d8
+1.2.52; on a Mac with an Android SDK it builds through Gradle 8.13 and AGP 8.9.1, whose d8 is
+current, so a jar can pass locally and fail in CI. That old d8 crashes on `MethodParameters`
+entries without a name, which some of Sentry's classes have (`v0.3.0-beta.4`'s job:
+"NullPointerException ... visitParameter"), so `air/ane/strip-parameters.py` removes the
+attribute from the merged classes (it only names parameters for reflection).
 
 Symbols: the release workflow builds the library with line tables, uploads it with `sentry-cli`
 and keeps it as the `symbols-turu-mas-android-arm64` artifact (90 days).
