@@ -103,6 +103,8 @@ public class Main extends MovieClip {
         new GameCalls(gameOf).exposeWith(expose);
         new Combat(gameOf).exposeWith(expose);
         new Auras(gameOf).exposeWith(expose);
+        new Items(gameOf).exposeWith(expose);
+        new World(gameOf).exposeWith(expose);
         // For checking error reports by hand; not listed, so only debug builds of Turu call it.
         host.addCallback("throwForTest", guard("throwForTest", throwForTest));
 

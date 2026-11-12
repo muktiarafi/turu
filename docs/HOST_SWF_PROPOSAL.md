@@ -1,8 +1,8 @@
 # Proposal: Turu's own host SWF
 
 Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the game, run only with
-`TURU_HOST_SWF=turu`); R2 done (the generic calls, parity mode `TURU_HOST_PARITY=1`); R3a
-written, awaiting its parity run; the rest are proposals. Replaces the plan to fork VibeSkua's
+`TURU_HOST_SWF=turu`); R2 done (the generic calls, parity mode `TURU_HOST_PARITY=1`); R3a done
+(auras, monsters, combat); R3b done (inventory, shop, player, world); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -141,8 +141,8 @@ How it's written:
   and the 13 other callbacks nothing calls; a call to a name `turu.swf` doesn't have answers an
   error ("not in Turu's host SWF") instead of an empty string.
 - **Deliberate differences**, each listed in the parity comparator's allowlist with why: the
-  game centred (no `align = TOP`), no quest-wiki error before login, the monster-click fallback
-  that works, a custom-background timer that gives up, the old game removed by reference,
+  game centred (no `align = TOP`), no quest-wiki error before login, no monster-click wiki link
+  (`openWebsite`: Turu only logs it, and the game's own wiki buttons open the browser), a custom-background timer that gives up, the old game removed by reference,
   `packetFromServer` only on request, errors reported (`error`), "Turu" as the login screen's
   title (VibeSkua's says "AURAS!!!"), the Bank hotkey ignored while typing in a text field,
   `loadClient` taking the frame rate, and the header's frame rate at 24, the game's own (Turu
@@ -240,8 +240,7 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
 - `TURU_HOST_SWF=turu` chooses it (`turu_bot::HostSwf`; `bot::paths` writes `turu.swf`). No
   setting yet: with only R1's callbacks, Turu's background loops would fill the log with
   "not in Turu's host SWF".
-- Not yet: the monster-click wiki link (`openWebsite`). What VibeSkua's click handler does isn't
-  in the spec; parity settles it (R2).
+- Not carried over: the monster-click wiki link (`openWebsite`), dropped in R3b (allowlisted).
 - Done when, by hand on desktop with `TURU_HOST_SWF=turu`: the client loads and you log in; the
   same hand-played sequence gives the same outgoing packet log and `pext` count as with
   VibeSkua's; `throwForTest` (and `throwForTest("later")`, uncaught) shows its stack in the
@@ -284,8 +283,9 @@ parts, each a branch (`host-r3a` ...) fast-forwarded in after its own checks:
 - **R3b**: inventory, shop, player and world (`buyItemByID`/`ByName`,
   `getUnmetPurchaseRequirements`, the inventory checks, `isFavoriteItem`, `rejectExcept`,
   `gender`, `getAvatar`, `jumpCorrectRoom`, `walkTo`, `isLoggedIn`, `isKicked`,
-  `getActiveModalMessage`, `sendClientPacket`), and the monster-click wiki link (`openWebsite`,
-  compared in parity).
+  `getActiveModalMessage`, `sendClientPacket`). Parity showed VibeSkua's monster-click wiki link
+  (`openWebsite("https://aqwwiki.wikidot.com/FrogZard")`); it's dropped and allowlisted, as Turu
+  only logs `openWebsite`.
 - **R3c**: server and login (`clickServer`, `connectToServer`, `killLoginModals`,
   `loadPolicyFile(s)`, `resetConnectionState`).
 - **R3d**: options and modules (`disableDeathAd`, `killLag`, `skipCutscenes`,

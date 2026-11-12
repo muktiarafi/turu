@@ -179,13 +179,13 @@ The AS3 function is `Main.*`, `Server.*`, etc. All values are Strings unless not
 
 **Player**
 - `isLoggedIn()` is `game!=null && game.sfc!=null && game.sfc.isConnected`.
-- `isKicked()` is `mcLogin.warning.visible`.
+- `isKicked()` is `mcLogin.warning.visible`; `"false"` in game, where there's no login screen.
 - `walkTo(x, y, speed)` calls `pMC.walkTo` and `world.moveRequest({mc, tx, ty, sp})`. Speed 8 is replaced by `world.WALKSPEED`.
 - `untargetSelf()` calls `world.cancelTarget()` if the target is the avatar.
 - `attackPlayer(name)` uses `getAvatarByUserName`, then `setTarget`, then `approachTarget`.
 - `getAvatar(id)` returns the JSON of `world.avatars[id].objData`.
 - `getLoadouts()` returns the JSON of `world.objInfo["customs"].loadouts`.
-- `gender()` returns `"\"MALE\""` or `"\"FEMALE\""` (quoted).
+- `gender()` returns the client's `objData.strGender` as JSON: `"\"M\""` or `"\"F\""` (seen in game; not `"MALE"`/`"FEMALE"`).
 - `rejectExcept(csvLowercaseNames)`:
   - If `litePreference.data.bCustomDrops` is set, it iterates `cDropsUI.invTree.concat()` and calls `cDropsUI.onBtNo(item)` for items not in the list.
   - Otherwise it walks `ui.dropStack` children whose class contains `DFrame2MC`, parses the `"Name xN"` text with `/(.*)\s+x\s*(\d*)/`, and dispatches CLICK on `cnt.nbtn`.
@@ -194,7 +194,7 @@ The AS3 function is `Main.*`, `Server.*`, etc. All values are Strings unless not
 **World**
 - `jumpCorrectRoom(cell, pad, autoCorrect=true, clientOnly=false)` calls `world.moveToCell(cell, pad, clientOnly)`.
   - With autoCorrect, a 50 ms x 40 timer checks that the map is on the cell label and not playing.
-  - It then checks the `Pad_\d+` children of `world.map` and re-issues `moveToCell` with a valid pad (preferred pad, then "Left", then the first).
+  - It then always re-issues `moveToCell` once (seen in game: `Spawn` twice), with the preferred pad if the cell has it, else "Left", else the first. The cell's pads are `world.map` children whose class name contains `Pad`, named for the pad (the client's `cellSetup`).
 - `disableDeathAd(bool)` sets `userPreference.data.bDeathAd = !enable`.
 - `skipCutscenes()` clears `mcExtSWF` children and calls `showInterface()`.
 - `hidePlayers(bool)`.

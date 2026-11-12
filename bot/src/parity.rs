@@ -34,11 +34,31 @@ const READS: &[&str] = &[
     "GetAuraSnapshots",
     "GetAurasValue",
     "HasAnyActiveAura",
+    // R3b: inventory, shop, player, world.
+    "hasInventoryCategories",
+    "inventoryBagUsedSlots",
+    "inventoryHasSpaceFor",
+    "isFavoriteItem",
+    "getUnmetPurchaseRequirements",
+    "isLoggedIn",
+    "isKicked",
+    "gender",
+    "getAvatar",
+    "getActiveModalMessage",
 ];
 
 /// The events compared. Not the start-up ones, which Turu's SWF doesn't send in parity mode,
 /// nor `packetFromServer`, which it sends only on request.
-const EVENTS: &[&str] = &["pext", "packet", "connectionLost", "userIntentionalAction"];
+const EVENTS: &[&str] = &[
+    "pext",
+    "packet",
+    "connectionLost",
+    "userIntentionalAction",
+    "openWebsite",
+];
+
+/// What a `parity:` line shows for the SWF that never sent an event.
+const MISSING: &str = "(none)";
 
 /// How long an event may wait for the other SWF's before it counts as missing.
 const EVENT_WAIT: Duration = Duration::from_secs(5);
@@ -72,6 +92,13 @@ const ALLOWED: &[Allowed] = &[
         reason: "`remaining` is read from the player's clock in each SWF's call, which can be a \
                  millisecond or two apart in the same frame",
         same: |_, vibeskua, turu| same_snapshots(vibeskua, turu),
+    },
+    Allowed {
+        name: "openWebsite",
+        reason: "Turu's SWF has no monster-click wiki link: Turu doesn't act on `openWebsite` \
+                 (it only logs it), and the game's own wiki buttons open the browser through \
+                 Ruffle",
+        same: |_, _, turu| turu == MISSING,
     },
 ];
 
@@ -228,8 +255,8 @@ impl Parity {
         }
         for (side, payload) in missing {
             let (a, b) = match side {
-                Side::VibeSkua => (payload, "(none)".to_owned()),
-                Side::Turu => ("(none)".to_owned(), payload),
+                Side::VibeSkua => (payload, MISSING.to_owned()),
+                Side::Turu => (MISSING.to_owned(), payload),
             };
             lines.extend(inner.compare(name, "", &a, &b, now));
         }
@@ -475,6 +502,17 @@ mod tests {
             r#"[{"dur":20,"nam":"Other","remaining":19.401,"n":1}]"#
         ));
         assert!(!same_snapshots(a, "[]"));
+    }
+
+    #[test]
+    fn a_wiki_link_only_vibeskua_opens_is_allowed() {
+        let parity = Parity::default();
+        let start = Instant::now();
+        let url = [json!("https://aqwwiki.wikidot.com/FrogZard")];
+        parity.event_at(Side::VibeSkua, "openWebsite", &url, start);
+        let lines = parity.event_at(Side::VibeSkua, "openWebsite", &url, start + EVENT_WAIT);
+        assert!(lines.is_empty(), "{lines:?}");
+        assert!(parity.summary().unwrap().contains("0 unlisted mismatches"));
     }
 
     #[test]
