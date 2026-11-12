@@ -2,7 +2,8 @@
 
 Status: proposal, nothing built. Touches `bot/assets/skua.swf` (and a new AS3 source tree),
 `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`, `api/wait.rs`, `api/player.rs`,
-`api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`, `app/src/player.rs`. Reference:
+`api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`, `air/app/src/` (Turu Mas's host
+SWF), `air/ane/rust/src/` (`android.rs`'s `patched`, `clients.rs`), `app/src/player.rs`. Reference:
 VibeSkua `Skua.AS3/skua/src/skua/*.as` (the SWF as it is), `docs/EVENT_WAITS_PROPOSAL.md` (waits
 that wake on packets), `docs/PACKET_BUTLER_PROPOSAL.md`, `docs/TURU_MAS.md` (the AIR patcher),
 `docs/STATUS.md` (the measurements and workarounds cited below).
@@ -36,15 +37,57 @@ calls. Everything Turu needs beyond them is worked around in Rust or patched at 
   dormant marks skip clips that are stopped, but the game keeps many decorative clips playing,
   and Lag Killer's `world.visible = false` hides clips while they still run their frames.
   Filters and full quality cost render passes on phones and in Grid View.
-- **Several clients on one stage.** Turu Mas rewrites skua's bytecode at run time
-  (`turu_air_patch`: `ExternalInterface` to `TuruExternal<n>`, `stage.getChildAt(0)` to
-  `TuruStage.rootOf`, `stage.removeChildAt(0)` to `TuruStage.removeOwn`).
+- **Turu Mas (AIR).** skua.swf is rewritten at run time for AIR (see "Turu Mas today" below).
 - **Unused and risky.** Turu never calls `injectScript` (loads and runs any SWF from a URL),
   the `lnk*`/`fc*` remote registry, or relies on the per-frame login/server-list monitors after
   they've done their job. Remote-registry objects live until `lnkDestroy`.
 - **Errors.** Most callbacks have no `try/catch`; a missing path throws inside
   `ExternalInterface`, and Rust can't tell "null" from "threw". AS3 errors in the game client
   are never reported.
+
+### Turu Mas today
+
+Turu Mas bundles the same `bot/assets/skua.swf` (`air/app/build.sh` copies it into the APK). The
+host SWF (`TuruAirHost`) reads it once, then has the engine patch it for each tab
+(`nativePatch` → `turu_air_patch`, `Target::Skua`, `Options { shared_stage, client }`) and loads
+the result with `loadBytes`. On VibeSkua's SWF, the shared-stage patch makes
+16 changes (6 swaps, 1 drop, 9 stage sites):
+
+| What skua does | What the patch makes it | Why |
+|---|---|---|
+| `ExternalInterface.addCallback` / `call` (`Externalizer`) | `TuruExternal<n>` | AIR on Android has no `ExternalInterface`. |
+| `new Loader()` ×4 (`loadGame`, `injectScript`, two in `initCustomBackground`) | `TuruLoader<n>` | A SWF loaded from the web lands in a remote sandbox that can't share code; `TuruLoader` fetches through Turu's disk cache, patches the client, and `loadBytes` it. |
+| `Security.allowDomain('*')` | dropped | Throws in AIR's application sandbox. |
+| `this.stg.removeChildAt(0)` in `onComplete` | `TuruStage.removeOwn(this)` | Child 0 of a shared stage is whichever tab is shown. |
+| `this.stg.addChild(game)`, one `getChildAt(0)` | `TuruStage.stageAddChild` / `rootOf` | The game goes into its own tab's layer. |
+| `game.stage.addEventListener(KEY_DOWN, key_StageGame)`, `QtySelectorMC`'s key listener | `TuruStage.keys` gate | Only the tab on screen takes keys. |
+| `stage.mouseX` / `mouseY` ×4 (`QtySelectorMC`) | the game's own | The host scales each game to fit AIR's view. |
+
+What that costs, beyond the rules themselves:
+
+- **The client number is baked into class names.** Each tab's skua is patched separately to
+  call `TuruExternal0`…`3` and `TuruLoader0`…`3`, eight near-empty classes compiled into the
+  host SWF. That is why Turu Mas has at most four tabs (`clients.rs`'s `MAX`), and why the patch cache
+  holds four copies of skua (`skua0`…`skua3`).
+- **The host guesses whose code is calling.** `TuruStage.clientOfDomain` finds a tab from the
+  caller's `ApplicationDomain` by looking for the `Game` class and comparing it with each tab's
+  game (or its loader while the game is still starting); skua never says which tab it is.
+- **The host does skua's job for the game.** `TuruLoader` recognises the client by its URL
+  (`/gamefiles/Game*.swf`) and copies `gameParams` (`sFilePath`) into the game's `params` on
+  `init`, because skua only copies its own `loaderInfo.parameters` after `complete`, too late for
+  the client.
+- **skua sets the shared stage's `scaleMode` and `align`** in `onComplete`, for every tab at once;
+  the host sets them back (`TuruAirHost.fit`).
+- **Every call is an AIR status event.** A round trip through the extension is ~1.6 ms on screen
+  and 2.7 ms median (27 ms p95) off screen, about 650 calls a second at most on screen
+  (AIR_PROPOSAL, "bridge benchmark"). One farming tab polling ~200 calls a second uses about a
+  third of that; four tabs would pass it. On Ruffle the hop is far cheaper.
+- **Rules match instructions, not names**, so they survive VibeSkua moving code around, but a
+  change in how skua reaches the stage or loads a SWF can silently miss a site
+  (`Report::stage_missed`), and `lib.rs`'s hash invalidates the cache on every rule change.
+
+The game client's rules (its `AirLoader`, `Loader`s, the shared-stage hooks for keys, sound and
+popups in the client and every SWF it loads) are AQW's code: an owned skua can't remove those.
 
 ## Goal
 
@@ -77,6 +120,10 @@ upstream changes can be merged. Commit the built `skua.swf` to `bot/assets/` as 
 Rust-only build needs no Java), and have CI rebuild it and fail on a difference. `air_patch`
 keeps working on the result until milestone 6 makes its skua rules unnecessary.
 
+Turu Mas needs nothing extra: `air/app/build.sh` already copies `bot/assets/skua.swf`, so the
+committed SWF ships in the APK too. The AIR SDK's `amxmlc` could compile skua, but desktop CI has
+no AIR SDK, so skua stays on `asc.jar` and both builds use the one SWF.
+
 ## Milestones
 
 Each milestone is one PR (or a few), shippable on its own, in this order.
@@ -89,7 +136,9 @@ Each milestone is one PR (or a few), shippable on its own, in this order.
   `bot/assets/skua.swf`.
 - CI job: rebuild and compare. The SWF won't be byte-identical to VibeSkua's (different
   compiler), so the check for this milestone is behavioural: `cargo test -p turu_bot`,
-  `air_patch`'s `patches_the_real_skua`, and a login-to-Battleon run on desktop and Turu Mas.
+  `air_patch`'s `patches_the_real_skua` (the same 6 swaps and 1 drop; with the shared stage, the
+  same 9 stage sites: `cargo run -p turu_air_patch --example patch -- --skua --shared-stage`),
+  and a login-to-Battleon run on desktop and on Turu Mas with two tabs.
 - Done when: the new SWF passes all of that and replaces the old one.
 
 ### M1: Version handshake and error reporting
@@ -147,8 +196,11 @@ Each milestone is one PR (or a few), shippable on its own, in this order.
 - `getSelfSnapshot()` / `getTargetSnapshot()`: HP, MP, state, cell, auras in one call.
 - Rust: `flash.rs` gets `get_many`; the kill loop, skill rules, `api::player::shared` and item
   checks use them when the feature is there.
+- Turu Mas gains most: each round trip saved is ~1.6 ms of AIR's thread on screen and more off
+  screen ("Turu Mas today"), against well under that on Ruffle.
 - Done when: calls/s on a standard farm (FarmerJoe DoAll, GoldFarm) drop measurably with the
-  same kills per minute and the same answers (a debug mode that does both and compares).
+  same kills per minute and the same answers (a debug mode that does both and compares), on
+  desktop and on Turu Mas (the extension's round trips per second, on and off screen).
 
 ### M5: Events and watched values
 
@@ -173,17 +225,55 @@ The large one; it completes EVENT_WAITS_PROPOSAL for the conditions packets can'
 - Cutscenes: with `cutscene`, Skip Cutscenes can wait until the game registered the overlay
   before removing it, fixing the /lichwar hold-back; `skipCutscenes` also restores
   `world.visible` unless Lag Killer is on.
+- On Turu Mas, events arrive through `TuruExternal.call` as status events like any other call
+  from skua; there are far fewer of them than the polls they replace, and they cost AIR's
+  thread nothing while waiting. With the screen off, AIR slows the app (27 ms p95 per round
+  trip), so a poll there is both slow and late; an event is only late.
 - Done when: calls/s idle and farming drop, wait latency (perf log) drops, and the warning
-  count ("too soon") doesn't rise. Measured with one tab and with nine in Grid View.
+  count ("too soon") doesn't rise. Measured with one tab and with nine in Grid View, and on Turu
+  Mas with four tabs, screen on and off.
 
-### M6: Several clients built in
+### M6: One SWF for every host, Turu Mas included
 
-- `loadClient(clientId)` (or a flash var): skua namespaces its callbacks and calls by the id and
-  finds its game by reference, never `stage.getChildAt(0)`.
-- Turu Mas then needs no skua rules in `air_patch` (the game client's rules stay). Keep them for
-  an old SWF (version 0) until the bundled one is the only one shipped.
-- Done when: Turu Mas runs several clients on the new SWF with `air_patch`'s skua target
-  disabled.
+skua finds out at start which host it runs under and talks to it directly, so the same SWF runs
+unpatched on desktop, Android (Ruffle) and Turu Mas. It depends only on M0–M2, so it can come
+straight after them if Turu Mas needs it first.
+
+- **A host interface, found at run time.** skua looks for a `TuruHost` class in its own
+  `ApplicationDomain` (`ApplicationDomain.currentDomain.hasDefinition`): the host SWF compiles
+  it in, as it compiles `TuruExternal` today. With it, `Externalizer` calls
+  `TuruHost.addCallback(client, ...)` and `TuruHost.call(client, ...)`; without it (desktop,
+  Ruffle Android), `ExternalInterface` as now. No class name carries a client number.
+- **The tab says who it is.** The host passes the client number in the `LoaderContext`'s
+  `parameters` when it loads skua (`turuClient`); skua reads it from `loaderInfo.parameters`
+  and passes it with every host call. Then it registers itself:
+  `TuruHost.register(client, main, gameDomain)` once the game's domain is known.
+  `TuruStage.clientOfDomain` gets an exact answer instead of matching `Game` classes, and its
+  "couldn't tell its tab" counter should stay at zero by construction.
+- **Loading through the host.** `loadGame` and the custom-background loads call
+  `TuruHost.load(client, url, kind)`, which does what `TuruLoader` does now (disk cache, patch
+  the client or the asset, `loadBytes` with `allowCodeImport`), and gives the `Loader` back. skua
+  copies its parameters and `sFilePath` into the game's `params` on `init` itself, on every
+  host, so `TuruLoader`'s URL check and `gameParams` copy go. `injectScript` keeps a plain
+  `Loader` (or goes in M9), and refuses under AIR.
+- **The sandbox.** `Security.allowDomain('*')` only when `Security.sandboxType` isn't
+  `Security.APPLICATION` (AIR), so it never throws there.
+- **The stage.** skua swaps its game by reference (M2), and under a host it hands the game to
+  `TuruHost.showGame(client, game)` instead of adding it to the stage, and leaves `scaleMode` and
+  `align` to the host. Its key listener checks `TuruHost.isShown(client)`; `QtySelectorMC` reads
+  the game's `mouseX`/`mouseY` instead of the stage's (correct on every host: the game is
+  scaled on AIR and letterboxed on desktop).
+- **The patcher.** With the bundled SWF reporting the feature (`skuaInfo`, M1), the host loads
+  skua as is: no `nativePatch` for skua, no `skua0`…`skua3` in the cache. Then remove
+  `Target::Skua`, `Options::client`, the `stg`/`removeChildAt` rules, `TuruExternal0`…`3` and
+  `TuruLoader0`…`3`. skua is bundled in the APK (`app:/skua.swf`), never a user's file, so
+  there is no old SWF to keep supporting once the APK ships the new one. The game client's rules
+  and `shared_stage_swf` for the SWFs it loads stay.
+- **More tabs.** With no per-client classes, `clients.rs`'s `MAX` of 4 is only a setting; what
+  limits tabs on a phone becomes memory and the extension's calls a second (M4, M5).
+- Done when: Turu Mas runs four tabs on the unpatched SWF (log in, change maps, switch tabs: keys,
+  sound and the quantity selector go to the shown tab) with `Target::Skua` deleted; desktop and
+  Ruffle Android are unchanged; `TuruStage`'s debug counters show no call it couldn't place.
 
 ### M7: Less work for the player
 
@@ -206,6 +296,9 @@ perf log now with `RUFFLE_GPU_TIMING=1` (STATUS.md, "GPU time per frame"):
   a desktop with a window (headless uses the null renderer, so drawing costs nothing there).
 - Hit-test time per pick in a shown tab with the pointer over the game, as STATUS.md's
   0.35 ms (farm map) / ~1 ms (Yulgar).
+- On Turu Mas, AIR's own renderer and VM do the work, not Ruffle and wgpu: the dormant marks
+  and `RUFFLE_GPU_TIMING` don't apply there. Measure frame time with AIR's `Event.ENTER_FRAME`
+  spacing (or `adb shell dumpsys gfxinfo`) for the drawing levers, with one tab and four.
 
 **Levers**, most expected value first:
 
@@ -214,7 +307,11 @@ perf log now with `RUFFLE_GPU_TIMING=1` (STATUS.md, "GPU time per frame"):
   restoring them on `false`. A dormant clip is skipped by a frame's three walks only while
   stopped with nothing queued (Battleon 2.2 -> 1.3 ms, /fotia 4.9 -> 1.95 ms), so every clip
   stopped here is one ruffle-aqw's mark can skip. Beyond Lag Killer's `world.visible = false`,
-  which hides clips but leaves them running their frames.
+  which hides clips but leaves them running their frames. On Turu Mas a stopped clip still
+  saves AIR its frame scripts and timeline work, so this helps there too, without the marks.
+  With several tabs it matters more on AIR than on Ruffle: hidden tabs aren't drawn, but every
+  tab's game runs at the one stage's frame rate (TURU_MAS.md, "No hidden-tab slowdown"), so
+  `stopAnimations(true)` on hidden tabs is AIR's stand-in for Ruffle's 2 FPS.
 - **Smaller hit tests in a shown tab.** `setMouseEnabled(...)`: `mouseChildren = false` on
   layers nobody clicks (map art, other players while a bot runs), and on `game.world` entirely
   while a bot runs in a hidden tab or headless. Hidden tabs already skip picking
@@ -277,6 +374,10 @@ shown again or a switch is turned off, and only the levers that paid off are kep
   locks held long); M5 measures the player's time spent in it.
 - **Game-side switches (M7, M8)** can break things only seen in game; they stay off by default
   until checked.
+- **Two hosts to check.** Every milestone runs under Ruffle and under AIR, whose AS3 VMs differ
+  (sandbox rules, `LoaderContext.parameters` with `loadBytes`, timing of `init` and `complete`).
+  Each milestone's "done when" includes a Turu Mas run, and `TuruHost` stays small so the
+  desktop path (no host class) stays the plain `ExternalInterface` one.
 
 ## Open questions
 
@@ -285,3 +386,5 @@ shown again or a switch is turned off, and only the levers that paid off are kep
 - Do scripts get the events too (`bot.events.on("mapLoaded", ...)` in `bot/js/turu.ts`), or only
   the engine's waits?
 - Does anything (custom scripts, `injectScript` users) depend on the remote registry?
+- Should M6 come right after M2, ahead of the call savings, because it lifts Turu Mas's
+  four-tab cap and removes the skua rules from `air_patch`?
