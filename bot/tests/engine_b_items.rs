@@ -367,6 +367,11 @@ fn drops_pickup_sends_get_drop() {
     assert_eq!(call(&bot, "drops.toPickupIds", json!([])), json!([5]));
     call(&bot, "drops.remove", json!([[5]]));
     assert_eq!(call(&bot, "drops.toPickupIds", json!([])), json!([]));
+    // Names in any case are the same entry.
+    call(&bot, "drops.add", json!([["a"]]));
+    assert_eq!(call(&bot, "drops.toPickup", json!([])), json!(["A"]));
+    call(&bot, "drops.remove", json!([["a"]]));
+    assert_eq!(call(&bot, "drops.toPickup", json!([])), json!([]));
 
     assert_eq!(call(&bot, "drops.interval", json!([])), json!(0));
     call(&bot, "drops.setInterval", json!([250]));

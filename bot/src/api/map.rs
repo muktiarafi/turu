@@ -111,7 +111,11 @@ pub fn join(
 ) -> BotResult<()> {
     let map_name = map.split('-').next().unwrap_or_default().to_owned();
     bot.state.lock().last_map = Some(map_name.clone());
-    if !player::playing(bot)? || !player::loaded(bot)? || (!ignore_check && name(bot)? == map) {
+    // Turu: in any case (VibeSkua compares exactly, so "WaterStorm" rejoined waterstorm).
+    if !player::playing(bot)?
+        || !player::loaded(bot)?
+        || (!ignore_check && name(bot)?.eq_ignore_ascii_case(map))
+    {
         return Ok(());
     }
     let (private_rooms, private_number, tries, delay) = {

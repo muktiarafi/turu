@@ -76,7 +76,8 @@ impl DropRunner {
             match *item {
                 NameOrId::Name(name) => {
                     let name = game_name(name);
-                    if !names.iter().any(|n| *n == name) {
+                    // Turu: in any case, as the pickup matches names.
+                    if !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
                         names.push(name.into_owned());
                     }
                 }
@@ -97,7 +98,7 @@ impl DropRunner {
             match *item {
                 NameOrId::Name(name) => {
                     let name = game_name(name);
-                    names.retain(|n| *n != name)
+                    names.retain(|n| !n.eq_ignore_ascii_case(&name))
                 }
                 NameOrId::Id(id) => ids.retain(|i| *i != id),
             }

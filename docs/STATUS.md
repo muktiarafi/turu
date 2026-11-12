@@ -247,6 +247,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Unlike VibeSkua, `getRank`/`hasRank` match faction names ignoring case: the game calls one
   faction "EtherStorm", CoreFarms' `etherStormREP` asks for "Etherstorm", and the exact match
   read rank 0, so 0ArchMage farmed waterstorm forever on accounts already at rank 10.
+  The same goes for `map.join`'s "already there" check and the drop list's `add`/`remove`, and
+  in the core scripts for `Core.hasFaction`, the item-name checks (CoreBots' `sameName`: trimmed,
+  any case, `&amp;` read as `&`) and `killMonster`'s cell spelling fix, which C# never applied
+  (it tests the case-insensitive match twice).
 - **Counter-attack pause:** `bot.ultraBossHelper` (VibeSkua `Bot.UltraBossHelper`) and
   `bot.combat.stopAttacking` / `enableCounterHandler` (`bot/src/api/combat.rs`). With it on
   (CoreBots' `setOptions()` turns it on, as in VibeSkua), a `ct` packet's "prepares a counter

@@ -198,6 +198,8 @@ fn join_skips_the_current_map() {
     let game = FakeGame::new();
     let bot = new_bot(&game);
     map::join(&bot, "battleon", "Enter", "Spawn", false, true).unwrap();
+    // In any case.
+    map::join(&bot, "BattleOn", "Enter", "Spawn", false, true).unwrap();
     assert!(game.packets().is_empty());
 }
 
