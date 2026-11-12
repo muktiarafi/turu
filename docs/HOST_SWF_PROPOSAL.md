@@ -1,7 +1,7 @@
 # Proposal: Turu's own host SWF
 
-Status: R0 done (`host/`, crate `turu_host`, `bot/assets/turu.swf` not yet used); the rest are
-proposals. Replaces the plan to fork VibeSkua's
+Status: R0 done (`host/`, crate `turu_host`); R1 built (`turu.swf` starts the game, run only with
+`TURU_HOST_SWF=turu`; its checks in game are pending); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -142,9 +142,11 @@ How it's written:
 - **Deliberate differences**, each listed in the parity comparator's allowlist with why: the
   game centred (no `align = TOP`), no quest-wiki error before login, the monster-click fallback
   that works, a custom-background timer that gives up, the old game removed by reference,
-  `packetFromServer` only on request, `sfc.debug` left as the game sets it (outgoing packets
-  captured by wrapping the send), and the header's frame rate at 24, the game's own (Turu sets
-  24 when the client loads anyway, `background.rs`; Turu Mas's stage is the host's 24).
+  `packetFromServer` only on request, errors reported (`error`), "Turu" as the login screen's
+  title (VibeSkua's says "AURAS!!!"), the Bank hotkey ignored while typing in a text field,
+  `loadClient` taking the frame rate, and the header's frame rate at 24, the game's own (Turu
+  sets 24 when the client loads anyway, `background.rs`; Turu Mas's stage is the host's 24).
+  From R5, `sfc.debug` left as the game sets it (packets captured by a hook in the client).
 - **Build.** `host/as3` (package `turu.host`) is compiled by crate `turu_host` with Ruffle's
   `ruffle/tools/asc/asc.jar` against Ruffle's playerglobal (which it builds itself, so nothing
   depends on where `ruffle_core`'s build put it). Java is already a build dependency there; the
@@ -167,10 +169,10 @@ How it's written:
 
 ### Moving over
 
-Both SWFs are embedded until the switch. A setting picks one: Options > Application > Host SWF
-(VibeSkua / Turu), `TURU_HOST_SWF=turu|vibeskua` for headless runs and CI. VibeSkua stays the
-default until parity passes (R3); Turu is then the default for one release with VibeSkua still
-selectable, and VibeSkua's SWF is removed after that (R5).
+Both SWFs are embedded until the switch. `TURU_HOST_SWF=turu|vibeskua` picks one; from R3, once
+`turu.swf` answers every call, so does a setting, Options > Application > Host SWF (VibeSkua /
+Turu). VibeSkua stays the default until parity passes (R3); Turu is then the default for one
+release with VibeSkua still selectable, and VibeSkua's SWF is removed after that (R6).
 
 ### Parity
 
@@ -205,26 +207,44 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
 
 ### R1: The skeleton
 
-- `turu.host.Main` loads the game client as VibeSkua's does (spec §1: game version, the client,
-  its `params`), copying its parameters and `sFilePath` into the client's `params` on `init`, on
-  every host.
-- The host split: with a `TuruHost` class in its `ApplicationDomain` (Turu Mas), callbacks and
-  calls go through it with the client number read from `loaderInfo.parameters` (`turuClient`);
-  without it, `ExternalInterface`. `Security.allowDomain('*')` only outside AIR's application
-  sandbox.
-- `hostInfo()`: `{"version": n, "features": [...]}`; VibeSkua's SWF has none, so a failed call
-  means "VibeSkua". `flash.rs` keeps the answer per client and later features check it.
-- Every callback in `try/catch`; uncaught errors of `turu.swf` and of the client forwarded as
-  `error(message, stack)`, logged to the debug log and, rate-limited, to Sentry. Behind
-  `setStrictErrors(true)` a throw answers `{"error": "..."}` so `flash.rs` can return a real
-  error; off until callers handle it.
-- Packets: `pext` once per packet; outgoing ones by wrapping `sfc.sendXtMessage` / `sfc.send`
-  (`xt`, `xml`, `str`, `json` checked in game); `packetFromServer` only after
-  `setPacketEcho(true)`; frame handlers that stop once their job is done.
-- The Host SWF setting and `TURU_HOST_SWF`.
-- Done when: with Turu chosen, desktop starts, loads the client and logs in; the packet log is
-  the same line for line as with VibeSkua's; `perf.rs` shows the packet cost down (packets/s,
-  ms/s in the debug-message handler and `JSON.stringify`).
+- `turu.host.Main` starts as VibeSkua's does (spec §1): `Security.allowDomain('*')` (skipped
+  where it throws), the `String.prototype.trim` patch, the game's version, then the client
+  loaded into `turu.swf`'s domain. Its `params` (`turu.swf`'s own parameters, `vars`, `sURL`,
+  `sBG`, `sTitle`, `isEU`, `loginURL`) are set on `init`, before the client reaches the stage.
+  The game then takes `turu.swf`'s place on the stage, `SHOW_ALL`, centred.
+- The `Host` seam (`addCallback`, `call`, `load`, `show`), with one implementation,
+  `ExternalHost` (`ExternalInterface` and the player's own stage: desktop and Ruffle Android).
+  Turu Mas's comes in R4, where it can be tested.
+- Events: every one Rust handles (`requestLoadGame`, `pre-load`, `loaded`, `pext`, `packet`,
+  `packetFromServer`, `connectionLost`, `userIntentionalAction`, `debug`), plus `error`. Logout
+  and Change Server in the options menu (`mcOption`) and a server picked from the login list
+  (`mcLogin.sl.iList`) are seen by one capture-phase click listener on the game, with no frame
+  handler. The Bank hotkey (`litePreference.data.keys.Bank`).
+- Callbacks: `loadClient(frameRate?)`, `setBackgroundValues`, `hostInfo`, `setStrictErrors`,
+  `setPacketEcho`, `catchPackets`, and `throwForTest` (unlisted: debug builds of Turu only).
+- `hostInfo()`: `{"name": "turu", "version": 1, "features": [...], "callbacks": [...]}`. Rust
+  asks for it in `Work::LoadClient`, before `loadClient`, and keeps it per tab until the next
+  `requestLoadGame`; VibeSkua's SWF answers nothing, and calls go through as before. With it,
+  `Flash::call` refuses a name it doesn't list, without calling Flash
+  (`BotError::NotInHostSwf`: "`name` is not in Turu's host SWF").
+- Errors: every callback in `try/catch`. Its throws and the uncaught errors of `turu.swf` and
+  of the client reach Rust as `error(message, stack)`, logged to the debug log, the same message
+  at most once a minute with a count. No Sentry: the bot crate has none, the client's errors are
+  AQW's, and stacks can carry player data. `setStrictErrors(true)` makes a throw answer
+  `{"error": "..."}`; off until `flash.rs` handles it.
+- Packets as VibeSkua's: read from SmartFox's debug messages, with `sfc.debug` kept on.
+  SmartFox's client (`it.gotoandplay.smartfoxserver.SmartFoxClient`) is sealed and its socket
+  private, so AS3 can't wrap its sends; R5 replaces this. `pext` once per packet;
+  `packetFromServer` only after `setPacketEcho(true)`; a new SmartFox client is followed.
+- `TURU_HOST_SWF=turu` chooses it (`turu_bot::HostSwf`; `bot::paths` writes `turu.swf`). No
+  setting yet: with only R1's callbacks, Turu's background loops would fill the log with
+  "not in Turu's host SWF".
+- Not yet: the monster-click wiki link (`openWebsite`). What VibeSkua's click handler does isn't
+  in the spec; parity settles it (R2).
+- Done when, by hand on desktop with `TURU_HOST_SWF=turu`: the client loads and you log in; the
+  same hand-played sequence gives the same outgoing packet log and `pext` count as with
+  VibeSkua's; `throwForTest` (and `throwForTest("later")`, uncaught) shows its stack in the
+  debug log; `packetFromServer` no longer arrives.
 
 ### R2: The generic calls and parity mode
 
@@ -254,14 +274,35 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
   `mouseX`/`mouseY`. It loads in a domain under the host's, or the game menu and assets lose
   `TuruStage` and the menu silently never opens.
 - The host loads `turu.swf` as is: no `nativePatch` for it, no per-client copies in the cache.
-  VibeSkua's SWF keeps going through `Target::Skua` until R5.
+  VibeSkua's SWF keeps going through `Target::Skua` until R6.
 - With no per-client classes, `clients.rs`'s `MAX` of 4 is only a setting; what limits tabs on a
   phone becomes memory and the extension's calls a second (M4, M5).
 - Done when: Turu Mas runs four tabs on `turu.swf` (log in, change maps, switch tabs: keys, sound
   and the quantity selector go to the shown tab; the game menu opens in Battleon), and
   `TuruStage`'s debug counters show no call it couldn't place.
 
-### R5: The switch
+### R5: One client-loading path
+
+- `Host.load` patches the client as it loads on every host, not only on Turu Mas: Ruffle's
+  hosts fetch it (through the disk cache, `game_files.rs`), patch it and `loadBytes` it.
+  `turu_air_patch` becomes the client patcher for every host; AIR's sandbox rules stay Turu
+  Mas's.
+- The packet hook: SmartFox's `writeToSocket` (every message sent) and `handleMessage` (every
+  one received) also call a hook class in `turu.swf`, which sends `packet` and, on request,
+  `packetFromServer`. `sfc.debug` is left as the game sets it, so SmartFox stops building a
+  debug string for every packet.
+- Not the socket (`capture.rs`): it sees bytes before the client has handled them, so a wait
+  woken by a packet could read the world before the client changed it; AIR has no such pipe;
+  and holding or dropping a packet there (M8) would deceive the client instead of not sending.
+  `capture.rs` stays the Interceptor's raw view.
+- A patch that misses (SmartFox's names changed in a game update) is reported, as
+  `Report::stage_missed` is, and the SWF falls back to the debug messages.
+- The same machinery carries M7's `gotoAndStop` guard.
+- Done when: the hook's packet log matches the debug messages' over the standard farms, and
+  `perf.rs` shows the packet cost down (ms/s in SmartFox's debug messages and `JSON.stringify`),
+  on desktop and on Turu Mas.
+
+### R6: The switch
 
 - Turu's SWF becomes the default on every host; VibeSkua's stays selectable for one release,
   then goes, with `Target::Skua`, `Options::client`, the skua rules (`stg`/`removeChildAt`),
@@ -372,7 +413,8 @@ perf log with `RUFFLE_GPU_TIMING=1` (STATUS.md, "GPU time per frame"):
 - **Fewer event-loop wakes.** Not a switch: M4's batched reads and M5's events cut the calls,
   and each call wakes the app's event loop (190-250 ticks a second with a bot running, against
   30 frames). Counted here with the rest so the total is measured together.
-- **Less packet work.** Also not a switch: R1's `sfc.debug` left alone and no `packetFromServer`.
+- **Less packet work.** Also not a switch: R5's packet hook (`sfc.debug` left alone) and
+  `packetFromServer` only on request (R1).
 - `setFrameRate(n)` inside the SWF, so the game's own FPS setting and Turu's (`background.rs`'s
   `stage.frameRate`) don't fight.
 
@@ -380,8 +422,8 @@ perf log with `RUFFLE_GPU_TIMING=1` (STATUS.md, "GPU time per frame"):
 
 - The game client's own code: its classes are sealed, so the host SWF can't replace their
   methods. The ~165 `gotoAndStop`s a second (half to the frame a clip is already on) could be
-  skipped in the client's bytecode (a guard on `currentFrame`), which `turu_air_patch` already
-  knows how to rewrite: a separate proposal, for desktop as well as AIR.
+  skipped in the client's bytecode (a guard on `currentFrame`), patched as R5 patches SmartFox:
+  a separate proposal, for desktop as well as AIR.
 - Rendering's fixed costs (tessellation, GPU passes, Metal/D3D presentation): Ruffle and wgpu.
 
 Done when: each lever has its before/after on the STATUS.md benchmarks (FarmerJoe DoAll at
@@ -391,7 +433,7 @@ shown again or a switch is turned off, and only the levers that paid off are kep
 
 ### M8: Packet hooks for Butler
 
-- With R1's send wrapper: `holdPackets(filter)` / `releasePackets()` and `dropPackets(filter)`,
+- With R5's packet hook: `holdPackets(filter)` / `releasePackets()` and `dropPackets(filter)`,
   so Butler can keep the client from acting while it drives the character, and a skill can be
   held rather than sent too soon.
 - `outgoing(packet)` events carry what the client sent, for PACKET_BUTLER_PROPOSAL's mirror.

@@ -362,11 +362,11 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
         ("--power", Some("-p"), Some("high")),
         ("--graphics", Some("-g"), Some(graphics)),
     ]);
-    // Turu: VibeSkua's skua.swf, which loads AQW and exposes it to the bot.
-    let skua_url = match turu::skua_swf_url() {
+    // Turu: the host SWF (VibeSkua's skua.swf), which loads AQW and exposes it to the bot.
+    let skua_url = match turu::host_swf_url() {
         Ok(url) => url,
         Err(e) => {
-            eprintln!("Couldn't write skua.swf: {e}");
+            eprintln!("Couldn't write the host SWF: {e}");
             std::process::exit(1);
         }
     };

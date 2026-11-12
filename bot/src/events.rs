@@ -257,6 +257,7 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
 
     match name {
         "requestLoadGame" => {
+            bot.flash.forget_host_info();
             bot.state.lock().client_requested = true;
             bot.events.post(Work::LoadClient);
         }
@@ -333,6 +334,12 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             }
         }
         "debug" => bot.logs.debug.push(format!("[skua] {}", arg_str(0))),
+        // Turu's host SWF: its own uncaught errors and the client's, and callbacks that threw.
+        "error" => {
+            if let Some(line) = bot.flash.host_error_line(arg_str(0), arg_str(1)) {
+                bot.logs.debug.push(line);
+            }
+        }
         // Turu Mas's host SWF (air/app): its start and its errors (the Debug log reaches the app's
         // log too).
         "hostLog" => bot.logs.debug.push(format!("[AIR host] {}", arg_str(0))),

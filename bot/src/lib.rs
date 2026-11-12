@@ -64,6 +64,49 @@ use std::time::Duration;
 /// client from game.aq.com and exposes the game to the bot through ExternalInterface.
 pub const SKUA_SWF: &[u8] = include_bytes!("../assets/skua.swf");
 
+/// `turu.swf`, Turu's own host SWF (`host/`, docs/HOST_SWF_PROPOSAL.md), still being written: run
+/// only with `TURU_HOST_SWF=turu` ([`HostSwf`]).
+pub const TURU_SWF: &[u8] = include_bytes!("../assets/turu.swf");
+
+/// The host SWF Turu starts: VibeSkua's, or with `TURU_HOST_SWF=turu` Turu's own, which answers
+/// only part of the bot's calls yet (docs/HOST_SWF_PROPOSAL.md, R1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostSwf {
+    VibeSkua,
+    Turu,
+}
+
+impl HostSwf {
+    /// The one `TURU_HOST_SWF` asks for (`turu` or `vibeskua`); VibeSkua's otherwise.
+    pub fn from_env() -> Self {
+        match std::env::var("TURU_HOST_SWF").as_deref() {
+            Ok("turu") => Self::Turu,
+            Ok("vibeskua") | Ok("") | Err(_) => Self::VibeSkua,
+            Ok(other) => {
+                tracing::warn!(
+                    "TURU_HOST_SWF={other}: expected turu or vibeskua; using VibeSkua's"
+                );
+                Self::VibeSkua
+            }
+        }
+    }
+
+    /// Its file name in the data directory.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::VibeSkua => "skua.swf",
+            Self::Turu => "turu.swf",
+        }
+    }
+
+    pub fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::VibeSkua => SKUA_SWF,
+            Self::Turu => TURU_SWF,
+        }
+    }
+}
+
 /// The script API (`import ... from "turu"`): the runtime scripts load, and the types editors
 /// read from the scripts folder's `types/turu.ts`.
 pub const TURU_TS: &str = include_str!("../js/turu.ts");

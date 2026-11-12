@@ -30,19 +30,30 @@ pub(crate) fn start(bot: &Arc<Bot>) {
         .expect("couldn't start the bot's timer thread");
 }
 
+/// Asks the host SWF what it is, then has it load the game's client.
+fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
+    // VibeSkua's "Client Animation Frame-rate": the host SWF runs at its own rate until the
+    // game's FPS setting (or Set FPS) applies in game.
+    let fps = bot.settings.read().animation_frame_rate.max(1);
+    if let Some(info) = bot.flash.ask_host_info() {
+        bot.logs
+            .debug
+            .push(format!("Host SWF: {} version {}", info.name, info.version));
+        if info.has("loadClientFrameRate") {
+            return bot.flash.call("loadClient", vec![fps.into()]).map(|_| ());
+        }
+    }
+    if let Err(e) = bot.flash.set("stage.frameRate", fps) {
+        bot.logs
+            .debug
+            .push(format!("Couldn't set the frame rate: {e}"));
+    }
+    bot.flash.call("loadClient", vec![]).map(|_| ())
+}
+
 fn do_work(bot: &Arc<Bot>, work: Work) {
     let result = match &work {
-        Work::LoadClient => {
-            // VibeSkua's "Client Animation Frame-rate": skua.swf runs at 30 until the game's
-            // own FPS setting (or Set FPS) applies in game.
-            let fps = bot.settings.read().animation_frame_rate.max(1);
-            if let Err(e) = bot.flash.set("stage.frameRate", fps) {
-                bot.logs
-                    .debug
-                    .push(format!("Couldn't set the frame rate: {e}"));
-            }
-            bot.flash.call("loadClient", vec![]).map(|_| ())
-        }
+        Work::LoadClient => load_client(bot),
         Work::AutoLogin => {
             // Logging in takes a while; items added meanwhile still need this thread.
             let bot = bot.clone();

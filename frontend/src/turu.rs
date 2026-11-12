@@ -575,11 +575,16 @@ pub fn init_main_thread() {
     let _ = MAIN_THREAD.set(std::thread::current().id());
 }
 
-/// The URL Turu starts with: VibeSkua's `skua.swf`, written to the data directory.
-pub fn skua_swf_url() -> anyhow::Result<String> {
-    let path = bot().paths.write_skua_swf()?;
+/// The URL Turu starts with: the host SWF, VibeSkua's `skua.swf` or with `TURU_HOST_SWF=turu`
+/// Turu's `turu.swf` ([`turu_bot::HostSwf`]), written to the data directory.
+pub fn host_swf_url() -> anyhow::Result<String> {
+    let swf = turu_bot::HostSwf::from_env();
+    if swf == turu_bot::HostSwf::Turu {
+        tracing::info!("Host SWF: Turu's own (TURU_HOST_SWF=turu), still being written");
+    }
+    let path = bot().paths.write_host_swf(swf)?;
     let url = url::Url::from_file_path(&path)
-        .map_err(|()| anyhow::anyhow!("bad path for skua.swf: {}", path.display()))?;
+        .map_err(|()| anyhow::anyhow!("bad path for {}: {}", swf.file_name(), path.display()))?;
     Ok(url.to_string())
 }
 

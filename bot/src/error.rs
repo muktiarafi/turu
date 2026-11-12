@@ -11,6 +11,9 @@ pub enum BotError {
     Json { path: String, message: String },
     #[error("{0}")]
     InvalidArgument(String),
+    /// Turu's host SWF has no such callback (yet): docs/HOST_SWF_PROPOSAL.md.
+    #[error("`{0}` is not in Turu's host SWF")]
+    NotInHostSwf(String),
     #[error("unknown bot method `{0}`")]
     UnknownMethod(String),
     #[error("{0}")]

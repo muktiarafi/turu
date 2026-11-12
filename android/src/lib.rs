@@ -566,14 +566,14 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         }) as turu::ThreadReport
     }));
 
-    let movie_url = match turu::skua_swf_url().map(|url| Url::parse(&url)) {
+    let movie_url = match turu::host_swf_url().map(|url| Url::parse(&url)) {
         Ok(Ok(url)) => url,
         Ok(Err(e)) => {
-            tracing::error!("Bad skua.swf URL: {e}");
+            tracing::error!("Bad host SWF URL: {e}");
             return;
         }
         Err(e) => {
-            tracing::error!("Couldn't write skua.swf: {e}");
+            tracing::error!("Couldn't write the host SWF: {e}");
             return;
         }
     };

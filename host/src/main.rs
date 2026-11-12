@@ -133,7 +133,7 @@ fn source_files(dir: &Path) -> anyhow::Result<Vec<Source>> {
 
 /// A file's package, class, base class and imports, from its tokens.
 fn parse(path: PathBuf) -> anyhow::Result<Source> {
-    let text = std::fs::read_to_string(&path)?;
+    let text = without_comments(&std::fs::read_to_string(&path)?);
     let tokens: Vec<&str> = text
         .split(|c: char| c.is_whitespace() || matches!(c, '{' | '}' | ';'))
         .filter(|t| !t.is_empty())
@@ -162,6 +162,27 @@ fn parse(path: PathBuf) -> anyhow::Result<Source> {
         extends,
         imports,
     })
+}
+
+/// `text` with its `/* */` and `//` comments blanked, so a word in a doc comment isn't taken for
+/// a keyword. Strings aren't parsed: a `//` in one blanks the rest of its line, which holds no
+/// declaration.
+fn without_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("/*") {
+            rest = after.split_once("*/").map_or("", |(_, after)| after);
+            out.push(' ');
+        } else if rest.starts_with("//") {
+            rest = rest.find('\n').map_or("", |i| &rest[i..]);
+        } else {
+            let c = rest.chars().next().expect("not empty");
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
 }
 
 /// `files` with each class after the class of ours it extends; otherwise in path order.
@@ -352,6 +373,22 @@ mod tests {
     fn a_cycle_fails() {
         let files = [source("A", Some("B"), &[]), source("B", Some("A"), &[])];
         assert!(compile_order(&files).is_err());
+    }
+
+    #[test]
+    fn words_in_comments_arent_keywords() {
+        let text = "/** Loads the class of the game. */\npackage a { // extends nothing\n\
+                    public class B extends C {} }";
+        let tokens: Vec<String> = without_comments(text)
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        assert_eq!(
+            tokens,
+            [
+                "package", "a", "{", "public", "class", "B", "extends", "C", "{}", "}"
+            ]
+        );
     }
 
     #[test]
