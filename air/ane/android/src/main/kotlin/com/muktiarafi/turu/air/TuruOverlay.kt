@@ -78,6 +78,11 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
             MotionEvent.ACTION_DOWN -> {
                 ours = Bridge.nativeOnUi(x, y)
                 if (!ours) {
+                    // The game's, but egui hears it as a tap there too: one on the game closes an
+                    // open menu or popup, as a click elsewhere does (the Ruffle build's
+                    // `Screen::touch`). The rest of the gesture is AIR's alone.
+                    Bridge.nativeTouch(0, x, y)
+                    Bridge.nativeTouch(2, x, y)
                     return false
                 }
                 Bridge.nativeTouch(0, x, y)

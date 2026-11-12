@@ -204,7 +204,6 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 
 * Stop and Pause in the notification (the API does it).
-* A tap on the game doesn't close an open Turu menu.
 * 6 hours screen-off, and the phones that fail on Ruffle (Redmi 10, Infinix): not run yet.
 * Crashes in AIR's runtime aren't reported (see "Crash reports").
 * The release job hasn't run in CI yet: the AIR SDK's download on Ubuntu and ADT's packaging

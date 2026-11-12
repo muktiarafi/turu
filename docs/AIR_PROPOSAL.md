@@ -264,7 +264,7 @@ in-game bench on a phone.
 * **`TuruOverlay`** (Kotlin): a `SurfaceView` over AIR's (`setZOrderOnTop`, translucent), in the
   activity's content layout. At a finger's down it asks the engine (`nativeOnUi`: the rail and
   bar, or a non-background egui layer, as the Ruffle build's `Screen::touch`); a gesture it doesn't
-  take falls through to AIR's view below. It's the soft keyboard's target while egui wants text
+  take falls through to AIR's view below (and is a tap for egui, so an open menu closes). It's the soft keyboard's target while egui wants text
   (`platform_output.ime`): `commitText`, deletes and Enter become egui events.
 * **The game right of the rail:** the engine sends the rail's and bar's size in pixels
   (`gameInsets`) whenever they change (the rail hidden, a cutout); Kotlin sets them as AIR's view's
@@ -319,8 +319,8 @@ background, idle or running; typing in Search Scripts; the strip above the keybo
 clear of the notch; silent in the background), and a script farmed correctly, found, started and
 watched from Turu's own windows on the phone.
 
-**Left for A2:** a tap on the game doesn't close an open egui menu (egui only sees the UI's
-touches); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause.
+**Left for A2:** ~~a tap on the game doesn't close an open egui menu~~ (done 2026-11-12: a finger
+that falls through to AIR is also a tap for egui, as the Ruffle build's `Screen::touch`); Turu's touch controls (joystick, skills) over AIR; the notification's Stop/Pause.
 
 ## A3: Turu Mas, an app of its own (2026-11-11)
 
