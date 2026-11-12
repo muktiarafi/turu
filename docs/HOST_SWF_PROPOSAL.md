@@ -1,7 +1,7 @@
 # Proposal: Turu's own host SWF
 
-Status: R0 done (`host/`, crate `turu_host`); R1 built (`turu.swf` starts the game, run only with
-`TURU_HOST_SWF=turu`; its checks in game are pending); the rest are proposals. Replaces the plan to fork VibeSkua's
+Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the game, run only with
+`TURU_HOST_SWF=turu`); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
