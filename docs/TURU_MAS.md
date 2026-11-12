@@ -137,7 +137,12 @@ On Linux (the release job) ADT packages its "legacy" way, dexing with the AIR SD
 current, so a jar can pass locally and fail in CI. That old d8 crashes on `MethodParameters`
 entries without a name, which some of Sentry's classes have (`v0.3.0-beta.4`'s job:
 "NullPointerException ... visitParameter"), so `air/ane/strip-parameters.py` removes the
-attribute from the merged classes (it only names parameters for reflection).
+attribute from the merged classes (it only names parameters for reflection). The legacy route also
+dexes without Android's classes, so it can't desugar default interface methods (AndroidX's
+`DefaultLifecycleObserver`, which Sentry implements: "its super class `java.lang.Object` is
+missing"); it dexes for the manifest's minimum SDK, AIR's 21 unless `app.xml` says otherwise, and
+from 24 up nothing needs desugaring. So `app.xml` declares Turu Mas's real minimum, 26 (Android
+8).
 
 Symbols: the release workflow builds the library with line tables, uploads it with `sentry-cli`
 and keeps it as the `symbols-turu-mas-android-arm64` artifact (90 days).
