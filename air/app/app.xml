@@ -39,14 +39,15 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
-<application android:usesCleartextTraffic="true">
+<application android:networkSecurityConfig="@xml/network_security_config">
   <service android:name="com.muktiarafi.turu.air.TuruAirService" android:exported="false" android:foregroundServiceType="specialUse">
     <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Runs a game client and its bot script while the app is in the background"/>
   </service>
 </application>
 </manifest>]]></manifestAdditions>
   </android>
-  <!-- Android resources (res/): the adaptive launcher icon. build.sh writes the folder's path. -->
+  <!-- Android resources (res/): the adaptive launcher icon, and the network security config
+       (build.sh adds it from rustls-platform-verifier). build.sh writes the folder's path. -->
   <resdir>@RES@</resdir>
   <extensions>
     <extensionID>com.muktiarafi.turu.air</extensionID>

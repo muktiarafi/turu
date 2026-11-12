@@ -44,8 +44,14 @@ mkdir -p "$out/ext" && cp target/air-ane/com.muktiarafi.turu.air.ane "$out/ext/"
 export JAVA_HOME="$AIR_JAVA_HOME" PATH="$AIR_JAVA_HOME/bin:$PATH"
 "$AIR_HOME/bin/amxmlc" -swf-version=51 -external-library-path+=target/air-ane/TuruAirNative.swc \
   -source-path+=air/app/src -output "$out/TuruAirHost.swf" air/app/src/TuruAirHost.as
-# The Android resources' folder, as an absolute path (ADT's base for <resdir> isn't app.xml's).
-sed -e "s|@RES@|$PWD/air/app/res|" -e "s|@VERSION_NUMBER@|$version_number|" -e "s|@VERSION@|$version|" \
+# The Android resources: ours, plus the network security config of rustls-platform-verifier's
+# Kotlin part (plain HTTP only to the certificate authorities' hosts, for their revocation lists;
+# app.xml points the app at it), as its own Android library would merge it. Its folder goes into
+# app.xml as an absolute path (ADT's base for <resdir> isn't app.xml's).
+rm -rf "$out/res" && cp -R air/app/res "$out/res" && mkdir -p "$out/res/xml"
+cp android/vendor/rustls-platform-verifier/android/rustls-platform-verifier/src/main/res/xml/network_security_config.xml \
+  "$out/res/xml/"
+sed -e "s|@RES@|$PWD/$out/res|" -e "s|@VERSION_NUMBER@|$version_number|" -e "s|@VERSION@|$version|" \
   air/app/app.xml > "$out/app.xml"
 keystore=${MAS_KEYSTORE:-$out/dev.p12}
 password=${MAS_KEYSTORE_PASSWORD:-turumasdev}

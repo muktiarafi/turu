@@ -274,8 +274,10 @@ in-game bench on a phone.
 * **HTTPS:** rustls-platform-verifier's Kotlin half fetches revocation lists over plain HTTP from
   the CAs' hosts, which its module allows with a network security config (merged into the Ruffle
   build's manifest). Without it every certificate came back "Revoked" (no Search Scripts). `app.xml`
-  sets `usesCleartextTraffic` for the AIR app for now; the verifier's own per-host config, as a
-  resource in the extension, is the tighter fix.
+  first set `usesCleartextTraffic` for the whole app; since 2026-11-12 `build.sh` copies the
+  verifier's own config into the app's resources and `app.xml` points `networkSecurityConfig` at
+  it: plain HTTP to the CAs' hosts only. (It governs Java's HTTP; AIR's downloads, the game's
+  sockets and Turu's Rust `reqwest` are native and go over HTTPS anyway.)
 * The host's log strip hides 20 s after skua loads (it covered the game's bar); an error shows it.
 * The APK is 56 MB (the engine with wgpu and egui: the extension's `.so` grew).
 
