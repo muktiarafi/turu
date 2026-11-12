@@ -341,9 +341,11 @@ impl ActivePlayer {
             .with_letterbox(opt.player.letterbox.unwrap_or(Letterbox::On))
             .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
             .with_quality(opt.player.quality.unwrap_or(StageQuality::High))
+            // Turu: skua.swf sets `stage.align = TOP`, which pins the game to the top of a
+            // window taller than 960:550. Keep it centred unless `--align` asks otherwise.
             .with_align(
                 opt.player.align.unwrap_or_default(),
-                opt.player.force_align.unwrap_or_default(),
+                opt.player.align.is_none() || opt.player.force_align.unwrap_or_default(),
             )
             .with_scale_mode(
                 opt.player.scale.unwrap_or_default(),
