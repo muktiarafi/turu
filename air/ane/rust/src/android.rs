@@ -168,11 +168,12 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
     match turu_air_patch::patch_swf_with(input, patch_target, options) {
         Ok((output, report)) => {
             tracing::info!(
-                "Patched {kind} for AIR in {:?}: {} swapped, {} dropped, {} stage roots, {} missed",
+                "Patched {kind} for AIR in {:?}: {} swapped, {} dropped, {} stage roots, {} hooks, {} missed",
                 started.elapsed(),
                 report.swapped.len(),
                 report.dropped.len(),
                 report.stage_roots.len(),
+                report.stage_hooks.len(),
                 report.stage_missed.len()
             );
             if let Some(problem) = report.problem().filter(|_| strict) {
@@ -214,10 +215,11 @@ fn shared_stage_swf(url: &str, body: Vec<u8>) -> Vec<u8> {
     };
     match turu_air_patch::patch_swf_with(&body, turu_air_patch::Target::Game, options) {
         Ok((output, report)) => {
-            if !report.stage_roots.is_empty() || !report.stage_missed.is_empty() {
+            if report.changed() || !report.stage_missed.is_empty() {
                 tracing::info!(
-                    "Shared stage: {url}: {} roots, {} missed, in {:?}",
+                    "Shared stage: {url}: {} roots, {} hooks, {} missed, in {:?}",
                     report.stage_roots.len(),
+                    report.stage_hooks.len(),
                     report.stage_missed.len(),
                     started.elapsed()
                 );

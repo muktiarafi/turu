@@ -67,6 +67,8 @@ package {
         private var waiting:Array = [];
         /** What was last sent of the game's focused text field (`gameTyping`). */
         private var typing:String = "";
+        /** [TuruStage.hookSummary] when last logged. */
+        private var hooksSaid:String = "";
         /** [TuruStage.fallbacks] when last logged. */
         private var fallbacksSaid:int = 0;
         /** AIR's view's size in pixels (status event "layout"), until the stage is there. */
@@ -134,12 +136,22 @@ package {
             if (viewSize != null) {
                 fit(viewSize[0], viewSize[1]);
             }
-            // A `stage.getChildAt(0)` that couldn't tell whose game it meant is a bug to look at.
+            addEventListener(Event.ENTER_FRAME, function(event:Event):void {
+                TuruStage.keepFitted();
+            });
+            // A `stage.getChildAt(0)` that couldn't tell whose game it meant is a bug to look at;
+            // what the shared stage's hooks did (keys held back, sounds silenced, popups) shows
+            // they work.
             var check:Timer = new Timer(60000);
             check.addEventListener(TimerEvent.TIMER, function(event:TimerEvent):void {
                 if (TuruStage.fallbacks != fallbacksSaid) {
                     fallbacksSaid = TuruStage.fallbacks;
                     say("tabs: " + fallbacksSaid + " stage.getChildAt(0) calls couldn't tell their tab");
+                }
+                var hooks:String = TuruStage.hookSummary();
+                if (hooks != hooksSaid) {
+                    hooksSaid = hooks;
+                    say("tabs: " + hooks);
                 }
             });
             check.start();

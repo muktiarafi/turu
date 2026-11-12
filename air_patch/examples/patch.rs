@@ -1,24 +1,35 @@
 //! Patches a SWF for AIR and lists what changed:
-//! `cargo run -p turu_air_patch --example patch -- [--skua] Game.swf Game-air.swf` (`--skua` for
-//! VibeSkua's skua.swf, else AQW's client).
+//! `cargo run -p turu_air_patch --example patch -- [--skua] [--shared-stage] Game.swf Game-air.swf`
+//! (`--skua` for VibeSkua's skua.swf, else AQW's client; `--shared-stage` as Turu Mas's tabs patch
+//! it, `Options::shared_stage`).
 
-use turu_air_patch::{Target, patch_swf};
+use std::collections::BTreeMap;
+use turu_air_patch::{Options, Target, patch_swf_with};
 
 fn main() -> anyhow::Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let target = match args.iter().position(|a| a == "--skua") {
+    let mut flag = |name: &str| match args.iter().position(|a| a == name) {
         Some(i) => {
             args.remove(i);
-            Target::Skua
+            true
         }
-        None => Target::Game,
+        None => false,
+    };
+    let target = if flag("--skua") {
+        Target::Skua
+    } else {
+        Target::Game
+    };
+    let options = Options {
+        shared_stage: flag("--shared-stage"),
+        client: None,
     };
     let [input, output] = &args[..] else {
-        anyhow::bail!("usage: patch [--skua] <in.swf> <out.swf>");
+        anyhow::bail!("usage: patch [--skua] [--shared-stage] <in.swf> <out.swf>");
     };
     let bytes = std::fs::read(input)?;
     let started = std::time::Instant::now();
-    let (patched, report) = patch_swf(&bytes, target)?;
+    let (patched, report) = patch_swf_with(&bytes, target, options)?;
     let took = started.elapsed();
     std::fs::write(output, &patched)?;
     for (what, sites) in [("swap", &report.swapped), ("drop", &report.dropped)] {
@@ -28,6 +39,17 @@ fn main() -> anyhow::Result<()> {
     }
     for method in &report.undecodable {
         println!("undecodable  {method}");
+    }
+    // The shared stage's sites, counted by kind; the missed ones listed.
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for site in report.stage_roots.iter().chain(&report.stage_hooks) {
+        *counts.entry(site.name.clone()).or_default() += 1;
+    }
+    for (name, count) in &counts {
+        println!("stage  {name:<18} {count}");
+    }
+    for site in &report.stage_missed {
+        println!("missed {:<18} {}", site.name, site.method);
     }
     println!(
         "{} ABC blocks, AIR loader: {}; {} swapped, {} dropped; {} -> {} bytes in {took:?}",

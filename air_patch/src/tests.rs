@@ -772,3 +772,186 @@ fn shared_stage_reads_the_mouse_from_the_game() {
         ]
     );
 }
+
+#[test]
+fn shared_stage_routes_sound_keys_and_stage_children_through_the_host() {
+    let ops = [
+        // snd.play(0, 1, null)
+        Op::GetLocal { index: 1 },
+        Op::PushByte { value: 0 },
+        Op::PushByte { value: 1 },
+        Op::PushNull,
+        Op::CallProperty {
+            index: Index::new(1),
+            num_args: 3,
+        },
+        Op::Pop,
+        // stage.addEventListener(KeyboardEvent.KEY_DOWN, this.onKey, false, 0, true)
+        Op::GetLex {
+            index: Index::new(2),
+        },
+        Op::GetLex {
+            index: Index::new(3),
+        },
+        Op::GetProperty {
+            index: Index::new(4),
+        },
+        Op::GetLocal { index: 0 },
+        Op::GetProperty {
+            index: Index::new(5),
+        },
+        Op::PushFalse,
+        Op::PushByte { value: 0 },
+        Op::PushTrue,
+        Op::CallPropVoid {
+            index: Index::new(6),
+            num_args: 5,
+        },
+        // stage.removeEventListener(KeyboardEvent.KEY_DOWN, onKey)
+        Op::GetLex {
+            index: Index::new(2),
+        },
+        Op::GetLex {
+            index: Index::new(3),
+        },
+        Op::GetProperty {
+            index: Index::new(4),
+        },
+        Op::GetLex {
+            index: Index::new(5),
+        },
+        Op::CallPropVoid {
+            index: Index::new(7),
+            num_args: 2,
+        },
+        // stage.addChild(popup)
+        Op::GetLex {
+            index: Index::new(2),
+        },
+        Op::GetLocal { index: 1 },
+        Op::CallPropVoid {
+            index: Index::new(8),
+            num_args: 1,
+        },
+        // a.addChild(b), with no stage near: left alone
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 0 },
+        Op::GetLocal { index: 1 },
+        Op::CallPropVoid {
+            index: Index::new(8),
+            num_args: 1,
+        },
+        Op::ReturnVoid,
+    ];
+    let names = [
+        ("", "play"),
+        ("", "stage"),
+        ("flash.events", "KeyboardEvent"),
+        ("", "KEY_DOWN"),
+        ("", "onKey"),
+        ("", "addEventListener"),
+        ("", "removeEventListener"),
+        ("", "addChild"),
+    ];
+    let shared = Options {
+        shared_stage: true,
+        client: None,
+    };
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    let mut report = Report::default();
+    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    let count = |name: &str| report.stage_hooks.iter().filter(|s| s.name == name).count();
+    assert_eq!(count("sound"), 1);
+    assert_eq!(count("keys"), 2);
+    assert_eq!(count("stageAddChild"), 1);
+    assert_eq!(report.stage_missed, vec![]);
+    // Two locals of its own for the stage's child (it had 2).
+    assert_eq!(abc.method_bodies[0].num_locals, 4);
+
+    let pool = &abc.constant_pool;
+    let name = |index: &Index<Multiname>| {
+        local_name(pool, &pool.multinames[index.0 as usize - 1])
+            .unwrap()
+            .to_owned()
+    };
+    let got: Vec<String> = ops_of(&abc)
+        .into_iter()
+        .map(|op| match op {
+            Op::GetLex { index } => format!("getlex {}", name(&index)),
+            Op::GetProperty { index } => format!("getproperty {}", name(&index)),
+            Op::CallProperty { index, num_args } => format!("call {} {num_args}", name(&index)),
+            Op::CallPropVoid { index, num_args } => format!("callvoid {} {num_args}", name(&index)),
+            op => format!("{op:?}"),
+        })
+        .collect();
+    let domain = ["getlex ApplicationDomain", "getproperty currentDomain"];
+    let mut expected: Vec<String> = vec![];
+    let mut push = |items: &[&str]| expected.extend(items.iter().map(|s| s.to_string()));
+    push(&[
+        "GetLocal { index: 1 }",
+        "PushByte { value: 0 }",
+        "PushByte { value: 1 }",
+        "PushNull",
+    ]);
+    push(&["call play 3", "getlex TuruStage", "Swap"]);
+    push(&domain);
+    push(&["call sound 2", "Pop"]);
+    push(&[
+        "getlex stage",
+        "getlex KeyboardEvent",
+        "getproperty KEY_DOWN",
+        "GetLocal { index: 0 }",
+    ]);
+    push(&["getproperty onKey", "getlex TuruStage", "Swap"]);
+    push(&domain);
+    push(&[
+        "call keys 2",
+        "PushFalse",
+        "PushByte { value: 0 }",
+        "PushTrue",
+    ]);
+    push(&["callvoid addEventListener 5"]);
+    push(&[
+        "getlex stage",
+        "getlex KeyboardEvent",
+        "getproperty KEY_DOWN",
+        "getlex onKey",
+    ]);
+    push(&["getlex TuruStage", "Swap"]);
+    push(&domain);
+    push(&["call keysRemoved 2", "callvoid removeEventListener 2"]);
+    push(&["getlex stage", "GetLocal { index: 1 }"]);
+    push(&[
+        "SetLocal { index: 3 }",
+        "SetLocal { index: 2 }",
+        "getlex TuruStage",
+    ]);
+    push(&["GetLocal { index: 2 }", "GetLocal { index: 3 }"]);
+    push(&domain);
+    push(&[
+        "callvoid stageAddChild 3",
+        "Kill { index: 2 }",
+        "Kill { index: 3 }",
+    ]);
+    for _ in 0..11 {
+        push(&["GetLocal { index: 0 }"]);
+    }
+    push(&["GetLocal { index: 1 }", "callvoid addChild 1", "ReturnVoid"]);
+    assert_eq!(got, expected);
+
+    // Patching it again changes nothing more.
+    let before = abc.method_bodies[0].code.clone();
+    let mut again = Report::default();
+    patch_abc_with(&mut abc, Target::Game, shared, &mut again).unwrap();
+    assert_eq!(abc.method_bodies[0].code, before);
+    assert_eq!(again.stage_hooks, vec![]);
+}

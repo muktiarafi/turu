@@ -206,13 +206,32 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 * **No hidden-tab slowdown.** Ruffle slows a hidden tab's game to 2 FPS with `stage.frameRate`;
   on AIR that's every client's rate, so Turu Mas doesn't (`turu::set_hidden_tabs_slowed(false)`).
   Hidden games aren't drawn, and AIR slows the whole app off screen.
+* **Only the tab on screen hears and is heard.** The stage and the sound mixer are every client's,
+  so `Options::shared_stage` also routes, in every SWF, what would reach them all through
+  `TuruStage`, with the calling code's own `ApplicationDomain.currentDomain`: each client's skua
+  has a domain of its own and its game and maps load in or below it, so the `Game` class found
+  from there (skua's main class before the game) names the tab (`TuruStage.clientOfDomain`).
+  * *Keys:* the listener of each `addEventListener(KeyboardEvent.KEY_DOWN or KEY_UP, f, ...)`
+    (on the stage or anything else; 91 sites in the client) becomes a gate that passes keys only
+    while its tab is shown (`keys`, and `keysRemoved` so `removeEventListener` finds it).
+    Switching tabs takes the focus off a hidden game's text field.
+  * *Sound:* each `play(...)`'s result goes through `TuruStage.sound`: a hidden tab's
+    `SoundChannel` is silenced, and follows its tab from then on; timeline sounds (maps,
+    monsters, skills) through the hidden game's own `soundTransform`.
+  * *Popups:* `addChild`, `removeChild` and `getChildByName` shortly after a `stage` (22, 7 and 10
+    sites) go through `stageAddChild` and its kin: a child for the stage goes into its tab's
+    layer, a sprite just above its game that's fitted, shown and hidden with it (`rootOf` maps
+    it back to the game). The game and skua themselves stay on the stage.
+  * The host's Debug log says, when it changes, how many keys were held back, sounds silenced,
+    popups put in a layer, and hooks that couldn't tell their tab (none so far).
+* **World Camera** resets the game's root to scale 1 at (0, 0) when it closes, which undid the
+  fit with several tabs; the host puts the fit back each frame it finds the shown game there
+  (`TuruStage.keepFitted`).
 
 ## Known gaps
 
-* Tabs: a hidden tab's game still hears the keyboard (the stage's key listeners are every
-  client's) and plays its sounds (`SoundMixer` is global); the 13 places where the client adds
-  a popup straight to the stage put it over whichever tab is shown, and with several tabs, at
-  the stage's scale rather than the fitted game's.
+* Tabs: a stage kept in a variable and used later (`MinigameSkip`, the keybinds' `onClose`)
+  isn't seen by the popup rule, so those few still show over whichever tab is on screen.
 
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 

@@ -54,6 +54,11 @@ package {
                 }
                 var loading:LoaderContext = context != null ? context : new LoaderContext(false, new ApplicationDomain(ApplicationDomain.currentDomain));
                 loading.allowCodeImport = true;
+                if (isClient() && client >= 0) {
+                    // Known as this client's from the start: the game's constructor already
+                    // plays sounds and adds listeners (TuruStage.clientOfDomain).
+                    TuruStage.gameLoaders[client] = this;
+                }
                 loadBytes(bytes, loading);
             });
             fetch.addEventListener(IOErrorEvent.IO_ERROR, function(event:ErrorEvent):void {

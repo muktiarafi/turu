@@ -60,6 +60,16 @@ pub struct Options {
     /// `x.stage.mouseX` and `mouseY` become `TuruStage.rootOf(x).mouseX` (the host scales each
     /// game to fit AIR's view). In skua, its `stage.removeChildAt(0)` (itself, before it adds the
     /// game) becomes `TuruStage.removeOwn(this)`.
+    ///
+    /// What the stage and the sound mixer do for every client at once goes through `TuruStage`
+    /// too, with the calling code's `ApplicationDomain.currentDomain` (each client's code has its
+    /// own), so only the client on screen is heard: each `play(...)`'s result goes through
+    /// `TuruStage.sound` (a hidden client's `SoundChannel` is silenced); the listener of an
+    /// `addEventListener(KeyboardEvent.KEY_DOWN or KEY_UP, f, ...)` through `TuruStage.keys` (a gate
+    /// that passes keys only while its client is on screen; `keysRemoved` for
+    /// `removeEventListener`); and `addChild`, `removeChild` and `getChildByName` shortly after a
+    /// `stage` become `TuruStage.stageAddChild(parent, child, domain)` and so on (on the stage, a
+    /// child goes into its client's layer, which shows, hides and fits with its game).
     pub shared_stage: bool,
     /// Which of the host's game clients this skua is: its `ExternalInterface` and `new
     /// Loader()` become that client's own host classes, [`HOST_EXTERNAL`] and [`HOST_LOADER`]
@@ -107,13 +117,22 @@ pub struct Report {
     /// `TuruStage.removeOwn` ("removeChildAt").
     pub stage_roots: Vec<Site>,
     /// [`Options::shared_stage`]: `getChildAt(0)` right after a `stage` that wasn't rewritten (a
-    /// branch lands inside it), so it still finds stage child 0.
+    /// branch lands inside it), so it still finds stage child 0; and key listeners
+    /// ("keys") whose `addEventListener` couldn't be read, so they stay ungated.
     pub stage_missed: Vec<Site>,
+    /// [`Options::shared_stage`]: calls routed through `TuruStage` with the calling code's
+    /// `ApplicationDomain`, so it knows whose they are: `play` ("sound"), key listeners ("keys"),
+    /// and `addChild`/`removeChild`/`getChildByName` near a `stage` ("stageAddChild",
+    /// "stageRemoveChild", "stageChildByName").
+    pub stage_hooks: Vec<Site>,
 }
 
 impl Report {
     pub fn changed(&self) -> bool {
-        !self.swapped.is_empty() || !self.dropped.is_empty() || !self.stage_roots.is_empty()
+        !self.swapped.is_empty()
+            || !self.dropped.is_empty()
+            || !self.stage_roots.is_empty()
+            || !self.stage_hooks.is_empty()
     }
 
     /// Why the patched SWF wouldn't run under AIR, or `None` if it should.
@@ -276,11 +295,48 @@ pub fn patch_abc_with(
     let mut remove_child_at = HashSet::new();
     // skua's `Main.stg`, the stage it keeps.
     let mut skua_stage = HashSet::new();
+    // What every client on the stage would share ([`Options::shared_stage`]): `play`, key
+    // listeners, and the stage's children.
+    let mut play_names = HashSet::new();
+    // `TuruStage` already in the SWF (patched before).
+    let mut host_stage = HashSet::new();
+    let mut add_listener = HashSet::new();
+    let mut remove_listener = HashSet::new();
+    let mut keyboard_event = HashSet::new();
+    let mut key_types = HashSet::new();
+    let mut child_calls: HashMap<u32, &'static str> = HashMap::new();
     for (i, multiname) in pool.multinames.iter().enumerate() {
         let index = i as u32 + 1;
         match local_name(pool, multiname) {
             Some("stage") => {
                 stage_names.insert(index);
+            }
+            Some("play") => {
+                play_names.insert(index);
+            }
+            Some(HOST_STAGE) => {
+                host_stage.insert(index);
+            }
+            Some("addEventListener") => {
+                add_listener.insert(index);
+            }
+            Some("removeEventListener") => {
+                remove_listener.insert(index);
+            }
+            Some("KeyboardEvent") => {
+                keyboard_event.insert(index);
+            }
+            Some("KEY_DOWN" | "KEY_UP") => {
+                key_types.insert(index);
+            }
+            Some("addChild") => {
+                child_calls.insert(index, "stageAddChild");
+            }
+            Some("removeChild") => {
+                child_calls.insert(index, "stageRemoveChild");
+            }
+            Some("getChildByName") => {
+                child_calls.insert(index, "stageChildByName");
             }
             Some("stg") if target == Target::Skua => {
                 skua_stage.insert(index);
@@ -338,11 +394,39 @@ pub fn patch_abc_with(
             add_qname(pool, "", "removeOwn"),
         )
     });
+    // `"keyDown"` and `"keyUp"`, the key events' types written out.
+    let key_strings: HashSet<u32> = pool_strings(&abc.constant_pool)
+        .filter(|(_, s)| matches!(*s, "keyDown" | "keyUp"))
+        .map(|(i, _)| i)
+        .collect();
+    let has_keys = (!add_listener.is_empty() || !remove_listener.is_empty())
+        && (!keyboard_event.is_empty() || !key_strings.is_empty());
+    let hooks = (options.shared_stage
+        && (!play_names.is_empty()
+            || has_keys
+            || (!child_calls.is_empty() && !stage_names.is_empty())))
+    .then(|| {
+        let pool = &mut abc.constant_pool;
+        let child = child_calls
+            .iter()
+            .map(|(&index, &helper)| (index, (add_qname(pool, "", helper), helper)))
+            .collect();
+        Hooks {
+            stage: add_qname(pool, "", HOST_STAGE),
+            domain_class: add_qname(pool, "flash.system", "ApplicationDomain"),
+            current_domain: add_qname(pool, "", "currentDomain"),
+            sound: add_qname(pool, "", "sound"),
+            keys: add_qname(pool, "", "keys"),
+            keys_removed: add_qname(pool, "", "keysRemoved"),
+            child,
+        }
+    });
     if loader.is_none()
         && external.is_none()
         && url_loader.is_none()
         && drops.is_empty()
         && stage_host.is_none()
+        && hooks.is_none()
     {
         return Ok(false);
     }
@@ -498,6 +582,150 @@ pub fn patch_abc_with(
                 }
             }
         }
+        // What every client would share: `play`, key listeners, the stage's children
+        // ([`Options::shared_stage`]), with the calling code's domain.
+        let mut hook_sites: Vec<&'static str> = Vec::new();
+        let mut keys_missed = 0;
+        // Two locals of this method's own, for the stage's children (above its own).
+        let mut hook_locals: Option<u32> = None;
+        if let Some(h) = &hooks {
+            let targets = jump_targets(&ops, &body.exceptions);
+            let domain = [
+                Op::GetLex {
+                    index: h.domain_class,
+                },
+                Op::GetProperty {
+                    index: h.current_domain,
+                },
+            ];
+            for (i, decoded) in ops.iter().enumerate() {
+                if stage_edits.contains_key(&i) {
+                    continue;
+                }
+                let (index, num_args, void) = match decoded.op {
+                    Op::CallProperty { index, num_args } => (index, num_args, false),
+                    Op::CallPropVoid { index, num_args } => (index, num_args, true),
+                    _ => continue,
+                };
+                let call = |helper, num_args| {
+                    if void {
+                        Op::CallPropVoid {
+                            index: helper,
+                            num_args,
+                        }
+                    } else {
+                        Op::CallProperty {
+                            index: helper,
+                            num_args,
+                        }
+                    }
+                };
+                let patched_before = matches!(ops.get(i + 1).map(|d| &d.op),
+                    Some(Op::GetLex { index }) if host_stage.contains(&index.0));
+                if play_names.contains(&index.0) && !patched_before {
+                    // x.play(...) -> TuruStage.sound(x.play(...), domain)
+                    let mut seq = vec![
+                        Op::CallProperty { index, num_args },
+                        Op::GetLex { index: h.stage },
+                        Op::Swap,
+                    ];
+                    seq.extend(domain.iter().cloned());
+                    seq.push(call(h.sound, 2));
+                    stage_edits.insert(i, seq);
+                    hook_sites.push("sound");
+                } else if let Some(&(helper, name)) = h.child.get(&index.0) {
+                    // parent.addChild(child) shortly after a `stage` (the helper looks at what
+                    // `parent` is): TuruStage.stageAddChild(parent, child, domain).
+                    let near_stage = ops[i.saturating_sub(STAGE_REACH)..i].iter().any(|d| {
+                        matches!(d.op, Op::GetLex { index } | Op::GetProperty { index }
+                            if stage_names.contains(&index.0))
+                    });
+                    if num_args != 1 || !near_stage {
+                        continue;
+                    }
+                    let parent = *hook_locals.get_or_insert(body.num_locals);
+                    let child = parent + 1;
+                    let mut seq = vec![
+                        Op::SetLocal { index: child },
+                        Op::SetLocal { index: parent },
+                        Op::GetLex { index: h.stage },
+                        Op::GetLocal { index: parent },
+                        Op::GetLocal { index: child },
+                    ];
+                    seq.extend(domain.iter().cloned());
+                    seq.extend([
+                        call(helper, 3),
+                        Op::Kill { index: parent },
+                        Op::Kill { index: child },
+                    ]);
+                    stage_edits.insert(i, seq);
+                    hook_sites.push(name);
+                }
+            }
+            // addEventListener(KeyboardEvent.KEY_DOWN or "keyDown", f, flags...): f becomes
+            // TuruStage.keys(f, domain) (keysRemoved for removeEventListener).
+            for i in 0..ops.len() {
+                let type_end = match ops[i].op {
+                    Op::GetLex { index } if keyboard_event.contains(&index.0) => {
+                        match ops.get(i + 1).map(|d| &d.op) {
+                            Some(Op::GetProperty { index }) if key_types.contains(&index.0) => {
+                                i + 1
+                            }
+                            _ => continue,
+                        }
+                    }
+                    Op::PushString { value } if key_strings.contains(&value.0) => i,
+                    _ => continue,
+                };
+                let found = ops
+                    .iter()
+                    .enumerate()
+                    .skip(type_end + 1)
+                    .take(STAGE_REACH)
+                    .find_map(|(c, d)| match d.op {
+                        Op::CallPropVoid { index, num_args } if add_listener.contains(&index.0) => {
+                            Some((c, num_args, h.keys))
+                        }
+                        Op::CallPropVoid { index, num_args }
+                            if remove_listener.contains(&index.0) =>
+                        {
+                            Some((c, num_args, h.keys_removed))
+                        }
+                        _ => None,
+                    });
+                // Not a listener's type (a `new KeyboardEvent(...)`, a comparison): nothing to do.
+                let Some((call, num_args, helper)) = found else {
+                    continue;
+                };
+                let flags = (num_args as usize).saturating_sub(2);
+                // The listener: the simple reads between the type and the flags, which are pushes.
+                let handler_end = call.checked_sub(1 + flags).filter(|&end| end > type_end);
+                let readable = num_args >= 2
+                    && handler_end.is_some_and(|end| {
+                        ops[type_end + 1..=end]
+                            .iter()
+                            .all(|d| is_simple_read(&d.op))
+                            && ops[end + 1..call].iter().all(|d| is_simple_push(&d.op))
+                            && !stage_edits.contains_key(&end)
+                    })
+                    && (i + 1..=call).all(|k| !targets.contains(&ops[k].pos));
+                let Some(end) = handler_end.filter(|_| readable) else {
+                    // A listener's type with an argument this can't read: left ungated.
+                    if ops[type_end + 1..call].iter().all(|d| !is_call(&d.op)) {
+                        keys_missed += 1;
+                    }
+                    continue;
+                };
+                let mut seq = vec![ops[end].op.clone(), Op::GetLex { index: h.stage }, Op::Swap];
+                seq.extend(domain.iter().cloned());
+                seq.push(Op::CallProperty {
+                    index: helper,
+                    num_args: 2,
+                });
+                stage_edits.insert(end, seq);
+                hook_sites.push("keys");
+            }
+        }
         let mut swapped = Vec::new();
         let mut dropped = Vec::new();
         let code = relink(body.code.len(), &ops, &mut body.exceptions, |i, op| {
@@ -551,10 +779,30 @@ pub fn patch_abc_with(
                 name: "getChildAt".into(),
             });
         }
+        for _ in 0..keys_missed {
+            report.stage_missed.push(Site {
+                method: method.clone(),
+                name: "keys".into(),
+            });
+        }
         let Some(code) = code else {
             continue;
         };
         body.code = code;
+        if !hook_sites.is_empty() {
+            // TuruStage and the domain over what the original call had (`play`, a listener), or
+            // TuruStage, the two locals and the domain where it had two (the stage's children).
+            body.max_stack += 2;
+        }
+        if hook_locals.is_some() {
+            body.num_locals += 2;
+        }
+        for name in hook_sites {
+            report.stage_hooks.push(Site {
+                method: method.clone(),
+                name: name.into(),
+            });
+        }
         if !stage_sites.is_empty() {
             // The rewrites peak at the stack the originals did; one more in case.
             body.max_stack += 1;
@@ -584,6 +832,79 @@ pub fn patch_abc_with(
         changed = true;
     }
     Ok(changed)
+}
+
+/// How far before a call a `stage` (or a key event's type) may be for the rules of
+/// [`Options::shared_stage`] to take the call as the stage's (the listener's).
+const STAGE_REACH: usize = 12;
+
+/// The `TuruStage` methods and names the shared stage's hooks call ([`Options::shared_stage`]).
+struct Hooks {
+    stage: Index<Multiname>,
+    domain_class: Index<Multiname>,
+    current_domain: Index<Multiname>,
+    sound: Index<Multiname>,
+    keys: Index<Multiname>,
+    keys_removed: Index<Multiname>,
+    /// By the multiname of `addChild`, `removeChild`, `getChildByName`: the helper and its name.
+    child: HashMap<u32, (Index<Multiname>, &'static str)>,
+}
+
+/// A read that leaves one value and has no other effect: a listener's argument such as `onKey`,
+/// `this.onKey` or `rootClass.key_StageGame`.
+fn is_simple_read(op: &Op) -> bool {
+    matches!(
+        op,
+        Op::GetLex { .. }
+            | Op::GetLocal { .. }
+            | Op::GetProperty { .. }
+            | Op::GetSlot { .. }
+            | Op::GetScopeObject { .. }
+            | Op::GetGlobalScope
+            | Op::FindPropStrict { .. }
+            | Op::FindProperty { .. }
+    )
+}
+
+/// A constant push: `addEventListener`'s `useCapture`, `priority` and `useWeakReference`.
+fn is_simple_push(op: &Op) -> bool {
+    matches!(
+        op,
+        Op::PushTrue
+            | Op::PushFalse
+            | Op::PushByte { .. }
+            | Op::PushShort { .. }
+            | Op::PushInt { .. }
+            | Op::PushUint { .. }
+            | Op::PushDouble { .. }
+            | Op::PushNull
+            | Op::PushUndefined
+    )
+}
+
+/// An instruction that calls or constructs (a key event's type used for something else).
+fn is_call(op: &Op) -> bool {
+    matches!(
+        op,
+        Op::CallProperty { .. }
+            | Op::CallPropVoid { .. }
+            | Op::CallPropLex { .. }
+            | Op::Call { .. }
+            | Op::Construct { .. }
+            | Op::ConstructProp { .. }
+            | Op::CallMethod { .. }
+            | Op::CallStatic { .. }
+            | Op::CallSuper { .. }
+            | Op::CallSuperVoid { .. }
+    )
+}
+
+/// The pool's strings that are UTF-8, with their indices.
+fn pool_strings(pool: &ConstantPool) -> impl Iterator<Item = (u32, &str)> {
+    pool.strings
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| std::str::from_utf8(s).ok().map(|s| (i as u32 + 1, s)))
 }
 
 /// `QName(PackageNamespace(package), name)` in the pool (added, with its strings and

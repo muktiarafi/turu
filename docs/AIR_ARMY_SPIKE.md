@@ -108,10 +108,8 @@ Rough size: 1-2 weeks, plus a phone run.
 * **One engine, one bot.** Client 2 has no `Bot`. Army and Butler need a bot per client:
   `AirFlashHost` and the extension's calls need a client ID, `TuruExternal` its callbacks per client,
   and the engine one bot per client (as tabs in `turu_frontend`).
-* **`stage.addChild` (13 sites in Game):** popups added straight to the stage (keybinds,
-  `charPage`, drop blacklist, ...) stay on top whichever client is shown.
-* **Stage keyboard listeners** (17 methods in Game, one in skua): both clients hear the keys.
-  On a phone that's mostly the chat.
-* **Sound:** both clients play (`SoundMixer` is global).
+* ~~**`stage.addChild`**, **stage keyboard listeners**, **sound**~~: done 2026-11-12, by each
+  calling code's `ApplicationDomain` (docs/TURU_MAS.md, "Tabs": "Only the tab on screen hears
+  and is heard").
 * **Only two clients.** `TuruExternalMute`'s callbacks are static, so more muted clients would
   share them; with a bot per client they'd go anyway.
