@@ -24,8 +24,8 @@ import java.util.Locale
  * the engine starts.
  *
  * Turu's Android app (`android/app`, `CrashReports.kt`) is where this comes from; unlike it, Turu
- * Mas keeps no memory log to add, and sends none of these to Sentry (its Rust panics only:
- * `crash_uploads.rs`).
+ * Mas keeps no memory log to add. As there, exits Sentry doesn't catch itself go to it
+ * ([CrashUploads.exit]), so [CrashUploads.start] comes first.
  */
 internal object CrashReports {
     private const val TAG = "turu"
@@ -137,6 +137,12 @@ internal object CrashReports {
         file.writeText(report.toString())
         // The list sorts by this: the exit's time, not the report's.
         file.setLastModified(`when`)
+        // Sentry reports crashes and ANRs itself (with more detail); the rest goes from here.
+        if (reason != ApplicationExitInfo.REASON_CRASH && reason != ApplicationExitInfo.REASON_CRASH_NATIVE &&
+            reason != ApplicationExitInfo.REASON_ANR
+        ) {
+            CrashUploads.exit(reasonName(reason), summary(exit), file)
+        }
         Log.w(TAG, "The last run ended: ${summary(exit)} ($file)")
     }
 

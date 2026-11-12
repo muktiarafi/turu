@@ -26,6 +26,7 @@ class TuruAirService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        CrashUploads.start(applicationContext)
         CrashReports.collect(applicationContext)
         val power = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Turu:air").apply {

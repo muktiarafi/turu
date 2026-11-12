@@ -1,86 +1,82 @@
-//! Crash reports sent to Turu's developers through Sentry, once the user said yes: Turu Mas's side
-//! of the desktop's `app/src/crash_uploads.rs` (the question the windows ask once, and Options >
-//! Application's switch: `sendCrashReports` in `settings.json`, through `Platform`).
+//! Crash reports sent to Turu's developers through Sentry, once the user said yes (the question the
+//! windows ask once, and Options > Application's switch: `sendCrashReports` in `settings.json`,
+//! through `Platform`). Sentry itself is the extension's Kotlin (`CrashUploads.kt`, with
+//! `io.sentry:sentry-android`), as in Turu's Android app: it catches Java and native crashes (the
+//! engine's and AIR's runtime's), ANRs and tombstones, and sends the exits Android records. This is
+//! the engine's side: whether the build can send them, the user's answer, and a panic's message.
 //!
-//! A Rust panic is sent as it happens, by Sentry's panic hook (before Turu's own, which keeps it in
-//! the crash folder and then waits for the report to leave: [`flush`], as a release build aborts on
-//! a panic). Crashes in AIR's runtime itself aren't Rust's and aren't caught here.
-//!
-//! Only builds made with a DSN have it (`TURU_MAS_SENTRY_DSN` when building; the release workflow
-//! passes its secret): without one, [`available`] is false, nothing starts and the question isn't
-//! asked. Sentry starts with the engine either way, so the switch works at once; until the user
-//! says yes it sends nothing. No personal data: no IP address (`send_default_pii` off), no device
-//! name, no logs.
+//! A release build aborts on a panic: the panic hook hands its message over first ([`panicked`]),
+//! and Sentry's native handler then reports the abort with it, as one event.
 
-use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
-use turu_frontend::turu;
+use crate::host::BRIDGE;
+use jni::objects::JValue;
+use jni::{Env, jni_sig, jni_str};
+use std::sync::OnceLock;
 
-/// The project's DSN, given when building.
-const DSN: Option<&str> = option_env!("TURU_MAS_SENTRY_DSN");
-
-/// Whether the user said yes: events are dropped while it's false.
-static ENABLED: AtomicBool = AtomicBool::new(false);
-
-/// Sentry's client, alive for the whole process.
-static CLIENT: OnceLock<sentry::ClientInitGuard> = OnceLock::new();
-
-/// Whether this build can send crash reports.
+/// Whether this build can send crash reports (the extension was built with a DSN).
 pub(crate) fn available() -> bool {
-    DSN.is_some_and(|dsn| !dsn.trim().is_empty())
-}
-
-/// Starts Sentry (builds with a DSN), once the data folder is set (the answer is in its
-/// `settings.json`) and after Turu's panic hook (Sentry's runs first, then Turu's).
-pub(crate) fn start() {
-    let Some(dsn) = DSN.filter(|_| available()) else {
-        return;
+    // The build's DSN doesn't change; asked once the extension is up.
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    if let Some(available) = AVAILABLE.get() {
+        return *available;
+    }
+    let Some((vm, class)) = BRIDGE.get() else {
+        return false;
     };
-    let consented = turu_bot::paths::Paths::new()
-        .load_settings()
-        .and_then(|settings| settings.send_crash_reports)
-        == Some(true);
-    ENABLED.store(consented, Ordering::SeqCst);
-    let mut options = sentry::ClientOptions::default();
-    options.dsn = dsn.trim().parse().ok();
-    options.release = Some(Cow::Owned(format!("turu-mas@{}", turu::VERSION)));
-    options.environment = Some(Cow::Borrowed(if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    }));
-    options.send_default_pii = false;
-    options.before_send = Some(Arc::new(|mut event| {
-        if !ENABLED.load(Ordering::SeqCst) {
-            return None;
+    let asked = crate::android::attach(vm, |env: &mut Env| {
+        env.call_static_method(
+            class,
+            jni_str!("crashUploadsAvailable"),
+            jni_sig!("()Z"),
+            &[],
+        )?
+        .z()
+    });
+    match asked {
+        Ok(available) => *AVAILABLE.get_or_init(|| available),
+        Err(e) => {
+            tracing::warn!("Couldn't ask whether crash reports can be sent: {e}");
+            false
         }
-        event.server_name = None;
-        Some(event)
-    }));
-    let _ = CLIENT.set(sentry::init(options));
-    sentry::configure_scope(|scope| scope.set_tag("client", "air"));
-    tracing::info!(
-        "Crash reports: {}",
-        if consented { "on" } else { "off until asked" }
-    );
+    }
 }
 
 /// The user's answer (Options > Application, or the question): applied at once.
 pub(crate) fn set_enabled(on: bool) {
-    if !available() || ENABLED.swap(on, Ordering::SeqCst) == on {
+    let Some((vm, class)) = BRIDGE.get() else {
         return;
+    };
+    let set = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
+        env.call_static_method(
+            class,
+            jni_str!("setCrashUploads"),
+            jni_sig!("(Z)V"),
+            &[JValue::Bool(on)],
+        )?;
+        Ok(())
+    });
+    if let Err(e) = set {
+        tracing::warn!(
+            "Couldn't turn crash reports {}: {e}",
+            if on { "on" } else { "off" }
+        );
     }
-    tracing::info!("Crash reports: {}", if on { "on" } else { "off" });
 }
 
-/// Waits (2 seconds at most) for what Sentry has queued to be sent: from the panic hook, before a
-/// release build's abort takes the sending thread with it.
-pub(crate) fn flush() {
-    if !ENABLED.load(Ordering::SeqCst) {
+/// From the panic hook, before a release build's abort: the panic's message goes with the native
+/// crash Sentry reports.
+pub(crate) fn panicked(message: &str) {
+    let Some((vm, class)) = BRIDGE.get() else {
         return;
-    }
-    if let Some(client) = sentry::Hub::main().client() {
-        client.flush(Some(std::time::Duration::from_secs(2)));
-    }
+    };
+    let _ = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
+        let message = env.new_string(message)?;
+        env.call_static_method(
+            class,
+            jni_str!("panicked"),
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::Object(&message)],
+        )?;
+        Ok(())
+    });
 }

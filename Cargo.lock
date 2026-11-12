@@ -7341,7 +7341,6 @@ dependencies = [
  "rquickjs",
  "rustls",
  "rustls-platform-verifier",
- "sentry",
  "serde_json",
  "tracing",
  "turu_air_patch",

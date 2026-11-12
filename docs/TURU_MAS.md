@@ -32,8 +32,8 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 | Path | What |
 |---|---|
 | `air_patch/` | crate `turu_air_patch`: patches AQW's client and VibeSkua's `skua.swf` for AIR's sandbox, at run time. |
-| `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports (`crash_uploads.rs`). |
-| `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `CrashReports` and `Tombstone` (how earlier runs ended). |
+| `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
+| `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
 | `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). `build.sh` adds rustls-platform-verifier's network security config to `res/` (plain HTTP only to the certificate authorities' hosts, for revocation lists). |
 | `air/ane/rust/src/clients.rs`, `air/app/src/TuruStage.as` | Tabs: game clients 0-3 on AIR's one stage, each with its own bot (below). |
@@ -108,22 +108,30 @@ MAS_KEYSTORE_PASSWORD=... air/app/build.sh`.
 
 ## Crash reports
 
-`air/ane/rust/src/crash_uploads.rs`, Turu Mas's side of the desktop's `app/src/crash_uploads.rs`:
-the same question at first start and the same switch (`sendCrashReports` in `settings.json`,
-through `Platform`). Sentry's own panic hook sends a Rust panic as it happens; Turu's hook then
-keeps it in the data folder's `crash/panic-<time>.txt` and waits (2 s at most) for the report to
-leave, as a release build aborts on a panic. They go to Turu's Android project (the release
-job reuses its `SENTRY_DSN` secret and `SENTRY_PROJECT` variable): filter by release
-`turu-mas@<version>` or the tag `client: air`. No IP address and no device name.
+Sentry runs in the extension's Kotlin (`CrashUploads.kt`, with `io.sentry:sentry-android` and its
+NDK part), as in Turu's Android app: the same question at first start and the same switch
+(`sendCrashReports` in `settings.json`; the engine's `crash_uploads.rs` asks and answers through
+`Bridge`). It catches Java and native crashes as they happen, Turu's and AIR's runtime's alike,
+and hangs (ANRs), merged with the tombstone where Android keeps one (Android 12+), and sends them at
+the next start. A Rust panic: the panic hook writes `crash/panic-<time>.txt`, hands the message to
+Sentry (`Bridge.panicked`), and the release build's abort is then reported as one native crash
+with it. They go to Turu's Android project (the release job reuses its `SENTRY_DSN` secret, as
+`TURU_MAS_SENTRY_DSN`, which the extension's Gradle build reads): filter by release
+`turu-mas@<version>` or the tag `client: air`. No IP address, no screenshots, no logs.
 
 **How earlier runs ended** (Android 11+): the extension's `CrashReports.kt`, Turu's own ported
 (with `Tombstone.kt`), reads Android's record of each exit Turu Mas didn't ask for at the next
 start (before the engine, and in the service) and writes `crash/exit-<time>-<reason>.txt`: a
 crash in Turu or in AIR's runtime (Java or native, with its tombstone on Android 12+), a hang, a
 low-memory kill, a battery saver's kill. Force stop, an update and a clean exit write none.
-Diagnostics > Logs > Crashes lists them and a notice shows each new one, as in Turu. These stay
-on the phone: Turu Mas has no Kotlin Sentry (`io.sentry:sentry-android`, which Turu's Android
-build ships), so nothing but Rust panics is sent.
+Diagnostics > Logs > Crashes lists them and a notice shows each new one, as in Turu. The exits
+Sentry doesn't catch itself (low memory, a kill) are sent too, one issue per reason, with the
+report attached.
+
+**Packaging:** an ANE gives AIR one jar and its native libraries, so the extension's `aneLibs`
+task collects what it needs at run time (Sentry, the AndroidX parts it uses, Kotlin's standard
+library: Java 8 class files, which the AIR SDK's old d8 can read) and Sentry's `libsentry.so` and
+`libsentry-android.so`; `air/ane/build.sh` merges and packs them (about 1.7 MB more in the APK).
 
 Symbols: the release workflow builds the library with line tables, uploads it with `sentry-cli`
 and keeps it as the `symbols-turu-mas-android-arm64` artifact (90 days).
@@ -208,9 +216,4 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 
-* Stop and Pause in the notification (the API does it).
 * 6 hours screen-off, and the phones that fail on Ruffle (Redmi 10, Infinix): not run yet.
-* Crashes in AIR's runtime and Android's kills are kept on the phone (`crash/exit-*.txt`), not
-  sent to Sentry (see "Crash reports").
-* The release job hasn't run in CI yet: the AIR SDK's download on Ubuntu and ADT's packaging
-  there are untested.

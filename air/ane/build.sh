@@ -11,8 +11,9 @@ export AIR_HOME ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 out=target/air-ane
 rm -rf "$out" && mkdir -p "$out/classes" "$out/Android-ARM64" "$out/default"
 
-# Kotlin: the library's classes, rustls-platform-verifier's Kotlin part and the Kotlin standard
-# library, in the one jar AIR takes.
+# Kotlin: the library's classes, rustls-platform-verifier's Kotlin part and what the library needs
+# at run time (the Kotlin standard library, Sentry and its AndroidX parts), in the one jar AIR
+# takes.
 android/gradlew -q -p air/ane/android assembleRelease aneLibs
 unzip -qo -p air/ane/android/build/outputs/aar/*-release.aar classes.jar > "$out/library-classes.jar"
 unzip -qo -p android/rustls-platform-verifier/build/outputs/aar/*-release.aar classes.jar > "$out/verifier-classes.jar"
@@ -36,6 +37,8 @@ cargo ndk --platform 26 -t arm64-v8a -o "$out/jni" build -q --release -p turu_ai
 mkdir -p "$out/Android-ARM64/libs/arm64-v8a"
 "$ndk/toolchains/llvm/prebuilt/$host/bin/llvm-strip" --strip-debug \
   -o "$out/Android-ARM64/libs/arm64-v8a/libturu_air.so" "$out/jni/arm64-v8a/libturu_air.so"
+# Sentry's native crash handler (libsentry.so, libsentry-android.so), from `aneLibs`.
+cp air/ane/android/build/ane-libs/jni/arm64-v8a/*.so "$out/Android-ARM64/libs/arm64-v8a/"
 
 # AS3, and the ANE (JDK 17 from here on).
 export JAVA_HOME="$AIR_JAVA_HOME" PATH="$AIR_JAVA_HOME/bin:$PATH"

@@ -467,8 +467,9 @@ jobs:
           CFG_RELEASE_CHANNEL: stable
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
           MAS_KEYSTORE_PASSWORD: ${{ secrets.MAS_KEYSTORE_PASSWORD }}
-          # Crash reports (`air/ane/rust/src/crash_uploads.rs`), to Turu's Android project:
-          # released as `turu-mas@<version>`, tagged `client: air`. Without it the APK has none.
+          # Crash reports (the extension's `CrashUploads.kt`, sentry-android: its Gradle build reads
+          # this), to Turu's Android project: released as `turu-mas@<version>`, tagged
+          # `client: air`. Without it the APK has none.
           TURU_MAS_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
       - name: Package

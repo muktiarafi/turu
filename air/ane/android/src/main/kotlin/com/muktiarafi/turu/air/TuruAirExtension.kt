@@ -30,7 +30,9 @@ class TuruAirExtension : FREExtension {
                 val activity = context.activity
                 // The Ruffle build's data folder: shared storage, reachable with adb.
                 val dir = activity.getExternalFilesDir(null) ?: activity.filesDir
-                // How the last runs ended, written before the engine looks for new reports.
+                // Crash reports (if the user said yes), then how the last runs ended, written before
+                // the engine looks for new reports.
+                CrashUploads.start(activity.applicationContext)
                 CrashReports.collect(activity.applicationContext)
                 Bridge.nativeStart(activity.applicationContext, dir.absolutePath)
                 Bridge.attachOverlay(activity)

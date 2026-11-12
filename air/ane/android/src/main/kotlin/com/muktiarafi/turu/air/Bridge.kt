@@ -222,4 +222,16 @@ object Bridge {
                 .setPrimaryClip(ClipData.newPlainText("Turu", text))
         }
     }
+
+    /** Whether this build can send crash reports ([CrashUploads]). */
+    @JvmStatic
+    fun crashUploadsAvailable(): Boolean = CrashUploads.available()
+
+    /** The user's answer to "Send crash reports?" (the question, or Options > Application). */
+    @JvmStatic
+    fun setCrashUploads(on: Boolean) = CrashUploads.setEnabled(on)
+
+    /** A Rust panic's message, from the panic hook just before the abort. */
+    @JvmStatic
+    fun panicked(message: String) = CrashUploads.panicked(message)
 }

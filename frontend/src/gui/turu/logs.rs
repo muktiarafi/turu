@@ -345,10 +345,12 @@ pub fn show_crash_upload_question(ctx: &Context) {
         "turu_crash_upload_question",
         "Send crash reports?",
         |ui| {
-            ui.label(
-                "When Turu crashes, it can send a report to its developers so they can fix it: what crashed, \
-                 the device and system version, and Turu's version.",
-            );
+            // "Turu", or "Turu Mas".
+            let app = turu_bot::updates::app_name();
+            ui.label(format!(
+                "When {app} crashes, it can send a report to its developers so they can fix it: what crashed, \
+                 the device and system version, and {app}'s version."
+            ));
             ui.add_space(6.0);
             ui.label(
                 RichText::new(
