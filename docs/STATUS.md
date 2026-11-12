@@ -469,7 +469,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   default. Checked on macOS (Apple GPU, Metal, debug build, 2026-11-12) at the title screen only,
   1916x1100, 1 sample: 1.4-1.6 ms a frame, against 4-5 ms of `finish_encoding` on the CPU; not
   yet in game, on Windows (D3D12/Vulkan) or on a phone, where the rendering levers of
-  `docs/SKUA_SWF_PROPOSAL.md` (M7) and the MSAA and resolution caps need these numbers.
+  `docs/HOST_SWF_PROPOSAL.md` (M7) and the MSAA and resolution caps need these numbers.
 - **Reads that copied whole objects:** `player::loaded` (asked by the skill timer every tick and
   by many waits) reads `world.myAvatar.items.length`, as VibeSkua does, not the whole inventory;
   `quests.get`/`canComplete` read `world.questTree.<id>`, not the whole quest tree. With nine
