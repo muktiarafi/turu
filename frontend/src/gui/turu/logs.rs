@@ -289,10 +289,12 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
         return;
     }
     let more = unseen.len() - 1;
+    // "Turu", or "Turu Mas".
+    let app = turu_bot::updates::app_name();
     let (clicked, close) = dialog(
         ctx,
         "turu_crash_notice",
-        "Turu closed unexpectedly",
+        &format!("{app} closed unexpectedly"),
         |ui| {
             ui.label(RichText::new(&newest.summary).color(WARNING));
             if more > 0 {
@@ -300,9 +302,9 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
             }
             ui.add_space(6.0);
             ui.label(
-                RichText::new(
-                    "Diagnostics > Logs > Crashes has the report. Share it with whoever helps you with Turu.",
-                )
+                RichText::new(format!(
+                    "Diagnostics > Logs > Crashes has the report. Share it with whoever helps you with {app}."
+                ))
                 .size(widgets::small_label_size() + 1.0)
                 .color(MUTED),
             );
