@@ -68,8 +68,12 @@ fn reputation_reads_the_faction_list() {
         json!(10)
     );
     assert_eq!(call(&bot, "reputation.getRank", json!([3])), json!(4));
-    // Names compare exactly, as VibeSkua does.
-    assert_eq!(call(&bot, "reputation.getRank", json!(["good"])), json!(0));
+    // Names ignore case (the game's "EtherStorm" is CoreFarms' "Etherstorm").
+    assert_eq!(call(&bot, "reputation.getRank", json!(["good"])), json!(4));
+    assert_eq!(
+        call(&bot, "reputation.hasRank", json!(["ALCHEMY", 10])),
+        json!(true)
+    );
     assert_eq!(
         call(&bot, "reputation.hasRank", json!(["Good", 4])),
         json!(true)

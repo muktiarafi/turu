@@ -244,6 +244,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `hasRank`), `bot.self` and `bot.target` (VibeSkua `Bot.Self`/`Bot.Target`: `auras`, `snapshots`,
   `getAura`, `getAuraStacks`, `hasActiveAura`, `getAuraValue`, `hasAnyActiveAura`, ...), in
   `bot/src/api/reputation.rs` and `auras.rs`. Skill rules read aura stacks through the same code.
+  Unlike VibeSkua, `getRank`/`hasRank` match faction names ignoring case: the game calls one
+  faction "EtherStorm", CoreFarms' `etherStormREP` asks for "Etherstorm", and the exact match
+  read rank 0, so 0ArchMage farmed waterstorm forever on accounts already at rank 10.
 - **Counter-attack pause:** `bot.ultraBossHelper` (VibeSkua `Bot.UltraBossHelper`) and
   `bot.combat.stopAttacking` / `enableCounterHandler` (`bot/src/api/combat.rs`). With it on
   (CoreBots' `setOptions()` turns it on, as in VibeSkua), a `ct` packet's "prepares a counter

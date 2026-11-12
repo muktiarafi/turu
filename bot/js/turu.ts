@@ -431,7 +431,7 @@ export class GameMap {
 export class Reputation {
     /** Every faction you have at least 1 point of reputation in. */
     get factionList(): Faction[] { return call("reputation.factionList"); }
-    /** Your rank in a faction, by its exact name or its ID; 0 without reputation in it. */
+    /** Your rank in a faction, by its name (any case) or its ID; 0 without reputation in it. */
     getRank(faction: string | number): number { return call("reputation.getRank", faction); }
     /** Whether your rank in the faction is at least `rank`. */
     hasRank(faction: string | number, rank = 1): boolean { return call("reputation.hasRank", faction, rank); }
