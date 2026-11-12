@@ -87,7 +87,10 @@ What that costs, beyond the rules themselves:
   (`Report::stage_missed`), and `lib.rs`'s hash invalidates the cache on every rule change.
 
 The game client's rules (its `AirLoader`, `Loader`s, the shared-stage hooks for keys, sound and
-popups in the client and every SWF it loads) are AQW's code: an owned skua can't remove those.
+popups in the client and every SWF it loads, and a parent for the client's own
+`new ApplicationDomain()`s, `TuruStage.assetsParent`, so its assets and game menu find
+`TuruStage`) are AQW's code: an owned skua can't remove those. The last one leans on skua: the
+parent it hands out is the domain of the tab's skua (`mains[client]`).
 
 ## Goal
 
@@ -249,7 +252,10 @@ straight after them if Turu Mas needs it first.
   and passes it with every host call. Then it registers itself:
   `TuruHost.register(client, main, gameDomain)` once the game's domain is known.
   `TuruStage.clientOfDomain` gets an exact answer instead of matching `Game` classes, and its
-  "couldn't tell its tab" counter should stay at zero by construction.
+  "couldn't tell its tab" counter should stay at zero by construction. That includes the client's
+  asset domains (`TuruStage.assetsParent`): `register` records skua's domain as their parent, and
+  skua must still load in a domain under the host's, or the game menu and assets lose `TuruStage`
+  and the menu silently never opens.
 - **Loading through the host.** `loadGame` and the custom-background loads call
   `TuruHost.load(client, url, kind)`, which does what `TuruLoader` does now (disk cache, patch
   the client or the asset, `loadBytes` with `allowCodeImport`), and gives the `Loader` back. skua
@@ -377,7 +383,10 @@ shown again or a switch is turned off, and only the levers that paid off are kep
 - **Two hosts to check.** Every milestone runs under Ruffle and under AIR, whose AS3 VMs differ
   (sandbox rules, `LoaderContext.parameters` with `loadBytes`, timing of `init` and `complete`).
   Each milestone's "done when" includes a Turu Mas run, and `TuruHost` stays small so the
-  desktop path (no host class) stays the plain `ExternalInterface` one.
+  desktop path (no host class) stays the plain `ExternalInterface` one. A rewritten call that
+  can't resolve fails silently (no `Report::stage_missed`; the client catches the error), as the
+  game menu did when its domain couldn't see `TuruStage`, so that run includes opening the game
+  menu (the treasure chest) in Battleon.
 
 ## Open questions
 
