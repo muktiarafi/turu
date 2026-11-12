@@ -31,7 +31,7 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 | `frontend/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
 | `frontend/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
 | `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |
-| `ruffle/` | Submodule ruffle-aqw: Ruffle's crates (`core`, `render`, `frontend-utils`, `video`) and Mugetsu's patched crates (`ruffle/patches/`, wired up by `[patch.crates-io]` in the root `Cargo.toml`). Change it only when a Flash API is missing: commit in ruffle-aqw, then bump the submodule. |
+| `ruffle/` | Submodule ruffle-aqw: Ruffle's crates (`core`, `render`, `frontend-utils`, `video`) and Mugetsu's patched crates (`ruffle/patches/`, wired up by `[patch.crates-io]` in the root `Cargo.toml`). Change it when the fix belongs in the player: a missing or wrong Flash API, the player's performance, or AQW-specific behaviour Turu can't reach from outside. Turu's own logic stays in this repo, not in Ruffle. Commit in ruffle-aqw (marked `AQW build:` / `Turu:`), then bump the submodule. |
 
 Sibling checkouts used as references (read-only): `../VibeSkua` (C# source of truth for
 behaviour: `Skua.Core/Scripts/*.cs`, `Skua.AS3/skua/src`), `../Scripts` (the C# scripts we
