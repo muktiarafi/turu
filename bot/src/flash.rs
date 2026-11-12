@@ -6,19 +6,25 @@
 use crate::control::ScriptControl;
 use crate::error::{BotError, BotResult};
 use crate::host::{FlashArg, FlashHost};
+use crate::parity::{self, Parity};
 use crate::perf::PerfStats;
+use crate::repeat_log::RepeatLog;
 use parking_lot::{Mutex, RwLock};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::collections::BTreeSet;
+use std::sync::{Arc, OnceLock, Weak};
+use std::time::Instant;
 
 pub struct Flash {
     host: RwLock<Option<Arc<dyn FlashHost>>>,
     /// What the host SWF says of itself; `None` for VibeSkua's, or before it's asked.
     info: RwLock<Option<Arc<HostInfo>>>,
-    errors: Mutex<ErrorLog>,
+    errors: Mutex<RepeatLog>,
+    /// `TURU_HOST_PARITY=1`: reads are asked of both host SWFs and compared.
+    parity: Option<Parity>,
+    /// The bot this belongs to, for parity's lines in its debug log.
+    owner: OnceLock<Weak<crate::Bot>>,
     control: Arc<ScriptControl>,
     perf: Arc<PerfStats>,
 }
@@ -48,49 +54,14 @@ impl HostInfo {
 /// `throwForTest`, to check error reports by hand).
 const UNLISTED_DEBUG_CALLBACKS: &[&str] = &["throwForTest"];
 
-/// How often the same host SWF error is logged.
-const ERROR_REPEAT: Duration = Duration::from_secs(60);
-/// Errors remembered at most; the oldest are forgotten past it.
-const ERRORS_KEPT: usize = 256;
-
-/// When each host SWF error was last logged, and how often it came since.
-#[derive(Default)]
-struct ErrorLog {
-    seen: HashMap<String, (Instant, u32)>,
-}
-
-impl ErrorLog {
-    /// `Some(n)` when `message` should be logged now, `n` being the times it came since it last
-    /// was; `None` while it was logged less than [`ERROR_REPEAT`] ago.
-    fn note(&mut self, message: &str, now: Instant) -> Option<u32> {
-        if let Some((logged, since)) = self.seen.get_mut(message) {
-            if now.duration_since(*logged) < ERROR_REPEAT {
-                *since += 1;
-                return None;
-            }
-            let repeats = *since;
-            *logged = now;
-            *since = 0;
-            return Some(repeats);
-        }
-        if self.seen.len() >= ERRORS_KEPT {
-            self.seen
-                .retain(|_, (logged, _)| now.duration_since(*logged) < ERROR_REPEAT);
-            if self.seen.len() >= ERRORS_KEPT {
-                self.seen.clear();
-            }
-        }
-        self.seen.insert(message.to_owned(), (now, 0));
-        Some(0)
-    }
-}
-
 impl Flash {
     pub(crate) fn new(control: Arc<ScriptControl>) -> Self {
         Self {
             host: RwLock::new(None),
             info: RwLock::new(None),
             errors: Mutex::default(),
+            parity: Parity::from_env(),
+            owner: OnceLock::new(),
             control,
             perf: Arc::default(),
         }
@@ -115,6 +86,15 @@ impl Flash {
         self.host.read().is_some()
     }
 
+    pub(crate) fn set_owner(&self, bot: &Arc<crate::Bot>) {
+        let _ = self.owner.set(Arc::downgrade(bot));
+    }
+
+    /// Parity mode's comparisons, when it's on.
+    pub fn parity(&self) -> Option<&Parity> {
+        self.parity.as_ref()
+    }
+
     /// What the host SWF said of itself when the client was loaded; `None` for VibeSkua's.
     pub fn host_info(&self) -> Option<Arc<HostInfo>> {
         self.info.read().clone()
@@ -130,6 +110,14 @@ impl Flash {
             .flatten()
             .map(Arc::new);
         *self.info.write() = info.clone();
+        if let Some(parity) = &self.parity {
+            let turu = self
+                .call_host(&format!("{}hostInfo", parity::PREFIX), vec![])
+                .ok()
+                .and_then(|raw| serde_json::from_str::<Option<HostInfo>>(unquote_empty(&raw)).ok())
+                .flatten();
+            parity.set_turu_callbacks(turu.map(|t| t.callbacks));
+        }
         info
     }
 
@@ -167,7 +155,50 @@ impl Flash {
             self.control.check()?;
             return Err(BotError::NotInHostSwf(name.to_owned()));
         }
+        if let Some(parity) = &self.parity
+            && parity.compares(name)
+        {
+            return self.call_compared(parity, name, args);
+        }
         self.call_host(name, args)
+    }
+
+    /// Parity mode: `name` on VibeSkua's SWF and on Turu's in one go; VibeSkua's answer.
+    fn call_compared(&self, parity: &Parity, name: &str, args: Vec<FlashArg>) -> BotResult<String> {
+        self.control.check()?;
+        let host = self.host.read().clone();
+        let Some(host) = host else {
+            return Err(BotError::Host(crate::host::HostError::NoPlayer));
+        };
+        let detail = args
+            .iter()
+            .map(|a| match a {
+                FlashArg::String(s) => s.clone(),
+                other => format!("{other:?}"),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let path = args.first().and_then(|a| match a {
+            FlashArg::String(path) if crate::perf::takes_path(name) => Some(path.clone()),
+            _ => None,
+        });
+        let asked = Instant::now();
+        let turu_name = format!("{}{name}", parity::PREFIX);
+        let result = host.call_pair((name, args.clone()), (&turu_name, args));
+        self.perf.record_call(
+            name,
+            path.as_deref(),
+            asked.elapsed(),
+            None,
+            result.as_ref().ok().map(|(a, _)| a.len()),
+        );
+        let (vibeskua, turu) = result.map_err(BotError::from)?;
+        if let Some(line) = parity.call(name, &detail, &vibeskua, &turu)
+            && let Some(bot) = self.owner.get().and_then(Weak::upgrade)
+        {
+            bot.logs.debug.push(line);
+        }
+        Ok(vibeskua)
     }
 
     fn call_host(&self, name: &str, args: Vec<FlashArg>) -> BotResult<String> {
@@ -346,34 +377,5 @@ fn truncate(s: &str, max: usize) -> &str {
     match s.char_indices().nth(max) {
         Some((i, _)) => &s[..i],
         None => s,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_error_is_logged_again_after_a_minute_with_its_count() {
-        let mut log = ErrorLog::default();
-        let start = Instant::now();
-        assert_eq!(log.note("a", start), Some(0));
-        assert_eq!(log.note("a", start + Duration::from_secs(1)), None);
-        assert_eq!(log.note("a", start + Duration::from_secs(30)), None);
-        assert_eq!(log.note("b", start + Duration::from_secs(30)), Some(0));
-        assert_eq!(log.note("a", start + Duration::from_secs(61)), Some(2));
-        assert_eq!(log.note("a", start + Duration::from_secs(62)), None);
-    }
-
-    #[test]
-    fn old_errors_are_forgotten_past_the_limit() {
-        let mut log = ErrorLog::default();
-        let start = Instant::now();
-        for i in 0..ERRORS_KEPT {
-            log.note(&i.to_string(), start);
-        }
-        let later = start + ERROR_REPEAT;
-        assert_eq!(log.note("new", later), Some(0));
-        assert_eq!(log.seen.len(), 1);
     }
 }

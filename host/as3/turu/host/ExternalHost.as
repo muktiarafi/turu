@@ -6,24 +6,30 @@ import flash.display.StageScaleMode;
 import flash.external.ExternalInterface;
 import flash.net.URLRequest;
 
-/** The [Host] of a player with `ExternalInterface` and a stage of its own: Ruffle's. */
+/**
+ * The [Host] of a player with `ExternalInterface` and a stage of its own: Ruffle's. In parity
+ * mode every name, both ways, starts with `prefix` (`turu.`), so VibeSkua's SWF in the same
+ * player keeps its own.
+ */
 public class ExternalHost extends Host {
     private var stage:Stage;
+    private var prefix:String;
     /** The game on screen, taken off by reference when another replaces it. */
     private var shown:DisplayObject;
 
-    public function ExternalHost(stage:Stage) {
+    public function ExternalHost(stage:Stage, prefix:String) {
         super();
         this.stage = stage;
+        this.prefix = prefix;
     }
 
     override public function addCallback(name:String, fn:Function):void {
-        ExternalInterface.addCallback(name, fn);
+        ExternalInterface.addCallback(prefix + name, fn);
     }
 
     override public function call(name:String, args:Array):void {
         if (ExternalInterface.available) {
-            ExternalInterface.call(name, args);
+            ExternalInterface.call(prefix + name, args);
         }
     }
 

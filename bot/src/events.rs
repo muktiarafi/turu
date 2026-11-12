@@ -255,6 +255,28 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
     };
     let arg_str = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
 
+    // Parity mode: Turu's SWF's events are only compared; VibeSkua's are compared and acted on.
+    if let Some(parity) = bot.flash.parity() {
+        let (side, event) = match name.strip_prefix(crate::parity::PREFIX) {
+            Some(event) => (crate::parity::Side::Turu, event),
+            None => (crate::parity::Side::VibeSkua, name),
+        };
+        for line in parity.event(side, event, &args) {
+            bot.logs.debug.push(line);
+        }
+        if side == crate::parity::Side::Turu {
+            if event == "error"
+                && let Some(line) = bot.flash.host_error_line(arg_str(0), arg_str(1))
+            {
+                bot.logs.debug.push(line);
+            }
+            return;
+        }
+        if name == "requestLoadGame" {
+            parity.restart();
+        }
+    }
+
     match name {
         "requestLoadGame" => {
             bot.flash.forget_host_info();

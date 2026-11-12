@@ -1,0 +1,150 @@
+package turu.host {
+import flash.system.ApplicationDomain;
+import flash.utils.Dictionary;
+import flash.utils.getQualifiedClassName;
+
+/**
+ * The calls that reach into the game by a dotted path (docs/VIBESKUA_SPEC.md, "Game object
+ * access"): `world.myAvatar.objData.intGold` is `game.world.myAvatar.objData.intGold`. Values
+ * come back as `JSON.stringify` of them; a path that throws answers nothing (the callback's
+ * guard reports it).
+ */
+public class GameCalls {
+    /** Split paths kept; past it the cache starts again (scripts can read any path). */
+    private static const CACHED:int = 1000;
+
+    /** Returns the game, or null before it loads. */
+    private var gameOf:Function;
+    private var cache:Dictionary = new Dictionary();
+    private var cached:int = 0;
+
+    public function GameCalls(gameOf:Function) {
+        this.gameOf = gameOf;
+    }
+
+    /**
+     * Registers the calls with `expose(name, fn, onThrow, quiet)`. Reads are quiet: a path that
+     * doesn't resolve yet is an ordinary empty answer. Writes and calls report their throws.
+     */
+    public function exposeWith(expose:Function):void {
+        expose("isTrue", isTrue, undefined, true);
+        expose("isNull", isNull, undefined, true);
+        expose("getGameObject", getGameObject, undefined, true);
+        expose("getGameObjectS", getGameObjectS, undefined, true);
+        expose("getGameObjectKey", getGameObjectKey, undefined, true);
+        expose("getArrayObject", getArrayObject, undefined, true);
+        expose("selectArrayObjects", selectArrayObjects, "", true);
+        expose("setGameObject", setGameObject);
+        expose("setGameObjectKey", setGameObjectKey);
+        expose("setArrayObject", setArrayObject);
+        expose("callGameFunction", callGameFunction);
+        expose("callGameFunction0", callGameFunction0);
+    }
+
+    private function isTrue():String {
+        return "true";
+    }
+
+    /** `"true"` when the value is null or the path doesn't resolve. */
+    private function isNull(path:String):String {
+        try {
+            return String(walk(gameOf(), path) == null);
+        } catch (e:Error) {
+        }
+        return "true";
+    }
+
+    private function getGameObject(path:String):String {
+        return JSON.stringify(walk(gameOf(), path));
+    }
+
+    /** Rooted at the game's class: its statics (`serverIP`, `loginInfo.strUsername`). */
+    private function getGameObjectS(path:String):String {
+        return JSON.stringify(walk(gameClass(), path));
+    }
+
+    private function getGameObjectKey(path:String, key:String):String {
+        return JSON.stringify(walk(gameOf(), path)[key]);
+    }
+
+    private function setGameObject(path:String, value:*):void {
+        var parts:Array = pathParts(path);
+        var last:int = parts.length - 1;
+        walkParts(gameOf(), parts, last)[parts[last]] = value;
+    }
+
+    private function setGameObjectKey(path:String, key:String, value:*):void {
+        walk(gameOf(), path)[key] = value;
+    }
+
+    private function getArrayObject(path:String, index:*):String {
+        return JSON.stringify(walk(gameOf(), path)[index]);
+    }
+
+    private function setArrayObject(path:String, index:*, value:*):void {
+        walk(gameOf(), path)[index] = value;
+    }
+
+    private function callGameFunction(path:String, ... args):String {
+        var parts:Array = pathParts(path);
+        var last:int = parts.length - 1;
+        var owner:* = walkParts(gameOf(), parts, last);
+        var fn:Function = owner[parts[last]];
+        return JSON.stringify(fn.apply(owner, args));
+    }
+
+    private function callGameFunction0(path:String):String {
+        return callGameFunction(path);
+    }
+
+    /** `[item[selector] for item in array]`, `selector` itself a dotted path. */
+    private function selectArrayObjects(path:String, selector:String):String {
+        var items:* = walk(gameOf(), path);
+        if (!(items is Array)) {
+            // VibeSkua's: "target is not an array", nothing.
+            return "";
+        }
+        var picked:Array = [];
+        var selectorParts:Array = pathParts(selector);
+        for each (var item:* in items) {
+            picked.push(walkParts(item, selectorParts, selectorParts.length));
+        }
+        return JSON.stringify(picked);
+    }
+
+    /** The game's class, from the game's own domain (a child of its loader's). */
+    private function gameClass():Class {
+        var game:* = gameOf();
+        var domain:ApplicationDomain = game.loaderInfo.applicationDomain;
+        return Class(domain.getDefinition(getQualifiedClassName(game)));
+    }
+
+    private function walk(from:*, path:String):* {
+        var parts:Array = pathParts(path);
+        return walkParts(from, parts, parts.length);
+    }
+
+    /** `from` followed through the first `count` of `parts`. */
+    private static function walkParts(from:*, parts:Array, count:int):* {
+        var at:* = from;
+        for (var i:int = 0; i < count; i++) {
+            at = at[parts[i]];
+        }
+        return at;
+    }
+
+    private function pathParts(path:String):Array {
+        var found:Array = cache[path];
+        if (found == null) {
+            if (cached >= CACHED) {
+                cache = new Dictionary();
+                cached = 0;
+            }
+            found = path == "" ? [] : path.split(".");
+            cache[path] = found;
+            cached++;
+        }
+        return found;
+    }
+}
+}

@@ -248,10 +248,27 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
 
 ### R2: The generic calls and parity mode
 
-- The calls that reach into the game by path: `getGameObject` and its variants, `setGameObject`,
-  `callGameFunction`, `isNull`, the array calls, statics; paths split once and cached.
-- Parity mode (above) and the comparator with its allowlist.
-- Done when: a farm run in parity mode has no unlisted mismatch on these calls.
+- The calls that reach into the game by path (`GameCalls`): `getGameObject`, `getGameObjectS`
+  (statics, from the game's own domain), `getGameObjectKey`, `setGameObject`,
+  `setGameObjectKey`, `getArrayObject`, `setArrayObject`, `callGameFunction`,
+  `callGameFunction0`, `selectArrayObjects`, `isNull`, `isTrue`. Paths are split once and kept,
+  the cache cleared past 1,000. A callback that throws answers what VibeSkua's does (nothing;
+  `""` for `selectArrayObjects`).
+- Parity mode, `TURU_HOST_PARITY=1` (desktop): Rust starts `turu.swf` with `turuParity=1` and
+  `turuSkua` (VibeSkua's SWF's URL) in its query. `turu.swf` loads VibeSkua's onto the stage
+  in its own domain, loads no game, finds VibeSkua's (the stage child with an `sfc`) and uses
+  `turu.` names both ways.
+- `Flash::call` asks both SWFs for each read Turu's lists (`turu.hostInfo`) in one request
+  (`FlashHost::call_pair`: back to back, no frame between) and answers with VibeSkua's; writes
+  go to VibeSkua's only. `pext`, `packet`, `connectionLost` and `userIntentionalAction` are
+  matched per name, in order; one with no partner after 5 s counts as missing. Rust acts on
+  VibeSkua's events only.
+- Exact string equality; the allowlist with reasons is `bot/src/parity.rs` (`ALLOWED`; `pext`
+  compares only `params`). Each unlisted difference is a `parity:` line in the debug log (once
+  a minute per call and arguments, with a count); the perf log has counts per call; a script's
+  end logs a summary.
+- Done when: GoldFarm for 15 minutes and one quest chain in parity mode end with no unlisted
+  mismatch and no `turu.swf` error. Before login, 190 reads compare equal (headless).
 
 ### R3: The API
 
@@ -470,4 +487,3 @@ shown again or a switch is turned off, and only the levers that paid off are kep
   only the engine's waits?
 - What can CI check of `turu.swf` beyond the build, without a game login (a Ruffle harness with
   a stub client)?
-- How is parity mode turned on (a debug setting, an environment variable, a perf-log flag)?

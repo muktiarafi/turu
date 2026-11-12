@@ -750,6 +750,9 @@ fn finish(
     bot.army.release_all();
     bot.options.write().reset_after_script();
     bot.state.lock().options_applied.restore_world();
+    if let Some(summary) = bot.flash.parity().and_then(|p| p.summary()) {
+        bot.log(summary);
+    }
     use crate::monitor::EventKind;
     let mut error = None;
     let status = match result {

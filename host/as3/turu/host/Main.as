@@ -13,6 +13,8 @@ import flash.events.SecurityErrorEvent;
 import flash.events.UncaughtErrorEvent;
 import flash.net.URLLoader;
 import flash.net.URLRequest;
+import flash.system.ApplicationDomain;
+import flash.system.LoaderContext;
 import flash.system.Security;
 import flash.text.TextField;
 import flash.text.TextFieldType;
@@ -24,8 +26,13 @@ import flash.utils.setTimeout;
  *
  * R1 has the start-up: the client loaded with its `params`, the stage, the login background,
  * the clicks the bot must know of (logout, change server, a server picked), the Bank hotkey,
- * packets and errors. The rest of VibeSkua's callbacks come in R2 and R3; until then Turu uses
- * this SWF only with `TURU_HOST_SWF=turu`.
+ * packets and errors. R2 adds the calls that reach into the game by path ([GameCalls]) and
+ * parity mode. The rest of VibeSkua's callbacks come in R3; until then Turu uses this SWF only
+ * with `TURU_HOST_SWF=turu`.
+ *
+ * Parity mode (`turuParity=1`, `TURU_HOST_PARITY=1`): this SWF loads VibeSkua's (`turuSkua`, its
+ * URL), which loads and hosts the game as usual, finds that game on the stage, and answers and
+ * reports under `turu.` names, so Turu can compare both SWFs' answers on the same game.
  */
 public class Main extends MovieClip {
     /** `hostInfo().version`: raised when a callback changes what it answers. */
@@ -37,6 +44,8 @@ public class Main extends MovieClip {
 
     private var host:Host;
     private var stageRef:Stage;
+    /** Parity mode: VibeSkua's SWF hosts the game, this one only answers. */
+    private var parity:Boolean = false;
     private var packets:Packets;
     private var background:Background;
     /** The callbacks `hostInfo` lists. */
@@ -74,10 +83,14 @@ public class Main extends MovieClip {
         } catch (e:Error) {
             // AIR's application sandbox throws.
         }
-        patchTrim();
+        var ours:Object = loaderInfo.parameters;
+        parity = ours.turuParity == "1";
+        if (!parity) {
+            patchTrim();
+        }
         // The client's errors too: they pass up through its Loader to this SWF's.
         loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaughtError);
-        host = new ExternalHost(stageRef);
+        host = new ExternalHost(stageRef, parity ? "turu." : "");
         packets = new Packets(host);
         background = new Background(host, gameOf);
 
@@ -87,11 +100,48 @@ public class Main extends MovieClip {
         expose("setStrictErrors", setStrictErrors);
         expose("setPacketEcho", packets.setEcho);
         expose("catchPackets", catchPackets);
+        new GameCalls(gameOf).exposeWith(expose);
         // For checking error reports by hand; not listed, so only debug builds of Turu call it.
         host.addCallback("throwForTest", guard("throwForTest", throwForTest));
 
+        if (parity) {
+            loadVibeSkua(String(ours.turuSkua));
+            return;
+        }
         stageRef.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         host.call("requestLoadGame", []);
+    }
+
+    // ---- Parity mode ----------------------------------------------------------------------
+
+    /**
+     * Loads VibeSkua's SWF as stage child 0, below this one, in this SWF's domain (the game's
+     * classes are then the same to both). When its game loads, VibeSkua's takes child 0 off,
+     * itself, as it does as the root; this one then takes itself off as the game arrives, so the
+     * game is the stage's only child, as the client expects (it reads `stage.getChildAt(0)`).
+     */
+    private function loadVibeSkua(url:String):void {
+        var skua:Loader = new Loader();
+        stageRef.addChildAt(skua, 0);
+        stageRef.addEventListener(Event.ADDED, onStageAdded);
+        skua.load(new URLRequest(url), new LoaderContext(false, ApplicationDomain.currentDomain));
+    }
+
+    /** VibeSkua's game reaching the stage: the stage's child with a SmartFox client. */
+    private function onStageAdded(event:Event):void {
+        var child:* = event.target;
+        if (child.parent != stageRef || child is Loader || !("sfc" in child)) {
+            return;
+        }
+        stageRef.removeEventListener(Event.ADDED, onStageAdded);
+        if (parent == stageRef) {
+            stageRef.removeChild(this);
+        }
+        game = child;
+        game.addEventListener(Event.ENTER_FRAME, onFrame);
+        game.addEventListener(MouseEvent.CLICK, onClick, true);
+        packets.frame(game);
+        host.call("loaded", []);
     }
 
     /** VibeSkua's `String.prototype.trim`, which the game's code calls. */
@@ -109,27 +159,34 @@ public class Main extends MovieClip {
 
     // ---- Callbacks ------------------------------------------------------------------------
 
-    /** Registers a callback, guarded, and lists it in `hostInfo`. */
-    private function expose(name:String, fn:Function):void {
+    /**
+     * Registers a callback, guarded, and lists it in `hostInfo`. `onThrow` is its answer when it
+     * throws (VibeSkua's: nothing for most, `""` where its callback catches). A `quiet` one's
+     * throws aren't reported: a path read before it resolves (`world.myAvatar` before login) is
+     * an ordinary empty answer.
+     */
+    private function expose(name:String, fn:Function, onThrow:* = undefined, quiet:Boolean = false):void {
         callbacks.push(name);
-        host.addCallback(name, guard(name, fn));
+        host.addCallback(name, guard(name, fn, onThrow, quiet));
     }
 
     /**
      * `fn` in a `try`: a throw is reported (`error`) and answers nothing, or with
      * `setStrictErrors(true)` `{"error": message}`.
      */
-    private function guard(name:String, fn:Function):Function {
+    private function guard(name:String, fn:Function, onThrow:* = undefined, quiet:Boolean = false):Function {
         return function(... args):* {
             try {
                 return fn.apply(null, args);
             } catch (e:*) {
-                report(name + ": " + messageOf(e), stackOf(e));
+                if (!quiet) {
+                    report(name + ": " + messageOf(e), stackOf(e));
+                }
                 if (strictErrors) {
                     return JSON.stringify({error: messageOf(e)});
                 }
             }
-            return undefined;
+            return onThrow;
         };
     }
 
@@ -171,6 +228,9 @@ public class Main extends MovieClip {
      * stage first (VibeSkua's SWF has Turu set it through `setGameObject`).
      */
     private function loadClient(frameRate:* = undefined):void {
+        if (parity) {
+            return;
+        }
         var fps:Number = Number(frameRate);
         if (fps > 0) {
             stageRef.frameRate = fps;

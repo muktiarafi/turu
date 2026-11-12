@@ -29,10 +29,12 @@ pub mod monitor;
 pub mod notifications;
 pub mod options;
 pub mod packet_filters;
+pub mod parity;
 pub mod paths;
 pub mod perf;
 pub mod quest_cache;
 pub mod quick_scripts;
+mod repeat_log;
 pub mod repo;
 pub mod scheduler;
 pub mod script;
@@ -197,6 +199,7 @@ impl Bot {
             notifications: notifications::Feed::default(),
             paths,
         });
+        bot.flash.set_owner(&bot);
         background::start(&bot);
         webhooks::start(&bot);
         monitor::start(&bot);

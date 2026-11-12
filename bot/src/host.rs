@@ -111,6 +111,19 @@ pub trait FlashHost: Send + Sync {
         self.call(name, args).map(|reply| (reply, None))
     }
 
+    /// Parity mode (`crate::parity`): calls `first` then `second` and returns both answers. The
+    /// player's host runs them back to back with no frame between, so the game can't change
+    /// between the two; this default makes two calls.
+    fn call_pair(
+        &self,
+        first: (&str, Vec<FlashArg>),
+        second: (&str, Vec<FlashArg>),
+    ) -> Result<(String, String), HostError> {
+        let a = self.call(first.0, first.1)?;
+        let b = self.call(second.0, second.1)?;
+        Ok((a, b))
+    }
+
     /// A SWF the game has loaded from a URL whose path ends in `path` (a map file such as
     /// `ChiralValley/town-Mobius-21Feb14.swf`), as an uncompressed SWF file; `None` when
     /// none is loaded or the host can't tell.

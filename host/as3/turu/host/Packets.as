@@ -18,6 +18,8 @@ public class Packets {
     private static const SENT_GAME:String = "[Sending - STR]: %xt%zm%";
     private static const PREFIXES:Array = ["[Sending - STR]: ", "[ RECEIVED ]: ", "[Sending]: "];
     private static const LENGTH:RegExp = /, \(len: \d+\)$/;
+    /** SmartFox ends a sent message's debug line with its line break. */
+    private static const LINE_END:RegExp = /[\r\n]+$/;
 
     private var host:Host;
     /** The SmartFox client listened to. */
@@ -70,7 +72,7 @@ public class Packets {
     private function onDebugMessage(event:Object):void {
         var message:String = String(event.params.message);
         if (message.indexOf(SENT_GAME) == 0) {
-            host.call("packet", [message.substr(SENT.length)]);
+            host.call("packet", [message.substr(SENT.length).replace(LINE_END, "")]);
         } else if (echo) {
             for each (var prefix:String in PREFIXES) {
                 if (message.indexOf(prefix) == 0) {

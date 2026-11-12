@@ -576,8 +576,23 @@ pub fn init_main_thread() {
 }
 
 /// The URL Turu starts with: the host SWF, VibeSkua's `skua.swf` or with `TURU_HOST_SWF=turu`
-/// Turu's `turu.swf` ([`turu_bot::HostSwf`]), written to the data directory.
+/// Turu's `turu.swf` ([`turu_bot::HostSwf`]), written to the data directory. With
+/// `TURU_HOST_PARITY=1`, Turu's in parity mode, loading VibeSkua's (`turu_bot::parity`).
 pub fn host_swf_url() -> anyhow::Result<String> {
+    let file_url = |path: &std::path::Path| {
+        url::Url::from_file_path(path)
+            .map_err(|()| anyhow::anyhow!("bad path for {}", path.display()))
+    };
+    if turu_bot::parity::enabled() {
+        tracing::info!("Host SWF parity mode (TURU_HOST_PARITY=1): Turu's loads VibeSkua's");
+        let paths = &bot().paths;
+        let skua = file_url(&paths.write_host_swf(turu_bot::HostSwf::VibeSkua)?)?;
+        let mut turu = file_url(&paths.write_host_swf(turu_bot::HostSwf::Turu)?)?;
+        turu.query_pairs_mut()
+            .append_pair("turuParity", "1")
+            .append_pair("turuSkua", skua.as_str());
+        return Ok(turu.to_string());
+    }
     let swf = turu_bot::HostSwf::from_env();
     if swf == turu_bot::HostSwf::Turu {
         tracing::info!("Host SWF: Turu's own (TURU_HOST_SWF=turu), still being written");
@@ -802,6 +817,9 @@ pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
                 busy += window.busy_ms();
                 seconds = seconds.max(window.seconds);
                 tracing::info!(target: "turu_perf", "{}", window.report(&format!("tab {}", tab_label(bot)), rows));
+                if let Some(parity) = bot.flash.parity().and_then(|p| p.report()) {
+                    tracing::info!(target: "turu_perf", "tab {}: {parity}", tab_label(bot));
+                }
                 last.insert(*tab, now);
             }
             if tabs.len() > 1 {
