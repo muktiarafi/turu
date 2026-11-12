@@ -2,7 +2,8 @@
 
 Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the game, run only with
 `TURU_HOST_SWF=turu`); R2 done (the generic calls, parity mode `TURU_HOST_PARITY=1`); R3a done
-(auras, monsters, combat); R3b done (inventory, shop, player, world); the rest are proposals. Replaces the plan to fork VibeSkua's
+(auras, monsters, combat); R3b done (inventory, shop, player, world); R3c written,
+awaiting its checks; the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -286,8 +287,12 @@ parts, each a branch (`host-r3a` ...) fast-forwarded in after its own checks:
   `getActiveModalMessage`, `sendClientPacket`). Parity showed VibeSkua's monster-click wiki link
   (`openWebsite("https://aqwwiki.wikidot.com/FrogZard")`); it's dropped and allowlisted, as Turu
   only logs `openWebsite`.
-- **R3c**: server and login (`clickServer`, `connectToServer`, `killLoginModals`,
-  `loadPolicyFile(s)`, `resetConnectionState`).
+- **R3c**: server and login (`Servers`: `clickServer`, `connectToServer`, `killLoginModals`,
+  `loadPolicyFile(s)`, `resetConnectionState`). `connectToServer` makes the stock server list's
+  own checks and messages (the client's `ServerList.onServerClick`: offline, full, chat limits,
+  member and testing servers, confirmed email) before `connectTo`; its dialogs' buttons do
+  nothing, as the list's callbacks are private to it. All actions: checked by
+  `host/checks/r3c-login.ts` (two relogins) on each SWF.
 - **R3d**: options and modules (`disableDeathAd`, `killLag`, `skipCutscenes`,
   `modEnable`/`modDisable`; Hide Players, Disable FX, Disable Collisions, quest item rates, quest
   wiki links), and Options > Application > Host SWF (VibeSkua / Turu, default VibeSkua;
