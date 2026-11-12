@@ -955,3 +955,93 @@ fn shared_stage_routes_sound_keys_and_stage_children_through_the_host() {
     assert_eq!(abc.method_bodies[0].code, before);
     assert_eq!(again.stage_hooks, vec![]);
 }
+
+#[test]
+fn shared_stage_gives_a_new_application_domain_the_clients_skua_as_parent() {
+    let ops = [
+        // new ApplicationDomain(): only the system's above it
+        Op::FindPropStrict {
+            index: Index::new(1),
+        },
+        Op::ConstructProp {
+            index: Index::new(1),
+            num_args: 0,
+        },
+        Op::Pop,
+        // new ApplicationDomain(ApplicationDomain.currentDomain): left alone
+        Op::FindPropStrict {
+            index: Index::new(1),
+        },
+        Op::GetLex {
+            index: Index::new(1),
+        },
+        Op::GetProperty {
+            index: Index::new(2),
+        },
+        Op::ConstructProp {
+            index: Index::new(1),
+            num_args: 1,
+        },
+        Op::Pop,
+        Op::ReturnVoid,
+    ];
+    let names = [("flash.system", "ApplicationDomain"), ("", "currentDomain")];
+    let shared = Options {
+        shared_stage: true,
+        client: None,
+    };
+    // Without a shared stage nothing changes.
+    let mut abc = abc_with(&names, &[], &ops, vec![]);
+    let mut report = Report::default();
+    assert!(!patch_abc_with(&mut abc, Target::Game, Options::default(), &mut report).unwrap());
+
+    let mut report = Report::default();
+    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    let count = |name: &str| report.stage_hooks.iter().filter(|s| s.name == name).count();
+    assert_eq!(count("assetsDomain"), 1);
+    assert_eq!(report.stage_hooks.len(), 1);
+
+    let pool = &abc.constant_pool;
+    let name = |index: &Index<Multiname>| {
+        local_name(pool, &pool.multinames[index.0 as usize - 1])
+            .unwrap()
+            .to_owned()
+    };
+    let got: Vec<String> = ops_of(&abc)
+        .into_iter()
+        .map(|op| match op {
+            Op::FindPropStrict { index } => format!("findpropstrict {}", name(&index)),
+            Op::GetLex { index } => format!("getlex {}", name(&index)),
+            Op::GetProperty { index } => format!("getproperty {}", name(&index)),
+            Op::CallProperty { index, num_args } => format!("call {} {num_args}", name(&index)),
+            Op::ConstructProp { index, num_args } => {
+                format!("construct {} {num_args}", name(&index))
+            }
+            op => format!("{op:?}"),
+        })
+        .collect();
+    let expected = [
+        "findpropstrict ApplicationDomain",
+        "getlex TuruStage",
+        "getlex ApplicationDomain",
+        "getproperty currentDomain",
+        "call assetsParent 1",
+        "construct ApplicationDomain 1",
+        "Pop",
+        "findpropstrict ApplicationDomain",
+        "getlex ApplicationDomain",
+        "getproperty currentDomain",
+        "construct ApplicationDomain 1",
+        "Pop",
+        "ReturnVoid",
+    ];
+    assert_eq!(got, expected);
+    assert_eq!(abc.method_bodies[0].max_stack, 5);
+
+    // Patching it again changes nothing more.
+    let before = abc.method_bodies[0].code.clone();
+    let mut again = Report::default();
+    patch_abc_with(&mut abc, Target::Game, shared, &mut again).unwrap();
+    assert_eq!(abc.method_bodies[0].code, before);
+    assert_eq!(again.stage_hooks, vec![]);
+}

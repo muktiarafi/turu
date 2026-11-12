@@ -70,6 +70,10 @@ pub struct Options {
     /// `removeEventListener`); and `addChild`, `removeChild` and `getChildByName` shortly after a
     /// `stage` become `TuruStage.stageAddChild(parent, child, domain)` and so on (on the stage, a
     /// child goes into its client's layer, which shows, hides and fits with its game).
+    ///
+    /// The client loads its assets and game menu into a `new ApplicationDomain()`, whose only
+    /// parent is the system's: there the patched SWFs wouldn't find `TuruStage`. Each becomes
+    /// `new ApplicationDomain(TuruStage.assetsParent(domain))`, the domain of the client's skua.
     pub shared_stage: bool,
     /// Which of the host's game clients this skua is: its `ExternalInterface` and `new
     /// Loader()` become that client's own host classes, [`HOST_EXTERNAL`] and [`HOST_LOADER`]
@@ -123,7 +127,8 @@ pub struct Report {
     /// [`Options::shared_stage`]: calls routed through `TuruStage` with the calling code's
     /// `ApplicationDomain`, so it knows whose they are: `play` ("sound"), key listeners ("keys"),
     /// and `addChild`/`removeChild`/`getChildByName` near a `stage` ("stageAddChild",
-    /// "stageRemoveChild", "stageChildByName").
+    /// "stageRemoveChild", "stageChildByName"); and `new ApplicationDomain()`, given
+    /// `TuruStage.assetsParent` as its parent ("assetsDomain").
     pub stage_hooks: Vec<Site>,
 }
 
@@ -305,6 +310,8 @@ pub fn patch_abc_with(
     let mut keyboard_event = HashSet::new();
     let mut key_types = HashSet::new();
     let mut child_calls: HashMap<u32, &'static str> = HashMap::new();
+    // `ApplicationDomain`, whose `new ApplicationDomain()` has no parent but the system's.
+    let mut app_domains = HashSet::new();
     for (i, multiname) in pool.multinames.iter().enumerate() {
         let index = i as u32 + 1;
         match local_name(pool, multiname) {
@@ -337,6 +344,9 @@ pub fn patch_abc_with(
             }
             Some("getChildByName") => {
                 child_calls.insert(index, "stageChildByName");
+            }
+            Some("ApplicationDomain") => {
+                app_domains.insert(index);
             }
             Some("stg") if target == Target::Skua => {
                 skua_stage.insert(index);
@@ -404,6 +414,7 @@ pub fn patch_abc_with(
     let hooks = (options.shared_stage
         && (!play_names.is_empty()
             || has_keys
+            || !app_domains.is_empty()
             || (!child_calls.is_empty() && !stage_names.is_empty())))
     .then(|| {
         let pool = &mut abc.constant_pool;
@@ -418,6 +429,7 @@ pub fn patch_abc_with(
             sound: add_qname(pool, "", "sound"),
             keys: add_qname(pool, "", "keys"),
             keys_removed: add_qname(pool, "", "keysRemoved"),
+            assets_parent: add_qname(pool, "", "assetsParent"),
             child,
         }
     });
@@ -600,6 +612,25 @@ pub fn patch_abc_with(
             ];
             for (i, decoded) in ops.iter().enumerate() {
                 if stage_edits.contains_key(&i) {
+                    continue;
+                }
+                // new ApplicationDomain() -> new ApplicationDomain(TuruStage.assetsParent(domain)):
+                // the client loads its assets and game menu into one with no parent but the
+                // system's, where `TuruStage` (which those SWFs call once patched) isn't found.
+                if let Op::ConstructProp { index, num_args: 0 } = decoded.op
+                    && app_domains.contains(&index.0)
+                {
+                    let mut seq = vec![Op::GetLex { index: h.stage }];
+                    seq.extend(domain.iter().cloned());
+                    seq.extend([
+                        Op::CallProperty {
+                            index: h.assets_parent,
+                            num_args: 1,
+                        },
+                        Op::ConstructProp { index, num_args: 1 },
+                    ]);
+                    stage_edits.insert(i, seq);
+                    hook_sites.push("assetsDomain");
                     continue;
                 }
                 let (index, num_args, void) = match decoded.op {
@@ -846,6 +877,7 @@ struct Hooks {
     sound: Index<Multiname>,
     keys: Index<Multiname>,
     keys_removed: Index<Multiname>,
+    assets_parent: Index<Multiname>,
     /// By the multiname of `addChild`, `removeChild`, `getChildByName`: the helper and its name.
     child: HashMap<u32, (Index<Multiname>, &'static str)>,
 }

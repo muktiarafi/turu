@@ -230,6 +230,11 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
     it back to the game). The game and skua themselves stay on the stage.
   * The host's Debug log says, when it changes, how many keys were held back, sounds silenced,
     popups put in a layer, and hooks that couldn't tell their tab (none so far).
+* **The client's own domains.** The client loads its assets and the game menu (the treasure
+  chest) into a `new ApplicationDomain()`, whose only parent is the system's, where those SWFs,
+  patched to call `TuruStage`, wouldn't find it (the menu never opened). `Options::shared_stage`
+  gives each such domain a parent, `TuruStage.assetsParent`: the domain of the client's skua,
+  which has `TuruStage` and names the tab, without the game's classes over the assets' own.
 * **World Camera** resets the game's root to scale 1 at (0, 0) when it closes, which undid the
   fit with several tabs; the host puts the fit back each frame it finds the shown game there
   (`TuruStage.keepFitted`).

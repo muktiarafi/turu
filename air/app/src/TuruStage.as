@@ -268,6 +268,25 @@ package {
             return -1;
         }
 
+        /**
+         * The parent for a `new ApplicationDomain()` in client code (`turu_air_patch` gives it
+         * one): the domain of the client's skua. Without a parent the domain has only the
+         * system's, so the SWFs loaded there (the game menu, the client's assets), patched to
+         * call `TuruStage`, would fail with "TuruStage is not defined". Skua's domain has this
+         * class (through the host's) and names the client ([clientOfDomain]) without the game's
+         * classes, which would shadow the assets' own.
+         */
+        public static function assetsParent(domain:ApplicationDomain):ApplicationDomain {
+            var client:int = clientOfDomain(domain);
+            var main:DisplayObject = client >= 0 ? mains[client] as DisplayObject : null;
+            if (main != null && main.loaderInfo != null && main.loaderInfo.applicationDomain != null) {
+                return main.loaderInfo.applicationDomain;
+            }
+            // `TuruStage` is still found from the host's own; the tab isn't.
+            lost("domain");
+            return ApplicationDomain.currentDomain;
+        }
+
         /** The client whose game (or overlay, or skua) `x` is in, or -1. */
         public static function clientOfObject(x:Object):int {
             var d:DisplayObject = x as DisplayObject;
