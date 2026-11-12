@@ -185,6 +185,11 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   games) and scales and moves each game to fit (`TuruAirHost.fit`, `TuruStage.place`: 0.903x on
   a 2400x1080 screen). For the game's code that reads the stage's mouse, `stage.mouseX` and
   `mouseY` are rewritten to the game's own. With one tab nothing moves.
+* **The map's SWF for the bot.** Grabber's map items and Jump's pads read the map the game
+  loaded (`FlashHost::loaded_swf`). AIR keeps its movies to itself, so `AirFlashHost` reads the
+  copy the game was served from the disk cache (`game_files::served_swf`: the newest of the last
+  64 SWFs `fetch` served whose path ends in the map's). With the cache off, or the file gone
+  from it, the bot downloads the map itself, as before.
 * **No hidden-tab slowdown.** Ruffle slows a hidden tab's game to 2 FPS with `stage.frameRate`;
   on AIR that's every client's rate, so Turu Mas doesn't (`turu::set_hidden_tabs_slowed(false)`).
   Hidden games aren't drawn, and AIR slows the whole app off screen.
@@ -198,7 +203,6 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 
-* `loaded_swf` (Grabber's map items, the map pads): `None` on AIR.
 * Stop and Pause in the notification (the API does it).
 * A tap on the game doesn't close an open Turu menu.
 * 6 hours screen-off, and the phones that fail on Ruffle (Redmi 10, Infinix): not run yet.

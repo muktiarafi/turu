@@ -80,6 +80,16 @@ impl FlashHost for AirFlashHost {
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(HostError::Closed),
         }
     }
+
+    /// The game's copy of the SWF, from the disk cache it was fetched through (AIR keeps its
+    /// movies to itself). The tabs share the cache, so this may be another tab's copy of the
+    /// same file.
+    fn loaded_swf(&self, path: &str) -> Option<Vec<u8>> {
+        if AIR_THREAD.get() == Some(&std::thread::current().id()) {
+            return None;
+        }
+        turu_frontend::game_files::served_swf(path)
+    }
 }
 
 /// AIR's answer to call `id` (the callback's result as `ExternalInterface` would stringify it).

@@ -7,7 +7,8 @@
 //! AIR's own downloads, which keep nothing.
 
 use ruffle_http_cache::{Entry, HttpCache, Policy};
-use std::sync::{Arc, OnceLock};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use url::Url;
 
@@ -75,7 +76,55 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
                 .map_err(|e| e.to_string())
         })
         .as_ref()?;
-    fetch_with(client, cache().as_deref(), url)
+    let body = fetch_with(client, cache().as_deref(), url)?;
+    if is_swf(&body)
+        && let Ok(url) = Url::parse(url)
+    {
+        remember(&mut served(), url);
+    }
+    Ok(body)
+}
+
+/// How many of the SWFs [`fetch`] served are remembered (a map's own files are a handful).
+const SERVED_KEPT: usize = 64;
+
+/// The SWFs [`fetch`] served, by URL, newest last.
+fn served() -> std::sync::MutexGuard<'static, VecDeque<Url>> {
+    static SERVED: Mutex<VecDeque<Url>> = Mutex::new(VecDeque::new());
+    SERVED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn is_swf(body: &[u8]) -> bool {
+    matches!(body.get(..3), Some(b"FWS" | b"CWS" | b"ZWS"))
+}
+
+fn remember(served: &mut VecDeque<Url>, url: Url) {
+    served.retain(|kept| *kept != url);
+    if served.len() == SERVED_KEPT {
+        served.pop_front();
+    }
+    served.push_back(url);
+}
+
+/// The newest URL in `served` whose path ends in `path` (a map file such as
+/// `ChiralValley/town-Mobius-21Feb14.swf`), as the Ruffle host finds a loaded movie.
+fn find_served(served: &VecDeque<Url>, path: &str) -> Option<Url> {
+    let suffix = format!("/{}", path.trim_start_matches('/'));
+    served
+        .iter()
+        .rev()
+        .find(|url| url.path().ends_with(&suffix))
+        .cloned()
+}
+
+/// A SWF [`fetch`] served whose URL path ends in `path`, read back from the disk cache and
+/// written out uncompressed (`FlashHost::loaded_swf` for Turu Mas, whose game loads through
+/// [`fetch`]). `None` when none was served, or the cache is off or no longer has it: the bot then
+/// downloads the file itself.
+pub fn served_swf(path: &str) -> Option<Vec<u8>> {
+    let url = find_served(&served(), path)?;
+    let entry = cache()?.lookup(&url)?;
+    crate::map_pads::uncompressed_swf(&entry.body)
 }
 
 fn fetch_with(
@@ -276,6 +325,46 @@ mod tests {
         assert_eq!(cache.stats().revalidated, 2);
         let other = format!("http://127.0.0.1:{}/gamefiles/mon/Other.swf", server.port);
         assert!(get(&other).is_err());
+    }
+
+    #[test]
+    fn finds_the_newest_served_swf_by_its_path() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        let mut served = VecDeque::new();
+        remember(
+            &mut served,
+            url("https://game.aq.com/game/gamefiles/maps/Town/town-1.swf?v=1"),
+        );
+        remember(
+            &mut served,
+            url("https://cdn.aq.com/game/gamefiles/maps/Town/town-1.swf?v=2"),
+        );
+        remember(
+            &mut served,
+            url("https://game.aq.com/game/gamefiles/maps/Other/mytown-1.swf"),
+        );
+        let found = |path: &str| find_served(&served, path).map(|url| url.to_string());
+        assert_eq!(
+            found("Town/town-1.swf").as_deref(),
+            Some("https://cdn.aq.com/game/gamefiles/maps/Town/town-1.swf?v=2")
+        );
+        assert_eq!(found("/Town/town-1.swf"), found("Town/town-1.swf"));
+        // A whole file name, not the end of another's.
+        assert_eq!(found("town-1.swf"), found("Town/town-1.swf"));
+        assert_eq!(found("own-1.swf"), None);
+        assert_eq!(found("Nowhere/town-1.swf"), None);
+
+        // Served again: newest; the oldest go past the limit.
+        remember(
+            &mut served,
+            url("https://game.aq.com/game/gamefiles/maps/Town/town-1.swf?v=1"),
+        );
+        assert_eq!(served.len(), 3);
+        for n in 0..SERVED_KEPT {
+            remember(&mut served, url(&format!("https://game.aq.com/x/{n}.swf")));
+        }
+        assert_eq!(served.len(), SERVED_KEPT);
+        assert_eq!(find_served(&served, "Town/town-1.swf"), None);
     }
 
     #[test]

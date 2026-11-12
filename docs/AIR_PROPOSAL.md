@@ -222,7 +222,8 @@ emulator.)
   event (`{"id","name","args"}`) and waits up to 20 s for `nativeReply`; a call from AIR's own
   thread is refused. `nativeFlashCall` hands skua's calls to `Bot::on_flash_call`. `nativePatch`
   patches over JNI and refuses a client without its AIR mode. `loaded_swf` (Grabber's map items,
-  the map pads) isn't there yet: `None`.
+  the map pads) came later (2026-11-12): the game's copy from the disk cache it loaded through
+  (`game_files::served_swf`), else the bot's own download.
 * **The extension** (`air/ane`): Kotlin functions `startEngine`, `flashCall`, `reply`,
   `patchSwf` (ByteArray in and out), the service; rustls-platform-verifier's Kotlin part comes
   from the Ruffle build's module (`android/rustls-platform-verifier`, which now resolves its paths
@@ -248,7 +249,7 @@ before the app made it) is invisible to the app (Android's storage layer goes by
 so its scripts aren't found and Search Scripts can't write there. Let the app create its folders
 (a first start does), then push into them.
 
-**Left for A1:** 6 hours screen-off on a phone (the "done when"); `loaded_swf`; Stop/Pause in the
+**Left for A1:** 6 hours screen-off on a phone (the "done when"); ~~`loaded_swf`~~ (done); Stop/Pause in the
 notification (the API does it now); scripts without adb (Search Scripts in the UI is A2); an
 in-game bench on a phone.
 
@@ -491,7 +492,7 @@ Turu activity for the bot windows (switch between the game and Turu, as with any
 | Scripts, Script Loader, Search Scripts, options, skills, Auto, relogin, monitor, control API | Same | Through `AirFlashHost`. |
 | Logging in with the game's screen, typing | Better | AIR's own text fields and soft keyboard. The typing strip isn't needed. |
 | Interceptor, Packet Logger edits (`capture.rs` wraps Ruffle's socket) | Adapt | A loopback proxy like VibeSkua's `CaptureProxy`, or skua's `catchPackets` for reading only. Already hidden on phones (v1 "Drop"), so it can wait. |
-| Grabber's map items, Jump's pads (`FlashHost::loaded_swf`) | Adapt | `AirFlashHost::loaded_swf` downloads the map SWF itself (same URL, cached). |
+| Grabber's map items, Jump's pads (`FlashHost::loaded_swf`) | Same | Done: `AirFlashHost::loaded_swf` reads the game's copy from the disk cache it loaded through. |
 | Frame interpolation, Safe Drawing, GPU memory trims, Graphics API choice | None | Ruffle only. AIR has `renderMode` (auto/gpu/cpu/direct) and Stage quality instead. |
 | Tabs, Army in tabs, Butler (proposal phase 5) | Not in AIR mode | One AIR app runs one root SWF, and skua is a singleton (`Main.instance`). |
 | Restart without a window after a kill | Worse | The service can restart Turu's engine, but the game needs AIR's activity, and Android 10+ restricts starting activities from the background. After a kill: a notification "tap to resume". |

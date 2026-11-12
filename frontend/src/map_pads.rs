@@ -250,6 +250,15 @@ pub fn swf_file(header: &swf::HeaderExt, tags: &[u8]) -> Option<Vec<u8>> {
     Some(swf)
 }
 
+/// A SWF file (compressed or not) written back out uncompressed; `None` when it isn't one.
+pub fn uncompressed_swf(data: &[u8]) -> Option<Vec<u8>> {
+    if data.starts_with(b"FWS") {
+        return Some(data.to_vec());
+    }
+    let buf = swf::decompress_swf(data).ok()?;
+    swf_file(&buf.header, &buf.data)
+}
+
 /// The pad to jump to in a cell with `pads`: "Spawn" for "Enter", else `wanted` when the cell has
 /// it, else "Left", else its first pad (VibeSkua `jumpCorrectRoom`'s choice).
 pub fn pick(pads: &[String], cell: &str, wanted: &str) -> String {
@@ -359,6 +368,10 @@ mod tests {
         let swf = swf_file(&loaded.header, &loaded.data).unwrap();
         assert_eq!(&swf[..3], b"FWS");
         assert_eq!(scan(&swf).unwrap(), scan(&compressed).unwrap());
+        // As Turu Mas has it: the file from the disk cache, compressed as served.
+        assert_eq!(uncompressed_swf(&compressed).unwrap(), swf);
+        assert_eq!(uncompressed_swf(&swf).unwrap(), swf);
+        assert!(uncompressed_swf(b"hello").is_none());
         let strings = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(
             scan(&swf).unwrap().cells,
