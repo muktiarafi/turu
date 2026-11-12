@@ -79,7 +79,14 @@ So nothing has to redirect `World.loadMap` and the others: they already load thr
   `loadBytes` and `allowCodeImport` (bytes from `turu_air_patch`), set `params.sFilePath` (and
   `isWeb = false`), and drop its own `Security.allowDomain('*')`. Map
   unloading (`unloadAndStop`, a GC nudge) is still ours to add if AIR's memory grows like
-  Ruffle's: check in the spike.
+  Ruffle's: check in the spike. **Checked 2026-11-12: not needed.** The client gives each map a
+  child `ApplicationDomain` (`World.loadMap`); a plain join drops the old `ldr_map` without
+  `unloadAndStop` (only `reloadCurrentMap`'s `cleanupMap` calls it, and `clearLoaders` at login
+  calls `System.gc()`), yet AIR frees it. On the emulator (Turu Mas 0.3.0-beta.3, a second tab
+  idle at login), 75 joins over 16 min through 9 public maps: PSS 260-330 MB the whole time, each
+  map back to where it was on the first round (greenguardwest 269 then 273-281 MB; battleon 323
+  then 311), at most ~15 MB of drift (monster and NPC classes cached in `loaderD`). Brief peaks of
+  450-645 MB while Swordhaven loads, gone by the next sample. A patch would save nothing.
 * The patch is small enough that a future client might need none. If Artix removes the AIR mode,
   `game_problem` says so and Turu stays on Ruffle.
 
@@ -371,7 +378,7 @@ From `docs/ANDROID.md` and the crash reports so far:
 | GPU out of memory, wgpu panics (`Globals::new`) | Redmi 10 (Mali-G52, 4 GB), Infinix HOT 11S | Probably. AIR's renderer is Adobe's own, tuned on phones for a decade, with no wgpu/Mugetsu atlas layer. Spike measures it. |
 | Garbage drawing, no error | Infinix Hot 30i (PowerVR GE8320) | Probably. AIR draws the real Flash player's way. |
 | OpenGL ES draws only parts of the game | every GLES device | Yes. Not a concern under AIR. |
-| Process aborted at 1.9 GB RSS after 27 min | Pixel 8 | Unknown. AIR has its own GC, and AQW keeps every SWF it loaded under any player. Unloading each map (`unloadAndStop`, its own `ApplicationDomain`) and a periodic `System.gc()` would keep it down. |
+| Process aborted at 1.9 GB RSS after 27 min | Pixel 8 | Likely. AIR frees old maps on its own: 75 map joins in 16 min stayed at 260-330 MB on the emulator (see "Spike A0"). An hour's farm on a phone is still to measure. |
 | ColorOS kill for CPU use | OPPO A9 2020 | No. That's the phone maker's battery manager, whatever the player. AIR may use less CPU, so it may help. |
 | Soft keyboard, typing strip, `TextControl`, touch routing for the joystick | all | Mostly. AIR handles Flash text fields, the IME and multitouch natively. |
 | Ruffle's AVM2 gaps (a game feature that misbehaves) | case by case | Yes. AIR is the reference implementation. |
