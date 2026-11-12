@@ -456,6 +456,20 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   monitor's rate, and each present waited for the next refresh: 35-40% of the main thread,
   which every tab's game and bot call waited behind. Nothing asks for a redraw while the window
   is minimized or covered (it spun the event loop, ~450 ms/s).
+- **GPU time per frame** (`RUFFLE_GPU_TIMING=1`, ruffle-aqw's `ruffle_render_wgpu::gpu_timing`):
+  the perf log's CPU timers say how long recording and submitting a frame took, not how long
+  the GPU then ran it. With the variable set, a `gpu time per frame` line every 5 s gives the
+  GPU's time for the game's frame (not the UI's or the copy into the window), split into the
+  cacheAsBitmap and filter redraws and the stage, with the longest frame, the frames measured,
+  and the target's size and MSAA samples. Three timestamps a frame, written by passes that clear
+  a 1x1 texture (an empty compute pass wrote nothing on Metal, and Ruffle's device can't
+  dispatch compute work) and copied out one frame later (copied in the same command buffer, a
+  frame's last timestamp often wasn't written yet on Metal). A span runs from the frame's first
+  command to its last, so it also counts the GPU waiting for later command segments. Off by
+  default. Checked on macOS (Apple GPU, Metal, debug build, 2026-11-12) at the title screen only,
+  1916x1100, 1 sample: 1.4-1.6 ms a frame, against 4-5 ms of `finish_encoding` on the CPU; not
+  yet in game, on Windows (D3D12/Vulkan) or on a phone, where the rendering levers of
+  `docs/SKUA_SWF_PROPOSAL.md` (M7) and the MSAA and resolution caps need these numbers.
 - **Reads that copied whole objects:** `player::loaded` (asked by the skill timer every tick and
   by many waits) reads `world.myAvatar.items.length`, as VibeSkua does, not the whole inventory;
   `quests.get`/`canComplete` read `world.questTree.<id>`, not the whole quest tree. With nine

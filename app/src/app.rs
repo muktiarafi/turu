@@ -305,6 +305,24 @@ impl PerfStats {
                 "off".to_string()
             }
         );
+        // Turu: the GPU's own time per frame, with `RUFFLE_GPU_TIMING=1` (see `gpu_timing`): the
+        // CPU timers above say how long recording and submitting took, not how long the GPU ran.
+        if let Some(gpu) = ruffle_render_wgpu::gpu_timing::take() {
+            tracing::info!(
+                target: "ruffle_aqw_perf",
+                "gpu time per frame (ms): total {:.2} (cacheAsBitmap and filters {:.2}, stage {:.2}), max {:.2}; {} frames measured, {} skipped, {} invalid; target {}x{}, {} samples",
+                gpu.total_ms(),
+                gpu.cache_ms,
+                gpu.stage_ms,
+                gpu.max_ms,
+                gpu.frames,
+                gpu.skipped,
+                gpu.invalid,
+                gpu.width,
+                gpu.height,
+                gpu.samples,
+            );
+        }
         // In-between pictures drawn from the last recorded one (see `replay`); a `no-replay`
         // file next to the exe walks the stage for every picture instead (A/B comparisons).
         use ruffle_core::interpolation_replay as replay;
