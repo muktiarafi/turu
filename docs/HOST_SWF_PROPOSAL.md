@@ -1,7 +1,8 @@
 # Proposal: Turu's own host SWF
 
 Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the game, run only with
-`TURU_HOST_SWF=turu`); the rest are proposals. Replaces the plan to fork VibeSkua's
+`TURU_HOST_SWF=turu`); R2 done (the generic calls, parity mode `TURU_HOST_PARITY=1`); R3a
+written, awaiting its parity run; the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -272,11 +273,43 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
 
 ### R3: The API
 
-- The rest of the 58 and the scripts' names, by group: player, world and map, combat and
-  monsters, inventory, bank, house and shop, quests, auras, skills, server list and login, the
-  five modules.
-- Done when: each group passes parity on the standard farms; with Turu chosen, the farms run with
-  the same kills per minute and no new "too soon".
+The rest of the callbacks Turu and its scripts call (about 44) and the five modules, in four
+parts, each a branch (`host-r3a` ...) fast-forwarded in after its own checks:
+
+- **R3a**: auras (`Auras`: `GetPlayerAura`, `GetMonsterAuraByID`/`ByName`,
+  `GetAuraSnapshots`, `GetAurasValue`, `HasAnyActiveAura`), monsters and combat (`Combat`:
+  `availableMonsters`, `getMonsters`, `getTargetMonster`, `attackMonsterName`/`ID`,
+  `attackPlayer`, `untargetSelf`, `canUseSkill`, `useSkill`, `infiniteRange`, `magnetize`).
+  VibeSkua's 5 s aura-array rebuild isn't carried over (Turu drops expired snapshots itself).
+- **R3b**: inventory, shop, player and world (`buyItemByID`/`ByName`,
+  `getUnmetPurchaseRequirements`, the inventory checks, `isFavoriteItem`, `rejectExcept`,
+  `gender`, `getAvatar`, `jumpCorrectRoom`, `walkTo`, `isLoggedIn`, `isKicked`,
+  `getActiveModalMessage`, `sendClientPacket`), and the monster-click wiki link (`openWebsite`,
+  compared in parity).
+- **R3c**: server and login (`clickServer`, `connectToServer`, `killLoginModals`,
+  `loadPolicyFile(s)`, `resetConnectionState`).
+- **R3d**: options and modules (`disableDeathAd`, `killLag`, `skipCutscenes`,
+  `modEnable`/`modDisable`; Hide Players, Disable FX, Disable Collisions, quest item rates, quest
+  wiki links), and Options > Application > Host SWF (VibeSkua / Turu, default VibeSkua;
+  `TURU_HOST_SWF` overrides it).
+
+How each is checked:
+
+- Reads join parity's compared list (`parity.rs`'s `READS`). Actions (attack, use a skill, buy,
+  walk, connect, the modules) go to VibeSkua's SWF only in parity mode, or they would happen
+  twice; they're checked by running `turu.swf` alone (`TURU_HOST_SWF=turu`). Real scripts need
+  every part (CoreBots asks `isLoggedIn` first), so until R3d each part's actions run from a
+  small script that calls only that part (`host/checks/`, e.g. `r3a-combat.ts`), compared
+  packet for packet with VibeSkua's SWF; from R3d FarmerJoe DoAll at Icestorm Arena keeps its
+  kills per minute with no new "too soon".
+- Behaviour comes from the spec, then the C# that uses each answer, then `flash.rs`, then
+  parity; where the spec is silent on an answer's shape, parity shows VibeSkua's and `turu.swf`
+  matches it. VibeSkua's AS3 isn't read.
+- Where VibeSkua's SWF throws (its quest-wiki module before login, `infiniteRange` without
+  skills, Disable Collisions without a map), `turu.swf` guards instead; the differences that
+  show go on the allowlist with their reason.
+- Done when, for each part: a parity run over GoldFarm and a script that uses the part has no
+  unlisted mismatch, and the `TURU_HOST_SWF=turu` checks above pass.
 
 ### R4: Turu Mas
 

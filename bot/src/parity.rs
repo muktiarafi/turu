@@ -23,6 +23,17 @@ const READS: &[&str] = &[
     "selectArrayObjects",
     "isNull",
     "isTrue",
+    // R3a: monsters, skills, auras.
+    "availableMonsters",
+    "getMonsters",
+    "getTargetMonster",
+    "canUseSkill",
+    "GetPlayerAura",
+    "GetMonsterAuraByID",
+    "GetMonsterAuraByName",
+    "GetAuraSnapshots",
+    "GetAurasValue",
+    "HasAnyActiveAura",
 ];
 
 /// The events compared. Not the start-up ones, which Turu's SWF doesn't send in parity mode,
@@ -35,6 +46,8 @@ const EVENT_WAIT: Duration = Duration::from_secs(5);
 const EVENTS_KEPT: usize = 1000;
 /// How much of each answer a `parity:` line shows.
 const SHOWN: usize = 200;
+/// How much of what's the same a `parity:` line shows before the first difference.
+const BEFORE_DIFFERENCE: usize = 60;
 
 /// A known, deliberate difference: `same` says whether the two answers (VibeSkua's, then
 /// Turu's) agree in what matters, for a call or event named `name` (`detail`: a call's
@@ -47,12 +60,46 @@ struct Allowed {
     same: fn(detail: &str, vibeskua: &str, turu: &str) -> bool,
 }
 
-const ALLOWED: &[Allowed] = &[Allowed {
-    name: "pext",
-    reason: "Turu's SWF sends only the packet's `type` and `params`, what the bot and scripts \
-             read; VibeSkua's stringifies the whole SmartFox event",
-    same: |_, vibeskua, turu| pext_params(vibeskua) == pext_params(turu),
-}];
+const ALLOWED: &[Allowed] = &[
+    Allowed {
+        name: "pext",
+        reason: "Turu's SWF sends only the packet's `type` and `params`, what the bot and \
+                 scripts read; VibeSkua's stringifies the whole SmartFox event",
+        same: |_, vibeskua, turu| pext_params(vibeskua) == pext_params(turu),
+    },
+    Allowed {
+        name: "GetAuraSnapshots",
+        reason: "`remaining` is read from the player's clock in each SWF's call, which can be a \
+                 millisecond or two apart in the same frame",
+        same: |_, vibeskua, turu| same_snapshots(vibeskua, turu),
+    },
+];
+
+/// Aura snapshots that differ at most by a few milliseconds in `remaining`.
+fn same_snapshots(a: &str, b: &str) -> bool {
+    const SECONDS: f64 = 0.05;
+    let (Ok(Value::Array(a)), Ok(Value::Array(b))) = (
+        serde_json::from_str::<Value>(a),
+        serde_json::from_str::<Value>(b),
+    ) else {
+        return false;
+    };
+    a.len() == b.len()
+        && a.iter().zip(&b).all(|(a, b)| {
+            let (Value::Object(a), Value::Object(b)) = (a, b) else {
+                return false;
+            };
+            a.len() == b.len()
+                && a.iter().all(|(key, va)| match (key.as_str(), b.get(key)) {
+                    ("remaining", Some(vb)) => match (va.as_f64(), vb.as_f64()) {
+                        (Some(x), Some(y)) => (x - y).abs() <= SECONDS,
+                        _ => va == vb,
+                    },
+                    (_, Some(vb)) => va == vb,
+                    (_, None) => false,
+                })
+        })
+}
 
 /// `params` of the packet in a `pext` event's arguments (`["{json}"]`).
 fn pext_params(args: &str) -> Option<Value> {
@@ -259,11 +306,12 @@ impl Inner {
         counts.mismatched += 1;
         let key = format!("{name} {detail}");
         let repeats = self.repeats.note(&key, now)?;
+        let start = excerpt_start(vibeskua, turu);
         let mut line = format!(
             "parity: {name}{}{detail}: VibeSkua {} / Turu {}",
             if detail.is_empty() { "" } else { " " },
-            shorten(vibeskua),
-            shorten(turu)
+            excerpt(vibeskua, start),
+            excerpt(turu, start)
         );
         if repeats > 0 {
             line.push_str(&format!(" (and {repeats} more since last logged)"));
@@ -272,11 +320,23 @@ impl Inner {
     }
 }
 
-fn shorten(text: &str) -> String {
-    match text.char_indices().nth(SHOWN) {
-        Some((i, _)) => format!("{}...", &text[..i]),
-        None => text.to_owned(),
-    }
+/// Where a line starts showing two answers: a little before the first character that differs,
+/// so a difference deep in a long JSON answer shows.
+fn excerpt_start(a: &str, b: &str) -> usize {
+    let differs = a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
+    differs.saturating_sub(BEFORE_DIFFERENCE)
+}
+
+/// `text` from character `start`, at most [`SHOWN`] characters, with `...` where it's cut.
+fn excerpt(text: &str, start: usize) -> String {
+    let shown: String = text.chars().skip(start).take(SHOWN).collect();
+    let before = if start > 0 { "..." } else { "" };
+    let after = if text.chars().count() > start + SHOWN {
+        "..."
+    } else {
+        ""
+    };
+    format!("{before}{shown}{after}")
 }
 
 /// `TURU_HOST_PARITY=1`.
@@ -381,6 +441,40 @@ mod tests {
         );
         let lines = parity.event_at(Side::VibeSkua, "packet", &packet("%y%"), gone + EVENT_WAIT);
         assert_eq!(lines, [r#"parity: packet: VibeSkua ["%x%"] / Turu (none)"#]);
+    }
+
+    #[test]
+    fn a_long_answer_shows_where_it_differs() {
+        let same = "x".repeat(500);
+        let a = format!("{same}A{same}");
+        let b = format!("{same}B{same}");
+        let start = excerpt_start(&a, &b);
+        assert_eq!(start, 500 - BEFORE_DIFFERENCE);
+        let shown = excerpt(&a, start);
+        assert!(
+            shown.starts_with("...") && shown.ends_with("..."),
+            "{shown}"
+        );
+        assert!(shown.contains('A'));
+        assert_eq!(excerpt("short", 0), "short");
+    }
+
+    #[test]
+    fn aura_snapshots_allow_a_few_milliseconds() {
+        let a = r#"[{"dur":20,"nam":"Valiance","remaining":19.401,"n":1}]"#;
+        assert!(same_snapshots(
+            a,
+            r#"[{"dur":20,"nam":"Valiance","remaining":19.399,"n":1}]"#
+        ));
+        assert!(!same_snapshots(
+            a,
+            r#"[{"dur":20,"nam":"Valiance","remaining":18.0,"n":1}]"#
+        ));
+        assert!(!same_snapshots(
+            a,
+            r#"[{"dur":20,"nam":"Other","remaining":19.401,"n":1}]"#
+        ));
+        assert!(!same_snapshots(a, "[]"));
     }
 
     #[test]
