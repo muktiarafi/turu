@@ -299,6 +299,15 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         "packet" => packet_sent(bot, arg_str(0)),
         "packetFromServer" => {}
         // turu.swf: what changed in game (docs/HOST_SWF_PROPOSAL.md M5). Only wakes waits.
+        "event" if arg_str(0) == "frames" => {
+            // `setFrameReport` (M7a): the gaps between the game's frames, for the perf log.
+            tracing::info!(
+                target: "turu_perf",
+                "frames{}: {}",
+                bot.log_name().map(|n| format!(" [{n}]")).unwrap_or_default(),
+                arg_str(1)
+            );
+        }
         "event" => {
             if let Some(topics) = event_topics(arg_str(0)) {
                 if topics == Topics::SESSION {

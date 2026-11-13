@@ -202,6 +202,10 @@ impl FakeGame {
             ("isLoggedIn", _) | ("inventoryHasSpaceFor", _) | ("rejectExcept", _) => "true".into(),
             ("getGameObject", "world.myAvatar.dataLeaf.intState") => "1".into(),
             ("getGameObject", "world.curRoom") => "42".into(),
+            // Every action's cooldown has passed (`forActionCooldown` returns at once).
+            ("getGameObject", path) if path.starts_with("world.lock.") => {
+                r#"{"ts":0,"cd":0}"#.into()
+            }
             ("getGameObject", "world.myAvatar.items") => inventory_json(),
             ("getGameObject", "world.myAvatar.objData.iBagSlots") => "30".into(),
             ("inventoryBagUsedSlots", _) => "12".into(),

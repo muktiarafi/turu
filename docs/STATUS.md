@@ -472,6 +472,33 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   1916x1100, 1 sample: 1.4-1.6 ms a frame, against 4-5 ms of `finish_encoding` on the CPU; not
   yet in game, on Windows (D3D12/Vulkan) or on a phone, where the rendering levers of
   `docs/HOST_SWF_PROPOSAL.md` (M7) and the MSAA and resolution caps need these numbers.
+- **What the player's frames are made of, and what cuts them** (M7a of
+  `docs/HOST_SWF_PROPOSAL.md`, 2026-11-13, macOS, release build, window shown, 30 FPS, each
+  lever on and off in turns of 1-2 minutes within one session with `TURU_LEVER_AB`):
+  - The perf log's `gotos:` line now counts, per frame, the clips skipped as dormant, the ones
+    walked, the walked ones playing, and those awake only because they play. GoldFarm's map:
+    ~560 dormant, ~255 walked, ~57 awake only because they play. Idle in Yulgar: ~965 / ~564 /
+    ~158 of 182 playing, mostly other players' avatars (`AvatarMC`, up to 27 clips each), an NPC
+    and the UI portrait's head.
+  - `stopAnimations` (turu.swf: stop the clips of the map's art and of other players whose
+    frame moves from one frame to the next; `isPlaying` is false for a timeline that plays by
+    itself, as in Flash Player): ~240 clips stopped, playing 182 -> 42, walked ~564 -> ~297,
+    **a frame's game logic 0.67 -> 0.26 ms**; drawing 5.07 -> 4.95 ms (no change).
+  - No gain: `stripFilters` (~217 filters: render 4.47 -> 4.41 ms), `mouseOff`
+    (`mouseChildren` off on 15 layers: frame 1.58 -> 1.49, render 5.65 -> 5.39 ms, within the
+    turns' spread; hit tests aren't timed apart), `lowQuality` (render 4.64 -> 4.97 ms),
+    `cacheStatic` (`cacheAsBitmap` on 52 map layers: 4.85 -> 4.81 ms).
+  - M5's event watcher costs nothing measurable (`eventsOff`: frame 1.40 vs 1.49 ms).
+  - ruffle-aqw now logs an uncaught AS3 error the first time its message and innermost frame
+    are seen and counts the repeats (`gotos:` line; `RUFFLE_ERRORS_EVERY_TIME` logs each). An
+    armour's frame scripts (`ShadedPlagisteGuise`, driven by the aura HUD) threw ~8 a second in
+    one debug run whose player ticks were twice another's; the release runs here didn't get
+    that stream, so its cost isn't measured.
+  - Turu Mas (emulator, one tab, `--perf-log`): AIR holds 24 FPS, 41.7 ms between frames on
+    average, ~1% over 50 ms (turu.swf's `frames:` report). Not yet measured with the levers.
+  - With a window, drawing (~5 ms a frame) is most of the cost and none of the levers moved
+    it; `stopAnimations` cuts the part that runs whether or not anything is drawn (hidden
+    tabs, headless, background Turu Mas tabs).
 - **Reads that copied whole objects:** `player::loaded` (asked by the skill timer every tick and
   by many waits) reads `world.myAvatar.items.length`, as VibeSkua does, not the whole inventory;
   `quests.get`/`canComplete` read `world.questTree.<id>`, not the whole quest tree. With nine

@@ -6,7 +6,7 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
 four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b done (VibeSkua's SWF,
-parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a built on `host-m5` (events that wake waits); the rest are proposals. Replaces the plan to fork VibeSkua's
+parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7a measured on `host-m7`; the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -568,6 +568,16 @@ Done when: each lever has its before/after on the STATUS.md benchmarks (FarmerJo
 Icestorm Arena and a /fotia farm, 5 minutes each, release build; plus a phone run for the drawing
 levers) with the same kills and no new "too soon" warnings, nothing visible breaks when a tab is
 shown again or a switch is turned off, and only the levers that paid off are kept.
+
+**M7a, measured** (on `host-m7`; numbers in STATUS.md, "What the player's frames are made of"):
+the levers are in turu.swf (`setLever`, `Levers.as`) behind `TURU_LEVER_AB=<lever>:<seconds>`,
+each reporting what it changed; the clip counts and log-errors-once are in ruffle-aqw; Turu Mas
+reports its frame gaps (`setFrameReport`). Only `stopAnimations` paid: a frame's game logic in
+a crowded room 0.67 -> 0.26 ms, nothing on drawing. `stripFilters`, `mouseOff`, `lowQuality` and
+`cacheStatic` changed what they aim at with no measurable gain. **M7b**, to grill: whether to
+keep `stopAnimations` as a switch (off by default: other players stop moving), or apply it only
+where nothing is shown (hidden tabs, headless, background Turu Mas tabs); measuring it there and
+on Turu Mas; and whether the four that didn't pay go.
 
 ### M8: Packet hooks for Butler
 

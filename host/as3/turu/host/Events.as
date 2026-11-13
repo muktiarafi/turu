@@ -1,6 +1,7 @@
 package turu.host {
 import flash.display.Shape;
 import flash.events.Event;
+import flash.utils.getTimer;
 
 /**
  * Tells Turu what the game doesn't send packets for (docs/HOST_SWF_PROPOSAL.md M5): once a
@@ -12,6 +13,10 @@ import flash.events.Event;
  * - `arrived` `{x, y}`: the avatar moved, then stood still for two frames.
  * - `loading` `{shown}`: the loading screen (`mcConnDetail` on the stage) came up or went.
  * - `cutscene` `{shown}`: a cutscene overlay (a child of `mcExtSWF`) came up or went.
+ *
+ * - `frames` `{frames, avgMs, maxMs, slow}`: with `setFrameReport(seconds)`, every that many
+ *   seconds, the gaps between frames (`slow`: over 50 ms). For Turu Mas, where AIR draws and
+ *   Ruffle's own frame log doesn't apply (M7a).
  *
  * Turu only wakes its waits on them and still reads the game to decide, so a late or missed
  * event costs time, never an answer.
@@ -36,10 +41,50 @@ public class Events {
     private var moving:Boolean = false;
     private var still:int = 0;
 
+    /** The `eventsOff` lever (M7a): no looking and no events, to measure what they cost. */
+    public var paused:Boolean = false;
+
+    /** `setFrameReport`'s period in ms (0: off), and the gaps since the last report. */
+    private var reportEvery:int = 0;
+    private var reported:int = 0;
+    private var lastFrame:int = 0;
+    private var frames:int = 0;
+    private var gapTotal:int = 0;
+    private var gapMax:int = 0;
+    private var slow:int = 0;
+
     public function Events(host:Host, gameOf:Function) {
         this.host = host;
         this.gameOf = gameOf;
         ticker.addEventListener(Event.ENTER_FRAME, onFrame);
+    }
+
+    public function exposeWith(expose:Function):void {
+        expose("setFrameReport", setFrameReport);
+    }
+
+    private function setFrameReport(seconds:*):void {
+        reportEvery = Math.max(0, int(Number(seconds) * 1000));
+        reported = lastFrame = getTimer();
+        frames = gapTotal = gapMax = slow = 0;
+    }
+
+    private function timeFrame():void {
+        var now:int = getTimer();
+        var gap:int = now - lastFrame;
+        lastFrame = now;
+        frames++;
+        gapTotal += gap;
+        gapMax = Math.max(gapMax, gap);
+        if (gap > 50) {
+            slow++;
+        }
+        if (now - reported >= reportEvery) {
+            emit("frames", {frames: frames, avgMs: frames > 0 ? Math.round(gapTotal / frames * 10) / 10 : 0,
+                maxMs: gapMax, slow: slow});
+            reported = now;
+            frames = gapTotal = gapMax = slow = 0;
+        }
     }
 
     private function emit(name:String, data:Object):void {
@@ -47,8 +92,11 @@ public class Events {
     }
 
     private function onFrame(event:Event):void {
+        if (reportEvery > 0) {
+            timeFrame();
+        }
         var game:* = gameOf();
-        if (game == null) {
+        if (game == null || paused) {
             return;
         }
         try {

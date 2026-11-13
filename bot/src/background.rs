@@ -176,6 +176,7 @@ fn timer(weak: Weak<Bot>) {
     // The events when the game and the loading screen were last checked.
     let mut game_mark = None;
     let mut load_mark = None;
+    let mut lever = LeverAb::from_env();
     loop {
         std::thread::sleep(Duration::from_millis(20));
         let Some(bot) = weak.upgrade() else { break };
@@ -275,6 +276,9 @@ fn timer(weak: Weak<Bot>) {
         if !catching {
             on_login(&bot);
         }
+        if let Some(lever) = &mut lever {
+            lever.tick(&bot);
+        }
 
         let rest_due =
             bot.opts().rest_packets && last_rest.elapsed() >= Duration::from_millis(1200);
@@ -336,6 +340,83 @@ fn player_reading(bot: &Bot) -> crate::stats::PlayerReading {
     }
 }
 
+/// `TURU_LEVER_AB=<lever>:<seconds>` (HOST_SWF_PROPOSAL.md M7a): turns one of turu.swf's levers
+/// (`stopAnimations`, `mouseOff`, `stripFilters`, `lowQuality`, `cacheStatic`, `eventsOff`) on and off in
+/// turns of that many seconds while in game, logging each turn (`turu_perf`: `lever ... on:
+/// {changed, failed}`, then a census of the clips that play),
+/// so the frame times around it can be compared within one session. While it's on, it's
+/// applied again on a new map and every few seconds (players come and go).
+struct LeverAb {
+    name: String,
+    every: Duration,
+    on: bool,
+    turned: Instant,
+    refreshed: Instant,
+    map_mark: Option<crate::control::Mark>,
+}
+
+/// How often a lever that's on is applied again.
+const LEVER_REFRESH: Duration = Duration::from_secs(5);
+
+impl LeverAb {
+    fn from_env() -> Option<Self> {
+        let value = std::env::var("TURU_LEVER_AB").ok()?;
+        let (name, seconds) = value.split_once(':')?;
+        let seconds: u64 = seconds.trim().parse().ok().filter(|s| *s > 0)?;
+        tracing::info!(target: "turu_perf", "lever {name}: on and off in turns of {seconds} s");
+        Some(Self {
+            name: name.trim().to_owned(),
+            every: Duration::from_secs(seconds),
+            on: false,
+            turned: Instant::now(),
+            refreshed: Instant::now(),
+            map_mark: None,
+        })
+    }
+
+    fn tick(&mut self, bot: &Bot) {
+        if self.turned.elapsed() >= self.every {
+            self.turned = Instant::now();
+            self.on = !self.on;
+            match bot
+                .flash
+                .call("setLever", vec![self.name.as_str().into(), self.on.into()])
+            {
+                Ok(answer) => {
+                    tracing::info!(
+                        target: "turu_perf",
+                        "lever {} {}: {answer}",
+                        self.name,
+                        if self.on { "on" } else { "off" }
+                    );
+                    // Where the game's playing clips are, to aim the levers.
+                    if let Ok(census) = bot
+                        .flash
+                        .call("setLever", vec!["census".into(), true.into()])
+                    {
+                        tracing::info!(target: "turu_perf", "lever census: {census}");
+                    }
+                }
+                Err(e) => tracing::info!(target: "turu_perf", "lever {}: {e}", self.name),
+            }
+            self.refreshed = Instant::now();
+            self.map_mark = Some(bot.control.mark());
+            return;
+        }
+        let new_map = self
+            .map_mark
+            .as_ref()
+            .is_some_and(|mark| bot.control.fired_since(mark, Topics::MAP));
+        if self.on && (new_map || self.refreshed.elapsed() >= LEVER_REFRESH) {
+            self.refreshed = Instant::now();
+            self.map_mark = Some(bot.control.mark());
+            let _ = bot
+                .flash
+                .call("setLever", vec!["refresh".into(), true.into()]);
+        }
+    }
+}
+
 /// Once per login: `catchPackets` and remember who we are and where.
 fn on_login(bot: &Bot) {
     if let Err(e) = bot.flash.call("catchPackets", vec![]) {
@@ -351,6 +432,17 @@ fn on_login(bot: &Bot) {
             .get_or("objServerInfo.sName", String::new())
             .unwrap_or_default(),
     );
+    // With the perf log on, turu.swf reports the gaps between frames as often (M7a).
+    if let Some(seconds) = std::env::var("TURU_PERF_LOG")
+        .ok()
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .filter(|s| *s > 0.0)
+        && let Err(e) = bot
+            .flash
+            .call("setFrameReport", vec![seconds.max(1.0).into()])
+    {
+        tracing::debug!("setFrameReport failed: {e}");
+    }
     let mut state = bot.state.lock();
     state.catching_packets = true;
     if username.is_some() {

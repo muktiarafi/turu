@@ -210,7 +210,7 @@ impl Bot {
 
     /// The account, for the app's log: the logged-in character, else the login being used.
     /// Never waits on a lock (a caller may hold one) and never asks the game.
-    fn log_name(&self) -> Option<String> {
+    pub(crate) fn log_name(&self) -> Option<String> {
         let character = self.state.try_lock().and_then(|s| s.username.clone());
         character
             .or_else(|| self.servers.try_login_info_name())
