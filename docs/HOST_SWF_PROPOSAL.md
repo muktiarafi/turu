@@ -6,7 +6,7 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
 four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b done (VibeSkua's SWF,
-parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7a measured on `host-m7`; the rest are proposals. Replaces the plan to fork VibeSkua's
+parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7 measured (only stopping animations paid, and only where it's visible; nothing kept on by default); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -578,6 +578,14 @@ a crowded room 0.67 -> 0.26 ms, nothing on drawing. `stripFilters`, `mouseOff`, 
 keep `stopAnimations` as a switch (off by default: other players stop moving), or apply it only
 where nothing is shown (hidden tabs, headless, background Turu Mas tabs); measuring it there and
 on Turu Mas; and whether the four that didn't pay go.
+
+**M7b**, measured and dropped: stopping the animations nobody sees automatically (a tab off
+screen on any host, Turu Mas included, Headless Mode, Lag Killer; other players with Hide
+Players) worked, 155-347 clips per off-screen Turu Mas tab, but saved nothing measurable: four
+idle Turu Mas tabs 116% CPU with it, 113% without, frame pacing alike; a hidden desktop tab
+runs at 2 FPS, so ~1 ms a second at most. M7a's gain is in a tab being looked at, where stopping
+other players is visible; that stays a measuring lever (`TURU_LEVER_AB=stopAnimations`) until
+someone asks for it. The four levers that didn't pay went. M7 is done.
 
 ### M8: Packet hooks for Butler
 

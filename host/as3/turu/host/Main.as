@@ -30,7 +30,7 @@ import flash.utils.setTimeout;
  */
 public class Main extends MovieClip {
     /** `hostInfo().version`: raised when a callback changes what it answers. */
-    private static const VERSION:int = 4;
+    private static const VERSION:int = 5;
     private static const GAME_URL:String = "https://game.aq.com/game/";
     /** The login screen's title (VibeSkua's says "AURAS!!!"). */
     private static const TITLE:String = '<font color="#FDAF2D">Turu</font>';
@@ -108,7 +108,8 @@ public class Main extends MovieClip {
         new Servers(gameOf).exposeWith(expose);
         options = new Options(gameOf);
         options.exposeWith(expose);
-        new Levers(gameOf, events).exposeWith(expose);
+        var animations:Animations = new Animations(gameOf);
+        new Levers(gameOf, events, animations).exposeWith(expose);
         // For checking error reports by hand; not listed, so only debug builds of Turu call it.
         host.addCallback("throwForTest", guard("throwForTest", throwForTest));
 

@@ -330,6 +330,7 @@ It also writes the samples to `<log>.csv`.
 | `TURU_HTTP_CACHE` | `0`: don't keep the game's files on disk (`<data>/cache/gamefiles`); every one is downloaded again. |
 | `TURU_HTTP_CACHE_MB` | How large that folder may grow (default 1024); the files used longest ago go first. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
+| `TURU_LEVER_AB` | `<lever>:<seconds>`: turns one of turu.swf's measuring levers (`stopAnimations`, `eventsOff`) on and off in turns while in game, logging each turn and where the playing clips are (HOST_SWF_PROPOSAL.md M7a). |
 | `TURU_TEST_PANIC` | Set: panic 10 s after the start, to test crash reports (`sendCrashReports: true` in `settings.json` sends them; there is no question without a window). |
 | `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |
 | `RUST_LOG` | What the log shows. |

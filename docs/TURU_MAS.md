@@ -66,7 +66,8 @@ air/app/build.sh
   packs a copy without debug info.
 * **Perf log:** `--perf-log <seconds>` in `turu-args.txt` (in the app's data folder) is the
   desktop's `TURU_PERF_LOG`: each tab's calls to `turu.swf` per second, every one a round trip
-  through the extension, and the busiest, in logcat (`turu_perf`).
+  through the extension, and the busiest, in logcat (`turu_perf`), and `turu.swf`'s gaps between
+  frames (`frames:`).
 
 ## Releases
 

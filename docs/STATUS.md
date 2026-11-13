@@ -499,6 +499,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   - With a window, drawing (~5 ms a frame) is most of the cost and none of the levers moved
     it; `stopAnimations` cuts the part that runs whether or not anything is drawn (hidden
     tabs, headless, background Turu Mas tabs).
+  - M7b tried applying `stopAnimations` automatically where nobody sees what it stops (a tab off
+    screen, Headless Mode, Lag Killer; other players with Hide Players) and dropped it: it
+    stopped 155-347 clips per off-screen Turu Mas tab, yet four idle tabs used 116% CPU with it
+    and 113% without, frame pacing alike; a hidden desktop tab already runs at 2 FPS, so at most
+    ~1 ms a second was there to save, and none showed. The lever stays (`Animations.as`), and
+    the four that didn't pay went.
+  - Not from M7: four Turu Mas tabs idle in Battleon and Yulgar pace unevenly, about a quarter
+    of frames over 50 ms at a steady 24 FPS (frames: report), against ~30 a minute per tab
+    while farming in houses. Not explained yet.
 - **Reads that copied whole objects:** `player::loaded` (asked by the skill timer every tick and
   by many waits) reads `world.myAvatar.items.length`, as VibeSkua does, not the whole inventory;
   `quests.get`/`canComplete` read `world.questTree.<id>`, not the whole quest tree. With nine
