@@ -1,4 +1,14 @@
 use super::*;
+
+/// [`patch_swf_with`] with the default options.
+fn patch_swf(input: &[u8]) -> Result<(Vec<u8>, Report)> {
+    patch_swf_with(input, Options::default())
+}
+
+/// [`patch_abc_with`] with the default options.
+fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
+    patch_abc_with(abc, Options::default(), report)
+}
 use swf::avm2::types::{Class, Instance, LookupSwitch, Method, MethodBody, MethodFlags};
 
 fn encode(ops: &[Op]) -> Vec<u8> {
@@ -436,6 +446,8 @@ fn patches_the_real_game() {
     );
 }
 
+/// The client's own `ExternalInterface` calls stay as they are. (VibeSkua's SWF once had them
+/// routed through the host; this guards against that coming back.)
 #[test]
 fn the_client_keeps_its_external_interface() {
     let ops = [

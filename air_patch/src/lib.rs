@@ -1,4 +1,4 @@
-//! AQW's client and Turu's host SWF under Adobe AIR (docs/AIR_PROPOSAL.md).
+//! AQW's client under Adobe AIR, for Turu Mas (docs/AIR_PROPOSAL.md, docs/TURU_MAS.md).
 //!
 //! AIR runs Turu's host in its application sandbox, which loads the SWFs below with `loadBytes`
 //! and `allowCodeImport` (so they share code with it) after this crate has rewritten their AS3
@@ -39,10 +39,10 @@ const TAG_DO_ABC: u16 = 72;
 const TAG_DO_ABC2: u16 = 82;
 
 /// The host's `URLLoader` that `AirLoader`'s fetches become (package `""`).
-pub const HOST_URL_LOADER: &str = "TuruURLLoader";
+const HOST_URL_LOADER: &str = "TuruURLLoader";
 /// The host's class that finds a client's game on a stage several clients share (package `""`):
 /// `rootOf(x)`.
-pub const HOST_STAGE: &str = "TuruStage";
+const HOST_STAGE: &str = "TuruStage";
 
 /// What [`patch_swf_with`] does beyond the client's rules.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -77,7 +77,7 @@ pub struct Site {
     pub name: String,
 }
 
-/// What [`patch_swf`] found and changed.
+/// What [`patch_swf_with`] found and changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Report {
     /// ABC blocks (DoAbc tags) read.
@@ -85,7 +85,7 @@ pub struct Report {
     /// Whether the client has its AIR loader (`AirLoader` and `SwfLoaderPatch`).
     pub has_air_loader: bool,
     /// `new Loader()` made the client's `AirLoader` ("Loader"), and `AirLoader`'s
-    /// `new URLLoader()` made [`HOST_URL_LOADER`] ("URLLoader").
+    /// `new URLLoader()` made the host's `TuruURLLoader` ("URLLoader").
     pub swapped: Vec<Site>,
     /// `allowDomain`/`allowInsecureDomain` calls dropped.
     pub dropped: Vec<Site>,
@@ -129,13 +129,9 @@ impl Report {
     }
 }
 
-/// Patches a SWF (compressed or not): AQW's client, or a SWF it loads. Returns the patched SWF, zlib-compressed, or
-/// the input unchanged when nothing needed patching, with what was done.
-pub fn patch_swf(input: &[u8]) -> Result<(Vec<u8>, Report)> {
-    patch_swf_with(input, Options::default())
-}
-
-/// [`patch_swf`] with [`Options`].
+/// Patches a SWF (compressed or not), AQW's client or a SWF it loads, with [`Options`]. Returns
+/// the patched SWF, zlib-compressed, or the input unchanged when nothing needed patching, with
+/// what was done.
 pub fn patch_swf_with(input: &[u8], options: Options) -> Result<(Vec<u8>, Report)> {
     let buf = swf::decompress_swf(input).context("not a SWF")?;
     let data = &buf.data;
@@ -218,12 +214,7 @@ fn patch_abc_bytes(bytes: &[u8], options: Options, report: &mut Report) -> Resul
     Ok(Some(out))
 }
 
-/// Patches an ABC block in place. True if anything changed.
-pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
-    patch_abc_with(abc, Options::default(), report)
-}
-
-/// [`patch_abc`] with [`Options`].
+/// Patches an ABC block in place with [`Options`]. True if anything changed.
 pub fn patch_abc_with(abc: &mut AbcFile, options: Options, report: &mut Report) -> Result<bool> {
     let pool = &abc.constant_pool;
     let class_named = |wanted: &str| {

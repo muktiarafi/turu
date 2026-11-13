@@ -1,4 +1,4 @@
-//! The SWFs [`patch_swf`](crate::patch_swf) rewrote, kept on disk so the next start loads them
+//! The SWFs [`patch_swf_with`](crate::patch_swf_with) rewrote, kept on disk so the next start loads them
 //! without patching again (the game's client takes 0.2-0.4 s on AIR's thread on an emulator, more
 //! on a phone).
 //!
