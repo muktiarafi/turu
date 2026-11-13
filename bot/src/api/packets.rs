@@ -149,6 +149,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
             let after = sent.as_ref().map(after_text).unwrap_or_default();
             if num(data.get("bSuccess")) == Some(1) {
                 bot.state.lock().stats.quests_completed += 1;
+                tracing::debug!("ccqr: quest {quest_id} turned in{after}");
                 bot.logs
                     .debug
                     .push(format!("Quest {quest_id}: turned in{after}."));
@@ -170,6 +171,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 }
                 let mut reply = reply.to_string();
                 reply.truncate(300);
+                tracing::debug!("ccqr: quest {quest_id} refused{after}{apart}: {reply}");
                 bot.note(format!(
                     "Quest {quest_id}: the server refused the turn-in{after}{apart}. Reply: {reply}"
                 ));

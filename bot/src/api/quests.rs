@@ -175,11 +175,35 @@ fn quest_loop(weak: &Weak<Bot>, shared: &QuestShared, cancel: &AtomicBool) {
         })();
         match result {
             Ok(()) => {}
-            Err(BotError::Stopped) => return,
+            // Turu: Stop is meant for the script or Auto Attack/Hunt, but this loop runs as a
+            // script thread too, so it sees it. VibeSkua's loop ends only on its own token
+            // (`UnregisterAllQuests`, which a script's end and logout call): stopping Auto
+            // Attack left the registered quests listed but never turned in again.
+            Err(BotError::Stopped) => {
+                tracing::debug!("Quest Thread: Stop requested; the quests stay registered");
+            }
             Err(e) => tracing::debug!("Quest processing iteration failed; it will retry: {e}"),
         }
-        if !matches!(nap(&bot, REGISTER_COMPLETE_INTERVAL, cancel), Ok(true)) {
+        if !rest(&bot, REGISTER_COMPLETE_INTERVAL, cancel) {
             return;
+        }
+    }
+}
+
+/// Sleeps between passes; false once the loop is cancelled. While Stop is in effect `bot.sleep`
+/// fails, so this sleeps without it: only `cancel` ends the loop.
+fn rest(bot: &Bot, ms: u64, cancel: &AtomicBool) -> bool {
+    match nap(bot, ms, cancel) {
+        Ok(go_on) => go_on,
+        Err(_) => {
+            let deadline = Instant::now() + Duration::from_millis(ms);
+            while Instant::now() < deadline {
+                if cancel.load(Ordering::Acquire) {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            !cancel.load(Ordering::Acquire)
         }
     }
 }
@@ -223,13 +247,16 @@ fn complete_registered(
     let delay = bot.opts().action_delay.max(0) as u64;
     let accept_again = |quest: i64| -> BotResult<()> {
         wait::for_action_cooldown(bot, "acceptQuest", 40)?;
-        accept(bot, quest)?;
+        let accepted = accept(bot, quest)?;
         shared
             .registry
             .lock()
             .accept_cooldowns
             .insert(quest, Instant::now());
-        wait_cancellable(bot, 20, cancel, || is_in_progress(bot, quest))?;
+        let in_progress = wait_cancellable(bot, 20, cancel, || is_in_progress(bot, quest))?;
+        tracing::debug!(
+            "Quest Thread: accepted quest {quest} (accept: {accepted}, in progress: {in_progress})"
+        );
         nap(bot, delay, cancel)?;
         Ok(())
     };
@@ -264,6 +291,7 @@ fn complete_registered(
             continue;
         }
         let Some(data) = get(bot, quest)? else {
+            tracing::debug!("Quest Thread: quest {quest} is completable but not in the quest tree");
             continue;
         };
         let turn_ins = if data.once || !data.field.is_empty() {
@@ -284,6 +312,9 @@ fn complete_registered(
         wait::for_action_cooldown(bot, "tryQuestComplete", 40)?;
         // The items may be gone by now (another turn-in, a bank move).
         if !can_complete(bot, quest)? {
+            tracing::debug!(
+                "Quest Thread: quest {quest} is no longer completable; not turning it in"
+            );
             continue;
         }
         let room = map::room_id(bot)?;
@@ -295,7 +326,16 @@ fn complete_registered(
             .lock()
             .complete_cooldowns
             .insert(quest, Instant::now());
-        wait_cancellable(bot, 20, cancel, || Ok(!is_in_progress(bot, quest)?))?;
+        tracing::debug!(
+            "Quest Thread: turning in quest {quest} ({}) with reward {reward}, {turn_ins} turn-in(s)",
+            data.name
+        );
+        let left = wait_cancellable(bot, 20, cancel, || Ok(!is_in_progress(bot, quest)?))?;
+        if left {
+            tracing::debug!("Quest Thread: quest {quest} turned in");
+        } else {
+            tracing::debug!("Quest Thread: quest {quest} still in progress 2 s after the turn-in");
+        }
         nap(bot, delay, cancel)?;
 
         // The game re-accepts by itself when AQW Lite's "Reaccept quest" is on.

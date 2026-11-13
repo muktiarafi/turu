@@ -418,6 +418,36 @@ fn registered_quests_keep_their_rewards() {
     assert!(bot.quests.registered_rewards().is_empty());
 }
 
+/// Stopping Auto Attack (or any Stop) must not end the registered-quest loop: VibeSkua's ends only
+/// on `UnregisterAllQuests`. It used to return on the first `Stopped`, leaving the quests listed
+/// but never turned in again.
+#[test]
+fn registered_quests_outlive_a_stop() {
+    let (bot, game) = setup();
+    bot.control.request_stop();
+    bot.quests.register(&bot, &[(1234, -1)]);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    bot.control.reset();
+    let turned_in = |game: &FakeGame| {
+        game.sent
+            .lock()
+            .iter()
+            .any(|p| p.contains("%tryQuestComplete%42%1234%"))
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    while !turned_in(&game) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let sent = turned_in(&game);
+    bot.quests.unregister_all();
+    bot.drops.stop();
+    assert!(
+        sent,
+        "no turn-in after Stop was cleared: {:?}",
+        game.sent.lock()
+    );
+}
+
 #[test]
 fn drop_loop_starts_and_stops() {
     let (bot, _) = setup();
