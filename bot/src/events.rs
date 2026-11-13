@@ -2,6 +2,7 @@
 //! (VibeSkua: `ScriptInterface.HandleFlashCall`, `IScriptEvent`).
 
 use crate::Bot;
+use crate::control::Topics;
 use crate::models::ItemBase;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
@@ -246,6 +247,26 @@ impl EventBus {
 }
 
 /// Entry point for `ExternalInterface.call(name, rest)` from `turu.swf`.
+/// Drops the reads `player::logged_in` and `player::state` reuse for a moment.
+fn forget_shared_reads(bot: &Bot) {
+    let mut state = bot.state.lock();
+    state.logged_in_read = None;
+    state.avatar_state_read = None;
+}
+
+/// The topics a turu.swf `event` wakes.
+fn event_topics(name: &str) -> Option<Topics> {
+    Some(match name {
+        "world" => Topics::SESSION,
+        "mapLoaded" => Topics::MAP,
+        "cellChanged" => Topics::CELL,
+        "arrived" => Topics::ARRIVED,
+        "loading" => Topics::LOADING,
+        "cutscene" => Topics::CUTSCENE,
+        _ => return None,
+    })
+}
+
 pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
     // `Externalizer.call(name, ...rest)` passes `rest` as one array argument.
     let args = match <[Value; 1]>::try_from(args) {
@@ -277,11 +298,23 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         },
         "packet" => packet_sent(bot, arg_str(0)),
         "packetFromServer" => {}
+        // turu.swf: what changed in game (docs/HOST_SWF_PROPOSAL.md M5). Only wakes waits.
+        "event" => {
+            if let Some(topics) = event_topics(arg_str(0)) {
+                if topics == Topics::SESSION {
+                    // A wait woken by a login or logout mustn't read the old answer.
+                    forget_shared_reads(bot);
+                }
+                bot.control.fire(topics);
+            }
+        }
         "connectionLost" => {
             bot.logs
                 .debug
                 .push("Flash socket connection lost event received.");
             bot.events.emit(BotEvent::ConnectionLost);
+            forget_shared_reads(bot);
+            bot.control.fire(Topics::SESSION);
             // Never block here: a script may hold the options lock while it waits on Flash.
             let watchdog = bot.options.try_read().is_none_or(|o| o.relogin_watchdog);
             if watchdog && !bot.servers.is_relogging() {

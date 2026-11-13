@@ -6,7 +6,7 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
 four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b done (VibeSkua's SWF,
-parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done on `host-m4` (batched reads); the rest are proposals. Replaces the plan to fork VibeSkua's
+parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a built on `host-m5` (events that wake waits); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -462,35 +462,41 @@ about 75 of them. So:
 
 ### M5: Events and watched values
 
-It completes EVENT_WAITS_PROPOSAL for the conditions packets can't report.
+Split after reading the code: EVENT_WAITS_PROPOSAL's wake-up machinery (its `Pulse`) wasn't
+built, and every wait polled. M5a, built on `host-m5`:
 
-- `subscribe(names)` / `unsubscribe(names)`; the SWF then calls `event(name, json)` only on
-  change:
-  - `mapLoaded` (the map SWF finished; the game's own load completing), `loadingDone` (the
-    loading screen closed), `cellChanged`;
-  - `arrived` (walking finished at the asked position);
-  - `cutscene` (a child added to `mcExtSWF`), `modal` (a dialog opened or closed);
-  - `bankOpen`, `shopLoaded`, `questLoaded`;
-  - `self` / `target` changes (HP, MP, state, target changed or died), `aura` added/removed,
-    `inventory` changed.
-- `watch(id, paths, minIntervalMs)` / `unwatch(id)`: the SWF reads the paths once per frame
-  (cheap inside AS3) and sends only the ones that changed, no more often than asked.
-  `api::player::shared` becomes a cache fed by it, never more than a frame old.
-- Events go through `Bot::on_flash_call`, which must not block or call Flash: they update state
-  and notify waits (`control.rs`), as packets do in EVENT_WAITS_PROPOSAL.
-- Waits that wake on them: `forMapLoad`, `forBankLoad`, `forItemBuy`/`forItemSell`,
-  `forPlayerPosition`, the loading-screen check in `background.rs`. Each wait keeps its polling
-  path as the fallback and its VibeSkua timeout; an event only wakes it early.
-- Cutscenes: with `cutscene`, Skip Cutscenes can wait until the game registered the overlay
-  before removing it, fixing the /lichwar hold-back, and it restores `world.visible` unless Lag
-  Killer is on.
-- On Turu Mas, events arrive through `TuruHost.call` as status events like any other call from
-  the SWF; there are far fewer of them than the polls they replace, and they cost AIR's thread
-  nothing while waiting. With the screen off, AIR slows the app (27 ms p95 per round trip), so
-  a poll there is both slow and late; an event is only late.
-- Done when: calls/s idle and farming drop, wait latency (perf log) drops, and the warning
-  count ("too soon") doesn't rise. Measured with one tab and with nine in Grid View, and on Turu
-  Mas with four tabs, screen on and off.
+- **The pulse** (`control.rs`): `Topics` (SIGNALS, MAP, CELL, ARRIVED, LOADING, CUTSCENE,
+  SESSION), `fire`, `mark`, `fired_since` and `sleep_until` on `ScriptControl`'s lock, so Stop
+  and Pause still wake a waiting script. A wait takes the mark before it looks, so nothing that
+  fires between the look and the sleep is lost.
+- **turu.swf's events** (`Events.as`, hostInfo version 3, feature `events`): once a frame it
+  looks at a few values and calls `event(name, json)` only on a change: `world` (came or went),
+  `mapLoaded` (`mapLoadInProgress` went false), `cellChanged`, `arrived` (the avatar moved, then
+  stood still two frames), `loading` (`mcConnDetail` on the stage or not), `cutscene`
+  (`mcExtSWF` has a child or not). Always on: they're rare. `Bot::on_flash_call` only fires the
+  topic; `world` and a lost connection also drop the 100 ms shared reads.
+- **Waits**: `for_true_on` / `until_on` look again when a topic fires, still answer from the
+  game, and keep their tries' pace, so a timeout lasts as long as before however often events
+  come. `forMapLoad` (MAP), `forCellChange` (CELL), `forPlayerPosition` (ARRIVED), all with
+  SESSION. `forItemBuy` / `forItemSell` / `forBankLoad` sleep until their packet's signal
+  (EVENT_WAITS phase 1), as VibeSkua's `AutoResetEvent`.
+- **Background polls**: "still in game?" and the loading screen in game look when `world` /
+  `loading` fired, else once a second (were 100 and 250 ms); Skip Cutscenes looks on
+  `cutscene`, else once a second (was every options tick). The cutscene a map waits to show has
+  no event: the second's look finds it.
+- **Measured**: the perf log's `waits:` line (each wait's count, time-outs and average time).
+- M5b, `watch()` and the self / target / aura / inventory events, only if M5a's numbers call
+  for them. Waits woken by packets (`forMonsterDeath`, drops, quests) stay EVENT_WAITS phase 3.
+- Done when: fmt, clippy, tests and the SWF check pass; GoldFarm on desktop with
+  `TURU_PERF_LOG_ROWS=40` shows calls/s under M4's ~120, `forMapLoad` / `forCellChange`
+  returning sooner, and no more "too soon" warnings; Turu Mas one tab, front and background.
+- Measured: desktop GoldFarm ~120 -> ~92 calls/s, the same 2.45 turn-ins a minute, no "too
+  soon" warnings; `forCellChange` 0-3 ms, `forMapLoad` 184-221 ms (mostly the load itself), no
+  wait timed out. Turu Mas (one tab, in front) ~120 -> ~101 round trips/s, 16 turn-ins in 5.5
+  minutes. There's no "before" for wait times: the `waits:` line is new here. The desktop run's
+  player ticks were twice M4's (230 vs 110 ms/s) while the game's own assets threw ~8 errors a
+  second (the equipped armour's eye clips, driven by its aura HUD; turu.swf isn't in their
+  stacks): not traced to M5 yet.
 
 ### M7: Less work for the player
 

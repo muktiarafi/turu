@@ -1077,6 +1077,10 @@ differences" and the list below say otherwise:
 - Batched reads of its own (M4, `hostInfo` version 2): `snapshot(withTarget)` (logged in,
   world, avatar, `intState`, loaded, class rank and, with `withTarget`, `getTargetMonster`'s
   answer), `getMany({key: path})` and `selectArrayObjectsWhere(path, {field: value})`.
+- Events of its own (M5, version 3, feature `events`): once a frame it looks at the world, the
+  map load, the cell, the avatar's walk, the loading screen and cutscene overlays, and calls
+  `event(name, json)` when one changed (`world`, `mapLoaded`, `cellChanged`, `arrived`,
+  `loading`, `cutscene`). Turu wakes its waits on them; VibeSkua's SWF has nothing like them.
 - Found in game and matched (this survey was wrong or silent): `gender` answers the client's
   `"M"`/`"F"`; `jumpCorrectRoom` always moves again once the cell settles; `isKicked` is `false` in
   game; `getActiveModalMessage` is plain text, `""` without a dialog; `selectArrayObjects` answers

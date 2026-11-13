@@ -7,9 +7,11 @@ use super::{Args, NameOrId, ok};
 use crate::Bot;
 use crate::api::inventory::{self, Container};
 use crate::api::{monsters, player, quests};
+use crate::control::Topics;
 use crate::error::{BotError, BotResult};
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// VibeSkua `WAIT_SLEEP`.
 pub const WAIT_SLEEP: u64 = 100;
@@ -21,14 +23,33 @@ pub const WAIT_SLEEP: u64 = 100;
 /// off the script thread (on it, Stop fails with [`BotError::Stopped`]).
 pub fn for_true(
     bot: &Bot,
+    predicate: impl FnMut() -> BotResult<bool>,
+    loop_fn: Option<&mut dyn FnMut() -> BotResult<()>>,
+    timeout: i64,
+    sleep_ms: u64,
+) -> BotResult<bool> {
+    for_true_on(bot, Topics::NONE, predicate, loop_fn, timeout, sleep_ms)
+}
+
+/// [`for_true`] that also looks again as soon as one of `wake` fires (docs/HOST_SWF_PROPOSAL.md
+/// M5): the answer is still the predicate's, read from the game, and a try still ends every
+/// `sleep_ms`, so a wait that times out lasts as long as [`for_true`]'s.
+pub fn for_true_on(
+    bot: &Bot,
+    wake: Topics,
     mut predicate: impl FnMut() -> BotResult<bool>,
     mut loop_fn: Option<&mut dyn FnMut() -> BotResult<()>>,
     timeout: i64,
     sleep_ms: u64,
 ) -> BotResult<bool> {
     let mut counter = 0;
+    // When the current try ends: a wake looks early, but tries keep their pace, so events
+    // however frequent can't hold off the timeout.
+    let mut try_ends = Instant::now() + Duration::from_millis(sleep_ms);
     loop {
         bot.control.check()?;
+        // Before looking: what fires from here on wakes the sleep below.
+        let mark = bot.control.mark();
         if safe(predicate())? || bot.should_exit() {
             return Ok(true);
         }
@@ -38,8 +59,16 @@ pub fn for_true(
         if let Some(f) = loop_fn.as_mut() {
             swallow(f())?;
         }
-        bot.sleep(sleep_ms)?;
-        counter += 1;
+        if wake == Topics::NONE {
+            bot.sleep(sleep_ms)?;
+            counter += 1;
+        } else {
+            bot.control.sleep_until(try_ends, wake, &mark)?;
+            if Instant::now() >= try_ends {
+                counter += 1;
+                try_ends = Instant::now() + Duration::from_millis(sleep_ms);
+            }
+        }
     }
 }
 
@@ -50,6 +79,26 @@ pub fn until(
     timeout: i64,
 ) -> BotResult<bool> {
     for_true(bot, predicate, None, timeout, WAIT_SLEEP)
+}
+
+/// [`until`] that also looks again when one of `wake` fires.
+pub fn until_on(
+    bot: &Bot,
+    wake: Topics,
+    predicate: impl FnMut() -> BotResult<bool>,
+    timeout: i64,
+) -> BotResult<bool> {
+    for_true_on(bot, wake, predicate, None, timeout, WAIT_SLEEP)
+}
+
+/// Runs a named wait and records how it went in the perf log (`waits:`).
+fn timed(bot: &Bot, name: &'static str, wait: impl FnOnce() -> BotResult<bool>) -> BotResult<bool> {
+    let started = Instant::now();
+    let result = wait();
+    if let Ok(done) = result {
+        bot.flash.perf().record_wait(name, started.elapsed(), done);
+    }
+    result
 }
 
 /// A predicate's error is false, except Stop.
@@ -98,72 +147,91 @@ pub fn is_action_available(bot: &Bot, action: &str) -> BotResult<bool> {
 /// VibeSkua `ForActionCooldown(action, 40)`. Lock names: `loadShop`, `equipItem`, `buyItem`,
 /// `sellItem`, `getMapItem`, `tryQuestComplete`, `acceptQuest`, `rest`, `tfer`, ...
 pub fn for_action_cooldown(bot: &Bot, action: &str, timeout: i64) -> BotResult<bool> {
-    until(bot, || is_action_available(bot, action), timeout)
+    timed(bot, "forActionCooldown", || {
+        until(bot, || is_action_available(bot, action), timeout)
+    })
 }
 
 /// VibeSkua `ForMapLoad(name, 20)`: the map name matches, then the map finished loading.
 pub fn for_map_load(bot: &Bot, name: &str, timeout: i64) -> BotResult<bool> {
-    let clean = name.split('-').next().unwrap_or_default().to_lowercase();
-    let named = until(
-        bot,
-        || Ok(super::map::name(bot)?.eq_ignore_ascii_case(&clean)),
-        timeout,
-    )?;
-    Ok(named
-        && until(
+    timed(bot, "forMapLoad", || {
+        let clean = name.split('-').next().unwrap_or_default().to_lowercase();
+        // turu.swf's `mapLoaded` (and a login or logout) wakes both halves at once.
+        let wake = Topics::MAP | Topics::SESSION;
+        let named = until_on(
             bot,
-            || Ok(!player::playing(bot)? || super::map::loaded(bot)?),
+            wake,
+            || Ok(super::map::name(bot)?.eq_ignore_ascii_case(&clean)),
             timeout,
-        )?)
+        )?;
+        Ok(named
+            && until_on(
+                bot,
+                wake,
+                || Ok(!player::playing(bot)? || super::map::loaded(bot)?),
+                timeout,
+            )?)
+    })
 }
 
 /// VibeSkua `ForCellChange(name)`: 25 tries.
 pub fn for_cell_change(bot: &Bot, cell: &str) -> BotResult<bool> {
-    until(
-        bot,
-        || Ok(!player::playing(bot)? || player::cell(bot)?.eq_ignore_ascii_case(cell)),
-        (WAIT_SLEEP / 4) as i64,
-    )
+    timed(bot, "forCellChange", || {
+        until_on(
+            bot,
+            Topics::CELL | Topics::SESSION,
+            || Ok(!player::playing(bot)? || player::cell(bot)?.eq_ignore_ascii_case(cell)),
+            (WAIT_SLEEP / 4) as i64,
+        )
+    })
 }
 
 pub fn for_combat_exit(bot: &Bot, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || Ok(!player::playing(bot)? || !player::in_combat(bot)?),
-        timeout,
-    )
+    timed(bot, "forCombatExit", || {
+        until(
+            bot,
+            || Ok(!player::playing(bot)? || !player::in_combat(bot)?),
+            timeout,
+        )
+    })
 }
 
 /// VibeSkua `ForMonsterDeath(-1)`: until there's no target, untargeting yourself every 20 ms.
 pub fn for_monster_death(bot: &Bot, timeout: i64) -> BotResult<bool> {
-    let mut untarget = || super::combat::untarget_self(bot);
-    for_true(
-        bot,
-        || Ok(!player::playing(bot)? || !player::has_target(bot)?),
-        Some(&mut untarget),
-        timeout,
-        WAIT_SLEEP / 5,
-    )
+    timed(bot, "forMonsterDeath", || {
+        let mut untarget = || super::combat::untarget_self(bot);
+        for_true(
+            bot,
+            || Ok(!player::playing(bot)? || !player::has_target(bot)?),
+            Some(&mut untarget),
+            timeout,
+            WAIT_SLEEP / 5,
+        )
+    })
 }
 
 pub fn for_monster_spawn(bot: &Bot, monster: NameOrId, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || Ok(!player::playing(bot)? || monsters::exists(bot, monster)?),
-        timeout,
-    )
+    timed(bot, "forMonsterSpawn", || {
+        until(
+            bot,
+            || Ok(!player::playing(bot)? || monsters::exists(bot, monster)?),
+            timeout,
+        )
+    })
 }
 
 pub fn for_fully_rested(bot: &Bot, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || {
-            Ok(!player::playing(bot)?
-                || (player::health(bot)? >= player::max_health(bot)?
-                    && player::mana(bot)? >= player::max_mana(bot)?))
-        },
-        timeout,
-    )
+    timed(bot, "forFullyRested", || {
+        until(
+            bot,
+            || {
+                Ok(!player::playing(bot)?
+                    || (player::health(bot)? >= player::max_health(bot)?
+                        && player::mana(bot)? >= player::max_mana(bot)?))
+            },
+            timeout,
+        )
+    })
 }
 
 /// Until the item is in the drop stack.
@@ -171,11 +239,13 @@ pub fn for_fully_rested(bot: &Bot, timeout: i64) -> BotResult<bool> {
 /// The drop stack is checked before `Playing` (VibeSkua checks `Playing` first): it's ours, so
 /// a drop that's there costs no call to the game.
 pub fn for_drop(bot: &Bot, item: NameOrId, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || Ok(bot.state.lock().drop_exists(item) || !player::playing(bot)?),
-        timeout,
-    )
+    timed(bot, "forDrop", || {
+        until(
+            bot,
+            || Ok(bot.state.lock().drop_exists(item) || !player::playing(bot)?),
+            timeout,
+        )
+    })
 }
 
 /// Until the item left the drop stack.
@@ -183,32 +253,36 @@ pub fn for_drop(bot: &Bot, item: NameOrId, timeout: i64) -> BotResult<bool> {
 /// The drop stack is checked before `Playing`, as in [`for_drop`]: the pickup loop waits on
 /// every listed item, dropped or not, which read `Playing` (three calls to the game) for each.
 pub fn for_pickup(bot: &Bot, item: NameOrId, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || Ok(!bot.state.lock().drop_exists(item) || !player::playing(bot)?),
-        timeout,
-    )
+    timed(bot, "forPickup", || {
+        until(
+            bot,
+            || Ok(!bot.state.lock().drop_exists(item) || !player::playing(bot)?),
+            timeout,
+        )
+    })
 }
 
 /// VibeSkua `ForItemEquip`: by ID, until it's equipped; by name, until it's equipped or gone.
 pub fn for_item_equip(bot: &Bot, item: NameOrId, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || {
-            if !player::playing(bot)? {
-                return Ok(true);
-            }
-            let items = inventory::items(bot, Container::Inventory)?;
-            Ok(match item {
-                NameOrId::Id(id) => items.iter().any(|i| i.id == id && i.equipped),
-                NameOrId::Name(name) => items
-                    .iter()
-                    .find(|i| i.name_is(name))
-                    .is_none_or(|i| i.equipped),
-            })
-        },
-        timeout,
-    )
+    timed(bot, "forItemEquip", || {
+        until(
+            bot,
+            || {
+                if !player::playing(bot)? {
+                    return Ok(true);
+                }
+                let items = inventory::items(bot, Container::Inventory)?;
+                Ok(match item {
+                    NameOrId::Id(id) => items.iter().any(|i| i.id == id && i.equipped),
+                    NameOrId::Name(name) => items
+                        .iter()
+                        .find(|i| i.name_is(name))
+                        .is_none_or(|i| i.equipped),
+                })
+            },
+            timeout,
+        )
+    })
 }
 
 /// Waits for a one-shot signal set by a packet (VibeSkua `AutoResetEvent.WaitOne`), polling
@@ -218,9 +292,10 @@ fn for_signal(
     timeout: i64,
     take: impl Fn(&mut crate::state::Signals) -> &mut bool,
 ) -> BotResult<bool> {
-    let deadline = std::time::Instant::now()
-        + std::time::Duration::from_millis(timeout.max(0) as u64 * WAIT_SLEEP);
+    let deadline = Instant::now() + Duration::from_millis(timeout.max(0) as u64 * WAIT_SLEEP);
     loop {
+        // Before the flag: a packet between the look and the sleep still wakes it.
+        let mark = bot.control.mark();
         {
             let mut state = bot.state.lock();
             let flag = take(&mut state.signals);
@@ -229,58 +304,72 @@ fn for_signal(
                 return Ok(true);
             }
         }
-        if std::time::Instant::now() >= deadline {
+        if Instant::now() >= deadline {
             return Ok(false);
         }
-        bot.sleep(20)?;
+        // As VibeSkua's `AutoResetEvent.WaitOne`: asleep until the packet's signal.
+        bot.control.sleep_until(deadline, Topics::SIGNALS, &mark)?;
     }
 }
 
 /// Until a `buyItem` packet with `bitSuccess` arrives.
 pub fn for_item_buy(bot: &Bot, timeout: i64) -> BotResult<bool> {
-    for_signal(bot, timeout, |s| &mut s.item_bought)
+    timed(bot, "forItemBuy", || {
+        for_signal(bot, timeout, |s| &mut s.item_bought)
+    })
 }
 
 /// Until a `sellItem` packet arrives.
 pub fn for_item_sell(bot: &Bot, timeout: i64) -> BotResult<bool> {
-    for_signal(bot, timeout, |s| &mut s.item_sold)
+    timed(bot, "forItemSell", || {
+        for_signal(bot, timeout, |s| &mut s.item_sold)
+    })
 }
 
 /// Until a `loadBank` packet arrives.
 pub fn for_bank_load(bot: &Bot, timeout: i64) -> BotResult<bool> {
-    for_signal(bot, timeout, |s| &mut s.bank_loaded)
+    timed(bot, "forBankLoad", || {
+        for_signal(bot, timeout, |s| &mut s.bank_loaded)
+    })
 }
 
 pub fn for_quest_accept(bot: &Bot, id: i64, timeout: i64) -> BotResult<bool> {
-    for_true(
-        bot,
-        || Ok(!player::playing(bot)? || quests::is_in_progress(bot, id)?),
-        None,
-        timeout,
-        WAIT_SLEEP / 2,
-    )
+    timed(bot, "forQuestAccept", || {
+        for_true(
+            bot,
+            || Ok(!player::playing(bot)? || quests::is_in_progress(bot, id)?),
+            None,
+            timeout,
+            WAIT_SLEEP / 2,
+        )
+    })
 }
 
 pub fn for_quest_complete(bot: &Bot, id: i64, timeout: i64) -> BotResult<bool> {
-    for_true(
-        bot,
-        || Ok(!player::playing(bot)? || !quests::is_in_progress(bot, id)?),
-        None,
-        timeout,
-        WAIT_SLEEP / 2,
-    )
+    timed(bot, "forQuestComplete", || {
+        for_true(
+            bot,
+            || Ok(!player::playing(bot)? || !quests::is_in_progress(bot, id)?),
+            None,
+            timeout,
+            WAIT_SLEEP / 2,
+        )
+    })
 }
 
 /// VibeSkua `ForPlayerPosition(x, y, 10)`.
 pub fn for_player_position(bot: &Bot, x: i64, y: i64, timeout: i64) -> BotResult<bool> {
-    until(
-        bot,
-        || {
-            Ok(!player::playing(bot)?
-                || (player::x(bot)?.round() as i64 == x && player::y(bot)?.round() as i64 == y))
-        },
-        timeout,
-    )
+    timed(bot, "forPlayerPosition", || {
+        until_on(
+            bot,
+            Topics::ARRIVED | Topics::SESSION,
+            || {
+                Ok(!player::playing(bot)?
+                    || (player::x(bot)?.round() as i64 == x && player::y(bot)?.round() as i64 == y))
+            },
+            timeout,
+        )
+    })
 }
 
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {

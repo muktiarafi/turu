@@ -6,11 +6,13 @@
 
 use super::{Args, lite, monsters, ok, player, send};
 use crate::Bot;
+use crate::control::{Mark, Topics};
 use crate::error::{BotError, BotResult};
 use crate::host::FlashArg;
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::time::{Duration, Instant};
 
 /// Turu: the frame rate of a hidden tab (VibeSkua's tabbed host: 2). The app raises it for
 /// Grid View's tiles (and `TURU_GRID_TEST`), and the next options pass applies it.
@@ -43,7 +45,14 @@ pub struct Applied {
     /// Turu: the house sign's own text (`world.map.txtHouse`, "Name's House") while Streamer
     /// Mode covers it, to write back when it's turned off.
     house_title: Option<String>,
+    /// When Skip Cutscenes last looked, and the events then: it looks again when turu.swf says
+    /// a cutscene came or went, else every [`CUTSCENE_CHECK`].
+    cutscene_check: Option<(Instant, Mark)>,
 }
+
+/// How often Skip Cutscenes looks without a `cutscene` event (M5 of HOST_SWF_PROPOSAL.md; it
+/// was every options tick, 250 ms). The cutscene a map is still waiting to show has no event.
+const CUTSCENE_CHECK: Duration = Duration::from_secs(1);
 
 impl Applied {
     /// Headless Mode is on in game: the window shows a placeholder instead of the game.
@@ -362,7 +371,11 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
             "String",
         )?;
     }
-    if o.skip_cutscenes {
+    let cutscene_due = a.cutscene_check.is_none_or(|(at, mark)| {
+        at.elapsed() >= CUTSCENE_CHECK || bot.control.fired_since(&mark, Topics::CUTSCENE)
+    });
+    if o.skip_cutscenes && cutscene_due {
+        a.cutscene_check = Some((Instant::now(), bot.control.mark()));
         // `skipCutscenes` removes the cutscene but leaves the world as the cutscene left it,
         // hidden: show it again unless Lag Killer hides it (VibeSkua's black screen until Lag
         // Killer is toggled).

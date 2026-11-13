@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use turu_bot::api::{NameOrId, kill, map, monsters, options, quests};
+use turu_bot::control::Topics;
 use turu_bot::models::Monster;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
@@ -445,12 +446,18 @@ fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
     assert_eq!(game.calls_to("skipCutscenes").len(), 1);
     assert_eq!(world_shown(&game), 0, "no cutscene, nothing to show");
 
+    // A cutscene comes up: turu.swf's `cutscene` event makes the next tick look at once.
     game.set("mcExtSWF.numChildren", "1");
+    bot.control.fire(Topics::CUTSCENE);
     bot.options.write().lag_killer = true;
     options::apply(&bot).unwrap();
     assert_eq!(world_shown(&game), 0, "Lag Killer keeps the world hidden");
 
+    // Without an event it looks again within a second.
     bot.options.write().lag_killer = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(world_shown(&game), 0, "not due yet");
+    std::thread::sleep(std::time::Duration::from_millis(1050));
     options::apply(&bot).unwrap();
     assert_eq!(world_shown(&game), 1);
 
@@ -482,8 +489,11 @@ fn skipping_cutscenes_cancels_the_one_the_game_waits_for() {
     options::apply(&bot).unwrap();
     assert_eq!(game_calls(&game, "world.cHandle.isPending"), 0);
 
+    // A cutscene the game is still waiting to show has no event: the second's look finds it.
+    let next_look = || std::thread::sleep(std::time::Duration::from_millis(1050));
     game.set("world.cHandle", "{}");
     game.set("world.cHandle.isPending", "false");
+    next_look();
     options::apply(&bot).unwrap();
     assert_eq!(
         game_calls(&game, "world.cHandle.cancel"),
@@ -494,6 +504,7 @@ fn skipping_cutscenes_cancels_the_one_the_game_waits_for() {
     // lichwar's intro: the game holds the cell's monsters back while it waits for the overlay.
     // Cancelling it, then entering the cell again, places them.
     game.set("world.cHandle.isPending", "true");
+    next_look();
     options::apply(&bot).unwrap();
     assert_eq!(game_calls(&game, "world.cHandle.cancel"), 1);
     let moves: Vec<Vec<FlashArg>> = game

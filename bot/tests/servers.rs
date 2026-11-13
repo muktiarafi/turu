@@ -577,7 +577,8 @@ fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
     let catches = || game.calls_to("catchPackets").len();
     assert!(wait_until(Duration::from_secs(2), || catches() == 1));
 
-    // In game: "still in game?" every 100 ms, not every 20 ms tick.
+    // In game: "still in game?" once a second, not every 20 ms tick: turu.swf's `world` event
+    // says when it changes.
     let world_checks = || {
         game.calls_to("isNull")
             .iter()
@@ -587,11 +588,21 @@ fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
     let before = world_checks();
     std::thread::sleep(Duration::from_millis(1000));
     let checks = world_checks() - before;
-    assert!((5..=15).contains(&checks), "{checks} checks in a second");
+    assert!((1..=3).contains(&checks), "{checks} checks in a second");
 
-    // A logout is still noticed within a check or two.
+    // A logout with its `world` event is noticed at once.
     game.leave_world();
-    assert!(wait_until(Duration::from_millis(500), || !bot
+    bot.on_flash_call("event", vec![json!("world"), json!("{\"present\":false}")]);
+    assert!(wait_until(Duration::from_millis(200), || !bot
+        .state
+        .lock()
+        .in_game));
+    game.enter_world();
+    assert!(wait_until(Duration::from_secs(1), || catches() == 2));
+
+    // One whose event got lost, within the fallback's second.
+    game.leave_world();
+    assert!(wait_until(Duration::from_millis(1500), || !bot
         .state
         .lock()
         .in_game));
@@ -599,7 +610,7 @@ fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
     // Out of game it checks every tick: the next login gets `catchPackets` right away.
     game.enter_world();
     let started = Instant::now();
-    assert!(wait_until(Duration::from_secs(1), || catches() == 2));
+    assert!(wait_until(Duration::from_secs(1), || catches() == 3));
     assert!(
         started.elapsed() < Duration::from_millis(250),
         "{:?}",

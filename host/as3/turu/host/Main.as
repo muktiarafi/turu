@@ -26,11 +26,11 @@ import flash.utils.setTimeout;
  * Here: the start-up (the client loaded with its `params`, the stage, the login background, the
  * clicks the bot must know of: logout, change server, a server picked; the Bank hotkey), packets
  * and errors. The calls are in [GameCalls], [Combat], [Auras], [Items], [World], [Servers] and
- * [Options]; the host (Ruffle's or Turu Mas's) is behind [Host].
+ * [Options]; what changed in game reaches Turu through [Events]; the host (Ruffle's or Turu Mas's) is behind [Host].
  */
 public class Main extends MovieClip {
     /** `hostInfo().version`: raised when a callback changes what it answers. */
-    private static const VERSION:int = 2;
+    private static const VERSION:int = 3;
     private static const GAME_URL:String = "https://game.aq.com/game/";
     /** The login screen's title (VibeSkua's says "AURAS!!!"). */
     private static const TITLE:String = '<font color="#FDAF2D">Turu</font>';
@@ -41,6 +41,8 @@ public class Main extends MovieClip {
     private var packets:Packets;
     private var options:Options;
     private var background:Background;
+    /** Kept: nothing else holds it, and its frame listener would go with it. */
+    private var events:Events;
     /** The callbacks `hostInfo` lists. */
     private var callbacks:Array = [];
     private var strictErrors:Boolean = false;
@@ -88,6 +90,7 @@ public class Main extends MovieClip {
         }
         packets = new Packets(host);
         background = new Background(host, gameOf);
+        events = new Events(host, gameOf);
 
         expose("loadClient", loadClient);
         expose("setBackgroundValues", background.setValues);
@@ -161,7 +164,7 @@ public class Main extends MovieClip {
         return JSON.stringify({
             name: "turu",
             version: VERSION,
-            features: ["errors", "strictErrors", "packetEcho", "packetCapture", "loadClientFrameRate"],
+            features: ["errors", "strictErrors", "packetEcho", "packetCapture", "loadClientFrameRate", "events"],
             callbacks: callbacks
         });
     }

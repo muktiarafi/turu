@@ -5,6 +5,7 @@
 use crate::Bot;
 use crate::api::inventory::{self, Container};
 use crate::api::{map, servers};
+use crate::control::Topics;
 use crate::events::{BotEvent, Work};
 use crate::models::ItemBase;
 use std::sync::{Arc, Weak};
@@ -149,13 +150,15 @@ fn item_added(bot: &Bot, item_id: i64, quantity_now: i64, fallback: &ItemBase) {
     }
 }
 
-/// How often the timer checks that you're still in game, and the loading screen while in game
-/// (Turu: VibeSkua checks both on every 20 ms tick and the loading screen every 100 ms, where
-/// a call to the game is nearly free; here each is a trip to the player's thread, and these
-/// were about half of all calls). Out of game the timer checks on every tick, so a login is
-/// caught, and `catchPackets` sent, as soon as the world appears.
-const IN_GAME_CHECK: Duration = Duration::from_millis(100);
-const IN_GAME_LOAD_CHECK: Duration = Duration::from_millis(250);
+/// How often the timer checks that you're still in game, and the loading screen while in game,
+/// when turu.swf hasn't said either changed (Turu: VibeSkua checks both on every 20 ms tick and
+/// the loading screen every 100 ms, where a call to the game is nearly free; here each is a
+/// trip to the player's thread, and these were about half of all calls). turu.swf's `world` and
+/// `loading` events (M5 of HOST_SWF_PROPOSAL.md) make it look at once; these only catch what an
+/// event missed. Out of game the timer checks on every tick, so a login is caught, and
+/// `catchPackets` sent, as soon as the world appears.
+const IN_GAME_CHECK: Duration = Duration::from_secs(1);
+const IN_GAME_LOAD_CHECK: Duration = Duration::from_secs(1);
 
 /// 20 ms tick (VibeSkua `ScriptInterface.ScriptTimer`): tracks login state, calls
 /// `catchPackets` once per login, sends rest packets every 1200 ms and applies the options
@@ -170,6 +173,9 @@ fn timer(weak: Weak<Bot>) {
     let mut last_game_check = Instant::now();
     let mut last_gameplay = Instant::now();
     let mut load = LoadWatch::default();
+    // The events when the game and the loading screen were last checked.
+    let mut game_mark = None;
+    let mut load_mark = None;
     loop {
         std::thread::sleep(Duration::from_millis(20));
         let Some(bot) = weak.upgrade() else { break };
@@ -177,12 +183,17 @@ fn timer(weak: Weak<Bot>) {
             continue;
         }
         let checked_in_game = bot.state.lock().in_game;
-        let in_game = if !checked_in_game || last_game_check.elapsed() >= IN_GAME_CHECK {
-            last_game_check = Instant::now();
-            crate::api::player::is_in_game(&bot).unwrap_or(false)
-        } else {
-            true
-        };
+        let session_changed = game_mark
+            .as_ref()
+            .is_none_or(|mark| bot.control.fired_since(mark, Topics::SESSION));
+        let in_game =
+            if !checked_in_game || session_changed || last_game_check.elapsed() >= IN_GAME_CHECK {
+                last_game_check = Instant::now();
+                game_mark = Some(bot.control.mark());
+                crate::api::player::is_in_game(&bot).unwrap_or(false)
+            } else {
+                true
+            };
         let (was_in_game, catching, intentional, hand_login) = {
             let mut state = bot.state.lock();
             let was = state.in_game;
@@ -239,8 +250,14 @@ fn timer(weak: Weak<Bot>) {
         } else {
             Duration::from_millis(100)
         };
-        if last_load_check.elapsed() >= load_check {
+        // Out of game every check; in game when `loading` fired or the fallback is due. While
+        // the screen stays up, the watchdog still needs the fallback's looks to time it.
+        let loading_changed = load_mark
+            .as_ref()
+            .is_none_or(|mark| bot.control.fired_since(mark, Topics::LOADING));
+        if last_load_check.elapsed() >= load_check || (in_game && loading_changed) {
             last_load_check = Instant::now();
+            load_mark = Some(bot.control.mark());
             check_stuck_loading(&bot, &mut load);
         }
         // Advanced Stats track connected gameplay whether or not a script runs.

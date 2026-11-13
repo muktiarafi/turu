@@ -236,8 +236,9 @@ change that.
 since it started (by thread and callback, with the path for `getGameObject` and its kin: how
 many, how long they waited, how long the player took to run them, reply bytes) and its player's
 ticks. `TURU_PERF_LOG=<seconds>` logs the same for each tab every `seconds`, over that window
-(`turu_perf` lines: the player thread's milliseconds per second, then the busiest calls, 12
-unless `TURU_PERF_LOG_ROWS` says how many). Without a window it also logs a `memory:` line:
+(`turu_perf` lines: the player thread's milliseconds per second, a `waits:` line with each
+`bot.wait.forX` that ended in the window, how many timed out and their average time, then the
+busiest calls, 12 unless `TURU_PERF_LOG_ROWS` says how many). Without a window it also logs a `memory:` line:
 the process's resident and committed memory (with peaks), the Rust heap that's live, the SWFs
 the game loaded (their data in MB) and the Flash objects it holds, to tell a leak from the
 allocator keeping freed memory. A `memory census:` line follows: the URLs with the most live

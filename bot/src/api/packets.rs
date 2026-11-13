@@ -63,6 +63,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 // A slot may have freed up: the pickup loop tries refused drops again.
                 state.refused_drops.clear();
             }
+            bot.control.fire(crate::control::Topics::SIGNALS);
             bot.events.emit(BotEvent::ItemSold {
                 char_item_id: num(data.get("CharItemID")).unwrap_or_default(),
                 quantity_sold: num(data.get("iQty")).unwrap_or_default(),
@@ -78,6 +79,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                     state.signals.item_bought = true;
                     state.refused_drops.clear();
                 }
+                bot.control.fire(crate::control::Topics::SIGNALS);
                 bot.events.emit(BotEvent::ItemBought);
             }
         }
@@ -183,6 +185,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 state.bank_loaded = true;
                 state.signals.bank_loaded = true;
             }
+            bot.control.fire(crate::control::Topics::SIGNALS);
             bot.events.emit(BotEvent::BankLoaded);
         }
         "loadShop" => {

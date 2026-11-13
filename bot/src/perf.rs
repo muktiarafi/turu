@@ -49,6 +49,15 @@ struct Inner {
     /// Thread name -> call label -> totals.
     calls: HashMap<String, HashMap<String, CallTotals>>,
     ticks: Totals,
+    /// Wait name (`forMapLoad`) -> totals.
+    waits: HashMap<&'static str, WaitTotals>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct WaitTotals {
+    done: u64,
+    timed_out: u64,
+    total: Duration,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -124,9 +133,33 @@ impl PerfStats {
         ticks.max = ticks.max.max(took);
     }
 
+    /// A wait (`bot.wait.forX`) ended after `took`: `done` when its condition held, else it
+    /// timed out.
+    pub fn record_wait(&self, name: &'static str, took: Duration, done: bool) {
+        let mut inner = self.inner.lock();
+        let row = inner.waits.entry(name).or_default();
+        if done {
+            row.done += 1;
+        } else {
+            row.timed_out += 1;
+        }
+        row.total += took;
+    }
+
     /// Everything since the bot started.
     pub fn snapshot(&self) -> PerfSnapshot {
         let inner = self.inner.lock();
+        let mut waits: Vec<WaitRow> = inner
+            .waits
+            .iter()
+            .map(|(name, t)| WaitRow {
+                wait: (*name).to_owned(),
+                done: t.done,
+                timed_out: t.timed_out,
+                total_ms: ms(t.total),
+            })
+            .collect();
+        waits.sort_by(|a, b| a.wait.cmp(&b.wait));
         let mut calls: Vec<CallRow> = inner
             .calls
             .iter()
@@ -150,6 +183,7 @@ impl PerfStats {
             tick_ms: ms(inner.ticks.total),
             tick_max_ms: ms(inner.ticks.max),
             calls,
+            waits,
         }
     }
 }
@@ -170,6 +204,20 @@ pub struct PerfSnapshot {
     pub tick_max_ms: f64,
     /// Per thread and call, the most made first.
     pub calls: Vec<CallRow>,
+    /// Per wait, by name.
+    #[serde(default)]
+    pub waits: Vec<WaitRow>,
+}
+
+/// How a wait (`forMapLoad`, ...) went: how many ended with their condition, how many timed
+/// out, and the time they took in all.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaitRow {
+    pub wait: String,
+    pub done: u64,
+    pub timed_out: u64,
+    pub total_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -217,12 +265,29 @@ impl PerfSnapshot {
             })
             .collect();
         calls.sort_by(|a, b| b.calls.cmp(&a.calls).then_with(|| a.call.cmp(&b.call)));
+        let waits = self
+            .waits
+            .iter()
+            .filter_map(|w| {
+                let before = earlier.waits.iter().find(|b| b.wait == w.wait);
+                let (done, timed_out, total) =
+                    before.map_or((0, 0, 0.0), |b| (b.done, b.timed_out, b.total_ms));
+                let row = WaitRow {
+                    wait: w.wait.clone(),
+                    done: w.done.saturating_sub(done),
+                    timed_out: w.timed_out.saturating_sub(timed_out),
+                    total_ms: w.total_ms - total,
+                };
+                (row.done + row.timed_out > 0).then_some(row)
+            })
+            .collect();
         PerfSnapshot {
             seconds: self.seconds - earlier.seconds,
             ticks: self.ticks.saturating_sub(earlier.ticks),
             tick_ms: self.tick_ms - earlier.tick_ms,
             tick_max_ms: self.tick_max_ms,
             calls,
+            waits,
         }
     }
 
@@ -251,6 +316,23 @@ impl PerfSnapshot {
             calls as f64 / secs,
             if calls > 0 { wait / calls as f64 } else { 0.0 },
         );
+        if !self.waits.is_empty() {
+            out.push_str("\n  waits:");
+            for w in &self.waits {
+                let n = (w.done + w.timed_out).max(1) as f64;
+                let _ = write!(
+                    out,
+                    " {} {}x {:.0} ms avg",
+                    w.wait,
+                    w.done + w.timed_out,
+                    w.total_ms / n
+                );
+                if w.timed_out > 0 {
+                    let _ = write!(out, " ({} timed out)", w.timed_out);
+                }
+                out.push(';');
+            }
+        }
         for r in self.calls.iter().take(top) {
             let n = r.calls as f64;
             let _ = write!(
