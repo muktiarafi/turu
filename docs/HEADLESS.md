@@ -330,7 +330,7 @@ It also writes the samples to `<log>.csv`.
 | `TURU_HTTP_CACHE_MB` | How large that folder may grow (default 1024); the files used longest ago go first. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
 | `TURU_TEST_PANIC` | Set: panic 10 s after the start, to test crash reports (`sendCrashReports: true` in `settings.json` sends them; there is no question without a window). |
-| `TURU_HOST_SWF` | `turu` or `vibeskua`: which host SWF to start, over Options > Application's "Use Turu's Host SWF" (`turuHostSwf` in `settings.json`; docs/HOST_SWF_PROPOSAL.md). |
+| `TURU_HOST_SWF` | `turu` or `vibeskua`: which host SWF to start, over Options > Application's "Use VibeSkua's Host SWF" (`useVibeSkuaHostSwf` in `settings.json`; Turu's own is the default; docs/HOST_SWF_PROPOSAL.md). |
 | `TURU_HOST_PARITY` | `1`: Turu's host SWF loads VibeSkua's, which hosts the game as usual; every read is asked of both and differences go to the debug log (`parity:` lines; docs/HOST_SWF_PROPOSAL.md, R2). |
 | `TURU_GRID_TEST` | With a window: hidden tabs run at this frame rate and draw every frame (to measure a grid of tiles). |
 | `RUST_LOG` | What the log shows. |

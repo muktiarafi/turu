@@ -198,8 +198,8 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   and `TuruLoader<n>` (the host SWF has 0 to 3). Its calls reach the engine with `n`
   (`nativeFlashCall`), which hands them to that tab's bot (`clients::bot`); the bot's calls name
   `n` too (`AirFlashHost { client }`), so they run its skua's callbacks.
-* **Turu's own host SWF.** With Options > Application > "Use Turu's Host SWF" (read from
-  settings.json at launch), the host loads Turu's `turu.swf` instead: the same unpatched bytes for
+* **Turu's own host SWF.** By default (unless Options > Application > "Use VibeSkua's Host SWF",
+  read from settings.json at launch) the host loads Turu's `turu.swf`: the same unpatched bytes for
   every tab, its tab number in the `LoaderContext`'s parameters (`turuClient`). It reaches the
   host through `TuruHost` (calls, loading through `TuruLoader`, showing its game), so it needs no
   per-tab classes (docs/HOST_SWF_PROPOSAL.md, R4).

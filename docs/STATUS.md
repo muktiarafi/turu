@@ -6,7 +6,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 ## What works
 
 - **App:** `app/` on ruffle-aqw (`ruffle/`: Ruffle `fda41800` + Mugetsu 1.6.0's patches) starts
-  VibeSkua's `skua.swf`, which loads AQW. You log in with the game's own screen.
+  Turu's host SWF, `turu.swf`, which loads AQW (VibeSkua's `skua.swf` with Options > Application
+  > "Use VibeSkua's Host SWF"; docs/HOST_SWF_PROPOSAL.md). You log in with the game's own screen.
+  On the Ruffle builds the bot's packets come from the player's socket (R5).
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
   background loops for drops, registered quests, skills and boosts; Stop and Pause.
 - **Servers and auto-relogin:** `bot.servers` (VibeSkua `Bot.Servers`: server list, login,

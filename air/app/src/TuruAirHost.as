@@ -69,7 +69,7 @@ package {
          * Turu's turu.swf, loaded as it is for every client ([TuruHost]); null until read.
          */
         private var skuaBytes:ByteArray;
-        /** Options > Application's "Use Turu's Host SWF" (`turuHostSwf` in settings.json). */
+        /** Turu's own host SWF, unless Options > Application's "Use VibeSkua's Host SWF". */
         private var useTuru:Boolean = false;
         /** Clients the engine opened before skua.swf was read. */
         private var waiting:Array = [];
@@ -114,7 +114,7 @@ package {
             }
             early = null;
             say("engine started, data folder " + folder);
-            useTuru = turuHostSwf(folder);
+            useTuru = !vibeSkuaHostSwf(folder);
             say("host SWF: " + (useTuru ? "Turu's turu.swf" : "VibeSkua's skua.swf"));
             // The main SWF is on the stage already; added later only when loaded by another.
             if (stage != null) {
@@ -131,10 +131,11 @@ package {
         }
 
         /**
-         * Whether settings.json in Turu's data folder asks for Turu's host SWF (Options >
-         * Application, "Use Turu's Host SWF"; read at launch, as on the Ruffle build).
+         * Whether settings.json in Turu's data folder asks for VibeSkua's host SWF (Options >
+         * Application, "Use VibeSkua's Host SWF", `useVibeSkuaHostSwf`; read at launch, as on the
+         * Ruffle build). Turu's own otherwise.
          */
-        private function turuHostSwf(folder:String):Boolean {
+        private function vibeSkuaHostSwf(folder:String):Boolean {
             try {
                 var file:File = new File(folder).resolvePath("settings.json");
                 if (!file.exists) {
@@ -144,7 +145,7 @@ package {
                 stream.open(file, FileMode.READ);
                 var text:String = stream.readUTFBytes(stream.bytesAvailable);
                 stream.close();
-                return JSON.parse(text).turuHostSwf === true;
+                return JSON.parse(text).useVibeSkuaHostSwf === true;
             } catch (e:Error) {
                 say("ERROR: couldn't read settings.json: " + e.message);
             }

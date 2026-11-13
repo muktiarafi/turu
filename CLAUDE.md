@@ -22,8 +22,8 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 |---|---|
 | `bot/` | crate `turu_bot`: the engine. No dependency on Ruffle or the app crate. TLS is a feature (`native-tls` default, `rustls-tls`). |
 | `bot/js/turu.ts` | **The script API contract** (runtime + types, embedded). Rust implements each `"module.method"` it calls in `bot/src/api/<module>.rs`. Change both sides together. |
-| `bot/assets/skua.swf` | VibeSkua's AS3 host (`Skua.AS3/skua/bin/skua.swf`), unchanged. |
-| `host/` | crate `turu_host`: Turu's own host SWF, `turu.swf`, being written to replace skua.swf (`docs/HOST_SWF_PROPOSAL.md`): its AS3 (`as3/`, package `turu.host`, written from `docs/VIBESKUA_SPEC.md`, not from VibeSkua's source) and its build with Ruffle's `asc.jar`. Rebuild and commit `bot/assets/turu.swf` after changing `as3/`; CI checks they match. |
+| `bot/assets/skua.swf` | VibeSkua's AS3 host (`Skua.AS3/skua/bin/skua.swf`), unchanged; still selectable (Options > Application > "Use VibeSkua's Host SWF") until it's removed (R6b). |
+| `host/` | crate `turu_host`: Turu's own host SWF, `turu.swf`, the default (`docs/HOST_SWF_PROPOSAL.md`): its AS3 (`as3/`, package `turu.host`, written from `docs/VIBESKUA_SPEC.md`, not from VibeSkua's source) and its build with Ruffle's `asc.jar`. Rebuild and commit `bot/assets/turu.swf` after changing `as3/`; CI checks they match. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
 | `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (for Android later: `docs/ANDROID_PROPOSAL.md`). The app re-exports its modules (`crate::turu`, ...). |
 | `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): `TuruActivity` (NativeActivity) and `TuruService` (foreground service: starts the engine, also alone after a kill; notification; wake lock), the engine thread on `turu_frontend::engine` drawing the game and `TuruUi` with wgpu (`screen.rs`), setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). |
@@ -47,7 +47,7 @@ it, bump `ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/
 
 ```bash
 cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
-./target/debug/turu                      # starts skua.swf -> AQW; log in with the game's own screen
+./target/debug/turu                      # starts turu.swf -> AQW; log in with the game's own screen
 cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md)

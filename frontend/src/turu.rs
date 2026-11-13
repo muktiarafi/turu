@@ -596,9 +596,13 @@ pub fn host_swf_url() -> anyhow::Result<String> {
         return Ok(turu.to_string());
     }
     let swf = turu_bot::HostSwf::chosen(&bot().settings.read());
-    if swf == turu_bot::HostSwf::Turu {
-        tracing::info!("Host SWF: Turu's own");
-    }
+    tracing::info!(
+        "Host SWF: {}",
+        match swf {
+            turu_bot::HostSwf::Turu => "Turu's own (turu.swf)",
+            turu_bot::HostSwf::VibeSkua => "VibeSkua's (skua.swf), as Options > Application asks",
+        }
+    );
     let path = bot().paths.write_host_swf(swf)?;
     let url = url::Url::from_file_path(&path)
         .map_err(|()| anyhow::anyhow!("bad path for {}: {}", swf.file_name(), path.display()))?;

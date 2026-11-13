@@ -71,8 +71,8 @@ pub const SKUA_SWF: &[u8] = include_bytes!("../assets/skua.swf");
 /// only with `TURU_HOST_SWF=turu` ([`HostSwf`]).
 pub const TURU_SWF: &[u8] = include_bytes!("../assets/turu.swf");
 
-/// The host SWF Turu starts: VibeSkua's, or Turu's own (docs/HOST_SWF_PROPOSAL.md), chosen in
-/// Options > Application or with `TURU_HOST_SWF`.
+/// The host SWF Turu starts: Turu's own (docs/HOST_SWF_PROPOSAL.md), or VibeSkua's when Options >
+/// Application or `TURU_HOST_SWF` asks for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostSwf {
     VibeSkua,
@@ -93,12 +93,12 @@ impl HostSwf {
         }
     }
 
-    /// `TURU_HOST_SWF`, else Options > Application's "Use Turu's Host SWF".
+    /// `TURU_HOST_SWF`, else Turu's own unless Options > Application's "Use VibeSkua's Host SWF".
     pub fn chosen(settings: &settings::AppSettings) -> Self {
-        Self::from_env().unwrap_or(if settings.turu_host_swf {
-            Self::Turu
-        } else {
+        Self::from_env().unwrap_or(if settings.use_vibe_skua_host_swf {
             Self::VibeSkua
+        } else {
+            Self::Turu
         })
     }
 

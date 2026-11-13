@@ -10,7 +10,7 @@ and keeps the same UI/UX, but:
 | UI | Avalonia | egui (inside Ruffle's desktop frontend), Mugetsu palette |
 | Bot engine | C# (`Skua.Core`) | Rust (`bot/`, crate `turu_bot`) |
 | Scripts | C# compiled with Roslyn, `//cs_include` | TypeScript, types stripped by `oxc`, run in QuickJS (`rquickjs`), ES `import` |
-| Game host SWF | `skua.swf` (from `Skua.AS3`) | the **same** `skua.swf`, embedded at `bot/assets/skua.swf` |
+| Game host SWF | `skua.swf` (from `Skua.AS3`) | Turu's own `turu.swf` (`host/`, same callbacks and answers), embedded at `bot/assets/turu.swf`; VibeSkua's `skua.swf` (`bot/assets/skua.swf`) still selectable |
 
 ## Repository layout
 
@@ -24,13 +24,14 @@ ruffle/                  submodule: muktiarafi/ruffle-aqw (branch `aqw`), Ruffle
                          are wired up in the root Cargo.toml
 host/                    crate `turu_host`: Turu's own host SWF (docs/HOST_SWF_PROPOSAL.md), its AS3
                          (as3/, package turu.host) and its build with Ruffle's asc.jar: `cargo run -p
-                         turu_host` writes bot/assets/turu.swf (not used yet), `-- --check` (CI) checks it
+                         turu_host` writes bot/assets/turu.swf (the default host SWF), `-- --check` (CI) checks it
 bot/                     crate `turu_bot`: the bot engine (no dependency on the app or ruffle_core)
-  assets/skua.swf        VibeSkua's AS3 host SWF (Skua.AS3/skua/bin/skua.swf), embedded with include_bytes!
+  assets/turu.swf        Turu's host SWF (built from host/as3), embedded with include_bytes!, the default
+  assets/skua.swf        VibeSkua's AS3 host SWF (Skua.AS3/skua/bin/skua.swf), still selectable
   js/                    TypeScript runtime that ships inside the binary (module "turu")
   src/
     lib.rs               `Bot` (Arc handle shared by script thread, UI and background threads)
-    flash.rs             `Flash`: typed calls into skua.swf's ExternalInterface callbacks
+    flash.rs             `Flash`: typed calls into the host SWF's ExternalInterface callbacks
     host.rs              `FlashHost` trait (implemented by desktop) + `FlashArg`
     control.rs           Stop and Pause (`ScriptControl`), script-thread marking
     control_api.rs       the HTTP control API (`--api`): hyper on its own thread, token auth, one
@@ -134,8 +135,10 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
 
 ## The Flash bridge
 
-`skua.swf` registers ~70 callbacks (full list: `docs/VIBESKUA_SPEC.md`, section 2). The calling
-convention matches VibeSkua's `FlashUtil.Call`:
+The host SWF, `turu.swf` (or VibeSkua's `skua.swf` with Options > Application > "Use VibeSkua's
+Host SWF"), registers the callbacks (VibeSkua's list: `docs/VIBESKUA_SPEC.md`, section 2;
+`turu.swf`'s: its `hostInfo`, docs/HOST_SWF_PROPOSAL.md). The calling convention matches
+VibeSkua's `FlashUtil.Call`:
 
 * Arguments are strings, numbers, booleans, null, arrays or objects (`FlashArg`; the last two become
   AS3 `Array`s and `Object`s, as VibeSkua passes .NET lists and objects).
@@ -150,7 +153,8 @@ convention matches VibeSkua's `FlashUtil.Call`:
 
 Startup sequence (same as VibeSkua):
 
-1. Desktop starts Ruffle with `skua.swf` (written from the embedded bytes to the data dir).
+1. Desktop starts Ruffle with the host SWF, `turu.swf` (written from the embedded bytes to the
+   data dir); `Work::LoadClient` asks it `hostInfo` first.
 2. AS3 `Externalizer.init` registers callbacks and calls `requestLoadGame` → bot calls `loadClient`.
 3. AS3 fetches `https://game.aq.com/game/api/data/gameversion`, loads the game SWF and calls
    `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (the bot marks the game
@@ -200,7 +204,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 
 | Path | Contents |
 |---|---|
-| `skua.swf` | written from the embedded copy at start |
+| `turu.swf`, `skua.swf` | the host SWF, written from the embedded copy at start (`skua.swf` only when chosen) |
 | `api-token` | the control API's token (`--api` without `TURU_API_TOKEN`), owner-readable only |
 | `monitor-key` | the web monitor's key (Options > Application > Monitor), owner-readable only |
 | `monitor-push-key` | the key other machines report to the web monitor with, owner-readable only |

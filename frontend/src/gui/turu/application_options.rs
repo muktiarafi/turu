@@ -173,9 +173,9 @@ fn vibeskua_entries() -> Vec<Entry> {
             restart: true,
             ..entry!(
                 General,
-                "Use Turu's Host SWF",
-                "Start Turu's own host SWF instead of VibeSkua's: the SWF that loads the game and answers the bot. Both do the same; Turu's is new, so turn it off again if something misbehaves",
-                Field::Bool(|s| &mut s.turu_host_swf)
+                "Use VibeSkua's Host SWF",
+                "Start VibeSkua's host SWF instead of Turu's own: the SWF that loads the game and answers the bot. Both do the same; turn this on if something misbehaves with Turu's, and please report it",
+                Field::Bool(|s| &mut s.use_vibe_skua_host_swf)
             )
         },
         entry!(

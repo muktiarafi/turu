@@ -5,8 +5,8 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 (auras, monsters, combat); R3b done (inventory, shop, player, world); R3c done (server
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
-four tabs); R5 written (packets from the player), awaiting its checks in game; the rest are
-proposals. Replaces the plan to fork VibeSkua's
+four tabs); R5 done (packets from the player); R6a written (`turu.swf` the default), awaiting its farm
+check; the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -404,12 +404,21 @@ without touching SmartFox.
 
 ### R6: The switch
 
-- Turu's SWF becomes the default on every host; VibeSkua's stays selectable for one release,
-  then goes, with `Target::Skua`, `Options::client`, the skua rules (`stg`/`removeChildAt`),
-  `TuruExternal0`…`3` and `TuruLoader0`…`3`. The game client's rules and `shared_stage_swf` for
-  the SWFs it loads stay.
-- Docs: `docs/VIBESKUA_SPEC.md` (where Turu's SWF differs), `docs/ARCHITECTURE.md`,
-  `docs/SCRIPTING.md` (calls that now error), STATUS.md, the README's license section.
+In two parts, a release apart:
+
+- **R6a, the switch:** `turu.swf` is the default on every host. The setting became an opt-out,
+  Options > Application > "Use VibeSkua's Host SWF" (`useVibeSkuaHostSwf`, off); the earlier
+  `turuHostSwf` is ignored, so every install moved, including those that saved `false`.
+  `TURU_HOST_SWF` still overrides it; Turu Mas's host reads the same key. No automatic fallback:
+  the debug log says which SWF runs. Parity mode stays, for chasing reports. Docs: SCRIPTING.md
+  (calls `turu.swf` lacks), VIBESKUA_SPEC.md ("Where Turu's host SWF differs"), ARCHITECTURE.md,
+  STATUS.md, HEADLESS.md, TURU_MAS.md, CLAUDE.md. Done when, besides the R1-R5 checks: GoldFarm for
+  15 minutes on each SWF alone (release build) keeps its quest turn-ins per minute with no new
+  "too soon" (FarmerJoe DoAll measures a character's progression more than the host SWF).
+- **R6b, the removal**, after a release with no reports against `turu.swf`: VibeSkua's SWF goes,
+  with `Target::Skua`, `Options::client`, the skua rules (`stg`/`removeChildAt`),
+  `TuruExternal0`…`3` and `TuruLoader0`…`3`, parity mode and the opt-out. The game client's
+  rules and `shared_stage_swf` for the SWFs it loads stay. Docs: the README's license section.
 
 ### M4: Batched reads
 

@@ -1059,3 +1059,22 @@ Rows top to bottom, margin 12, spacing 10:
    - `ScriptOption.ScriptStopped` toggling `LagKiller` true then false.
    - `ForCellChange` uses `WAIT_SLEEP / 4` as its timeout.
    - Account passwords are stored as plain text.
+
+## 8. Where Turu's host SWF differs
+
+Turu runs its own host SWF, `turu.swf` (`host/`, docs/HOST_SWF_PROPOSAL.md), written from this
+survey and checked against VibeSkua's SWF by parity mode (`TURU_HOST_PARITY=1`). It keeps the
+names, arguments and answers above, except where the parity allowlist (`bot/src/parity.rs`,
+`ALLOWED`, each with its reason) and the proposal's "deliberate differences" say otherwise:
+
+- Not carried over: the `lnk*`/`fc*` remote registry, `injectScript`, the quest window's two
+  modules, the monster-click wiki link, and the callbacks nothing in Turu or its scripts called;
+  calling one answers "`name` is not in Turu's host SWF".
+- `pext` carries only the packet's `type` and `params`, not the whole SmartFox event.
+- The game is centred (no `align = TOP`); "Turu" is the login screen's title; errors are
+  reported (`error`); `packetFromServer` only on request; `hostInfo` says what the SWF has.
+- On the Ruffle builds the bot's packets come from the player's socket, not from the SWF.
+- Found in game and matched (this survey was wrong or silent): `gender` answers the client's
+  `"M"`/`"F"`; `jumpCorrectRoom` always moves again once the cell settles; `isKicked` is `false` in
+  game; `getActiveModalMessage` is plain text, `""` without a dialog; `selectArrayObjects` answers
+  `""` on a non-array; aura snapshots' `hudAuras` is keyed by name, `end` on `getTimer`.
