@@ -47,6 +47,7 @@ public class Main extends MovieClip {
     /** Parity mode: VibeSkua's SWF hosts the game, this one only answers. */
     private var parity:Boolean = false;
     private var packets:Packets;
+    private var options:Options;
     private var background:Background;
     /** The callbacks `hostInfo` lists. */
     private var callbacks:Array = [];
@@ -106,6 +107,8 @@ public class Main extends MovieClip {
         new Items(gameOf).exposeWith(expose);
         new World(gameOf).exposeWith(expose);
         new Servers(gameOf).exposeWith(expose);
+        options = new Options(gameOf);
+        options.exposeWith(expose);
         // For checking error reports by hand; not listed, so only debug builds of Turu call it.
         host.addCallback("throwForTest", guard("throwForTest", throwForTest));
 
@@ -328,6 +331,11 @@ public class Main extends MovieClip {
 
     private function onFrame(event:Event):void {
         packets.frame(game);
+        try {
+            options.frame();
+        } catch (e:Error) {
+            report("modules: " + messageOf(e), stackOf(e));
+        }
     }
 
     /**

@@ -70,8 +70,8 @@ pub const SKUA_SWF: &[u8] = include_bytes!("../assets/skua.swf");
 /// only with `TURU_HOST_SWF=turu` ([`HostSwf`]).
 pub const TURU_SWF: &[u8] = include_bytes!("../assets/turu.swf");
 
-/// The host SWF Turu starts: VibeSkua's, or with `TURU_HOST_SWF=turu` Turu's own, which answers
-/// only part of the bot's calls yet (docs/HOST_SWF_PROPOSAL.md, R1).
+/// The host SWF Turu starts: VibeSkua's, or Turu's own (docs/HOST_SWF_PROPOSAL.md), chosen in
+/// Options > Application or with `TURU_HOST_SWF`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostSwf {
     VibeSkua,
@@ -79,18 +79,26 @@ pub enum HostSwf {
 }
 
 impl HostSwf {
-    /// The one `TURU_HOST_SWF` asks for (`turu` or `vibeskua`); VibeSkua's otherwise.
-    pub fn from_env() -> Self {
+    /// The one `TURU_HOST_SWF` asks for (`turu` or `vibeskua`), if it's set.
+    pub fn from_env() -> Option<Self> {
         match std::env::var("TURU_HOST_SWF").as_deref() {
-            Ok("turu") => Self::Turu,
-            Ok("vibeskua") | Ok("") | Err(_) => Self::VibeSkua,
+            Ok("turu") => Some(Self::Turu),
+            Ok("vibeskua") => Some(Self::VibeSkua),
+            Ok("") | Err(_) => None,
             Ok(other) => {
-                tracing::warn!(
-                    "TURU_HOST_SWF={other}: expected turu or vibeskua; using VibeSkua's"
-                );
-                Self::VibeSkua
+                tracing::warn!("TURU_HOST_SWF={other}: expected turu or vibeskua; ignored");
+                None
             }
         }
+    }
+
+    /// `TURU_HOST_SWF`, else Options > Application's "Use Turu's Host SWF".
+    pub fn chosen(settings: &settings::AppSettings) -> Self {
+        Self::from_env().unwrap_or(if settings.turu_host_swf {
+            Self::Turu
+        } else {
+            Self::VibeSkua
+        })
     }
 
     /// Its file name in the data directory.

@@ -14,6 +14,9 @@ pub struct AppSettings {
     /// VibeSkua's "Client Animation Frame-rate": the frame rate the client starts with, until
     /// the game's own FPS setting (or Options > Game > Set FPS) applies in game.
     pub animation_frame_rate: i32,
+    /// Start Turu's own host SWF (`turu.swf`) instead of VibeSkua's; read at launch.
+    /// `TURU_HOST_SWF` overrides it ([`crate::HostSwf::chosen`]).
+    pub turu_host_swf: bool,
     /// VibeSkua's "Grandpa Mode" (`GrandpaMode`): larger text in the logs and the packet tools.
     pub grandpa_mode: bool,
     // Auto Updates & Sync. The script ones are read at launch (`repo::ScriptRepo::startup`);
@@ -88,6 +91,7 @@ impl Default for AppSettings {
         Self {
             show_username_in_title: true,
             animation_frame_rate: GAME_FRAME_RATE,
+            turu_host_swf: false,
             grandpa_mode: false,
             check_bot_scripts_updates: true,
             auto_update_bot_scripts: true,

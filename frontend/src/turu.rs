@@ -575,8 +575,8 @@ pub fn init_main_thread() {
     let _ = MAIN_THREAD.set(std::thread::current().id());
 }
 
-/// The URL Turu starts with: the host SWF, VibeSkua's `skua.swf` or with `TURU_HOST_SWF=turu`
-/// Turu's `turu.swf` ([`turu_bot::HostSwf`]), written to the data directory. With
+/// The URL Turu starts with: the host SWF, VibeSkua's `skua.swf` or Turu's `turu.swf`
+/// ([`turu_bot::HostSwf::chosen`]), written to the data directory. With
 /// `TURU_HOST_PARITY=1`, Turu's in parity mode, loading VibeSkua's (`turu_bot::parity`).
 pub fn host_swf_url() -> anyhow::Result<String> {
     let file_url = |path: &std::path::Path| {
@@ -593,9 +593,9 @@ pub fn host_swf_url() -> anyhow::Result<String> {
             .append_pair("turuSkua", skua.as_str());
         return Ok(turu.to_string());
     }
-    let swf = turu_bot::HostSwf::from_env();
+    let swf = turu_bot::HostSwf::chosen(&bot().settings.read());
     if swf == turu_bot::HostSwf::Turu {
-        tracing::info!("Host SWF: Turu's own (TURU_HOST_SWF=turu), still being written");
+        tracing::info!("Host SWF: Turu's own");
     }
     let path = bot().paths.write_host_swf(swf)?;
     let url = url::Url::from_file_path(&path)
