@@ -200,7 +200,7 @@ pub struct ItemBase {
 
 impl ItemBase {
     /// The item as the game spells it (VibeSkua `JsonConvert.SerializeObject(item)`), for
-    /// `skua.swf` callbacks that take an item's JSON (`inventoryHasSpaceFor`, ...).
+    /// `turu.swf` callbacks that take an item's JSON (`inventoryHasSpaceFor`, ...).
     pub fn game_json(&self) -> serde_json::Value {
         let flag = |b: bool| if b { "1" } else { "0" };
         serde_json::json!({
@@ -895,7 +895,7 @@ pub struct Faction {
     pub remaining_rep: i64,
 }
 
-/// An aura on a player or a monster (VibeSkua `Aura`, from skua.swf's `GetPlayerAura` and
+/// An aura on a player or a monster (VibeSkua `Aura`, from turu.swf's `GetPlayerAura` and
 /// `GetMonsterAuraByID`/`ByName`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all(serialize = "camelCase"))]
@@ -951,7 +951,7 @@ fn one() -> f64 {
     1.0
 }
 
-/// An aura as the HUD shows it (VibeSkua `AuraSnapshot`, from skua.swf's `GetAuraSnapshots`).
+/// An aura as the HUD shows it (VibeSkua `AuraSnapshot`, from turu.swf's `GetAuraSnapshots`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all(serialize = "camelCase"))]
 pub struct AuraSnapshot {

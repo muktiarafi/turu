@@ -166,7 +166,7 @@ impl UiBackend for AndroidUiBackend {
     }
 
     fn display_root_movie_download_failed_message(&self, invalid_swf: bool, fetched_error: String) {
-        tracing::error!("skua.swf failed to load (invalid SWF: {invalid_swf}): {fetched_error}");
+        tracing::error!("turu.swf failed to load (invalid SWF: {invalid_swf}): {fetched_error}");
     }
 
     /// AQW's dash button and keys listen for the fingers that aren't the mouse

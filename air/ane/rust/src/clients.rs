@@ -1,7 +1,7 @@
 //! Turu Mas's tabs: several game clients on AIR's one stage (docs/AIR_ARMY_SPIKE.md), each a
 //! tab with its own bot, as Turu's Android app has them (`android/src/lib.rs`, `tab_request`).
 //!
-//! The host SWF numbers its clients (0 to [`MAX`] - 1): each client's skua talks through its own
+//! The host SWF numbers its clients (0 to [`MAX`] - 1): each client's turu.swf talks through its own
 //! `TuruExternal<n>`, so its calls reach its tab's bot ([`bot`]) and its tab's bot reaches it
 //! ([`AirFlashHost`]'s `client`). Client 0 is the first tab, which the host loads at start; tab
 //! requests (the tab strip's "+", Army > Accounts, Army Control) open, select and close the
@@ -86,7 +86,7 @@ fn handle(request: TabRequest) {
             let (tab, bot) = turu::add_tab(*startup);
             clients()[client] = Some(tab);
             let client = client as u8;
-            // Before the host loads its skua, whose first call asks the bot to load the game.
+            // Before the host loads its turu.swf, whose first call asks the bot to load the game.
             bot.set_host(Some(Arc::new(AirFlashHost { client })));
             send_host("open", client);
             select(tab);

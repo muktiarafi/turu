@@ -41,7 +41,7 @@ object Bridge {
     @JvmStatic
     external fun nativeStart(context: Context, filesDir: String)
 
-    /** Client `client`.s skua.swf called `ExternalInterface.call(name, ...)` (args as a JSON array; -1: the host SWF). */
+    /** Client `client`'s turu.swf called `ExternalInterface.call(name, ...)` (args as a JSON array; -1: the host SWF). */
     @JvmStatic
     external fun nativeFlashCall(name: String, args: String, client: Int)
 
@@ -49,7 +49,7 @@ object Bridge {
     @JvmStatic
     external fun nativeReply(id: Long, value: String, runMicros: Int)
 
-    /** The SWF rewritten for AIR (target 0: the game's client, 1: skua.swf, 2: another SWF); null if it can't run there. */
+    /** The SWF rewritten for AIR (target 0: the game's client, 2: another SWF); null if it can't run there. */
     @JvmStatic
     external fun nativePatch(swf: ByteArray, target: Int): ByteArray?
 

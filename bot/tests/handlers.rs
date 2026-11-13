@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use turu_bot::script::{self, ScriptStatus};
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
-/// Answers the paths the scripts read, like skua.swf would.
+/// Answers the paths the scripts read, like turu.swf would.
 struct FakeGame;
 
 impl FlashHost for FakeGame {

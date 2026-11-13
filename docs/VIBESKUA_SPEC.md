@@ -1063,9 +1063,9 @@ Rows top to bottom, margin 12, spacing 10:
 ## 8. Where Turu's host SWF differs
 
 Turu runs its own host SWF, `turu.swf` (`host/`, docs/HOST_SWF_PROPOSAL.md), written from this
-survey and checked against VibeSkua's SWF by parity mode (`TURU_HOST_PARITY=1`). It keeps the
-names, arguments and answers above, except where the parity allowlist (`bot/src/parity.rs`,
-`ALLOWED`, each with its reason) and the proposal's "deliberate differences" say otherwise:
+survey and was checked against VibeSkua's SWF by a parity mode while both shipped (R2–R6a). It
+keeps the names, arguments and answers above, except where the proposal's "deliberate
+differences" and the list below say otherwise:
 
 - Not carried over: the `lnk*`/`fc*` remote registry, `injectScript`, the quest window's two
   modules, the monster-click wiki link, and the callbacks nothing in Turu or its scripts called;

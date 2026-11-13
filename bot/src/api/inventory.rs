@@ -164,7 +164,7 @@ pub fn items(bot: &Bot, container: Container) -> BotResult<Vec<ItemBase>> {
 /// The container's items that `wanted` picks, in the list's order, read without copying the
 /// whole list: a member's inventory is 0.4 MB as JSON and a bank 0.9 MB, 4 to 10 ms of the
 /// game's thread per read, and scripts ask "do I have this item" several times a second.
-/// Reads only `fields` of every item (skua.swf's `selectArrayObjects`, a few kB), then the
+/// Reads only `fields` of every item (turu.swf's `selectArrayObjects`, a few kB), then the
 /// whole item at each place they pick (`getArrayObject`).
 ///
 /// `None` when it can't tell and the caller must read the whole list: a column came back

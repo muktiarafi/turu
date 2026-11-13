@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-/// What skua.swf's `getGameObject` gives for a path inside a value a fake keeps whole
+/// What turu.swf's `getGameObject` gives for a path inside a value a fake keeps whole
 /// (`world.questTree.1234`, `world.myAvatar.items.length`): `bases` are such paths and their
 /// JSON. `None` when `path` isn't below one of them.
 pub fn sub_path(path: &str, bases: &[(&str, String)]) -> Option<String> {

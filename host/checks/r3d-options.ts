@@ -1,6 +1,6 @@
 /*
 name: R3d options check
-description: Turns Hide Players, Disable FX, Disable Collisions and Lag Killer on for 10 s each, then off, through Turu's own options, so the two SWFs can be compared by eye and by log. Stand in a busy map cell (with other players) first.
+description: Turns Hide Players, Disable FX, Disable Collisions and Lag Killer on for 10 s each, then off, through Turu's own options, to check turu.swf's options and modules by eye and by log. Stand in a busy map cell (with other players) first.
 */
 import { bot } from "turu";
 

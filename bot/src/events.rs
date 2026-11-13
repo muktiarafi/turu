@@ -1,4 +1,4 @@
-//! Calls from `skua.swf` (`ExternalInterface.call`) and the bot's event bus
+//! Calls from `turu.swf` (`ExternalInterface.call`) and the bot's event bus
 //! (VibeSkua: `ScriptInterface.HandleFlashCall`, `IScriptEvent`).
 
 use crate::Bot;
@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Something that happened in the game. Scripts subscribe with `bot.events.on(...)`.
 #[derive(Debug, Clone)]
 pub enum BotEvent {
-    /// `skua.swf` finished loading the game client.
+    /// `turu.swf` finished loading the game client.
     GameLoaded,
     Logout,
     PlayerDeath,
@@ -245,7 +245,7 @@ impl EventBus {
     }
 }
 
-/// Entry point for `ExternalInterface.call(name, rest)` from `skua.swf`.
+/// Entry point for `ExternalInterface.call(name, rest)` from `turu.swf`.
 pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
     // `Externalizer.call(name, ...rest)` passes `rest` as one array argument.
     let args = match <[Value; 1]>::try_from(args) {
@@ -254,35 +254,6 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         Err(args) => args,
     };
     let arg_str = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
-
-    // Parity mode: Turu's SWF's events are only compared; VibeSkua's are compared and acted on.
-    if let Some(parity) = bot.flash.parity() {
-        let (side, event) = match name.strip_prefix(crate::parity::PREFIX) {
-            Some(event) => (crate::parity::Side::Turu, event),
-            None => (crate::parity::Side::VibeSkua, name),
-        };
-        for line in parity.event(side, event, &args) {
-            bot.logs.debug.push(line);
-        }
-        // The player's packets stand for Turu's side (R5): its SWF's own aren't compared.
-        if side == crate::parity::Side::Turu
-            && matches!(event, "packet" | "pext")
-            && bot.flash.player_packets()
-        {
-            return;
-        }
-        if side == crate::parity::Side::Turu {
-            if event == "error"
-                && let Some(line) = bot.flash.host_error_line(arg_str(0), arg_str(1))
-            {
-                bot.logs.debug.push(line);
-            }
-            return;
-        }
-        if name == "requestLoadGame" {
-            parity.restart();
-        }
-    }
 
     match name {
         "requestLoadGame" => {
@@ -356,7 +327,7 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
                 bot.logs.debug.push(format!("Open website: {url}"));
             }
         }
-        "debug" => bot.logs.debug.push(format!("[skua] {}", arg_str(0))),
+        "debug" => bot.logs.debug.push(format!("[host swf] {}", arg_str(0))),
         // Turu's host SWF: its own uncaught errors and the client's, and callbacks that threw.
         "error" => {
             if let Some(line) = bot.flash.host_error_line(arg_str(0), arg_str(1)) {
@@ -381,26 +352,12 @@ fn packet_sent(bot: &Arc<Bot>, packet: &str) {
     crate::api::packets::on_packet_sent(bot, packet);
 }
 
-/// A packet the game sent, from the player (`player_packets`): as the host SWF's `packet`, and in
-/// parity mode compared with VibeSkua's.
+/// A packet the game sent, from the player (`player_packets`): as the host SWF's `packet`.
 pub(crate) fn player_packet_sent(bot: &Arc<Bot>, packet: &str) {
-    if let Some(parity) = bot.flash.parity() {
-        let args = [Value::String(packet.to_owned())];
-        for line in parity.event(crate::parity::Side::Turu, "packet", &args) {
-            bot.logs.debug.push(line);
-        }
-    }
     packet_sent(bot, packet);
 }
 
-/// An extension response the client handled, from the player: as the host SWF's `pext`, and in
-/// parity mode compared with VibeSkua's.
+/// An extension response the client handled, from the player: as the host SWF's `pext`.
 pub(crate) fn player_extension_packet(bot: &Arc<Bot>, packet: Value) {
-    if let Some(parity) = bot.flash.parity() {
-        let args = [Value::String(packet.to_string())];
-        for line in parity.event(crate::parity::Side::Turu, "pext", &args) {
-            bot.logs.debug.push(line);
-        }
-    }
     crate::api::packets::on_extension_packet(bot, packet);
 }

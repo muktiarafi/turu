@@ -1,6 +1,6 @@
 /*
 name: R3c login check
-description: Relogs twice on the quietest free server (never Twilly, Artix or Alteon): once by name (connectToServer), once from the server list (clickServer). Uses only R2-R3c's callbacks, so it runs on turu.swf alone and on VibeSkua's SWF. Log in by hand first; give it about two minutes.
+description: Relogs twice on the quietest free server (never Twilly, Artix or Alteon): once by name (connectToServer), once from the server list (clickServer). Checks turu.swf's login callbacks. Log in by hand first; give it about two minutes.
 */
 import { bot } from "turu";
 

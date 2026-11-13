@@ -79,8 +79,9 @@ Calls are synchronous (no `await`). API: [bot/js/turu.ts](bot/js/turu.ts). Guide
   team (SharpTheNightmare, wtffidy, omega13-engr, BrenoHenrike, PUNK3DAF, LordExelot, l0newolf12
   and contributors): the original framework, script API and the C# scripts Turu's scripts port.
 - [VibeSkua](https://github.com/NinjaXz/VibeSkua) by NinjaXz, building on
-  [ArrowDev's Avalonia port](https://github.com/ArrowDev123/Skua): the client Turu reproduces,
-  and its `skua.swf`, which Turu ships unchanged.
+  [ArrowDev's Avalonia port](https://github.com/ArrowDev123/Skua): the client Turu reproduces.
+  Turu's own host SWF, `turu.swf`, is written from a survey of its behaviour
+  (docs/VIBESKUA_SPEC.md), not from its source.
 - [Ruffle](https://ruffle.rs) and [Mugetsu](https://github.com/mugetsu-aqw/mugetsu): the Flash
   player and its AQW patches.
 
@@ -88,6 +89,6 @@ Calls are synchronous (no `await`). API: [bot/js/turu.ts](bot/js/turu.ts). Guide
 
 Turu is GPL-3.0-or-later ([LICENSE](LICENSE)). Ruffle is MIT / Apache-2.0
 ([LICENSE-RUFFLE.md](LICENSE-RUFFLE.md)); Mugetsu is GPL-3.0. Skua, VibeSkua and Scripts publish
-no license, so the GPL doesn't cover `skua.swf` or the ported scripts; their authors keep their
+no license, so the GPL doesn't cover the ported scripts; their authors keep their
 rights (open an issue if you're one of them and want something changed). Turu isn't affiliated
 with Artix Entertainment or any of the projects above.

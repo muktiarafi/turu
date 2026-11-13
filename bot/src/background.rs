@@ -1,5 +1,5 @@
 //! The bot's own threads (VibeSkua: the 20 ms "ScriptInterface" timer and the startup
-//! handler): answers `skua.swf`'s startup calls, finishes packet work that needs Flash, keeps
+//! handler): answers `turu.swf`'s startup calls, finishes packet work that needs Flash, keeps
 //! the options applied in game and watches for disconnects (auto-relogin).
 
 use crate::Bot;
@@ -35,6 +35,13 @@ fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
     // VibeSkua's "Client Animation Frame-rate": the host SWF runs at its own rate until the
     // game's FPS setting (or Set FPS) applies in game.
     let fps = bot.settings.read().animation_frame_rate.max(1);
+    for gone in ["TURU_HOST_SWF", "TURU_HOST_PARITY"] {
+        if std::env::var_os(gone).is_some() {
+            bot.logs.debug.push(format!(
+                "{gone} has no effect any more: Turu runs its own host SWF, turu.swf"
+            ));
+        }
+    }
     if let Some(info) = bot.flash.ask_host_info() {
         bot.logs
             .debug

@@ -577,7 +577,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             return;
         }
     };
-    // skua.swf's stage until a window sets the game's size.
+    // turu.swf's stage until a window sets the game's size.
     let Some((descriptors, blit, renderer)) = screen::gpu(graphics, engine::STAGE) else {
         tracing::error!("No graphics API worked; the game can't start");
         return;
@@ -801,8 +801,8 @@ fn read_args(file: &Path) -> Vec<OsString> {
     }
 }
 
-/// skua.swf's player, drawing with `renderer`, with the desktop's defaults. Its viewport is
-/// skua.swf's stage until the screen's first frame sets it.
+/// turu.swf's player, drawing with `renderer`, with the desktop's defaults. Its viewport is
+/// turu.swf's stage until the screen's first frame sets it.
 fn build_player(
     root: &Path,
     movie_url: &Url,

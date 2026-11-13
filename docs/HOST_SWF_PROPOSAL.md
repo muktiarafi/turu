@@ -5,8 +5,8 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 (auras, monsters, combat); R3b done (inventory, shop, player, world); R3c done (server
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
-four tabs); R5 done (packets from the player); R6a written (`turu.swf` the default), awaiting its farm
-check; the rest are proposals. Replaces the plan to fork VibeSkua's
+four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b built on `host-r6b` (VibeSkua's SWF,
+parity mode and the opt-out removed), to merge after a release with R6a; the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -415,10 +415,13 @@ In two parts, a release apart:
   STATUS.md, HEADLESS.md, TURU_MAS.md, CLAUDE.md. Done when, besides the R1-R5 checks: GoldFarm for
   15 minutes on each SWF alone (release build) keeps its quest turn-ins per minute with no new
   "too soon" (FarmerJoe DoAll measures a character's progression more than the host SWF).
-- **R6b, the removal**, after a release with no reports against `turu.swf`: VibeSkua's SWF goes,
-  with `Target::Skua`, `Options::client`, the skua rules (`stg`/`removeChildAt`),
-  `TuruExternal0`…`3` and `TuruLoader0`…`3`, parity mode and the opt-out. The game client's
-  rules and `shared_stage_swf` for the SWFs it loads stay. Docs: the README's license section.
+- **R6b, the removal**, merged after a release with no reports against `turu.swf`: VibeSkua's
+  SWF goes (`bot/assets/skua.swf`, `HostSwf`), with `Target::Skua`, `Options::client`, the skua
+  rules (`ExternalInterface`, `stg`/`removeChildAt`), `TuruExternal0`…`3`, `TuruLoader0`…`3`,
+  `skuaFor`, parity mode (`parity.rs`, `FlashHost::call_pair`, `turu.swf`'s `turu.` prefix), the
+  opt-out and `TURU_HOST_SWF`/`TURU_HOST_PARITY` (set, they only log that they're ignored). The
+  game client's rules and `shared_stage_swf` for the SWFs it loads stay; `host/checks/` stays as
+  `turu.swf` smoke tests. Docs: the README's credits and license, and the rest.
 
 ### M4: Batched reads
 

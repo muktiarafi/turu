@@ -4,20 +4,17 @@ package {
     import flash.utils.getTimer;
 
     /**
-     * skua.swf's `flash.external.ExternalInterface` under AIR, which has none on Android:
-     * `turu_air_patch` makes skua's `ExternalInterface` this class, which has the same
-     * `addCallback` and `call`, through Turu's native extension.
+     * The host SWF's `flash.external.ExternalInterface` under AIR, which has none on Android:
+     * turu.swf reaches it through [TuruHost] (`addCallback`, `call`), with its tab's number, through
+     * Turu's native extension. The engine's calls name the client too, so each tab's bot talks to
+     * its own turu.swf.
      *
-     * Each game client (tab) has its own skua, patched to call `TuruExternal<n>` (`TuruExternal0`,
-     * ...), which hand their calls here with the client's number; the engine's calls name the
-     * client too, so each tab's bot talks to its own skua.
-     *
-     * * `addCallback(name, fn)` keeps skua's callbacks; the engine's calls into skua arrive as
+     * * `addCallbackFor(client, name, fn)` keeps a client's callbacks; the engine's calls arrive as
      *   status events ("call", `{"id", "client", "name", "args"}`), run here on AIR's thread, and the result
      *   goes back with `reply`, stringified as the Ruffle host does (`ExternalInterface`'s rules:
      *   booleans "true"/"false", null/undefined "null", whole numbers without a point, other
      *   values JSON).
-     * * `call(name, ...)` hands skua's calls to the engine, its arguments as JSON.
+     * * `callFrom(client, name, rest)` hands a client's calls to the engine, its arguments as JSON.
      */
     public class TuruExternal {
         public static var native:TuruAirNative;
@@ -33,7 +30,7 @@ package {
             native.addEventListener(StatusEvent.STATUS, onStatus);
         }
 
-        /** Client `client`'s skua's `ExternalInterface.addCallback`. */
+        /** Client `client`'s `ExternalInterface.addCallback`. */
         public static function addCallbackFor(client:int, name:String, fn:Function):void {
             if (callbacks[client] == null) {
                 callbacks[client] = {};
@@ -41,7 +38,7 @@ package {
             callbacks[client][name] = fn;
         }
 
-        /** Client `client`'s skua's `ExternalInterface.call` (-1: the host's own). */
+        /** Client `client`'s `ExternalInterface.call` (-1: the host's own). */
         public static function callFrom(client:int, name:String, rest:Array):* {
             var args:String;
             try {

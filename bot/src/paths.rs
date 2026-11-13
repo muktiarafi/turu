@@ -103,17 +103,16 @@ impl Paths {
         self.root.join("loadouts")
     }
 
-    pub fn host_swf(&self, swf: crate::HostSwf) -> PathBuf {
-        self.root.join(swf.file_name())
+    pub fn host_swf(&self) -> PathBuf {
+        self.root.join("turu.swf")
     }
 
-    /// Writes the embedded host SWF (`skua.swf` or `turu.swf`) to the data directory and returns
-    /// its path.
-    pub fn write_host_swf(&self, swf: crate::HostSwf) -> io::Result<PathBuf> {
+    /// Writes the embedded host SWF, `turu.swf`, to the data directory and returns its path.
+    pub fn write_host_swf(&self) -> io::Result<PathBuf> {
         self.ensure()?;
-        let path = self.host_swf(swf);
-        if fs::read(&path).ok().as_deref() != Some(swf.bytes()) {
-            fs::write(&path, swf.bytes())?;
+        let path = self.host_swf();
+        if fs::read(&path).ok().as_deref() != Some(crate::TURU_SWF) {
+            fs::write(&path, crate::TURU_SWF)?;
         }
         Ok(path)
     }

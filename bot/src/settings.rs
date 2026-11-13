@@ -14,10 +14,6 @@ pub struct AppSettings {
     /// VibeSkua's "Client Animation Frame-rate": the frame rate the client starts with, until
     /// the game's own FPS setting (or Options > Game > Set FPS) applies in game.
     pub animation_frame_rate: i32,
-    /// Start VibeSkua's host SWF (`skua.swf`) instead of Turu's own (`turu.swf`); read at
-    /// launch. `TURU_HOST_SWF` overrides it ([`crate::HostSwf::chosen`]). Replaces an earlier
-    /// `turuHostSwf`, which is ignored, so every install moved to Turu's.
-    pub use_vibe_skua_host_swf: bool,
     /// VibeSkua's "Grandpa Mode" (`GrandpaMode`): larger text in the logs and the packet tools.
     pub grandpa_mode: bool,
     // Auto Updates & Sync. The script ones are read at launch (`repo::ScriptRepo::startup`);
@@ -92,7 +88,6 @@ impl Default for AppSettings {
         Self {
             show_username_in_title: true,
             animation_frame_rate: GAME_FRAME_RATE,
-            use_vibe_skua_host_swf: false,
             grandpa_mode: false,
             check_bot_scripts_updates: true,
             auto_update_bot_scripts: true,
@@ -212,14 +207,17 @@ mod tests {
     use super::FastTravel;
 
     #[test]
-    fn an_old_turu_host_swf_setting_is_ignored() {
-        let old: super::AppSettings =
-            serde_json::from_str(r#"{"turuHostSwf": false, "tabLimit": 3}"#).unwrap();
-        assert!(!old.use_vibe_skua_host_swf, "everyone moves to Turu's own");
+    fn the_old_host_swf_settings_are_ignored() {
+        let old: super::AppSettings = serde_json::from_str(
+            r#"{"turuHostSwf": false, "useVibeSkuaHostSwf": true, "tabLimit": 3}"#,
+        )
+        .unwrap();
         assert_eq!(old.tab_limit, 3);
-        let opted_out: super::AppSettings =
-            serde_json::from_str(r#"{"useVibeSkuaHostSwf": true}"#).unwrap();
-        assert!(opted_out.use_vibe_skua_host_swf);
+        let saved = serde_json::to_string(&old).unwrap();
+        assert!(
+            !saved.contains("HostSwf"),
+            "dropped on the next save: {saved}"
+        );
     }
 
     #[test]

@@ -43,8 +43,8 @@ package com.muktiarafi.turu.air {
         }
 
         /**
-         * Client `client`'s skua.swf's `ExternalInterface.call(name, ...)` for the engine, its
-         * arguments as a JSON array (-1: the host SWF's own). The engine's calls into skua come as status events "call" (level: JSON with
+         * Client `client`'s turu.swf's `ExternalInterface.call(name, ...)` for the engine, its
+         * arguments as a JSON array (-1: the host SWF's own). The engine's calls into turu.swf come as status events "call" (level: JSON with
          * `id`, `name` and `args`), answered with `reply`.
          */
         public function flashCall(name:String, args:String, client:int = -1):void {
@@ -60,7 +60,7 @@ package com.muktiarafi.turu.air {
             }
         }
 
-        /** The SWF rewritten for AIR (`GAME`, `SKUA` or `ASSET`), or null if it can't run there. */
+        /** The SWF rewritten for AIR (`GAME` or `ASSET`), or null if it can't run there. */
         public function patchSwf(swf:ByteArray, target:int):ByteArray {
             return context != null ? context.call("patchSwf", swf, target) as ByteArray : null;
         }
@@ -93,15 +93,9 @@ package com.muktiarafi.turu.air {
         }
 
         public static const GAME:int = 0;
-        public static const SKUA:int = 1;
-        /** Another SWF the game or skua loads (a background, an injected script). */
+        /** Another SWF the game loads (a map, an asset, the game menu). */
         public static const ASSET:int = 2;
         /** Or'd with a target: the game clients (tabs) share the stage. */
         public static const SHARED_STAGE:int = 0x10;
-
-        /** `SKUA` for client `client`: its `ExternalInterface` and loaders are that client's. */
-        public static function skuaFor(client:int):int {
-            return SKUA | SHARED_STAGE | ((client + 1) << 8);
-        }
     }
 }

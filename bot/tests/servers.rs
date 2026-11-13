@@ -1,4 +1,4 @@
-//! `bot.servers` and auto-relogin against a fake skua.swf whose login screen and servers work.
+//! `bot.servers` and auto-relogin against a fake turu.swf whose login screen and servers work.
 
 use parking_lot::Mutex;
 use serde_json::json;

@@ -13,7 +13,7 @@ package {
 
     /**
      * Turu Mas's game clients (tabs) on AIR's one stage (docs/AIR_ARMY_SPIKE.md), by client
-     * number. The game, skua and the SWFs the game loads find their game as
+     * number. The game and the SWFs it loads find their game as
      * `stage.getChildAt(0)`; `turu_air_patch::Options::shared_stage` makes each of those
      * [rootOf], which finds the game the asking object belongs to. The client on screen has its
      * game at stage child 0, so whatever still asks the stage directly gets the one shown; the
@@ -21,9 +21,9 @@ package {
      */
     public class TuruStage {
         public static var stage:Stage;
-        /** Each client's skua (`skua::Main`), while it's open. */
+        /** Each client's host SWF (`turu.host::Main`), while it's open. */
         public static var mains:Array = [];
-        /** Each client's game, once its skua has loaded it. */
+        /** Each client's game, once its host SWF has loaded it. */
         public static var games:Array = [];
         /** The loader of each client's game ([TuruLoader]). */
         public static var gameLoaders:Array = [];
@@ -63,7 +63,7 @@ package {
         /** What `domain` holds of the tabs' classes, and what the tabs have so far. */
         private static function describe(domain:ApplicationDomain):String {
             var has:Array = [];
-            for each (var name:String in ["Game", "turu.host::Main", "skua::Main", "TuruStage"]) {
+            for each (var name:String in ["Game", "turu.host::Main", "TuruStage"]) {
                 try {
                     if (domain.hasDefinition(name)) {
                         has.push(name);
@@ -91,7 +91,7 @@ package {
                 (lost.length > 0 ? lost.join(", ") : "none");
         }
 
-        /** Scales and moves a client's game (or skua) to fit AIR's view. */
+        /** Scales and moves a client's game (or host SWF) to fit AIR's view. */
         public static function place(d:DisplayObject):void {
             if (d != null) {
                 d.scaleX = fitScale;
@@ -116,7 +116,7 @@ package {
             }
         }
 
-        /** [place]s every client's game, skua and overlay. */
+        /** [place]s every client's game, host SWF and overlay. */
         public static function placeAll():void {
             for each (var list:Array in [games, mains, overlays]) {
                 for each (var d:DisplayObject in list) {
@@ -152,8 +152,8 @@ package {
         }
 
         /**
-         * skua's `stage.removeChildAt(0)`: at first skua itself (before it adds the game); when
-         * it loads the game again (a relogin), the game it had put there.
+         * The host SWF taking itself off the stage (`TuruHost.showGame`): at first itself (before
+         * it adds the game); when it loads the game again, the game it had put there.
          */
         public static function removeOwn(main:DisplayObject):void {
             if (main == null) {
@@ -223,7 +223,7 @@ package {
             if (stage != null && stage.focus != null && clientOfObject(stage.focus) != client) {
                 stage.focus = null;
             }
-            // A skua still loading its game: shown only while its client is.
+            // A host SWF still loading its game: shown only while its client is.
             for (var j:int = 0; j < mains.length; j++) {
                 var main:DisplayObject = mains[j] as DisplayObject;
                 if (main != null && main.parent != null) {
@@ -247,8 +247,8 @@ package {
 
         /**
          * The client whose code runs in `domain` (the code's own `ApplicationDomain.currentDomain`,
-         * which the patched sites pass), or -1. Each client's skua has a domain of its own, its
-         * game and maps load in it or below, so the `Game` class (or skua's main class, before the
+         * which the patched sites pass), or -1. Each client's host SWF has a domain of its own, its
+         * game and maps load in it or below, so the `Game` class (or the host SWF's class, before the
          * game) found from there is that client's.
          */
         public static function clientOfDomain(domain:ApplicationDomain):int {
@@ -292,9 +292,9 @@ package {
 
         /**
          * The parent for a `new ApplicationDomain()` in client code (`turu_air_patch` gives it
-         * one): the domain of the client's skua. Without a parent the domain has only the
+         * one): the domain of the client's host SWF. Without a parent the domain has only the
          * system's, so the SWFs loaded there (the game menu, the client's assets), patched to
-         * call `TuruStage`, would fail with "TuruStage is not defined". Skua's domain has this
+         * call `TuruStage`, would fail with "TuruStage is not defined". The host SWF's domain has this
          * class (through the host's) and names the client ([clientOfDomain]) without the game's
          * classes, which would shadow the assets' own.
          */
@@ -312,7 +312,7 @@ package {
             return ApplicationDomain.currentDomain;
         }
 
-        /** The client whose game (or overlay, or skua) `x` is in, or -1. */
+        /** The client whose game (or overlay, or host SWF) `x` is in, or -1. */
         public static function clientOfObject(x:Object):int {
             var d:DisplayObject = x as DisplayObject;
             if (d == null) {
@@ -420,7 +420,7 @@ package {
          * goes into that client's overlay instead, so it shows, hides and fits with its game.
          */
         public static function stageAddChild(parent:*, child:*, domain:ApplicationDomain):* {
-            // Not the stage, or skua putting a game (or itself) there: as written.
+            // Not the stage, or a host SWF putting a game (or itself) there: as written.
             if (!(parent is Stage) || games.indexOf(child) >= 0 || mains.indexOf(child) >= 0) {
                 return parent.addChild(child);
             }

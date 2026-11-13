@@ -159,7 +159,7 @@ fn inventory_json() -> String {
 struct FakeGame {
     sent: Mutex<Vec<String>>,
     calls: Mutex<Vec<String>>,
-    /// Answers skua.swf's `selectArrayObjects` and `getArrayObject` for the inventory.
+    /// Answers turu.swf's `selectArrayObjects` and `getArrayObject` for the inventory.
     narrow: std::sync::atomic::AtomicBool,
     /// `getArrayObject` gives the item one place further: the list changed since the select.
     shifted: std::sync::atomic::AtomicBool,

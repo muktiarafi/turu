@@ -29,7 +29,6 @@ pub mod monitor;
 pub mod notifications;
 pub mod options;
 pub mod packet_filters;
-pub mod parity;
 pub mod paths;
 pub mod perf;
 pub mod player_packets;
@@ -63,60 +62,9 @@ use state::GameState;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// `skua.swf`, the AS3 host VibeSkua loads (Skua.AS3/skua/bin/skua.swf). It loads the AQW
-/// client from game.aq.com and exposes the game to the bot through ExternalInterface.
-pub const SKUA_SWF: &[u8] = include_bytes!("../assets/skua.swf");
-
-/// `turu.swf`, Turu's own host SWF (`host/`, docs/HOST_SWF_PROPOSAL.md), still being written: run
-/// only with `TURU_HOST_SWF=turu` ([`HostSwf`]).
+/// `turu.swf`, Turu's host SWF (`host/`, docs/HOST_SWF_PROPOSAL.md): it loads the AQW client
+/// from game.aq.com and exposes the game to the bot through ExternalInterface.
 pub const TURU_SWF: &[u8] = include_bytes!("../assets/turu.swf");
-
-/// The host SWF Turu starts: Turu's own (docs/HOST_SWF_PROPOSAL.md), or VibeSkua's when Options >
-/// Application or `TURU_HOST_SWF` asks for it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HostSwf {
-    VibeSkua,
-    Turu,
-}
-
-impl HostSwf {
-    /// The one `TURU_HOST_SWF` asks for (`turu` or `vibeskua`), if it's set.
-    pub fn from_env() -> Option<Self> {
-        match std::env::var("TURU_HOST_SWF").as_deref() {
-            Ok("turu") => Some(Self::Turu),
-            Ok("vibeskua") => Some(Self::VibeSkua),
-            Ok("") | Err(_) => None,
-            Ok(other) => {
-                tracing::warn!("TURU_HOST_SWF={other}: expected turu or vibeskua; ignored");
-                None
-            }
-        }
-    }
-
-    /// `TURU_HOST_SWF`, else Turu's own unless Options > Application's "Use VibeSkua's Host SWF".
-    pub fn chosen(settings: &settings::AppSettings) -> Self {
-        Self::from_env().unwrap_or(if settings.use_vibe_skua_host_swf {
-            Self::VibeSkua
-        } else {
-            Self::Turu
-        })
-    }
-
-    /// Its file name in the data directory.
-    pub fn file_name(self) -> &'static str {
-        match self {
-            Self::VibeSkua => "skua.swf",
-            Self::Turu => "turu.swf",
-        }
-    }
-
-    pub fn bytes(self) -> &'static [u8] {
-        match self {
-            Self::VibeSkua => SKUA_SWF,
-            Self::Turu => TURU_SWF,
-        }
-    }
-}
 
 /// The script API (`import ... from "turu"`): the runtime scripts load, and the types editors
 /// read from the scripts folder's `types/turu.ts`.
@@ -211,7 +159,6 @@ impl Bot {
             notifications: notifications::Feed::default(),
             paths,
         });
-        bot.flash.set_owner(&bot);
         background::start(&bot);
         webhooks::start(&bot);
         monitor::start(&bot);
@@ -230,7 +177,7 @@ impl Bot {
         self.flash.set_host(host);
     }
 
-    /// Handles a call made by `skua.swf` (`ExternalInterface.call`). Called on the player's
+    /// Handles a call made by `turu.swf` (`ExternalInterface.call`). Called on the player's
     /// thread while the player is locked: it must not call into Flash or block.
     pub fn on_flash_call(self: &Arc<Self>, name: &str, args: Vec<serde_json::Value>) {
         events::on_flash_call(self, name, args);

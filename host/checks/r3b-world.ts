@@ -1,6 +1,6 @@
 /*
 name: R3b world check
-description: Walks, moves between cells and reads a shop using only R2-R3b's callbacks, so it runs on turu.swf alone and on VibeSkua's SWF (compare their outgoing packets). Start in Battleon (/join battleon) with a shop opened by hand (e.g. Battleon's Yulgar's Inn shop) and closed again. It buys nothing.
+description: Walks, moves between cells and reads a shop to check turu.swf's world and shop callbacks (watch the outgoing packets in the log). Start in Battleon (/join battleon) with a shop opened by hand (e.g. Battleon's Yulgar's Inn shop) and closed again. It buys nothing.
 */
 import { bot } from "turu";
 

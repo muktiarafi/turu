@@ -1,5 +1,4 @@
-//! Keeps a line that keeps coming from flooding a log: the host SWF's errors (`flash.rs`) and
-//! parity mismatches (`parity.rs`).
+//! Keeps a line that keeps coming from flooding a log: the host SWF's errors (`flash.rs`).
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};

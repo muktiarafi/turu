@@ -1,4 +1,4 @@
-//! Packet handling (`pext` / `packet` from skua.swf) -> state, stats and events.
+//! Packet handling (`pext` / `packet` from turu.swf) -> state, stats and events.
 
 use parking_lot::Mutex;
 use serde_json::{Value, json};

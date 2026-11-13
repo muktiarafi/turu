@@ -362,15 +362,15 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
         ("--power", Some("-p"), Some("high")),
         ("--graphics", Some("-g"), Some(graphics)),
     ]);
-    // Turu: the host SWF (VibeSkua's skua.swf), which loads AQW and exposes it to the bot.
-    let skua_url = match turu::host_swf_url() {
+    // Turu: its host SWF, turu.swf, which loads AQW and exposes it to the bot.
+    let host_url = match turu::host_swf_url() {
         Ok(url) => url,
         Err(e) => {
             eprintln!("Couldn't write the host SWF: {e}");
             std::process::exit(1);
         }
     };
-    let mut full = vec![args[0].clone(), skua_url.into()];
+    let mut full = vec![args[0].clone(), host_url.into()];
     for (flag, short, value) in defaults {
         if given(flag) || short.is_some_and(given) {
             continue;
@@ -515,7 +515,7 @@ fn main() -> Result<(), Error> {
     // Turu: `--headless` runs the game without a window.
     if turu::headless() {
         let Some(movie_url) = preferences.cli.movie_url.clone() else {
-            return Err(anyhow!("--headless needs skua.swf"));
+            return Err(anyhow!("--headless needs the host SWF, turu.swf"));
         };
         return headless::run(preferences, movie_url);
     }

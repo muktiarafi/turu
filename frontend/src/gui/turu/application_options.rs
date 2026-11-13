@@ -169,15 +169,6 @@ fn vibeskua_entries() -> Vec<Entry> {
                 Field::Int(|s| &mut s.animation_frame_rate, "FPS", 1, i32::MAX)
             )
         },
-        Entry {
-            restart: true,
-            ..entry!(
-                General,
-                "Use VibeSkua's Host SWF",
-                "Start VibeSkua's host SWF instead of Turu's own: the SWF that loads the game and answers the bot. Both do the same; turn this on if something misbehaves with Turu's, and please report it",
-                Field::Bool(|s| &mut s.use_vibe_skua_host_swf)
-            )
-        },
         entry!(
             General,
             "Frame Interpolation",

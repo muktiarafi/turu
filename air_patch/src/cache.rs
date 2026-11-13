@@ -3,7 +3,7 @@
 //! on a phone).
 //!
 //! A file is found by what went in: the input's hash and length, which caller it was for (the
-//! client, skua.swf, another SWF) and this crate's rules (a hash of `lib.rs`, so a Turu build
+//! client, another SWF) and this crate's rules (a hash of `lib.rs`, so a Turu build
 //! that patches differently never loads what an older one wrote). A game update is a new input,
 //! so a new file. The folder keeps the [`KEEP`] files used last.
 
@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
-/// How many patched SWFs the folder keeps: the client of a few game versions, skua.swf, and the
-/// few other SWFs skua loads.
+/// How many patched SWFs the folder keeps: the client of a few game versions and the SWFs it
+/// loads.
 pub const KEEP: usize = 16;
 
 /// The patching rules: a hash of the source that holds them.
@@ -186,9 +186,9 @@ mod tests {
         // An uncompressed SWF shorter than its header says.
         let mut short = b"FWS\x0a".to_vec();
         short.extend_from_slice(&100u32.to_le_bytes());
-        cache.put(b"skua", "skua", &short).unwrap();
-        assert_eq!(cache.get(b"skua", "skua"), None);
-        assert!(!cache.path(b"skua", "skua").exists());
+        cache.put(b"asset", "asset", &short).unwrap();
+        assert_eq!(cache.get(b"asset", "asset"), None);
+        assert!(!cache.path(b"asset", "asset").exists());
     }
 
     #[test]

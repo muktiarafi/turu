@@ -1,11 +1,11 @@
-//! `bot.reputation`, `bot.self` and `bot.target` against a fake skua.swf.
+//! `bot.reputation`, `bot.self` and `bot.target` against a fake turu.swf.
 
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
-/// Answers the faction list and skua.swf's aura callbacks; records their arguments.
+/// Answers the faction list and turu.swf's aura callbacks; records their arguments.
 #[derive(Default)]
 struct FakeGame {
     calls: Mutex<Vec<(String, Vec<FlashArg>)>>,

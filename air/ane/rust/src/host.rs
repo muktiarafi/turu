@@ -1,4 +1,4 @@
-//! [`AirFlashHost`]: the bot's calls into `skua.swf`, through AIR.
+//! [`AirFlashHost`]: the bot's calls into `turu.swf`, through AIR.
 //!
 //! A bot thread can't run AS3: AIR runs it on its own thread. So a call becomes a status event
 //! ("call", with `{"id", "client", "name", "args"}` as JSON) that Kotlin's `Bridge.dispatch` sends; the host
@@ -33,7 +33,7 @@ fn pending() -> std::sync::MutexGuard<'static, Option<Pending>> {
     PENDING.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// One game client's skua (a tab's): `client` is its number in the host SWF.
+/// One game client's turu.swf (a tab's): `client` is its number in the host SWF.
 pub(crate) struct AirFlashHost {
     pub client: u8,
 }

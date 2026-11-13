@@ -1,4 +1,4 @@
-//! Typed access to `skua.swf`'s ExternalInterface callbacks (VibeSkua: `IFlashUtil`).
+//! Typed access to `turu.swf`'s ExternalInterface callbacks (VibeSkua: `IFlashUtil`).
 //!
 //! Paths are dotted and rooted at the game (`world.myAvatar.objData.intGold`); `get_static`
 //! roots them at the game's class (`loginInfo.strUsername`). See docs/VIBESKUA_SPEC.md, section 2.
@@ -6,14 +6,13 @@
 use crate::control::ScriptControl;
 use crate::error::{BotError, BotResult};
 use crate::host::{FlashArg, FlashHost};
-use crate::parity::{self, Parity};
 use crate::perf::PerfStats;
 use crate::repeat_log::RepeatLog;
 use parking_lot::{Mutex, RwLock};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeSet;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::Arc;
 use std::time::Instant;
 
 pub struct Flash {
@@ -21,10 +20,6 @@ pub struct Flash {
     /// What the host SWF says of itself; `None` for VibeSkua's, or before it's asked.
     info: RwLock<Option<Arc<HostInfo>>>,
     errors: Mutex<RepeatLog>,
-    /// `TURU_HOST_PARITY=1`: reads are asked of both host SWFs and compared.
-    parity: Option<Parity>,
-    /// The bot this belongs to, for parity's lines in its debug log.
-    owner: OnceLock<Weak<crate::Bot>>,
     control: Arc<ScriptControl>,
     perf: Arc<PerfStats>,
 }
@@ -60,8 +55,6 @@ impl Flash {
             host: RwLock::new(None),
             info: RwLock::new(None),
             errors: Mutex::default(),
-            parity: Parity::from_env(),
-            owner: OnceLock::new(),
             control,
             perf: Arc::default(),
         }
@@ -94,15 +87,6 @@ impl Flash {
             .is_some_and(|h| h.player_packets())
     }
 
-    pub(crate) fn set_owner(&self, bot: &Arc<crate::Bot>) {
-        let _ = self.owner.set(Arc::downgrade(bot));
-    }
-
-    /// Parity mode's comparisons, when it's on.
-    pub fn parity(&self) -> Option<&Parity> {
-        self.parity.as_ref()
-    }
-
     /// What the host SWF said of itself when the client was loaded; `None` for VibeSkua's.
     pub fn host_info(&self) -> Option<Arc<HostInfo>> {
         self.info.read().clone()
@@ -118,14 +102,6 @@ impl Flash {
             .flatten()
             .map(Arc::new);
         *self.info.write() = info.clone();
-        if let Some(parity) = &self.parity {
-            let turu = self
-                .call_host(&format!("{}hostInfo", parity::PREFIX), vec![])
-                .ok()
-                .and_then(|raw| serde_json::from_str::<Option<HostInfo>>(unquote_empty(&raw)).ok())
-                .flatten();
-            parity.set_turu_callbacks(turu.map(|t| t.callbacks));
-        }
         info
     }
 
@@ -163,50 +139,7 @@ impl Flash {
             self.control.check()?;
             return Err(BotError::NotInHostSwf(name.to_owned()));
         }
-        if let Some(parity) = &self.parity
-            && parity.compares(name)
-        {
-            return self.call_compared(parity, name, args);
-        }
         self.call_host(name, args)
-    }
-
-    /// Parity mode: `name` on VibeSkua's SWF and on Turu's in one go; VibeSkua's answer.
-    fn call_compared(&self, parity: &Parity, name: &str, args: Vec<FlashArg>) -> BotResult<String> {
-        self.control.check()?;
-        let host = self.host.read().clone();
-        let Some(host) = host else {
-            return Err(BotError::Host(crate::host::HostError::NoPlayer));
-        };
-        let detail = args
-            .iter()
-            .map(|a| match a {
-                FlashArg::String(s) => s.clone(),
-                other => format!("{other:?}"),
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let path = args.first().and_then(|a| match a {
-            FlashArg::String(path) if crate::perf::takes_path(name) => Some(path.clone()),
-            _ => None,
-        });
-        let asked = Instant::now();
-        let turu_name = format!("{}{name}", parity::PREFIX);
-        let result = host.call_pair((name, args.clone()), (&turu_name, args));
-        self.perf.record_call(
-            name,
-            path.as_deref(),
-            asked.elapsed(),
-            None,
-            result.as_ref().ok().map(|(a, _)| a.len()),
-        );
-        let (vibeskua, turu) = result.map_err(BotError::from)?;
-        if let Some(line) = parity.call(name, &detail, &vibeskua, &turu)
-            && let Some(bot) = self.owner.get().and_then(Weak::upgrade)
-        {
-            bot.logs.debug.push(line);
-        }
-        Ok(vibeskua)
     }
 
     fn call_host(&self, name: &str, args: Vec<FlashArg>) -> BotResult<String> {

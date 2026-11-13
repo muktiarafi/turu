@@ -52,7 +52,7 @@ pub enum RuffleEvent {
     /// Export Ruffle Bundle from currently playing content and open save dialog.
     ExportBundle,
 
-    /// Turu: a bot thread calls one of skua.swf's ExternalInterface callbacks.
+    /// Turu: a bot thread calls one of turu.swf's ExternalInterface callbacks.
     TuruFlashCall(crate::turu::TuruFlashCall),
 
     /// Turu: open, select or close a tab (a game client of its own).

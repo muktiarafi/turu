@@ -292,7 +292,7 @@ impl ActivePlayer {
         RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
 
         if let Some(bot) = &bot {
-            // Turu: skua.swf talks to the tab's bot through ExternalInterface.
+            // Turu: turu.swf talks to the tab's bot through ExternalInterface.
             builder = builder.with_external_interface(Box::new(crate::turu::TuruExternalInterface {
                 bot: bot.clone(),
             }));
@@ -345,7 +345,7 @@ impl ActivePlayer {
             .with_letterbox(opt.player.letterbox.unwrap_or(Letterbox::On))
             .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
             .with_quality(opt.player.quality.unwrap_or(StageQuality::High))
-            // Turu: skua.swf sets `stage.align = TOP`, which pins the game to the top of a
+            // Turu: turu.swf sets `stage.align = TOP`, which pins the game to the top of a
             // window taller than 960:550. Keep it centred unless `--align` asks otherwise.
             .with_align(
                 opt.player.align.unwrap_or_default(),

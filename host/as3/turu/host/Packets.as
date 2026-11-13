@@ -6,8 +6,8 @@ package turu.host {
  * - `pext`: every extension response, as JSON (`params.type`, `params.dataObj`).
  * - `packet`: every packet the client sends, read from SmartFox's debug messages, so `debug`
  *   is kept on (the game's own packet logger turns it off). SmartFox's client is sealed, so its
- *   sends can't be wrapped from here; a hook in the client replaces this later
- *   (docs/HOST_SWF_PROPOSAL.md, R5).
+ *   sends can't be wrapped from here. On the Ruffle builds the player reports the packets
+ *   instead (docs/HOST_SWF_PROPOSAL.md, R5); this capture serves Turu Mas.
  * - `packetFromServer`: the other debug messages, only after `setPacketEcho(true)`.
  * - `connectionLost`.
  *

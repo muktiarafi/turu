@@ -1,6 +1,6 @@
 /*
 name: R3a combat check
-description: Attacks the monsters in your cell for about 30 s using only R3a's callbacks, so it runs on turu.swf alone and on VibeSkua's SWF (compare their outgoing packets).
+description: Attacks the monsters in your cell for about 30 s to check turu.swf's combat callbacks (watch the outgoing attack packets in the log).
 */
 import { bot } from "turu";
 

@@ -1,5 +1,5 @@
 //! The counter-attack pause (VibeSkua `Combat.StopAttacking`, `EnableCounterHandler`,
-//! `UltraBossHelper`) against a fake skua.swf.
+//! `UltraBossHelper`) against a fake turu.swf.
 
 use parking_lot::Mutex;
 use serde_json::{Value, json};

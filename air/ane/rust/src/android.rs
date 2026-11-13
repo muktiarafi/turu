@@ -47,7 +47,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
-/// `Bridge.nativeFlashCall(name, args, client)`: client `client`'s `skua.swf` called
+/// `Bridge.nativeFlashCall(name, args, client)`: client `client`'s `turu.swf` called
 /// `ExternalInterface.call(name, ...)`, its arguments as a JSON array (-1: the host SWF itself).
 /// On AIR's thread: hands the call to that tab's bot, which never waits here.
 #[unsafe(no_mangle)]
@@ -101,8 +101,8 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeReply<'local>(
 
 /// `Bridge.nativePatch(swf, target)`: the SWF rewritten for AIR (`turu_air_patch`), or null when
 /// it can't run there (then the host refuses to load it). Target 0: the game's client, which must
-/// have its AIR mode; 1: skua.swf; 2: any other SWF the game or skua loads (a background, an
-/// injected script), patched as the client's but required to have nothing.
+/// have its AIR mode; 2: any other SWF the game loads (a map, an asset, the game menu), patched
+/// as the client's but required to have nothing. (1 was VibeSkua's skua.swf.)
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativePatch<'local>(
     mut unowned_env: EnvUnowned<'local>,
@@ -130,29 +130,19 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
     let cache = CACHE.get_or_init(|| {
         turu_air_patch::cache::PatchCache::new(turu_bot::paths::Paths::new().air_patched_dir())
     });
-    // Bit 0x10: the clients (tabs) share the stage. Bits 8 and up: skua's client, plus one.
+    // Bit 0x10: the clients (tabs) share the stage.
     let shared_stage = target & TARGET_SHARED_STAGE != 0;
     if shared_stage {
         SHARED_STAGE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
-    let client = u8::try_from(target >> 8)
-        .ok()
-        .and_then(|n| n.checked_sub(1));
-    let options = turu_air_patch::Options {
-        shared_stage,
-        client,
-    };
+    let options = turu_air_patch::Options { shared_stage };
     let kind = match (target & 0xf, shared_stage) {
-        (0, false) => "game".to_owned(),
-        (0, true) => "gameshared".to_owned(),
-        (1, false) => "skua".to_owned(),
-        (1, true) => format!("skua{}", client.map(|n| n.to_string()).unwrap_or_default()),
-        (_, false) => "asset".to_owned(),
-        (_, true) => "assetshared".to_owned(),
+        (0, false) => "game",
+        (0, true) => "gameshared",
+        (_, false) => "asset",
+        (_, true) => "assetshared",
     };
-    let kind = kind.as_str();
-    let strict = target & 0xf < 2;
-    let target = target & 0xf;
+    let strict = target & 0xf == 0;
     let started = std::time::Instant::now();
     if let Some(output) = cache.get(input, kind) {
         tracing::info!(
@@ -161,11 +151,7 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
         );
         return Some(output);
     }
-    let patch_target = match target {
-        1 => turu_air_patch::Target::Skua,
-        _ => turu_air_patch::Target::Game,
-    };
-    match turu_air_patch::patch_swf_with(input, patch_target, options) {
+    match turu_air_patch::patch_swf_with(input, turu_air_patch::Target::Game, options) {
         Ok((output, report)) => {
             tracing::info!(
                 "Patched {kind} for AIR in {:?}: {} swapped, {} dropped, {} stage roots, {} hooks, {} missed",
@@ -209,10 +195,7 @@ fn shared_stage_swf(url: &str, body: Vec<u8>) -> Vec<u8> {
         return body;
     }
     let started = std::time::Instant::now();
-    let options = turu_air_patch::Options {
-        shared_stage: true,
-        client: None,
-    };
+    let options = turu_air_patch::Options { shared_stage: true };
     match turu_air_patch::patch_swf_with(&body, turu_air_patch::Target::Game, options) {
         Ok((output, report)) => {
             if report.changed() || !report.stage_missed.is_empty() {
@@ -479,7 +462,7 @@ fn engine(root: &Path) {
             args.len()
         );
     }
-    // Before skua.swf's first call (`requestLoadGame`), which asks the bot to load the client:
+    // Before turu.swf's first call (`requestLoadGame`), which asks the bot to load the client:
     // the first tab is client 0, which the host SWF loads at start. The others open and close
     // through tab requests (`clients`).
     crate::clients::start();

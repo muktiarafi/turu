@@ -22,9 +22,6 @@ package {
     import flash.system.ApplicationDomain;
     import flash.system.LoaderContext;
     import flash.system.Security;
-    import flash.filesystem.File;
-    import flash.filesystem.FileMode;
-    import flash.filesystem.FileStream;
     import flash.text.TextField;
     import flash.text.TextFieldType;
     import flash.utils.ByteArray;
@@ -33,45 +30,36 @@ package {
 
     /**
      * Turu's host under Adobe AIR (docs/AIR_PROPOSAL.md): starts the foreground service and
-     * Turu's engine (the native extension), then loads VibeSkua's skua.swf as the Ruffle build
-     * does, patched by the engine for AIR (`turu_air_patch`), once per tab. It draws nothing
+     * Turu's engine (the native extension), then loads Turu's host SWF, turu.swf, as the Ruffle
+     * build does, once per tab, as it is (it reaches this host through [TuruHost]). It draws nothing
      * itself: its start and its errors go to Turu's Debug log ([say]), and Turu's windows are drawn
      * over the game by the engine (the extension's overlay view).
      *
      * Tabs (docs/AIR_ARMY_SPIKE.md): each tab is a game client, numbered 0 to 3, all on AIR's one
-     * stage ([TuruStage]). Client `n`'s skua talks through `TuruExternal<n>` and loads through
-     * `TuruLoader<n>`, so its calls reach its tab's bot and its game is known as its own. Client 0
-     * loads at start; the engine opens, shows and closes the others (status events "tab",
+     * stage ([TuruStage]). Client `n`'s turu.swf gets `n` in its `LoaderContext`'s parameters
+     * (`turuClient`) and names it to [TuruHost], so its calls reach its tab's bot and its game is
+     * known as its own. Client 0 loads at start; the engine opens, shows and closes the others (status events "tab",
      * `air/ane/rust/src/clients.rs`).
      *
-     * The host classes are compiled into this SWF; skua, in a child application domain, finds
+     * The host classes are compiled into this SWF; turu.swf, in a child application domain, finds
      * them by name.
      */
     [SWF(frameRate="24", backgroundColor="#000000", width="958", height="550")]
     public class TuruAirHost extends Sprite {
         private static const URL:String = "https://game.aq.com/game/";
 
-        // Compiled in for skua (found by name, never named here otherwise).
-        private static const HOST_CLASSES:Array = [
-            TuruExternal, TuruLoader, TuruStage, TuruHost,
-            TuruExternal0, TuruExternal1, TuruExternal2, TuruExternal3,
-            TuruLoader0, TuruLoader1, TuruLoader2, TuruLoader3
-        ];
+        // Compiled in for turu.swf (found by name, never named here otherwise).
+        private static const HOST_CLASSES:Array = [TuruExternal, TuruLoader, TuruStage, TuruHost];
 
         /** What [say] got before the engine started, sent to it once it has. */
         private var early:Array = [];
         private var engineStarted:Boolean = false;
         private var native:TuruAirNative;
-        /** Each client's skua loader, while it's open. */
-        private var skuas:Array = [];
-        /**
-         * The host SWF as read: skua.swf, patched once per client, or with "Use Turu's Host SWF"
-         * Turu's turu.swf, loaded as it is for every client ([TuruHost]); null until read.
-         */
-        private var skuaBytes:ByteArray;
-        /** Turu's own host SWF, unless Options > Application's "Use VibeSkua's Host SWF". */
-        private var useTuru:Boolean = false;
-        /** Clients the engine opened before skua.swf was read. */
+        /** Each client's turu.swf loader, while it's open. */
+        private var hosts:Array = [];
+        /** turu.swf as read, the same for every client; null until read. */
+        private var hostBytes:ByteArray;
+        /** Clients the engine opened before turu.swf was read. */
         private var waiting:Array = [];
         /** What was last sent of the game's focused text field (`gameTyping`). */
         private var typing:String = "";
@@ -114,8 +102,6 @@ package {
             }
             early = null;
             say("engine started, data folder " + folder);
-            useTuru = !vibeSkuaHostSwf(folder);
-            say("host SWF: " + (useTuru ? "Turu's turu.swf" : "VibeSkua's skua.swf"));
             // The main SWF is on the stage already; added later only when loaded by another.
             if (stage != null) {
                 onStage(null);
@@ -125,31 +111,9 @@ package {
 
             var bytes:URLLoader = new URLLoader();
             bytes.dataFormat = URLLoaderDataFormat.BINARY;
-            bytes.addEventListener(Event.COMPLETE, onSkuaBytes);
+            bytes.addEventListener(Event.COMPLETE, onHostBytes);
             bytes.addEventListener(IOErrorEvent.IO_ERROR, onFail);
-            bytes.load(new URLRequest(useTuru ? "app:/turu.swf" : "app:/skua.swf"));
-        }
-
-        /**
-         * Whether settings.json in Turu's data folder asks for VibeSkua's host SWF (Options >
-         * Application, "Use VibeSkua's Host SWF", `useVibeSkuaHostSwf`; read at launch, as on the
-         * Ruffle build). Turu's own otherwise.
-         */
-        private function vibeSkuaHostSwf(folder:String):Boolean {
-            try {
-                var file:File = new File(folder).resolvePath("settings.json");
-                if (!file.exists) {
-                    return false;
-                }
-                var stream:FileStream = new FileStream();
-                stream.open(file, FileMode.READ);
-                var text:String = stream.readUTFBytes(stream.bytesAvailable);
-                stream.close();
-                return JSON.parse(text).useVibeSkuaHostSwf === true;
-            } catch (e:Error) {
-                say("ERROR: couldn't read settings.json: " + e.message);
-            }
-            return false;
+            bytes.load(new URLRequest("app:/turu.swf"));
         }
 
         private function onStage(event:Event = null):void {
@@ -280,7 +244,7 @@ package {
             var client:int = int(request.client);
             switch (request.op) {
                 case "open":
-                    if (skuaBytes == null) {
+                    if (hostBytes == null) {
                         waiting.push(client);
                     } else {
                         open(client);
@@ -295,8 +259,8 @@ package {
             }
         }
 
-        private function onSkuaBytes(event:Event):void {
-            skuaBytes = URLLoader(event.target).data;
+        private function onHostBytes(event:Event):void {
+            hostBytes = URLLoader(event.target).data;
             open(0);
             for each (var client:int in waiting) {
                 open(client);
@@ -335,41 +299,33 @@ package {
                 ": games at " + TuruStage.fitScale.toFixed(3) + "x, " + TuruStage.fitX.toFixed(1));
         }
 
-        /** Loads client `client`'s skua.swf, which then loads its game (asked by its tab's bot). */
+        /** Loads client `client`'s turu.swf, which then loads its game (asked by its tab's bot). */
         private function open(client:int):void {
-            if (skuas[client] != null) {
+            if (hosts[client] != null) {
                 say("ERROR: client " + client + " is open already");
-                return;
-            }
-            // turu.swf runs as it is; skua.swf is patched for AIR and for its client.
-            var patched:ByteArray = useTuru ? skuaBytes : native.patchSwf(skuaBytes, TuruAirNative.skuaFor(client));
-            if (patched == null) {
-                say("ERROR: skua.swf can't run under AIR");
                 return;
             }
             say("opening client " + client);
             var context:LoaderContext = new LoaderContext(false, new ApplicationDomain(ApplicationDomain.currentDomain));
             context.allowCodeImport = true;
-            if (useTuru) {
-                context.parameters = {turuClient: String(client)};
-            }
-            var skua:Loader = new Loader();
-            skuas[client] = skua;
-            skua.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaught);
-            skua.contentLoaderInfo.addEventListener(Event.COMPLETE, function(event:Event):void {
-                if (skuas[client] != skua) {
+            context.parameters = {turuClient: String(client)};
+            var host:Loader = new Loader();
+            hosts[client] = host;
+            host.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaught);
+            host.contentLoaderInfo.addEventListener(Event.COMPLETE, function(event:Event):void {
+                if (hosts[client] != host) {
                     return; // Closed while it loaded.
                 }
                 var main:DisplayObject = LoaderInfo(event.target).content;
                 TuruStage.mains[client] = main;
-                // Under the host, until skua swaps itself for its game.
+                // Under the host, until turu.swf swaps itself for its game.
                 TuruStage.place(main);
                 stage.addChild(main);
                 TuruStage.activate(TuruStage.active);
-                say("client " + client + "'s " + (useTuru ? "turu.swf" : "skua.swf") + " loaded");
+                say("client " + client + "'s turu.swf loaded");
             });
-            skua.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onFail);
-            skua.loadBytes(patched, context);
+            host.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onFail);
+            host.loadBytes(hostBytes, context);
         }
 
         /**
@@ -389,7 +345,7 @@ package {
                     shown.parent.removeChild(shown);
                 }
             }
-            for each (var loader:Loader in [TuruStage.gameLoaders[client], skuas[client]]) {
+            for each (var loader:Loader in [TuruStage.gameLoaders[client], hosts[client]]) {
                 if (loader != null) {
                     try {
                         loader.unloadAndStop(true);
@@ -399,12 +355,12 @@ package {
             }
             TuruStage.remove(client);
             TuruExternal.forget(client);
-            skuas[client] = null;
+            hosts[client] = null;
             say("closed client " + client);
         }
 
         /**
-         * A client's game reached the stage ([TuruLoader] knew it as that client's): its skua adds
+         * A client's game reached the stage ([TuruLoader] knew it as that client's): its turu.swf adds
          * it on top, before it's anyone's; the next frame puts the one on screen back in front.
          */
         private function watchGames(event:Event):void {

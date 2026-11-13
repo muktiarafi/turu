@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BotState {
-    /// No player, or `skua.swf` hasn't loaded the game yet.
+    /// No player, or `turu.swf` hasn't loaded the game yet.
     #[default]
     NotLoaded,
     /// The game is loaded; not logged in.

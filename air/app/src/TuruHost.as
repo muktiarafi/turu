@@ -8,8 +8,7 @@ package {
     /**
      * What Turu's own host SWF (`turu.swf`, `host/`; its `AirHost`) asks of Turu Mas, for its tab
      * `client` (docs/HOST_SWF_PROPOSAL.md, R4). `turu.swf` finds this class by name in its
-     * parent domain, so one unpatched copy serves every tab: VibeSkua's SWF needs a patched copy
-     * per tab instead (`TuruExternal<n>`, `TuruLoader<n>`).
+     * parent domain, so one unpatched copy serves every tab.
      */
     public class TuruHost {
         /** Client `client`'s callback `name`, which the engine's calls reach. */

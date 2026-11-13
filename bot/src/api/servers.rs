@@ -427,7 +427,7 @@ pub fn connect_ip(ctx: &Ctx, ip: &str, port: Option<i64>) -> BotResult<bool> {
     wait_for_world(ctx)
 }
 
-/// VibeSkua `ConnectToServer`: skua.swf's `connectToServer` (checks the server like the
+/// VibeSkua `ConnectToServer`: turu.swf's `connectToServer` (checks the server like the
 /// game's server list does), then waits for the world.
 fn connect_to_server(ctx: &Ctx, server: &Server) -> BotResult<bool> {
     ctx.bot

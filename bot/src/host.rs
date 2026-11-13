@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
-/// An argument passed to one of `skua.swf`'s ExternalInterface callbacks.
+/// An argument passed to one of `turu.swf`'s ExternalInterface callbacks.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlashArg {
     Null,
@@ -93,7 +93,7 @@ impl fmt::Display for HostError {
     }
 }
 
-/// Calls an ExternalInterface callback registered by `skua.swf`.
+/// Calls an ExternalInterface callback registered by `turu.swf`.
 ///
 /// Implementations must be callable from any thread except the one that runs the player,
 /// and return the callback's result as a string (`ExternalInterface` results other than
@@ -109,19 +109,6 @@ pub trait FlashHost: Send + Sync {
         args: Vec<FlashArg>,
     ) -> Result<(String, Option<Duration>), HostError> {
         self.call(name, args).map(|reply| (reply, None))
-    }
-
-    /// Parity mode (`crate::parity`): calls `first` then `second` and returns both answers. The
-    /// player's host runs them back to back with no frame between, so the game can't change
-    /// between the two; this default makes two calls.
-    fn call_pair(
-        &self,
-        first: (&str, Vec<FlashArg>),
-        second: (&str, Vec<FlashArg>),
-    ) -> Result<(String, String), HostError> {
-        let a = self.call(first.0, first.1)?;
-        let b = self.call(second.0, second.1)?;
-        Ok((a, b))
     }
 
     /// Whether the player itself reports the game's packets ([`crate::Bot::on_socket`]):

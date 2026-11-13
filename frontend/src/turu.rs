@@ -3,8 +3,8 @@
 //! * Tabs: every tab is a game client of its own, a player and its [`Bot`] (VibeSkua runs one
 //!   process per tab instead). All the players run on the event loop thread; the window shows
 //!   the active tab's, and [`bot()`] is the active tab's bot, which the UI shows.
-//! * [`TuruExternalInterface`] receives a tab's `skua.swf`'s `ExternalInterface.call(...)`s.
-//! * [`TuruFlashHost`] lets bot threads call `skua.swf`'s callbacks: each call is handed to the
+//! * [`TuruExternalInterface`] receives a tab's `turu.swf`'s `ExternalInterface.call(...)`s.
+//! * [`TuruFlashHost`] lets bot threads call `turu.swf`'s callbacks: each call is handed to the
 //!   thread that runs the players (the window's event loop, the `headless` loop, Android's
 //!   engine thread), names its tab, and is answered by [`answer_flash_call`] with that tab's
 //!   player.
@@ -577,35 +577,11 @@ pub fn init_main_thread() {
     let _ = MAIN_THREAD.set(std::thread::current().id());
 }
 
-/// The URL Turu starts with: the host SWF, VibeSkua's `skua.swf` or Turu's `turu.swf`
-/// ([`turu_bot::HostSwf::chosen`]), written to the data directory. With
-/// `TURU_HOST_PARITY=1`, Turu's in parity mode, loading VibeSkua's (`turu_bot::parity`).
+/// The URL Turu starts with: its host SWF, `turu.swf`, written to the data directory.
 pub fn host_swf_url() -> anyhow::Result<String> {
-    let file_url = |path: &std::path::Path| {
-        url::Url::from_file_path(path)
-            .map_err(|()| anyhow::anyhow!("bad path for {}", path.display()))
-    };
-    if turu_bot::parity::enabled() {
-        tracing::info!("Host SWF parity mode (TURU_HOST_PARITY=1): Turu's loads VibeSkua's");
-        let paths = &bot().paths;
-        let skua = file_url(&paths.write_host_swf(turu_bot::HostSwf::VibeSkua)?)?;
-        let mut turu = file_url(&paths.write_host_swf(turu_bot::HostSwf::Turu)?)?;
-        turu.query_pairs_mut()
-            .append_pair("turuParity", "1")
-            .append_pair("turuSkua", skua.as_str());
-        return Ok(turu.to_string());
-    }
-    let swf = turu_bot::HostSwf::chosen(&bot().settings.read());
-    tracing::info!(
-        "Host SWF: {}",
-        match swf {
-            turu_bot::HostSwf::Turu => "Turu's own (turu.swf)",
-            turu_bot::HostSwf::VibeSkua => "VibeSkua's (skua.swf), as Options > Application asks",
-        }
-    );
-    let path = bot().paths.write_host_swf(swf)?;
+    let path = bot().paths.write_host_swf()?;
     let url = url::Url::from_file_path(&path)
-        .map_err(|()| anyhow::anyhow!("bad path for {}: {}", swf.file_name(), path.display()))?;
+        .map_err(|()| anyhow::anyhow!("bad path for turu.swf: {}", path.display()))?;
     Ok(url.to_string())
 }
 
@@ -823,9 +799,6 @@ pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
                 busy += window.busy_ms();
                 seconds = seconds.max(window.seconds);
                 tracing::info!(target: "turu_perf", "{}", window.report(&format!("tab {}", tab_label(bot)), rows));
-                if let Some(parity) = bot.flash.parity().and_then(|p| p.report()) {
-                    tracing::info!(target: "turu_perf", "tab {}: {parity}", tab_label(bot));
-                }
                 last.insert(*tab, now);
             }
             if tabs.len() > 1 {

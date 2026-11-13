@@ -17,14 +17,14 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::Instant;
 use url::Url;
 
-/// skua.swf's stage.
+/// turu.swf's stage.
 pub const STAGE: (u32, u32) = (958, 550);
 
 /// Work for the loop from other threads.
 pub enum EngineEvent {
     /// A future of the tab's player is ready to be polled.
     TaskPoll(async_task::Runnable<TabId>),
-    /// A bot thread calls one of skua.swf's callbacks (in its tab's player: `call.tab()`).
+    /// A bot thread calls one of turu.swf's callbacks (in its tab's player: `call.tab()`).
     TuruFlashCall(TuruFlashCall),
     /// The frontend's work on the active tab's player (input, a new surface), run between ticks.
     Run(Box<dyn FnOnce(&mut Player) + Send>),

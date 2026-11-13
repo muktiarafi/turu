@@ -31,7 +31,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 
 | Path | What |
 |---|---|
-| `air_patch/` | crate `turu_air_patch`: patches AQW's client and VibeSkua's `skua.swf` for AIR's sandbox, at run time. |
+| `air_patch/` | crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's sandbox, at run time. |
 | `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
 | `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
@@ -190,19 +190,16 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 
 * **Whose game.** AQW's client and nearly every SWF it loads find the game as
   `stage.getChildAt(0)`. `turu_air_patch`'s `Options::shared_stage` rewrites each of those to
-  `TuruStage.rootOf(x)`, the game `x` belongs to: in skua.swf and the client when they're patched,
-  and in every other SWF as the engine downloads it (`shared_stage_swf`, on the download thread).
+  `TuruStage.rootOf(x)`, the game `x` belongs to: in the client when it's patched, and in every
+  other SWF as the engine downloads it (`shared_stage_swf`, on the download thread).
   The tab on screen has its game at stage child 0 and the others hidden (`visible`, so AIR doesn't
   draw them). Every 60 s the Debug log says if any call couldn't tell its tab (none so far).
-* **Whose calls.** Client `n`'s skua.swf is patched (`Options::client`) to use `TuruExternal<n>`
-  and `TuruLoader<n>` (the host SWF has 0 to 3). Its calls reach the engine with `n`
-  (`nativeFlashCall`), which hands them to that tab's bot (`clients::bot`); the bot's calls name
-  `n` too (`AirFlashHost { client }`), so they run its skua's callbacks.
-* **Turu's own host SWF.** By default (unless Options > Application > "Use VibeSkua's Host SWF",
-  read from settings.json at launch) the host loads Turu's `turu.swf`: the same unpatched bytes for
-  every tab, its tab number in the `LoaderContext`'s parameters (`turuClient`). It reaches the
-  host through `TuruHost` (calls, loading through `TuruLoader`, showing its game), so it needs no
-  per-tab classes (docs/HOST_SWF_PROPOSAL.md, R4).
+* **Whose calls.** The host loads Turu's `turu.swf` for every tab, the same unpatched bytes, its
+  tab number in the `LoaderContext`'s parameters (`turuClient`). It reaches the host through
+  `TuruHost` (calls, loading through `TuruLoader`, showing its game; docs/HOST_SWF_PROPOSAL.md,
+  R4). Its calls reach the engine with `n` (`nativeFlashCall`), which hands them to that tab's
+  bot (`clients::bot`); the bot's calls name `n` too (`AirFlashHost { client }`), so they run its
+  `turu.swf`'s callbacks.
 * **Opening and closing.** `clients.rs` serves the UI's tab requests: a new tab gets a free client
   number and a bot, and the host SWF loads a skua for it (status event "tab", `open`); `select`
   shows it; `close` disconnects its game and unloads its SWFs (`unloadAndStop`). Client 0, the

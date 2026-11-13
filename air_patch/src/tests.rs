@@ -215,13 +215,10 @@ fn air_loader_fetches_through_the_host() {
         ]
     );
 
-    // In another class (here SwfLoaderPatch's method), or for skua, it stays a URLLoader.
+    // In another class (here SwfLoaderPatch's method), it stays a URLLoader.
     let mut abc = abc_with(&names, &[3, 2], &ops, vec![]);
     let mut report = Report::default();
     assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
-    let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
-    let mut report = Report::default();
-    assert!(!patch_abc(&mut abc, Target::Skua, &mut report).unwrap());
 }
 
 #[test]
@@ -440,59 +437,6 @@ fn patches_the_real_game() {
 }
 
 #[test]
-fn skua_routes_external_interface_and_loaders_through_the_host() {
-    let ops = [
-        Op::GetLex {
-            index: Index::new(1),
-        }, // ExternalInterface
-        Op::PushNull,
-        Op::PushNull,
-        Op::CallPropVoid {
-            index: Index::new(2),
-            num_args: 2,
-        }, // addCallback
-        Op::FindPropStrict {
-            index: Index::new(3),
-        },
-        Op::ConstructProp {
-            index: Index::new(3),
-            num_args: 0,
-        }, // new Loader()
-        Op::ReturnValue,
-    ];
-    let names = [
-        ("flash.external", "ExternalInterface"),
-        ("", "addCallback"),
-        ("flash.display", "Loader"),
-    ];
-    let mut abc = abc_with(&names, &[], &ops, vec![]);
-    let mut report = Report {
-        target: Target::Skua,
-        ..Report::default()
-    };
-    assert!(patch_abc(&mut abc, Target::Skua, &mut report).unwrap());
-    let swapped: Vec<_> = report.swapped.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(swapped, ["ExternalInterface", "Loader"]);
-    assert_eq!(report.problem(), None);
-
-    let pool = &abc.constant_pool;
-    let name_of = |op: &Op| match op {
-        Op::GetLex { index } | Op::FindPropStrict { index } | Op::ConstructProp { index, .. } => {
-            let m = &pool.multinames[index.0 as usize - 1];
-            assert!(in_package(pool, m, ""), "{m:?} isn't in the host's package");
-            local_name(pool, m).unwrap().to_string()
-        }
-        other => panic!("{other:?}"),
-    };
-    let patched = ops_of(&abc);
-    assert_eq!(name_of(&patched[0]), HOST_EXTERNAL);
-    assert_eq!(name_of(&patched[4]), HOST_LOADER);
-    assert_eq!(name_of(&patched[5]), HOST_LOADER);
-    // The call itself is unchanged: the host's class has the same static methods.
-    assert_eq!(patched[3], ops[3]);
-}
-
-#[test]
 fn the_game_target_leaves_external_interface_alone() {
     let ops = [
         Op::GetLex {
@@ -508,22 +452,6 @@ fn the_game_target_leaves_external_interface_alone() {
     );
     let mut report = Report::default();
     assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
-}
-
-/// VibeSkua's skua.swf, as bundled (bot/assets).
-#[test]
-fn patches_the_real_skua() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../bot/assets/skua.swf");
-    let input = std::fs::read(path).unwrap();
-    let (output, report) = patch_swf(&input, Target::Skua).unwrap();
-    assert_eq!(report.problem(), None, "{report:#?}");
-    let count = |name: &str| report.swapped.iter().filter(|s| s.name == name).count();
-    // Externalizer's addCallback and call; Main's loadGame, injectScript and backgrounds.
-    assert_eq!(count("ExternalInterface"), 2, "{report:#?}");
-    assert_eq!(count("Loader"), 4, "{report:#?}");
-    assert_eq!(report.dropped.len(), 1, "{report:#?}");
-    let (_, again) = patch_swf(&output, Target::Skua).unwrap();
-    assert!(!again.changed(), "{again:#?}");
 }
 
 #[test]
@@ -550,10 +478,7 @@ fn shared_stage_finds_each_clients_game() {
         Op::ReturnValue,
     ];
     let names = [("", "stage"), ("", "getChildAt")];
-    let shared = Options {
-        shared_stage: true,
-        client: None,
-    };
+    let shared = Options { shared_stage: true };
     // Without the option, nothing changes.
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
@@ -631,10 +556,7 @@ fn shared_stage_leaves_a_site_a_branch_lands_in() {
     };
     abc.method_bodies[0].code = encode(&ops);
     let mut report = Report::default();
-    let shared = Options {
-        shared_stage: true,
-        client: None,
-    };
+    let shared = Options { shared_stage: true };
     assert!(!patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
     assert_eq!(report.stage_missed.len(), 1);
 }
@@ -648,82 +570,26 @@ fn shared_stage_real_swfs() {
         eprintln!("TURU_STAGE_SWFS not set, skipped");
         return;
     };
-    let shared = Options {
-        shared_stage: true,
-        client: None,
-    };
+    let shared = Options { shared_stage: true };
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         let input = std::fs::read(&path).unwrap();
-        let target = if path.to_string_lossy().contains("skua") {
-            Target::Skua
-        } else {
-            Target::Game
-        };
+        let target = Target::Game;
         let started = std::time::Instant::now();
         let (output, report) = patch_swf_with(&input, target, shared).unwrap();
         let took = started.elapsed();
         let (_, again) = patch_swf_with(&output, target, shared).unwrap();
         assert_eq!(again.stage_roots, vec![], "{}", path.display());
-        let removes = report
-            .stage_roots
-            .iter()
-            .filter(|s| s.name == "removeChildAt")
-            .count();
         eprintln!(
-            "{}: {} roots, {removes} removes, {} missed, {} undecodable, {took:?}, {} -> {} bytes",
+            "{}: {} roots, {} missed, {} undecodable, {took:?}, {} -> {} bytes",
             path.file_name().unwrap().to_string_lossy(),
-            report.stage_roots.len() - removes,
+            report.stage_roots.len(),
             report.stage_missed.len(),
             report.undecodable.len(),
             input.len(),
             output.len()
         );
     }
-}
-
-#[test]
-fn a_numbered_client_gets_its_own_host_classes() {
-    let ops = [
-        Op::GetLex {
-            index: Index::new(1),
-        }, // ExternalInterface
-        Op::Pop,
-        Op::FindPropStrict {
-            index: Index::new(2),
-        },
-        Op::ConstructProp {
-            index: Index::new(2),
-            num_args: 0,
-        }, // new Loader()
-        Op::ReturnValue,
-    ];
-    let names = [
-        ("flash.external", "ExternalInterface"),
-        ("flash.display", "Loader"),
-    ];
-    let mut abc = abc_with(&names, &[], &ops, vec![]);
-    let mut report = Report {
-        target: Target::Skua,
-        ..Report::default()
-    };
-    let options = Options {
-        shared_stage: false,
-        client: Some(2),
-    };
-    assert!(patch_abc_with(&mut abc, Target::Skua, options, &mut report).unwrap());
-    let pool = &abc.constant_pool;
-    let named: Vec<&str> = decode(&abc.method_bodies[0].code)
-        .unwrap()
-        .into_iter()
-        .filter_map(|d| match d.op {
-            Op::GetLex { index } | Op::FindPropStrict { index } => {
-                local_name(pool, &pool.multinames[index.0 as usize - 1])
-            }
-            _ => None,
-        })
-        .collect();
-    assert_eq!(named, ["TuruExternal2", "TuruLoader2"]);
 }
 
 #[test]
@@ -741,10 +607,7 @@ fn shared_stage_reads_the_mouse_from_the_game() {
     let names = [("", "stage"), ("", "mouseX")];
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
-    let shared = Options {
-        shared_stage: true,
-        client: None,
-    };
+    let shared = Options { shared_stage: true };
     assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
     assert_eq!(report.stage_roots.len(), 1);
     let pool = &abc.constant_pool;
@@ -862,10 +725,7 @@ fn shared_stage_routes_sound_keys_and_stage_children_through_the_host() {
         ("", "removeEventListener"),
         ("", "addChild"),
     ];
-    let shared = Options {
-        shared_stage: true,
-        client: None,
-    };
+    let shared = Options { shared_stage: true };
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
     assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
@@ -957,7 +817,7 @@ fn shared_stage_routes_sound_keys_and_stage_children_through_the_host() {
 }
 
 #[test]
-fn shared_stage_gives_a_new_application_domain_the_clients_skua_as_parent() {
+fn shared_stage_gives_a_new_application_domain_the_clients_host_swf_as_parent() {
     let ops = [
         // new ApplicationDomain(): only the system's above it
         Op::FindPropStrict {
@@ -986,10 +846,7 @@ fn shared_stage_gives_a_new_application_domain_the_clients_skua_as_parent() {
         Op::ReturnVoid,
     ];
     let names = [("flash.system", "ApplicationDomain"), ("", "currentDomain")];
-    let shared = Options {
-        shared_stage: true,
-        client: None,
-    };
+    let shared = Options { shared_stage: true };
     // Without a shared stage nothing changes.
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();

@@ -1,7 +1,7 @@
 //! The bridge between a tab's bot and its Ruffle player (the `ruffle` feature): bot threads call
-//! `skua.swf`'s callbacks through [`TuruFlashHost`], which hands each call to the thread that runs
+//! `turu.swf`'s callbacks through [`TuruFlashHost`], which hands each call to the thread that runs
 //! the players, where [`answer_flash_call`] runs it; [`TuruExternalInterface`] receives
-//! `skua.swf`'s `ExternalInterface.call(...)`s.
+//! `turu.swf`'s `ExternalInterface.call(...)`s.
 
 use super::{MAIN_THREAD, TabId};
 use ruffle_core::Player;
@@ -29,12 +29,6 @@ enum Request {
         /// The answer and how long the player took to run it.
         reply: SyncSender<(Option<ExternalValue>, Duration)>,
     },
-    /// Two callbacks run back to back, with no frame between ([`FlashHost::call_pair`]).
-    CallPair {
-        first: (String, Vec<ExternalValue>),
-        second: (String, Vec<ExternalValue>),
-        reply: SyncSender<Option<(ExternalValue, ExternalValue)>>,
-    },
     /// A loaded movie whose URL path ends in `path` ([`FlashHost::loaded_swf`]).
     LoadedMovie {
         path: String,
@@ -56,18 +50,6 @@ pub fn answer_flash_call(call: TuruFlashCall, player: Option<&mut Player>) {
             let started = Instant::now();
             let result = player.map(|player| player.call_internal_interface(&name, args));
             let _ = reply.send((result, started.elapsed()));
-        }
-        Request::CallPair {
-            first,
-            second,
-            reply,
-        } => {
-            let result = player.map(|player| {
-                let a = player.call_internal_interface(&first.0, first.1);
-                let b = player.call_internal_interface(&second.0, second.1);
-                (a, b)
-            });
-            let _ = reply.send(result);
         }
         Request::LoadedMovie { path, reply } => {
             let suffix = format!("/{}", path.trim_start_matches('/'));
@@ -132,39 +114,6 @@ impl FlashHost for TuruFlashHost {
         }
     }
 
-    fn call_pair(
-        &self,
-        first: (&str, Vec<FlashArg>),
-        second: (&str, Vec<FlashArg>),
-    ) -> Result<(String, String), HostError> {
-        if MAIN_THREAD.get() == Some(&std::thread::current().id()) {
-            tracing::error!(
-                "Flash call {} from the UI thread; use turu::spawn_action",
-                first.0
-            );
-            return Err(HostError::Closed);
-        }
-        let (reply, answer) = sync_channel(1);
-        let externals = |args: Vec<FlashArg>| args.into_iter().map(to_external).collect();
-        let request = Request::CallPair {
-            first: (first.0.to_owned(), externals(first.1)),
-            second: (second.0.to_owned(), externals(second.1)),
-            reply,
-        };
-        if !(self.send)(TuruFlashCall {
-            tab: self.tab,
-            request,
-        }) {
-            return Err(HostError::Closed);
-        }
-        match answer.recv_timeout(CALL_TIMEOUT) {
-            Ok(Some((a, b))) => Ok((from_external(a), from_external(b))),
-            Ok(None) => Err(HostError::NoPlayer),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(HostError::Timeout),
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(HostError::Closed),
-        }
-    }
-
     /// The player's [`TuruSocketObserver`] reports the game's packets.
     fn player_packets(&self) -> bool {
         true
@@ -205,7 +154,7 @@ fn to_external(arg: FlashArg) -> ExternalValue {
     }
 }
 
-/// skua.swf answers with strings; anything else is stringified like the OCX did.
+/// turu.swf answers with strings; anything else is stringified like the OCX did.
 fn from_external(value: ExternalValue) -> String {
     match value {
         ExternalValue::String(s) => s,
@@ -239,7 +188,7 @@ fn to_json(value: ExternalValue) -> serde_json::Value {
     }
 }
 
-/// Receives a tab's `skua.swf`'s calls to the host.
+/// Receives a tab's `turu.swf`'s calls to the host.
 /// A tab's player's sockets, for its bot (R5, `turu_bot::player_packets`): runs on the player's
 /// thread while it's locked, as [`TuruExternalInterface`] does.
 pub struct TuruSocketObserver {

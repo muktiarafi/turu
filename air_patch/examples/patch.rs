@@ -1,7 +1,7 @@
 //! Patches a SWF for AIR and lists what changed:
-//! `cargo run -p turu_air_patch --example patch -- [--skua] [--shared-stage] Game.swf Game-air.swf`
-//! (`--skua` for VibeSkua's skua.swf, else AQW's client; `--shared-stage` as Turu Mas's tabs patch
-//! it, `Options::shared_stage`).
+//! `cargo run -p turu_air_patch --example patch -- [--shared-stage] Game.swf Game-air.swf`
+//! (AQW's client or a SWF it loads; `--shared-stage` as Turu Mas's tabs patch it,
+//! `Options::shared_stage`).
 
 use std::collections::BTreeMap;
 use turu_air_patch::{Options, Target, patch_swf_with};
@@ -15,17 +15,12 @@ fn main() -> anyhow::Result<()> {
         }
         None => false,
     };
-    let target = if flag("--skua") {
-        Target::Skua
-    } else {
-        Target::Game
-    };
+    let target = Target::Game;
     let options = Options {
         shared_stage: flag("--shared-stage"),
-        client: None,
     };
     let [input, output] = &args[..] else {
-        anyhow::bail!("usage: patch [--skua] [--shared-stage] <in.swf> <out.swf>");
+        anyhow::bail!("usage: patch [--shared-stage] <in.swf> <out.swf>");
     };
     let bytes = std::fs::read(input)?;
     let started = std::time::Instant::now();

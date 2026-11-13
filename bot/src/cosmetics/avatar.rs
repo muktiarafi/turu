@@ -188,7 +188,7 @@ pub fn real_gender(bot: &Bot) -> BotResult<char> {
     }
 }
 
-/// The gender shown: skua.swf's `gender`, else `objData`, else `dataLeaf`; `M` by default.
+/// The gender shown: turu.swf's `gender`, else `objData`, else `dataLeaf`; `M` by default.
 pub fn current_gender(bot: &Bot) -> BotResult<char> {
     if !logged_in(bot)? {
         return Ok('M');
@@ -550,7 +550,7 @@ fn gender_of_armor(item: &CosmeticItem) -> Option<char> {
 }
 
 /// VibeSkua `CopyPlayerLookByEntIdAsync`: the player's gear, gender and colors from
-/// skua.swf's `getAvatar`, and empties the slots they have nothing in.
+/// turu.swf's `getAvatar`, and empties the slots they have nothing in.
 ///
 /// VibeSkua also looks in `world.CHARS[id]` for the gender, skin and hair; its
 /// `getGameObject` can't read a `[...]` path, so those always came back empty and are left out.

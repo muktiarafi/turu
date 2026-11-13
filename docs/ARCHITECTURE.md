@@ -10,7 +10,7 @@ and keeps the same UI/UX, but:
 | UI | Avalonia | egui (inside Ruffle's desktop frontend), Mugetsu palette |
 | Bot engine | C# (`Skua.Core`) | Rust (`bot/`, crate `turu_bot`) |
 | Scripts | C# compiled with Roslyn, `//cs_include` | TypeScript, types stripped by `oxc`, run in QuickJS (`rquickjs`), ES `import` |
-| Game host SWF | `skua.swf` (from `Skua.AS3`) | Turu's own `turu.swf` (`host/`, same callbacks and answers), embedded at `bot/assets/turu.swf`; VibeSkua's `skua.swf` (`bot/assets/skua.swf`) still selectable |
+| Game host SWF | `skua.swf` (from `Skua.AS3`) | Turu's own `turu.swf` (`host/`, same callbacks and answers), embedded at `bot/assets/turu.swf` |
 
 ## Repository layout
 
@@ -27,7 +27,6 @@ host/                    crate `turu_host`: Turu's own host SWF (docs/HOST_SWF_P
                          turu_host` writes bot/assets/turu.swf (the default host SWF), `-- --check` (CI) checks it
 bot/                     crate `turu_bot`: the bot engine (no dependency on the app or ruffle_core)
   assets/turu.swf        Turu's host SWF (built from host/as3), embedded with include_bytes!, the default
-  assets/skua.swf        VibeSkua's AS3 host SWF (Skua.AS3/skua/bin/skua.swf), still selectable
   js/                    TypeScript runtime that ships inside the binary (module "turu")
   src/
     lib.rs               `Bot` (Arc handle shared by script thread, UI and background threads)
@@ -135,8 +134,7 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
 
 ## The Flash bridge
 
-The host SWF, `turu.swf` (or VibeSkua's `skua.swf` with Options > Application > "Use VibeSkua's
-Host SWF"), registers the callbacks (VibeSkua's list: `docs/VIBESKUA_SPEC.md`, section 2;
+The host SWF, `turu.swf`, registers the callbacks (VibeSkua's list: `docs/VIBESKUA_SPEC.md`, section 2;
 `turu.swf`'s: its `hostInfo`, docs/HOST_SWF_PROPOSAL.md). The calling convention matches
 VibeSkua's `FlashUtil.Call`:
 
@@ -204,7 +202,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 
 | Path | Contents |
 |---|---|
-| `turu.swf`, `skua.swf` | the host SWF, written from the embedded copy at start (`skua.swf` only when chosen) |
+| `turu.swf` | the host SWF, written from the embedded copy at start |
 | `api-token` | the control API's token (`--api` without `TURU_API_TOKEN`), owner-readable only |
 | `monitor-key` | the web monitor's key (Options > Application > Monitor), owner-readable only |
 | `monitor-push-key` | the key other machines report to the web monitor with, owner-readable only |
@@ -222,7 +220,7 @@ the game. Colours, corner radii and fonts come from Mugetsu's menu style
 | `army/<name>.log`, `.barrier`, `.<name>.lock` | `bot.army`'s logs shared by the army scripts of every client (`bot/src/api/army.rs`); each operation holds the log's lock file, a barrier keeps its round and waiting members in `.barrier` |
 | `butler/<username>.state` | each logged-in account's Butler state (`key=value` lines, `bot/src/butler/sync.rs`): where it is, whom it summons and follows, a `beat` every 5 s; older than 15 s counts as offline |
 | `cache/gamefiles/` | the files the game downloaded, kept for as long as AQW's servers allow (ruffle-aqw's `HttpCache`, `turu_frontend::game_files`; Turu Mas's downloads too, through `TuruURLLoader`); shared by every client, safe to delete |
-| `cache/airpatched/` | Turu Mas only: skua.swf and the game's client as `turu_air_patch` rewrote them for AIR (`turu_air_patch::cache`), by the input's hash and the patcher's rules, so a start skips patching (0.2-0.5 s); the 16 used last are kept, safe to delete |
+| `cache/airpatched/` | Turu Mas only: the game's client and the SWFs it loads as `turu_air_patch` rewrote them for AIR (`turu_air_patch::cache`), by the input's hash and the patcher's rules, so a start skips patching (0.2-0.5 s); the 16 used last are kept, safe to delete |
 | `scripts/` | the scripts folder: Search Scripts downloads here (the repo's `scripts/` can be used directly) |
 | `scripts/types/turu.ts`, `scripts/tsconfig.json` | for code editors: the script API this app runs (`Paths::write_script_types`, when Search Scripts starts; rewritten when it differs), and the scripts repository's `tsconfig.json`, downloaded with the scripts once per commit (its `"turu"` falls back to `./types/turu.ts`); a `tsconfig.json` you wrote or changed stays (`scripts-manifest.json` keeps the sha256 of the one Turu wrote) |
 | `scripts-index.json` | the last script list (`index.json` of the scripts repository) and its ETag |

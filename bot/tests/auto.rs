@@ -1,4 +1,4 @@
-//! Auto Attack / Auto Hunt (`turu_bot::auto`) against a fake skua.swf whose monsters live in
+//! Auto Attack / Auto Hunt (`turu_bot::auto`) against a fake turu.swf whose monsters live in
 //! several cells and die on the first hit.
 
 use parking_lot::Mutex;

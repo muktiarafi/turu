@@ -23,7 +23,7 @@ use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs, STAGE};
 use turu_frontend::players::{Players, Slot};
 use url::Url;
 
-/// Runs `movie_url` (skua.swf) without a window until the process is stopped.
+/// Runs `movie_url` (turu.swf) without a window until the process is stopped.
 pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> {
     let runtime = tokio::runtime::Runtime::new()?;
     let _guard = runtime.enter();

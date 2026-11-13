@@ -1,5 +1,5 @@
 //! `bot.self` and `bot.target` (VibeSkua `IScriptSelfAuras`, `IScriptTargetAuras`): the auras on
-//! you and on your target, read through skua.swf's `Auras.as` callbacks.
+//! you and on your target, read through turu.swf's `Auras.as` callbacks.
 
 use super::{Args, NameOrId, ok, player};
 use crate::Bot;
@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::sync::Arc;
 
-/// Whose auras: you (`bot.self`) or your target (`bot.target`). The name is skua.swf's subject.
+/// Whose auras: you (`bot.self`) or your target (`bot.target`). The name is turu.swf's subject.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subject {
     Self_,
@@ -105,7 +105,7 @@ pub fn snapshots(bot: &Bot, subject: Subject) -> BotResult<Vec<AuraSnapshot>> {
     Ok(list.into_iter().filter(|s| !s.expired()).collect())
 }
 
-/// A JSON list from skua.swf; empty when it's missing or malformed (VibeSkua catches the same).
+/// A JSON list from turu.swf; empty when it's missing or malformed (VibeSkua catches the same).
 fn parse_list<T: DeserializeOwned>(raw: &str) -> Vec<T> {
     serde_json::from_str::<Vec<Value>>(raw.trim())
         .unwrap_or_default()

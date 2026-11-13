@@ -1,4 +1,4 @@
-//! map / combat / kill / monsters / options against a fake skua.swf.
+//! map / combat / kill / monsters / options against a fake turu.swf.
 
 mod common;
 

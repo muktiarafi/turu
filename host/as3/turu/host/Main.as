@@ -14,7 +14,6 @@ import flash.events.UncaughtErrorEvent;
 import flash.net.URLLoader;
 import flash.net.URLRequest;
 import flash.system.ApplicationDomain;
-import flash.system.LoaderContext;
 import flash.system.Security;
 import flash.text.TextField;
 import flash.text.TextFieldType;
@@ -24,15 +23,10 @@ import flash.utils.setTimeout;
  * Turu's host SWF (docs/HOST_SWF_PROPOSAL.md): loads AQW's client and answers the bot's calls,
  * with VibeSkua's names and answers (docs/VIBESKUA_SPEC.md, sections 1 and 2).
  *
- * R1 has the start-up: the client loaded with its `params`, the stage, the login background,
- * the clicks the bot must know of (logout, change server, a server picked), the Bank hotkey,
- * packets and errors. R2 adds the calls that reach into the game by path ([GameCalls]) and
- * parity mode. The rest of VibeSkua's callbacks come in R3; until then Turu uses this SWF only
- * with `TURU_HOST_SWF=turu`.
- *
- * Parity mode (`turuParity=1`, `TURU_HOST_PARITY=1`): this SWF loads VibeSkua's (`turuSkua`, its
- * URL), which loads and hosts the game as usual, finds that game on the stage, and answers and
- * reports under `turu.` names, so Turu can compare both SWFs' answers on the same game.
+ * Here: the start-up (the client loaded with its `params`, the stage, the login background, the
+ * clicks the bot must know of: logout, change server, a server picked; the Bank hotkey), packets
+ * and errors. The calls are in [GameCalls], [Combat], [Auras], [Items], [World], [Servers] and
+ * [Options]; the host (Ruffle's or Turu Mas's) is behind [Host].
  */
 public class Main extends MovieClip {
     /** `hostInfo().version`: raised when a callback changes what it answers. */
@@ -44,8 +38,6 @@ public class Main extends MovieClip {
 
     private var host:Host;
     private var stageRef:Stage;
-    /** Parity mode: VibeSkua's SWF hosts the game, this one only answers. */
-    private var parity:Boolean = false;
     private var packets:Packets;
     private var options:Options;
     private var background:Background;
@@ -85,17 +77,14 @@ public class Main extends MovieClip {
             // AIR's application sandbox throws.
         }
         var ours:Object = loaderInfo.parameters;
-        parity = ours.turuParity == "1";
-        if (!parity) {
-            patchTrim();
-        }
+        patchTrim();
         // The client's errors too: they pass up through its Loader to this SWF's.
         loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaughtError);
         // Turu Mas: its host compiles in `TuruHost`, and names this SWF's tab.
         if (ApplicationDomain.currentDomain.hasDefinition("TuruHost")) {
             host = new AirHost(int(ours.turuClient));
         } else {
-            host = new ExternalHost(stageRef, parity ? "turu." : "");
+            host = new ExternalHost(stageRef);
         }
         packets = new Packets(host);
         background = new Background(host, gameOf);
@@ -118,44 +107,8 @@ public class Main extends MovieClip {
         // For checking error reports by hand; not listed, so only debug builds of Turu call it.
         host.addCallback("throwForTest", guard("throwForTest", throwForTest));
 
-        if (parity) {
-            loadVibeSkua(String(ours.turuSkua));
-            return;
-        }
         stageRef.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
         host.call("requestLoadGame", []);
-    }
-
-    // ---- Parity mode ----------------------------------------------------------------------
-
-    /**
-     * Loads VibeSkua's SWF as stage child 0, below this one, in this SWF's domain (the game's
-     * classes are then the same to both). When its game loads, VibeSkua's takes child 0 off,
-     * itself, as it does as the root; this one then takes itself off as the game arrives, so the
-     * game is the stage's only child, as the client expects (it reads `stage.getChildAt(0)`).
-     */
-    private function loadVibeSkua(url:String):void {
-        var skua:Loader = new Loader();
-        stageRef.addChildAt(skua, 0);
-        stageRef.addEventListener(Event.ADDED, onStageAdded);
-        skua.load(new URLRequest(url), new LoaderContext(false, ApplicationDomain.currentDomain));
-    }
-
-    /** VibeSkua's game reaching the stage: the stage's child with a SmartFox client. */
-    private function onStageAdded(event:Event):void {
-        var child:* = event.target;
-        if (child.parent != stageRef || child is Loader || !("sfc" in child)) {
-            return;
-        }
-        stageRef.removeEventListener(Event.ADDED, onStageAdded);
-        if (parent == stageRef) {
-            stageRef.removeChild(this);
-        }
-        game = child;
-        game.addEventListener(Event.ENTER_FRAME, onFrame);
-        game.addEventListener(MouseEvent.CLICK, onClick, true);
-        packets.frame(game);
-        host.call("loaded", []);
     }
 
     /** VibeSkua's `String.prototype.trim`, which the game's code calls. */
@@ -242,9 +195,6 @@ public class Main extends MovieClip {
      * stage first (VibeSkua's SWF has Turu set it through `setGameObject`).
      */
     private function loadClient(frameRate:* = undefined):void {
-        if (parity) {
-            return;
-        }
         var fps:Number = Number(frameRate);
         if (fps > 0 && host.ownsStage()) {
             stageRef.frameRate = fps;

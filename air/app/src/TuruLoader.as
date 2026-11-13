@@ -13,11 +13,11 @@ package {
     import flash.utils.ByteArray;
 
     /**
-     * skua.swf's `Loader` under AIR (`turu_air_patch` makes each of skua's `new Loader()` one of
-     * these). A SWF loaded from the web would land in a remote sandbox, where skua can't reach
-     * the game's classes, so this fetches the bytes, has the engine patch a SWF for AIR, and loads
-     * it with `loadBytes` and `allowCodeImport`, as the client's own `AirLoader` does. Before
-     * the game's client reaches the stage (`init`, before skua's `complete`), its `params` get
+     * The host SWF's `Loader` under AIR ([TuruHost.load]). A SWF loaded from the web would land in
+     * a remote sandbox, where the host SWF can't reach the game's classes, so this fetches the
+     * bytes, has the engine patch a SWF for AIR, and loads it with `loadBytes` and
+     * `allowCodeImport`, as the client's own `AirLoader` does. Before the game's client reaches
+     * the stage (`init`), its `params` get
      * [gameParams]: the client reads `sFilePath` when it's added to the stage.
      */
     public class TuruLoader extends Loader {
@@ -25,10 +25,10 @@ package {
         public static var gameParams:Object = {};
 
         private var url:String;
-        /** The game client whose skua made this loader ([TuruLoader0] ...), or -1. */
+        /** The game client this loader loads for, or -1. */
         protected var client:int = -1;
 
-        /** `forClient`: the client it loads for (`TuruHost.load`); -1 for skua's own. */
+        /** `forClient`: the client it loads for (`TuruHost.load`); -1 for none. */
         public function TuruLoader(forClient:int = -1) {
             super();
             client = forClient;

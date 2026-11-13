@@ -11,7 +11,7 @@ import com.adobe.fre.FREObject
 
 /**
  * Turu's AIR native extension (docs/AIR_PROPOSAL.md): starts Turu's engine ([Bridge]) and passes
- * calls between it and skua.swf, patches SWFs for AIR, and starts and stops [TuruAirService], the
+ * calls between it and turu.swf, patches SWFs for AIR, and starts and stops [TuruAirService], the
  * foreground service that keeps the game running off screen.
  */
 class TuruAirExtension : FREExtension {
@@ -42,7 +42,7 @@ class TuruAirExtension : FREExtension {
             "flashCall" to FREFunction { _, args ->
                 val name = args?.getOrNull(0)?.asString
                 if (name != null) {
-                    // The client whose skua called (-1: the host SWF).
+                    // The client whose turu.swf called (-1: the AIR host SWF itself).
                     Bridge.nativeFlashCall(name, args.getOrNull(1)?.asString ?: "[]", args.getOrNull(2)?.asInt ?: -1)
                 }
                 null
