@@ -4,7 +4,8 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 `TURU_HOST_SWF=turu`); R2 done (the generic calls, parity mode `TURU_HOST_PARITY=1`); R3a done
 (auras, monsters, combat); R3b done (inventory, shop, player, world); R3c done (server
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
-answers every callback Turu calls); the rest are proposals. Replaces the plan to fork VibeSkua's
+answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
+four tabs); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -323,23 +324,35 @@ How each is checked:
 
 ### R4: Turu Mas
 
-- `TuruAirHost` compiles a `TuruHost` class: `addCallback`/`call(client, ...)`,
-  `register(client, main, gameDomain)` (so `TuruStage.clientOfDomain` gets an exact answer and
-  `assetsParent` the tab's domain), `load(client, url, kind)` (what `TuruLoader` does now: disk
-  cache, patch the client or the asset, `loadBytes` with `allowCodeImport`, the `Loader` given
-  back), `showGame(client, game)`, `isShown(client)`. The host passes `turuClient` in the
-  `LoaderContext`'s `parameters`.
-- `turu.swf` hands its game to `showGame` instead of the stage, leaves `scaleMode` and `align`
-  to the host, gates its key listener on `isShown`, and its quantity selector reads the game's
-  `mouseX`/`mouseY`. It loads in a domain under the host's, or the game menu and assets lose
-  `TuruStage` and the menu silently never opens.
-- The host loads `turu.swf` as is: no `nativePatch` for it, no per-client copies in the cache.
-  VibeSkua's SWF keeps going through `Target::Skua` until R6.
-- With no per-client classes, `clients.rs`'s `MAX` of 4 is only a setting; what limits tabs on a
-  phone becomes memory and the extension's calls a second (M4, M5).
-- Done when: Turu Mas runs four tabs on `turu.swf` (log in, change maps, switch tabs: keys, sound
-  and the quantity selector go to the shown tab; the game menu opens in Battleon), and
-  `TuruStage`'s debug counters show no call it couldn't place.
+- `TuruAirHost` compiles in `TuruHost`, static methods by tab (`client`): `addCallback`,
+  `call` (to `TuruExternal`), `load(client, url):Loader` (a `TuruLoader` for the client: disk
+  cache, the client patched for AIR, `loadBytes`), `showGame(client, main, game)` (`TuruStage`
+  takes the host SWF off and the game on), `isShown(client)`.
+- `turu.swf` uses `AirHost` when its domain has `TuruHost`, with its tab from
+  `loaderInfo.parameters.turuClient`, which the host passes in the `LoaderContext`. `Host.load`
+  became `load(url):Loader`, the host making the loader. Under AIR (`Host.ownsStage()` false)
+  `turu.swf` leaves the shared stage's frame rate, scale and alignment to the host, and its Bank
+  key works only while its tab is on screen (`isShown`).
+- The host loads the same `turu.swf` bytes for every tab, unpatched, in a domain under its own
+  (so the game menu's assets still find `TuruStage`), and `turu.swf` has its game loaded into a
+  domain under its own (`AirHost.load`), as VibeSkua's SWF does: the game's domain then holds the
+  tab's `turu.host::Main`, so `TuruStage` knows the tab while the game is still being built
+  (without it, two `assetsParent` calls a start couldn't tell their tab). `TuruStage` needed no change: it finds a tab
+  by its host SWF's class (`mains[client]`), whichever it is. VibeSkua's SWF keeps going through
+  `Target::Skua`, `TuruExternal<n>` and `TuruLoader<n>` until R6.
+- Which SWF: Options > Application's "Use Turu's Host SWF", read by the host from settings.json in
+  the data folder the engine's start returns (no new native call). `build.sh` packages both.
+- `clients.rs`'s `MAX` stays 4: the per-tab classes no longer set it, but a phone's memory and
+  the extension's calls a second do, which M4 and M5 measure.
+- Checked on the emulator (Android 16, four accounts): four tabs logged in, each its own game;
+  switching showed each one's, with 264 keys held back from hidden tabs; the game menu opened;
+  `TuruStage` placed every call ("couldn't tell their tab: none"); GoldFarm on one tab moved only
+  that tab's maps and turned in 26 quests in 5.2 minutes (5.0 a minute, VibeSkua's desktop pace)
+  with no "too soon".
+- Done when: on a phone with the setting on, four tabs log in and change maps; switching tabs
+  moves keys, sound and the quantity selector to the shown tab; the game menu opens in Battleon;
+  `TuruStage`'s `fallbacks` and `hookSummary` show no call it couldn't place; GoldFarm on one tab
+  keeps VibeSkua's pace on Turu Mas.
 
 ### R5: One client-loading path
 

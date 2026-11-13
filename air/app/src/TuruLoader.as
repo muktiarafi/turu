@@ -28,8 +28,10 @@ package {
         /** The game client whose skua made this loader ([TuruLoader0] ...), or -1. */
         protected var client:int = -1;
 
-        public function TuruLoader() {
+        /** `forClient`: the client it loads for (`TuruHost.load`); -1 for skua's own. */
+        public function TuruLoader(forClient:int = -1) {
             super();
+            client = forClient;
             contentLoaderInfo.addEventListener(Event.INIT, onInit, false, int.MAX_VALUE);
         }
 

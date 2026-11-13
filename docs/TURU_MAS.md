@@ -35,7 +35,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 | `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
 | `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
-| `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). `build.sh` adds rustls-platform-verifier's network security config to `res/` (plain HTTP only to the certificate authorities' hosts, for revocation lists). |
+| `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`, and `TuruHost` for Turu's own `turu.swf`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). `build.sh` adds rustls-platform-verifier's network security config to `res/` (plain HTTP only to the certificate authorities' hosts, for revocation lists). |
 | `air/ane/rust/src/clients.rs`, `air/app/src/TuruStage.as` | Tabs: game clients 0-3 on AIR's one stage, each with its own bot (below). |
 | `frontend/` (`air` feature) | the gold accent (`theme.rs`: `ACCENT`, and `ON_ACCENT`, the dark text and icons on it); `turu_frontend` without its `ruffle` feature. |
 
@@ -198,6 +198,11 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   and `TuruLoader<n>` (the host SWF has 0 to 3). Its calls reach the engine with `n`
   (`nativeFlashCall`), which hands them to that tab's bot (`clients::bot`); the bot's calls name
   `n` too (`AirFlashHost { client }`), so they run its skua's callbacks.
+* **Turu's own host SWF.** With Options > Application > "Use Turu's Host SWF" (read from
+  settings.json at launch), the host loads Turu's `turu.swf` instead: the same unpatched bytes for
+  every tab, its tab number in the `LoaderContext`'s parameters (`turuClient`). It reaches the
+  host through `TuruHost` (calls, loading through `TuruLoader`, showing its game), so it needs no
+  per-tab classes (docs/HOST_SWF_PROPOSAL.md, R4).
 * **Opening and closing.** `clients.rs` serves the UI's tab requests: a new tab gets a free client
   number and a bot, and the host SWF loads a skua for it (status event "tab", `open`); `select`
   shows it; `close` disconnects its game and unloads its SWFs (`unloadAndStop`). Client 0, the

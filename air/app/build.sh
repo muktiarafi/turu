@@ -1,7 +1,7 @@
 #!/bin/bash
-# Turu Mas (docs/TURU_MAS.md): builds the APK (the host SWF, VibeSkua's skua.swf, Turu's
-# native extension with the engine) and installs it on the connected device (adb), unless
-# `--no-install`. The engine patches skua.swf, and the live client as skua loads it, at run time.
+# Turu Mas (docs/TURU_MAS.md): builds the APK (the host SWF, VibeSkua's skua.swf, Turu's own
+# turu.swf, Turu's native extension with the engine) and installs it on the connected device
+# (adb), unless `--no-install`. The engine patches skua.swf, and the live client as skua loads it, at run time.
 # Needs:
 #   AIR_HOME      the AIR SDK (51.5+)
 #   AIR_JAVA_HOME a JDK 17 (AIR's Gradle doesn't run on newer ones)
@@ -36,6 +36,8 @@ echo "Turu Mas $version (version code $code, AIR versionNumber $version_number)"
 
 # skua.swf as the Ruffle build bundles it; the icons.
 cp bot/assets/skua.swf "$out/skua.swf"
+# Turu's own host SWF (docs/HOST_SWF_PROPOSAL.md), used with "Use Turu's Host SWF".
+cp bot/assets/turu.swf "$out/turu.swf"
 rm -rf "$out/icons" && cp -R air/app/icons "$out/icons"
 
 # The native extension, the host, and the APK (JDK 17 from here on).
@@ -61,7 +63,7 @@ fi
 # The app's ID as app.xml has it (com.muktiarafi.turumas), not AIR's "air." + ID.
 AIR_NOANDROIDFLAIR=true "$AIR_HOME/bin/adt" -package -target apk-captive-runtime -arch armv8 \
   -storetype pkcs12 -keystore "$keystore" -storepass "$password" \
-  "$out/TuruMas.apk" "$out/app.xml" -extdir "$out/ext" -C "$out" TuruAirHost.swf skua.swf icons
+  "$out/TuruMas.apk" "$out/app.xml" -extdir "$out/ext" -C "$out" TuruAirHost.swf skua.swf turu.swf icons
 ls -la "$out/TuruMas.apk"
 if [ "${1:-}" != "--no-install" ]; then
   "$ANDROID_HOME/platform-tools/adb" install -r "$out/TuruMas.apk"

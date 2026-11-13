@@ -33,9 +33,11 @@ public class ExternalHost extends Host {
         }
     }
 
-    override public function load(loader:Loader, url:String):void {
-        // No LoaderContext: the game lands in this SWF's domain, as with VibeSkua's.
+    override public function load(url:String):Loader {
+        // No LoaderContext: as VibeSkua's, the game gets a domain under this SWF's.
+        var loader:Loader = new Loader();
         loader.load(new URLRequest(url));
+        return loader;
     }
 
     override public function show(main:DisplayObject, game:DisplayObject):void {

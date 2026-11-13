@@ -91,7 +91,12 @@ public class Main extends MovieClip {
         }
         // The client's errors too: they pass up through its Loader to this SWF's.
         loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaughtError);
-        host = new ExternalHost(stageRef, parity ? "turu." : "");
+        // Turu Mas: its host compiles in `TuruHost`, and names this SWF's tab.
+        if (ApplicationDomain.currentDomain.hasDefinition("TuruHost")) {
+            host = new AirHost(int(ours.turuClient));
+        } else {
+            host = new ExternalHost(stageRef, parity ? "turu." : "");
+        }
         packets = new Packets(host);
         background = new Background(host, gameOf);
 
@@ -240,7 +245,7 @@ public class Main extends MovieClip {
             return;
         }
         var fps:Number = Number(frameRate);
-        if (fps > 0) {
+        if (fps > 0 && host.ownsStage()) {
             stageRef.frameRate = fps;
         }
         if (loading) {
@@ -278,11 +283,10 @@ public class Main extends MovieClip {
             loading = false;
             return;
         }
-        loader = new Loader();
+        loader = host.load(GAME_URL + "gamefiles/" + vars.sFile + "?ver=" + Math.random());
         loader.contentLoaderInfo.addEventListener(Event.INIT, onClientInit);
         loader.contentLoaderInfo.addEventListener(Event.COMPLETE, onClientLoaded);
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onClientFailed);
-        host.load(loader, GAME_URL + "gamefiles/" + vars.sFile + "?ver=" + Math.random());
     }
 
     private function onClientFailed(event:IOErrorEvent):void {
@@ -373,7 +377,7 @@ public class Main extends MovieClip {
 
     /** The game's Bank key (`litePreference.data.keys.Bank`) opens the bank, unless typing. */
     private function onKeyDown(event:KeyboardEvent):void {
-        if (game == null) {
+        if (game == null || !host.isShown()) {
             return;
         }
         var focus:TextField = stageRef.focus as TextField;

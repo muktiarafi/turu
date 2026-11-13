@@ -61,8 +61,7 @@ public class Background {
         if (shown != null && shown.parent != null) {
             shown.parent.removeChild(shown);
         }
-        shown = new Loader();
-        host.load(shown, custom);
+        shown = host.load(custom);
         title.addChild(shown);
     }
 

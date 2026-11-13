@@ -57,6 +57,28 @@ package {
             unknown[kind] = int(unknown[kind]) + 1;
         }
 
+        /** What the first few [assetsParent] calls that couldn't tell their tab saw, to log. */
+        public static var lostDomains:Array = [];
+
+        /** What `domain` holds of the tabs' classes, and what the tabs have so far. */
+        private static function describe(domain:ApplicationDomain):String {
+            var has:Array = [];
+            for each (var name:String in ["Game", "turu.host::Main", "skua::Main", "TuruStage"]) {
+                try {
+                    if (domain.hasDefinition(name)) {
+                        has.push(name);
+                    }
+                } catch (e:Error) {
+                }
+            }
+            var tabs:Array = [];
+            for (var i:int = 0; i < Math.max(mains.length, games.length); i++) {
+                tabs.push(i + ": main " + (mains[i] != null ? getQualifiedClassName(mains[i]) : "-") +
+                    ", game " + (games[i] != null) + ", loader " + (gameLoaders[i] != null));
+            }
+            return "domain has [" + has.join(", ") + "]; tabs " + tabs.join("; ");
+        }
+
         /** What the shared stage's hooks have done so far, in a line. */
         public static function hookSummary():String {
             var lost:Array = [];
@@ -284,6 +306,9 @@ package {
             }
             // `TuruStage` is still found from the host's own; the tab isn't.
             lost("domain");
+            if (lostDomains.length < 5) {
+                lostDomains.push(describe(domain));
+            }
             return ApplicationDomain.currentDomain;
         }
 
