@@ -32,6 +32,7 @@ pub mod packet_filters;
 pub mod parity;
 pub mod paths;
 pub mod perf;
+pub mod player_packets;
 pub mod quest_cache;
 pub mod quick_scripts;
 mod repeat_log;
@@ -127,6 +128,8 @@ pub const DEFAULT_ADVANCED_SKILLS: &str = include_str!("../assets/AdvancedSkills
 /// The bot. One per game client; shared (`Arc`) by the UI, the script thread and the
 /// background threads.
 pub struct Bot {
+    /// What's left of each game socket's last message (`player_packets`).
+    socket_buffers: player_packets::SocketBuffers,
     pub flash: Flash,
     pub control: Arc<ScriptControl>,
     pub state: Mutex<GameState>,
@@ -179,6 +182,7 @@ impl Bot {
         let settings = paths.load_settings().unwrap_or_default();
         let bot = Arc::new(Self {
             flash: Flash::new(control.clone()),
+            socket_buffers: player_packets::SocketBuffers::default(),
             control,
             state: Mutex::new(GameState::default()),
             options: RwLock::new(options),

@@ -124,6 +124,12 @@ pub trait FlashHost: Send + Sync {
         Ok((a, b))
     }
 
+    /// Whether the player itself reports the game's packets ([`crate::Bot::on_socket`]):
+    /// ruffle-aqw's socket observer (R5). The host SWF's packet capture is then off.
+    fn player_packets(&self) -> bool {
+        false
+    }
+
     /// A SWF the game has loaded from a URL whose path ends in `path` (a map file such as
     /// `ChiralValley/town-Mobius-21Feb14.swf`), as an uncompressed SWF file; `None` when
     /// none is loaded or the host can't tell.

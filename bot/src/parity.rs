@@ -100,6 +100,20 @@ const ALLOWED: &[Allowed] = &[
                  Ruffle",
         same: |_, _, turu| turu == MISSING,
     },
+    Allowed {
+        name: "packet",
+        reason: "only the player's socket saw it (R5): VibeSkua's SWF reads sent packets from \
+                 SmartFox's debug messages, which the game's own logger keeps turning off, and \
+                 missed about 5% of every kind in game; the player reports every flush",
+        same: |_, vibeskua, _| vibeskua == MISSING,
+    },
+    Allowed {
+        name: "pext",
+        reason: "only the player's socket saw it (R5): VibeSkua's SWF missed about 4% of the \
+                 received extension responses, of every kind, with no error of its own; the \
+                 player reports every message the client handled",
+        same: |_, vibeskua, _| vibeskua == MISSING,
+    },
 ];
 
 /// Aura snapshots that differ at most by a few milliseconds in `remaining`.
@@ -126,6 +140,36 @@ fn same_snapshots(a: &str, b: &str) -> bool {
                     (_, None) => false,
                 })
         })
+}
+
+/// The command an event's arguments carry (`["%xt%zm%gar%..."]`: `gar`; a `pext`: its
+/// `dataObj`'s `cmd`, or a string packet's first field), for telling one-sided events apart.
+fn command_of(args: &str) -> String {
+    let Ok(Value::Array(args)) = serde_json::from_str::<Value>(args) else {
+        return String::new();
+    };
+    let Some(first) = args.first().and_then(Value::as_str) else {
+        return String::new();
+    };
+    if let Some(rest) = first.strip_prefix("%xt%zm%") {
+        return rest.split('%').next().unwrap_or_default().to_owned();
+    }
+    let Ok(packet) = serde_json::from_str::<Value>(first) else {
+        return String::new();
+    };
+    let data = &packet["params"]["dataObj"];
+    data.get("cmd")
+        .or_else(|| data.get(0))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Whether [`ALLOWED`] accepts `vibeskua` and `turu` as the same for `name`.
+fn allowed(name: &str, vibeskua: &str, turu: &str) -> bool {
+    ALLOWED
+        .iter()
+        .any(|a| a.name == name && (a.same)("", vibeskua, turu))
 }
 
 /// `params` of the packet in a `pext` event's arguments (`["{json}"]`).
@@ -163,6 +207,10 @@ struct Counts {
     mismatched: u64,
     /// Different, but on the allowlist.
     allowed: u64,
+    /// Events only VibeSkua's SWF sent (no partner in time).
+    only_vibeskua: u64,
+    /// Events only Turu's side sent.
+    only_turu: u64,
 }
 
 /// One event's payloads from each SWF, waiting for the other's.
@@ -213,6 +261,10 @@ impl Parity {
         self.event_at(side, name, args, Instant::now())
     }
 
+    /// Pairs an event with an equal one (or one [`ALLOWED`] accepts) the other SWF sent, in
+    /// either order: two captures can each see a few the other doesn't (VibeSkua's starts at
+    /// login), and pairing by order would then compare every later event with the wrong one.
+    /// An event left without a partner for [`EVENT_WAIT`] is a mismatch, seen on one side only.
     fn event_at(&self, side: Side, name: &str, args: &[Value], now: Instant) -> Vec<String> {
         if !EVENTS.contains(&name) {
             return Vec::new();
@@ -220,22 +272,34 @@ impl Parity {
         let payload = Value::Array(args.to_vec()).to_string();
         let mut inner = self.inner.lock();
         let waiting = inner.events.entry(name.to_owned()).or_default();
-        let queue = match side {
-            Side::VibeSkua => &mut waiting.vibeskua,
-            Side::Turu => &mut waiting.turu,
+        let (mine, theirs) = match side {
+            Side::VibeSkua => (&mut waiting.vibeskua, &mut waiting.turu),
+            Side::Turu => (&mut waiting.turu, &mut waiting.vibeskua),
         };
-        if queue.len() >= EVENTS_KEPT {
-            queue.pop_front();
-        }
-        queue.push_back((payload, now));
+        // VibeSkua's first, as `ALLOWED` takes them.
+        let ordered = |other: &str| match side {
+            Side::VibeSkua => (payload.clone(), other.to_owned()),
+            Side::Turu => (other.to_owned(), payload.clone()),
+        };
+        let found = theirs.iter().position(|(other, _)| {
+            let (a, b) = ordered(other);
+            a == b || allowed(name, &a, &b)
+        });
+        let matched = match found {
+            Some(i) => {
+                let (other, _) = theirs.remove(i).expect("found");
+                Some(ordered(&other))
+            }
+            None => {
+                if mine.len() >= EVENTS_KEPT {
+                    mine.pop_front();
+                }
+                mine.push_back((payload.clone(), now));
+                None
+            }
+        };
 
-        let mut pairs = Vec::new();
         let mut missing = Vec::new();
-        while let (Some(_), Some(_)) = (waiting.vibeskua.front(), waiting.turu.front()) {
-            let (a, _) = waiting.vibeskua.pop_front().expect("checked");
-            let (b, _) = waiting.turu.pop_front().expect("checked");
-            pairs.push((a, b));
-        }
         for (queue, side) in [
             (&mut waiting.vibeskua, Side::VibeSkua),
             (&mut waiting.turu, Side::Turu),
@@ -250,7 +314,7 @@ impl Parity {
         }
 
         let mut lines = Vec::new();
-        for (a, b) in pairs {
+        if let Some((a, b)) = matched {
             lines.extend(inner.compare(name, "", &a, &b, now));
         }
         for (side, payload) in missing {
@@ -293,7 +357,16 @@ impl Parity {
             .counts
             .iter()
             .filter(|(_, c)| c.mismatched > 0)
-            .map(|(name, c)| format!("{name} {}", c.mismatched))
+            .map(|(name, c)| {
+                if c.only_vibeskua + c.only_turu > 0 {
+                    format!(
+                        "{name} {}: VibeSkua only {}, Turu only {}",
+                        c.mismatched, c.only_vibeskua, c.only_turu
+                    )
+                } else {
+                    format!("{name} {}", c.mismatched)
+                }
+            })
             .collect();
         Some(format!(
             "Parity: {} compared, {} unlisted mismatches{}, {} allowed differences.",
@@ -331,7 +404,21 @@ impl Inner {
             return None;
         }
         counts.mismatched += 1;
-        let key = format!("{name} {detail}");
+        // An event one side alone sent: counted by side, and logged once a minute per side and
+        // command, so one kind doesn't hide another.
+        let alone = if turu == MISSING {
+            counts.only_vibeskua += 1;
+            Some(("VibeSkua", vibeskua))
+        } else if vibeskua == MISSING {
+            counts.only_turu += 1;
+            Some(("Turu", turu))
+        } else {
+            None
+        };
+        let key = match alone {
+            Some((side, payload)) => format!("{name} {detail} {side} only {}", command_of(payload)),
+            None => format!("{name} {detail}"),
+        };
         let repeats = self.repeats.note(&key, now)?;
         let start = excerpt_start(vibeskua, turu);
         let mut line = format!(
@@ -425,49 +512,53 @@ mod tests {
 
         let other = json!(r#"{"params":{"type":"str","dataObj":["b"]}}"#);
         let mine = json!(r#"{"params":{"type":"str","dataObj":["c"]}}"#);
-        parity.event(Side::Turu, "pext", &[mine]);
-        let lines = parity.event(Side::VibeSkua, "pext", &[other]);
+        let start = Instant::now();
+        assert!(
+            parity
+                .event_at(Side::Turu, "pext", &[mine], start)
+                .is_empty()
+        );
+        assert!(
+            parity
+                .event_at(Side::VibeSkua, "pext", &[other], start)
+                .is_empty(),
+            "different params don't pair"
+        );
+        let lines = parity.event_at(Side::VibeSkua, "pext", &[json!("{}")], start + EVENT_WAIT);
+        // Turu's (the player's) alone is allowed; VibeSkua's alone isn't.
         assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(parity.summary().unwrap().contains("1 unlisted mismatches"));
     }
 
     #[test]
-    fn events_pair_in_order_and_a_late_one_is_missing() {
+    fn events_pair_by_content_and_one_without_a_partner_is_missing() {
         let parity = Parity::default();
         let start = Instant::now();
         let packet = |p: &str| [json!(p)];
-        assert!(
-            parity
-                .event_at(Side::VibeSkua, "packet", &packet("%a%"), start)
-                .is_empty()
-        );
-        assert!(
-            parity
-                .event_at(Side::VibeSkua, "packet", &packet("%b%"), start)
-                .is_empty()
-        );
-        assert!(
-            parity
-                .event_at(Side::Turu, "packet", &packet("%a%"), start)
-                .is_empty()
-        );
+        // Only VibeSkua's saw `%a%`. The rest still pair, in any order.
+        for (side, p) in [
+            (Side::VibeSkua, "%a%"),
+            (Side::Turu, "%b%"),
+            (Side::VibeSkua, "%c%"),
+            (Side::VibeSkua, "%b%"),
+            (Side::Turu, "%c%"),
+        ] {
+            assert!(
+                parity
+                    .event_at(side, "packet", &packet(p), start)
+                    .is_empty()
+            );
+        }
         let later = start + EVENT_WAIT;
-        let lines = parity.event_at(Side::Turu, "packet", &packet("%c%"), later);
-        assert_eq!(
-            lines,
-            [r#"parity: packet: VibeSkua ["%b%"] / Turu ["%c%"]"#]
-        );
-
-        // Turu's never sends this one: it counts as missing once the next comes (a new Parity:
-        // the mismatch above keeps `packet` out of the log for a minute).
-        let parity = Parity::default();
-        let gone = later + Duration::from_secs(1);
+        let lines = parity.event_at(Side::Turu, "packet", &packet("%d%"), later);
+        assert_eq!(lines, [r#"parity: packet: VibeSkua ["%a%"] / Turu (none)"#]);
+        let summary = parity.summary().unwrap();
         assert!(
-            parity
-                .event_at(Side::VibeSkua, "packet", &packet("%x%"), gone)
-                .is_empty()
+            summary.contains(
+                "3 compared, 1 unlisted mismatches (packet 1: VibeSkua only 1, Turu only 0)"
+            ),
+            "{summary}"
         );
-        let lines = parity.event_at(Side::VibeSkua, "packet", &packet("%y%"), gone + EVENT_WAIT);
-        assert_eq!(lines, [r#"parity: packet: VibeSkua ["%x%"] / Turu (none)"#]);
     }
 
     #[test]
@@ -513,6 +604,50 @@ mod tests {
         let lines = parity.event_at(Side::VibeSkua, "openWebsite", &url, start + EVENT_WAIT);
         assert!(lines.is_empty(), "{lines:?}");
         assert!(parity.summary().unwrap().contains("0 unlisted mismatches"));
+    }
+
+    #[test]
+    fn one_sided_events_are_counted_by_side_and_command() {
+        assert_eq!(command_of(r#"["%xt%zm%gar%1%42%aa>m:1%wvz%"]"#), "gar");
+        assert_eq!(
+            command_of(
+                &json!([r#"{"params":{"type":"json","dataObj":{"cmd":"ct"}}}"#]).to_string()
+            ),
+            "ct"
+        );
+        assert_eq!(
+            command_of(
+                &json!([r#"{"params":{"type":"str","dataObj":["warning","-1"]}}"#]).to_string()
+            ),
+            "warning"
+        );
+        let parity = Parity::default();
+        let start = Instant::now();
+        let gar = [json!("%xt%zm%gar%1%1%aa%")];
+        let mv = [json!("%xt%zm%mv%1%2%3%")];
+        parity.event_at(Side::VibeSkua, "packet", &gar, start);
+        parity.event_at(Side::VibeSkua, "packet", &mv, start);
+        let lines = parity.event_at(Side::Turu, "packet", &[json!("%x%")], start + EVENT_WAIT);
+        assert_eq!(lines.len(), 2, "gar and mv each logged: {lines:?}");
+        let summary = parity.summary().unwrap();
+        assert!(
+            summary.contains("VibeSkua only 2, Turu only 0"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn packets_only_the_player_saw_are_allowed_but_not_the_reverse() {
+        let parity = Parity::default();
+        let start = Instant::now();
+        let later = start + EVENT_WAIT;
+        let pext = |d: &str| [json!(format!(r#"{{"params":{{"dataObj":["{d}"]}}}}"#))];
+        parity.event_at(Side::Turu, "pext", &pext("player"), start);
+        parity.event_at(Side::VibeSkua, "pext", &pext("vibeskua"), start);
+        let lines = parity.event_at(Side::Turu, "pext", &pext("next"), later);
+        assert_eq!(lines.len(), 1, "only VibeSkua's is reported: {lines:?}");
+        assert!(lines[0].contains("Turu (none)"), "{lines:?}");
+        assert!(parity.summary().unwrap().contains("1 allowed differences"));
     }
 
     #[test]

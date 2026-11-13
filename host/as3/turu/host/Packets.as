@@ -12,6 +12,10 @@ package turu.host {
  * - `connectionLost`.
  *
  * The client may make a new SmartFox client; [frame] follows it.
+ *
+ * `setPacketCapture(false)`: the player reports the packets itself (the Ruffle builds, R5), so
+ * `debug` is left as the game sets it and `pext` and `packet` aren't sent; `connectionLost` still
+ * is.
  */
 public class Packets {
     private static const SENT:String = "[Sending - STR]: ";
@@ -25,6 +29,7 @@ public class Packets {
     /** The SmartFox client listened to. */
     private var sfc:*;
     private var echo:Boolean = false;
+    private var capture:Boolean = true;
 
     public function Packets(host:Host) {
         this.host = host;
@@ -33,6 +38,11 @@ public class Packets {
     /** `setPacketEcho(on)`: whether `packetFromServer` is sent. */
     public function setEcho(on:*):void {
         echo = on === true || on == "true";
+    }
+
+    /** `setPacketCapture(on)`: whether this SWF reports packets (off when the player does). */
+    public function setCapture(on:*):void {
+        capture = on === true || on == "true";
     }
 
     /** Each frame: listen to the game's SmartFox client, and keep its debug messages on. */
@@ -44,7 +54,7 @@ public class Packets {
         if (now !== sfc) {
             listen(now);
         }
-        if (!now.debug) {
+        if (capture && !now.debug) {
             now.debug = true;
         }
     }
@@ -62,6 +72,9 @@ public class Packets {
     }
 
     private function onExtension(event:Object):void {
+        if (!capture) {
+            return;
+        }
         host.call("pext", [JSON.stringify({type: event.type, params: event.params})]);
     }
 
@@ -70,6 +83,9 @@ public class Packets {
     }
 
     private function onDebugMessage(event:Object):void {
+        if (!capture) {
+            return;
+        }
         var message:String = String(event.params.message);
         if (message.indexOf(SENT_GAME) == 0) {
             host.call("packet", [message.substr(SENT.length).replace(LINE_END, "")]);

@@ -165,6 +165,11 @@ impl FlashHost for TuruFlashHost {
         }
     }
 
+    /// The player's [`TuruSocketObserver`] reports the game's packets.
+    fn player_packets(&self) -> bool {
+        true
+    }
+
     /// The movie from the player's library, written back out as an uncompressed SWF here, off
     /// the event loop (Ruffle keeps its tags decompressed, without the header).
     fn loaded_swf(&self, path: &str) -> Option<Vec<u8>> {
@@ -235,6 +240,28 @@ fn to_json(value: ExternalValue) -> serde_json::Value {
 }
 
 /// Receives a tab's `skua.swf`'s calls to the host.
+/// A tab's player's sockets, for its bot (R5, `turu_bot::player_packets`): runs on the player's
+/// thread while it's locked, as [`TuruExternalInterface`] does.
+pub struct TuruSocketObserver {
+    pub bot: Arc<Bot>,
+}
+
+impl ruffle_core::socket::SocketObserver for TuruSocketObserver {
+    fn sent(&self, socket: u64, data: &[u8]) {
+        self.bot
+            .on_socket(socket, turu_bot::player_packets::Direction::Sent, data);
+    }
+
+    fn received(&self, socket: u64, data: &[u8]) {
+        self.bot
+            .on_socket(socket, turu_bot::player_packets::Direction::Received, data);
+    }
+
+    fn closed(&self, socket: u64) {
+        self.bot.on_socket_closed(socket);
+    }
+}
+
 pub struct TuruExternalInterface {
     pub bot: Arc<Bot>,
 }

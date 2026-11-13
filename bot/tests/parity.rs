@@ -129,12 +129,13 @@ fn turus_events_are_compared_not_acted_on() {
     );
     bot.on_flash_call("packet", vec![json!(["%xt%zm%moveToCell%1%Other%Spawn%"])]);
 
+    // The equal pair is compared at once; the two left over wait for a partner (5 s) before
+    // they count as mismatches.
     let log = bot.logs.debug.text();
-    assert_eq!(log.matches("parity: packet").count(), 1, "{log}");
-    assert!(log.contains("Wrong"), "{log}");
+    assert_eq!(log.matches("parity: packet").count(), 0, "{log}");
     let summary = bot.flash.parity().unwrap().summary().unwrap();
     assert!(
-        summary.contains("1 unlisted mismatches (packet 1)"),
+        summary.contains("1 compared, 0 unlisted mismatches"),
         "{summary}"
     );
 }

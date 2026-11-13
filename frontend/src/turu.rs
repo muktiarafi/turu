@@ -28,7 +28,9 @@ use turu_bot::startup::Startup;
 #[cfg(feature = "ruffle")]
 mod ruffle_host;
 #[cfg(feature = "ruffle")]
-pub use ruffle_host::{TuruExternalInterface, TuruFlashCall, TuruFlashHost, answer_flash_call};
+pub use ruffle_host::{
+    TuruExternalInterface, TuruFlashCall, TuruFlashHost, TuruSocketObserver, answer_flash_call,
+};
 
 pub const APP_NAME: &str = "Turu";
 /// The release workflow sets `TURU_VERSION` from the git tag; local builds show the crate version.

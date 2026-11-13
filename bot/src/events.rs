@@ -264,6 +264,13 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         for line in parity.event(side, event, &args) {
             bot.logs.debug.push(line);
         }
+        // The player's packets stand for Turu's side (R5): its SWF's own aren't compared.
+        if side == crate::parity::Side::Turu
+            && matches!(event, "packet" | "pext")
+            && bot.flash.player_packets()
+        {
+            return;
+        }
         if side == crate::parity::Side::Turu {
             if event == "error"
                 && let Some(line) = bot.flash.host_error_line(arg_str(0), arg_str(1))
@@ -290,20 +297,14 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             bot.events.emit(BotEvent::GameLoaded);
             crate::startup::on_game_loaded(bot);
         }
+        // The player's packets take their place when it has them (R5): `player_packet_sent`.
+        "pext" if bot.flash.player_packets() => {}
+        "packet" if bot.flash.player_packets() => {}
         "pext" => match serde_json::from_str::<Value>(arg_str(0)) {
             Ok(packet) => crate::api::packets::on_extension_packet(bot, packet),
             Err(e) => tracing::debug!("Bad pext JSON: {e}"),
         },
-        "packet" => {
-            let packet = arg_str(0).to_owned();
-            if bot.logs.packet_logging.load(Ordering::Relaxed) && bot.logs.keeps_packet(&packet) {
-                bot.logs.packets.push(packet.clone());
-            }
-            if crate::log::packets_to_log() {
-                tracing::info!(target: "turu::packet", "{packet}");
-            }
-            crate::api::packets::on_packet_sent(bot, &packet);
-        }
+        "packet" => packet_sent(bot, arg_str(0)),
         "packetFromServer" => {}
         "connectionLost" => {
             bot.logs
@@ -367,4 +368,39 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
         "hostLog" => bot.logs.debug.push(format!("[AIR host] {}", arg_str(0))),
         other => tracing::debug!("Unhandled Flash call {other}: {args:?}"),
     }
+}
+
+/// An outgoing game packet: logged (Diagnostics > Logger, `TURU_PACKET_LOG`) and acted on.
+fn packet_sent(bot: &Arc<Bot>, packet: &str) {
+    if bot.logs.packet_logging.load(Ordering::Relaxed) && bot.logs.keeps_packet(packet) {
+        bot.logs.packets.push(packet.to_owned());
+    }
+    if crate::log::packets_to_log() {
+        tracing::info!(target: "turu::packet", "{packet}");
+    }
+    crate::api::packets::on_packet_sent(bot, packet);
+}
+
+/// A packet the game sent, from the player (`player_packets`): as the host SWF's `packet`, and in
+/// parity mode compared with VibeSkua's.
+pub(crate) fn player_packet_sent(bot: &Arc<Bot>, packet: &str) {
+    if let Some(parity) = bot.flash.parity() {
+        let args = [Value::String(packet.to_owned())];
+        for line in parity.event(crate::parity::Side::Turu, "packet", &args) {
+            bot.logs.debug.push(line);
+        }
+    }
+    packet_sent(bot, packet);
+}
+
+/// An extension response the client handled, from the player: as the host SWF's `pext`, and in
+/// parity mode compared with VibeSkua's.
+pub(crate) fn player_extension_packet(bot: &Arc<Bot>, packet: Value) {
+    if let Some(parity) = bot.flash.parity() {
+        let args = [Value::String(packet.to_string())];
+        for line in parity.event(crate::parity::Side::Turu, "pext", &args) {
+            bot.logs.debug.push(line);
+        }
+    }
+    crate::api::packets::on_extension_packet(bot, packet);
 }

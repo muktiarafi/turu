@@ -105,6 +105,7 @@ public class Main extends MovieClip {
         expose("hostInfo", hostInfo);
         expose("setStrictErrors", setStrictErrors);
         expose("setPacketEcho", packets.setEcho);
+        expose("setPacketCapture", packets.setCapture);
         expose("catchPackets", catchPackets);
         new GameCalls(gameOf).exposeWith(expose);
         new Combat(gameOf).exposeWith(expose);
@@ -207,7 +208,7 @@ public class Main extends MovieClip {
         return JSON.stringify({
             name: "turu",
             version: VERSION,
-            features: ["errors", "strictErrors", "packetEcho", "loadClientFrameRate"],
+            features: ["errors", "strictErrors", "packetEcho", "packetCapture", "loadClientFrameRate"],
             callbacks: callbacks
         });
     }

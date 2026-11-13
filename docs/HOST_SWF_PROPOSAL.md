@@ -5,7 +5,8 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 (auras, monsters, combat); R3b done (inventory, shop, player, world); R3c done (server
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
-four tabs); the rest are proposals. Replaces the plan to fork VibeSkua's
+four tabs); R5 written (packets from the player), awaiting its checks in game; the rest are
+proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -368,15 +369,20 @@ without touching SmartFox.
   `onExtensionResponse`, and the game updates), so the client has applied the packet by then,
   which waits (EVENT_WAITS_PROPOSAL) need. That is the difference from `capture.rs`, which reads
   the network before the client does and stays the Interceptor's raw view.
-- Only the game server's socket (the one connected to the server the game picked); policy-file
-  requests and other sockets are left out.
-- Rust builds `packet` and `pext` from them: SmartFox's `%xt%...%` strings and its JSON
-  (`{"t":"xt","b":{"o":{...}}}`), into the shape `pext` carries today (`params.type`,
-  `params.dataObj`), so the bot, scripts and their events don't change.
-- `turu.swf` then stops its own capture there (asked by Rust after `hostInfo`): no `sfc.debug`
-  kept on, so SmartFox stops building a debug string for every packet, and no `JSON.stringify` of
-  every received packet. VibeSkua's SWF can't be asked; with it both run, and Rust takes the
-  player's.
+- Built as `ruffle_core::socket::SocketObserver` (`PlayerBuilder::with_socket_observer`), told
+  from `Socket.flush` and after each `socketData` dispatch, and when a socket closes; the
+  frontend's `TuruSocketObserver` hands a tab's to its bot (`Bot::on_socket`,
+  `bot/src/player_packets.rs`). Every AVM2 `flash.net.Socket` is watched (the game opens one,
+  SmartFox's), each with its own buffer split on null bytes; `XMLSocket` and policy files aren't.
+- Rust builds `packet` (outgoing `%xt%zm%...` strings, VibeSkua's filter) and `pext` (incoming
+  extension responses) from them, as the client's SmartFox builds `onExtensionResponse`'s
+  `params` (`ExtHandler.handleMessage`): a string message's fields after `xt`, a JSON one's
+  `b.o`, with `type` `str` or `json`. XML and system messages aren't the bot's. They go to the
+  same handlers as the SWF's events, so the bot, scripts and their events don't change.
+- `turu.swf` then stops its own capture there (`setPacketCapture(false)`, asked by Rust after
+  `hostInfo` when `FlashHost::player_packets()`): no `sfc.debug` kept on, so SmartFox stops
+  building a debug string for every packet, and no `JSON.stringify` of every received packet.
+  VibeSkua's SWF can't be asked; with it both run, and Rust drops its `packet` and `pext`.
 - No client patching on desktop or Ruffle Android, and nothing in `game_files.rs` changes. AQW or
   SmartFox changing their code doesn't reach it: it reads the socket, not their methods.
 - Hold and drop (M8): ruffle-aqw can hold a flush or drop a message. To the client it looks like
@@ -384,8 +390,14 @@ without touching SmartFox.
 - Turu Mas: AIR owns its socket, so it keeps the debug messages. A hook in SmartFox's
   `writeToSocket`/`handleMessage` there (Turu Mas already patches the client, `turu_air_patch`) is
   a later, separate step, if M4/M5's measurements show Turu Mas's packet cost matters.
-- Parity: in parity mode the player's `packet` and `pext` are compared with the SWF's, as events
-  are.
+- Parity: in parity mode the player's `packet` and `pext` are compared with VibeSkua's. Two
+  captures don't start together (VibeSkua's at login), so events pair by content, in either
+  order, and one left alone for 5 s is reported with the side that saw it. Over GoldFarm and a
+  relogin (about 50,000 compared) every unlisted one was the player's alone: about 5% of every
+  kind, `packet` and `pext`, and none VibeSkua's alone. VibeSkua's capture misses them (sent
+  packets come from SmartFox's debug messages, which the game's logger keeps turning off; for
+  received ones it logs nothing), so packets only the player saw are allowlisted; one only
+  VibeSkua's saw is still reported.
 - Done when: over the standard farms the player's packets match the SWF's (parity), and `perf.rs`
   shows the packet cost down (the ms/s in SmartFox's debug messages and `JSON.stringify` gone), on
   desktop and on Ruffle Android.

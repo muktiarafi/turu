@@ -296,6 +296,10 @@ impl ActivePlayer {
             builder = builder.with_external_interface(Box::new(crate::turu::TuruExternalInterface {
                 bot: bot.clone(),
             }));
+            // Turu: the game's packets, from its socket (R5).
+            builder = builder.with_socket_observer(Box::new(crate::turu::TuruSocketObserver {
+                bot: bot.clone(),
+            }));
         } else if opt.player.dummy_external_interface.unwrap_or_default() {
             builder = builder.with_external_interface(Box::new(DesktopExternalInterfaceProvider {
                 spoof_url: opt.player.spoof_url.clone(),

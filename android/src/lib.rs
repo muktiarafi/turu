@@ -839,6 +839,8 @@ fn build_player(
             root.join("SharedObjects"),
         )))
         .with_external_interface(Box::new(turu::TuruExternalInterface { bot: bot.clone() }))
+        // Turu: the game's packets, from its socket (R5).
+        .with_socket_observer(Box::new(turu::TuruSocketObserver { bot: bot.clone() }))
         .with_autoplay(true)
         .with_letterbox(Letterbox::On)
         .with_quality(StageQuality::High)

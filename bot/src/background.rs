@@ -39,6 +39,13 @@ fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
         bot.logs
             .debug
             .push(format!("Host SWF: {} version {}", info.name, info.version));
+        // R5: the player reports the packets; the SWF needn't keep SmartFox's debug messages.
+        if info.has("packetCapture")
+            && bot.flash.player_packets()
+            && let Err(e) = bot.flash.call("setPacketCapture", vec![false.into()])
+        {
+            tracing::debug!("setPacketCapture failed: {e}");
+        }
         if info.has("loadClientFrameRate") {
             return bot.flash.call("loadClient", vec![fps.into()]).map(|_| ());
         }

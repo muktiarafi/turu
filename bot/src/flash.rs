@@ -86,6 +86,14 @@ impl Flash {
         self.host.read().is_some()
     }
 
+    /// The player reports the game's packets itself ([`FlashHost::player_packets`]).
+    pub fn player_packets(&self) -> bool {
+        self.host
+            .read()
+            .as_ref()
+            .is_some_and(|h| h.player_packets())
+    }
+
     pub(crate) fn set_owner(&self, bot: &Arc<crate::Bot>) {
         let _ = self.owner.set(Arc::downgrade(bot));
     }
