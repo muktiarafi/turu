@@ -77,6 +77,29 @@ fn received_json_messages_reach_the_handlers_and_the_swfs_dont() {
 }
 
 #[test]
+fn compressed_messages_are_unpacked_like_the_clients() {
+    // The server sends its longer messages as `Z` and zlib in Base64: the Staff of Inversion's
+    // drops come so (Escherion's, shorter, don't), and they were lost before the bot saw them.
+    let bot = bot();
+    let drop = r#"{"t":"xt","b":{"r":-1,"o":{"cmd":"dropItem","items":{"1174":{"ItemID":1174,"sName":"1st Lord of Chaos Staff","sDesc":"You now posses the living staff of the very first Lord of Chaos!","iQty":1,"iStk":1,"bTemp":false,"sType":"Staff","sES":"Weapon","bQuest":1}}}}}"#;
+    let mut packed = turu_bot::capture::pack(drop);
+    packed.push(0);
+    bot.on_socket(7, Direction::Received, &packed);
+    assert!(
+        bot.state
+            .lock()
+            .drop_exists(turu_bot::api::NameOrId::Name("1st Lord Of Chaos Staff")),
+        "the compressed drop reached the drop stack"
+    );
+
+    let map = r#"{"t":"xt","b":{"r":-1,"o":{"cmd":"moveToArea","strMapName":"escherion","strMapFileName":"escherion.swf"}}}"#;
+    let mut packed = turu_bot::capture::pack(map);
+    packed.push(0);
+    let changed = maps_changed(&bot, || bot.on_socket(7, Direction::Received, &packed));
+    assert_eq!(changed, ["escherion"]);
+}
+
+#[test]
 fn sent_game_packets_are_logged_once() {
     let bot = bot();
     bot.logs

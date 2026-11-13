@@ -8,6 +8,8 @@
 //! SmartFox (`ExtHandler.handleMessage`) builds `onExtensionResponse`'s `params`: for a string
 //! message (`%xt%cmd%-1%...%`) `dataObj` is its fields after `xt`; for a JSON one
 //! (`{"t":"xt","b":{"o":{...}}}`) it's `b.o`. Other messages (XML, system ones) aren't the bot's.
+//! A compressed message (`Z` and zlib data in Base64, [`crate::capture::unpack`]) is unpacked
+//! first, as the client does.
 
 use crate::Bot;
 use parking_lot::Mutex;
@@ -77,7 +79,14 @@ pub fn extension_packet(message: &str) -> Option<Value> {
         let data: Vec<Value> = fields.map(|f| Value::String(f.to_owned())).collect();
         ("str", Value::Array(data))
     } else if message.starts_with('{') {
-        let parsed: Value = serde_json::from_str(message).ok()?;
+        let parsed: Value = match serde_json::from_str(message) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                let start: String = message.chars().take(300).collect();
+                tracing::warn!("A packet from the server isn't JSON ({e}): {start}");
+                return None;
+            }
+        };
         if parsed.get("t").and_then(Value::as_str) != Some("xt") {
             return None;
         }
@@ -104,6 +113,9 @@ impl Bot {
                     }
                 }
                 Direction::Received => {
+                    // The server compresses its longer messages (`Z`, zlib in Base64): a
+                    // monster's drops, `moveToArea`, `getQuests`, ...; the client unpacks them.
+                    let message = crate::capture::unpack(&message).unwrap_or(message);
                     if let Some(pext) = extension_packet(&message) {
                         crate::events::player_extension_packet(self, pext);
                     }
