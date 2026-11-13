@@ -150,7 +150,8 @@ How it's written:
   title (VibeSkua's says "AURAS!!!"), the Bank hotkey ignored while typing in a text field,
   `loadClient` taking the frame rate, and the header's frame rate at 24, the game's own (Turu
   sets 24 when the client loads anyway, `background.rs`; Turu Mas's stage is the host's 24).
-  From R5, `sfc.debug` left as the game sets it (packets captured by a hook in the client).
+  From R5, on the Ruffle builds, `sfc.debug` left as the game sets it (packets come from the
+  player).
 - **Build.** `host/as3` (package `turu.host`) is compiled by crate `turu_host` with Ruffle's
   `ruffle/tools/asc/asc.jar` against Ruffle's playerglobal (which it builds itself, so nothing
   depends on where `ruffle_core`'s build put it). Java is already a build dependency there; the
@@ -238,8 +239,8 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
   `{"error": "..."}`; off until `flash.rs` handles it.
 - Packets as VibeSkua's: read from SmartFox's debug messages, with `sfc.debug` kept on.
   SmartFox's client (`it.gotoandplay.smartfoxserver.SmartFoxClient`) is sealed and its socket
-  private, so AS3 can't wrap its sends; R5 replaces this. `pext` once per packet;
-  `packetFromServer` only after `setPacketEcho(true)`; a new SmartFox client is followed.
+  private, so AS3 can't wrap its sends; R5 replaces this on the Ruffle builds. `pext` once per
+  packet; `packetFromServer` only after `setPacketEcho(true)`; a new SmartFox client is followed.
 - `TURU_HOST_SWF=turu` chooses it (`turu_bot::HostSwf`; `bot::paths` writes `turu.swf`). No
   setting yet: with only R1's callbacks, Turu's background loops would fill the log with
   "not in Turu's host SWF".
@@ -354,26 +355,40 @@ How each is checked:
   `TuruStage`'s `fallbacks` and `hookSummary` show no call it couldn't place; GoldFarm on one tab
   keeps VibeSkua's pace on Turu Mas.
 
-### R5: One client-loading path
+### R5: Packets from the player
 
-- `Host.load` patches the client as it loads on every host, not only on Turu Mas: Ruffle's
-  hosts fetch it (through the disk cache, `game_files.rs`), patch it and `loadBytes` it.
-  `turu_air_patch` becomes the client patcher for every host; AIR's sandbox rules stay Turu
-  Mas's.
-- The packet hook: SmartFox's `writeToSocket` (every message sent) and `handleMessage` (every
-  one received) also call a hook class in `turu.swf`, which sends `packet` and, on request,
-  `packetFromServer`. `sfc.debug` is left as the game sets it, so SmartFox stops building a
-  debug string for every packet.
-- Not the socket (`capture.rs`): it sees bytes before the client has handled them, so a wait
-  woken by a packet could read the world before the client changed it; AIR has no such pipe;
-  and holding or dropping a packet there (M8) would deceive the client instead of not sending.
-  `capture.rs` stays the Interceptor's raw view.
-- A patch that misses (SmartFox's names changed in a game update) is reported, as
-  `Report::stage_missed` is, and the SWF falls back to the debug messages.
-- The same machinery carries M7's `gotoAndStop` guard.
-- Done when: the hook's packet log matches the debug messages' over the standard farms, and
-  `perf.rs` shows the packet cost down (ms/s in SmartFox's debug messages and `JSON.stringify`),
-  on desktop and on Turu Mas.
+On the Ruffle builds (desktop, Ruffle Android) the bot's packets come from ruffle-aqw, below the
+game client, instead of from AS3. Turu controls that player, so it can watch the game's socket
+without touching SmartFox.
+
+- **Outgoing:** when a `flash.net.Socket` flushes, ruffle-aqw hands Rust the messages written
+  (SmartFox ends each with a null byte): what the client sent, when it sent it.
+- **Incoming:** ruffle-aqw hands Rust the messages a `socketData` event carried *after* that
+  event's dispatch returns. SmartFox's handler runs synchronously (it parses the message, raises
+  `onExtensionResponse`, and the game updates), so the client has applied the packet by then,
+  which waits (EVENT_WAITS_PROPOSAL) need. That is the difference from `capture.rs`, which reads
+  the network before the client does and stays the Interceptor's raw view.
+- Only the game server's socket (the one connected to the server the game picked); policy-file
+  requests and other sockets are left out.
+- Rust builds `packet` and `pext` from them: SmartFox's `%xt%...%` strings and its JSON
+  (`{"t":"xt","b":{"o":{...}}}`), into the shape `pext` carries today (`params.type`,
+  `params.dataObj`), so the bot, scripts and their events don't change.
+- `turu.swf` then stops its own capture there (asked by Rust after `hostInfo`): no `sfc.debug`
+  kept on, so SmartFox stops building a debug string for every packet, and no `JSON.stringify` of
+  every received packet. VibeSkua's SWF can't be asked; with it both run, and Rust takes the
+  player's.
+- No client patching on desktop or Ruffle Android, and nothing in `game_files.rs` changes. AQW or
+  SmartFox changing their code doesn't reach it: it reads the socket, not their methods.
+- Hold and drop (M8): ruffle-aqw can hold a flush or drop a message. To the client it looks like
+  a slow network, which it already copes with.
+- Turu Mas: AIR owns its socket, so it keeps the debug messages. A hook in SmartFox's
+  `writeToSocket`/`handleMessage` there (Turu Mas already patches the client, `turu_air_patch`) is
+  a later, separate step, if M4/M5's measurements show Turu Mas's packet cost matters.
+- Parity: in parity mode the player's `packet` and `pext` are compared with the SWF's, as events
+  are.
+- Done when: over the standard farms the player's packets match the SWF's (parity), and `perf.rs`
+  shows the packet cost down (the ms/s in SmartFox's debug messages and `JSON.stringify` gone), on
+  desktop and on Ruffle Android.
 
 ### R6: The switch
 
@@ -486,8 +501,8 @@ perf log with `RUFFLE_GPU_TIMING=1` (STATUS.md, "GPU time per frame"):
 - **Fewer event-loop wakes.** Not a switch: M4's batched reads and M5's events cut the calls,
   and each call wakes the app's event loop (190-250 ticks a second with a bot running, against
   30 frames). Counted here with the rest so the total is measured together.
-- **Less packet work.** Also not a switch: R5's packet hook (`sfc.debug` left alone) and
-  `packetFromServer` only on request (R1).
+- **Less packet work.** Also not a switch: R5's packets from the player (`sfc.debug` left alone,
+  no `JSON.stringify` per packet) and `packetFromServer` only on request (R1).
 - `setFrameRate(n)` inside the SWF, so the game's own FPS setting and Turu's (`background.rs`'s
   `stage.frameRate`) don't fight.
 
@@ -495,8 +510,8 @@ perf log with `RUFFLE_GPU_TIMING=1` (STATUS.md, "GPU time per frame"):
 
 - The game client's own code: its classes are sealed, so the host SWF can't replace their
   methods. The ~165 `gotoAndStop`s a second (half to the frame a clip is already on) could be
-  skipped in the client's bytecode (a guard on `currentFrame`), patched as R5 patches SmartFox:
-  a separate proposal, for desktop as well as AIR.
+  skipped in the client's bytecode (a guard on `currentFrame`), patched as Turu Mas already
+  patches the client (`turu_air_patch`): a separate proposal, for desktop as well as AIR.
 - Rendering's fixed costs (tessellation, GPU passes, Metal/D3D presentation): Ruffle and wgpu.
 
 Done when: each lever has its before/after on the STATUS.md benchmarks (FarmerJoe DoAll at
@@ -506,7 +521,8 @@ shown again or a switch is turned off, and only the levers that paid off are kep
 
 ### M8: Packet hooks for Butler
 
-- With R5's packet hook: `holdPackets(filter)` / `releasePackets()` and `dropPackets(filter)`,
+- With R5's packets from the player (the Ruffle builds; Turu Mas would need the SmartFox hook
+  first): `holdPackets(filter)` / `releasePackets()` and `dropPackets(filter)`,
   so Butler can keep the client from acting while it drives the character, and a skill can be
   held rather than sent too soon.
 - `outgoing(packet)` events carry what the client sent, for PACKET_BUTLER_PROPOSAL's mirror.
