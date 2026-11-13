@@ -31,10 +31,10 @@ pub(crate) fn start(bot: &Arc<Bot>) {
         .expect("couldn't start the bot's timer thread");
 }
 
-/// Asks the host SWF what it is, then has it load the game's client.
+/// Asks turu.swf what it is, then has it load the game's client at the client's frame rate.
 fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
-    // VibeSkua's "Client Animation Frame-rate": the host SWF runs at its own rate until the
-    // game's FPS setting (or Set FPS) applies in game.
+    // VibeSkua's "Client Animation Frame-rate": the client runs at this rate until the game's
+    // FPS setting (or Set FPS) applies in game.
     let fps = bot.settings.read().animation_frame_rate.max(1);
     for gone in ["TURU_HOST_SWF", "TURU_HOST_PARITY"] {
         if std::env::var_os(gone).is_some() {
@@ -47,23 +47,14 @@ fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
         bot.logs
             .debug
             .push(format!("Host SWF: {} version {}", info.name, info.version));
-        // R5: the player reports the packets; the SWF needn't keep SmartFox's debug messages.
-        if info.has("packetCapture")
-            && bot.flash.player_packets()
-            && let Err(e) = bot.flash.call("setPacketCapture", vec![false.into()])
-        {
-            tracing::debug!("setPacketCapture failed: {e}");
-        }
-        if info.has("loadClientFrameRate") {
-            return bot.flash.call("loadClient", vec![fps.into()]).map(|_| ());
-        }
     }
-    if let Err(e) = bot.flash.set("stage.frameRate", fps) {
-        bot.logs
-            .debug
-            .push(format!("Couldn't set the frame rate: {e}"));
+    // R5: the player reports the packets; the SWF needn't keep SmartFox's debug messages.
+    if bot.flash.player_packets()
+        && let Err(e) = bot.flash.call("setPacketCapture", vec![false.into()])
+    {
+        tracing::debug!("setPacketCapture failed: {e}");
     }
-    bot.flash.call("loadClient", vec![]).map(|_| ())
+    bot.flash.call("loadClient", vec![fps.into()]).map(|_| ())
 }
 
 fn do_work(bot: &Arc<Bot>, work: Work) {

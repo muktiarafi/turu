@@ -18,8 +18,8 @@ public class Host {
     }
 
     /**
-     * Tells the bot of an event. `args` arrive as one array, as VibeSkua's `Externalizer.call`
-     * sends them (`events.rs` unwraps it).
+     * Tells the bot of an event. `args` arrive as one array (VibeSkua's `Externalizer.call`
+     * convention, kept; `events.rs` unwraps it).
      */
     public function call(name:String, args:Array):void {
         throw new Error("Host.call");

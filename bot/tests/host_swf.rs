@@ -1,5 +1,5 @@
-//! Turu's host SWF against VibeSkua's (docs/HOST_SWF_PROPOSAL.md, R1): `hostInfo` asked when
-//! the client loads, names it doesn't list refused, and its errors logged once a minute.
+//! Turu's host SWF (docs/HOST_SWF_PROPOSAL.md, R1): `hostInfo` asked when the client loads, names
+//! it doesn't list refused, and its errors logged once a minute.
 
 use parking_lot::Mutex;
 use serde_json::{Value, json};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use turu_bot::{Bot, BotError, FlashArg, FlashHost, HostError};
 
 /// A host SWF that records the calls it gets; `info` is what its `hostInfo` answers ("null":
-/// none, as VibeSkua's).
+/// none, as the tests' fake games).
 struct FakeSwf {
     info: String,
     calls: Mutex<Vec<(String, Vec<FlashArg>)>>,
@@ -93,16 +93,17 @@ fn turus_swf_gets_the_frame_rate_with_load_client_and_refuses_unlisted_names() {
     assert!(bot.flash.call("setBackgroundValues", vec![]).is_ok());
 }
 
+/// A host without `hostInfo` (the tests' fake games): the client still loads at the frame rate,
+/// and no call is refused.
 #[test]
-fn vibeskuas_swf_has_no_host_info_and_every_call_goes_through() {
+fn a_host_without_host_info_lets_every_call_through() {
     let swf = FakeSwf::new(Value::Null);
     let bot = bot_with(&swf);
     bot.on_flash_call("requestLoadGame", vec![json!([])]);
 
     let args = wait_for_call(&swf, "loadClient");
-    assert!(args.is_empty());
+    assert!(matches!(args.as_slice(), [FlashArg::Number(fps)] if *fps > 0.0));
     assert!(bot.flash.host_info().is_none());
-    assert!(swf.calls().iter().any(|(n, _)| n == "setGameObject"));
     assert!(bot.flash.call("getGameObject", vec!["x".into()]).is_ok());
 }
 

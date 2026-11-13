@@ -62,7 +62,7 @@ impl SocketBuffers {
 }
 
 /// An outgoing message the bot logs and acts on (`packet`): the game's `%xt%zm%...` strings,
-/// what VibeSkua's SWF sends as `packet`.
+/// what turu.swf sends as `packet` on Turu Mas.
 pub fn sent_packet(message: &str) -> Option<&str> {
     message.starts_with("%xt%zm%").then_some(message)
 }

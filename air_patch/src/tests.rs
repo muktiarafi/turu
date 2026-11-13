@@ -154,7 +154,7 @@ fn makes_new_loader_an_air_loader() {
     ];
     let mut abc = abc_with(&LOADERS, &[2, 3], &ops, vec![]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, &mut report).unwrap());
     assert!(report.has_air_loader);
     assert_eq!(report.swapped.len(), 1);
     assert_eq!(report.problem(), None);
@@ -191,7 +191,7 @@ fn air_loader_fetches_through_the_host() {
     // The method is the last class's (`abc_with`): AirLoader's.
     let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, &mut report).unwrap());
     assert_eq!(report.problem(), None);
     assert_eq!(report.swapped.len(), 1);
     assert_eq!(report.swapped[0].name, "URLLoader");
@@ -218,7 +218,7 @@ fn air_loader_fetches_through_the_host() {
     // In another class (here SwfLoaderPatch's method), it stays a URLLoader.
     let mut abc = abc_with(&names, &[3, 2], &ops, vec![]);
     let mut report = Report::default();
-    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(!patch_abc(&mut abc, &mut report).unwrap());
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn no_air_loader_no_swap() {
     ];
     let mut abc = abc_with(&LOADERS, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(!patch_abc(&mut abc, &mut report).unwrap());
     assert!(report.problem().is_some());
 
     // Another package's Loader isn't flash.display's.
@@ -245,7 +245,7 @@ fn no_air_loader_no_swap() {
         ("types", "SwfLoaderPatch"),
     ];
     let mut abc = abc_with(&names, &[2, 3], &ops, vec![]);
-    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(!patch_abc(&mut abc, &mut report).unwrap());
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn drops_allow_domain_and_keeps_branches_on_their_instructions() {
 
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, &mut report).unwrap());
     assert_eq!(report.dropped.len(), 1);
     let patched = ops_of(&abc);
     assert_eq!(
@@ -325,7 +325,7 @@ fn a_used_result_becomes_undefined() {
         vec![],
     );
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, &mut report).unwrap());
     assert_eq!(
         ops_of(&abc),
         [
@@ -371,7 +371,7 @@ fn moves_exception_ranges_and_switch_targets() {
     let names = [("flash.system", "Security"), ("", "allowDomain")];
     let mut abc = abc_with(&names, &[], &ops, vec![exception]);
     let mut report = Report::default();
-    assert!(patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(patch_abc(&mut abc, &mut report).unwrap());
 
     let body = &abc.method_bodies[0];
     let decoded = decode(&body.code).unwrap();
@@ -406,12 +406,12 @@ fn patches_the_real_game() {
         return;
     };
     let input = std::fs::read(&path).unwrap();
-    let (output, report) = patch_swf(&input, Target::Game).unwrap();
+    let (output, report) = patch_swf(&input).unwrap();
     assert_eq!(report.problem(), None, "{report:#?}");
     assert!(!report.swapped.is_empty());
 
     // Patching it again finds nothing left to change, and every body decodes.
-    let (_, again) = patch_swf(&output, Target::Game).unwrap();
+    let (_, again) = patch_swf(&output).unwrap();
     assert_eq!(again.swapped, vec![]);
     assert_eq!(again.dropped, vec![]);
     let buf = swf::decompress_swf(&output[..]).unwrap();
@@ -437,7 +437,7 @@ fn patches_the_real_game() {
 }
 
 #[test]
-fn the_game_target_leaves_external_interface_alone() {
+fn the_client_keeps_its_external_interface() {
     let ops = [
         Op::GetLex {
             index: Index::new(1),
@@ -451,7 +451,7 @@ fn the_game_target_leaves_external_interface_alone() {
         vec![],
     );
     let mut report = Report::default();
-    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(!patch_abc(&mut abc, &mut report).unwrap());
 }
 
 #[test]
@@ -482,10 +482,10 @@ fn shared_stage_finds_each_clients_game() {
     // Without the option, nothing changes.
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(!patch_abc(&mut abc, Target::Game, &mut report).unwrap());
+    assert!(!patch_abc(&mut abc, &mut report).unwrap());
 
     let mut report = Report::default();
-    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert!(patch_abc_with(&mut abc, shared, &mut report).unwrap());
     assert_eq!(report.stage_roots.len(), 2);
     assert_eq!(report.stage_missed, vec![]);
     let pool = &abc.constant_pool;
@@ -557,7 +557,7 @@ fn shared_stage_leaves_a_site_a_branch_lands_in() {
     abc.method_bodies[0].code = encode(&ops);
     let mut report = Report::default();
     let shared = Options { shared_stage: true };
-    assert!(!patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert!(!patch_abc_with(&mut abc, shared, &mut report).unwrap());
     assert_eq!(report.stage_missed.len(), 1);
 }
 
@@ -574,11 +574,10 @@ fn shared_stage_real_swfs() {
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         let input = std::fs::read(&path).unwrap();
-        let target = Target::Game;
         let started = std::time::Instant::now();
-        let (output, report) = patch_swf_with(&input, target, shared).unwrap();
+        let (output, report) = patch_swf_with(&input, shared).unwrap();
         let took = started.elapsed();
-        let (_, again) = patch_swf_with(&output, target, shared).unwrap();
+        let (_, again) = patch_swf_with(&output, shared).unwrap();
         assert_eq!(again.stage_roots, vec![], "{}", path.display());
         eprintln!(
             "{}: {} roots, {} missed, {} undecodable, {took:?}, {} -> {} bytes",
@@ -608,7 +607,7 @@ fn shared_stage_reads_the_mouse_from_the_game() {
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
     let shared = Options { shared_stage: true };
-    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert!(patch_abc_with(&mut abc, shared, &mut report).unwrap());
     assert_eq!(report.stage_roots.len(), 1);
     let pool = &abc.constant_pool;
     let got: Vec<String> = decode(&abc.method_bodies[0].code)
@@ -728,7 +727,7 @@ fn shared_stage_routes_sound_keys_and_stage_children_through_the_host() {
     let shared = Options { shared_stage: true };
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert!(patch_abc_with(&mut abc, shared, &mut report).unwrap());
     let count = |name: &str| report.stage_hooks.iter().filter(|s| s.name == name).count();
     assert_eq!(count("sound"), 1);
     assert_eq!(count("keys"), 2);
@@ -811,7 +810,7 @@ fn shared_stage_routes_sound_keys_and_stage_children_through_the_host() {
     // Patching it again changes nothing more.
     let before = abc.method_bodies[0].code.clone();
     let mut again = Report::default();
-    patch_abc_with(&mut abc, Target::Game, shared, &mut again).unwrap();
+    patch_abc_with(&mut abc, shared, &mut again).unwrap();
     assert_eq!(abc.method_bodies[0].code, before);
     assert_eq!(again.stage_hooks, vec![]);
 }
@@ -850,10 +849,10 @@ fn shared_stage_gives_a_new_application_domain_the_clients_host_swf_as_parent() 
     // Without a shared stage nothing changes.
     let mut abc = abc_with(&names, &[], &ops, vec![]);
     let mut report = Report::default();
-    assert!(!patch_abc_with(&mut abc, Target::Game, Options::default(), &mut report).unwrap());
+    assert!(!patch_abc_with(&mut abc, Options::default(), &mut report).unwrap());
 
     let mut report = Report::default();
-    assert!(patch_abc_with(&mut abc, Target::Game, shared, &mut report).unwrap());
+    assert!(patch_abc_with(&mut abc, shared, &mut report).unwrap());
     let count = |name: &str| report.stage_hooks.iter().filter(|s| s.name == name).count();
     assert_eq!(count("assetsDomain"), 1);
     assert_eq!(report.stage_hooks.len(), 1);
@@ -898,7 +897,7 @@ fn shared_stage_gives_a_new_application_domain_the_clients_host_swf_as_parent() 
     // Patching it again changes nothing more.
     let before = abc.method_bodies[0].code.clone();
     let mut again = Report::default();
-    patch_abc_with(&mut abc, Target::Game, shared, &mut again).unwrap();
+    patch_abc_with(&mut abc, shared, &mut again).unwrap();
     assert_eq!(abc.method_bodies[0].code, before);
     assert_eq!(again.stage_hooks, vec![]);
 }

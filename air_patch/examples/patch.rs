@@ -4,7 +4,7 @@
 //! `Options::shared_stage`).
 
 use std::collections::BTreeMap;
-use turu_air_patch::{Options, Target, patch_swf_with};
+use turu_air_patch::{Options, patch_swf_with};
 
 fn main() -> anyhow::Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -15,7 +15,6 @@ fn main() -> anyhow::Result<()> {
         }
         None => false,
     };
-    let target = Target::Game;
     let options = Options {
         shared_stage: flag("--shared-stage"),
     };
@@ -24,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     };
     let bytes = std::fs::read(input)?;
     let started = std::time::Instant::now();
-    let (patched, report) = patch_swf_with(&bytes, target, options)?;
+    let (patched, report) = patch_swf_with(&bytes, options)?;
     let took = started.elapsed();
     std::fs::write(output, &patched)?;
     for (what, sites) in [("swap", &report.swapped), ("drop", &report.dropped)] {
@@ -56,8 +55,8 @@ fn main() -> anyhow::Result<()> {
         patched.len()
     );
     match report.problem() {
-        Some(problem) => println!("not runnable under AIR ({target:?}): {problem}"),
-        None => println!("looks runnable under AIR ({target:?})"),
+        Some(problem) => println!("not runnable under AIR: {problem}"),
+        None => println!("looks runnable under AIR"),
     }
     Ok(())
 }

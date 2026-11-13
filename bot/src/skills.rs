@@ -1161,7 +1161,8 @@ impl SkillProvider {
     /// VibeSkua `GetNextSkill`: `(sequence index, slot)` and advances; `None` when empty.
     ///
     /// (VibeSkua also reads `world.actions.active[i].isOK` here to hold the sequence during
-    /// the global cooldown, but that path never resolves in turu.swf, so it always advances.)
+    /// the global cooldown, but that path never resolved through skua.swf, so VibeSkua always
+    /// advances; Turu does the same.)
     pub fn next_skill(&mut self) -> Option<(usize, i64)> {
         let command = self.commands.get(self.index)?;
         let result = (self.index, command.skill);

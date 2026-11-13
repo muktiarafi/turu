@@ -8,7 +8,6 @@ package turu.host {
  *   is kept on (the game's own packet logger turns it off). SmartFox's client is sealed, so its
  *   sends can't be wrapped from here. On the Ruffle builds the player reports the packets
  *   instead (docs/HOST_SWF_PROPOSAL.md, R5); this capture serves Turu Mas.
- * - `packetFromServer`: the other debug messages, only after `setPacketEcho(true)`.
  * - `connectionLost`.
  *
  * The client may make a new SmartFox client; [frame] follows it.
@@ -20,24 +19,16 @@ package turu.host {
 public class Packets {
     private static const SENT:String = "[Sending - STR]: ";
     private static const SENT_GAME:String = "[Sending - STR]: %xt%zm%";
-    private static const PREFIXES:Array = ["[Sending - STR]: ", "[ RECEIVED ]: ", "[Sending]: "];
-    private static const LENGTH:RegExp = /, \(len: \d+\)$/;
     /** SmartFox ends a sent message's debug line with its line break. */
     private static const LINE_END:RegExp = /[\r\n]+$/;
 
     private var host:Host;
     /** The SmartFox client listened to. */
     private var sfc:*;
-    private var echo:Boolean = false;
     private var capture:Boolean = true;
 
     public function Packets(host:Host) {
         this.host = host;
-    }
-
-    /** `setPacketEcho(on)`: whether `packetFromServer` is sent. */
-    public function setEcho(on:*):void {
-        echo = on === true || on == "true";
     }
 
     /** `setPacketCapture(on)`: whether this SWF reports packets (off when the player does). */
@@ -89,14 +80,6 @@ public class Packets {
         var message:String = String(event.params.message);
         if (message.indexOf(SENT_GAME) == 0) {
             host.call("packet", [message.substr(SENT.length).replace(LINE_END, "")]);
-        } else if (echo) {
-            for each (var prefix:String in PREFIXES) {
-                if (message.indexOf(prefix) == 0) {
-                    message = message.substr(prefix.length);
-                    break;
-                }
-            }
-            host.call("packetFromServer", [message.replace(LENGTH, "")]);
         }
     }
 }

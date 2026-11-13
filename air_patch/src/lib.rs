@@ -2,10 +2,9 @@
 //!
 //! AIR runs Turu's host in its application sandbox, which loads the SWFs below with `loadBytes`
 //! and `allowCodeImport` (so they share code with it) after this crate has rewritten their AS3
-//! bytecode. The target is [`Target::Game`]: Turu's host SWF (`turu.swf`) runs as it is, so only
-//! AQW's code is patched.
+//! bytecode. Turu's host SWF (`turu.swf`) runs as it is, so only AQW's code is patched:
 //!
-//! * [`Target::Game`], AQW's client. It has an AIR mode of its own (Artix's mobile app):
+//! * AQW's client. It has an AIR mode of its own (Artix's mobile app):
 //!   `types.AirLoader`, a `Loader` that in AIR's application sandbox fetches a SWF's bytes,
 //!   patches them (`SwfLoaderPatch`: each `new Loader()` in them becomes `new AirLoader()`) and
 //!   loads them with `loadBytes`, so maps and assets share code with the game. The client builds
@@ -45,7 +44,7 @@ pub const HOST_URL_LOADER: &str = "TuruURLLoader";
 /// `rootOf(x)`.
 pub const HOST_STAGE: &str = "TuruStage";
 
-/// What [`patch_swf_with`] does beyond its [`Target`]'s rules.
+/// What [`patch_swf_with`] does beyond the client's rules.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     /// Several clients share AIR's one stage. The game and the SWFs it loads find the game as
@@ -71,14 +70,6 @@ pub struct Options {
     pub shared_stage: bool,
 }
 
-/// Which SWF is being patched: what its loaders become, and what it must have.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Target {
-    /// AQW's client (or a SWF it loads): `new Loader()` becomes its own `types.AirLoader`.
-    #[default]
-    Game,
-}
-
 /// One patched instruction: the method it's in and the property it names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Site {
@@ -89,7 +80,6 @@ pub struct Site {
 /// What [`patch_swf`] found and changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Report {
-    pub target: Target,
     /// ABC blocks (DoAbc tags) read.
     pub abc_blocks: usize,
     /// Whether the client has its AIR loader (`AirLoader` and `SwfLoaderPatch`).
@@ -132,36 +122,31 @@ impl Report {
                 self.undecodable.len()
             ));
         }
-        match self.target {
-            Target::Game if !self.has_air_loader => {
-                Some("the client has no AirLoader/SwfLoaderPatch (its AIR mode)".into())
-            }
-            _ => None,
+        if !self.has_air_loader {
+            return Some("the client has no AirLoader/SwfLoaderPatch (its AIR mode)".into());
         }
+        None
     }
 }
 
-/// Patches a SWF (compressed or not) for `target`. Returns the patched SWF, zlib-compressed, or
+/// Patches a SWF (compressed or not): AQW's client, or a SWF it loads. Returns the patched SWF, zlib-compressed, or
 /// the input unchanged when nothing needed patching, with what was done.
-pub fn patch_swf(input: &[u8], target: Target) -> Result<(Vec<u8>, Report)> {
-    patch_swf_with(input, target, Options::default())
+pub fn patch_swf(input: &[u8]) -> Result<(Vec<u8>, Report)> {
+    patch_swf_with(input, Options::default())
 }
 
 /// [`patch_swf`] with [`Options`].
-pub fn patch_swf_with(input: &[u8], target: Target, options: Options) -> Result<(Vec<u8>, Report)> {
+pub fn patch_swf_with(input: &[u8], options: Options) -> Result<(Vec<u8>, Report)> {
     let buf = swf::decompress_swf(input).context("not a SWF")?;
     let data = &buf.data;
-    let mut report = Report {
-        target,
-        ..Report::default()
-    };
+    let mut report = Report::default();
     let mut tags = Vec::with_capacity(data.len() + 4096);
     let mut pos = 0;
     while pos < data.len() {
         let (code, body_start, end) = tag_bounds(data, pos)?;
         let body = &data[body_start..end];
         let patched = match code {
-            TAG_DO_ABC => patch_abc_bytes(body, target, options, &mut report)?,
+            TAG_DO_ABC => patch_abc_bytes(body, options, &mut report)?,
             TAG_DO_ABC2 => {
                 // Flags (u32), then a null-terminated name, then the ABC.
                 let name_end = body
@@ -169,7 +154,7 @@ pub fn patch_swf_with(input: &[u8], target: Target, options: Options) -> Result<
                     .and_then(|rest| rest.iter().position(|&b| b == 0))
                     .context("DoAbc2 tag without a name")?;
                 let abc_start = 4 + name_end + 1;
-                patch_abc_bytes(&body[abc_start..], target, options, &mut report)?
+                patch_abc_bytes(&body[abc_start..], options, &mut report)?
                     .map(|abc| [&body[..abc_start], &abc[..]].concat())
             }
             _ => None,
@@ -222,15 +207,10 @@ fn write_tag(out: &mut Vec<u8>, code: u16, body: &[u8]) {
 }
 
 /// Patches one ABC block: `Some(bytes)` if anything changed.
-fn patch_abc_bytes(
-    bytes: &[u8],
-    target: Target,
-    options: Options,
-    report: &mut Report,
-) -> Result<Option<Vec<u8>>> {
+fn patch_abc_bytes(bytes: &[u8], options: Options, report: &mut Report) -> Result<Option<Vec<u8>>> {
     let mut abc = Reader::new(bytes).read().context("reading ABC")?;
     report.abc_blocks += 1;
-    if !patch_abc_with(&mut abc, target, options, report)? {
+    if !patch_abc_with(&mut abc, options, report)? {
         return Ok(None);
     }
     let mut out = Vec::with_capacity(bytes.len() + 1024);
@@ -238,18 +218,13 @@ fn patch_abc_bytes(
     Ok(Some(out))
 }
 
-/// Patches an ABC block in place for `target`. True if anything changed.
-pub fn patch_abc(abc: &mut AbcFile, target: Target, report: &mut Report) -> Result<bool> {
-    patch_abc_with(abc, target, Options::default(), report)
+/// Patches an ABC block in place. True if anything changed.
+pub fn patch_abc(abc: &mut AbcFile, report: &mut Report) -> Result<bool> {
+    patch_abc_with(abc, Options::default(), report)
 }
 
 /// [`patch_abc`] with [`Options`].
-pub fn patch_abc_with(
-    abc: &mut AbcFile,
-    _target: Target,
-    options: Options,
-    report: &mut Report,
-) -> Result<bool> {
+pub fn patch_abc_with(abc: &mut AbcFile, options: Options, report: &mut Report) -> Result<bool> {
     let pool = &abc.constant_pool;
     let class_named = |wanted: &str| {
         abc.instances

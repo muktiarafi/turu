@@ -297,7 +297,6 @@ pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
             Err(e) => tracing::debug!("Bad pext JSON: {e}"),
         },
         "packet" => packet_sent(bot, arg_str(0)),
-        "packetFromServer" => {}
         // turu.swf: what changed in game (docs/HOST_SWF_PROPOSAL.md M5). Only wakes waits.
         "event" if arg_str(0) == "frames" => {
             // `setFrameReport` (M7a): the gaps between the game's frames, for the perf log.

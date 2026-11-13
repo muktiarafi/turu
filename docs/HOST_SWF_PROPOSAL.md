@@ -589,6 +589,8 @@ someone asks for it. The four levers that didn't pay went. M7 is done.
 
 ### M8: Packet hooks for Butler
 
+On hold: it serves PACKET_BUTLER_PROPOSAL, and a packet-based Butler isn't decided yet.
+
 - With R5's packets from the player (the Ruffle builds; Turu Mas would need the SmartFox hook
   first): `holdPackets(filter)` / `releasePackets()` and `dropPackets(filter)`,
   so Butler can keep the client from acting while it drives the character, and a skill can be

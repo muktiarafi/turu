@@ -557,7 +557,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   first request), no `Vary` beyond `Accept-Encoding` (the game's API answers,
   `max-age=2` and `Vary: *`, never are). A file is one entry whatever its query string: asked
   for with the query it was stored with, while fresh, it comes from disk with no request; with
-  another query (`?v=5.32` after a game update, skua.swf's `?ver=<random>` on the game client)
+  another query (`?v=5.32` after a game update, the host SWF's `?ver=<random>` on the game client)
   or once stale, the server is asked with `If-None-Match` and answers `304` without a body when
   nothing changed. With the network down, a cached file is used. The folder stays under 1 GB
   (`TURU_HTTP_CACHE_MB`), dropping the files used longest ago; `TURU_HTTP_CACHE=0` turns it
@@ -678,7 +678,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   script turns it on), so a drop right after a relogin (a Mac waking from sleep) relogs again
   and `--exit-on-script-stop` waits out a relogin that starts within 2 s of the script stopping.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
-  in timings and in how the real `skua.swf` answers (`getActiveModalMessage`, `clickServer`).
+  in timings and in how `turu.swf` answers (`getActiveModalMessage`, `clickServer`).
 - **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and
   bot windows (the desktop's, by touch), keys, the soft keyboard and sound (muted in the
   background, as a hidden desktop tab; Notify Drop's beep still sounds); a foreground service
@@ -750,7 +750,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   {})`, used by CoreStory's `preLoad`), but nothing has sent one in game yet. Equipping still goes
   through the `equipItem` packet (check consumables in game), and CoreBots' quest-limit handler
   isn't restored.
-- **The black screen after a cutscene is fixed only in tests:** skua.swf's `skipCutscenes` removes
+- **The black screen after a cutscene is fixed only in tests:** `skipCutscenes` (VibeSkua's, and
+  turu.swf's, which matches it) removes
   the cutscene but leaves `world.visible` off, so the game stayed black until Lag Killer was
   toggled. `api/options.rs` now shows the world again after a skipped cutscene (unless Lag Killer
   is on), and a stopping script sends `killLag(false)` even when Lag Killer was off (VibeSkua's
@@ -905,8 +906,6 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   ran (where TURU-DESKTOP-5 panicked), was skipped, and the next frame stopped drawing; the game
   went on (no panic, the debug log and title said so). Not seen on a real driver reset. Getting
   the picture back without a restart: docs/GPU_RECOVERY_PROPOSAL.md.
-- **Noise in the log:** before login, skua.swf's `QuestRequirementWiki` logs a `ModalStack` null
-  error every 100 ms. It's harmless (Flash's release player hid it).
 - **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies
   outside the workspace). It passes with `--all-targets` and `-A clippy::redundant_clone` (that
   lint, denied by Ruffle's workspace lints, still flags a few clones in tests and UI windows); CI

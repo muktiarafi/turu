@@ -22,7 +22,6 @@ const PATH_CALLS: &[&str] = &[
     "setGameObject",
     "setGameObjectKey",
     "getArrayObject",
-    "setArrayObject",
     "callGameFunction",
     "callGameFunction0",
     "selectArrayObjects",

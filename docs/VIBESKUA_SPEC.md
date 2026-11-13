@@ -1068,11 +1068,12 @@ keeps the names, arguments and answers above, except where the proposal's "delib
 differences" and the list below say otherwise:
 
 - Not carried over: the `lnk*`/`fc*` remote registry, `injectScript`, the quest window's two
-  modules, the monster-click wiki link, and the callbacks nothing in Turu or its scripts called;
-  calling one answers "`name` is not in Turu's host SWF".
+  modules, the monster-click wiki link, `packetFromServer`, and the callbacks nothing in Turu or
+  its scripts called (`isTrue`, `setArrayObject`, ...); calling one answers "`name` is not in
+  Turu's host SWF".
 - `pext` carries only the packet's `type` and `params`, not the whole SmartFox event.
 - The game is centred (no `align = TOP`); "Turu" is the login screen's title; errors are
-  reported (`error`); `packetFromServer` only on request; `hostInfo` says what the SWF has.
+  reported (`error`); `hostInfo` says what the SWF has.
 - On the Ruffle builds the bot's packets come from the player's socket, not from the SWF.
 - Batched reads of its own (M4, `hostInfo` version 2): `snapshot(withTarget)` (logged in,
   world, avatar, `intState`, loaded, class rank and, with `withTarget`, `getTargetMonster`'s

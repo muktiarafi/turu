@@ -18,21 +18,21 @@ use std::time::Instant;
 
 pub struct Flash {
     host: RwLock<Option<Arc<dyn FlashHost>>>,
-    /// What the host SWF says of itself; `None` for VibeSkua's, or before it's asked.
+    /// What turu.swf says of itself; `None` before it's asked.
     info: RwLock<Option<Arc<HostInfo>>>,
     errors: Mutex<RepeatLog>,
     control: Arc<ScriptControl>,
     perf: Arc<PerfStats>,
 }
 
-/// A host SWF's `hostInfo()` (Turu's, docs/HOST_SWF_PROPOSAL.md); VibeSkua's has none.
+/// turu.swf's `hostInfo()` (docs/HOST_SWF_PROPOSAL.md).
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct HostInfo {
     /// `turu`.
     pub name: String,
     /// Raised when a callback changes what it answers.
     pub version: u32,
-    /// What it does beyond VibeSkua's SWF (`strictErrors`, `packetEcho`, ...).
+    /// What it can do (`errors`, `packetCapture`, `events`, ...).
     #[serde(default)]
     pub features: BTreeSet<String>,
     /// Every callback it has: [`Flash::call`] refuses others.
@@ -88,13 +88,14 @@ impl Flash {
             .is_some_and(|h| h.player_packets())
     }
 
-    /// What the host SWF said of itself when the client was loaded; `None` for VibeSkua's.
+    /// What turu.swf said of itself when the client was loaded; `None` before, or for a host
+    /// without `hostInfo` (the tests' fake games).
     pub fn host_info(&self) -> Option<Arc<HostInfo>> {
         self.info.read().clone()
     }
 
-    /// Asks the host SWF what it is (`hostInfo`) and keeps the answer. VibeSkua's has no such
-    /// callback: its empty answer means `None`, and every call goes through as before.
+    /// Asks the host SWF what it is (`hostInfo`) and keeps the answer. A host without it (the
+    /// tests' fake games) answers nothing: `None`, and no call is refused.
     pub(crate) fn ask_host_info(&self) -> Option<Arc<HostInfo>> {
         let info = self
             .call_host("hostInfo", vec![])

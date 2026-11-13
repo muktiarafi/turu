@@ -345,8 +345,9 @@ impl ActivePlayer {
             .with_letterbox(opt.player.letterbox.unwrap_or(Letterbox::On))
             .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
             .with_quality(opt.player.quality.unwrap_or(StageQuality::High))
-            // Turu: turu.swf sets `stage.align = TOP`, which pins the game to the top of a
-            // window taller than 960:550. Keep it centred unless `--align` asks otherwise.
+            // Turu: keep the game centred in a window taller than 960:550 (split screen) unless
+            // `--align` asks otherwise. VibeSkua's skua.swf set `stage.align = TOP`, pinning it to
+            // the top; turu.swf centres it itself, and this keeps it so whatever sets the align.
             .with_align(
                 opt.player.align.unwrap_or_default(),
                 opt.player.align.is_none() || opt.player.force_align.unwrap_or_default(),

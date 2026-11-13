@@ -102,7 +102,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeReply<'local>(
 /// `Bridge.nativePatch(swf, target)`: the SWF rewritten for AIR (`turu_air_patch`), or null when
 /// it can't run there (then the host refuses to load it). Target 0: the game's client, which must
 /// have its AIR mode; 2: any other SWF the game loads (a map, an asset, the game menu), patched
-/// as the client's but required to have nothing. (1 was VibeSkua's skua.swf.)
+/// as the client's but required to have nothing. 1 is unused (it was VibeSkua's SWF until R6b).
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativePatch<'local>(
     mut unowned_env: EnvUnowned<'local>,
@@ -151,7 +151,7 @@ fn patched(input: &[u8], target: jint) -> Option<Vec<u8>> {
         );
         return Some(output);
     }
-    match turu_air_patch::patch_swf_with(input, turu_air_patch::Target::Game, options) {
+    match turu_air_patch::patch_swf_with(input, options) {
         Ok((output, report)) => {
             tracing::info!(
                 "Patched {kind} for AIR in {:?}: {} swapped, {} dropped, {} stage roots, {} hooks, {} missed",
@@ -196,7 +196,7 @@ fn shared_stage_swf(url: &str, body: Vec<u8>) -> Vec<u8> {
     }
     let started = std::time::Instant::now();
     let options = turu_air_patch::Options { shared_stage: true };
-    match turu_air_patch::patch_swf_with(&body, turu_air_patch::Target::Game, options) {
+    match turu_air_patch::patch_swf_with(&body, options) {
         Ok((output, report)) => {
             if report.changed() || !report.stage_missed.is_empty() {
                 tracing::info!(

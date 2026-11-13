@@ -519,7 +519,7 @@ abstract class SubjectAuras {
     getAuraStacks(name: string): number { return call(`${this.module}.getAuraStacks`, name); }
     /** Whether the aura is active. */
     hasActiveAura(name: string): boolean { return call(`${this.module}.hasActiveAura`, name); }
-    /** The aura's value as skua.swf sums it (`GetAurasValue`); 0 when it isn't there. */
+    /** The aura's value as VibeSkua sums it (`GetAurasValue`); 0 when it isn't there. */
     getAuraValue(name: string): number { return call(`${this.module}.getAuraValue`, name); }
     /** Whether any of these auras is active. */
     hasAnyActiveAura(...names: string[]): boolean { return call(`${this.module}.hasAnyActiveAura`, names); }
@@ -1295,7 +1295,7 @@ export class Flash {
      */
     getMany<K extends string>(paths: Record<K, string>): Record<K, unknown> { return call("flash.getMany", paths); }
     callGameFunction<T = unknown>(path: string, ...args: unknown[]): T { return call("flash.callGameFunction", path, ...args); }
-    /** Calls one of skua.swf's ExternalInterface callbacks and returns its raw string. */
+    /** Calls one of turu.swf's ExternalInterface callbacks and returns its raw string. */
     call(name: string, ...args: unknown[]): string { return call("flash.call", name, ...args); }
 }
 

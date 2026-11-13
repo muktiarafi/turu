@@ -30,7 +30,7 @@ import flash.utils.setTimeout;
  */
 public class Main extends MovieClip {
     /** `hostInfo().version`: raised when a callback changes what it answers. */
-    private static const VERSION:int = 5;
+    private static const VERSION:int = 6;
     private static const GAME_URL:String = "https://game.aq.com/game/";
     /** The login screen's title (VibeSkua's says "AURAS!!!"). */
     private static const TITLE:String = '<font color="#FDAF2D">Turu</font>';
@@ -45,7 +45,6 @@ public class Main extends MovieClip {
     private var events:Events;
     /** The callbacks `hostInfo` lists. */
     private var callbacks:Array = [];
-    private var strictErrors:Boolean = false;
 
     private var loading:Boolean = false;
     private var versionTries:int = 0;
@@ -96,8 +95,6 @@ public class Main extends MovieClip {
         expose("loadClient", loadClient);
         expose("setBackgroundValues", background.setValues);
         expose("hostInfo", hostInfo);
-        expose("setStrictErrors", setStrictErrors);
-        expose("setPacketEcho", packets.setEcho);
         expose("setPacketCapture", packets.setCapture);
         expose("catchPackets", catchPackets);
         new GameCalls(gameOf).exposeWith(expose);
@@ -144,8 +141,7 @@ public class Main extends MovieClip {
     }
 
     /**
-     * `fn` in a `try`: a throw is reported (`error`) and answers nothing, or with
-     * `setStrictErrors(true)` `{"error": message}`.
+     * `fn` in a `try`: a throw is reported (`error`) and answers `onThrow` (nothing for most).
      */
     private function guard(name:String, fn:Function, onThrow:* = undefined, quiet:Boolean = false):Function {
         return function(... args):* {
@@ -154,9 +150,6 @@ public class Main extends MovieClip {
             } catch (e:*) {
                 if (!quiet) {
                     report(name + ": " + messageOf(e), stackOf(e));
-                }
-                if (strictErrors) {
-                    return JSON.stringify({error: messageOf(e)});
                 }
             }
             return onThrow;
@@ -167,13 +160,9 @@ public class Main extends MovieClip {
         return JSON.stringify({
             name: "turu",
             version: VERSION,
-            features: ["errors", "strictErrors", "packetEcho", "packetCapture", "loadClientFrameRate", "events"],
+            features: ["errors", "packetCapture", "loadClientFrameRate", "events"],
             callbacks: callbacks
         });
-    }
-
-    private function setStrictErrors(on:*):void {
-        strictErrors = on === true || on == "true";
     }
 
     /** VibeSkua's, called once per login: the SmartFox client is followed each frame anyway. */
@@ -197,8 +186,8 @@ public class Main extends MovieClip {
     // ---- Loading the client ---------------------------------------------------------------
 
     /**
-     * Fetches the game's version, then loads its client. `frameRate`, if given, is set on the
-     * stage first (VibeSkua's SWF has Turu set it through `setGameObject`).
+     * Fetches the game's version, then loads its client, first setting the stage to `frameRate`
+     * (Turu passes the client's animation frame rate).
      */
     private function loadClient(frameRate:* = undefined):void {
         var fps:Number = Number(frameRate);

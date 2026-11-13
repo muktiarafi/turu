@@ -27,7 +27,6 @@ public class GameCalls {
      * doesn't resolve yet is an ordinary empty answer. Writes and calls report their throws.
      */
     public function exposeWith(expose:Function):void {
-        expose("isTrue", isTrue, undefined, true);
         expose("isNull", isNull, undefined, true);
         expose("getGameObject", getGameObject, undefined, true);
         expose("getGameObjectS", getGameObjectS, undefined, true);
@@ -38,13 +37,8 @@ public class GameCalls {
         expose("getMany", getMany, undefined, true);
         expose("setGameObject", setGameObject);
         expose("setGameObjectKey", setGameObjectKey);
-        expose("setArrayObject", setArrayObject);
         expose("callGameFunction", callGameFunction);
         expose("callGameFunction0", callGameFunction0);
-    }
-
-    private function isTrue():String {
-        return "true";
     }
 
     /** `"true"` when the value is null or the path doesn't resolve. */
@@ -81,10 +75,6 @@ public class GameCalls {
 
     private function getArrayObject(path:String, index:*):String {
         return JSON.stringify(walk(gameOf(), path)[index]);
-    }
-
-    private function setArrayObject(path:String, index:*, value:*):void {
-        walk(gameOf(), path)[index] = value;
     }
 
     private function callGameFunction(path:String, ... args):String {
