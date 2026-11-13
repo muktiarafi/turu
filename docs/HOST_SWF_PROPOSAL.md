@@ -3,7 +3,8 @@
 Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the game, run only with
 `TURU_HOST_SWF=turu`); R2 done (the generic calls, parity mode `TURU_HOST_PARITY=1`); R3a done
 (auras, monsters, combat); R3b done (inventory, shop, player, world); R3c done (server
-list, login); R3d written, awaiting its checks; the rest are proposals. Replaces the plan to fork VibeSkua's
+list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
+answers every callback Turu calls); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
