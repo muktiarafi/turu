@@ -308,7 +308,7 @@ fn options_send_toggles_once_and_repeat_ticks() {
 fn streamer_mode_hides_names_and_gives_custom_names_back() {
     let game = FakeGame::new();
     game.set("world.strMapName", "\"ULTRADAGE\"");
-    game.set("world.map.txtHouse.text", "\"Dod's House\"");
+    game.set("world.map.txtHouse.text", "\"Questwalker's House\"");
     let bot = new_bot(&game);
     let sets_of = |game: &FakeGame, path: &str| -> Vec<FlashArg> {
         game.calls_to("setGameObject")
@@ -389,7 +389,7 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
     }
     assert_eq!(
         sets_of(&game, "world.map.txtHouse.text").last(),
-        Some(&FlashArg::String("Dod's House".into()))
+        Some(&FlashArg::String("Questwalker's House".into()))
     );
     let redraws = game
         .calls_to("callGameFunction")

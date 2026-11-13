@@ -62,8 +62,9 @@ cover every SWF as it's downloaded, not only the client.
 * 61 downloaded SWFs (maps, classes, armour, pets, the interface assets) rewritten, 0 missed;
   **0 `rootOf` fallbacks** and no `UNCAUGHT` error over the whole session, switching back and forth.
 * Client 1's inventory opened on client 1 and didn't show through on client 2.
-* The engine follows client 1 only: its log has `[dod]`'s packets and none of client 2's. With
-  client 2 on screen, Jump listed client 1's cells and moved it to r1 (seen after switching back).
+* The engine follows client 1 only: its log has client 1's account's packets and none of client
+  2's. With client 2 on screen, Jump listed client 1's cells and moved it to r1 (seen after
+  switching back).
 * Memory: **392 MB PSS** with both in game (189 MB at the login screens), against ~250-275 MB for
   one client in battleon on a phone: about 1.4x, not 2x (AIR's runtime and the shared assets are
   paid once).
@@ -84,10 +85,10 @@ Tabs with a bot each, Army and Butler, as described in docs/TURU_MAS.md ("Tabs")
 second muted client and its switch button are gone. Checked on the emulator at the login
 screen: New Tab, switching, closing (the client unloaded), a tab opened again on the freed
 client number, and the second tab reopened from `android-tabs.json` after a restart. In game,
-with two accounts: each tab's bot follows its own account (the log's `[dod]` and `[ghole]`, the
-tab names), the game fits the view below the tab strip (`fit`: 0.903x), taps land (the login
-field, the inventory), Butler on one tab lists the other's account and follows it (same room
-found from its state file), and Army Control lists both tabs.
+with two accounts: each tab's bot follows its own account (the log tags each line with its
+account's name, as the tab names show), the game fits the view below the tab strip (`fit`:
+0.903x), taps land (the login field, the inventory), Butler on one tab lists the other's account
+and follows it (same room found from its state file), and Army Control lists both tabs.
 
 ## To make it Army and Butler (the plan)
 
