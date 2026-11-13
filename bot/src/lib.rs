@@ -45,6 +45,8 @@ pub mod spammer;
 pub mod startup;
 pub mod state;
 pub mod stats;
+#[doc(hidden)]
+pub mod testing;
 pub mod updates;
 pub mod webhooks;
 

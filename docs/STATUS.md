@@ -493,7 +493,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   equipped class) no longer read the whole list (VibeSkua does): they read one field of every
   item (skua.swf's `selectArrayObjects`: the names are 10 kB of an inventory's 366) and then
   only the items that match (`getArrayObject`), and fall back to the whole list when a column
-  comes back empty or an item isn't the one asked for any more (`inventory::matching_by`).
+  comes back empty or an item isn't the one asked for any more. Since M4 of
+  HOST_SWF_PROPOSAL.md, turu.swf's `selectArrayObjectsWhere` sends the matching items in one
+  call (`inventory::matching_where`).
   The same farm after it: the bot's calls 47 -> 14 ms/s, the script thread's whole reads gone
   (a column read takes 0.6 ms for the inventory, 2.2 ms for the bank). The gameplay stats'
   sample, once a second, read the whole inventory for the equipped class's ID (~6 ms/s), and

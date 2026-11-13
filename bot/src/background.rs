@@ -287,25 +287,35 @@ const GAMEPLAY_STATS_EVERY: Duration = Duration::from_millis(1000);
 /// What VibeSkua's `ScriptTimer` hands `Stats.UpdateGameplaySnapshot` (read before taking the
 /// state lock; a failed read is 0, as its bindings' defaults).
 fn player_reading(bot: &Bot) -> crate::stats::PlayerReading {
-    let int = |path: &str| {
-        let value: Option<serde_json::Value> = bot.flash.get_opt(path).ok().flatten();
-        crate::api::packets::num(value.as_ref()).unwrap_or(0)
-    };
-    // Not the whole inventory (0.4 MB of a member's, once a second): see `inventory::matching_by`.
+    // One call for the avatar's numbers (turu.swf's `getMany`).
+    let values = bot
+        .flash
+        .get_many(&[
+            ("exp", "world.myAvatar.objData.intExp"),
+            ("expToLevel", "world.myAvatar.objData.intExpToLevel"),
+            ("level", "world.myAvatar.dataLeaf.intLevel"),
+            ("gold", "world.myAvatar.objData.intGold"),
+            ("cp", "world.myAvatar.objData.iCurCP"),
+            ("cpToRank", "world.myAvatar.objData.iCPToRank"),
+            ("rank", "world.myAvatar.objData.iRank"),
+        ])
+        .unwrap_or_default();
+    let int = |key: &str| crate::api::packets::num(values.get(key)).unwrap_or(0);
+    // Not the whole inventory (0.4 MB of a member's, once a second): see `inventory::matching_where`.
     let class_id = inventory::current_class_item(bot)
         .ok()
         .flatten()
         .map_or(0, |i| i.id);
     crate::stats::PlayerReading {
-        experience: int("world.myAvatar.objData.intExp"),
-        required_experience: int("world.myAvatar.objData.intExpToLevel"),
-        level: int("world.myAvatar.dataLeaf.intLevel"),
-        gold: int("world.myAvatar.objData.intGold"),
+        experience: int("exp"),
+        required_experience: int("expToLevel"),
+        level: int("level"),
+        gold: int("gold"),
         class_id,
         // iCurCP is progress within the current rank; iCPToRank is that rank's requirement.
-        class_points: int("world.myAvatar.objData.iCurCP"),
-        class_points_to_rank: int("world.myAvatar.objData.iCPToRank"),
-        class_rank: int("world.myAvatar.objData.iRank"),
+        class_points: int("cp"),
+        class_points_to_rank: int("cpToRank"),
+        class_rank: int("rank"),
     }
 }
 

@@ -158,21 +158,37 @@ fn inventory_json() -> String {
 
 struct FakeGame {
     sent: Mutex<Vec<String>>,
+    /// The engine's calls (not the single reads the fake answers a batched read from).
     calls: Mutex<Vec<String>>,
-    /// Answers turu.swf's `selectArrayObjects` and `getArrayObject` for the inventory.
-    narrow: std::sync::atomic::AtomicBool,
-    /// `getArrayObject` gives the item one place further: the list changed since the select.
-    shifted: std::sync::atomic::AtomicBool,
+}
+
+fn first_arg(args: &[FlashArg]) -> String {
+    match args.first() {
+        Some(FlashArg::String(s)) => s.clone(),
+        Some(FlashArg::Number(n)) => n.to_string(),
+        _ => String::new(),
+    }
 }
 
 impl FlashHost for FakeGame {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
+        self.calls
+            .lock()
+            .push(format!("{name}({})", first_arg(&args)));
+        if let Some(answer) = turu_bot::testing::batched(name, &args, |n, a| self.single(n, a)) {
+            return Ok(answer);
+        }
+        Ok(self.single(name, args))
+    }
+}
+
+impl FakeGame {
+    fn single(&self, name: &str, args: Vec<FlashArg>) -> String {
         let arg = |i: usize| match args.get(i) {
             Some(FlashArg::String(s)) => s.clone(),
             Some(FlashArg::Number(n)) => n.to_string(),
             _ => String::new(),
         };
-        self.calls.lock().push(format!("{name}({})", arg(0)));
         let whole = [
             ("world.myAvatar.items", inventory_json()),
             ("world.questTree", QUEST_TREE.to_owned()),
@@ -180,28 +196,9 @@ impl FlashHost for FakeGame {
         if name == "getGameObject"
             && let Some(value) = common::sub_path(&arg(0), &whole)
         {
-            return Ok(value);
+            return value;
         }
-        use std::sync::atomic::Ordering::Relaxed;
-        if self.narrow.load(Relaxed) && arg(0) == "world.myAvatar.items" {
-            let items: Vec<Value> = serde_json::from_str(&inventory_json()).unwrap();
-            match name {
-                "selectArrayObjects" => {
-                    let column: Vec<Value> = items
-                        .iter()
-                        .map(|i| i.get(arg(1)).cloned().unwrap_or(Value::Null))
-                        .collect();
-                    return Ok(Value::Array(column).to_string());
-                }
-                "getArrayObject" => {
-                    let index: usize = arg(1).parse::<f64>().unwrap() as usize;
-                    let index = index + usize::from(self.shifted.load(Relaxed));
-                    return Ok(items.get(index).cloned().unwrap_or(Value::Null).to_string());
-                }
-                _ => {}
-            }
-        }
-        let answer = match (name, arg(0).as_str()) {
+        match (name, arg(0).as_str()) {
             ("isLoggedIn", _) | ("inventoryHasSpaceFor", _) | ("rejectExcept", _) => "true".into(),
             ("getGameObject", "world.myAvatar.dataLeaf.intState") => "1".into(),
             ("getGameObject", "world.curRoom") => "42".into(),
@@ -215,8 +212,7 @@ impl FlashHost for FakeGame {
             }
             ("callGameFunction", "world.isQuestInProgress") => (arg(1) == "1234").to_string(),
             _ => "null".into(),
-        };
-        Ok(answer)
+        }
     }
 }
 
@@ -232,8 +228,6 @@ fn setup() -> (Arc<Bot>, Arc<FakeGame>) {
     let game = Arc::new(FakeGame {
         sent: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
-        narrow: Default::default(),
-        shifted: Default::default(),
     });
     bot.set_host(Some(game.clone()));
     (bot, game)
@@ -296,11 +290,13 @@ fn alive_and_logged_in_reads_are_shared_for_a_moment() {
         game.calls
             .lock()
             .iter()
-            .filter(|c| c.starts_with("isLoggedIn") || c.starts_with("isNull(world.myAvatar)"))
+            .filter(|c| c.starts_with("snapshot"))
             .count()
     };
     assert!(api::player::playing(&bot).unwrap());
     let after_first = reads();
+    // Logged in and alive come from one snapshot.
+    assert_eq!(after_first, 1, "{:?}", game.calls.lock());
     // What a wait, the skill timer and the drop loop ask in the same moment: no more calls.
     for _ in 0..10 {
         assert!(api::player::playing(&bot).unwrap());
@@ -514,8 +510,6 @@ fn whole_reads(game: &FakeGame) -> usize {
 #[test]
 fn item_checks_read_only_the_items_they_ask_about() {
     let (bot, game) = setup();
-    game.narrow
-        .store(true, std::sync::atomic::Ordering::Relaxed);
     assert_eq!(
         call(&bot, "inventory.contains", json!(["dragon scale", 5])),
         json!(true)
@@ -553,12 +547,12 @@ fn item_checks_read_only_the_items_they_ask_about() {
         json!("Void Highlord")
     );
     assert_eq!(whole_reads(&game), 0, "{:?}", game.calls.lock());
-    // An item that isn't there takes one read of one column and no item.
+    // An item check is one read of the items that match.
     game.calls.lock().clear();
     call(&bot, "inventory.contains", json!(["missing", 1]));
     assert_eq!(
         *game.calls.lock(),
-        ["selectArrayObjects(world.myAvatar.items)"]
+        ["selectArrayObjectsWhere(world.myAvatar.items)"]
     );
     // The whole list is still there for who asks for it.
     assert_eq!(
@@ -568,27 +562,4 @@ fn item_checks_read_only_the_items_they_ask_about() {
             .len(),
         2
     );
-}
-
-#[test]
-fn an_item_check_reads_the_whole_list_when_it_changed_meanwhile() {
-    let (bot, game) = setup();
-    game.narrow
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    game.shifted
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    // The place the name was at now holds another item: the answer comes from the whole list.
-    assert_eq!(
-        call(&bot, "inventory.getQuantity", json!(["Dragon Scale"])),
-        json!(5)
-    );
-    assert_eq!(
-        call(&bot, "inventory.getItem", json!([2]))["name"],
-        json!("Void Highlord")
-    );
-    assert_eq!(
-        call(&bot, "player.currentClass", json!([])),
-        json!("Void Highlord")
-    );
-    assert_eq!(whole_reads(&game), 3);
 }

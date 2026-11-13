@@ -131,6 +131,22 @@ fn flash_dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(())
         }
         "isNull" => ok(flash.is_null(args.str(0)?)?),
+        "getMany" => {
+            let Some(paths) = args.value(0).as_object() else {
+                return Err(BotError::InvalidArgument(
+                    "argument 1 must be an object of paths".into(),
+                ));
+            };
+            let paths = paths
+                .iter()
+                .map(|(key, path)| {
+                    path.as_str().map(|p| (key.as_str(), p)).ok_or_else(|| {
+                        BotError::InvalidArgument(format!("path `{key}` must be a string"))
+                    })
+                })
+                .collect::<BotResult<Vec<_>>>()?;
+            ok(flash.get_many(&paths)?)
+        }
         "callGameFunction" => {
             let rest = args.0.iter().skip(1).cloned().map(Into::into).collect();
             ok(flash.call_game_function_json::<Value>(args.str(0)?, rest)?)

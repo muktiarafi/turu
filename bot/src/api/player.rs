@@ -10,11 +10,9 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const AVATAR: &str = "world.myAvatar";
-
 /// How long a read of [`logged_in`] or [`state`] is reused (Turu). Nearly every wait and
 /// background loop asks them (through `alive`, `playing`, ...), each on its own: about 25 times
-/// a second per client in game, three calls to the game each time. One wait try
+/// a second per client in game. One [`snapshot`] refreshes both. One wait try
 /// ([`wait::WAIT_SLEEP`]) is the most a change can go unseen.
 const SHARED_READ: Duration = Duration::from_millis(100);
 
@@ -35,12 +33,70 @@ fn shared<T: Copy>(
     Ok(value)
 }
 
+/// What the skill timer and the waits ask on every tick, read in one call (turu.swf's
+/// `snapshot`, docs/HOST_SWF_PROPOSAL.md M4).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Snapshot {
+    /// The SmartFox client is connected (`isLoggedIn`).
+    #[serde(deserialize_with = "lenient_bool")]
+    pub logged_in: bool,
+    /// `world` isn't null.
+    #[serde(deserialize_with = "lenient_bool")]
+    pub world: bool,
+    /// `world.myAvatar` isn't null.
+    #[serde(deserialize_with = "lenient_bool")]
+    pub avatar: bool,
+    /// `dataLeaf.intState`: 0 dead, 1 idle, 2 in combat (0 without an avatar).
+    #[serde(deserialize_with = "lenient_i64")]
+    pub state: i64,
+    /// [`loaded`]'s answer.
+    #[serde(deserialize_with = "lenient_bool")]
+    pub loaded: bool,
+    /// `objData.iRank`, the class rank (0 without one).
+    #[serde(deserialize_with = "lenient_i64")]
+    pub rank: i64,
+    target: Value,
+}
+
+impl Snapshot {
+    pub fn alive(&self) -> bool {
+        self.avatar && self.state > 0
+    }
+
+    /// Logged in and alive ([`playing`]).
+    pub fn playing(&self) -> bool {
+        self.logged_in && self.alive()
+    }
+
+    /// The target, when the snapshot was read with it ([`target`]'s answer).
+    pub fn target(&self) -> Option<Monster> {
+        monster_of(self.target.clone())
+    }
+
+    /// [`has_target`]'s answer, when the snapshot was read with the target.
+    pub fn has_target(&self) -> bool {
+        self.target().is_some_and(|m| m.alive())
+    }
+}
+
+/// Reads the [`Snapshot`]. With `with_target` it also does what [`target`] does: drops a dead
+/// or missing target. It refreshes the reads [`logged_in`] and [`state`] reuse.
+pub fn snapshot(bot: &Bot, with_target: bool) -> BotResult<Snapshot> {
+    let snap: Snapshot = bot.flash.call_json("snapshot", vec![with_target.into()])?;
+    let now = Instant::now();
+    let mut state = bot.state.lock();
+    state.logged_in_read = Some((now, snap.logged_in));
+    state.avatar_state_read = Some((now, if snap.avatar { snap.state } else { 0 }));
+    Ok(snap)
+}
+
 /// `isLoggedIn`: the SmartFox client is connected.
 pub fn logged_in(bot: &Bot) -> BotResult<bool> {
     shared(
         bot,
         |s| &mut s.logged_in_read,
-        || bot.flash.call_bool("isLoggedIn", vec![]),
+        || Ok(snapshot(bot, false)?.logged_in),
     )
 }
 
@@ -50,10 +106,8 @@ pub fn state(bot: &Bot) -> BotResult<i64> {
         bot,
         |s| &mut s.avatar_state_read,
         || {
-            if bot.flash.is_null(AVATAR)? {
-                return Ok(0);
-            }
-            bot.flash.get_or("world.myAvatar.dataLeaf.intState", 0)
+            let snap = snapshot(bot, false)?;
+            Ok(if snap.avatar { snap.state } else { 0 })
         },
     )
 }
@@ -147,11 +201,17 @@ pub fn y(bot: &Bot) -> BotResult<f64> {
 /// cancels the target when it's missing or dead).
 pub fn target(bot: &Bot) -> BotResult<Option<Monster>> {
     let raw = bot.flash.call("getTargetMonster", vec![])?;
-    let value: Value = serde_json::from_str(raw.trim()).unwrap_or(Value::Null);
+    Ok(monster_of(
+        serde_json::from_str(raw.trim()).unwrap_or(Value::Null),
+    ))
+}
+
+/// A monster's JSON, or `None` for nothing or `{}`.
+fn monster_of(value: Value) -> Option<Monster> {
     if value.as_object().is_none_or(|o| o.is_empty()) {
-        return Ok(None);
+        return None;
     }
-    Ok(serde_json::from_value(value).ok())
+    serde_json::from_value(value).ok()
 }
 
 /// VibeSkua `HasTarget`: the target exists and is alive.

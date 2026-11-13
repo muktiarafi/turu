@@ -34,6 +34,8 @@ public class GameCalls {
         expose("getGameObjectKey", getGameObjectKey, undefined, true);
         expose("getArrayObject", getArrayObject, undefined, true);
         expose("selectArrayObjects", selectArrayObjects, "", true);
+        expose("selectArrayObjectsWhere", selectArrayObjectsWhere, "", true);
+        expose("getMany", getMany, undefined, true);
         expose("setGameObject", setGameObject);
         expose("setGameObjectKey", setGameObjectKey);
         expose("setArrayObject", setArrayObject);
@@ -110,6 +112,106 @@ public class GameCalls {
             picked.push(walkParts(item, selectorParts, selectorParts.length));
         }
         return JSON.stringify(picked);
+    }
+
+    /**
+     * The items of the array at `path` whose fields match all of `filter`'s
+     * (`{sName: "Gold", bEquip: true}`), whole: one read instead of a column per field and an
+     * item per match. A string matches trimmed, ignoring case and the game's `&lt;`, `&gt;`
+     * and `&amp;`; a number by value (`"12"` is 12); a boolean as the game writes them (`1`,
+     * `"1"`, `"true"`). Loose on purpose: the engine checks each item again.
+     */
+    private function selectArrayObjectsWhere(path:String, filter:*):String {
+        var items:* = walk(gameOf(), path);
+        if (!(items is Array)) {
+            return "";
+        }
+        var keys:Array = [];
+        for (var key:String in filter) {
+            keys.push(key);
+        }
+        var picked:Array = [];
+        for each (var item:* in items) {
+            if (item != null && matchesAll(item, filter, keys)) {
+                picked.push(item);
+            }
+        }
+        return JSON.stringify(picked);
+    }
+
+    private static function matchesAll(item:*, filter:*, keys:Array):Boolean {
+        for each (var key:String in keys) {
+            var want:* = filter[key];
+            var have:* = item[key];
+            if (want is Boolean) {
+                if (truthy(have) != want) {
+                    return false;
+                }
+            } else if (want is Number) {
+                if (have == null || Number(have) != Number(want)) {
+                    return false;
+                }
+            } else if (looseName(have) != looseName(want)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function truthy(value:*):Boolean {
+        if (value is Boolean) {
+            return value;
+        }
+        if (value is Number) {
+            return value != 0;
+        }
+        if (value is String) {
+            var text:String = trim(value);
+            return text == "1" || text.toLowerCase() == "true";
+        }
+        return false;
+    }
+
+    private static function looseName(value:*):String {
+        if (value == null) {
+            return "";
+        }
+        return trim(String(value)).split("&lt;").join("<").split("&gt;").join(">").split("&amp;").join("&")
+            .toLowerCase();
+    }
+
+    private static function trim(text:String):String {
+        return text.replace(/^\s+|\s+$/g, "");
+    }
+
+    /**
+     * Several values in one read: `{key: path}` gives `{key: value}`. A path that doesn't
+     * resolve, throws, or holds a value JSON can't write gives `null` for its key.
+     */
+    private function getMany(paths:*):String {
+        var game:* = gameOf();
+        var out:Object = {};
+        for (var key:String in paths) {
+            var value:* = null;
+            try {
+                value = walk(game, String(paths[key]));
+            } catch (e:Error) {
+            }
+            out[key] = value === undefined ? null : value;
+        }
+        try {
+            return JSON.stringify(out);
+        } catch (e:Error) {
+        }
+        // One value JSON can't write (a cycle): find it rather than lose the rest.
+        for (key in out) {
+            try {
+                JSON.stringify(out[key]);
+            } catch (e:Error) {
+                out[key] = null;
+            }
+        }
+        return JSON.stringify(out);
     }
 
     /** The game's class, from the game's own domain (a child of its loader's). */

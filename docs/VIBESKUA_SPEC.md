@@ -1074,6 +1074,9 @@ differences" and the list below say otherwise:
 - The game is centred (no `align = TOP`); "Turu" is the login screen's title; errors are
   reported (`error`); `packetFromServer` only on request; `hostInfo` says what the SWF has.
 - On the Ruffle builds the bot's packets come from the player's socket, not from the SWF.
+- Batched reads of its own (M4, `hostInfo` version 2): `snapshot(withTarget)` (logged in,
+  world, avatar, `intState`, loaded, class rank and, with `withTarget`, `getTargetMonster`'s
+  answer), `getMany({key: path})` and `selectArrayObjectsWhere(path, {field: value})`.
 - Found in game and matched (this survey was wrong or silent): `gender` answers the client's
   `"M"`/`"F"`; `jumpCorrectRoom` always moves again once the cell settles; `isKicked` is `false` in
   game; `getActiveModalMessage` is plain text, `""` without a dialog; `selectArrayObjects` answers

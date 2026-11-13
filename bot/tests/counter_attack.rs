@@ -15,6 +15,11 @@ struct FakeGame {
 
 impl FlashHost for FakeGame {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
+        if let Some(answer) =
+            turu_bot::testing::batched(name, &args, |n, a| self.call(n, a).unwrap_or_default())
+        {
+            return Ok(answer);
+        }
         let first = match args.first() {
             Some(FlashArg::String(s)) => s.clone(),
             Some(FlashArg::Number(n)) => n.to_string(),

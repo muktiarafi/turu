@@ -5,8 +5,8 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 (auras, monsters, combat); R3b done (inventory, shop, player, world); R3c done (server
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
-four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b built on `host-r6b` (VibeSkua's SWF,
-parity mode and the opt-out removed), to merge after a release with R6a; the rest are proposals. Replaces the plan to fork VibeSkua's
+four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b done (VibeSkua's SWF,
+parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done on `host-m4` (batched reads); the rest are proposals. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -425,20 +425,40 @@ In two parts, a release apart:
 
 ### M4: Batched reads
 
-- `getMany({key: path, ...})`: one JSON object with every value; a path that throws or is null
-  gives `null` for that key.
-- `selectArrayObjectsWhere(path, field, value)`: only the matching items, replacing the
-  `selectArrayObjects` + `getArrayObject` pair in `inventory::matching_by`.
-- `getSkillStates()`: every skill's cooldown left, cost, range and whether it's usable, for the
-  skill loop (one call instead of `canUseSkill` per skill).
-- `getSelfSnapshot()` / `getTargetSnapshot()`: HP, MP, state, cell, auras in one call.
-- Rust: `flash.rs` gets `get_many`; the kill loop, skill rules, `api::player::shared` and item
-  checks use them when `hostInfo` lists the feature.
+Built on `host-m4`. What the R6 GoldFarm run's perf log showed: 187 calls/s, and the skill
+timer reading eight values separately every 100 ms tick (`isLoggedIn`, `isNull(myAvatar)`,
+`intState`, `getTargetMonster`, `items.length`, `mapLoadInProgress`, `artLoaded`, `iRank`),
+about 75 of them. So:
+
+- `snapshot(withTarget)`: `{loggedIn, world, avatar, state, loaded, rank, target}` in one call.
+  With `withTarget`, `target` is `getTargetMonster`'s answer (a dead or missing target is
+  dropped, as there); without, the target is left alone. The skill timer reads it once a tick,
+  and `api::player`'s `logged_in` / `state` (behind the 100 ms cache) read it instead of three
+  calls, refreshing both.
+- `getMany({key: path})`: one JSON object with every value; a path that doesn't resolve,
+  throws or holds what JSON can't write gives `null`. The background loop's once-a-second
+  gameplay stats read with it, and scripts have `bot.flash.getMany`.
+- `selectArrayObjectsWhere(path, {field: value})`: the whole items matching every field
+  (strings trimmed and ignoring case, numbers by value, the game's booleans), replacing
+  `inventory::matching_by`'s column reads plus an item per match; the engine checks each item
+  again. `""` on a non-array, as `selectArrayObjects`.
+- `getSkillStates` waits: only if `canUseSkill` stays among the busiest calls afterwards.
+- No feature gate: the engine and `turu.swf` ship together, so `hostInfo` goes to version 2 and
+  the engine calls them directly. Checked by engine tests (`turu_bot::testing::batched` answers
+  them in fake games from the single reads they replace) and by `host/checks/m4-batched.ts`,
+  which compares them with the single reads in game, rather than a parity mode.
 - Turu Mas gains most: each round trip saved is ~1.6 ms of AIR's thread on screen and more off
   screen ("Turu Mas today"), against well under that on Ruffle.
-- Done when: calls/s on a standard farm drop measurably with the same kills per minute and the
-  same answers (a debug mode that does both and compares), on desktop and on Turu Mas (the
-  extension's round trips per second, on and off screen).
+- Done when: fmt, clippy, tests and the SWF check pass; a GoldFarm run with
+  `TURU_PERF_LOG=60` shows calls/s well under 187 (aim: under 120) with about the same quest
+  turn-ins per minute (R6b's run: 19 in 7 minutes); and on Turu Mas in the emulator, one tab's
+  extension round trips per second drop, screen on and off.
+- Measured: desktop GoldFarm 187 -> ~120 calls/s with the same 19 turn-ins in 7 minutes, the
+  skill timer one `snapshot` (0.17 ms) a tick; `m4-batched.ts` matched every read in game.
+  Turu Mas (emulator, one tab, `--perf-log 60`, which it gained here): ~124 round trips/s in
+  front, ~116 in the background, 1.8-1.9 ms wait each, 32 turn-ins in 11 minutes. It had no perf
+  log before M4, so its "before" is desktop's 187 (the engine makes the same calls on both).
+  `canUseSkill` stays at ~6/s, so `getSkillStates` isn't needed.
 
 ### M5: Events and watched values
 

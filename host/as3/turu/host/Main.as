@@ -30,7 +30,7 @@ import flash.utils.setTimeout;
  */
 public class Main extends MovieClip {
     /** `hostInfo().version`: raised when a callback changes what it answers. */
-    private static const VERSION:int = 1;
+    private static const VERSION:int = 2;
     private static const GAME_URL:String = "https://game.aq.com/game/";
     /** The login screen's title (VibeSkua's says "AURAS!!!"). */
     private static const TITLE:String = '<font color="#FDAF2D">Turu</font>';

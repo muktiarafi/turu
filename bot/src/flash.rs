@@ -11,7 +11,8 @@ use crate::repeat_log::RepeatLog;
 use parking_lot::{Mutex, RwLock};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::collections::BTreeSet;
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -272,6 +273,40 @@ impl Flash {
             .ok()
             .flatten()
             .unwrap_or_default())
+    }
+
+    /// `selectArrayObjectsWhere(path, filter)`: the whole items whose fields match every one of
+    /// `filter`'s, loosely (strings trimmed and ignoring case, numbers by value, the game's
+    /// booleans): check each again. Empty when `path` isn't an array.
+    pub fn select_where<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        filter: BTreeMap<String, FlashArg>,
+    ) -> BotResult<Vec<T>> {
+        let raw = self.call(
+            "selectArrayObjectsWhere",
+            vec![path.into(), FlashArg::Object(filter)],
+        )?;
+        Ok(serde_json::from_str::<Option<Vec<T>>>(unquote_empty(&raw))
+            .ok()
+            .flatten()
+            .unwrap_or_default())
+    }
+
+    /// `getMany({key: path})`: several values in one call. A key whose path doesn't resolve
+    /// (or holds what JSON can't write) is `null`, or missing.
+    pub fn get_many(&self, paths: &[(&str, &str)]) -> BotResult<serde_json::Map<String, Value>> {
+        let paths = paths
+            .iter()
+            .map(|(key, path)| ((*key).to_owned(), FlashArg::from(*path)))
+            .collect();
+        let raw = self.call("getMany", vec![FlashArg::Object(paths)])?;
+        Ok(
+            serde_json::from_str::<Option<serde_json::Map<String, Value>>>(unquote_empty(&raw))
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+        )
     }
 
     /// `getArrayObject(path, index)`.

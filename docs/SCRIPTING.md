@@ -86,6 +86,8 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
 - **Imports** are relative, without extension: `import { Core } from "../core/CoreBots";`.
 - **Missing API**: `bot.flash.get("world.strMapName")`, `bot.flash.callGameFunction(...)` and
   `bot.send.packet("%xt%zm%...%")` reach the game directly, using the same paths VibeSkua uses.
+  A loop that reads several values can read them in one call:
+  `bot.flash.getMany({ gold: "world.myAvatar.objData.intGold", cell: "world.strFrame" })`.
 - **`bot.flash.call(name, ...)`** calls a host SWF callback by name. Turu's own host SWF
   (`turu.swf`) has every callback Turu and turu-scripts use, with VibeSkua's names
   and answers, but not VibeSkua's handle-based registry (`lnkCreate`, `lnkGetValue`, `fcCall`,

@@ -7,7 +7,8 @@
 use super::{Args, NameOrId, map, ok, player, wait};
 use crate::Bot;
 use crate::error::{BotError, BotResult};
-use crate::models::{ItemBase, ShopItem};
+use crate::host::FlashArg;
+use crate::models::{ItemBase, ShopItem, game_name};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -24,16 +25,11 @@ pub fn current_class(bot: &Bot) -> BotResult<Option<String>> {
 /// The equipped class.
 pub fn current_class_item(bot: &Bot) -> BotResult<Option<ItemBase>> {
     let is_worn_class = |i: &ItemBase| i.equipped && i.is_class();
+    let filter = [("bEquip", FlashArg::Bool(true)), ("sType", "Class".into())];
     Ok(
-        match matching_by(
-            bot,
-            Container::Inventory,
-            &["bEquip", "sType"],
-            is_worn_class,
-        )? {
-            Some(items) => items.into_iter().next(),
-            None => inventory_items(bot)?.into_iter().find(is_worn_class),
-        },
+        matching_where(bot, Container::Inventory, &filter, is_worn_class)?
+            .into_iter()
+            .next(),
     )
 }
 
@@ -161,72 +157,33 @@ pub fn items(bot: &Bot, container: Container) -> BotResult<Vec<ItemBase>> {
     Ok(parse_items(raw.unwrap_or_default()))
 }
 
-/// The container's items that `wanted` picks, in the list's order, read without copying the
-/// whole list: a member's inventory is 0.4 MB as JSON and a bank 0.9 MB, 4 to 10 ms of the
-/// game's thread per read, and scripts ask "do I have this item" several times a second.
-/// Reads only `fields` of every item (turu.swf's `selectArrayObjects`, a few kB), then the
-/// whole item at each place they pick (`getArrayObject`).
-///
-/// `None` when it can't tell and the caller must read the whole list: a column came back
-/// empty or not as long as the first (an empty or missing list, a game that has no such
-/// call), or an item wasn't `wanted` any more when it was read (the list changed between
-/// the calls). `wanted` must only look at `fields`.
-fn matching_by(
+/// The container's items whose fields match `filter`, then `wanted`, in the list's order, read
+/// without copying the whole list: a member's inventory is 0.4 MB as JSON and a bank 0.9 MB, 4
+/// to 10 ms of the game's thread per read, and scripts ask "do I have this item" several times
+/// a second. turu.swf's `selectArrayObjectsWhere` sends only the items that match, loosely;
+/// `wanted` decides.
+fn matching_where(
     bot: &Bot,
     container: Container,
-    fields: &[&str],
+    filter: &[(&str, FlashArg)],
     wanted: impl Fn(&ItemBase) -> bool,
-) -> BotResult<Option<Vec<ItemBase>>> {
-    let path = container.items_path();
-    let mut columns: Vec<Vec<Value>> = Vec::with_capacity(fields.len());
-    for field in fields {
-        match bot.flash.select::<Value>(path, field) {
-            Ok(column) if !column.is_empty() => columns.push(column),
-            _ => return Ok(None),
-        }
-    }
-    if columns.iter().any(|c| c.len() != columns[0].len()) {
-        return Ok(None);
-    }
-    let mut found = Vec::new();
-    for index in 0..columns[0].len() {
-        // The same parsing as a whole item's, so names and IDs compare the same.
-        let probe: serde_json::Map<String, Value> = fields
-            .iter()
-            .zip(&columns)
-            .map(|(field, column)| ((*field).to_owned(), column[index].clone()))
-            .collect();
-        let Ok(probe) = serde_json::from_value::<ItemBase>(Value::Object(probe)) else {
-            continue;
-        };
-        if !wanted(&probe) {
-            continue;
-        }
-        let item = bot
-            .flash
-            .get_array_item::<Value>(path, index)?
-            .filter(Value::is_object)
-            .and_then(|v| serde_json::from_value::<ItemBase>(v).ok());
-        match item {
-            Some(item) if wanted(&item) => found.push(item),
-            _ => return Ok(None),
-        }
-    }
-    Ok(Some(found))
+) -> BotResult<Vec<ItemBase>> {
+    let filter = filter
+        .iter()
+        .map(|(field, value)| ((*field).to_owned(), value.clone()))
+        .collect();
+    let mut found = parse_items(bot.flash.select_where(container.items_path(), filter)?);
+    found.retain(|i| wanted(i));
+    Ok(found)
 }
 
 /// The container's items with this name or ID, in the list's order.
 fn matching(bot: &Bot, container: Container, which: NameOrId) -> BotResult<Vec<ItemBase>> {
-    let field = match which {
-        NameOrId::Name(_) => "sName",
-        NameOrId::Id(_) => "ItemID",
+    let filter = match which {
+        NameOrId::Name(name) => ("sName", FlashArg::from(game_name(name.trim()).as_ref())),
+        NameOrId::Id(id) => ("ItemID", FlashArg::from(id)),
     };
-    if let Some(found) = matching_by(bot, container, &[field], |i| item_matches(i, which))? {
-        return Ok(found);
-    }
-    let mut all = items(bot, container)?;
-    all.retain(|i| item_matches(i, which));
-    Ok(all)
+    matching_where(bot, container, &[filter], |i| item_matches(i, which))
 }
 
 /// At least `quantity` of the item (VibeSkua `ICheckInventory.Contains`).

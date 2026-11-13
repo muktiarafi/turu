@@ -1686,27 +1686,27 @@ fn skill_timer(weak: &Weak<Bot>, shared: &SkillShared, cancel: &AtomicBool) {
             let Some((provider, use_mode)) = current(shared) else {
                 return nap(&bot, SKILL_INTERVAL, cancel);
             };
-            if !player::alive(&bot)? {
+            // One read for the tick (docs/HOST_SWF_PROPOSAL.md M4): alive, logged in, loaded,
+            // the class rank and, unless attacking without one, the target.
+            let without_target = bot.opts().attack_without_target;
+            let snap = player::snapshot(&bot, !without_target)?;
+            if !snap.alive() {
                 provider.lock().on_player_death();
             }
-            let attack = if bot.opts().attack_without_target {
-                player::loaded(&bot)? && player::playing(&bot)?
-            } else {
-                player::has_target(&bot)? && player::loaded(&bot)? && player::playing(&bot)?
-            };
+            let attack = (without_target || snap.has_target()) && snap.loaded && snap.playing();
             if let Some(note) = idle.update(Instant::now(), attack) {
                 note_idle(&bot, note);
             }
             if attack {
-                poll(
-                    &bot,
-                    shared,
-                    &provider,
-                    use_mode,
-                    &mut cache,
-                    &mut last_rank,
-                    cancel,
-                )?;
+                // A class rank-up enables skills: refresh the cached action bar.
+                if snap.rank > last_rank || cache.is_none() {
+                    let list = skills(&bot)?;
+                    if !list.is_empty() {
+                        cache = Some(list);
+                    }
+                }
+                last_rank = snap.rank;
+                poll(&bot, shared, &provider, use_mode, &cache, cancel)?;
             }
             provider.lock().on_target_reset(&bot)?;
             nap(&bot, SKILL_INTERVAL, cancel)
@@ -1744,20 +1744,9 @@ fn poll(
     shared: &SkillShared,
     provider: &Mutex<SkillProvider>,
     use_mode: SkillUseMode,
-    cache: &mut Option<Vec<Skill>>,
-    last_rank: &mut i64,
+    cache: &Option<Vec<Skill>>,
     cancel: &AtomicBool,
 ) -> BotResult<()> {
-    // A class rank-up enables skills: refresh the cached action bar.
-    let rank: Option<Value> = bot.flash.get_opt("world.myAvatar.objData.iRank")?;
-    let rank = crate::api::packets::num(rank.as_ref()).unwrap_or_default();
-    if rank > *last_rank || cache.is_none() {
-        let list = skills(bot)?;
-        if !list.is_empty() {
-            *cache = Some(list);
-        }
-    }
-    *last_rank = rank;
     if cancel.load(Ordering::Acquire) {
         return Ok(());
     }

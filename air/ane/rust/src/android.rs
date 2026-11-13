@@ -455,6 +455,7 @@ fn engine(root: &Path) {
         root.display()
     );
     let mut args = read_args(&root.join(ARGS_FILE));
+    let perf_log = take_value(&mut args, "--perf-log");
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!(
@@ -469,11 +470,36 @@ fn engine(root: &Path) {
     turu::configure_startup();
     turu::start_api();
     turu::start_monitor();
+    // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with: each tab's
+    // calls to turu.swf (each a round trip through the extension) and the busiest of them.
+    if let Some(seconds) = perf_log {
+        // SAFETY: before the perf log's thread exists (started just below).
+        unsafe { std::env::set_var("TURU_PERF_LOG", seconds) };
+    }
+    turu::start_perf_log(None);
     // At start and every 6 hours (Options > Application): a newer Turu Mas shows Update in the
     // bar, whose button downloads its APK for Android to install.
     turu::start_client_updates();
     // The notification's state and buttons (`TuruAirService`).
     crate::notify::start_updates();
+}
+
+/// Takes `flag <value>` or `flag=<value>` out of `args`.
+fn take_value(args: &mut Vec<OsString>, flag: &str) -> Option<String> {
+    let mut value = None;
+    let mut rest = Vec::with_capacity(args.len());
+    let mut iter = std::mem::take(args).into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.to_str() {
+            Some(text) if text == flag => value = iter.next().and_then(|v| v.into_string().ok()),
+            Some(text) if text.strip_prefix(flag).is_some_and(|v| v.starts_with('=')) => {
+                value = Some(text[flag.len() + 1..].to_owned());
+            }
+            _ => rest.push(arg),
+        }
+    }
+    *args = rest;
+    value
 }
 
 fn read_args(file: &Path) -> Vec<OsString> {

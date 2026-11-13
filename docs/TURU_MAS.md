@@ -64,6 +64,9 @@ air/app/build.sh
 * **Crash reports:** `TURU_MAS_SENTRY_DSN` when building; without it the app never asks.
 * `air/ane/build.sh` keeps the library with its symbols in `target/air-ane/jni/arm64-v8a/` and
   packs a copy without debug info.
+* **Perf log:** `--perf-log <seconds>` in `turu-args.txt` (in the app's data folder) is the
+  desktop's `TURU_PERF_LOG`: each tab's calls to `turu.swf` per second, every one a round trip
+  through the extension, and the busiest, in logcat (`turu_perf`).
 
 ## Releases
 

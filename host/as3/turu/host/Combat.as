@@ -19,6 +19,7 @@ public class Combat {
         expose("getMonsters", getMonsters, undefined, true);
         expose("getTargetMonster", getTargetMonster, undefined, true);
         expose("canUseSkill", canUseSkill, undefined, true);
+        expose("snapshot", snapshot, undefined, true);
         expose("attackMonsterName", attackMonsterName);
         expose("attackMonsterID", attackMonsterID);
         expose("attackPlayer", attackPlayer);
@@ -84,6 +85,62 @@ public class Combat {
             return "{}";
         }
         return JSON.stringify(monsterJson(target));
+    }
+
+    /**
+     * What the skill timer and the engine's waits ask on every tick, in one read:
+     * `{loggedIn, world, avatar, state, loaded, rank, target}`. `state` is the avatar's
+     * `intState` (0 dead or no avatar); `loaded` means items loaded, no map load in progress
+     * and the avatar's art loaded; `rank` the class rank (null without one). With
+     * `withTarget`, `target` is `getTargetMonster`'s answer, dropping a dead or missing target
+     * as it does; otherwise null and the target is left alone.
+     */
+    private function snapshot(withTarget:*):String {
+        var out:Object = {loggedIn: false, world: false, avatar: false, state: 0, loaded: false, rank: null,
+            target: null};
+        var game:* = gameOf();
+        if (game == null) {
+            return JSON.stringify(out);
+        }
+        out.loggedIn = game.sfc != null && game.sfc.isConnected == true;
+        var world:* = game.world;
+        if (world == null) {
+            return JSON.stringify(out);
+        }
+        out.world = true;
+        var avatar:* = world.myAvatar;
+        if (avatar != null) {
+            out.avatar = true;
+            try {
+                out.state = int(avatar.dataLeaf.intState);
+            } catch (e:Error) {
+            }
+            out.loaded = loaded(world, avatar);
+            try {
+                out.rank = avatar.objData.iRank;
+            } catch (e:Error) {
+            }
+        }
+        if (withTarget == true && avatar != null) {
+            var target:* = avatar.target;
+            if (target == null || target.dataLeaf == null || target.dataLeaf.intHP <= 0) {
+                world.cancelTarget();
+            } else {
+                out.target = monsterJson(target);
+            }
+        }
+        return JSON.stringify(out);
+    }
+
+    private static function loaded(world:*, avatar:*):Boolean {
+        try {
+            if (avatar.items == null || avatar.items.length <= 0 || world.mapLoadInProgress !== false) {
+                return false;
+            }
+            return avatar.pMC.artLoaded() === true;
+        } catch (e:Error) {
+        }
+        return false;
     }
 
     private function attackMonsterName(name:*):String {

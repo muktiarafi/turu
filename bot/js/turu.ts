@@ -1288,6 +1288,12 @@ export class Flash {
      */
     set(path: string, value: unknown): void { call("flash.set", path, value); }
     isNull(path: string): boolean { return call("flash.isNull", path); }
+    /**
+     * Reads several game values in one call (Turu): `getMany({ gold: "world.myAvatar.objData.intGold",
+     * cell: "world.strFrame" })` gives `{ gold: 1200, cell: "Enter" }`. A path that doesn't
+     * resolve gives `null`. Cheaper than one `get` per value when a loop reads several.
+     */
+    getMany<K extends string>(paths: Record<K, string>): Record<K, unknown> { return call("flash.getMany", paths); }
     callGameFunction<T = unknown>(path: string, ...args: unknown[]): T { return call("flash.callGameFunction", path, ...args); }
     /** Calls one of skua.swf's ExternalInterface callbacks and returns its raw string. */
     call(name: string, ...args: unknown[]): string { return call("flash.call", name, ...args); }
