@@ -631,8 +631,9 @@ Done, once `turu.swf` was the only host SWF:
      pad and the loading screen in one `getMany`, and the recorded username.
 
   Checked by the engine's tests (the fakes answer `questStates` from the single reads);
-  `host/checks/after-m7.ts` checks `questStates` against the single reads and Lag Killer kept on
-  in game, not run yet. Not measured on GoldFarm again yet.
+  in game, `host/checks/after-m7.ts` matched on every line (`questStates` against the single
+  reads for loaded, accepted and unloaded quests; Lag Killer on, kept on, and off). Not measured
+  on GoldFarm again yet.
 
 That run's other repeated reads are the script's own (CoreBots), or one-off work per drop.
 
