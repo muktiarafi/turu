@@ -21,7 +21,7 @@ How to build, run and check the Android app. The design and the plan are in
 > tab" only; "Log in by hand" without a saved password) and Army Control's Show open and select
 > them; one engine thread runs them all (`turu_frontend::players`), the active tab drawn and
 > heard, the others muted and ticked at the hidden tab's rate. Options > Application > Tab Limit
-> (default 2, at most 4) refuses more, with a log line. The Army menu and Plugins > Butler show
+> (default 4, at most 4) refuses more, with a log line. The Army menu and Plugins > Butler show
 > (`Platform::has_army`), Butler and Army Control as full-screen sheets with finger-sized
 > buttons. The wake lock is held while any tab's script runs and the notification has a line per
 > tab (Pause and Stop act on the active one). The tabs after the first are written to

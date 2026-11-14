@@ -686,7 +686,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   while a script runs, back on its own after a kill). Checked on an emulator, not a phone. No file dialogs
   (scripts come from Search Scripts); OpenGL ES misdraws; the soft keyboard covers the game's
   own text fields. Tabs (phase 5): several clients in one engine thread, the Army menu and
-  Butler, a Tab Limit (default 2), tabs reopened after a kill; built, not run on a device yet.
+  Butler, a Tab Limit (default 4), tabs reopened after a kill; built, not run on a device yet.
   Vulkan misdrew on an Infinix Hot 30i (PowerVR): the debug log now names the
   GPU and driver, and Options > Application > Safe Drawing turns Mugetsu's speed-ups off to test
   (docs/ANDROID.md, "Misdrawing"; not yet tried on that phone).

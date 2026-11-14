@@ -17,7 +17,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
   and scripts aren't shared with Turu. Search Scripts downloads the scripts.
 * It starts with the AIR SDK's splash screen for about 1.6 s (the SDK's free tier).
 * Tabs, Army and Butler as in Turu on Android: the tab strip's "+", Army > New Tab, Army >
-  Accounts ("In a tab") and Army Control, up to Options > Application > Tab Limit (default 2,
+  Accounts ("In a tab") and Army Control, up to Options > Application > Tab Limit (default 4,
   at most 4; about 200 MB a client), reopened after Android stops the app
   (`android-tabs.json`). No Grid View. No HotKeys or file dialogs.
 * Updates: as Turu on Android, it checks the releases at start and every 6 hours (Options >
