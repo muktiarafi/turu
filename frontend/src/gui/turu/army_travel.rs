@@ -69,6 +69,7 @@ struct ServerPicker {
     picked: String,
 }
 
+#[derive(Default)]
 pub struct Travel {
     shared: Arc<Mutex<Shared>>,
     loaded: bool,
@@ -89,27 +90,6 @@ pub struct Travel {
     notice: Option<(String, String)>,
     /// Commands for Army Control to send to its targets.
     pub commands: Vec<Command>,
-}
-
-impl Default for Travel {
-    fn default() -> Self {
-        Self {
-            shared: Arc::default(),
-            loaded: false,
-            polling: Arc::default(),
-            polled: None,
-            file: None,
-            open: false,
-            history_pick: 0,
-            preset_pick: 0,
-            editor: None,
-            go_to: Destination::default(),
-            player: None,
-            server: None,
-            notice: None,
-            commands: Vec::new(),
-        }
-    }
 }
 
 impl Travel {

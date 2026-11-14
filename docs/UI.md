@@ -391,17 +391,24 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   to house, Start Auto-Attack, Stop Auto-Attack; Travel (open: Map Travel…, Jump to Player…,
   Change Server…), Quest (accept with an optional reward) and Misc options fold away, closed at
   first. Travel is VibeSkua's tabbed host's travel menu (`army_travel.rs`): **Map Travel**
-  (520x360) has Recent destinations (the maps and rooms the clients actually visited, read every
-  second while Turu runs, the newest first, at most 15; Select / Jump, Clear History) and Saved
-  presets ("Name — map-room - cell, pad"; Select / Jump, Create, Edit, Delete), then Jump to
-  Map / Cell... (a box for `Map,Room,Cell`, room optional, starting with the last jump) and
-  Close. Create/Edit Map Preset asks Preset name, Map, Room number (optional), Cell, Pad, with
-  Use Current Client Location (the only checked row, else the active tab; a new preset starts
-  there). Jump to Player… lists the clients' logged-in players in a ▾ next to a box that takes
-  any name; Change Server… loads the online servers (Artix first picked) and relogs the clients
-  there (`/relogin?server=`). The last jump, player, history and presets are saved in
-  `army-control-jump.json` with VibeSkua's field names. The dialogs are modals, as wide as a
-  phone allows.
+  (520x380; a sheet on a phone) has three sections, each a heading with its small buttons on
+  the right. **Go to** (Turu's, in place of VibeSkua's "Jump to Map / Cell" box): Map and Room
+  (digits only; empty for any room), then Cell (Enter when empty), the Pad drop-down (Spawn) and
+  Jump, which Enter in a box also does; `map,room,cell,pad` pasted into Map fills every box.
+  They start with the last jump; Use current fills in where the selected client is. A line
+  under them says what Jump does ("Sends 3 clients to yulgar-12345 - Enter, Spawn"). Narrower
+  than 320 points, Jump gets a row of its own. **Recent destinations** (the maps and rooms the
+  clients actually visited, read every second while Turu runs, the newest first, at most 15;
+  Clear) and **Saved presets** ("Name — map-room - cell, pad"; New…, Edit, Delete): a
+  drop-down with its Jump beside it. Every Jump is off while no client would get it.
+  Create/Edit Map Preset asks Preset name, Map, Room number (optional), Cell, Pad, with Use
+  Current Client Location (the only checked row, else the active tab); a new preset starts with
+  Go to's destination when a map is typed there, else where that client is. Jump to Player…
+  lists the clients' logged-in players in a ▾ next to a box that takes any name; Change
+  Server… loads the online servers (Artix first picked) and relogs the clients there
+  (`/relogin?server=`). The last jump, player, history and presets are saved in
+  `army-control-jump.json` with VibeSkua's field names (and Turu's `Pad`, the last jump's
+  pad). The dialogs are modals, as wide as a phone allows.
 * **Army Queue** (`army_queue.rs`, 600x640; VibeSkua Manager's Army Queue tab): ▶ Start Queue /
   Pause Queue / Resume Queue / ■ Stop Queue (asks first), How to Use (the Quick Guide, hidden for
   good with "Got it, hide guide"), the running status and progress, the squad tabs (name, count,
