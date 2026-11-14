@@ -359,8 +359,8 @@ fn parse_meminfo(text: &str) -> Option<(u64, u64)> {
     Some((field("MemAvailable")?, field("MemTotal")?))
 }
 
-/// `TuruService.nativeTrimMemory(level)`: Android's `onTrimMemory` at `TRIM_MEMORY_RUNNING_LOW`
-/// or above (the service gets it as the activity does, and runs whenever the engine does).
+/// `TuruService.nativeTrimMemory(level)`: Android's `onTrimMemory`, at any level (the service gets
+/// it as the activity does, and runs whenever the engine does).
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeTrimMemory(
     _env: jni::EnvUnowned<'_>,
