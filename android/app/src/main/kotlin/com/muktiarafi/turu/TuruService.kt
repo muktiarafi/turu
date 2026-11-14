@@ -13,6 +13,18 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import com.muktiarafi.turu.shared.CrashApp
+import com.muktiarafi.turu.shared.CrashReports
+import com.muktiarafi.turu.shared.CrashUploads
+
+/** What Turu's crash records and uploads say about it (the shared module's `CrashApp`). */
+internal val CRASH_APP = CrashApp(
+    name = "Turu",
+    sentryDsn = BuildConfig.SENTRY_DSN,
+    release = "turu-android",
+    client = null,
+    memoryHint = "One game client uses about 400 MB. Closing other apps while Turu runs helps.",
+)
 
 /**
  * Keeps Turu running in the background: without a foreground service Android cuts a background
@@ -42,8 +54,8 @@ class TuruService : Service() {
             NotificationChannel(CHANNEL, "Turu running", NotificationManager.IMPORTANCE_LOW),
         )
         startForegroundWith(build())
-        CrashUploads.start(applicationContext)
-        CrashReports.collect(applicationContext)
+        CrashUploads.start(applicationContext, CRASH_APP)
+        CrashReports.collect(applicationContext, CRASH_APP)
         // Passwords and documents (`storage.rs`), before the engine reads a password.
         Storage.init(applicationContext)
         // No activity in this process: Android restarted the service after killing it, and the

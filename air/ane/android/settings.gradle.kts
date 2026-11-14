@@ -30,3 +30,7 @@ rootProject.name = "turu-air-ane"
 // The Kotlin part of rustls-platform-verifier (the engine's HTTPS checks), from the Ruffle build.
 include(":rustls-platform-verifier")
 project(":rustls-platform-verifier").projectDir = file("../../../android/rustls-platform-verifier")
+
+// The Kotlin Turu's Android app shares with this (android/shared).
+include(":shared")
+project(":shared").projectDir = file("../../../android/shared")

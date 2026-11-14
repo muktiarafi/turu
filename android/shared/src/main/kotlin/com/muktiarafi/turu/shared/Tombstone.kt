@@ -1,4 +1,4 @@
-package com.muktiarafi.turu
+package com.muktiarafi.turu.shared
 
 import java.util.Locale
 
@@ -9,7 +9,7 @@ import java.util.Locale
  * process's log. Fields this doesn't know are skipped; the raw file is kept next to the report for
  * anything else (`pbtombstone`, or `protoc --decode` with that .proto).
  */
-internal object Tombstone {
+object Tombstone {
     /** The other threads' frames shown (there are dozens of threads: tokio, wgpu, audio). */
     private const val OTHER_THREAD_FRAMES = 6
 

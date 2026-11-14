@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.app.NativeActivity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
@@ -20,6 +22,11 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
+import com.muktiarafi.turu.shared.CrashQuestion
+import com.muktiarafi.turu.shared.CrashReports
+import com.muktiarafi.turu.shared.CrashUploads
+import com.muktiarafi.turu.shared.FieldStyle
+import com.muktiarafi.turu.shared.FieldTarget
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -34,8 +41,8 @@ import kotlin.concurrent.thread
 class TuruActivity : NativeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before super.onCreate starts the Rust side, which shows a notice for new reports.
-        CrashUploads.start(applicationContext)
-        CrashReports.collect(applicationContext)
+        CrashUploads.start(applicationContext, CRASH_APP)
+        CrashReports.collect(applicationContext, CRASH_APP)
         super.onCreate(savedInstanceState)
         // NativeActivity's onCreate sets the window to "unspecified, resize", over the manifest's
         // setting. Unspecified shows the keyboard whenever the window comes to the front (start,
@@ -93,21 +100,21 @@ class TuruActivity : NativeActivity() {
     private var keyInput: KeyInput? = null
 
     /** The game's focused text field, above the keyboard (`game_field.rs`). */
-    private val gameField = NativeField(this, object : FieldTarget {
+    private val gameField = DialogField(this, object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) = nativeGameFieldEdited(text, start, end)
         override fun enter() = nativeGameFieldEnter()
         override fun closed() = nativeGameFieldClosed()
     })
 
     /** Turu's focused text box (egui's), above the keyboard (`ui_field.rs`). */
-    private val uiField = NativeField(this, object : FieldTarget {
+    private val uiField = DialogField(this, object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) = nativeUiFieldEdited(text, start, end)
         override fun enter() = nativeUiFieldEnter()
         override fun closed() = nativeUiFieldClosed()
     })
 
     /**
-     * Shows a [NativeField] for the game's focused text field: its `text`, `start`..`end` selected
+     * Shows a [DialogField] for the game's focused text field: its `text`, `start`..`end` selected
      * (UTF-16 units), a password or not, `max` characters at most (0: no limit). Called on the
      * engine thread (`screen.rs`).
      */
@@ -115,18 +122,18 @@ class TuruActivity : NativeActivity() {
         runOnUiThread { gameField.show(text, start, end, FieldStyle(password, max, "Type in the game")) }
     }
 
-    /** The game changed its focused field: its [NativeField] shows it. Called on the engine thread. */
+    /** The game changed its focused field: its [DialogField] shows it. Called on the engine thread. */
     fun updateGameField(text: String, start: Int, end: Int) {
         runOnUiThread { gameField.update(text, start, end) }
     }
 
-    /** No game field has the focus now: its [NativeField] goes. Called on the engine thread. */
+    /** No game field has the focus now: its [DialogField] goes. Called on the engine thread. */
     fun hideGameField() {
         runOnUiThread { gameField.hide() }
     }
 
     /**
-     * Shows a [NativeField] for Turu's focused text box: its `text`, `start`..`end` selected
+     * Shows a [DialogField] for Turu's focused text box: its `text`, `start`..`end` selected
      * (UTF-16 units), its `kind` (0 a line, 1 a password, 2 several lines, 3 a number) and `hint`.
      * Called on the engine thread (`ui_field.rs`).
      */
@@ -135,12 +142,12 @@ class TuruActivity : NativeActivity() {
         runOnUiThread { uiField.show(text, start, end, style) }
     }
 
-    /** Turu's focused text box changed: its [NativeField] shows it. Called on the engine thread. */
+    /** Turu's focused text box changed: its [DialogField] shows it. Called on the engine thread. */
     fun updateUiField(text: String, start: Int, end: Int) {
         runOnUiThread { uiField.update(text, start, end) }
     }
 
-    /** None of Turu's text boxes has the focus now: its [NativeField] goes. Called on the engine thread. */
+    /** None of Turu's text boxes has the focus now: its [DialogField] goes. Called on the engine thread. */
     fun hideUiField() {
         runOnUiThread { uiField.hide() }
     }
@@ -160,6 +167,44 @@ class TuruActivity : NativeActivity() {
                 methods.hideSoftInputFromWindow(keys.windowToken, 0)
             }
         }
+    }
+
+    /** Opens `url` in the browser (or the app for the link). Called on the engine thread (`platform.rs`). */
+    fun openUrl(url: String) {
+        runOnUiThread {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (e: ActivityNotFoundException) {
+                Log.w("turu", "Nothing opens $url: $e")
+            }
+        }
+    }
+
+    /** Android's share sheet (mail, a chat, Drive) with `text`. Called on the engine thread. */
+    fun shareText(subject: String, text: String) {
+        runOnUiThread {
+            val send = Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, subject)
+                .putExtra(Intent.EXTRA_TEXT, text)
+            try {
+                startActivity(Intent.createChooser(send, null))
+            } catch (e: ActivityNotFoundException) {
+                Log.w("turu", "Nothing shares text: $e")
+            }
+        }
+    }
+
+    /** Puts `text` on the clipboard (egui's Copy, the game's Ctrl+C). Called on the engine thread. */
+    fun copyText(text: String) {
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Turu", text))
+    }
+
+    /** The clipboard's text, or null when it holds none (the game's Ctrl+V). Called on the engine thread. */
+    fun clipText(): String? {
+        val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return null
+        if (clip.itemCount < 1) return null
+        return clip.getItemAt(0).coerceToText(this)?.toString()
     }
 
     /**
@@ -403,27 +448,27 @@ class TuruActivity : NativeActivity() {
         @JvmStatic
         private external fun nativeCutout(left: Int, right: Int)
 
-        /** The game's [NativeField] changed its text or selection: the game's field takes it (`game_field.rs`). */
+        /** The game's [DialogField] changed its text or selection: the game's field takes it (`game_field.rs`). */
         @JvmStatic
         external fun nativeGameFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in the game's [NativeField]: Enter in the game. */
+        /** The keyboard's Send (or Enter) in the game's [DialogField]: Enter in the game. */
         @JvmStatic
         external fun nativeGameFieldEnter()
 
-        /** The game's [NativeField] was closed (Back): the game's field loses the focus. */
+        /** The game's [DialogField] was closed (Back): the game's field loses the focus. */
         @JvmStatic
         external fun nativeGameFieldClosed()
 
-        /** The UI's [NativeField] changed its text or selection: Turu's text box takes it (`ui_field.rs`). */
+        /** The UI's [DialogField] changed its text or selection: Turu's text box takes it (`ui_field.rs`). */
         @JvmStatic
         external fun nativeUiFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in the UI's [NativeField]: Enter in Turu's text box. */
+        /** The keyboard's Send (or Enter) in the UI's [DialogField]: Enter in Turu's text box. */
         @JvmStatic
         external fun nativeUiFieldEnter()
 
-        /** The UI's [NativeField] was closed (Back): Turu's text box loses the focus. */
+        /** The UI's [DialogField] was closed (Back): Turu's text box loses the focus. */
         @JvmStatic
         external fun nativeUiFieldClosed()
 

@@ -12,6 +12,20 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import com.muktiarafi.turu.shared.CrashApp
+import com.muktiarafi.turu.shared.CrashReports
+import com.muktiarafi.turu.shared.CrashUploads
+
+/** What Turu Mas's crash records and uploads say about it (the shared module's `CrashApp`). */
+internal val CRASH_APP = CrashApp(
+    name = "Turu Mas",
+    sentryDsn = BuildConfig.SENTRY_DSN,
+    release = "turu-mas",
+    // Turu's Sentry project takes both apps' reports.
+    client = "air",
+    memoryHint = "One game client uses about 200 MB, more while a map loads. Closing other apps (or tabs) " +
+        "while Turu Mas runs helps.",
+)
 
 /**
  * Keeps the AIR app's process running off screen: a foreground service, so Android neither
@@ -26,8 +40,8 @@ class TuruAirService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        CrashUploads.start(applicationContext)
-        CrashReports.collect(applicationContext)
+        CrashUploads.start(applicationContext, CRASH_APP)
+        CrashReports.collect(applicationContext, CRASH_APP)
         val power = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Turu:air").apply {
             setReferenceCounted(false)

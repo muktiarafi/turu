@@ -39,6 +39,8 @@ val airHome: String = System.getenv("AIR_HOME") ?: error("set AIR_HOME to the AI
 
 dependencies {
     compileOnly(files("$airHome/lib/android/FlashRuntimeExtensions.jar"))
+    // What Turu's Android app shares (android/shared); air/ane/build.sh merges its classes.
+    implementation(project(":shared"))
     // Crash reports as Turu's Android app sends them (`io.sentry:sentry-android` there): Java and
     // native crashes (the NDK part), ANRs and tombstones. Not its session replay, which Turu
     // doesn't use either.
@@ -47,10 +49,10 @@ dependencies {
 }
 
 // An ANE gives AIR one jar per platform and its native libraries, so what the library needs at
-// run time goes into it: air/ane/build.sh merges the jars `aneLibs` writes (the Kotlin standard
-// library, Sentry and the AndroidX parts it uses; each library's classes, numbered, as AARs all
-// call theirs classes.jar) and packs `jni/arm64-v8a/*.so` (Sentry's native handler) with
-// libturu_air.so.
+// run time goes into it: air/ane/build.sh merges the jars `aneLibs` writes (the shared module's
+// classes, the Kotlin standard library, Sentry and the AndroidX parts it uses; each library's
+// classes, numbered, as AARs all call theirs classes.jar) and packs `jni/arm64-v8a/*.so`
+// (Sentry's native handler) with libturu_air.so.
 tasks.register("aneLibs") {
     val runtime = configurations.getByName("releaseRuntimeClasspath")
     val artifactType = Attribute.of("artifactType", String::class.java)

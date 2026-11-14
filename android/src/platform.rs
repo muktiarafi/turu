@@ -239,173 +239,64 @@ pub(crate) fn with_activity<T>(
     })
 }
 
-/// `startActivity(Intent.createChooser(new Intent(ACTION_SEND) with the subject and text, null))`.
+/// `TuruActivity.shareText(subject, text)`: the share sheet.
 fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()> {
     let text = turu_frontend::crash_reports::shareable(text, MAX_TEXT_BYTES);
     with_activity(app, |env, activity| {
-        let action = env.new_string("android.intent.action.SEND")?;
-        let send = env.new_object(
-            jni_str!("android/content/Intent"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&action)],
-        )?;
-        let mime = env.new_string("text/plain")?;
-        env.call_method(
-            &send,
-            jni_str!("setType"),
-            jni_sig!("(Ljava/lang/String;)Landroid/content/Intent;"),
-            &[JValue::Object(&mime)],
-        )?;
-        for (key, value) in [
-            ("android.intent.extra.SUBJECT", subject),
-            ("android.intent.extra.TEXT", text.as_str()),
-        ] {
-            let key = env.new_string(key)?;
-            let value = env.new_string(value)?;
-            env.call_method(
-                &send,
-                jni_str!("putExtra"),
-                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;"),
-                &[JValue::Object(&key), JValue::Object(&value)],
-            )?;
-        }
-        let chooser = env
-            .call_static_method(
-                jni_str!("android/content/Intent"),
-                jni_str!("createChooser"),
-                jni_sig!(
-                    "(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;"
-                ),
-                &[JValue::Object(&send), JValue::Object(&JObject::null())],
-            )?
-            .l()?;
+        let subject = env.new_string(subject)?;
+        let text = env.new_string(&text)?;
         env.call_method(
             activity,
-            jni_str!("startActivity"),
-            jni_sig!("(Landroid/content/Intent;)V"),
-            &[JValue::Object(&chooser)],
+            jni_str!("shareText"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
+            &[JValue::Object(&subject), JValue::Object(&text)],
         )?;
         Ok(())
     })
 }
 
-/// `getSystemService("clipboard")`.
-fn clipboard<'local>(
-    env: &mut jni::Env<'local>,
-    activity: &JObject,
-) -> jni::errors::Result<JObject<'local>> {
-    let name = env.new_string("clipboard")?;
-    env.call_method(
-        activity,
-        jni_str!("getSystemService"),
-        jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
-        &[JValue::Object(&name)],
-    )?
-    .l()
-}
-
-/// `getSystemService("clipboard").getPrimaryClip().getItemAt(0).coerceToText(activity)`, or
-/// `None` for an empty clipboard.
+/// `TuruActivity.clipText()`: the clipboard's text, or `None` for an empty clipboard.
 fn paste(app: &AndroidApp) -> jni::errors::Result<Option<String>> {
     with_activity(app, |env, activity| {
-        let clipboard = clipboard(env, activity)?;
-        let clip = env
-            .call_method(
-                &clipboard,
-                jni_str!("getPrimaryClip"),
-                jni_sig!("()Landroid/content/ClipData;"),
-                &[],
-            )?
-            .l()?;
-        if clip.is_null()
-            || env
-                .call_method(&clip, jni_str!("getItemCount"), jni_sig!("()I"), &[])?
-                .i()?
-                < 1
-        {
-            return Ok(None);
-        }
-        let item = env
-            .call_method(
-                &clip,
-                jni_str!("getItemAt"),
-                jni_sig!("(I)Landroid/content/ClipData$Item;"),
-                &[JValue::Int(0)],
-            )?
-            .l()?;
         let text = env
             .call_method(
-                &item,
-                jni_str!("coerceToText"),
-                jni_sig!("(Landroid/content/Context;)Ljava/lang/CharSequence;"),
-                &[JValue::Object(activity)],
+                activity,
+                jni_str!("clipText"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
             )?
             .l()?;
         if text.is_null() {
             return Ok(None);
         }
-        let text = env
-            .call_method(
-                &text,
-                jni_str!("toString"),
-                jni_sig!("()Ljava/lang/String;"),
-                &[],
-            )?
-            .l()?;
         let text = env.cast_local::<JString>(text)?;
         Ok(Some(text.try_to_string(env)?))
     })
 }
 
-/// `getSystemService("clipboard").setPrimaryClip(ClipData.newPlainText("Turu", text))`.
+/// `TuruActivity.copyText(text)`: puts `text` on the clipboard.
 fn copy(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
     with_activity(app, |env, activity| {
-        let clipboard = clipboard(env, activity)?;
-        let label = env.new_string("Turu")?;
         let text = env.new_string(text)?;
-        let clip = env
-            .call_static_method(
-                jni_str!("android/content/ClipData"),
-                jni_str!("newPlainText"),
-                jni_sig!(
-                    "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"
-                ),
-                &[JValue::Object(&label), JValue::Object(&text)],
-            )?
-            .l()?;
         env.call_method(
-            &clipboard,
-            jni_str!("setPrimaryClip"),
-            jni_sig!("(Landroid/content/ClipData;)V"),
-            &[JValue::Object(&clip)],
+            activity,
+            jni_str!("copyText"),
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::Object(&text)],
         )?;
         Ok(())
     })
 }
 
-/// `activity.startActivity(new Intent(ACTION_VIEW, Uri.parse(url)))`.
+/// `TuruActivity.openUrl(url)`: the browser, or the app for the link.
 fn open_in_browser(app: &AndroidApp, url: &str) -> jni::errors::Result<()> {
     with_activity(app, |env, activity| {
-        let uri_text = env.new_string(url)?;
-        let uri = env
-            .call_static_method(
-                jni_str!("android/net/Uri"),
-                jni_str!("parse"),
-                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
-                &[JValue::Object(&uri_text)],
-            )?
-            .l()?;
-        let action = env.new_string("android.intent.action.VIEW")?;
-        let intent = env.new_object(
-            jni_str!("android/content/Intent"),
-            jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"),
-            &[JValue::Object(&action), JValue::Object(&uri)],
-        )?;
+        let url = env.new_string(url)?;
         env.call_method(
             activity,
-            jni_str!("startActivity"),
-            jni_sig!("(Landroid/content/Intent;)V"),
-            &[JValue::Object(&intent)],
+            jni_str!("openUrl"),
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::Object(&url)],
         )?;
         Ok(())
     })

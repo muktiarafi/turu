@@ -12,8 +12,8 @@ out=target/air-ane
 rm -rf "$out" && mkdir -p "$out/classes" "$out/Android-ARM64" "$out/default"
 
 # Kotlin: the library's classes, rustls-platform-verifier's Kotlin part and what the library needs
-# at run time (the Kotlin standard library, Sentry and its AndroidX parts), in the one jar AIR
-# takes.
+# at run time (the Kotlin Turu's app shares, android/shared; the Kotlin standard library, Sentry and
+# its AndroidX parts), in the one jar AIR takes.
 android/gradlew -q -p air/ane/android assembleRelease aneLibs
 unzip -qo -p air/ane/android/build/outputs/aar/*-release.aar classes.jar > "$out/library-classes.jar"
 unzip -qo -p android/rustls-platform-verifier/build/outputs/aar/*-release.aar classes.jar > "$out/verifier-classes.jar"

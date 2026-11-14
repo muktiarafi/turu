@@ -1,9 +1,8 @@
-package com.muktiarafi.turu
+package com.muktiarafi.turu.shared
 
-import android.app.Dialog
+import android.app.Activity
 import android.content.Context
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.text.Editable
@@ -16,10 +15,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.Window
 import android.view.WindowInsets
-import android.view.WindowInsetsController
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -27,7 +23,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /** Where a [NativeField]'s edits go: the game's focused text field, or Turu's own text box. */
-internal interface FieldTarget {
+interface FieldTarget {
     /** The text or the selection changed (UTF-16 units). */
     fun edited(text: String, start: Int, end: Int)
 
@@ -39,7 +35,7 @@ internal interface FieldTarget {
 }
 
 /** What a [NativeField] is for: a password (dots), at most `max` characters (0: no limit), several lines, a number. */
-internal data class FieldStyle(
+data class FieldStyle(
     val password: Boolean = false,
     val max: Int = 0,
     val hint: String = "",
@@ -51,31 +47,44 @@ internal data class FieldStyle(
  * A text field being typed in, as a real Android text field just above the soft keyboard (as
  * AQW's own Android launcher does): the keyboard covers the field, and a native one gets
  * Android's own caret, selection handles, text toolbar (Cut, Copy, Paste, Select all, Translate,
- * Share), suggestions, autocorrect, autofill and clipboard. One for the game's text fields, one
- * for Turu's own text boxes (egui's).
+ * Share), suggestions, autocorrect, autofill and clipboard. Each app has one for the game's text
+ * fields and one for Turu's own text boxes (egui's).
  *
  * The Rust side shows it when a field takes the focus, with that field's text and selection
- * (`game_field.rs`, `ui_field.rs`), and keeps it in step when the field changes. Each edit here
- * goes to [target]; the keyboard's Send (or Enter) presses Enter there; Back ends typing: the
- * field loses the focus.
+ * (Turu: `game_field.rs`, `ui_field.rs`; Turu Mas: the host SWF's `gameTyping`, `overlay.rs`),
+ * and keeps it in step when the field changes. Each edit here goes to [target]; the keyboard's
+ * Send (or Enter) presses Enter there; Back ends typing: the field loses the focus.
  *
- * NativeActivity draws its window itself, so its views don't show: the field is a window of its
- * own, a dialog along the bottom of the screen that lets touches outside it through to the game.
- * Its bottom padding is the keyboard's height, which puts the field right above it.
+ * This builds the strip (the field and its count, in Turu's colours with the app's `accent`);
+ * each app puts it on screen its own way ([attach], [detach]): Turu as a dialog of its own
+ * (NativeActivity's views don't show), Turu Mas as a view right of the rail (a window of its own
+ * would take AIR's focus). See docs/ANDROID_NATIVE_UI.md.
  */
-internal class NativeField(private val activity: TuruActivity, private val target: FieldTarget) {
-    private var dialog: Dialog? = null
+abstract class NativeField(
+    val activity: Activity,
+    private val target: FieldTarget,
+    private val accent: Int,
+) {
+    /** The strip while it's up: the field and its count. */
+    protected var bar: LinearLayout? = null
+        private set
     private var edit: Field? = null
     private var count: TextView? = null
     private var max = 0
 
+    /** Whether the field is up, and for what kind of field. */
+    val shown: Boolean get() = bar != null
+    var style = FieldStyle()
+        private set
+
     /** Setting what the field's owner holds: not an edit to send back. */
     private var fromOwner = false
 
-    /** Whether the field is up, and for what kind of field. */
-    val shown: Boolean get() = dialog != null
-    var style = FieldStyle()
-        private set
+    /** Puts the strip on screen (along the bottom, above the keyboard). */
+    protected abstract fun attach(bar: LinearLayout)
+
+    /** Takes the strip off screen, `field` its text field (the keyboard goes with it). */
+    protected abstract fun detach(bar: LinearLayout, field: EditText?)
 
     /** Shows the field with `text`, `start`..`end` selected (UTF-16 units, as the owner's). */
     fun show(text: String, start: Int, end: Int, style: FieldStyle) {
@@ -84,7 +93,6 @@ internal class NativeField(private val activity: TuruActivity, private val targe
         val password = style.password
         val max = style.max
         this.max = max
-        val dialog = Dialog(activity)
         val field = Field(activity, this)
         if (style.lines) {
             field.isSingleLine = false
@@ -115,20 +123,21 @@ internal class NativeField(private val activity: TuruActivity, private val targe
         field.setTextColor(TEXT)
         field.setHintTextColor(MUTED)
         field.hint = style.hint
-        field.highlightColor = ACCENT and 0x00FFFFFF or 0x66000000
+        field.highlightColor = accent and 0x00FFFFFF or 0x66000000
         field.background = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             field.textCursorDrawable = GradientDrawable().apply {
-                setColor(ACCENT)
+                setColor(accent)
                 setSize(dp(2), 0)
             }
-            field.textSelectHandle?.setTint(ACCENT)
-            field.textSelectHandleLeft?.setTint(ACCENT)
-            field.textSelectHandleRight?.setTint(ACCENT)
+            field.textSelectHandle?.setTint(accent)
+            field.textSelectHandleLeft?.setTint(accent)
+            field.textSelectHandleRight?.setTint(accent)
         }
-        field.setOnEditorActionListener { _, action, event ->
+        field.setOnEditorActionListener { _, editorAction, event ->
             val enter = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
-            if (!style.lines && (action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_ACTION_DONE || enter)) {
+            val send = editorAction == EditorInfo.IME_ACTION_SEND || editorAction == EditorInfo.IME_ACTION_DONE
+            if (!style.lines && (send || enter)) {
                 target.enter()
                 true
             } else {
@@ -139,7 +148,7 @@ internal class NativeField(private val activity: TuruActivity, private val targe
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(MUTED)
             setPadding(dp(12), 0, 0, 0)
-            visibility = if (max > 0) android.view.View.VISIBLE else android.view.View.GONE
+            visibility = if (max > 0) View.VISIBLE else View.GONE
         }
         val bar = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -149,53 +158,7 @@ internal class NativeField(private val activity: TuruActivity, private val targe
             addView(field, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(count, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        // Above the keyboard, clear of a camera cutout at the side (held sideways).
-        bar.setOnApplyWindowInsetsListener { view, insets ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val left = dp(16) + (insets.displayCutout?.safeInsetLeft ?: 0)
-                val right = dp(16) + (insets.displayCutout?.safeInsetRight ?: 0)
-                if (view.paddingLeft != left || view.paddingRight != right) {
-                    view.setPadding(left, view.paddingTop, right, view.paddingBottom)
-                }
-            }
-            insets
-        }
-        // Right above the keyboard, checked before each draw (`fitAboveKeyboard`).
-        bar.viewTreeObserver.addOnPreDrawListener {
-            fitAboveKeyboard(bar)
-        }
-        // No title row above the field (the activity's theme gives dialogs an empty one).
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setContentView(bar)
-        dialog.setCancelable(true)
-        // A tap outside the field and the keyboard ends typing, as Back does (and still reaches
-        // what it was on: the game, or Turu's windows).
-        dialog.setCanceledOnTouchOutside(true)
-        dialog.setOnCancelListener { close() }
-        dialog.window?.let { window ->
-            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            window.setGravity(Gravity.BOTTOM)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            // Touches outside the field go to the game; the dialog hears of them (`ACTION_OUTSIDE`)
-            // and closes. A tap on the keyboard isn't one: its window is above this one.
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-            )
-            window.setSoftInputMode(
-                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
-                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                window.attributes = window.attributes.apply {
-                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                window.setDecorFitsSystemWindows(false)
-            }
-        }
-        this.dialog = dialog
+        this.bar = bar
         this.edit = field
         this.count = count
         set(text, start, end)
@@ -207,16 +170,13 @@ internal class NativeField(private val activity: TuruActivity, private val targe
                 edited()
             }
         })
-        dialog.show()
-        // The game's bars stay hidden, as over the activity's window.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            dialog.window?.insetsController?.let { insets ->
-                insets.hide(WindowInsets.Type.systemBars())
-                insets.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        }
+        attach(bar)
         field.requestFocus()
         field.post {
+            // Laid out now: the text scrolled to the caret at the field's real width.
+            edit?.let { set(it.text.toString(), it.selectionStart, it.selectionEnd) }
+            field.scrollTo(0, 0)
+            field.bringPointIntoView(field.selectionEnd)
             val methods = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             methods.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
         }
@@ -231,19 +191,20 @@ internal class NativeField(private val activity: TuruActivity, private val targe
         set(text, start, end)
     }
 
-    /** Hides the field; `close` tells the game too (the user closed it). */
+    /** Hides the field; `close` tells its owner too (the user closed it). */
     fun hide(close: Boolean = false) {
-        val dialog = dialog ?: return
-        this.dialog = null
+        val bar = bar ?: return
+        this.bar = null
+        val field = edit
         edit = null
         count = null
-        dialog.setOnCancelListener(null)
-        dialog.dismiss()
+        detach(bar, field)
         if (close) {
             target.closed()
         }
     }
 
+    /** The user closed the field (Back, a tap outside): its owner loses the focus. */
     fun close() = hide(true)
 
     private fun set(text: String, start: Int, end: Int) {
@@ -278,37 +239,10 @@ internal class NativeField(private val activity: TuruActivity, private val targe
         target.edited(field.text.toString(), field.selectionStart, field.selectionEnd)
     }
 
-    private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
+    protected fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
 
     /**
-     * Puts `bar`'s field right above the keyboard: its bottom padding is how much of its window
-     * the keyboard covers. Where the system keeps the window above the keyboard (Android 15+)
-     * that's nothing; elsewhere the window stays at the screen's bottom, under the keyboard. The
-     * dialog's own insets can't say which: read while the keyboard slides up, they went stale
-     * once the window moved (the field then floated a field's height too high). So the
-     * keyboard's height comes from the activity's window, which stays put, and the window's
-     * place from the screen. False (skip this draw) when the padding changed.
-     */
-    private fun fitAboveKeyboard(bar: View): Boolean {
-        val root = activity.window.decorView
-        val keyboard = root.rootWindowInsets?.let { keyboardHeight(it) } ?: 0
-        val place = IntArray(2)
-        bar.getLocationOnScreen(place)
-        val rootPlace = IntArray(2)
-        root.getLocationOnScreen(rootPlace)
-        val screenBottom = rootPlace[1] + root.height
-        val windowBottom = place[1] + bar.height
-        val covered = (keyboard - (screenBottom - windowBottom)).coerceAtLeast(0)
-        val bottom = dp(4) + covered
-        if (bar.paddingBottom == bottom) {
-            return true
-        }
-        bar.setPadding(bar.paddingLeft, bar.paddingTop, bar.paddingRight, bottom)
-        return false
-    }
-
-    /**
-     * An EditText that says when its selection moves (the game's caret follows), and closes on
+     * An EditText that says when its selection moves (the owner's caret follows), and closes on
      * Back: the keyboard going down alone doesn't (a hardware keyboard's key hides it).
      */
     private class Field(context: Context, private val owner: NativeField) : EditText(context) {
@@ -331,14 +265,18 @@ internal class NativeField(private val activity: TuruActivity, private val targe
     }
 
     companion object {
-        // Turu's egui colours (`frontend/src/gui/turu/theme.rs`).
+        // Turu's egui colours (`frontend/src/gui/turu/theme.rs`); the accent is each app's.
         private val CARD = Color.rgb(24, 27, 37)
         private val TEXT = Color.rgb(232, 234, 242)
         private val MUTED = Color.rgb(140, 146, 166)
-        private val ACCENT = Color.rgb(0x7C, 0x6C, 0xF0)
         private val DANGER = Color.rgb(0xEF, 0x44, 0x44)
 
-        private fun keyboardHeight(insets: WindowInsets): Int {
+        /** Turu's accent (violet) and Turu Mas's (gold), as `theme.rs`'s `ACCENT`. */
+        val TURU_ACCENT = Color.rgb(0x7C, 0x6C, 0xF0)
+        val TURU_MAS_ACCENT = Color.rgb(0xD4, 0xA7, 0x2C)
+
+        /** The soft keyboard's height in `insets`, 0 while it's down. */
+        fun keyboardHeight(insets: WindowInsets): Int {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 return if (insets.isVisible(WindowInsets.Type.ime())) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
             }

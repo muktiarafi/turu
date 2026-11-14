@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 rootProject.name = "Turu"
 include(":app")
 include(":rustls-platform-verifier")
+// The Kotlin Turu Mas's extension (air/ane/android) shares.
+include(":shared")

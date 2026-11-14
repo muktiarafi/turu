@@ -41,7 +41,8 @@ its text) keeps clear of the display cutout's left and right insets, as the keyb
 S24 FE) sits at the side, at about the strip's height. Backspace, Delete, the arrows, Home/End and
 Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it).
 
-The strip is now a native Android text field (`GameField.kt`, `game_field.rs`), as AQW's own
+The strip is now a native Android text field (`game_field.rs`; Kotlin's `NativeField`, since in
+the module both apps share, `android/shared`, placed by Turu's `DialogField`), as AQW's own
 Android launcher has it: Android's caret, selection handles, text toolbar (Cut, Copy, Paste, Share,
 Select all, Translate), suggestions and clipboard. NativeActivity draws its window itself, so the
 field is a window of its own: a dialog along the bottom, its bottom padding the keyboard's height,

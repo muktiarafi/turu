@@ -1,4 +1,4 @@
-package com.muktiarafi.turu.air
+package com.muktiarafi.turu.shared
 
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
@@ -15,19 +15,18 @@ import java.util.Locale
 
 /**
  * How the last runs ended, from Android's own record (ActivityManager's historical exit
- * reasons, Android 11 and later): a report in the data folder's `crash/` for each exit Turu Mas
- * didn't ask for, so a crash (Turu's or AIR's runtime's, Java or native), a hang, a low-memory
+ * reasons, Android 11 and later): a report in the data folder's `crash/` for each exit the app
+ * didn't ask for, so a crash (the engine's, or AIR's runtime's in Turu Mas), a hang, a low-memory
  * kill or a battery saver's kill is known after the fact without logcat. Native crashes come with
  * their tombstone (Android 12 and later), read by [Tombstone], plus the raw file next to the
- * report. The Rust side lists the reports (Diagnostics > Logs > Crashes,
+ * report. The engine's memory log of that process (`crash/memory-<pid>.log`, Turu's
+ * `android/src/memory.rs`; Turu Mas keeps none) is added to its report, and the logs of older
+ * processes are then deleted. The Rust side lists the reports (Diagnostics > Logs > Crashes,
  * `turu_frontend::crash_reports`) and shows a notice for new ones. Runs once per process, before
- * the engine starts.
- *
- * Turu's Android app (`android/app`, `CrashReports.kt`) is where this comes from; unlike it, Turu
- * Mas keeps no memory log to add. As there, exits Sentry doesn't catch itself go to it
- * ([CrashUploads.exit]), so [CrashUploads.start] comes first.
+ * the engine starts, after [CrashUploads.start]: exits Sentry doesn't catch itself go to it
+ * ([CrashUploads.exit]).
  */
-internal object CrashReports {
+object CrashReports {
     private const val TAG = "turu"
 
     /** The most exits Android is asked for; it keeps a few per app. */
@@ -38,13 +37,17 @@ internal object CrashReports {
 
     private var collected = false
 
-    /** Writes reports for the exits since the last call (in an earlier process). */
+    /** The app the reports are about ([collect]). */
+    private var app = CrashApp("Turu", "", "turu", null, "")
+
+    /** Writes reports for the exits of `app` since the last call (in an earlier process). */
     @Synchronized
-    fun collect(context: Context) {
+    fun collect(context: Context, app: CrashApp) {
         if (collected) {
             return
         }
         collected = true
+        this.app = app
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return
         }
@@ -78,9 +81,17 @@ internal object CrashReports {
             }
         }
         prefs.edit().putLong("lastExit", newest).apply()
+        deleteMemoryLogs(dir)
     }
 
-    /** Not a stop someone asked for (Force stop, an update, Turu Mas's own clean exit). */
+    /** The memory logs of earlier processes, once their reports have them (or they ended well). */
+    private fun deleteMemoryLogs(dir: File) {
+        val mine = "memory-${android.os.Process.myPid()}.log"
+        dir.listFiles { file -> file.name.startsWith("memory-") && file.name.endsWith(".log") && file.name != mine }
+            ?.forEach { it.delete() }
+    }
+
+    /** Not a stop someone asked for (Force stop, an update, the app's own clean exit). */
     private fun unexpected(exit: ApplicationExitInfo): Boolean = when (exit.reason) {
         ApplicationExitInfo.REASON_USER_REQUESTED,
         ApplicationExitInfo.REASON_USER_STOPPED,
@@ -112,7 +123,7 @@ internal object CrashReports {
         report.append("Was: ").append(importance(exit.importance)).append('\n')
         // Android often leaves RSS and PSS at 0 (ColorOS's kills: "RSS 0 MB"), and some phones
         // fill in nonsense (an OPPO: 20 million MB): only sizes the phone's memory could hold are
-        // shown, and the line is left out without any.
+        // shown, and the line is left out without any (Turu's memory log below has the readings).
         val phoneMemory = ActivityManager.MemoryInfo().also { activities.getMemoryInfo(it) }.totalMem
         val sizes = listOf("RSS" to exit.rss, "PSS" to exit.pss)
             .filter { (_, kb) -> kb > 0 && kb * 1024 <= phoneMemory }
@@ -121,6 +132,11 @@ internal object CrashReports {
             report.append("Memory at the end: ").append(sizes).append('\n')
         }
         appendDevice(context, activities, report)
+        val memory = File(dir, "memory-${exit.pid}.log")
+        if (memory.isFile) {
+            report.append("\nMemory over the run (").append(memory.name).append(", a reading a minute)\n")
+                .append(memory.readText())
+        }
         if (tombstone) {
             val formatted = Tombstone.format(trace)
             val raw = File(dir, "$name-tombstone.pb")
@@ -149,33 +165,32 @@ internal object CrashReports {
     private fun summary(exit: ApplicationExitInfo): String {
         val description = exit.description
         val detail = if (!description.isNullOrEmpty()) " ($description)" else ""
+        val turu = app.name
         return when (exit.reason) {
-            ApplicationExitInfo.REASON_LOW_MEMORY -> "Android closed Turu Mas to free memory: the phone ran low"
+            ApplicationExitInfo.REASON_LOW_MEMORY -> "Android closed $turu to free memory: the phone ran low"
             ApplicationExitInfo.REASON_CRASH_NATIVE ->
                 if (exit.status == 6) {
-                    "Turu Mas crashed: native code aborted (signal 6)"
+                    "$turu crashed: native code aborted (signal 6)"
                 } else {
-                    "Turu Mas crashed in native code (signal ${exit.status})"
+                    "$turu crashed in native code (signal ${exit.status})"
                 }
-            ApplicationExitInfo.REASON_CRASH -> "Turu Mas crashed: a Java exception$detail"
-            ApplicationExitInfo.REASON_ANR -> "Turu Mas stopped responding and Android closed it"
-            ApplicationExitInfo.REASON_SIGNALED -> "The system killed Turu Mas (signal ${exit.status})$detail"
+            ApplicationExitInfo.REASON_CRASH -> "$turu crashed: a Java exception$detail"
+            ApplicationExitInfo.REASON_ANR -> "$turu stopped responding and Android closed it"
+            ApplicationExitInfo.REASON_SIGNALED -> "The system killed $turu (signal ${exit.status})$detail"
             ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE ->
-                "Android closed Turu Mas for using too much CPU in the background$detail"
-            ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "Turu Mas failed to start$detail"
-            ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "Android closed Turu Mas after a permission changed"
-            ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "Android closed Turu Mas after a process it depends on died"
-            ApplicationExitInfo.REASON_FREEZER -> "Android closed Turu Mas while it was frozen in the background"
-            ApplicationExitInfo.REASON_EXIT_SELF -> "Turu Mas exited with status ${exit.status}"
-            else -> "The system closed Turu Mas$detail"
+                "Android closed $turu for using too much CPU in the background$detail"
+            ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "$turu failed to start$detail"
+            ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "Android closed $turu after a permission changed"
+            ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "Android closed $turu after a process it depends on died"
+            ApplicationExitInfo.REASON_FREEZER -> "Android closed $turu while it was frozen in the background"
+            ApplicationExitInfo.REASON_EXIT_SELF -> "$turu exited with status ${exit.status}"
+            else -> "The system closed $turu$detail"
         }
     }
 
     /** What the person can do about it, when there is something. */
     private fun hint(exit: ApplicationExitInfo): String? = when (exit.reason) {
-        ApplicationExitInfo.REASON_LOW_MEMORY ->
-            "One game client uses about 200 MB, more while a map loads. Closing other apps (or tabs) while " +
-                "Turu Mas runs helps."
+        ApplicationExitInfo.REASON_LOW_MEMORY -> app.memoryHint.takeIf { it.isNotEmpty() }
         ApplicationExitInfo.REASON_SIGNALED,
         ApplicationExitInfo.REASON_OTHER,
         ApplicationExitInfo.REASON_UNKNOWN,
@@ -185,14 +200,14 @@ internal object CrashReports {
             if (colorOs()) {
                 // EXCESSIVE_RESOURCE_USAGE "o-kill:6" on an OPPO A9 2020 running as a foreground
                 // service: ColorOS's own background manager (Android's CPU check spares those).
-                "If nobody stopped Turu Mas: ColorOS (OPPO, realme, OnePlus) closes apps in the background on " +
+                "If nobody stopped ${app.name}: ColorOS (OPPO, realme, OnePlus) closes apps in the background on " +
                     "its own, even with battery optimisation off. In Settings > Battery > App battery " +
-                    "management > Turu Mas, allow background activity and auto launch; also lock Turu Mas in the " +
+                    "management > ${app.name}, allow background activity and auto launch; also lock ${app.name} in the " +
                     "recent apps (hold its card, then the lock)."
             } else {
-                "If nobody stopped Turu Mas: some phones' battery savers (Xiaomi's MIUI and HyperOS, Huawei, " +
+                "If nobody stopped ${app.name}: some phones' battery savers (Xiaomi's MIUI and HyperOS, Huawei, " +
                     "Samsung's sleeping apps, ColorOS on OPPO, realme and OnePlus) close apps in the " +
-                    "background. Allow Turu Mas to start on its own (Autostart) and set its battery saver to " +
+                    "background. Allow ${app.name} to start on its own (Autostart) and set its battery saver to " +
                     "No restrictions."
             }
         else -> null
@@ -212,13 +227,13 @@ internal object CrashReports {
             .append(memory.availMem / (1024 * 1024)).append(" MB free now\n")
         try {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            report.append("Turu Mas: ").append(info.versionName).append(" (").append(info.longVersionCode).append(")\n")
+            report.append(app.name).append(": ").append(info.versionName).append(" (").append(info.longVersionCode).append(")\n")
         } catch (_: Exception) {
             // The report is still useful without it.
         }
         val power = context.getSystemService(PowerManager::class.java)
         report.append("Battery optimisation: ")
-            .append(if (power.isIgnoringBatteryOptimizations(context.packageName)) "off for Turu Mas" else "on")
+            .append(if (power.isIgnoringBatteryOptimizations(context.packageName)) "off for ${app.name}" else "on")
             .append(", background restricted: ").append(if (activities.isBackgroundRestricted) "yes" else "no")
             .append(" (now)\n")
     }

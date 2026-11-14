@@ -8,14 +8,20 @@ and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MA
 
 | Piece | Commit | Turu | Turu Mas |
 |---|---|---|---|
-| The game's text fields as a native field above the keyboard | `1c32e1adb` | `NativeField.kt`, `game_field.rs` | `NativeField.kt`, host SWF's `gameTyping` |
+| The game's text fields as a native field above the keyboard | `1c32e1adb` | `DialogField.kt`, `game_field.rs` | `ViewField.kt`, host SWF's `gameTyping` |
 | Turu's own text boxes as a native field; a tap outside closes it | `8174af2e9` | `ui_field.rs` | `overlay.rs`, `Bridge` |
-| "Send crash reports?" as Android's dialog | `b37f9f790` | `CrashQuestion.kt`, `platform.rs` | `CrashQuestion.kt`, `platform.rs` |
+| "Send crash reports?" as Android's dialog | `b37f9f790` | `CrashQuestion.kt` (shared), `platform.rs` | `CrashQuestion.kt` (shared), `platform.rs` |
 | File dialogs through the system picker | `c013aa4c0` (Turu had them before) | `saf.rs` | `saf.rs`, `Documents.kt`, `PickerActivity.kt` |
 
 What both apps share lives in `turu_frontend` (`gui/turu/native_field.rs`, `documents.rs`, the
-`Platform` hooks); each app keeps only its JNI glue and its Kotlin. The two apps' Kotlin are
-separate copies (`android/app/...` and `air/ane/android/...`): change both.
+`Platform` hooks) and in the Gradle module `android/shared` (package `com.muktiarafi.turu.shared`):
+`NativeField`, `CrashQuestion`, `CrashReports`, `CrashUploads`, `Tombstone`. Turu's app depends on it
+(`android/settings.gradle.kts`); Turu Mas's extension includes it by path
+(`air/ane/android/settings.gradle.kts`), and its classes reach the ANE's jar with the other
+libraries (`aneLibs`, `air/ane/build.sh`). It builds Java 8 class files, which AIR's own `d8`
+needs. Each app keeps its JNI glue, its activity and service, and what differs: where the text
+field goes (Turu's `DialogField`, Turu Mas's `ViewField`), and a `CrashApp` saying who it is (name,
+Sentry DSN and release name, client tag, the low-memory hint).
 
 ## Already native before this
 
@@ -32,8 +38,8 @@ text toolbar or autofill. And the keyboard covers the field being typed in. So w
 the focus, a real Android `EditText` sits just above the keyboard holding what the field holds
 (as AQW's own Android launcher does), and edits go back to the field.
 
-Kotlin's `NativeField` is that strip, in both apps: one for the game's focused field, one for
-Turu's text boxes, each with a `FieldTarget` (where edits, Send and Back go) and a `FieldStyle`
+Kotlin's `NativeField` (the shared module's) is that strip, in both apps: one for the game's
+focused field, one for Turu's text boxes, each with a `FieldTarget` (where edits, Send and Back go) and a `FieldStyle`
 (password, `max` characters, hint, several lines, number). Positions are UTF-16 units on the
 Kotlin side, characters in egui.
 
@@ -73,7 +79,7 @@ How the strip is placed differs:
 ## "Send crash reports?"
 
 A one-time question at first start, so it belongs with the notification and battery prompts as an
-`AlertDialog` (`CrashQuestion.kt`, a copy per app). The Rust side still decides when to ask and
+`AlertDialog` (`CrashQuestion.kt`, shared). The Rust side still decides when to ask and
 what it says, and keeps the answer: `show_crash_upload_question` (`logs.rs`) builds a
 `platform::Question` and calls `Platform::ask_crash_uploads`; Android shows it and answers through
 `answer_crash_upload_question` (any thread); where there's no native dialog (the desktop) egui asks
@@ -97,6 +103,13 @@ scripts folder's `Imported/`; `save_request`: MIME type and suggested name), and
   picker's grant on the document ends with that activity, before the copy or the save is done, so
   `Documents.hold` takes a persistable grant and gives it up after.
 
+## Platform calls
+
+The bot windows' links, share sheet and clipboard are one Kotlin method each, called from Rust over
+JNI: Turu's `TuruActivity.openUrl`, `shareText`, `copyText` and `clipText` (`android/src/platform.rs`,
+which spelled the `Intent`s and the `ClipboardManager` out as JNI call chains before), as Turu Mas's
+`Bridge` has them.
+
 ## Kept in egui
 
 * **The nav rail and the bot windows** (about 40,000 lines): the desktop shares them, `CLAUDE.md`
@@ -112,9 +125,6 @@ scripts folder's `Imported/`; `save_request`: MIME type and suggested name), and
 
 From the survey these came from, not done:
 
-* Turu's raw JNI call chains (clipboard, share, links in `android/src/platform.rs`) as small
-  Kotlin helpers, as Turu Mas's `Bridge` has them; and one Gradle module for the Kotlin both apps
-  copy (`Tombstone.kt` is identical in both; `CrashReports`, `CrashUploads`, `NativeField` drift).
 * Installing an update's APK in the app (`DownloadManager`, `PackageInstaller`) instead of the
   browser.
 * Drop and script-stopped alerts as Android notifications, heard with the screen off.

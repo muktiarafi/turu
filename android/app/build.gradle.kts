@@ -69,6 +69,8 @@ kotlin {
 
 dependencies {
     implementation(project(":rustls-platform-verifier"))
+    // What Turu Mas shares: crash records and uploads, the crash question, the native text field.
+    implementation(project(":shared"))
     // Crash reports: Java and native crashes (its NDK part), ANRs and tombstones.
     implementation(libs.sentryAndroid)
 }

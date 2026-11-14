@@ -8,6 +8,8 @@ import com.adobe.fre.FREContext
 import com.adobe.fre.FREExtension
 import com.adobe.fre.FREFunction
 import com.adobe.fre.FREObject
+import com.muktiarafi.turu.shared.CrashReports
+import com.muktiarafi.turu.shared.CrashUploads
 
 /**
  * Turu's AIR native extension (docs/AIR_PROPOSAL.md): starts Turu's engine ([Bridge]) and passes
@@ -32,8 +34,8 @@ class TuruAirExtension : FREExtension {
                 val dir = activity.getExternalFilesDir(null) ?: activity.filesDir
                 // Crash reports (if the user said yes), then how the last runs ended, written before
                 // the engine looks for new reports.
-                CrashUploads.start(activity.applicationContext)
-                CrashReports.collect(activity.applicationContext)
+                CrashUploads.start(activity.applicationContext, CRASH_APP)
+                CrashReports.collect(activity.applicationContext, CRASH_APP)
                 // Accounts' passwords, before the engine reads one.
                 Passwords.init(activity.applicationContext)
                 // The file dialogs' documents.

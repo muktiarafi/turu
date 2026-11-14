@@ -13,6 +13,10 @@ import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import com.adobe.fre.FREContext
+import com.muktiarafi.turu.shared.CrashQuestion
+import com.muktiarafi.turu.shared.CrashUploads
+import com.muktiarafi.turu.shared.FieldStyle
+import com.muktiarafi.turu.shared.FieldTarget
 import org.json.JSONObject
 
 /**
@@ -88,15 +92,15 @@ object Bridge {
 
     /** The game's focused text field above the keyboard, and the activity it's in. */
     /** The game's focused text field above the keyboard (`gameTyping`). */
-    private var gameField: NativeField? = null
+    private var gameField: ViewField? = null
 
     /** Turu's focused text box above the keyboard (`overlay.rs`). */
-    private var uiField: NativeField? = null
+    private var uiField: ViewField? = null
 
     /** The game's focused field as the host last reported it: shown again when Turu's text box is done. */
     private var lastGameTyping = ""
 
-    /** What the game's [NativeField] does with an edit: a status event "typing" to the host SWF. */
+    /** What the game's [ViewField] does with an edit: a status event "typing" to the host SWF. */
     private val gameTarget = object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) = send(
             JSONObject().put("op", "set").put("text", text).put("start", start).put("end", end),
@@ -107,7 +111,7 @@ object Bridge {
         private fun send(request: JSONObject) = dispatch("typing", request.toString())
     }
 
-    /** What Turu's [NativeField] does with an edit: the overlay's text box takes it (`overlay.rs`). */
+    /** What Turu's [ViewField] does with an edit: the overlay's text box takes it (`overlay.rs`). */
     private val uiTarget = object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) = nativeUiFieldEdited(text, start, end)
         override fun enter() = nativeUiFieldEnter()
@@ -118,10 +122,10 @@ object Bridge {
     }
 
     /** The field `current` if it's for `activity`, else a new one there (the old one gone). */
-    private fun fieldFor(current: NativeField?, activity: Activity, target: FieldTarget): NativeField =
+    private fun fieldFor(current: ViewField?, activity: Activity, target: FieldTarget): ViewField =
         current?.takeIf { it.activity === activity } ?: run {
             current?.hide()
-            NativeField(activity, target)
+            ViewField(activity, target)
         }
 
     /** Right of Turu's rail: where the fields go. */
@@ -130,7 +134,7 @@ object Bridge {
     /**
      * The game's focused text field, from the host SWF (`gameTyping`) as JSON (`text`, `caret`,
      * `selStart`, `selEnd`, `password`, `max`), or empty when no field you type in has the focus:
-     * its [NativeField] shows it, follows it, or goes. Not while Turu's text box has a field.
+     * its [ViewField] shows it, follows it, or goes. Not while Turu's text box has a field.
      */
     @JvmStatic
     fun gameTyping(json: String) {
@@ -157,7 +161,7 @@ object Bridge {
     }
 
     /**
-     * Shows a [NativeField] for Turu's focused text box: its `text`, `start`..`end` selected
+     * Shows a [ViewField] for Turu's focused text box: its `text`, `start`..`end` selected
      * (UTF-16 units), its `kind` (0 a line, 1 a password, 2 several lines, 3 a number) and `hint`.
      * The game's field steps aside meanwhile. Called on the overlay's thread.
      */
@@ -172,7 +176,7 @@ object Bridge {
         }
     }
 
-    /** Turu's focused text box changed: its [NativeField] shows it. Called on the overlay's thread. */
+    /** Turu's focused text box changed: its [ViewField] shows it. Called on the overlay's thread. */
     @JvmStatic
     fun updateUiField(text: String, start: Int, end: Int) {
         activity?.runOnUiThread { uiField?.update(text, start, end) }
@@ -220,15 +224,15 @@ object Bridge {
         gameField?.takeIf { it.shown }?.close()
     }
 
-    /** The UI's [NativeField] changed its text or selection: Turu's text box takes it (`overlay.rs`). */
+    /** The UI's [ViewField] changed its text or selection: Turu's text box takes it (`overlay.rs`). */
     @JvmStatic
     external fun nativeUiFieldEdited(text: String, start: Int, end: Int)
 
-    /** The keyboard's Send (or Enter) in the UI's [NativeField]: Enter in Turu's text box. */
+    /** The keyboard's Send (or Enter) in the UI's [ViewField]: Enter in Turu's text box. */
     @JvmStatic
     external fun nativeUiFieldEnter()
 
-    /** The UI's [NativeField] was closed (Back): Turu's text box loses the focus. */
+    /** The UI's [ViewField] was closed (Back): Turu's text box loses the focus. */
     @JvmStatic
     external fun nativeUiFieldClosed()
 
