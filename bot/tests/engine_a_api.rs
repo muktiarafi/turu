@@ -307,15 +307,19 @@ fn options_send_toggles_once_and_repeat_ticks() {
 }
 
 #[test]
-fn streamer_mode_hides_names_and_gives_custom_names_back() {
+fn streamer_mode_is_turu_swfs_module_and_gives_custom_names_back() {
     let game = FakeGame::new();
-    game.set("world.strMapName", "\"ULTRADAGE\"");
-    game.set("world.map.txtHouse.text", "\"Questwalker's House\"");
     let bot = new_bot(&game);
-    let sets_of = |game: &FakeGame, path: &str| -> Vec<FlashArg> {
+    let streamer = |calls: Vec<Vec<FlashArg>>| {
+        calls
+            .into_iter()
+            .filter(|a| arg(a, 0) == "StreamerMode")
+            .count()
+    };
+    let name_sets = |game: &FakeGame| -> Vec<FlashArg> {
         game.calls_to("setGameObject")
             .into_iter()
-            .filter(|a| arg(a, 0) == path)
+            .filter(|a| arg(a, 0) == "world.myAvatar.pMC.pname.ti.text")
             .map(|a| a[1].clone())
             .collect()
     };
@@ -326,124 +330,45 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
     }
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
-    // Hide Players comes with it; the drawn names are rewritten on every pass, never objData.
-    assert_eq!(
-        game.calls_to("modEnable"),
-        [
-            [FlashArg::String("HidePlayers".into())],
-            [FlashArg::String("UntargetLite".into())]
-        ]
+    // Hide Players comes with it; turu.swf keeps the names covered (one call, not one a pass),
+    // over the custom name.
+    assert_eq!(streamer(game.calls_to("modEnable")), 1);
+    assert!(
+        game.calls_to("modEnable")
+            .iter()
+            .any(|a| arg(a, 0) == "HidePlayers")
     );
-    let name = FlashArg::String(options::STREAMER_NAME.into());
-    assert_eq!(
-        sets_of(&game, "world.myAvatar.pMC.pname.ti.text"),
-        [name.clone(), name]
-    );
-    assert!(sets_of(&game, "world.myAvatar.objData.strUsername").is_empty());
-    assert_eq!(
-        sets_of(&game, "world.rootClass.ui.mcInterface.t1.visible"),
-        [FlashArg::Bool(false), FlashArg::Bool(false)]
-    );
-    // The chat's entry field is left alone: hiding it would take its focus (and the keyboard).
-    assert!(sets_of(&game, "world.rootClass.ui.mcInterface.te.visible").is_empty());
-    // The target portrait keeps a monster's or another player's name.
-    assert!(sets_of(&game, "world.rootClass.ui.mcPortraitTarget.strName.text").is_empty());
-    assert_eq!(
-        sets_of(&game, "ui.mcInterface.areaList.title.t1.text").last(),
-        Some(&FlashArg::String("Ultradage".into()))
-    );
-    // The portrait's name and the gold are hidden (the game rewrites the name's text in combat).
-    for path in [
-        "world.rootClass.ui.mcPortrait.strName.visible",
-        "world.rootClass.ui.mcInterface.mcGold.visible",
-    ] {
-        assert_eq!(
-            sets_of(&game, path).last(),
-            Some(&FlashArg::Bool(false)),
-            "{path}"
-        );
-    }
-    // The house sign names its owner.
-    let house = FlashArg::String("TuruUser's House".into());
-    assert_eq!(
-        sets_of(&game, "world.map.txtHouse.text").last(),
-        Some(&house)
-    );
-    game.set("world.map.txtHouse.text", "\"TuruUser's House\"");
+    assert!(name_sets(&game).is_empty());
 
-    // Off: chat back, names redrawn, Hide Players as it was, and the custom name again.
+    // Off: the module gives the names back, Hide Players goes as it was, and the custom name
+    // applies again.
     bot.options.write().streamer_mode = false;
     options::apply(&bot).unwrap();
-    assert_eq!(
-        sets_of(&game, "world.rootClass.ui.mcInterface.t1.visible").last(),
-        Some(&FlashArg::Bool(true))
-    );
+    options::apply(&bot).unwrap();
     assert_eq!(
         game.calls_to("modDisable"),
-        [[FlashArg::String("HidePlayers".into())]]
+        [
+            [FlashArg::String("HidePlayers".into())],
+            [FlashArg::String("StreamerMode".into())]
+        ]
     );
     assert_eq!(
-        sets_of(&game, "world.myAvatar.pMC.pname.ti.text").last(),
+        name_sets(&game).last(),
         Some(&FlashArg::String("Custom".into()))
     );
-    for path in [
-        "world.rootClass.ui.mcPortrait.strName.visible",
-        "world.rootClass.ui.mcInterface.mcGold.visible",
-    ] {
-        assert_eq!(
-            sets_of(&game, path).last(),
-            Some(&FlashArg::Bool(true)),
-            "{path}"
-        );
-    }
-    assert_eq!(
-        sets_of(&game, "world.map.txtHouse.text").last(),
-        Some(&FlashArg::String("Questwalker's House".into()))
-    );
-    let redraws = game
-        .calls_to("callGameFunction")
-        .into_iter()
-        .chain(game.calls_to("callGameFunction0"))
-        .filter(|a| arg(a, 0) == "world.setUserData")
-        .count();
-    assert_eq!(redraws, 1);
 
-    // Without a custom name: the character's own name and guild, from objData.
-    game.set("world.myAvatar.objData.strUsername", "\"Hero\"");
-    game.set("world.myAvatar.objData.guild.Name", "\"Heroes\"");
-    {
-        let mut o = bot.options.write();
-        o.streamer_mode = true;
-        o.custom_name.clear();
-    }
-    // Targeting yourself: the target portrait's name is covered too.
-    let target = "world.rootClass.ui.mcPortraitTarget.strName.text";
-    game.set(target, "\"HERO\"");
+    // On, a relogin, and turned off before the first pass: the SWF, which outlived the login,
+    // is still told.
+    bot.options.write().streamer_mode = true;
     options::apply(&bot).unwrap();
-    assert_eq!(
-        sets_of(&game, target).last(),
-        Some(&FlashArg::String(options::STREAMER_NAME.into()))
-    );
-    game.set(target, "\"TuruUser\"");
+    bot.state.lock().reset_session();
     bot.options.write().streamer_mode = false;
     options::apply(&bot).unwrap();
+    assert_eq!(streamer(game.calls_to("modDisable")), 2);
+    // And not again once it knows.
+    bot.state.lock().reset_session();
     options::apply(&bot).unwrap();
-    assert_eq!(
-        sets_of(&game, "world.myAvatar.pMC.pname.ti.text").last(),
-        Some(&FlashArg::String("Hero".into()))
-    );
-    assert_eq!(
-        sets_of(&game, "world.rootClass.ui.mcPortrait.strName.text").last(),
-        Some(&FlashArg::String("Hero".into()))
-    );
-    assert_eq!(
-        sets_of(&game, target).last(),
-        Some(&FlashArg::String("Hero".into()))
-    );
-    assert_eq!(
-        sets_of(&game, "world.myAvatar.pMC.pname.tg.text").last(),
-        Some(&FlashArg::String("Heroes".into()))
-    );
+    assert_eq!(streamer(game.calls_to("modDisable")), 2);
 }
 
 /// Skip Cutscenes is turu.swf's to keep applied: it takes a cutscene's overlay off, shows the

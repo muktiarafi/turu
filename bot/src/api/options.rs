@@ -38,10 +38,8 @@ pub struct Applied {
     walk_speed: Option<i32>,
     custom_name: Option<String>,
     custom_guild: Option<String>,
+    /// turu.swf's Streamer Mode module, which keeps it applied itself.
     streamer: Option<bool>,
-    /// Turu: the house sign's own text (`world.map.txtHouse`, "Name's House") while Streamer
-    /// Mode covers it, to write back when it's turned off.
-    house_title: Option<String>,
     /// turu.swf's Skip Cutscenes module, which it keeps applied itself.
     skip_cutscenes: Option<bool>,
     /// turu.swf's Infinite Range and Untarget Lite modules, kept applied by the SWF itself.
@@ -89,116 +87,6 @@ fn write_name(bot: &Bot, name: &str) -> BotResult<()> {
         bot.flash.set(path, name)?;
     }
     Ok(())
-}
-
-/// The name tag and portrait name while Streamer Mode is on (VibeSkua: "VibeSkuaUser").
-pub const STREAMER_NAME: &str = "TuruUser";
-/// The guild tag while Streamer Mode is on.
-const STREAMER_GUILD: &str = "Hidden";
-
-/// The house sign while Streamer Mode is on, in place of "Name's House".
-const STREAMER_HOUSE: &str = "TuruUser's House";
-/// The sign over a house map (`house_fla`), with its owner's name.
-const HOUSE_TITLE: &str = "world.map.txtHouse.text";
-
-/// What Streamer Mode hides: the gold, coins and chat (VibeSkua tries every spelling the
-/// interface has had), and, Turu's, the gold as the interface has it now (`mcGold`, its icon
-/// and `strGold`) and the portrait's name. The game rewrites the portrait's name whenever the
-/// avatar's bars change (in combat, about one frame in eight showed it under the 250 ms
-/// rewrite), but never its visibility, so it is hidden rather than rewritten.
-///
-/// Turu: the chat's log (`t1`) only, not its entry field (`te`, which VibeSkua hides too).
-/// Ruffle drops the focus of a field made invisible, so hiding it on every pass took the focus
-/// from the field you were typing in, and on Android closed the keyboard each time it opened.
-const STREAMER_HIDDEN: [&str; 9] = [
-    "world.rootClass.ui.mcInterface.mcGold.visible",
-    "world.rootClass.ui.mcPortrait.strName.visible",
-    "world.rootClass.ui.mcInterface.teGold.visible",
-    "world.rootClass.ui.mcInterface.teCoins.visible",
-    "world.rootClass.ui.mcInterface.strGold.visible",
-    "world.rootClass.ui.mcInterface.strCoins.visible",
-    "world.rootClass.ui.mcInterface.txtGold.visible",
-    "world.rootClass.ui.mcInterface.txtCoins.visible",
-    "world.rootClass.ui.mcInterface.t1.visible",
-];
-/// The target portrait's name (VibeSkua writes "Hidden" over it whatever the target is).
-const TARGET_NAME: &str = "world.rootClass.ui.mcPortraitTarget.strName.text";
-
-/// VibeSkua `ApplyStreamerMode`'s loop: the drawn names only (never `objData`, which shops and
-/// the inventory read), the gold, coins and chat hidden, and the area title without the room
-/// number. Each write may fail on its own, as VibeSkua ignores them.
-fn write_streamer(bot: &Bot, a: &mut Applied) {
-    let f = &bot.flash;
-    let _ = f.set("world.myAvatar.pMC.pname.ti.text", STREAMER_NAME);
-    let _ = f.set("world.myAvatar.pMC.pname.tg.text", STREAMER_GUILD);
-    let _ = f.set("world.rootClass.ui.mcPortrait.strName.text", STREAMER_NAME);
-    // Turu: the target portrait only while it names you (targeting yourself), so monsters and
-    // other players keep their names there.
-    if let Ok(Some(target)) = f.get_opt::<String>(TARGET_NAME)
-        && !target.is_empty()
-        && target != STREAMER_NAME
-    {
-        let me: String = f
-            .get_or("world.myAvatar.objData.strUsername", String::new())
-            .unwrap_or_default();
-        if !me.is_empty() && target.trim().eq_ignore_ascii_case(me.trim()) {
-            let _ = f.set(TARGET_NAME, STREAMER_NAME);
-        }
-    }
-    for path in STREAMER_HIDDEN {
-        let _ = f.set(path, false);
-    }
-    let map: String = f
-        .get_or("world.strMapName", String::new())
-        .unwrap_or_default();
-    if !map.is_empty() && map != "null" {
-        let mut chars = map.chars();
-        let title: String = chars
-            .next()
-            .into_iter()
-            .flat_map(char::to_uppercase)
-            .chain(chars.flat_map(char::to_lowercase))
-            .collect();
-        let _ = f.set("ui.mcInterface.areaList.title.t1.text", title);
-    }
-    // Turu: the sign in a house names its owner. Kept to write back unless it's already ours.
-    if let Ok(Some(title)) = f.get_opt::<String>(HOUSE_TITLE)
-        && title != STREAMER_HOUSE
-    {
-        a.house_title = Some(title);
-        let _ = f.set(HOUSE_TITLE, STREAMER_HOUSE);
-    }
-}
-
-/// Streamer Mode turned off: the gold, coins and chat shown again, and the name and guild
-/// written back from `objData`, which Streamer Mode leaves alone. VibeSkua only calls
-/// `world.setUserData`, which leaves the name tag as it is. As in [`write_streamer`], one failed
-/// write doesn't stop the others, and it isn't tried again.
-fn clear_streamer(bot: &Bot, a: &mut Applied) {
-    let f = &bot.flash;
-    if let Some(title) = a.house_title.take()
-        && f.get_opt::<String>(HOUSE_TITLE).ok().flatten().as_deref() == Some(STREAMER_HOUSE)
-    {
-        let _ = f.set(HOUSE_TITLE, title);
-    }
-    for path in STREAMER_HIDDEN {
-        let _ = f.set(path, true);
-    }
-    let name: String = f
-        .get_or("world.myAvatar.objData.strUsername", String::new())
-        .unwrap_or_default();
-    if !name.is_empty() {
-        let _ = f.set("world.myAvatar.pMC.pname.ti.text", name.as_str());
-        let _ = f.set("world.rootClass.ui.mcPortrait.strName.text", name.as_str());
-        if f.get_opt::<String>(TARGET_NAME).ok().flatten().as_deref() == Some(STREAMER_NAME) {
-            let _ = f.set(TARGET_NAME, name.as_str());
-        }
-    }
-    let guild: String = f
-        .get_or("world.myAvatar.objData.guild.Name", String::new())
-        .unwrap_or_default();
-    let _ = f.set("world.myAvatar.pMC.pname.tg.text", guild);
-    let _ = f.call_game_function("world.setUserData", vec![]);
 }
 
 /// Custom Name and Custom Guild, on change.
@@ -342,18 +230,20 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         }
         a.set_fps = Some(o.set_fps);
     }
-    // Streamer Mode: rewritten on every pass (VibeSkua's loop), over Custom Name and Guild,
-    // which apply again once it's off.
-    if o.streamer_mode {
-        write_streamer(bot, a);
-        a.streamer = Some(true);
-    } else {
-        if a.streamer == Some(true) {
-            clear_streamer(bot, a);
+    // Streamer Mode: turu.swf's module covers the names on every frame (VibeSkua's 500 ms loop)
+    // and gives them back when it's turned off; then Custom Name and Guild apply again.
+    // Turned off while logged out, it's still on in the SWF: told at the next login.
+    let was_on = a.streamer == Some(true);
+    let stale = a.streamer.is_none() && !o.streamer_mode && bot.state.lock().streamer_in_swf;
+    if changed(&mut a.streamer, o.streamer_mode) || stale {
+        module(bot, "StreamerMode", o.streamer_mode)?;
+        bot.state.lock().streamer_in_swf = o.streamer_mode;
+        if was_on || stale {
             a.custom_name = None;
             a.custom_guild = None;
         }
-        a.streamer = Some(false);
+    }
+    if !o.streamer_mode {
         apply_custom_names(bot, o, a)?;
     }
 

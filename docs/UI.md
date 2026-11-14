@@ -285,8 +285,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   While Headless Mode is on in game, the game area shows VibeSkua's headless overlay ("Headless
   Mode Active", `show_headless_screen` in `mod.rs`) instead of the 2 FPS game: the movie isn't
   drawn and the overlay takes the game's clicks; the bar and tool windows work as usual.
-  Streamer Mode (VibeSkua `ApplyStreamerMode`, `api/options.rs`) turns Hide Players on and, on
-  every options pass, draws "TuruUser" / "Hidden" over the name tag and guild, and "TuruUser" over the
+  Streamer Mode (VibeSkua `ApplyStreamerMode`) turns Hide Players on and turu.swf's
+  `StreamerMode` module (`host/as3/turu/host/Streamer.as`; one call when it changes, where VibeSkua
+  rewrites everything every 500 ms) checks on every frame and writes only what the game changed back.
+  It draws "TuruUser" / "Hidden" over the name tag and guild, and "TuruUser" over the
   target portrait only while it names you (VibeSkua writes "Hidden" there over every monster and
   player; never `objData`), hides the gold (`mcGold`, the interface's current one, as well as VibeSkua's old
   spellings), coins, the chat's log (not its entry field `te`, as VibeSkua does: Ruffle drops the

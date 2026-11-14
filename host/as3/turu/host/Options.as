@@ -9,8 +9,9 @@ import flash.utils.getTimer;
  * only while an avatar's `pMC.spFX` is set), Disable Collisions (`world.arrSolid`, the walls,
  * emptied), and Turu's own Infinite Range, Untarget Lite (Lite's untarget-self and
  * untarget-dead on), Skip Cutscenes (the overlay taken off, the world shown again unless Lag
- * Killer is on, and a cutscene the game waits to show cancelled) and Lag Killer (the world kept
- * hidden), which the engine did on every options pass before. An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
+ * Killer is on, and a cutscene the game waits to show cancelled), Lag Killer (the world kept
+ * hidden) and Streamer Mode (`Streamer`, checked on every frame), which the engine did on every
+ * options pass before. An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
  * off restores what it changed, which VibeSkua's Disable FX doesn't.
  */
 public class Options {
@@ -34,6 +35,7 @@ public class Options {
      * game shows it again, after a cutscene for one). */
     private var lagKiller:Boolean = false;
     private var lastFrame:int = 0;
+    private var streamer:Streamer;
     /** Disable FX: each avatar MC's `spFX`, to give back. */
     private var savedFX:Dictionary = new Dictionary(true);
     /** Disable Collisions: the walls taken away, and the empty list put in their place. */
@@ -43,6 +45,7 @@ public class Options {
     public function Options(gameOf:Function, host:Host) {
         this.gameOf = gameOf;
         this.host = host;
+        streamer = new Streamer(gameOf);
     }
 
     /** Registers the calls with `expose(name, fn, onThrow, quiet)`. */
@@ -154,6 +157,9 @@ public class Options {
             case "SkipCutscenes":
                 skipCutscenesOn = on;
                 break;
+            case "StreamerMode":
+                streamer.enabled = on;
+                return;
             case "LagKiller":
                 // Off shows the world again even when it wasn't on (a stopping script does that).
                 lagKiller = on;
@@ -167,8 +173,12 @@ public class Options {
         }
     }
 
-    /** Every frame (from `Main`): re-applies the enabled modules every 100 ms. */
+    /** Every frame (from `Main`): Streamer Mode on every frame, the other enabled modules every
+     * 100 ms. */
     public function frame():void {
+        if (streamer.enabled) {
+            streamer.frame();
+        }
         if (!hidePlayers && !disableFX && !disableCollisions && !infiniteRange && !untargetLite &&
             !skipCutscenesOn && !lagKiller) {
             return;
