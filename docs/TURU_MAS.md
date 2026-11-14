@@ -20,6 +20,9 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
   Accounts ("In a tab") and Army Control, up to Options > Application > Tab Limit (default 4,
   at most 4; about 200 MB a client), reopened after Android stops the app
   (`android-tabs.json`). No Grid View. No HotKeys or file dialogs.
+* Army > Accounts keeps passwords as Turu on Android does: encrypted with a key in the Android
+  Keystore, in the app's internal storage (not the shared data folder; not Turu's), so an
+  account opened in a tab logs in by itself.
 * Updates: as Turu on Android, it checks the releases at start and every 6 hours (Options >
   Application) and shows Update in the bar; the window's Download APK fetches Turu Mas's APK
   for Android to install over it (same signature, so data stays). A release without a Turu Mas
@@ -33,7 +36,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 |---|---|
 | `air_patch/` | crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's sandbox, at run time. |
 | `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
-| `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
+| `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `Passwords` (Accounts' passwords, with `passwords.rs`: the Ruffle build's `Storage.kt` and `KeystoreStore`), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
 | `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`, and `TuruHost` for Turu's own `turu.swf`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). `build.sh` adds rustls-platform-verifier's network security config to `res/` (plain HTTP only to the certificate authorities' hosts, for revocation lists). |
 | `air/ane/rust/src/clients.rs`, `air/app/src/TuruStage.as` | Tabs: game clients 0-3 on AIR's one stage, each with its own bot (below). |

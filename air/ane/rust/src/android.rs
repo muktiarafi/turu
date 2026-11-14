@@ -40,6 +40,14 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
                 log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
             }
             let root = PathBuf::from(files_dir.try_to_string(env)?);
+            // Here, on a Java thread: the engine's threads can't find the extension's classes.
+            if let Err(e) = crate::passwords::install(env) {
+                // A missing class leaves its exception pending: not ours to throw to AIR.
+                env.exception_clear();
+                log::error!(
+                    "Couldn't set up the password store; Accounts won't keep passwords: {e}"
+                );
+            }
             turu_frontend::platform::set(Arc::new(crate::platform::AirPlatform));
             start_engine(root);
             Ok(())

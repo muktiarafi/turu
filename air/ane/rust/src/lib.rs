@@ -26,4 +26,6 @@ mod notify;
 #[cfg(target_os = "android")]
 mod overlay;
 #[cfg(target_os = "android")]
+mod passwords;
+#[cfg(target_os = "android")]
 mod platform;
