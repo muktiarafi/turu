@@ -2,7 +2,7 @@
 //! mouse: a finger down is a left click, dragging moves the mouse (several fingers share the
 //! game's one mouse: `turu_frontend::touch`); egui also gets it as a touch, so that it knows
 //! it's on a touch screen (a drag on a list scrolls it). Keys (a hardware keyboard, or
-//! the soft keyboard, which NativeActivity gets as key events) are named from Android's key code,
+//! the soft keyboard, whose `KeyInput.kt` sends key events) are named from Android's key code,
 //! and their character comes from the device's key character map, so Shift and other layouts
 //! type what they show. `screen.rs` decides who gets which.
 

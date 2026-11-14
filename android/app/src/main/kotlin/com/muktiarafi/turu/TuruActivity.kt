@@ -2,7 +2,6 @@ package com.muktiarafi.turu
 
 import android.Manifest
 import android.app.Activity
-import android.app.NativeActivity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -15,6 +14,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -22,6 +22,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
+import com.google.androidgamesdk.GameActivity
 import com.muktiarafi.turu.shared.CrashQuestion
 import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
@@ -33,14 +34,15 @@ import java.io.File
 import kotlin.concurrent.thread
 
 /**
- * NativeActivity, which runs the Rust side (libturu_android.so), plus the foreground service
+ * AndroidX's GameActivity, which runs the Rust side (libturu_android.so) and draws it in a
+ * SurfaceView of its view hierarchy, plus the foreground service
  * that keeps the process and its network while the app is in the background. Full screen: the
  * status and navigation bars would sit over Turu's nav bar (apps draw under them since Android
  * 15); a swipe from the edge shows them for a moment. Asks once for what running in the
  * background needs: showing the service's notification, and leaving Turu out of battery
  * optimisation (or Doze cuts its network while the screen is off).
  */
-class TuruActivity : NativeActivity() {
+class TuruActivity : GameActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before super.onCreate starts the Rust side, which shows a notice for new reports.
         CrashUploads.start(applicationContext, CRASH_APP)
@@ -48,8 +50,8 @@ class TuruActivity : NativeActivity() {
         super.onCreate(savedInstanceState)
         // Before it resumes: alerts wait while it's on screen, the install confirmation shows on it.
         Foreground.watch(this)
-        // NativeActivity's onCreate sets the window to "unspecified, resize", over the manifest's
-        // setting. Unspecified shows the keyboard whenever the window comes to the front (start,
+        // The window's soft input mode is set again after super.onCreate (NativeActivity, before
+        // GameActivity, set "unspecified, resize" there, over the manifest's setting). Unspecified shows the keyboard whenever the window comes to the front (start,
         // back from the background), as KeyInput holds the focus as a text editor; always hidden
         // leaves it to a game field taking the focus (`ui.rs`). Nothing: the window stays as it is
         // under the keyboard (Turu shows the field above it).
@@ -104,21 +106,21 @@ class TuruActivity : NativeActivity() {
     private var keyInput: KeyInput? = null
 
     /** The game's focused text field, above the keyboard (`game_field.rs`). */
-    private val gameField = DialogField(this, object : FieldTarget {
+    private val gameField = SurfaceField(this, object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) = nativeGameFieldEdited(text, start, end)
         override fun enter() = nativeGameFieldEnter()
         override fun closed() = nativeGameFieldClosed()
     })
 
     /** Turu's focused text box (egui's), above the keyboard (`ui_field.rs`). */
-    private val uiField = DialogField(this, object : FieldTarget {
+    private val uiField = SurfaceField(this, object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) = nativeUiFieldEdited(text, start, end)
         override fun enter() = nativeUiFieldEnter()
         override fun closed() = nativeUiFieldClosed()
     })
 
     /**
-     * Shows a [DialogField] for the game's focused text field: its `text`, `start`..`end` selected
+     * Shows a [SurfaceField] for the game's focused text field: its `text`, `start`..`end` selected
      * (UTF-16 units), a password or not, `max` characters at most (0: no limit). Called on the
      * engine thread (`screen.rs`).
      */
@@ -126,18 +128,18 @@ class TuruActivity : NativeActivity() {
         runOnUiThread { gameField.show(text, start, end, FieldStyle(password, max, "Type in the game")) }
     }
 
-    /** The game changed its focused field: its [DialogField] shows it. Called on the engine thread. */
+    /** The game changed its focused field: its [SurfaceField] shows it. Called on the engine thread. */
     fun updateGameField(text: String, start: Int, end: Int) {
         runOnUiThread { gameField.update(text, start, end) }
     }
 
-    /** No game field has the focus now: its [DialogField] goes. Called on the engine thread. */
+    /** No game field has the focus now: its [SurfaceField] goes. Called on the engine thread. */
     fun hideGameField() {
         runOnUiThread { gameField.hide() }
     }
 
     /**
-     * Shows a [DialogField] for Turu's focused text box: its `text`, `start`..`end` selected
+     * Shows a [SurfaceField] for Turu's focused text box: its `text`, `start`..`end` selected
      * (UTF-16 units), its `kind` (0 a line, 1 a password, 2 several lines, 3 a number) and `hint`.
      * Called on the engine thread (`ui_field.rs`).
      */
@@ -146,14 +148,32 @@ class TuruActivity : NativeActivity() {
         runOnUiThread { uiField.show(text, start, end, style) }
     }
 
-    /** Turu's focused text box changed: its [DialogField] shows it. Called on the engine thread. */
+    /** Turu's focused text box changed: its [SurfaceField] shows it. Called on the engine thread. */
     fun updateUiField(text: String, start: Int, end: Int) {
         runOnUiThread { uiField.update(text, start, end) }
     }
 
-    /** None of Turu's text boxes has the focus now: its [DialogField] goes. Called on the engine thread. */
+    /** None of Turu's text boxes has the focus now: its [SurfaceField] goes. Called on the engine thread. */
     fun hideUiField() {
         runOnUiThread { uiField.hide() }
+    }
+
+    /** Gives [KeyInput] the focus again once a [SurfaceField] is gone: the keyboard types into it. */
+    fun focusKeys() {
+        keyInput?.requestFocus()
+    }
+
+    /**
+     * A finger down outside a [SurfaceField] that's up closes it, as Back does; the touch still
+     * goes on to what it landed on (the game, or Turu's windows).
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            for (field in arrayOf(gameField, uiField)) {
+                if (field.touchedOutside(event.rawX, event.rawY)) field.close()
+            }
+        }
+        return super.dispatchTouchEvent(event)
     }
 
     /**
@@ -376,7 +396,7 @@ class TuruActivity : NativeActivity() {
         }
     }
 
-    @Deprecated("The pickers use startActivityForResult, which NativeActivity has")
+    @Deprecated("The pickers use startActivityForResult (from NativeActivity days; GameActivity has it too)")
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -464,27 +484,27 @@ class TuruActivity : NativeActivity() {
         @JvmStatic
         external fun nativePackageInstalled(status: Int, message: String?)
 
-        /** The game's [DialogField] changed its text or selection: the game's field takes it (`game_field.rs`). */
+        /** The game's [SurfaceField] changed its text or selection: the game's field takes it (`game_field.rs`). */
         @JvmStatic
         external fun nativeGameFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in the game's [DialogField]: Enter in the game. */
+        /** The keyboard's Send (or Enter) in the game's [SurfaceField]: Enter in the game. */
         @JvmStatic
         external fun nativeGameFieldEnter()
 
-        /** The game's [DialogField] was closed (Back): the game's field loses the focus. */
+        /** The game's [SurfaceField] was closed (Back): the game's field loses the focus. */
         @JvmStatic
         external fun nativeGameFieldClosed()
 
-        /** The UI's [DialogField] changed its text or selection: Turu's text box takes it (`ui_field.rs`). */
+        /** The UI's [SurfaceField] changed its text or selection: Turu's text box takes it (`ui_field.rs`). */
         @JvmStatic
         external fun nativeUiFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in the UI's [DialogField]: Enter in Turu's text box. */
+        /** The keyboard's Send (or Enter) in the UI's [SurfaceField]: Enter in Turu's text box. */
         @JvmStatic
         external fun nativeUiFieldEnter()
 
-        /** The UI's [DialogField] was closed (Back): Turu's text box loses the focus. */
+        /** The UI's [SurfaceField] was closed (Back): Turu's text box loses the focus. */
         @JvmStatic
         external fun nativeUiFieldClosed()
 

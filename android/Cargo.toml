@@ -31,7 +31,9 @@ bytemuck = { workspace = true }
 # AAudio (`audio.rs`) and the window; the same ndk android-activity uses.
 ndk = { version = "0.9", features = ["audio"] }
 ruffle_frontend_utils = { path = "../ruffle/frontend-utils", default-features = false, features = ["navigator"] }
-android-activity = { version = "0.6.1", features = ["native-activity"] }
+# GameActivity (AndroidX's, `androidx.games:games-activity` in the Gradle app): a real view
+# hierarchy and Android's text input, which NativeActivity lacks.
+android-activity = { version = "0.6.1", features = ["game-activity"] }
 android_logger = "0.15.1"
 log = "0.4"
 # `mallinfo` for the memory log (`memory.rs`).

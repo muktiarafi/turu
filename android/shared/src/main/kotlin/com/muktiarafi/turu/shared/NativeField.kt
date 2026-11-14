@@ -56,8 +56,8 @@ data class FieldStyle(
  * Send (or Enter) presses Enter there; Back ends typing: the field loses the focus.
  *
  * This builds the strip (the field and its count, in Turu's colours with the app's `accent`);
- * each app puts it on screen its own way ([attach], [detach]): Turu as a dialog of its own
- * (NativeActivity's views don't show), Turu Mas as a view right of the rail (a window of its own
+ * each app puts it on screen its own way ([attach], [detach]): Turu as a view over its
+ * GameActivity's SurfaceView, Turu Mas as a view right of the rail (a window of its own
  * would take AIR's focus). See docs/ANDROID_NATIVE_UI.md.
  */
 abstract class NativeField(

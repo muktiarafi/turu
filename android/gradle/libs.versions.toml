@@ -3,9 +3,17 @@
 agp = "9.5.0"
 kotlin = "2.4.21"
 sentry = "8.61.1"
+# The one android-activity 0.6 is written against (its README); no prefab: it has its own glue.
+gamesActivity = "4.4.0"
+# GameActivity is an AppCompatActivity, and its POM names neither.
+appcompat = "1.7.1"
+core = "1.16.0"
 
 [libraries]
 sentryAndroid = { module = "io.sentry:sentry-android", version.ref = "sentry" }
+gamesActivity = { module = "androidx.games:games-activity", version.ref = "gamesActivity" }
+appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+core = { module = "androidx.core:core", version.ref = "core" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

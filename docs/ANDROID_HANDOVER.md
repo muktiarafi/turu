@@ -42,11 +42,11 @@ S24 FE) sits at the side, at about the strip's height. Backspace, Delete, the ar
 Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it).
 
 The strip is now a native Android text field (`game_field.rs`; Kotlin's `NativeField`, since in
-the module both apps share, `android/shared`, placed by Turu's `DialogField`), as AQW's own
+the module both apps share, `android/shared`, placed by Turu's `SurfaceField`), as AQW's own
 Android launcher has it: Android's caret, selection handles, text toolbar (Cut, Copy, Paste, Share,
-Select all, Translate), suggestions and clipboard. NativeActivity draws its window itself, so the
-field is a window of its own: a dialog along the bottom, its bottom padding the keyboard's height,
-letting touches outside it through to the game. The screen keeps it in step with the game's focused
+Select all, Translate), suggestions and clipboard. The field is a view along the bottom of Turu's
+GameActivity, over the `SurfaceView` the game is drawn in, its bottom padding the keyboard's
+height (under NativeActivity, whose views didn't show, it was a dialog of its own). The screen keeps it in step with the game's focused
 field each time it draws (shown when an editable field takes the focus, updated when the game
 changes it, gone with the focus); each edit there is typed into the game's field as the change it
 is (`textInput` for the replaced part), so the game sees ordinary typing. Send (or Enter) presses
@@ -68,10 +68,9 @@ the Console. A new text box must call `follow` too, or it falls back to the keys
 `pan.rs`. The game's strip steps aside while one of Turu's boxes has the field.
 
 A tap outside the field and the keyboard closes both, as Back does, and still reaches the game or
-Turu's window (the dialog watches outside touches: `FLAG_WATCH_OUTSIDE_TOUCH`). The field's place
-above the keyboard is worked out from where its window is (`fitAboveKeyboard`): on Android 15+
-the system already keeps the dialog above the keyboard, and the dialog's own insets, read while
-the keyboard slid up, went stale, so the field sometimes floated a field's height too high.
+Turu's window (`TuruActivity.dispatchTouchEvent`). As a view in the activity's own window, it
+needs none of the dialog's placing (`fitAboveKeyboard`, which on Android 15+ had to allow for the
+system moving the dialog above the keyboard).
 
 ## Branches and workflow
 
@@ -96,7 +95,7 @@ the keyboard slid up, went stale, so the field sometimes floated a field's heigh
 | `android/src/screen.rs` | The GPU (`gpu`, set up without a window), `MovieTexture` the player draws into, `Screen` (surface, blit, egui painting `TuruUi`), who gets a touch or a key. |
 | `android/src/notify.rs` | `TuruService`'s native methods (`nativeStart`, `nativeAction`) and the status sent to the notification every 2 s. |
 | `android/src/input.rs`, `audio.rs`, `ui.rs`, `platform.rs` | Touch and keys; AAudio (from ruffle-android); the game's soft keyboard; the bot windows' `Platform` (browser via `Intent`, no file dialogs). |
-| `android/app/src/main/kotlin/com/muktiarafi/turu/` | `TuruActivity` (NativeActivity: full screen, Back to background, one-time prompts, starts the service) and `TuruService` (foreground service: starts the engine, notification, wake lock, `START_STICKY`). |
+| `android/app/src/main/kotlin/com/muktiarafi/turu/` | `TuruActivity` (a GameActivity: full screen, Back to background, one-time prompts, starts the service) and `TuruService` (foreground service: starts the engine, notification, wake lock, `START_STICKY`). |
 | `android/rustls-platform-verifier/` + submodule `android/vendor/rustls-platform-verifier` | The Kotlin half of HTTPS certificate checks, pinned to `252e2516`. A Gradle check compares it with `Cargo.lock`. |
 | `android/app/build.gradle.kts` | The `cargoNdk` task (runs `cargo ndk` into `app/src/main/jniLibs/`, sets the bindgen env). |
 

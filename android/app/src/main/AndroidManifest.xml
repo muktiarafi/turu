@@ -13,7 +13,7 @@
     <!-- Installing an update's APK (PackageUpdate.kt); Android asks the user each time. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- TuruActivity (a NativeActivity) runs the Rust side, libturu_android.so. -->
+    <!-- TuruActivity (a GameActivity, AndroidX's) runs the Rust side, libturu_android.so. -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -23,14 +23,15 @@
         <meta-data
             android:name="io.sentry.auto-init"
             android:value="false" />
-        <!-- windowSoftInputMode: NativeActivity sets its own in onCreate; TuruActivity sets it
-             again after that. -->
+        <!-- windowSoftInputMode: TuruActivity sets it again in onCreate. Theme.Turu: GameActivity is
+             an AppCompatActivity. -->
         <activity
             android:name=".TuruActivity"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Turu"
             android:windowSoftInputMode="adjustNothing">
             <meta-data
                 android:name="android.app.lib_name"

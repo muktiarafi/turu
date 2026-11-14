@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TuruActivity is a GameActivity, an AppCompatActivity: an AppCompat theme, no action bar,
+         full screen over a black window (the game draws all of it). -->
+    <style name="Theme.Turu" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

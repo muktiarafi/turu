@@ -71,6 +71,10 @@ dependencies {
     implementation(project(":rustls-platform-verifier"))
     // What Turu Mas shares: crash records and uploads, the crash question, the native text field.
     implementation(project(":shared"))
+    // TuruActivity's base (android-activity's `game-activity` feature).
+    implementation(libs.gamesActivity)
+    implementation(libs.appcompat)
+    implementation(libs.core)
     // Crash reports: Java and native crashes (its NDK part), ANRs and tombstones.
     implementation(libs.sentryAndroid)
 }
