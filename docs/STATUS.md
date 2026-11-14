@@ -40,8 +40,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   only updates installed apps): at launch and every 6 hours a thread reads Turu's GitHub releases
   (`TURU_RELEASES_URL` overrides the URL), skips drafts and, unless Include Pre-releases is on or
   this build is itself a pre-release, pre-releases, and compares versions with semver against
-  `TURU_VERSION` (the tag the release workflow builds from; local builds: the crate's 0.2.0,
-  which is above every 0.2.0 alpha, so they're offered nothing). A newer one is logged once and
+  `TURU_VERSION` (the tag the release workflow builds from; local builds: the crate's, the
+  release the current pre-releases lead to (0.3.0, above every 0.3.0 beta), so they're offered
+  nothing; raise it when a release ships). A newer one is logged once and
   shown in the nav bar ("Update <version>"), the control API's `/status` and the web monitor's
   summary. Download & restart (desktops) downloads this platform's package, checks its SHA-256
   against the release's `SHA256SUMS.txt`, then on Windows and Linux swaps the running program

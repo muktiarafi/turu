@@ -14,7 +14,7 @@ edition = "2024"
 homepage = "https://github.com/muktiarafi/turu"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/muktiarafi/turu"
-version = "0.2.0"
+version = "0.3.0"
 
 # The versions ruffle-aqw's workspace uses (ruffle/Cargo.toml): keep them equal, so the app and
 # the Ruffle crates build against the same egui, wgpu, tokio, ...

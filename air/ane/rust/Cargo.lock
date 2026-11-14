@@ -4025,7 +4025,7 @@ dependencies = [
 
 [[package]]
 name = "turu_air_patch"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "swf",
@@ -4033,7 +4033,7 @@ dependencies = [
 
 [[package]]
 name = "turu_bot"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4062,7 +4062,7 @@ dependencies = [
 
 [[package]]
 name = "turu_frontend"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",
