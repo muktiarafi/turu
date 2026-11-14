@@ -153,7 +153,7 @@ Startup sequence (same as VibeSkua):
 
 1. Desktop starts Ruffle with the host SWF, `turu.swf` (written from the embedded bytes to the
    data dir); `Work::LoadClient` asks it `hostInfo` first.
-2. AS3 `Externalizer.init` registers callbacks and calls `requestLoadGame` → bot calls `loadClient`.
+2. `turu.swf` registers its callbacks and calls `requestLoadGame` → bot calls `loadClient`.
 3. AS3 fetches `https://game.aq.com/game/api/data/gameversion`, loads the game SWF and calls
    `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (the bot marks the game
    loaded and sends `GameLoaded`; its 20 ms timer runs from startup).

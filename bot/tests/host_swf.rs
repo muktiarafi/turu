@@ -70,7 +70,7 @@ fn wait_for_call(swf: &FakeSwf, name: &str) -> Vec<FlashArg> {
 fn turus_swf_gets_the_frame_rate_with_load_client_and_refuses_unlisted_names() {
     let swf = FakeSwf::new(turu_info());
     let bot = bot_with(&swf);
-    bot.on_flash_call("requestLoadGame", vec![json!([])]);
+    bot.on_flash_call("requestLoadGame", vec![]);
 
     let args = wait_for_call(&swf, "loadClient");
     assert!(matches!(args.as_slice(), [FlashArg::Number(fps)] if *fps > 0.0));
@@ -99,7 +99,7 @@ fn turus_swf_gets_the_frame_rate_with_load_client_and_refuses_unlisted_names() {
 fn a_host_without_host_info_lets_every_call_through() {
     let swf = FakeSwf::new(Value::Null);
     let bot = bot_with(&swf);
-    bot.on_flash_call("requestLoadGame", vec![json!([])]);
+    bot.on_flash_call("requestLoadGame", vec![]);
 
     let args = wait_for_call(&swf, "loadClient");
     assert!(matches!(args.as_slice(), [FlashArg::Number(fps)] if *fps > 0.0));
@@ -111,11 +111,11 @@ fn a_host_without_host_info_lets_every_call_through() {
 fn a_new_start_asks_the_host_swf_again() {
     let swf = FakeSwf::new(turu_info());
     let bot = bot_with(&swf);
-    bot.on_flash_call("requestLoadGame", vec![json!([])]);
+    bot.on_flash_call("requestLoadGame", vec![]);
     wait_for_call(&swf, "loadClient");
     assert!(bot.flash.host_info().is_some());
 
-    bot.on_flash_call("requestLoadGame", vec![json!([])]);
+    bot.on_flash_call("requestLoadGame", vec![]);
     assert!(
         bot.flash.host_info().is_none(),
         "forgotten until asked again"
@@ -126,11 +126,11 @@ fn a_new_start_asks_the_host_swf_again() {
 fn the_same_error_is_logged_once_with_its_stack() {
     let swf = FakeSwf::new(turu_info());
     let bot = bot_with(&swf);
-    let error = json!(["TypeError #1009: null", "at Game/frame()"]);
+    let error = vec![json!("TypeError #1009: null"), json!("at Game/frame()")];
     for _ in 0..3 {
-        bot.on_flash_call("error", vec![error.clone()]);
+        bot.on_flash_call("error", error.clone());
     }
-    bot.on_flash_call("error", vec![json!(["Error #2: other", ""])]);
+    bot.on_flash_call("error", vec![json!("Error #2: other"), json!("")]);
 
     let log = bot.logs.debug.text();
     assert_eq!(log.matches("TypeError #1009: null").count(), 1, "{log}");

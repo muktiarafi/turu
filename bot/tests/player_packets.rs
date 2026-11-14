@@ -59,7 +59,7 @@ fn received_json_messages_reach_the_handlers_and_the_swfs_dont() {
 
     let from_swf = maps_changed(&bot, || {
         let pext = json!({"params": {"type": "json", "dataObj": {"cmd": "moveToArea", "strMapName": "battleon"}}});
-        bot.on_flash_call("pext", vec![json!([pext.to_string()])]);
+        bot.on_flash_call("pext", vec![json!(pext.to_string())]);
     });
     assert!(
         from_swf.is_empty(),
@@ -105,7 +105,7 @@ fn sent_game_packets_are_logged_once() {
     bot.logs
         .packet_logging
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    bot.on_flash_call("packet", vec![json!(["%xt%zm%moveToCell%1%Enter%Spawn%"])]);
+    bot.on_flash_call("packet", vec![json!("%xt%zm%moveToCell%1%Enter%Spawn%")]);
     bot.on_socket(
         7,
         Direction::Sent,

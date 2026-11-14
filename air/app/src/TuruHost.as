@@ -16,12 +16,9 @@ package {
             TuruExternal.addCallbackFor(client, name, fn);
         }
 
-        /**
-         * Tells client `client`'s bot of an event. `args` go as one array, as `ExternalInterface`
-         * sends them on the Ruffle build (`events.rs` unwraps it).
-         */
+        /** Tells client `client`'s bot of an event, with `args` as the call's arguments. */
         public static function call(client:int, name:String, args:Array):void {
-            TuruExternal.callFrom(client, name, [args]);
+            TuruExternal.callFrom(client, name, args);
         }
 
         /**

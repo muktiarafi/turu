@@ -17,10 +17,7 @@ public class Host {
         throw new Error("Host.addCallback");
     }
 
-    /**
-     * Tells the bot of an event. `args` arrive as one array (VibeSkua's `Externalizer.call`
-     * convention, kept; `events.rs` unwraps it).
-     */
+    /** Tells the bot of an event, with `args` as the call's arguments. */
     public function call(name:String, args:Array):void {
         throw new Error("Host.call");
     }

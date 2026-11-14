@@ -26,7 +26,7 @@ public class ExternalHost extends Host {
 
     override public function call(name:String, args:Array):void {
         if (ExternalInterface.available) {
-            ExternalInterface.call(name, args);
+            ExternalInterface.call.apply(ExternalInterface, [name].concat(args));
         }
     }
 

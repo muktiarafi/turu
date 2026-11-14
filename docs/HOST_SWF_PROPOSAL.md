@@ -614,6 +614,9 @@ Done, once `turu.swf` was the only host SWF:
   Butler's broadcast reads with one `getMany`. GoldFarm (release): ~101 -> ~70 calls/s, the same
   turn-in rate. Checked in game: lichwar's real intro cancelled 1.7 s after joining
   (ColossalWaresMerge, headless), and `host/checks/ticks-options.ts` (ranges and Lite settings).
+- Events pass their arguments as the call's own, not as one array (VibeSkua's
+  `Externalizer.call` convention): `ExternalHost` and Turu Mas's `TuruHost.call` send them flat,
+  and `events.rs` no longer unwraps them.
 
 Left, from that GoldFarm run's busiest calls (~70/s); 1-3 would bring it to about 55:
 
@@ -637,8 +640,6 @@ Left as they are, by decision:
   together, for no change in behaviour.
 - Typed answers instead of JSON strings (booleans as `"true"`, `parse_bool`'s leniency): every
   call site, for little gain.
-- Events passing their arguments as one array (VibeSkua's `Externalizer.call` convention): both
-  `turu.swf` and Turu Mas's host would change.
 
 ## Risks
 

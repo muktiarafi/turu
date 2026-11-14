@@ -267,12 +267,6 @@ fn event_topics(name: &str) -> Option<Topics> {
 }
 
 pub(crate) fn on_flash_call(bot: &Arc<Bot>, name: &str, args: Vec<Value>) {
-    // `Externalizer.call(name, ...rest)` passes `rest` as one array argument.
-    let args = match <[Value; 1]>::try_from(args) {
-        Ok([Value::Array(inner)]) => inner,
-        Ok([single]) => vec![single],
-        Err(args) => args,
-    };
     let arg_str = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
 
     match name {

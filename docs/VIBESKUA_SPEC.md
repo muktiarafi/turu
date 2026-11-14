@@ -1072,6 +1072,8 @@ differences" and the list below say otherwise:
   its scripts called (`isTrue`, `setArrayObject`, ...); calling one answers "`name` is not in
   Turu's host SWF".
 - `pext` carries only the packet's `type` and `params`, not the whole SmartFox event.
+- Events pass their arguments as the call's own (`ExternalInterface.call(name, a, b)`), not as
+  one array (`Externalizer.call`'s `rest`).
 - The game is centred (no `align = TOP`); "Turu" is the login screen's title; errors are
   reported (`error`); `hostInfo` says what the SWF has.
 - On the Ruffle builds the bot's packets come from the player's socket, not from the SWF.
