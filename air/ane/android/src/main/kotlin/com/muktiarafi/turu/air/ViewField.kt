@@ -35,6 +35,7 @@ internal class ViewField(activity: Activity, target: FieldTarget) : NativeField(
         // Above the keyboard, clear of a camera cutout at the side (held sideways).
         bar.setOnApplyWindowInsetsListener { view, insets ->
             val keyboard = keyboardHeight(insets)
+            keyboardMoved(keyboard)
             var cutoutLeft = 0
             var cutoutRight = 0
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

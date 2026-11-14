@@ -263,6 +263,11 @@ Nothing from the survey these came from is left.
   session is committed on the emulator: the emulator lacks that service; harmless.
 * **rustfmt on `frontend/src/gui/turu/mod.rs`** with `max_width = 120` rewrites unrelated lines;
   format the files you changed one at a time, as `CLAUDE.md` says.
+* **Back closed only the keyboard; the strip stayed** (Turu Mas, on a phone with gesture
+  navigation): a back swipe reaches the keyboard, which hides itself and never passes Back on to
+  the field (`onKeyPreIme`), and the keyboard's own hide arrow does the same; the emulator's Back
+  key had worked. The strip now closes whenever the keyboard goes down while it's up
+  (`NativeField.keyboardMoved`, from each app's insets listener), in both apps.
 * **Every letter typed two or three times** on the keys-only keyboard under GameActivity: its
   text input took the surface's keys in too. Its key listener is taken off (`TuruActivity`).
 * **Clearing the game's field with adb's Ctrl+A then Delete, at once,** left it one character

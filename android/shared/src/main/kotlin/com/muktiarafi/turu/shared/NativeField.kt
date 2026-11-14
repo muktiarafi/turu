@@ -89,6 +89,7 @@ abstract class NativeField(
     /** Shows the field with `text`, `start`..`end` selected (UTF-16 units, as the owner's). */
     fun show(text: String, start: Int, end: Int, style: FieldStyle) {
         hide(false)
+        keyboardUp = false
         this.style = style
         val password = style.password
         val max = style.max
@@ -237,6 +238,23 @@ abstract class NativeField(
             return
         }
         target.edited(field.text.toString(), field.selectionStart, field.selectionEnd)
+    }
+
+    /** Whether the keyboard has been up since the strip showed ([keyboardMoved]). */
+    private var keyboardUp = false
+
+    /**
+     * The keyboard is `height` pixels tall now (0: down), from the window's insets ([attach]'s
+     * listener). Its going down while the strip is up closes the strip, as Back does: with gesture
+     * navigation Back reaches the keyboard alone, which hides itself and never passes it to the
+     * field ([Field.onKeyPreIme]), and the keyboard's own hide key does the same.
+     */
+    protected fun keyboardMoved(height: Int) {
+        val up = height > 0
+        if (keyboardUp && !up && bar != null) {
+            activity.window.decorView.post { if (bar != null) close() }
+        }
+        keyboardUp = up
     }
 
     protected fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
