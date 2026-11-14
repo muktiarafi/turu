@@ -667,7 +667,7 @@ mod tests {
             &host("127.0.0.1:9021")
         ));
         assert!(!same_origin(
-            &origin("http://127.0.0.1:8080"),
+            &origin("http://127.0.0.1:9091"),
             &host("127.0.0.1:9021")
         ));
         assert!(!same_origin(&origin("null"), &host("127.0.0.1:9021")));

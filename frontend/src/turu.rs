@@ -738,7 +738,7 @@ pub fn host_swf_url() -> anyhow::Result<String> {
 /// * `--headless`: no window (see `headless.rs`).
 /// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
-/// * `--api` (or `--api=<address>`, default `127.0.0.1:8080`): the control API (see
+/// * `--api` (or `--api=<address>`, default `127.0.0.1:9091`): the control API (see
 ///   `turu_bot::control_api`), started by [`start_api`].
 pub fn take_startup_args(args: &mut Vec<OsString>) {
     let Flags {
@@ -857,7 +857,7 @@ pub fn start_api() {
     let addr: std::net::SocketAddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:8080)");
+            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:9091)");
             return;
         }
     };
@@ -1323,7 +1323,7 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             "--headless" => flags.headless = true,
             "--exit-with-parent" => flags.exit_with_parent = true,
             // The address only inline (`--api=...`): the next argument may be anything.
-            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:8080".into())),
+            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:9091".into())),
             // Likewise: `--monitor` alone takes Options > Application's port.
             "--monitor" => flags.monitor = Some(inline.unwrap_or_default()),
             "--report-to" => flags.report_to = value(),
@@ -1497,7 +1497,7 @@ mod tests {
         } = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-p", "low", "-g", "metal"]);
         assert!(headless);
-        assert_eq!(api.as_deref(), Some("127.0.0.1:8080"));
+        assert_eq!(api.as_deref(), Some("127.0.0.1:9091"));
         assert_eq!(startup.username.as_deref(), Some("Hero"));
         assert_eq!(startup.password.as_deref(), Some("a=b"));
         assert_eq!(startup.server.as_deref(), Some("Artix"));

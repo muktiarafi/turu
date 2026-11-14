@@ -210,7 +210,7 @@ a switch in Options.
   after Android killed and restarted the process; Turu Mas through `Bridge`. Both log each alert
   sent (`Alert: ...`) and, in Kotlin, one held because the app is on screen.
 * **Tested** on the Android 16 arm64 emulator (2026-11-14) with a script that sleeps 15 s, started
-  through the control API (`--api` in `turu-args.txt`, `adb forward tcp:8080 tcp:8080`): in the
+  through the control API (`--api` in `turu-args.txt`, `adb forward tcp:9091 tcp:9091`): in the
   background both apps posted "Script finished", and Turu "Script stopped" for a Stop; on screen
   neither posted. A drop wasn't tried (it needs a watched item to drop in the game); its alert
   goes through the same `Alerts.post`. `dumpsys notification --noredact` lists them, with the

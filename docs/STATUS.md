@@ -106,7 +106,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   RSS / the working set is what counts. Android uses its own allocator (scudo), not mimalloc.
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
-- **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:8080`): HTTP routes for
+- **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:9091`): HTTP routes for
   status, loading/starting/stopping/pausing scripts, logs (`since` paging), the bot options,
   login, relogin and logout (`bot/src/control_api.rs` lists them, with what each status means).
   One table of routes answers each method and gives a wrong one 405 with `Allow`. Commands
@@ -127,7 +127,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `TURU_API_TOKEN`, else the data folder's `api-token`, made on first use (64 characters) and
   readable by you only; a shorter one there is replaced. Works with
   or without the window. Example:
-  `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:8080/status`.
+  `curl -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Turu/api-token)" localhost:9091/status`.
   Army Control also uses `/map/join`, `/player/goto`, `/map/house`, `/quest/register`,
   `/game/options`, the gear routes `/gear`, `/equip` and `/bank/load` (below), and
   `/auto/attack` and `/auto/stop` (Start/Stop Auto-Attack; `/auto/hunt` starts Auto Hunt;

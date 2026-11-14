@@ -43,10 +43,10 @@ the web monitor shows an event too, and `--run-script` warns at startup. Set the
 desktop in the web monitor (a bot's Details > Script Options) or with the control API:
 
 ```bash
-curl -H "$T" localhost:8080/script/options        # the loaded script's options and values
-curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:8080/script/options
-curl -H "$T" -X POST "localhost:8080/script/options?reset=1"     # back to the defaults
-curl -H "$T" "localhost:8080/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
+curl -H "$T" localhost:9091/script/options        # the loaded script's options and values
+curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:9091/script/options
+curl -H "$T" -X POST "localhost:9091/script/options?reset=1"     # back to the defaults
+curl -H "$T" "localhost:9091/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
 ```
 
 Or copy these from a desktop's data folder to the server's:
@@ -105,7 +105,7 @@ Each account gets `/etc/turu/<account>.env`, readable by root only
 TURU_USER=YourName
 TURU_PASSWORD=your password
 TURU_SERVER=Twilly
-TURU_API=127.0.0.1:8080
+TURU_API=127.0.0.1:9091
 # The control API token: 32 characters at least, e.g. from `openssl rand -hex 32`
 TURU_API_TOKEN=a long random string
 # Extra flags, e.g. --monitor=127.0.0.1:9021 (systemd reads no comments after a value)
@@ -142,7 +142,7 @@ ones reuse BuildKit's cargo cache. `--build-arg PROFILE=release` builds faster,
 
 `docker/entrypoint.sh` turns the env file into flags: `TURU_USER`, `TURU_SERVER`,
 `TURU_RUN_SCRIPT` / `TURU_LOAD_SCRIPT`, `TURU_RUN_PLAYLIST` / `TURU_LOAD_PLAYLIST`,
-`TURU_API` (the image sets `0.0.0.0:8080`; empty turns it off), `TURU_MONITOR`, `TURU_REPORT_TO`;
+`TURU_API` (the image sets `0.0.0.0:9091`; empty turns it off), `TURU_MONITOR`, `TURU_REPORT_TO`;
 `TURU_PASSWORD`, `TURU_API_TOKEN` and the other variables (Reference, below) are read as they are.
 Arguments after the image name are added last, so they win:
 
@@ -168,7 +168,7 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
 ## Several accounts
 
 Run one instance per account, all with **one data folder** (as above) and each with **its own
-`TURU_API` port** (`8080`, `8081`, ...). The shared folder is how clients find each other:
+`TURU_API` port** (`9091`, `9092`, ...). The shared folder is how clients find each other:
 Butler's sync files, army scripts' sync logs and their private room number
 (`bot.army.roomNumber()`, a hash of the folder's path) all live there. Start the instances a
 few seconds apart, so they don't update the same scripts at once.
@@ -224,19 +224,19 @@ folder's `api-token`). All routes, and what each status means, are listed in
 
 ```bash
 T="Authorization: Bearer $TURU_API_TOKEN"
-curl -H "$T" localhost:8080/status
-curl -H "$T" "localhost:8080/log?since=0"
-curl -H "$T" -X POST "localhost:8080/script/start?path=farm/GoldFarm"
-curl -H "$T" -X POST localhost:8080/script/stop      # with a playlist: moves on to the next
-curl -H "$T" localhost:8080/scheduler
-curl -H "$T" -X POST --data-binary @daily.json localhost:8080/scheduler/load
-curl -H "$T" -X POST localhost:8080/scheduler/start  # and /scheduler/stop
-curl -H "$T" localhost:8080/butler                   # online accounts, who can be summoned
-curl -H "$T" -X POST "localhost:8080/butler/summon?user=MyAlt"   # also release, summon-all,
+curl -H "$T" localhost:9091/status
+curl -H "$T" "localhost:9091/log?since=0"
+curl -H "$T" -X POST "localhost:9091/script/start?path=farm/GoldFarm"
+curl -H "$T" -X POST localhost:9091/script/stop      # with a playlist: moves on to the next
+curl -H "$T" localhost:9091/scheduler
+curl -H "$T" -X POST --data-binary @daily.json localhost:9091/scheduler/load
+curl -H "$T" -X POST localhost:9091/scheduler/start  # and /scheduler/stop
+curl -H "$T" localhost:9091/butler                   # online accounts, who can be summoned
+curl -H "$T" -X POST "localhost:9091/butler/summon?user=MyAlt"   # also release, summon-all,
                                                                  # release-all, follow, unfollow
-curl -N -H "$T" "localhost:8080/events?logs=script,debug"       # follow it, instead of polling
-curl -H "$T" localhost:8080/tabs                     # with a window: the tabs
-curl -H "$T" localhost:8080/tabs/2/status            # any route, for one tab
+curl -N -H "$T" "localhost:9091/events?logs=script,debug"       # follow it, instead of polling
+curl -H "$T" localhost:9091/tabs                     # with a window: the tabs
+curl -H "$T" localhost:9091/tabs/2/status            # any route, for one tab
 ```
 
 `/events` sends server-sent events: `script` (path, status, running) when it changes, `log`
@@ -257,8 +257,8 @@ able to write the program's folder (`/opt/turu` above is root's: `chown` it to t
 update by hand). `SHA256SUMS.txt` proves the download is intact, not who published it.
 
 ```bash
-curl -H "$T" localhost:8080/status | jq .update
-curl -H "$T" -X POST localhost:8080/update            # ?stop=1 while a script runs
+curl -H "$T" localhost:9091/status | jq .update
+curl -H "$T" -X POST localhost:9091/update            # ?stop=1 while a script runs
 ```
 
 A command answers with what it changed: the script for `/script/*`, `/status` for the logins,
@@ -351,7 +351,7 @@ It also writes the samples to `<log>.csv`.
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
-| `--api[=<address>]` | The control API, default `127.0.0.1:8080`. |
+| `--api[=<address>]` | The control API, default `127.0.0.1:9091`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |
 | `--report-to <url>` | Report to another machine's web monitor. |
 

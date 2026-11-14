@@ -149,7 +149,7 @@ shared `http.rs`.
 The page shows character names, gold, rooms; control can run scripts as the account. Modelled on
 Nexus's, but stricter where it's cheap:
 
-* Listens on `127.0.0.1:9021` by default (8080 is the control API). "Allow other devices"
+* Listens on `127.0.0.1:9021` by default (9091 is the control API). "Allow other devices"
   switches to `0.0.0.0`. Never suggests port forwarding; the docs describe Tailscale Serve, as
   Nexus does.
 * Three keys in `monitor-keys.json` (owner-readable, like `api-token`): **view**, **control**,

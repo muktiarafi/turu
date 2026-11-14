@@ -58,9 +58,9 @@ COPY README.md LICENSE LICENSE-RUFFLE.md /opt/turu/
 
 USER turu
 ENV TURU_DATA_DIR=/data \
-    TURU_API=0.0.0.0:8080
+    TURU_API=0.0.0.0:9091
 VOLUME /data
-EXPOSE 8080 9021
+EXPOSE 9091 9021
 WORKDIR /data
 
 ENTRYPOINT ["tini", "--", "turu-entrypoint"]
