@@ -93,7 +93,7 @@ fn write_name(bot: &Bot, name: &str) -> BotResult<()> {
 
 /// The name tag and portrait name while Streamer Mode is on (VibeSkua: "VibeSkuaUser").
 pub const STREAMER_NAME: &str = "TuruUser";
-/// The guild tag and target portrait name while Streamer Mode is on.
+/// The guild tag while Streamer Mode is on.
 const STREAMER_GUILD: &str = "Hidden";
 
 /// The house sign while Streamer Mode is on, in place of "Name's House".
@@ -106,7 +106,11 @@ const HOUSE_TITLE: &str = "world.map.txtHouse.text";
 /// and `strGold`) and the portrait's name. The game rewrites the portrait's name whenever the
 /// avatar's bars change (in combat, about one frame in eight showed it under the 250 ms
 /// rewrite), but never its visibility, so it is hidden rather than rewritten.
-const STREAMER_HIDDEN: [&str; 10] = [
+///
+/// Turu: the chat's log (`t1`) only, not its entry field (`te`, which VibeSkua hides too).
+/// Ruffle drops the focus of a field made invisible, so hiding it on every pass took the focus
+/// from the field you were typing in, and on Android closed the keyboard each time it opened.
+const STREAMER_HIDDEN: [&str; 9] = [
     "world.rootClass.ui.mcInterface.mcGold.visible",
     "world.rootClass.ui.mcPortrait.strName.visible",
     "world.rootClass.ui.mcInterface.teGold.visible",
@@ -116,8 +120,9 @@ const STREAMER_HIDDEN: [&str; 10] = [
     "world.rootClass.ui.mcInterface.txtGold.visible",
     "world.rootClass.ui.mcInterface.txtCoins.visible",
     "world.rootClass.ui.mcInterface.t1.visible",
-    "world.rootClass.ui.mcInterface.te.visible",
 ];
+/// The target portrait's name (VibeSkua writes "Hidden" over it whatever the target is).
+const TARGET_NAME: &str = "world.rootClass.ui.mcPortraitTarget.strName.text";
 
 /// VibeSkua `ApplyStreamerMode`'s loop: the drawn names only (never `objData`, which shops and
 /// the inventory read), the gold, coins and chat hidden, and the area title without the room
@@ -127,10 +132,19 @@ fn write_streamer(bot: &Bot, a: &mut Applied) {
     let _ = f.set("world.myAvatar.pMC.pname.ti.text", STREAMER_NAME);
     let _ = f.set("world.myAvatar.pMC.pname.tg.text", STREAMER_GUILD);
     let _ = f.set("world.rootClass.ui.mcPortrait.strName.text", STREAMER_NAME);
-    let _ = f.set(
-        "world.rootClass.ui.mcPortraitTarget.strName.text",
-        STREAMER_GUILD,
-    );
+    // Turu: the target portrait only while it names you (targeting yourself), so monsters and
+    // other players keep their names there.
+    if let Ok(Some(target)) = f.get_opt::<String>(TARGET_NAME)
+        && !target.is_empty()
+        && target != STREAMER_NAME
+    {
+        let me: String = f
+            .get_or("world.myAvatar.objData.strUsername", String::new())
+            .unwrap_or_default();
+        if !me.is_empty() && target.trim().eq_ignore_ascii_case(me.trim()) {
+            let _ = f.set(TARGET_NAME, STREAMER_NAME);
+        }
+    }
     for path in STREAMER_HIDDEN {
         let _ = f.set(path, false);
     }
@@ -176,6 +190,9 @@ fn clear_streamer(bot: &Bot, a: &mut Applied) {
     if !name.is_empty() {
         let _ = f.set("world.myAvatar.pMC.pname.ti.text", name.as_str());
         let _ = f.set("world.rootClass.ui.mcPortrait.strName.text", name.as_str());
+        if f.get_opt::<String>(TARGET_NAME).ok().flatten().as_deref() == Some(STREAMER_NAME) {
+            let _ = f.set(TARGET_NAME, name.as_str());
+        }
     }
     let guild: String = f
         .get_or("world.myAvatar.objData.guild.Name", String::new())

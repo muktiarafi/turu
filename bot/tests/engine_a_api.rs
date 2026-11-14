@@ -344,6 +344,10 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
         sets_of(&game, "world.rootClass.ui.mcInterface.t1.visible"),
         [FlashArg::Bool(false), FlashArg::Bool(false)]
     );
+    // The chat's entry field is left alone: hiding it would take its focus (and the keyboard).
+    assert!(sets_of(&game, "world.rootClass.ui.mcInterface.te.visible").is_empty());
+    // The target portrait keeps a monster's or another player's name.
+    assert!(sets_of(&game, "world.rootClass.ui.mcPortraitTarget.strName.text").is_empty());
     assert_eq!(
         sets_of(&game, "ui.mcInterface.areaList.title.t1.text").last(),
         Some(&FlashArg::String("Ultradage".into()))
@@ -412,7 +416,15 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
         o.streamer_mode = true;
         o.custom_name.clear();
     }
+    // Targeting yourself: the target portrait's name is covered too.
+    let target = "world.rootClass.ui.mcPortraitTarget.strName.text";
+    game.set(target, "\"HERO\"");
     options::apply(&bot).unwrap();
+    assert_eq!(
+        sets_of(&game, target).last(),
+        Some(&FlashArg::String(options::STREAMER_NAME.into()))
+    );
+    game.set(target, "\"TuruUser\"");
     bot.options.write().streamer_mode = false;
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
@@ -422,6 +434,10 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
     );
     assert_eq!(
         sets_of(&game, "world.rootClass.ui.mcPortrait.strName.text").last(),
+        Some(&FlashArg::String("Hero".into()))
+    );
+    assert_eq!(
+        sets_of(&game, target).last(),
         Some(&FlashArg::String("Hero".into()))
     );
     assert_eq!(
