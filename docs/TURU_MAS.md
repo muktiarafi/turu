@@ -19,7 +19,9 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 * Tabs, Army and Butler as in Turu on Android: the tab strip's "+", Army > New Tab, Army >
   Accounts ("In a tab") and Army Control, up to Options > Application > Tab Limit (default 4,
   at most 4; about 200 MB a client), reopened after Android stops the app
-  (`android-tabs.json`). No Grid View. No HotKeys or file dialogs.
+  (`android-tabs.json`). No Grid View or HotKeys.
+* File dialogs are Android's system picker, as in Turu on Android: Load Script (the script copied
+  into `scripts/Imported/`), Junk Items' and Loadouts' import and export, the logs' Save, ...
 * Army > Accounts keeps passwords as Turu on Android does: encrypted with a key in the Android
   Keystore, in the app's internal storage (not the shared data folder; not Turu's), so an
   account opened in a tab logs in by itself.
@@ -36,7 +38,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 |---|---|
 | `air_patch/` | crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's sandbox, at run time. |
 | `air/ane/rust/` | crate `turu_air` (`libturu_air.so`), a Cargo workspace of its own ("Licenses"): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
-| `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `NativeField` (a text field being typed in, as a native Android field above the keyboard: one for the game's focused field, kept in step by the host's `gameTyping` and status event "typing", one for Turu's own text boxes, kept in step by `overlay.rs` through `turu_frontend::gui::turu::native_field`; as Turu's, but a view right of the rail, as a window of its own would take AIR's focus. The overlay is a surface over every view, so it draws nothing below and right of the field's corner (`Bridge.nativeFieldPlace`). A finger down anywhere outside the field and the keyboard closes it: `TuruOverlay` sees every touch first), `Passwords` (Accounts' passwords, with `passwords.rs`: the Ruffle build's `Storage.kt` and `KeystoreStore`), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
+| `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `NativeField` (a text field being typed in, as a native Android field above the keyboard: one for the game's focused field, kept in step by the host's `gameTyping` and status event "typing", one for Turu's own text boxes, kept in step by `overlay.rs` through `turu_frontend::gui::turu::native_field`; as Turu's, but a view right of the rail, as a window of its own would take AIR's focus. The overlay is a surface over every view, so it draws nothing below and right of the field's corner (`Bridge.nativeFieldPlace`). A finger down anywhere outside the field and the keyboard closes it: `TuruOverlay` sees every touch first), `Documents` and `PickerActivity` (the file dialogs through the system picker, with `saf.rs` and `turu_frontend::documents`; the picker is started from an activity of the extension's own, see-through, as AIR's activity is AIR's, and the document's access is kept past it until the copy or the save is done), `Passwords` (Accounts' passwords, with `passwords.rs`: the Ruffle build's `Storage.kt` and `KeystoreStore`), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
 | `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`, and `TuruHost` for Turu's own `turu.swf`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). `build.sh` adds rustls-platform-verifier's network security config to `res/` (plain HTTP only to the certificate authorities' hosts, for revocation lists). |
 | `air/ane/rust/src/clients.rs`, `air/app/src/TuruStage.as` | Tabs: game clients 0-3 on AIR's one stage, each with its own bot (below). |
@@ -276,6 +278,11 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 
 * Tabs: a stage kept in a variable and used later (`MinigameSkip`, the keybinds' `onClose`)
   isn't seen by the popup rule, so those few still show over whichever tab is on screen.
+* The game stays black after the app comes back to the screen (Home and back, or a file dialog's
+  picker), on the Android 16 arm64 emulator (2026-11-14): AIR says `activate` but its view keeps
+  its black placeholder (an `ImageView` over AIR's `SurfaceView`) and never draws; Turu's windows
+  draw. A new activity (Back, then opening the app) draws again. Not yet tried on a phone, nor
+  known whether an earlier build did it.
 
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 

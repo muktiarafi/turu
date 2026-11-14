@@ -44,6 +44,8 @@
   <service android:name="com.muktiarafi.turu.air.TuruAirService" android:exported="false" android:foregroundServiceType="specialUse">
     <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Runs a game client and its bot script while the app is in the background"/>
   </service>
+  <!-- The bot windows' file dialogs: starts the system's document picker (Documents.kt). -->
+  <activity android:name="com.muktiarafi.turu.air.PickerActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"/>
 </application>
 </manifest>]]></manifestAdditions>
   </android>

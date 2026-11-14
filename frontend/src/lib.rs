@@ -7,6 +7,7 @@
 #[cfg(feature = "ruffle")]
 pub mod capture;
 pub mod crash_reports;
+pub mod documents;
 #[cfg(feature = "ruffle")]
 pub mod engine;
 pub mod game_files;

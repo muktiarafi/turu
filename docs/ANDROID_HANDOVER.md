@@ -269,8 +269,9 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
   made on Metal, Vulkan and DX12. Vulkan is the default.
 * File dialogs are the system picker (`saf.rs`, `TuruActivity.openDocument` /
-  `createDocument`): a picked file is copied in and its path is the answer; a save answers a
-  cache file and copies it into the document once written. Not tried on a device yet.
+  `createDocument`; what's shared with Turu Mas is `turu_frontend::documents`): a picked file is
+  copied in and its path is the answer; a save answers a cache file and copies it into the
+  document once written. Checked on the emulator (2026-11-14): the logs' Save, in both apps.
 * The desktop windows at the phone's density work, but there is no drawer or full-screen sheet
   layout yet.
 * After a restart (kill), the script started by hand runs again (`restart.rs`), but not a

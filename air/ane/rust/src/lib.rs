@@ -29,3 +29,5 @@ mod overlay;
 mod passwords;
 #[cfg(target_os = "android")]
 mod platform;
+#[cfg(target_os = "android")]
+mod saf;

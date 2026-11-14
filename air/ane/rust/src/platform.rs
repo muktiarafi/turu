@@ -1,7 +1,7 @@
 //! What the bot windows can do under AIR (`turu_frontend::platform::Platform`): links and the share
-//! sheet through Kotlin's `Bridge`; tabs (game clients sharing AIR's one stage: `clients`), Army
-//! and Butler in tabs, under the Tab Limit, without Grid View; no file dialogs yet (scripts come
-//! from Search Scripts).
+//! sheet through Kotlin's `Bridge`; file dialogs through Android's system picker (`saf.rs`); tabs
+//! (game clients sharing AIR's one stage: `clients`), Army and Butler in tabs, under the Tab
+//! Limit, without Grid View.
 
 use crate::host::BRIDGE;
 use jni::objects::JValue;
@@ -12,12 +12,12 @@ use turu_frontend::platform::{Answer, FileDialog, Platform, Question};
 pub(crate) struct AirPlatform;
 
 impl Platform for AirPlatform {
-    fn pick_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
-        false
+    fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
+        crate::saf::pick_file(&dialog, answer)
     }
 
-    fn save_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
-        false
+    fn save_file(&self, dialog: FileDialog, answer: Answer) -> bool {
+        crate::saf::save_file(&dialog, answer)
     }
 
     fn open_url(&self, url: &str) {
@@ -45,10 +45,6 @@ impl Platform for AirPlatform {
 
     fn open_file(&self, path: &Path) {
         tracing::info!("File: {}", path.display());
-    }
-
-    fn has_file_dialogs(&self) -> bool {
-        false
     }
 
     fn opens_files(&self) -> bool {

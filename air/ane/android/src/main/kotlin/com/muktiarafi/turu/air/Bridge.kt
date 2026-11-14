@@ -383,6 +383,29 @@ object Bridge {
     @JvmStatic
     external fun nativeCrashUploadsAnswer(answer: Int)
 
+    /** AIR's activity, while there is one ([PickerActivity] starts from it). */
+    fun currentActivity(): Activity? = activity
+
+    /** The bot windows' "open file" dialog: the system picker ([Documents.open]). From `saf.rs`. */
+    @JvmStatic
+    fun openDocument(mimeTypes: String, folder: String): Boolean = Documents.open(mimeTypes, folder)
+
+    /** The bot windows' "save file" dialog: the system picker ([Documents.create]). From `saf.rs`. */
+    @JvmStatic
+    fun createDocument(mimeType: String, fileName: String): Boolean = Documents.create(mimeType, fileName)
+
+    /** Copies the file a window saved into its document ([Documents.writeDocument]); null, or why not. */
+    @JvmStatic
+    fun writeDocument(uri: String, path: String): String? = Documents.writeDocument(uri, path)
+
+    /** The "open" picker's document, copied to `path`; null when cancelled (`saf.rs`). */
+    @JvmStatic
+    external fun nativeDocumentPicked(path: String?)
+
+    /** The "save" picker made the document `uri`, for the window to write `path`; nulls when cancelled. */
+    @JvmStatic
+    external fun nativeDocumentCreated(uri: String?, path: String?)
+
     /** Whether this build can send crash reports ([CrashUploads]). */
     @JvmStatic
     fun crashUploadsAvailable(): Boolean = CrashUploads.available()

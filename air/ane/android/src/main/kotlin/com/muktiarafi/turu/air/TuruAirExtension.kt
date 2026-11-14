@@ -36,6 +36,8 @@ class TuruAirExtension : FREExtension {
                 CrashReports.collect(activity.applicationContext)
                 // Accounts' passwords, before the engine reads one.
                 Passwords.init(activity.applicationContext)
+                // The file dialogs' documents.
+                Documents.init(activity.applicationContext)
                 Bridge.nativeStart(activity.applicationContext, dir.absolutePath)
                 Bridge.attachOverlay(activity)
                 Prompts.askOnce(activity)
