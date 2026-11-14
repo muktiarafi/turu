@@ -209,10 +209,12 @@ impl Location {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct JumpSettings {
-    /// The last destination jumped to (the "Jump to Map / Cell" box starts with it).
+    /// The last destination jumped to (Map Travel's Go to fields start with it).
     pub map: String,
     pub room: String,
     pub cell: String,
+    /// Turu's: the last pad jumped to (VibeSkua keeps no pad; it reads files without it).
+    pub pad: String,
     /// The last player jumped to.
     pub player: String,
     /// The maps the clients visited, the newest first.
@@ -226,6 +228,7 @@ impl Default for JumpSettings {
             map: String::new(),
             room: String::new(),
             cell: "Enter".into(),
+            pad: "Spawn".into(),
             player: String::new(),
             history: Vec::new(),
             presets: Vec::new(),
@@ -275,12 +278,24 @@ impl JumpSettings {
         self.history.clear();
     }
 
-    /// VibeSkua `JumpArmyToDestination`'s bookkeeping: remembers the destination for the
-    /// "Jump to Map / Cell" box.
+    /// VibeSkua `JumpArmyToDestination`'s bookkeeping: remembers the destination for Map
+    /// Travel's Go to fields.
     pub fn remember_jump(&mut self, destination: &Destination) {
         self.map = destination.map.trim().to_owned();
         self.room = destination.room.trim().to_owned();
         self.cell = destination.cell_or_default();
+        self.pad = destination.pad_or_default();
+    }
+
+    /// The last destination jumped to, which Map Travel's Go to fields start with.
+    pub fn last_jump(&self) -> Destination {
+        Destination {
+            map: self.map.clone(),
+            room: self.room.clone(),
+            cell: or(&self.cell, "Enter"),
+            pad: or(&self.pad, "Spawn"),
+            ..Default::default()
+        }
     }
 
     /// What the "Jump to Map / Cell" box starts with: `map,room,cell`.
@@ -337,8 +352,10 @@ impl JumpSettings {
     }
 }
 
-/// The "Jump to Map / Cell" box (VibeSkua `MenuItem_JumpMap_Click`): `map,room,cell`, the room
-/// optional (`map,cell`, or `map` alone for "Enter"). `None` without a map.
+/// VibeSkua's "Jump to Map / Cell" box (`MenuItem_JumpMap_Click`): `map,room,cell`, the room
+/// optional (`map,cell`, or `map` alone for "Enter"); Turu also takes a pad after the cell
+/// (`map,room,cell,pad`). Map Travel's Map field reads what is pasted into it this way. `None`
+/// without a map.
 pub fn parse_manual(text: &str) -> Option<Destination> {
     let parts: Vec<&str> = text.split(',').map(str::trim).collect();
     let map = parts.first().copied().unwrap_or_default();
@@ -354,6 +371,7 @@ pub fn parse_manual(text: &str) -> Option<Destination> {
         map: map.to_owned(),
         room: room.to_owned(),
         cell: or(cell, "Enter"),
+        pad: or(parts.get(3).copied().unwrap_or_default(), "Spawn"),
         ..Default::default()
     })
 }

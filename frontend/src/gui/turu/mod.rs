@@ -478,11 +478,20 @@ mod tests {
     thread_local! {
         /// How much taller than its window each shown tool window's content is (it scrolls).
         static OVERFLOW: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
+        /// How much wider than its window each shown tool window's content is (cut off).
+        static WIDE: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
     }
 
     pub(super) fn record(ui: &egui::Ui) {
         let room = ui.clip_rect().height() - ui.spacing().window_margin.sum().y;
         OVERFLOW.with(|o| o.borrow_mut().push(ui.min_rect().height() - room));
+        let room = ui.clip_rect().width() - ui.spacing().window_margin.sum().x;
+        WIDE.with(|w| w.borrow_mut().push(ui.min_rect().width() - room));
+    }
+
+    /// How much wider than its window the last shown tool window's content was.
+    pub(super) fn last_wide() -> f32 {
+        WIDE.with(|w| w.borrow().last().copied().unwrap_or_default())
     }
 
     pub(super) type Show = Box<dyn FnMut(&Context, &mut bool)>;
@@ -630,6 +639,7 @@ mod tests {
         let mut area = Rect::NOTHING;
         for _ in 0..6 {
             OVERFLOW.with(|o| o.borrow_mut().clear());
+            WIDE.with(|w| w.borrow_mut().clear());
             let input = egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, screen)),
                 ..Default::default()

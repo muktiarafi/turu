@@ -72,6 +72,8 @@ fn history_records_only_new_visits_and_persists() {
     let read = JumpSettings::load(&file);
     assert_eq!(read.player, "Artix");
     assert_eq!(read.manual_text(), "tercessuinotlim,,m2");
+    // VibeSkua's file has no pad: the Go to fields start on Spawn.
+    assert_eq!(read.last_jump().pad, "Spawn");
     assert_eq!(
         read.presets[0].preset_label(),
         "Farm — tercessuinotlim - m2, Left"
@@ -130,6 +132,7 @@ fn presets_are_created_edited_and_deleted() {
     let read = JumpSettings::load(&file);
     assert_eq!(read, settings);
     assert_eq!(read.manual_text(), "ultradage,9999,r1");
+    assert_eq!(read.last_jump().command(), read.presets[0].command());
     let mut read = read;
     read.delete_preset(0);
     read.delete_preset(5);
@@ -147,6 +150,9 @@ fn manual_destinations_and_locations_parse() {
     assert_eq!((d.room.as_str(), d.cell.as_str()), ("", "Upstairs"));
     assert_eq!(jump::parse_manual("battleon").unwrap().cell, "Enter");
     assert!(jump::parse_manual(" ,x").is_none());
+    let d = jump::parse_manual("yulgar,12345,Upstairs, Left").unwrap();
+    assert_eq!((d.cell.as_str(), d.pad.as_str()), ("Upstairs", "Left"));
+    assert_eq!(jump::parse_manual("yulgar,1,Enter").unwrap().pad, "Spawn");
     let l = Location::from_full_name("doom-wood-42", "Enter", "", "Alt").unwrap();
     assert_eq!(
         (l.map.as_str(), l.room.as_str(), l.pad.as_str()),

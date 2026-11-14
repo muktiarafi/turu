@@ -1,12 +1,13 @@
 //! Army Control's travel (VibeSkua's tabbed host "Map Travel...", "Jump All to Player..." and
-//! "Change Server for All..."): the Map Travel window with the maps the clients visited and the
-//! saved map presets, the preset editor, the "Jump to Map / Cell" box, the player picker and the
-//! server picker. What they jump to goes to Army Control's targets (`ArmyWindow::send`).
+//! "Change Server for All..."): the Map Travel window, with Go to (a map, room, cell and pad typed
+//! in; Turu's, in place of VibeSkua's "Jump to Map / Cell" box), the maps the clients visited and
+//! the saved map presets; the preset editor, the player picker and the server picker. What they
+//! jump to goes to Army Control's targets (`ArmyWindow::send`).
 //!
 //! Where each client is gets read every second while Turu runs, as VibeSkua's clients report it,
 //! and a client's new map or room goes to the top of the history (`turu_bot::army::jump`).
 
-use super::theme::{DANGER, MUTED};
+use super::theme::{DANGER, MUTED, WARNING};
 use super::widgets::{self, Kind};
 use egui::{Align, ComboBox, Context, Layout, Modal, RichText, Ui, vec2};
 use std::collections::HashMap;
@@ -21,6 +22,14 @@ use turu_bot::army::jump::{self, Destination, JumpSettings, Location, Visits};
 const POLL_EVERY: Duration = Duration::from_secs(1);
 /// A location older than this isn't current (VibeSkua: 5 s).
 const FRESH_FOR: Duration = Duration::from_secs(5);
+/// VibeSkua `MapService.Pads`, Go to's Pad drop-down.
+const PADS: [&str; 8] = ["Spawn", "Center", "Left", "Right", "Up", "Down", "Top", "Bottom"];
+/// The room between controls on a row.
+const GAP: f32 = 6.0;
+/// The width of a Jump button (and Go to's Room box).
+const JUMP_WIDTH: f32 = 84.0;
+/// Narrower than this, Go to's Jump gets a row of its own and the presets' header buttons shrink.
+const NARROW: f32 = 320.0;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
@@ -71,7 +80,8 @@ pub struct Travel {
     history_pick: usize,
     preset_pick: usize,
     editor: Option<Editor>,
-    manual: Option<String>,
+    /// Go to's fields (`name` unused); they start with the last jump.
+    go_to: Destination,
     /// The player picker's box (`Some` while it shows).
     player: Option<(String, Vec<String>)>,
     server: Option<ServerPicker>,
@@ -93,7 +103,7 @@ impl Default for Travel {
             history_pick: 0,
             preset_pick: 0,
             editor: None,
-            manual: None,
+            go_to: Destination::default(),
             player: None,
             server: None,
             notice: None,
@@ -113,7 +123,9 @@ impl Travel {
         if !self.loaded {
             self.loaded = true;
             let file = self.file();
-            lock(&self.shared).settings = JumpSettings::load(&file);
+            let settings = JumpSettings::load(&file);
+            self.go_to = settings.last_jump();
+            lock(&self.shared).settings = settings;
         }
     }
 
@@ -263,13 +275,12 @@ impl Travel {
         if self.open {
             self.ensure_loaded();
             let mut open = true;
-            super::window(ctx, "Map Travel", [520.0, 360.0], 6)
+            super::window(ctx, "Map Travel", [520.0, 380.0], 6)
                 .open(&mut open)
-                .show(ctx, |ui| self.map_travel(ui, current));
+                .show(ctx, |ui| self.map_travel(ui, current, targets));
             self.open &= open;
         }
         self.editor_dialog(ctx, current);
-        self.manual_dialog(ctx);
         self.player_dialog(ctx);
         self.server_dialog(ctx, targets);
         if let Some((title, text)) = &self.notice {
@@ -288,108 +299,196 @@ impl Travel {
         }
     }
 
-    /// VibeSkua `MenuItem_MapTravel_Click`.
-    fn map_travel(&mut self, ui: &mut Ui, current: Option<&str>) {
-        ui.label("Choose a recent destination or a saved preset to jump all clients.");
-        ui.add_space(4.0);
+    /// VibeSkua `MenuItem_MapTravel_Click`: Go to, then the recent destinations and the saved
+    /// presets, each a drop-down with its Jump beside it. `targets` is how many clients a jump
+    /// reaches; none, and the Jumps are off.
+    fn map_travel(&mut self, ui: &mut Ui, current: Option<&str>, targets: usize) {
         let (history, presets) = {
             let shared = lock(&self.shared);
             (shared.settings.history.clone(), shared.settings.presets.clone())
         };
-        let width = ui.available_width();
-        widgets::section_label(ui, "RECENT DESTINATIONS");
-        self.history_pick = self.history_pick.min(history.len().saturating_sub(1));
-        let selected = history
-            .get(self.history_pick)
-            .map_or_else(|| "No visited maps yet".to_owned(), Destination::display_name);
-        ComboBox::from_id_salt("turu_army_history")
-            .width(width)
-            .truncate()
-            .selected_text(selected)
-            .show_ui(ui, |ui| {
-                ui.spacing_mut().interact_size.y = widgets::target(20.0, 40.0);
-                for (i, d) in history.iter().enumerate() {
-                    let label = format!("{} ({})", d.display_name(), d.name);
-                    ui.selectable_value(&mut self.history_pick, i, label);
-                }
-            })
-            .response
-            .on_hover_text("Maps the clients travelled to, the newest first");
-        let any = !history.is_empty();
-        ui.horizontal_wrapped(|ui| {
-            if widgets::button(
-                ui,
-                "Select / Jump",
-                Kind::Primary,
-                any,
-                button_size(110.0),
-                "No visited maps yet",
-            )
-            .clicked()
-            {
-                self.jump(&history[self.history_pick]);
-            }
-            if widgets::button(ui, "Clear History", Kind::Normal, any, button_size(100.0), "").clicked() {
-                lock(&self.shared).settings.clear_history();
-                self.save();
-            }
-        });
+        let control = widgets::target(28.0, 40.0);
+        ui.spacing_mut().item_spacing = vec2(GAP, 8.0);
+        ui.spacing_mut().interact_size.y = control;
+        let narrow = ui.available_width() < NARROW;
+        let reach = targets > 0;
+        let off = "No clients to send: check a row in Army Control, or start one";
+
+        self.go_to_ui(ui, current, targets, control, narrow);
         ui.separator();
-        widgets::section_label(ui, "SAVED PRESETS");
+
+        ui.horizontal(|ui| {
+            widgets::section_label(ui, "RECENT DESTINATIONS");
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let clear = header_button(ui, "Clear", Kind::Normal, !history.is_empty(), "Nothing to clear")
+                    .on_hover_text("Forget the visited maps");
+                if clear.clicked() {
+                    lock(&self.shared).settings.clear_history();
+                    self.save();
+                }
+            });
+        });
+        self.history_pick = self.history_pick.min(history.len().saturating_sub(1));
+        let jump = picker_row(
+            ui,
+            "turu_army_history",
+            control,
+            reach && !history.is_empty(),
+            off,
+            |ui| {
+                let selected = history
+                    .get(self.history_pick)
+                    .map_or_else(|| "No visited maps yet".to_owned(), Destination::display_name);
+                picker_combo(ui, "turu_army_history", selected, |ui| {
+                    for (i, d) in history.iter().enumerate() {
+                        let label = format!("{}  ·  {}", d.display_name(), d.name);
+                        ui.selectable_value(&mut self.history_pick, i, label);
+                    }
+                })
+                .on_hover_text("Maps the clients travelled to, the newest first");
+            },
+        );
+        if jump {
+            self.jump(&history[self.history_pick]);
+        }
+        ui.separator();
+
+        let any = !presets.is_empty();
+        ui.horizontal(|ui| {
+            widgets::section_label(ui, "SAVED PRESETS");
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if header_button(ui, "Delete", Kind::Danger, any, "No presets yet").clicked() {
+                    lock(&self.shared).settings.delete_preset(self.preset_pick);
+                    self.save();
+                }
+                if header_button(ui, "Edit", Kind::Normal, any, "No presets yet").clicked() {
+                    self.open_editor(Some(self.preset_pick), current);
+                }
+                let new = header_button(ui, if narrow { "New" } else { "New…" }, Kind::Normal, true, "")
+                    .on_hover_text("Save a preset: Go to's destination when one is typed, else where the client is");
+                if new.clicked() {
+                    self.open_editor(None, current);
+                }
+            });
+        });
         self.preset_pick = self.preset_pick.min(presets.len().saturating_sub(1));
-        let selected = presets
-            .get(self.preset_pick)
-            .map_or_else(|| "No presets yet".to_owned(), Destination::preset_label);
-        ComboBox::from_id_salt("turu_army_presets")
-            .width(width)
-            .truncate()
-            .selected_text(selected)
-            .show_ui(ui, |ui| {
-                ui.spacing_mut().interact_size.y = widgets::target(20.0, 40.0);
+        let jump = picker_row(ui, "turu_army_presets", control, reach && any, off, |ui| {
+            let selected = presets
+                .get(self.preset_pick)
+                .map_or_else(|| "No presets yet".to_owned(), Destination::preset_label);
+            picker_combo(ui, "turu_army_presets", selected, |ui| {
                 for (i, d) in presets.iter().enumerate() {
                     ui.selectable_value(&mut self.preset_pick, i, d.preset_label());
                 }
             });
-        let any = !presets.is_empty();
-        ui.horizontal_wrapped(|ui| {
-            if widgets::button(
-                ui,
-                "Select / Jump",
-                Kind::Primary,
-                any,
-                button_size(110.0),
-                "No presets yet",
-            )
-            .clicked()
+        });
+        if jump && let Some(preset) = presets.get(self.preset_pick) {
+            self.jump(preset);
+        }
+    }
+
+    /// Go to: a map, its room (optional: any room), then the cell and pad, which start on Enter
+    /// and Spawn. Enter in a box jumps; `map,room,cell,pad` pasted into Map fills them all.
+    fn go_to_ui(&mut self, ui: &mut Ui, current: Option<&str>, targets: usize, control: f32, narrow: bool) {
+        let here = self.location(current);
+        ui.horizontal(|ui| {
+            widgets::section_label(ui, "GO TO");
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let use_current = header_button(
+                    ui,
+                    "Use current",
+                    Kind::Normal,
+                    here.is_some(),
+                    "The selected client hasn't said where it is yet",
+                )
+                .on_hover_text("Fill in where the selected client is (the only checked row, else the active tab)");
+                if use_current.clicked()
+                    && let Some(here) = &here
+                {
+                    self.go_to = here.to_destination();
+                }
+            });
+        });
+        let width = ui.available_width();
+        let mut enter = false;
+        ui.horizontal(|ui| {
+            let map = go_to_box(ui, &mut self.go_to.map, "Map", width - JUMP_WIDTH - GAP, control);
+            if map.changed()
+                && self.go_to.map.contains(',')
+                && let Some(pasted) = jump::parse_manual(&self.go_to.map)
             {
-                self.jump(&presets[self.preset_pick]);
+                self.go_to = pasted;
             }
-            if widgets::button(ui, "Create", Kind::Normal, true, button_size(80.0), "").clicked() {
-                self.open_editor(None, current);
+            enter |= submitted(ui, &map);
+            let room = go_to_box(ui, &mut self.go_to.room, "Room", JUMP_WIDTH, control)
+                .on_hover_text("The room number; empty for any room");
+            if room.changed() {
+                self.go_to.room.retain(|c| c.is_ascii_digit());
             }
-            if widgets::button(ui, "Edit", Kind::Normal, any, button_size(70.0), "").clicked() {
-                self.open_editor(Some(self.preset_pick), current);
-            }
-            if widgets::button(ui, "Delete", Kind::Danger, any, button_size(80.0), "").clicked() {
-                lock(&self.shared).settings.delete_preset(self.preset_pick);
-                self.save();
+            enter |= submitted(ui, &room);
+        });
+        let valid = !self.go_to.map.trim().is_empty();
+        let mut jump = false;
+        ui.horizontal(|ui| {
+            let fields = if narrow { width } else { width - JUMP_WIDTH - GAP };
+            let half = (fields - GAP) / 2.0;
+            let cell = go_to_box(ui, &mut self.go_to.cell, "Cell (Enter)", half, control);
+            enter |= submitted(ui, &cell);
+            let pad = self.go_to.pad.trim().to_owned();
+            ComboBox::from_id_salt("turu_army_go_to_pad")
+                .selected_text(if pad.is_empty() { "Spawn" } else { pad.as_str() })
+                .width(half)
+                .show_ui(ui, |ui| {
+                    ui.spacing_mut().interact_size.y = widgets::target(20.0, 40.0);
+                    for p in PADS {
+                        if ui.selectable_label(pad.eq_ignore_ascii_case(p), p).clicked() {
+                            self.go_to.pad = p.to_owned();
+                        }
+                    }
+                })
+                .response
+                .on_hover_text("The pad to stand on in that cell");
+            if !narrow {
+                jump = jump_button(ui, valid && targets > 0, control, JUMP_WIDTH);
             }
         });
-        ui.separator();
-        ui.horizontal_wrapped(|ui| {
-            if widgets::button(ui, "Jump to Map / Cell...", Kind::Normal, true, button_size(140.0), "").clicked() {
-                self.manual = Some(lock(&self.shared).settings.manual_text());
-            }
-            if widgets::button(ui, "Close", Kind::Normal, true, button_size(84.0), "").clicked() {
-                self.open = false;
-            }
-        });
+        if narrow {
+            jump = jump_button(ui, valid && targets > 0, control, width);
+        }
+        // What a jump does, in words: where, and to how many clients.
+        let (text, color) = if targets == 0 {
+            ("No clients to send.".to_owned(), WARNING)
+        } else if valid {
+            let clients = if targets == 1 {
+                "1 client".to_owned()
+            } else {
+                format!("{targets} clients")
+            };
+            let d = &self.go_to;
+            let place = format!("{} - {}, {}", d.map_to_join(), d.cell_or_default(), d.pad_or_default());
+            (format!("Sends {clients} to {place}"), MUTED)
+        } else {
+            (
+                "Type a map to go to; the room, cell and pad are optional.".to_owned(),
+                MUTED,
+            )
+        };
+        ui.add(egui::Label::new(RichText::new(text).size(widgets::small_label_size()).color(color)).truncate());
+        if (jump || enter) && valid && targets > 0 {
+            let destination = self.go_to.clone();
+            self.jump(&destination);
+        }
     }
 
     fn open_editor(&mut self, editing: Option<usize>, current: Option<&str>) {
         let preset = match editing {
             Some(i) => lock(&self.shared).settings.presets.get(i).cloned(),
-            // New presets start with the selected client's current location when there is one.
+            // New presets start with Go to's destination when one is typed, else the selected
+            // client's current location when there is one.
+            None if !self.go_to.map.trim().is_empty() => Some(Destination {
+                name: String::new(),
+                ..self.go_to.clone()
+            }),
             None => Some(self.location(current).map(|l| l.to_destination()).unwrap_or_default()),
         };
         if let Some(preset) = preset {
@@ -491,41 +590,6 @@ impl Travel {
             }
             Some(false) => self.editor = None,
             None if response.should_close() => self.editor = None,
-            None => {}
-        }
-    }
-
-    /// VibeSkua `MenuItem_JumpMap_Click`: "Jump Army to Map / Cell".
-    fn manual_dialog(&mut self, ctx: &Context) {
-        let Some(text) = &mut self.manual else {
-            return;
-        };
-        let mut answer = None;
-        let response = Modal::new(egui::Id::new("turu_army_manual_jump")).show(ctx, |ui| {
-            let width = dialog_width(ui, 380.0);
-            ui.heading("Jump Army to Map / Cell");
-            ui.label("Enter destination as Map,Room,Cell (room is optional):");
-            let edit = widgets::text_box(ui, text, "e.g., yulgar,12345,Enter", width);
-            let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if widgets::button(ui, "OK", Kind::Primary, true, button_size(72.0), "").clicked() || enter {
-                    answer = Some(true);
-                }
-                if widgets::button(ui, "Cancel", Kind::Normal, true, button_size(72.0), "").clicked() {
-                    answer = Some(false);
-                }
-            });
-        });
-        match answer {
-            Some(true) => {
-                let destination = jump::parse_manual(text);
-                self.manual = None;
-                if let Some(destination) = destination {
-                    self.jump(&destination);
-                }
-            }
-            Some(false) => self.manual = None,
-            None if response.should_close() => self.manual = None,
             None => {}
         }
     }
@@ -673,4 +737,121 @@ fn scroll_body(ui: &mut Ui, reserve: f32, add: impl FnOnce(&mut Ui)) {
 
 fn button_size(width: f32) -> egui::Vec2 {
     vec2(width, widgets::target(28.0, 40.0))
+}
+
+/// A small button in a section's heading row: finger-sized on a touch screen.
+fn header_button(ui: &mut Ui, label: &str, kind: Kind, enabled: bool, disabled: &str) -> egui::Response {
+    widgets::button(
+        ui,
+        label,
+        kind,
+        enabled,
+        vec2(0.0, widgets::target(22.0, 40.0)),
+        disabled,
+    )
+}
+
+/// A drop-down filling the row but for its Jump on the right; true when Jump was clicked.
+fn picker_row(ui: &mut Ui, id: &str, control: f32, enabled: bool, disabled: &str, combo: impl FnOnce(&mut Ui)) -> bool {
+    let width = ui.available_width();
+    ui.push_id(id, |ui| {
+        ui.horizontal(|ui| {
+            ui.allocate_ui(vec2(width - JUMP_WIDTH - GAP, control), combo);
+            widgets::button(ui, "Jump", Kind::Primary, enabled, vec2(JUMP_WIDTH, control), disabled).clicked()
+        })
+        .inner
+    })
+    .inner
+}
+
+/// A drop-down as wide as the room it's given, its text cut off with an ellipsis.
+fn picker_combo(ui: &mut Ui, id: &str, selected: String, add: impl FnOnce(&mut Ui)) -> egui::Response {
+    ComboBox::from_id_salt(id)
+        .width(ui.available_width())
+        .truncate()
+        .selected_text(selected)
+        .show_ui(ui, |ui| {
+            ui.spacing_mut().interact_size.y = widgets::target(20.0, 40.0);
+            add(ui);
+        })
+        .response
+}
+
+/// One of Go to's boxes.
+fn go_to_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32, control: f32) -> egui::Response {
+    widgets::text_box_sized(ui, text, hint, vec2(width.max(48.0), control))
+}
+
+/// Enter was pressed in this box.
+fn submitted(ui: &Ui, response: &egui::Response) -> bool {
+    response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+}
+
+/// Go to's Jump, `width` wide.
+fn jump_button(ui: &mut Ui, enabled: bool, control: f32, width: f32) -> bool {
+    widgets::button(
+        ui,
+        "Jump",
+        Kind::Primary,
+        enabled,
+        vec2(width, control),
+        "Type a map, and have a client to send",
+    )
+    .clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gui::turu::tests::{Show, last_wide, run};
+
+    /// Map Travel, typed into and with a preset and a visit, stays on screen from a desktop down
+    /// to a phone's width, and nothing in it is cut off at the right.
+    #[test]
+    fn map_travel_fits_any_width() {
+        let mut travel = Travel {
+            loaded: true,
+            open: true,
+            go_to: Destination {
+                map: "tercessuinotlim".into(),
+                room: "123456789".into(),
+                cell: "Boss".into(),
+                pad: "Left".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        {
+            let mut shared = lock(&travel.shared);
+            let long = Destination {
+                name: "A preset with a long name to cut off".into(),
+                map: "ultradage".into(),
+                room: "9999".into(),
+                cell: "Boss".into(),
+                pad: "Left".into(),
+            };
+            shared.settings.presets.push(long.clone());
+            shared.settings.history.push(long);
+        }
+        let mut show: Show = Box::new(move |ctx, _| {
+            travel.show(ctx, None, 3);
+        });
+        for screen in [
+            vec2(1400.0, 1000.0),
+            vec2(900.0, 600.0),
+            vec2(640.0, 420.0),
+            vec2(360.0, 740.0),
+            vec2(300.0, 600.0),
+        ] {
+            let (rect, area, overflow) = run(screen, "Map Travel", &mut show);
+            assert!(
+                area.expand(1.0).contains_rect(rect),
+                "{screen:?}: {rect:?} outside {area:?}"
+            );
+            assert!(last_wide() <= 0.5, "{screen:?}: {} wider than the window", last_wide());
+            if screen.y >= 1000.0 {
+                assert!(overflow <= 0.5, "scrolls at its default size by {overflow}");
+            }
+        }
+    }
 }
