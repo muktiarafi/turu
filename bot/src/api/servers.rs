@@ -21,9 +21,6 @@ use std::time::{Duration, Instant};
 pub const SERVERS_URL: &str = "http://content.aq.com/game/api/data/servers";
 /// The game server port when a server doesn't say.
 const DEFAULT_PORT: i64 = 5588;
-/// Cloudflare in front of [`SERVERS_URL`] refuses requests without a User-Agent. This is the one
-/// the player sends for the game's own requests (Ruffle's navigator), so the bot's look the same.
-const USER_AGENT: &str = concat!("Ruffle/", env!("CARGO_PKG_VERSION"), " (https://ruffle.rs)");
 /// How long the UI waits before fetching a list that failed again.
 const REFRESH_RETRY: Duration = Duration::from_secs(30);
 
@@ -153,7 +150,8 @@ impl ServerRunner {
 fn fetch_servers() -> Result<Vec<Server>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
-        .user_agent(USER_AGENT)
+        // Cloudflare in front of SERVERS_URL refuses requests without a User-Agent.
+        .user_agent(crate::GAME_USER_AGENT)
         .build()
         .map_err(|e| e.to_string())?;
     let text = client

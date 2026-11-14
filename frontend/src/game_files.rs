@@ -68,7 +68,7 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
     let client = CLIENT
         .get_or_init(|| {
             reqwest::blocking::Client::builder()
-                .user_agent(concat!("Turu/", env!("CARGO_PKG_VERSION")))
+                .user_agent(turu_bot::GAME_USER_AGENT)
                 .cookie_store(true)
                 .connect_timeout(Duration::from_secs(30))
                 .timeout(Duration::from_secs(180))

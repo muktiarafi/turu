@@ -68,6 +68,11 @@ use std::time::Duration;
 /// from game.aq.com and exposes the game to the bot through ExternalInterface.
 pub const TURU_SWF: &[u8] = include_bytes!("../assets/turu.swf");
 
+/// The User-Agent for requests to the game's own servers (content.aq.com, game.aq.com,
+/// account.aq.com): a browser's, as VibeSkua's Cosmetics sends, not Turu's name. Requests
+/// elsewhere (GitHub, the cosmetics catalog) say `Turu/<version>`.
+pub const GAME_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
 /// The script API (`import ... from "turu"`): the runtime scripts load, and the types editors
 /// read from the scripts folder's `types/turu.ts`.
 pub const TURU_TS: &str = include_str!("../js/turu.ts");

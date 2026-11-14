@@ -47,7 +47,7 @@ fn save(path: &Path, saved: &Saved) {
 fn download(url: &str) -> Result<Vec<u8>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(60))
-        .user_agent(concat!("Turu/", env!("CARGO_PKG_VERSION")))
+        .user_agent(crate::GAME_USER_AGENT)
         .build()
         .map_err(|e| e.to_string())?;
     client

@@ -37,7 +37,7 @@ pub fn fetch(name: &str) -> Result<CharPage, String> {
     }
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
-        .user_agent(concat!("Turu/", env!("CARGO_PKG_VERSION")))
+        .user_agent(crate::GAME_USER_AGENT)
         .build()
         .map_err(|e| e.to_string())?;
     let html = client

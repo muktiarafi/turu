@@ -326,7 +326,7 @@ pub fn web_badges(bot: &Bot) -> BotResult<Vec<Badge>> {
     let failed = |e: reqwest::Error| BotError::Other(format!("couldn't read the badges: {e}"));
     let text = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("Mozilla/5.0")
+        .user_agent(crate::GAME_USER_AGENT)
         .build()
         .map_err(failed)?
         .get(url)
