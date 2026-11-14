@@ -6,7 +6,9 @@ name = "turu_air"
 authors = ["muktiarafi <muktiarafi@gmail.com>"]
 edition = "2024"
 license = "GPL-3.0-or-later"
-version = "0.2.0"
+# No version: nothing reads it (the app's is `TURU_VERSION`, else the root `Cargo.toml`'s), so
+# there's none to keep in step.
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
