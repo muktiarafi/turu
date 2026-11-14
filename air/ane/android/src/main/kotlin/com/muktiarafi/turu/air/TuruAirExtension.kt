@@ -8,8 +8,10 @@ import com.adobe.fre.FREContext
 import com.adobe.fre.FREExtension
 import com.adobe.fre.FREFunction
 import com.adobe.fre.FREObject
+import com.muktiarafi.turu.shared.Alerts
 import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
+import com.muktiarafi.turu.shared.Foreground
 
 /**
  * Turu's AIR native extension (docs/AIR_PROPOSAL.md): starts Turu's engine ([Bridge]) and passes
@@ -40,6 +42,10 @@ class TuruAirExtension : FREExtension {
                 Passwords.init(activity.applicationContext)
                 // The file dialogs' documents.
                 Documents.init(activity.applicationContext)
+                // Drops and stopped scripts as notifications (`Platform::alert`), held while AIR's
+                // activity, already on screen, is.
+                Foreground.watch(activity, activity)
+                Alerts.init(activity.applicationContext, activity.applicationInfo.icon)
                 Bridge.nativeStart(activity.applicationContext, dir.absolutePath)
                 Bridge.attachOverlay(activity)
                 Prompts.askOnce(activity)

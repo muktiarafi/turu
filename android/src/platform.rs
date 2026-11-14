@@ -3,6 +3,7 @@
 //! folders and files only get logged, so Edit Script and Open VSCode are hidden.
 //! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
 //! `OutputCommand::CopyText`, passed on by `screen.rs`) goes to Android's clipboard.
+//! Notify Drop's drops and stopped scripts are notifications too (`notify::alert`).
 //! An update's APK goes to Android's installer (`TuruActivity.installPackage`).
 //! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`). Frame interpolation
 //! (Options > Application) is saved in the data folder.
@@ -13,7 +14,7 @@ use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::{jint, jobject};
 use jni::{EnvUnowned, jni_sig, jni_str};
 use std::path::Path;
-use turu_frontend::platform::{Answer, FileDialog, Platform, Question};
+use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
 
 pub struct AndroidPlatform;
 
@@ -185,6 +186,14 @@ impl Platform for AndroidPlatform {
             }
             None => tracing::info!("Not shared without the app on screen: {subject}"),
         }
+    }
+
+    fn posts_alerts(&self) -> bool {
+        true
+    }
+
+    fn alert(&self, kind: Alert, title: &str, text: &str) {
+        crate::notify::alert(kind, title, text);
     }
 
     fn installs_packages(&self) -> bool {

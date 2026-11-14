@@ -86,10 +86,14 @@ struct Tabs {
 fn tabs_lock() -> std::sync::MutexGuard<'static, Option<Tabs>> {
     let mut tabs = TABS.lock().unwrap_or_else(|e| e.into_inner());
     // The first tab: the one the window (or `--headless`) opens with.
-    tabs.get_or_insert_with(|| Tabs {
-        list: vec![(TabId(0), Bot::new())],
-        active: TabId(0),
-        next: 1,
+    tabs.get_or_insert_with(|| {
+        let bot = Bot::new();
+        watch_alerts(&bot);
+        Tabs {
+            list: vec![(TabId(0), bot)],
+            active: TabId(0),
+            next: 1,
+        }
     });
     tabs
 }
@@ -133,6 +137,7 @@ pub fn tab_bot(tab: TabId) -> Option<Arc<Bot>> {
 /// login, the bot logs in once its game has loaded, as with `--user`.
 pub fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
     let bot = Bot::new();
+    watch_alerts(&bot);
     bot.scripts.set_interactive(!headless());
     turu_bot::startup::configure(&bot, startup);
     let mut tabs = tabs_lock();
@@ -141,6 +146,63 @@ pub fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
     tabs.next += 1;
     tabs.list.push((id, bot.clone()));
     (id, bot)
+}
+
+/// Where the platform posts alerts ([`crate::platform::Platform::posts_alerts`], Android's
+/// notifications): a script that stops in `bot`'s tab alerts, 2 s later (as
+/// [`exit_on_script_stop`] waits), unless it was the auto-relogin's stop, the script runs again, or
+/// a playlist goes on to its next script. Notify Drop alerts its own drops (`notify_drop.rs`).
+fn watch_alerts(bot: &Arc<Bot>) {
+    let watched = Arc::downgrade(bot);
+    // The first tab is made before the platform is installed: asked at each stop.
+    bot.events.subscribe(move |event| {
+        if !matches!(event, BotEvent::ScriptStopped)
+            || !crate::platform::platform().posts_alerts()
+        {
+            return;
+        }
+        let watched = watched.clone();
+        let _ = std::thread::Builder::new()
+            .name("Turu Alert".into())
+            .spawn(move || {
+                std::thread::sleep(Duration::from_secs(2));
+                let Some(bot) = watched.upgrade() else { return };
+                if bot.servers.is_relogging()
+                    || bot.scripts.is_running()
+                    || bot.scheduler.is_running()
+                {
+                    return;
+                }
+                let Some(end) = bot.scripts.last_end().1 else {
+                    return;
+                };
+                let (title, text) = script_stopped_alert(&tab_label(&bot), &end);
+                tracing::info!("Alert: {title}: {text}");
+                let kind = crate::platform::Alert::ScriptStopped;
+                crate::platform::platform().alert(kind, &title, &text);
+            });
+    });
+}
+
+/// "Script finished" / "Script failed" / "Script stopped", and "<tab>: <script>" (with the
+/// error's first line).
+fn script_stopped_alert(tab: &str, end: &turu_bot::script::RunEnd) -> (String, String) {
+    let script = end
+        .script
+        .file_stem()
+        .map_or_else(|| "The script".into(), |s| s.to_string_lossy().into_owned());
+    let title = match (&end.error, end.finished) {
+        (Some(_), _) => "Script failed",
+        (None, true) => "Script finished",
+        (None, false) => "Script stopped",
+    };
+    let mut text = format!("{tab}: {script}");
+    if let Some(first) = end.error.as_deref().and_then(|e| e.lines().next()) {
+        text.push_str(" (");
+        text.push_str(first);
+        text.push(')');
+    }
+    (title.to_owned(), text)
 }
 
 /// Removes the tab (never the last one): stops its script and Auto Attack/Hunt.
@@ -1351,6 +1413,30 @@ pub fn spawn_action_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_stopped_alert_says_how_it_ended() {
+        let end = |finished, error: Option<&str>| turu_bot::script::RunEnd {
+            script: PathBuf::from("/data/scripts/farm/GoldFarm.ts"),
+            started: true,
+            finished,
+            error: error.map(str::to_owned),
+            ran: Duration::from_secs(60),
+            ended: chrono::Local::now(),
+        };
+        assert_eq!(
+            script_stopped_alert("Hero", &end(true, None)),
+            ("Script finished".into(), "Hero: GoldFarm".into())
+        );
+        assert_eq!(
+            script_stopped_alert("Hero", &end(false, None)),
+            ("Script stopped".into(), "Hero: GoldFarm".into())
+        );
+        assert_eq!(
+            script_stopped_alert("Hero", &end(false, Some("BotError: map.join\n  at main"))),
+            ("Script failed".into(), "Hero: GoldFarm (BotError: map.join)".into())
+        );
+    }
 
     #[test]
     fn takes_the_monitor_flags() {

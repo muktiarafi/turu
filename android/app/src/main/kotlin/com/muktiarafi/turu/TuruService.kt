@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import com.muktiarafi.turu.shared.Alerts
 import com.muktiarafi.turu.shared.CrashApp
 import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
@@ -56,6 +57,8 @@ class TuruService : Service() {
         startForegroundWith(build())
         CrashUploads.start(applicationContext, CRASH_APP)
         CrashReports.collect(applicationContext, CRASH_APP)
+        // Drops and stopped scripts as notifications (`Platform::alert`).
+        Alerts.init(applicationContext, R.drawable.ic_notification)
         // Passwords and documents (`storage.rs`), before the engine reads a password.
         Storage.init(applicationContext)
         // No activity in this process: Android restarted the service after killing it, and the
@@ -196,6 +199,15 @@ class TuruService : Service() {
         /** Called by the Rust side (any thread): a warning that goes with the next crash report. */
         @JvmStatic
         fun breadcrumb(category: String, message: String) = CrashUploads.breadcrumb(category, message)
+
+        /**
+         * Called by the Rust side (any thread): an alert ([Alerts]: 0 a watched drop, 1 a script
+         * stopped), posted while the app isn't on screen.
+         */
+        @JvmStatic
+        fun alert(kind: Int, title: String, text: String) {
+            Alerts.post(kind, title, text)
+        }
 
         /** Called by the Rust side (any thread): the GPU dropped the device. */
         @JvmStatic

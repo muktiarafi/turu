@@ -603,7 +603,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   `itemAdded` when it reaches the inventory, as VibeSkua's `ItemDroppedMessage`; exact,
   case-sensitive names) plays the beeps on a thread of their own: `Platform::beep`, .NET's
   `Console.Beep()` (800 Hz, 200 ms) on a sound stream apart from the game's (cpal's default output
-  on the desktop, AAudio on Android), so it sounds while the game is muted. The list is the tab's
+  on the desktop, AAudio on Android), so it sounds while the game is muted. On Android, while the
+  app isn't on screen, the drop is also a notification ("<item> dropped", in the Drops channel;
+  docs/ANDROID_NATIVE_UI.md, "Alerts"), as is a tab's script that stops. The list is the tab's
   and isn't saved (VibeSkua's neither): closing the window keeps it, closing the tab or Turu
   drops it. On a touch screen it opens at 560x480 (its controls and rows are finger-sized), and
   with a window under 560x400 it fills the screen.

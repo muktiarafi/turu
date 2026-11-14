@@ -27,6 +27,7 @@ import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
 import com.muktiarafi.turu.shared.FieldStyle
 import com.muktiarafi.turu.shared.FieldTarget
+import com.muktiarafi.turu.shared.Foreground
 import com.muktiarafi.turu.shared.PackageUpdate
 import java.io.File
 import kotlin.concurrent.thread
@@ -45,6 +46,8 @@ class TuruActivity : NativeActivity() {
         CrashUploads.start(applicationContext, CRASH_APP)
         CrashReports.collect(applicationContext, CRASH_APP)
         super.onCreate(savedInstanceState)
+        // Before it resumes: alerts wait while it's on screen, the install confirmation shows on it.
+        Foreground.watch(this)
         // NativeActivity's onCreate sets the window to "unspecified, resize", over the manifest's
         // setting. Unspecified shows the keyboard whenever the window comes to the front (start,
         // back from the background), as KeyInput holds the focus as a text editor; always hidden

@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import com.adobe.fre.FREContext
+import com.muktiarafi.turu.shared.Alerts
 import com.muktiarafi.turu.shared.CrashQuestion
 import com.muktiarafi.turu.shared.CrashUploads
 import com.muktiarafi.turu.shared.FieldStyle
@@ -402,6 +403,12 @@ object Bridge {
     /** How Android's installer ended [installPackage]'s install ([PackageUpdate]'s status). */
     @JvmStatic
     external fun nativePackageInstalled(status: Int, message: String?)
+
+    /** An alert ([Alerts]: 0 a watched drop, 1 a script stopped), posted while the app isn't on screen. */
+    @JvmStatic
+    fun alert(kind: Int, title: String, text: String) {
+        Alerts.post(kind, title, text)
+    }
 
     /** AIR's activity, while there is one ([PickerActivity] starts from it). */
     fun currentActivity(): Activity? = activity

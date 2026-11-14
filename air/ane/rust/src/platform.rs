@@ -7,7 +7,7 @@ use crate::host::BRIDGE;
 use jni::objects::{JString, JValue};
 use jni::{Env, jni_sig, jni_str};
 use std::path::Path;
-use turu_frontend::platform::{Answer, FileDialog, Platform, Question};
+use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
 
 pub(crate) struct AirPlatform;
 
@@ -142,6 +142,35 @@ impl Platform for AirPlatform {
             )?;
             Ok(())
         });
+    }
+
+    fn posts_alerts(&self) -> bool {
+        true
+    }
+
+    /// `Bridge.alert(kind, title, text)`: a notification while the app isn't on screen.
+    fn alert(&self, kind: Alert, title: &str, text: &str) {
+        let Some((vm, class)) = BRIDGE.get() else {
+            return;
+        };
+        let posted = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
+            let title = env.new_string(title)?;
+            let text = env.new_string(text)?;
+            env.call_static_method(
+                class,
+                jni_str!("alert"),
+                jni_sig!("(ILjava/lang/String;Ljava/lang/String;)V"),
+                &[
+                    JValue::Int(kind as i32),
+                    JValue::Object(&title),
+                    JValue::Object(&text),
+                ],
+            )?;
+            Ok(())
+        });
+        if let Err(e) = posted {
+            tracing::warn!("Couldn't post the alert: {e}");
+        }
     }
 
     fn installs_packages(&self) -> bool {

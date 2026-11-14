@@ -1,7 +1,6 @@
 package com.muktiarafi.turu.shared
 
 import android.app.Activity
-import android.app.Application
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -9,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInstaller
 import android.os.Build
-import android.os.Bundle
 import android.util.Log
 import java.io.File
 
@@ -40,10 +38,6 @@ object PackageUpdate {
     @Volatile
     private var confirm: Intent? = null
 
-    /** The app's activity on screen, if one is. */
-    @Volatile
-    private var resumed: Activity? = null
-
     private var watching = false
 
     /**
@@ -54,7 +48,8 @@ object PackageUpdate {
      */
     fun install(context: Context, path: String, done: (Int, String?) -> Unit): String? = try {
         val app = context.applicationContext
-        watch(app, context as? Activity)
+        Foreground.watch(app, context as? Activity)
+        watch(app)
         val file = File(path)
         val installer = app.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
@@ -85,37 +80,18 @@ object PackageUpdate {
         e.toString()
     }
 
-    /**
-     * Registers the install's receiver and follows which activity is on screen, once: from
-     * `current` (the one Download & install was tapped in, resumed before this could hear it).
-     */
+    /** Registers the install's receiver and shows a held confirmation on the next activity, once. */
     @Synchronized
-    private fun watch(app: Context, current: Activity?) {
+    private fun watch(app: Context) {
         if (watching) return
         watching = true
-        resumed = current
         val filter = IntentFilter(ACTION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             app.registerReceiver(receiver, filter)
         }
-        (app as Application).registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityResumed(a: Activity) {
-                resumed = a
-                confirm?.let { show(a, it) }
-            }
-
-            override fun onActivityPaused(a: Activity) {
-                if (resumed === a) resumed = null
-            }
-
-            override fun onActivityCreated(a: Activity, savedInstanceState: Bundle?) {}
-            override fun onActivityStarted(a: Activity) {}
-            override fun onActivityStopped(a: Activity) {}
-            override fun onActivitySaveInstanceState(a: Activity, outState: Bundle) {}
-            override fun onActivityDestroyed(a: Activity) {}
-        })
+        Foreground.onResumed { a -> confirm?.let { show(a, it) } }
     }
 
     /** Shows Android's confirmation on `activity`; kept for the next activity if it can't. */
@@ -140,7 +116,7 @@ object PackageUpdate {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 } ?: return
-                val activity = resumed
+                val activity = Foreground.activity
                 if (activity != null) show(activity, ask) else confirm = ask
                 return
             }

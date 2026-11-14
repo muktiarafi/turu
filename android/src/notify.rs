@@ -250,6 +250,32 @@ pub(crate) fn gpu_lost(why: &str) {
     });
 }
 
+/// `TuruService.alert(kind, title, text)`: a notification while the app isn't on screen
+/// (`Platform::alert`). Through the service's class, as the activity may be gone.
+pub(crate) fn alert(kind: turu_frontend::platform::Alert, title: &str, text: &str) {
+    let Some((vm, class)) = SERVICE.get() else {
+        return;
+    };
+    let posted = crate::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
+        let title = env.new_string(title)?;
+        let text = env.new_string(text)?;
+        env.call_static_method(
+            class,
+            jni_str!("alert"),
+            jni_sig!("(ILjava/lang/String;Ljava/lang/String;)V"),
+            &[
+                JValue::Int(kind as i32),
+                JValue::Object(&title),
+                JValue::Object(&text),
+            ],
+        )?;
+        Ok(())
+    });
+    if let Err(e) = posted {
+        tracing::warn!("Couldn't post the alert: {e}");
+    }
+}
+
 /// `TuruService.status(title, text, running, paused, startable, awake)`.
 fn send(status: &Status) -> jni::errors::Result<()> {
     let Some((vm, class)) = SERVICE.get() else {

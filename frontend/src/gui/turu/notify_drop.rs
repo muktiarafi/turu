@@ -1,14 +1,15 @@
 //! Combat > Runtime > Notifications (VibeSkua `NotifyDropView` / `NotifyDropViewModel`): a list
 //! of item names, and a beep (`Platform::beep`, VibeSkua's `ISoundService.Beep`) played a number
 //! of times when one of them drops. As VibeSkua, the list isn't saved: it lasts as long as the tab
-//! (closing the window keeps it), and each tab has its own.
+//! (closing the window keeps it), and each tab has its own. Where the platform posts alerts
+//! (Android), a drop is also a notification, heard with the screen off.
 
 use super::theme::{DANGER, INSET, MUTED, TEXT};
 use super::widgets::{self, Kind, Selection};
 use egui::{Align, Context, Key, Label, Layout, RichText, ScrollArea, Ui, vec2};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use turu_bot::Bot;
 use turu_bot::events::BotEvent;
 
@@ -18,6 +19,8 @@ pub const TITLE: &str = "Notify Drop";
 const NARROW: f32 = 440.0;
 /// From this width the beep settings sit in the WATCHING heading's row.
 const WIDE: f32 = 720.0;
+/// How long the same item's drop alerts only once ([`alert`]).
+const ALERT_AGAIN_AFTER: Duration = Duration::from_secs(10);
 
 /// What the drop handler reads (on the thread that emits the event).
 struct Watch {
@@ -354,6 +357,7 @@ impl NotifyDropWindow {
         }
         let bot = crate::turu::bot();
         let watch = Arc::downgrade(&self.watch);
+        let tab = Arc::downgrade(&bot);
         let id = bot.events.subscribe(move |event| {
             let (BotEvent::ItemDropped { item } | BotEvent::ItemAdded { item, .. }) = event else {
                 return;
@@ -362,6 +366,7 @@ impl NotifyDropWindow {
             let listed = watch.lock().contains(&item.name);
             if listed {
                 watch.play();
+                alert(tab.clone(), &item.name);
             }
         });
         self.subscription = Some((Arc::downgrade(&bot), id));
@@ -373,6 +378,37 @@ impl NotifyDropWindow {
         {
             bot.events.unsubscribe(id);
         }
+    }
+}
+
+/// The drop's alert where the platform posts them (Android's notification, heard with the screen
+/// off), on a thread of its own: the drop handler runs inside `Bot::on_flash_call` too. Once per
+/// drop: the handler hears it drop and again reach the inventory, so the same item within
+/// [`ALERT_AGAIN_AFTER`] alerts once.
+fn alert(tab: Weak<Bot>, item: &str) {
+    static LAST: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+    if !crate::platform::platform().posts_alerts() {
+        return;
+    }
+    {
+        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        if last
+            .as_ref()
+            .is_some_and(|(name, at)| name == item && at.elapsed() < ALERT_AGAIN_AFTER)
+        {
+            return;
+        }
+        *last = Some((item.to_owned(), Instant::now()));
+    }
+    let item = item.to_owned();
+    let spawned = std::thread::Builder::new().name("Turu Alert".into()).spawn(move || {
+        let Some(bot) = tab.upgrade() else { return };
+        let text = format!("{}: {item}", crate::turu::tab_label(&bot));
+        tracing::info!("Alert: {item} dropped: {text}");
+        crate::platform::platform().alert(crate::platform::Alert::Drop, &format!("{item} dropped"), &text);
+    });
+    if let Err(e) = spawned {
+        tracing::warn!("Notify Drop alert failed: {e}");
     }
 }
 

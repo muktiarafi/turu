@@ -2,7 +2,7 @@
 
 Turu's windows on Android are egui, the same code as the desktop's (`frontend/src/gui/turu/`),
 drawn over the game. Some of what they do works better as Android's own components: typing,
-first-start questions, file dialogs, installing an update. This says which pieces were moved to native Android, in both
+first-start questions, file dialogs, installing an update, alerts. This says which pieces were moved to native Android, in both
 Android apps (Turu, on Ruffle, and Turu Mas, on AIR), how each works, what stays in egui and why,
 and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MAS.md` first.
 
@@ -12,11 +12,13 @@ and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MA
 | Turu's own text boxes as a native field; a tap outside closes it | `8174af2e9` | `ui_field.rs` | `overlay.rs`, `Bridge` |
 | "Send crash reports?" as Android's dialog | `b37f9f790` | `CrashQuestion.kt` (shared), `platform.rs` | `CrashQuestion.kt` (shared), `platform.rs` |
 | File dialogs through the system picker | `c013aa4c0` (Turu had them before) | `saf.rs` | `saf.rs`, `Documents.kt`, `PickerActivity.kt` |
-| An update's APK installed by Android's installer, not the browser | "Install an update's APK" (after `2f7bb166c`) | `PackageUpdate.kt` (shared), `platform.rs` | `PackageUpdate.kt` (shared), `platform.rs`, `Bridge` |
+| An update's APK installed by Android's installer, not the browser | `67ec55652` | `PackageUpdate.kt` (shared), `platform.rs` | `PackageUpdate.kt` (shared), `platform.rs`, `Bridge` |
+| Drop and script-stopped alerts as notifications | "Alert drops and stopped scripts" (after `67ec55652`) | `Alerts.kt`, `Foreground.kt` (shared), `notify.rs` | `Alerts.kt`, `Foreground.kt` (shared), `platform.rs`, `Bridge` |
 
 What both apps share lives in `turu_frontend` (`gui/turu/native_field.rs`, `documents.rs`, the
 `Platform` hooks) and in the Gradle module `android/shared` (package `com.muktiarafi.turu.shared`):
-`NativeField`, `CrashQuestion`, `CrashReports`, `CrashUploads`, `Tombstone`, `PackageUpdate`. Turu's app depends on it
+`NativeField`, `CrashQuestion`, `CrashReports`, `CrashUploads`, `Tombstone`, `PackageUpdate`, `Alerts`,
+`Foreground`. Turu's app depends on it
 (`android/settings.gradle.kts`); Turu Mas's extension includes it by path
 (`air/ane/android/settings.gradle.kts`), and its classes reach the ANE's jar with the other
 libraries (`aneLibs`, `air/ane/build.sh`). It builds Java 8 class files, which AIR's own `d8`
@@ -136,6 +138,34 @@ message.
   downloaded, checked and committed the APK, showed Android's dialog and went back to the button
   when it was cancelled; the install itself, past "install unknown apps", wasn't tried.
 
+## Alerts
+
+Notify Drop's beep (`Platform::beep`) and a stopped script's place in the windows say it only
+to someone looking at the phone. Now both are notifications too, heard with the screen off, through
+`Platform::alert` and `Alerts.kt` (shared), each kind in a channel of its own ("Drops", "Script
+stopped", high importance) that the user can silence or turn off in Android's settings, instead of
+a switch in Options.
+
+* **Drops** (`notify_drop.rs`): a watched item that drops, "<item> dropped", "<tab>: <item>". The
+  handler hears a drop twice (it drops, then reaches the inventory, as VibeSkua's
+  `ItemDroppedMessage`), so the same item alerts once within 10 s.
+* **Script stopped** (`turu::watch_alerts`, on every tab): "Script finished", "Script failed" (with
+  the error's first line) or "Script stopped", "<tab>: <script>", 2 s after the stop, unless the
+  auto-relogin stopped it, it runs again, or a playlist goes on to its next script.
+* **Only while the app isn't on screen** (`Foreground.kt`, which follows the app's resumed activity
+  and is also what `PackageUpdate` shows Android's confirmation from): there the beep and the
+  windows say it, and a Stop pressed in Turu would alert the person who pressed it.
+* Turu posts through `TuruService`'s class (`notify::alert`), which is there without the activity,
+  after Android killed and restarted the process; Turu Mas through `Bridge`. Both log each alert
+  sent (`Alert: ...`) and, in Kotlin, one held because the app is on screen.
+* **Tested** on the Android 16 arm64 emulator (2026-11-14) with a script that sleeps 15 s, started
+  through the control API (`--api` in `turu-args.txt`, `adb forward tcp:9021 tcp:9021`): in the
+  background both apps posted "Script finished", and Turu "Script stopped" for a Stop; on screen
+  neither posted. A drop wasn't tried (it needs a watched item to drop in the game); its alert
+  goes through the same `Alerts.post`. `dumpsys notification --noredact` lists them, with the
+  title a few lines below each `NotificationRecord`; Android adds a group summary of its own
+  (`g:Aggregate_AlertingSection`) once there are two.
+
 ## Platform calls
 
 The bot windows' links, share sheet and clipboard are one Kotlin method each, called from Rust over
@@ -163,7 +193,6 @@ keyboard while the game's field has the focus.
 
 From the survey these came from, not done:
 
-* Drop and script-stopped alerts as Android notifications, heard with the screen off.
 * Turu from `NativeActivity` to `GameActivity` (a real view hierarchy: the strip as a view, the
   platform's text input, activity results), if more native views come.
 
@@ -179,6 +208,8 @@ From the survey these came from, not done:
 * **Android's install confirmation never showed** until the app was left and opened again:
   `PackageUpdate` learnt which activity was on screen only from resume callbacks, registered
   after the activity had resumed. It starts from the caller's activity now.
+* **Turu Mas's API token can't be read with adb** (the engine makes it readable by the app only):
+  for a test, move it aside, push a token of your own, and move it back after.
 * **`system_server` logs `ServiceNotFoundException: persistent_data_block`** when an install
   session is committed on the emulator: the emulator lacks that service; harmless.
 * **rustfmt on `frontend/src/gui/turu/mod.rs`** with `max_width = 120` rewrites unrelated lines;

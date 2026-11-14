@@ -138,6 +138,17 @@ pub trait Platform: Send + Sync {
         false
     }
 
+    /// Whether [`Platform::alert`] tells the user anything (Android's notifications): the tabs
+    /// are watched for alerts only then (`turu::watch_alerts`).
+    fn posts_alerts(&self) -> bool {
+        false
+    }
+
+    /// Tells the user `title` and `text` the system's way, heard with the screen off (Android: a
+    /// notification in the `kind`'s channel, while the app isn't on screen). Called on a thread
+    /// of its own.
+    fn alert(&self, _kind: Alert, _title: &str, _text: &str) {}
+
     /// Whether [`Platform::install_package`] installs a downloaded app package (Android's APK):
     /// the update window then downloads and installs an update instead of linking to it.
     fn installs_packages(&self) -> bool {
@@ -195,6 +206,16 @@ pub const BEEP_MS: u64 = 200;
 
 /// The beep's sample `frame` at `sample_rate`, in -1..=1: a sine at [`BEEP_HZ`] for [`BEEP_MS`],
 /// faded in and out over 5 ms so it doesn't click, then silence.
+/// What an alert ([`Platform::alert`]) is about; Android posts each kind in a channel of its own
+/// (`Alerts.kt`, which numbers them the same).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Alert {
+    /// An item Notify Drop watches dropped.
+    Drop = 0,
+    /// A tab's script finished, failed or was stopped.
+    ScriptStopped = 1,
+}
+
 /// A question for the system's own dialog ([`Platform::ask_crash_uploads`]): `message` and,
 /// smaller, `note`; a link (`link`, opening `link_url`) that leaves it open; `no` and `yes`.
 #[derive(Clone, Debug)]
