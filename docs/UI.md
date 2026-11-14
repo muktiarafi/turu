@@ -11,6 +11,11 @@ Rules: UI code runs on the winit thread and only reads cached bot state (`bot.st
 goes through `crate::turu::spawn_action`, which runs on a bot thread. File dialogs use the
 existing `FilePicker` (rfd, async) and never block the UI.
 
+Tab goes to the game, as in Ruffle (`app/src/gui/controller.rs`, `handle_event`), except while
+a Turu widget has focus (a text box clicked, or Tab got there): then egui has it, and Tab moves
+to the next widget (boxes, drop-downs, buttons), Shift+Tab to the one before. A click elsewhere,
+the game included, drops the focus. Boxes with `lock_focus` (the Console's) keep it.
+
 ## Theme (`theme.rs`)
 
 | Role | Colour |

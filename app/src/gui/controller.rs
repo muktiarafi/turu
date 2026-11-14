@@ -306,8 +306,11 @@ impl GuiController {
                 },
                 ..
             }
-        ) {
+        ) && !self.egui_winit.egui_ctx().egui_wants_keyboard_input()
+        {
             // Prevent egui from consuming the Tab key.
+            // Turu: unless one of its widgets has focus (a text box clicked, or Tab got there):
+            // then Tab moves to the next widget, Shift+Tab to the one before.
             return false;
         }
 
