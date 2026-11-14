@@ -108,7 +108,12 @@ scripts folder's `Imported/`; `save_request`: MIME type and suggested name), and
 The bot windows' links, share sheet and clipboard are one Kotlin method each, called from Rust over
 JNI: Turu's `TuruActivity.openUrl`, `shareText`, `copyText` and `clipText` (`android/src/platform.rs`,
 which spelled the `Intent`s and the `ClipboardManager` out as JNI call chains before), as Turu Mas's
-`Bridge` has them.
+`Bridge` has them. Rust names each by its JNI signature, which nothing checks at build time: a
+renamed method or a changed parameter fails only when it's called (`dexdump` on the APK lists the
+methods with their signatures). Logs > Copy and Share exercise `copyText` and `shareText`;
+`openUrl` and `clipText` (the game's Ctrl+V) are harder to reach on a phone: a link only shows in
+some windows (an update's release page, Options' web control), and the native field holds the
+keyboard while the game's field has the focus.
 
 ## Kept in egui
 
@@ -145,7 +150,13 @@ From the survey these came from, not done:
 * **Testing on the emulator**: `uiautomator dump` gives the strip's bounds, `dumpsys
   input_method | grep mInputShown` whether the keyboard is up, `dumpsys window` the dialog's frame.
   Turu Mas's local builds have no Sentry DSN (`TURU_MAS_SENTRY_DSN`), so they never ask about crash
-  reports.
+  reports. Start the apps with `am start -n com.muktiarafi.turu/.TuruActivity` and
+  `am start -n com.muktiarafi.turumas/.AIRAppEntry`: `adb shell monkey -p <package> -c
+  android.intent.category.LAUNCHER 1` finds neither and exits with code -5.
+* **A change to `android/shared` needs both apps rebuilt and tried**: Turu's with
+  `./gradlew assembleDebug`, Turu Mas's with `air/app/build.sh`, which wants `AIR_JAVA_HOME` set to a
+  JDK 17 (a newer one breaks AIR's Gradle). A class the ANE's jar lacks shows only at run time, as
+  `NoClassDefFoundError` in logcat when Turu Mas starts.
 
 ## Known gap
 
