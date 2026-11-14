@@ -53,6 +53,7 @@ cargo test -p turu -p turu_frontend --no-default-features --features turu/softwa
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 air/app/build.sh --no-install           # Turu Mas APK (AIR SDK, JDK 17: docs/TURU_MAS.md)
+docker build -t turu .                  # headless image (Dockerfile, compose.yaml: docs/HEADLESS.md, "Docker")
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
 cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (their CI checks it)
 ```

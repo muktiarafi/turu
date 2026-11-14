@@ -123,6 +123,48 @@ journalctl -u turu@main -f
   leaves stopped; use `Restart=always` to loop.
 * `systemctl stop` doesn't log out; the game server drops the connection shortly after.
 
+## Docker
+
+The `Dockerfile` builds Turu from this checkout (with the `ruffle` submodule checked out) and
+runs it with `--headless` as user `turu`, on Debian slim; it builds for the machine's own
+architecture (x86_64 or arm64). The data folder is `/data`, a volume.
+
+```bash
+git submodule update --init ruffle
+cp docker/turu.env.example docker/main.env      # fill it in; git ignores docker/*.env
+docker compose up -d --build
+docker compose logs -f main
+```
+
+The first build takes a while (the `dist` profile, as the release packages, with LTO); later
+ones reuse BuildKit's cargo cache. `--build-arg PROFILE=release` builds faster,
+`--build-arg TURU_VERSION=0.3.0` sets the version Turu reports and compares with its releases.
+
+`docker/entrypoint.sh` turns the env file into flags: `TURU_USER`, `TURU_SERVER`,
+`TURU_RUN_SCRIPT` / `TURU_LOAD_SCRIPT`, `TURU_RUN_PLAYLIST` / `TURU_LOAD_PLAYLIST`,
+`TURU_API` (the image sets `0.0.0.0:9021`; empty turns it off), `TURU_MONITOR`, `TURU_REPORT_TO`;
+`TURU_PASSWORD`, `TURU_API_TOKEN` and the other variables (Reference, below) are read as they are.
+Arguments after the image name are added last, so they win:
+
+```bash
+docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-script-stop
+```
+
+* `compose.yaml` publishes the control API and the web monitor on the host's loopback only.
+  Requests come through Docker's network, so the web monitor asks for its key
+  (`http://localhost:8790/#<key>`, the key from `docker compose exec main cat /data/monitor-key`);
+  the control API wants its token as always.
+* Several accounts: one service each, all on the `turu-data` volume (as "Several accounts"
+  below), each with its own env file and host port; the others report to the first one's
+  monitor at `http://main:8790`. `compose.yaml` has one commented out.
+* Settings, options and playlists go in the volume: `docker compose cp daily.json
+  main:/data/playlists/` (then `TURU_RUN_PLAYLIST=/data/playlists/daily.json`), or the control
+  API and the web monitor as below.
+* `restart: on-failure`, as the service above: a crash restarts it, `--exit-on-script-stop` ends
+  it. `POST /update` replaces the binary inside the container, which lasts until the container
+  is recreated; rebuild the image to keep a new version.
+* `docker compose stop` doesn't log out either.
+
 ## Several accounts
 
 Run one instance per account, all with **one data folder** (as above) and each with **its own

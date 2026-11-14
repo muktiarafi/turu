@@ -1,0 +1,23 @@
+# The Docker build (Dockerfile) needs the workspace's crates and the ruffle submodule, not the
+# build outputs (tens of GB), Android's and AIR's Gradle builds, or the repository's history.
+*
+!Cargo.toml
+!Cargo.lock
+!README.md
+!LICENSE
+!LICENSE-RUFFLE.md
+!app
+!bot
+!frontend
+!host
+!air_patch
+# A workspace member: Cargo reads its manifest, the build doesn't compile it.
+!android/Cargo.toml
+!android/src
+!ruffle
+!docker
+**/target
+**/.DS_Store
+ruffle/.git
+ruffle/web/node_modules
+ruffle/web/packages

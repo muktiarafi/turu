@@ -1,0 +1,35 @@
+# Turu without a window, one container per account (docs/HEADLESS.md, "Docker").
+#
+#   cp docker/turu.env.example docker/main.env    # then fill it in
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# All accounts share the `turu-data` volume (the data folder): Butler, army scripts and the web
+# monitor find each other through it, as on one machine.
+
+x-turu: &turu
+  build: .
+  image: turu
+  init: false # the image runs tini
+  restart: on-failure # --exit-on-script-stop exits 0 when done: not restarted
+  volumes:
+    - turu-data:/data
+
+services:
+  main:
+    <<: *turu
+    env_file: docker/main.env
+    ports:
+      # Loopback only: reach them from elsewhere with `ssh -L` (docs/HEADLESS.md).
+      - "127.0.0.1:9021:9021" # control API
+      - "127.0.0.1:8790:8790" # web monitor (TURU_MONITOR=0.0.0.0:8790 in main.env)
+
+  # A second account: its own env file, the same data folder, reporting to main's monitor.
+  # alt:
+  #   <<: *turu
+  #   env_file: docker/alt.env       # with TURU_REPORT_TO=http://main:8790 and TURU_MONITOR_PUSH_KEY
+  #   ports:
+  #     - "127.0.0.1:9022:9021"
+
+volumes:
+  turu-data:

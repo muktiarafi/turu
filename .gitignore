@@ -8,3 +8,6 @@
 *.jks
 *.keystore
 *.p12
+
+# Docker accounts (compose.yaml): they hold passwords.
+/docker/*.env
