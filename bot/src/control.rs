@@ -39,12 +39,10 @@ impl Topics {
     pub const ARRIVED: Self = Self(1 << 3);
     /// turu.swf `loading`: the loading screen (`mcConnDetail`) came up or went.
     pub const LOADING: Self = Self(1 << 4);
-    /// turu.swf `cutscene`: a cutscene overlay (`mcExtSWF`) came up or went.
-    pub const CUTSCENE: Self = Self(1 << 5);
     /// turu.swf `world`: the world came or went (login, logout, lost connection).
-    pub const SESSION: Self = Self(1 << 6);
+    pub const SESSION: Self = Self(1 << 5);
 
-    const COUNT: usize = 7;
+    const COUNT: usize = 6;
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0

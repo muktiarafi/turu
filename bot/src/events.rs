@@ -262,7 +262,6 @@ fn event_topics(name: &str) -> Option<Topics> {
         "cellChanged" => Topics::CELL,
         "arrived" => Topics::ARRIVED,
         "loading" => Topics::LOADING,
-        "cutscene" => Topics::CUTSCENE,
         _ => return None,
     })
 }

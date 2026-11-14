@@ -481,9 +481,10 @@ built, and every wait polled. M5a, built on `host-m5`:
   SESSION. `forItemBuy` / `forItemSell` / `forBankLoad` sleep until their packet's signal
   (EVENT_WAITS phase 1), as VibeSkua's `AutoResetEvent`.
 - **Background polls**: "still in game?" and the loading screen in game look when `world` /
-  `loading` fired, else once a second (were 100 and 250 ms); Skip Cutscenes looks on
-  `cutscene`, else once a second (was every options tick). The cutscene a map waits to show has
-  no event: the second's look finds it.
+  `loading` fired, else once a second (were 100 and 250 ms); Skip Cutscenes looked on a
+  `cutscene` event, else once a second (was every options tick). It later became a turu.swf
+  module that looks every 100 ms itself, pending cutscenes included, and the `cutscene` event and
+  topic went.
 - **Measured**: the perf log's `waits:` line (each wait's count, time-outs and average time).
 - M5b, `watch()` and the self / target / aura / inventory events, only if M5a's numbers call
   for them. Waits woken by packets (`forMonsterDeath`, drops, quests) stay EVENT_WAITS phase 3.

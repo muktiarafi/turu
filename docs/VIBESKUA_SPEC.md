@@ -1079,15 +1079,16 @@ differences" and the list below say otherwise:
   world, avatar, `intState`, loaded, class rank and, with `withTarget`, `getTargetMonster`'s
   answer), `getMany({key: path})` and `selectArrayObjectsWhere(path, {field: value})`.
 - Events of its own (M5, version 3, feature `events`): once a frame it looks at the world, the
-  map load, the cell, the avatar's walk, the loading screen and cutscene overlays, and calls
-  `event(name, json)` when one changed (`world`, `mapLoaded`, `cellChanged`, `arrived`,
-  `loading`, `cutscene`). Turu wakes its waits on them; VibeSkua's SWF has nothing like them.
+  map load, the cell, the avatar's walk and the loading screen, and calls `event(name, json)`
+  when one changed (`world`, `mapLoaded`, `cellChanged`, `arrived`, `loading`). Turu wakes its waits on them; VibeSkua's SWF has nothing like them.
 - `setLever` and `setFrameReport` (version 5) are for measuring (M7a): levers such as stopping
   the animations of the map's art and other players, and the gaps between frames.
 - Work it keeps applied itself (version 7), where VibeSkua's C# called on every options pass:
   `skipCutscenes(showWorld)` shows the world again after a skipped cutscene (unless Lag Killer)
-  and answers whether there was one; the modules `InfiniteRange` and `UntargetLite` (Lite's
-  untarget-self and untarget-dead) are re-applied every 100 ms like Hide Players.
+  and answers whether there was one; the modules `InfiniteRange`, `UntargetLite` (Lite's
+  untarget-self and untarget-dead) and `SkipCutscenes` (version 8: the overlay off, the world
+  shown again unless Lag Killer, a pending cutscene cancelled) are re-applied every 100 ms like
+  Hide Players.
 - Found in game and matched (this survey was wrong or silent): `gender` answers the client's
   `"M"`/`"F"`; `jumpCorrectRoom` always moves again once the cell settles; `isKicked` is `false` in
   game; `getActiveModalMessage` is plain text, `""` without a dialog; `selectArrayObjects` answers

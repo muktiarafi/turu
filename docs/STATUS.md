@@ -759,8 +759,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   (lichwar's intro, while quest value 602 is 0) makes the game hold back the monsters of the cells
   you enter until the overlay appears, for up to 450 frames (~225 s at 2 FPS headless). Skipping
   removed the overlay before the game saw it, so a hunt in /lichwar found no monster to attack
-  (ColossalWaresMerge's Grimskull's Favor). `api/options.rs` now cancels the pending cutscene and
-  enters the cell again. Seen in game with a forced cutscene whose overlay never appears (the lost
+  (ColossalWaresMerge's Grimskull's Favor). turu.swf's Skip Cutscenes module now cancels the
+  pending cutscene and enters the cell again, checking every 100 ms (it was the engine's, every
+  options pass). Seen in game with a forced cutscene whose overlay never appears (the lost
   race); the intro itself plays once per character, so the real one isn't reproduced yet.
 - **The counter-attack pause is unverified in game:** its tests run the `ct` packets against a
   fake game. Check the skill timer's 10 s wait and the re-attack on a real counter-attack boss.

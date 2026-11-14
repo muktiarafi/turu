@@ -6,7 +6,6 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use turu_bot::api::{NameOrId, kill, map, monsters, options, quests};
-use turu_bot::control::Topics;
 use turu_bot::models::Monster;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
@@ -432,45 +431,40 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
     );
 }
 
+/// Skip Cutscenes is turu.swf's to keep applied: it takes a cutscene's overlay off, shows the
+/// world again unless Lag Killer hides it, and cancels a cutscene the game is waiting to show
+/// (lichwar's intro). The engine only switches it, on a change.
 #[test]
-fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
+fn skip_cutscenes_is_switched_in_turu_swf() {
     let game = FakeGame::new();
     let bot = new_bot(&game);
-    // turu.swf's `skipCutscenes(showWorld)` shows the world again after a skipped cutscene.
-    let show_world = |game: &FakeGame| -> Vec<bool> {
-        game.calls_to("skipCutscenes")
+    let switched = |game: &FakeGame, call: &str| -> usize {
+        game.calls_to(call)
             .iter()
-            .map(|a| matches!(a.first(), Some(FlashArg::Bool(true))))
-            .collect()
+            .filter(|a| arg(a, 0) == "SkipCutscenes")
+            .count()
     };
     bot.options.write().skip_cutscenes = true;
     options::apply(&bot).unwrap();
-    assert_eq!(show_world(&game), [true], "one call, the world shown");
-
-    // A cutscene comes up: turu.swf's `cutscene` event makes the next tick look at once.
-    bot.control.fire(Topics::CUTSCENE);
-    bot.options.write().lag_killer = true;
     options::apply(&bot).unwrap();
-    assert_eq!(
-        show_world(&game),
-        [true, false],
-        "Lag Killer keeps the world hidden"
-    );
-
-    // Without an event it looks again within a second.
-    bot.options.write().lag_killer = false;
-    options::apply(&bot).unwrap();
-    assert_eq!(show_world(&game).len(), 2, "not due yet");
-    std::thread::sleep(std::time::Duration::from_millis(1050));
-    options::apply(&bot).unwrap();
-    assert_eq!(show_world(&game), [true, false, true]);
+    assert_eq!(switched(&game, "modEnable"), 1, "once");
+    assert!(game.calls_to("skipCutscenes").is_empty(), "the SWF skips");
     assert!(
-        game.calls_to("setGameObject")
+        game.calls_to("callGameFunction0")
             .iter()
-            .all(|a| arg(a, 0) != "world.visible"),
-        "the engine never sets it itself"
+            .all(|a| arg(a, 0) != "world.cHandle.isPending"),
+        "and cancels, not the engine"
     );
+    bot.options.write().skip_cutscenes = false;
+    options::apply(&bot).unwrap();
+    assert_eq!(switched(&game, "modDisable"), 1);
+}
 
+#[test]
+fn a_stopping_script_shows_the_world() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    options::apply(&bot).unwrap();
     // A stopping script shows the world even when Lag Killer was never on.
     let kills = game.calls_to("killLag").len();
     bot.state.lock().options_applied.restore_world();
@@ -483,65 +477,7 @@ fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
     );
 }
 
-#[test]
-fn skipping_cutscenes_cancels_the_one_the_game_waits_for() {
-    let game = FakeGame::new();
-    let bot = new_bot(&game);
-    let game_calls = |game: &FakeGame, path: &str| {
-        game.calls_to("callGameFunction0")
-            .iter()
-            .filter(|a| arg(a, 0) == path)
-            .count()
-    };
-    bot.options.write().skip_cutscenes = true;
-
-    // A game without a cutscene handler (or before a map made one): nothing to ask.
-    options::apply(&bot).unwrap();
-    assert_eq!(game_calls(&game, "world.cHandle.isPending"), 0);
-
-    // A cutscene the game is still waiting to show has no event: the second's look finds it.
-    let next_look = || std::thread::sleep(std::time::Duration::from_millis(1050));
-    game.set("world.cHandle", "{}");
-    game.set("world.cHandle.isPending", "false");
-    next_look();
-    options::apply(&bot).unwrap();
-    assert_eq!(
-        game_calls(&game, "world.cHandle.cancel"),
-        0,
-        "nothing pending"
-    );
-
-    // lichwar's intro: the game holds the cell's monsters back while it waits for the overlay.
-    // Cancelling it, then entering the cell again, places them.
-    game.set("world.cHandle.isPending", "true");
-    next_look();
-    options::apply(&bot).unwrap();
-    assert_eq!(game_calls(&game, "world.cHandle.cancel"), 1);
-    let moves: Vec<Vec<FlashArg>> = game
-        .calls_to("callGameFunction")
-        .into_iter()
-        .filter(|a| arg(a, 0) == "world.moveToCell")
-        .collect();
-    assert_eq!(moves.len(), 1);
-    assert_eq!(
-        (arg(&moves[0], 1), arg(&moves[0], 2)),
-        ("Enter".to_owned(), "Spawn".to_owned())
-    );
-
-    options::apply(&bot).unwrap();
-    assert_eq!(
-        game_calls(&game, "world.cHandle.cancel"),
-        1,
-        "cancelled once"
-    );
-
-    // With Skip Cutscenes off the game shows its cutscenes.
-    game.set("world.cHandle.isPending", "true");
-    bot.options.write().skip_cutscenes = false;
-    options::apply(&bot).unwrap();
-    assert_eq!(game_calls(&game, "world.cHandle.cancel"), 1);
-}
-
+/// The frame rates the bot set on the stage.
 fn frame_rates(game: &FakeGame) -> Vec<FlashArg> {
     game.calls_to("setGameObject")
         .into_iter()

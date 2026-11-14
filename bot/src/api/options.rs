@@ -6,12 +6,10 @@
 
 use super::{Args, monsters, ok, player, send};
 use crate::Bot;
-use crate::control::{Mark, Topics};
 use crate::error::{BotError, BotResult};
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::time::{Duration, Instant};
 
 /// Turu: the frame rate of a hidden tab (VibeSkua's tabbed host: 2). The app raises it for
 /// Grid View's tiles (and `TURU_GRID_TEST`), and the next options pass applies it.
@@ -44,17 +42,12 @@ pub struct Applied {
     /// Turu: the house sign's own text (`world.map.txtHouse`, "Name's House") while Streamer
     /// Mode covers it, to write back when it's turned off.
     house_title: Option<String>,
-    /// When Skip Cutscenes last looked, and the events then: it looks again when turu.swf says
-    /// a cutscene came or went, else every [`CUTSCENE_CHECK`].
-    cutscene_check: Option<(Instant, Mark)>,
+    /// turu.swf's Skip Cutscenes module, which it keeps applied itself.
+    skip_cutscenes: Option<bool>,
     /// turu.swf's Infinite Range and Untarget Lite modules, kept applied by the SWF itself.
     infinite_range: Option<bool>,
     untarget_lite: Option<bool>,
 }
-
-/// How often Skip Cutscenes looks without a `cutscene` event (M5 of HOST_SWF_PROPOSAL.md; it
-/// was every options tick, 250 ms). The cutscene a map is still waiting to show has no event.
-const CUTSCENE_CHECK: Duration = Duration::from_secs(1);
 
 impl Applied {
     /// Headless Mode is on in game: the window shows a placeholder instead of the game.
@@ -375,16 +368,12 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
             "String",
         )?;
     }
-    let cutscene_due = a.cutscene_check.is_none_or(|(at, mark)| {
-        at.elapsed() >= CUTSCENE_CHECK || bot.control.fired_since(&mark, Topics::CUTSCENE)
-    });
-    if o.skip_cutscenes && cutscene_due {
-        a.cutscene_check = Some((Instant::now(), bot.control.mark()));
-        // A cutscene leaves the world hidden: turu.swf shows it again with the skip, unless
-        // Lag Killer hides it (VibeSkua's black screen until Lag Killer is toggled).
-        bot.flash
-            .call("skipCutscenes", vec![(!o.lag_killer).into()])?;
-        cancel_pending_cutscene(bot)?;
+    // turu.swf keeps it applied every 100 ms: it takes a cutscene's overlay off, shows the
+    // world again unless Lag Killer hides it, and cancels a cutscene the game is waiting to
+    // show (lichwar's intro), which held back the cell's monsters (VibeSkua's CheckOptions
+    // called `skipCutscenes` on every pass).
+    if changed(&mut a.skip_cutscenes, o.skip_cutscenes) {
+        module(bot, "SkipCutscenes", o.skip_cutscenes)?;
     }
     if o.walk_speed != 8 {
         player::set_walk_speed(bot, o.walk_speed.into())?;
@@ -398,38 +387,6 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
     if changed(&mut a.untarget_lite, true) {
         module(bot, "UntargetLite", true)?;
     }
-    Ok(())
-}
-
-/// Turu: Skip Cutscenes also cancels the cutscene the game is waiting to show. A map asks for
-/// one with `world.cHandle.showCutscene` (lichwar's intro, for one), and while `isPending` the
-/// game holds back the monsters of the cells you enter (`World.placeMissingCellMonsters`)
-/// until the cutscene's overlay appears, for up to 450 frames (~225 s at a hidden tab's
-/// 2 FPS). `skipCutscenes` removes the overlay, often before the game sees it, so the cell's
-/// monsters stayed unattackable for that long. `cancel` is what the cutscene's own end
-/// (`transfer`) calls. The game's cell settle gave up while the cutscene was pending (and its
-/// `scheduleCellSettle` is private), so entering the current cell again places its monsters.
-fn cancel_pending_cutscene(bot: &Bot) -> BotResult<()> {
-    if bot.flash.is_null("world.cHandle")? {
-        return Ok(());
-    }
-    let pending = bot
-        .flash
-        .call_game_function_json::<bool>("world.cHandle.isPending", vec![])?;
-    if pending != Some(true) {
-        return Ok(());
-    }
-    bot.flash
-        .call_game_function("world.cHandle.cancel", vec![])?;
-    let frame = bot.flash.get_opt::<String>("world.strFrame")?;
-    let pad = bot.flash.get_opt::<String>("world.strPad")?;
-    if let (Some(frame), Some(pad)) = (frame, pad) {
-        bot.flash.call_game_function(
-            "world.moveToCell",
-            vec![frame.as_str().into(), pad.as_str().into()],
-        )?;
-    }
-    bot.note("Skip Cutscenes: cancelled the cutscene the game was waiting to show.");
     Ok(())
 }
 
