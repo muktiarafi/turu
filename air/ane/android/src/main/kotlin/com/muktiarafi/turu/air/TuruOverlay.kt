@@ -13,6 +13,7 @@ import android.view.WindowInsets
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import com.muktiarafi.turu.shared.NativeField
 
 /**
  * Turu's windows over the game in AIR (docs/AIR_PROPOSAL.md): a see-through view above AIR's,
@@ -50,12 +51,7 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
     }
 
     private fun sendInsets(insets: WindowInsets) {
-        val keyboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (insets.isVisible(WindowInsets.Type.ime())) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
-        } else {
-            @Suppress("DEPRECATION")
-            insets.systemWindowInsetBottom
-        }
+        val keyboard = NativeField.keyboardHeight(insets)
         val cutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) insets.displayCutout else null
         Bridge.nativeInsets(keyboard, cutout?.safeInsetLeft ?: 0, cutout?.safeInsetRight ?: 0)
     }
@@ -153,13 +149,11 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
         return true
     }
 
-    /** A keyboard's text sent as one event (`ACTION_MULTIPLE` with characters). */
+    /**
+     * A key pressed `repeatCount` times in one event. A keyboard's text comes through the input
+     * connection's `commitText` (not as `ACTION_MULTIPLE` characters, which Android 10+ never sends).
+     */
     override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent): Boolean {
-        val characters = event.characters
-        if (keyCode == KeyEvent.KEYCODE_UNKNOWN && !characters.isNullOrEmpty()) {
-            Bridge.nativeText(characters)
-            return true
-        }
         repeat(repeatCount) { onKeyDown(keyCode, event) }
         return true
     }

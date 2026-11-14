@@ -2,7 +2,7 @@ package com.muktiarafi.turu.shared
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
-import android.os.Build
+import androidx.core.content.pm.PackageInfoCompat
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -145,10 +145,7 @@ object CrashUploads {
     private fun init(context: Context) {
         val app = app ?: return
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else {
-            @Suppress("DEPRECATION")
-            info.versionCode.toLong()
-        }
+        val code = PackageInfoCompat.getLongVersionCode(info)
         val debug = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         SentryAndroid.init(context) { options ->
             options.dsn = app.sentryDsn
@@ -156,8 +153,7 @@ object CrashUploads {
             options.release = app.release + "@" + info.versionName
             options.dist = code.toString()
             options.environment = if (debug) "debug" else "release"
-            @Suppress("DEPRECATION") // Deprecated in Sentry 8 but still read; off keeps the IP address out.
-            options.isSendDefaultPii = false
+            // No IP address and no user data: Sentry's `sendDefaultPii`, off by default, left so.
             options.isAttachScreenshot = false
             options.isAttachViewHierarchy = false
             // Native crashes: the NDK handler as they happen, merged with the tombstone where

@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
+import androidx.core.content.IntentCompat
 import java.io.File
 
 /**
@@ -110,12 +111,7 @@ object PackageUpdate {
         override fun onReceive(context: Context, intent: Intent) {
             val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
             if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                val ask = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT)
-                } ?: return
+                val ask = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
                 val activity = Foreground.activity
                 if (activity != null) show(activity, ask) else confirm = ask
                 return

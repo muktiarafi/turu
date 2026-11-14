@@ -91,12 +91,8 @@ class TuruAirService : Service() {
     }
 
     private fun build(): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= 26) {
-            Notification.Builder(this, CHANNEL)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
+        // Android 8+ (app.xml's minimum): notifications go to a channel.
+        val builder = Notification.Builder(this, CHANNEL)
         packageManager.getLaunchIntentForPackage(packageName)?.let { open ->
             builder.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE))
         }

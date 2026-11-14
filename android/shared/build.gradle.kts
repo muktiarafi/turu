@@ -31,4 +31,7 @@ kotlin {
 dependencies {
     // `CrashUploads`: each app brings Sentry's NDK part itself (Turu: `sentry-android`).
     implementation("io.sentry:sentry-android-core:${libs.versions.sentry.get()}")
+    // Compat APIs in place of deprecated ones (insets, intents, package info): the version Turu's
+    // app uses; Turu Mas's extension had 1.3.2 through Sentry.
+    implementation(libs.core)
 }

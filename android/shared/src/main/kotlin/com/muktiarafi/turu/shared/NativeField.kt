@@ -21,6 +21,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.WindowInsetsCompat
 
 /** Where a [NativeField]'s edits go: the game's focused text field, or Turu's own text box. */
 interface FieldTarget {
@@ -295,11 +296,9 @@ abstract class NativeField(
 
         /** The soft keyboard's height in `insets`, 0 while it's down. */
         fun keyboardHeight(insets: WindowInsets): Int {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                return if (insets.isVisible(WindowInsets.Type.ime())) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
-            }
-            @Suppress("DEPRECATION")
-            return insets.systemWindowInsetBottom
+            val compat = WindowInsetsCompat.toWindowInsetsCompat(insets)
+            val ime = WindowInsetsCompat.Type.ime()
+            return if (compat.isVisible(ime)) compat.getInsets(ime).bottom else 0
         }
     }
 }

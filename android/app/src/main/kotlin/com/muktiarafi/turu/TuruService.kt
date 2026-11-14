@@ -89,13 +89,14 @@ class TuruService : Service() {
         super.onDestroy()
     }
 
-    /** The phone is low on memory, or the UI went away: Turu frees what it can spare (`memory.rs`). */
-    @Suppress("DEPRECATION")
+    /**
+     * The phone is low on memory, or the UI went away: Turu frees what it can spare (`memory.rs`).
+     * Every level: Android 14+ sends only the UI going away and the app in the background; older
+     * Android also sends the running app's levels as memory gets low.
+     */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= TRIM_MEMORY_RUNNING_LOW) {
-            nativeTrimMemory(level)
-        }
+        nativeTrimMemory(level)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
