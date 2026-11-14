@@ -53,6 +53,8 @@ Enter in the game; Back ends typing (the game's field loses the focus). The keyb
 alone doesn't close it: a hardware keyboard's key hides the soft keyboard.
 The player's clipboard is Android's now (`AndroidUiBackend`), so Ctrl+C/V reach it too.
 
+What of Turu's UI is native Android, in both apps, and what stays egui: `docs/ANDROID_NATIVE_UI.md`.
+
 Since 2026-11-14: **Turu's own text boxes** are typed in the same way (Kotlin's `NativeField`,
 which the game's strip is one of, and `ui_field.rs`): suggestions, autocorrect, the text toolbar
 and autofill for Accounts' password, where egui alone got only keys (`KeyInput`). Each text box

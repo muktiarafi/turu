@@ -7,7 +7,8 @@ bot engine in **Rust** and scripts in **TypeScript**. Same UI/UX and flow as Vib
 Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
 tooling quirks). The Android port: `docs/ANDROID_HANDOVER.md` (start here: state,
 branches, setup, testing, pitfalls), `docs/ANDROID_PROPOSAL.md` (plan) and `docs/ANDROID.md`
-(build, run). Turu Mas, the Android app on Adobe AIR: `docs/TURU_MAS.md` (build, release,
+(build, run); what of Turu's UI is native Android there, and why: `docs/ANDROID_NATIVE_UI.md`.
+Turu Mas, the Android app on Adobe AIR: `docs/TURU_MAS.md` (build, release,
 license; how it came about: `docs/AIR_PROPOSAL.md`). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
 behaviour, Flash bridge, API and UI, surveyed from its source), `docs/SCRIPTING.md`
 (writing scripts), `docs/UI.md`, `docs/HEADLESS.md` (running without a window: flags,
