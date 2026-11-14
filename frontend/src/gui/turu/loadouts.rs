@@ -663,7 +663,7 @@ impl LoadoutsWindow {
 
     fn name_field(&mut self, ui: &mut Ui, bot: &Arc<turu_bot::Bot>, index: usize, control: f32) {
         let id = Id::new("turu_loadouts_name");
-        let response = ui.add_sized(
+        let mut response = ui.add_sized(
             vec2(ui.available_width(), control),
             egui::TextEdit::singleline(&mut self.name)
                 .id(id)
@@ -673,6 +673,8 @@ impl LoadoutsWindow {
                 .margin(Margin::symmetric(10, 4))
                 .background_color(INSET),
         );
+        let kind = super::native_field::Kind::Line;
+        super::native_field::follow(ui, &mut response, &mut self.name, "Loadout name", kind);
         if std::mem::take(&mut self.focus_name) {
             response.request_focus();
             if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id) {

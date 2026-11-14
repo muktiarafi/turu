@@ -473,6 +473,7 @@ pub fn touch_number<'a, N: egui::emath::Numeric>(
             .vertical_align(Align::Center)
             .background_color(INSET),
     );
+    super::native_field::follow(ui, &mut response, &mut text, "", super::native_field::Kind::Number);
     let (low, high) = (range.start().to_f64(), range.end().to_f64());
     if response.changed() {
         text.retain(|c| c.is_ascii_digit() || c == '-' || (!N::INTEGRAL && c == '.'));
@@ -508,7 +509,7 @@ pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respo
 
 /// [`text_box`] `size.x` wide and at least `size.y` tall, to line up with buttons beside it.
 pub fn text_box_sized(ui: &mut Ui, text: &mut String, hint: &str, size: Vec2) -> Response {
-    ui.add(
+    let mut response = ui.add(
         egui::TextEdit::singleline(text)
             .hint_text(hint)
             .desired_width(size.x)
@@ -516,7 +517,9 @@ pub fn text_box_sized(ui: &mut Ui, text: &mut String, hint: &str, size: Vec2) ->
             .vertical_align(Align::Center)
             .margin(Margin::symmetric(8, 5))
             .background_color(INSET),
-    )
+    );
+    super::native_field::follow(ui, &mut response, text, hint, super::native_field::Kind::Line);
+    response
 }
 
 /// The narrowest an option's label and description get beside its control; narrower (a phone),

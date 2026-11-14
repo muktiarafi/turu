@@ -13,6 +13,7 @@ import android.text.method.PasswordTransformationMethod
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
@@ -21,68 +22,100 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import org.json.JSONObject
+
+/** Where a [NativeField]'s edits go: the game's focused text field, or Turu's own text box. */
+internal interface FieldTarget {
+    /** The text or the selection changed (UTF-16 units). */
+    fun edited(text: String, start: Int, end: Int)
+
+    /** The keyboard's Send (or Enter) in a one-line field. */
+    fun enter()
+
+    /** Back: done typing, the field's owner loses the focus. */
+    fun closed()
+}
+
+/** What a [NativeField] is for: a password (dots), at most `max` characters (0: no limit), several lines, a number. */
+internal data class FieldStyle(
+    val password: Boolean = false,
+    val max: Int = 0,
+    val hint: String = "",
+    val lines: Boolean = false,
+    val number: Boolean = false,
+)
 
 /**
- * The game's focused text field (AIR's), as a real Android text field just above the soft keyboard
- * (as AQW's own Android launcher does, and Turu's `GameField`): the keyboard covers the game's
- * field, and a native one gets Android's own caret, selection handles, text toolbar (Cut, Copy,
- * Paste, Select all, Translate, Share), suggestions and clipboard.
+ * A text field being typed in, as a real Android text field just above the soft keyboard (as
+ * AQW's own Android launcher does, and Turu's `NativeField`): the keyboard covers the field, and a
+ * native one gets Android's own caret, selection handles, text toolbar (Cut, Copy, Paste, Select
+ * all, Translate, Share), suggestions, autocorrect, autofill and clipboard. One for the game's
+ * text fields (AIR's), one for Turu's own text boxes (egui's).
  *
- * The host SWF reports the focused field each frame it changes (`gameTyping`, JSON): [Bridge]
- * shows, updates or hides this from it. Each edit here goes back to the host as a status event
- * "typing" (`{"op": "set", "text", "start", "end"}`), which puts it in the game's field; the
- * keyboard's Send (or Enter) is `{"op": "enter"}`, Enter in the game; Back is `{"op": "close"}`:
- * done typing, the game's field loses the focus.
+ * For the game, the host SWF reports the focused field each frame it changes (`gameTyping`,
+ * JSON): [Bridge] shows, updates or hides this from it, and its [target] sends each edit back to
+ * the host as a status event "typing" (`{"op": "set", "text", "start", "end"}`), which puts it in
+ * the game's field; the keyboard's Send (or Enter) is `{"op": "enter"}`, Enter in the game; Back
+ * is `{"op": "close"}`: done typing, the game's field loses the focus. For Turu's text boxes, the
+ * overlay's thread shows it (`overlay.rs`) and its target calls back there.
  *
  * The field is a view along the bottom of the activity, right of Turu's rail, over AIR's view (a
  * window of its own, as Turu's, would take the window focus from AIR, which then drops the game
  * field's focus). Its bottom padding is the keyboard's height, which puts it right above it.
  */
-internal class GameField(val activity: Activity) {
+internal class NativeField(val activity: Activity, private val target: FieldTarget) {
     private var bar: LinearLayout? = null
     private var edit: Field? = null
     private var count: TextView? = null
     var max = 0
         private set
 
-    /** Whether the field is up, and for what kind of game field (a password, `maxChars`). */
+    /** Whether the field is up, and for what kind of field. */
     val shown: Boolean get() = bar != null
-    var password = false
+    var style = FieldStyle()
         private set
 
-    /** Setting what the game holds: not an edit to send back. */
-    private var fromGame = false
+    /** Setting what the field's owner holds: not an edit to send back. */
+    private var fromOwner = false
 
     /**
-     * Shows the field with `text`, `start`..`end` selected (UTF-16 units, as the game's), `left`
+     * Shows the field with `text`, `start`..`end` selected (UTF-16 units, as the owner's), `left`
      * pixels in from the left: right of Turu's rail, which the overlay draws over every view.
      */
-    fun show(text: String, start: Int, end: Int, password: Boolean, max: Int, left: Int) {
+    fun show(text: String, start: Int, end: Int, style: FieldStyle, left: Int) {
         hide(false)
-        this.max = max
-        this.password = password
+        this.style = style
+        val password = style.password
+        this.max = style.max
         val field = Field(activity, this)
-        // Single line first: it sets its own transformation, over a password's dots.
-        field.isSingleLine = true
-        field.inputType = if (password) {
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        if (style.lines) {
+            field.isSingleLine = false
+            field.maxLines = 4
+            field.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         } else {
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+            // Single line first: it sets its own transformation, over a password's dots.
+            field.isSingleLine = true
+            field.inputType = when {
+                password -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                style.number -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL
+                else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+            }
         }
         if (password) {
             field.transformationMethod = PasswordTransformationMethod.getInstance()
         }
-        // Landscape: the field here, not the keyboard's full-screen editor.
-        field.imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-            EditorInfo.IME_FLAG_NO_FULLSCREEN
+        // Landscape: the field here, not the keyboard's full-screen editor. Several lines: Enter
+        // starts a new one.
+        val action = if (style.lines) EditorInfo.IME_ACTION_NONE else EditorInfo.IME_ACTION_SEND
+        field.imeOptions = action or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
         if (max > 0) {
             field.filters = arrayOf(InputFilter.LengthFilter(max))
         }
         field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
         field.setTextColor(TEXT)
         field.setHintTextColor(MUTED)
-        field.hint = "Type in the game"
+        field.hint = style.hint
         field.highlightColor = ACCENT and 0x00FFFFFF or 0x66000000
         field.background = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -96,8 +129,8 @@ internal class GameField(val activity: Activity) {
         }
         field.setOnEditorActionListener { _, action, event ->
             val enter = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
-            if (action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_ACTION_DONE || enter) {
-                send(JSONObject().put("op", "enter"))
+            if (!style.lines && (action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_ACTION_DONE || enter)) {
+                target.enter()
                 true
             } else {
                 false
@@ -146,6 +179,8 @@ internal class GameField(val activity: Activity) {
         val place = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
         place.leftMargin = left
         content.addView(bar, place)
+        // Turu's overlay keeps clear of the field (it would draw its windows over it).
+        bar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> Bridge.fieldsMoved() }
         bar.requestApplyInsets()
         field.requestFocus()
         field.post {
@@ -158,7 +193,7 @@ internal class GameField(val activity: Activity) {
         }
     }
 
-    /** The game changed its field: shows its `text` and selection, unless that's what's here. */
+    /** The owner changed its field: shows its `text` and selection, unless that's what's here. */
     fun update(text: String, start: Int, end: Int) {
         val field = edit ?: return
         if (field.text.toString() == text && field.selectionStart == start && field.selectionEnd == end) {
@@ -178,16 +213,28 @@ internal class GameField(val activity: Activity) {
         methods.hideSoftInputFromWindow(bar.windowToken, 0)
         field?.clearFocus()
         (bar.parent as? ViewGroup)?.removeView(bar)
+        Bridge.fieldsMoved()
         if (close) {
-            send(JSONObject().put("op", "close"))
+            target.closed()
         }
     }
 
     fun close() = hide(true)
 
+    /** Where the field's top left corner is while it's up, (top, left) in pixels from `view`'s. */
+    fun place(view: View): Pair<Int, Int>? {
+        val bar = bar ?: return null
+        if (!bar.isLaidOut) return null
+        val here = IntArray(2)
+        bar.getLocationOnScreen(here)
+        val there = IntArray(2)
+        view.getLocationOnScreen(there)
+        return Pair(here[1] - there[1], here[0] - there[0])
+    }
+
     private fun set(text: String, start: Int, end: Int) {
         val field = edit ?: return
-        fromGame = true
+        fromOwner = true
         try {
             if (field.text.toString() != text) {
                 field.setText(text)
@@ -195,7 +242,7 @@ internal class GameField(val activity: Activity) {
             val length = field.text.length
             field.setSelection(start.coerceIn(0, length), end.coerceIn(0, length))
         } finally {
-            fromGame = false
+            fromOwner = false
         }
         showCount()
     }
@@ -208,23 +255,14 @@ internal class GameField(val activity: Activity) {
         }
     }
 
-    /** The text or the selection changed here: the game's field takes it. */
+    /** The text or the selection changed here: the owner's field takes it. */
     fun edited() {
         val field = edit ?: return
-        if (fromGame) {
+        if (fromOwner) {
             return
         }
-        send(
-            JSONObject()
-                .put("op", "set")
-                .put("text", field.text.toString())
-                .put("start", field.selectionStart)
-                .put("end", field.selectionEnd),
-        )
+        target.edited(field.text.toString(), field.selectionStart, field.selectionEnd)
     }
-
-    /** A status event "typing" to the host SWF. */
-    private fun send(request: JSONObject) = Bridge.dispatch("typing", request.toString())
 
     private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).toInt()
 
@@ -232,7 +270,7 @@ internal class GameField(val activity: Activity) {
      * An EditText that says when its selection moves (the game's caret follows), and closes on
      * Back: the keyboard going down alone doesn't (a hardware keyboard's key hides it).
      */
-    private class Field(context: Context, private val owner: GameField) : EditText(context) {
+    private class Field(context: Context, private val owner: NativeField) : EditText(context) {
         override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
             if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
                 owner.close()

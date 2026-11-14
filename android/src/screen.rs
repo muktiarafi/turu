@@ -86,6 +86,8 @@ pub struct Screen {
     ui_typing: bool,
     /// The game's focused text field, as a native one above the keyboard.
     pub game_field: crate::game_field::GameField,
+    /// Turu's focused text box, as a native one above the keyboard.
+    ui_field: crate::ui_field::UiField,
     /// The game's viewport, last set.
     movie_size: (u32, u32),
     /// Frame interpolation's pacing, with the display's refresh rate.
@@ -233,6 +235,7 @@ impl Screen {
             keyboard_shown: false,
             ui_typing: false,
             game_field: Default::default(),
+            ui_field: Default::default(),
             movie_size: (0, 0),
             pacing: Pacing::new(),
             refresh_millihertz: 0,
@@ -673,10 +676,17 @@ impl Screen {
         if let Some(viewport) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
             viewport.native_pixels_per_point = Some(ppp);
         }
+        // The native field's Send, as Enter in Turu's text box (`ui_field.rs`).
+        raw_input
+            .events
+            .extend(turu_frontend::gui::turu::native_field::input_events(
+                &self.egui,
+            ));
         let top = self.top() / ppp;
         let keyboard = crate::ui::keyboard_height() as f32 / ppp;
-        // The game's focused text field, as a native one above the keyboard (`game_field.rs`).
-        self.game_field.sync(player);
+        // The game's focused text field, as a native one above the keyboard (`game_field.rs`);
+        // not while one of Turu's text boxes has it.
+        self.game_field.sync(player, self.ui_field.is_shown());
         let ui = &mut self.ui;
         let output = self.egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
@@ -685,8 +695,11 @@ impl Screen {
             }
             ui.show_windows(root.ctx());
         });
-        self.ui_typing = output.platform_output.ime.is_some();
-        let ime = output.platform_output.ime.as_ref();
+        // Turu's text boxes are typed in through a native field (`ui_field.rs`); a text box that
+        // isn't one of them (egui's own) gets the keyboard's keys, and moves up above it.
+        let native = self.ui_field.sync(&self.egui);
+        let ime = output.platform_output.ime.as_ref().filter(|_| !native);
+        self.ui_typing = ime.is_some();
         crate::pan::follow_text_field(&self.egui, ime, self.size.1 as f32 / ppp, keyboard);
         self.soft_keyboard();
         for command in &output.platform_output.commands {
@@ -758,6 +771,11 @@ impl Screen {
         queue.present(frame);
         crate::frame_perf::add(crate::frame_perf::Phase::Present, present_started.elapsed());
         crate::frame_perf::add(crate::frame_perf::Phase::Draw, started.elapsed());
+    }
+
+    /// Turu's native text field and the UI's context (`ui_field.rs`).
+    pub(crate) fn ui_field(&mut self) -> (&mut crate::ui_field::UiField, &egui::Context) {
+        (&mut self.ui_field, &self.egui)
     }
 
     /// Brings the soft keyboard up while a text box of the UI has the focus.

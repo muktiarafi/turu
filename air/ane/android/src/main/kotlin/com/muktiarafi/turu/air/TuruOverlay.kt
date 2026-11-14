@@ -76,6 +76,9 @@ class TuruOverlay(activity: Activity) : SurfaceView(activity), SurfaceHolder.Cal
         val y = event.getY(event.actionIndex)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // A finger down here is outside the text fields above the keyboard (they're over
+                // this view, the keyboard is a window of its own): typing ends, as with Back.
+                Bridge.touchedOutsideFields()
                 ours = Bridge.nativeOnUi(x, y)
                 if (!ours) {
                     // The game's, but egui hears it as a tap there too: one on the game closes an

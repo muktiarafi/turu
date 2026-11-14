@@ -634,7 +634,7 @@ fn form_height(control: f32, narrow: bool) -> f32 {
 
 /// A one-line form field `width` wide and `height` high; true when Enter was pressed in it.
 fn field(ui: &mut Ui, text: &mut String, hint: &str, width: f32, height: f32) -> bool {
-    let response: Response = ui.add_sized(
+    let mut response: Response = ui.add_sized(
         vec2(width, height),
         egui::TextEdit::singleline(text)
             .hint_text(hint)
@@ -642,6 +642,7 @@ fn field(ui: &mut Ui, text: &mut String, hint: &str, width: f32, height: f32) ->
             .margin(egui::Margin::symmetric(8, 4))
             .background_color(super::theme::INSET),
     );
+    super::native_field::follow(ui, &mut response, text, hint, super::native_field::Kind::Line);
     response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
 }
 

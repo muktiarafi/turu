@@ -87,23 +87,59 @@ object Bridge {
     external fun nativeInsets(keyboard: Int, cutoutLeft: Int, cutoutRight: Int)
 
     /** The game's focused text field above the keyboard, and the activity it's in. */
-    private var gameField: GameField? = null
+    /** The game's focused text field above the keyboard (`gameTyping`). */
+    private var gameField: NativeField? = null
+
+    /** Turu's focused text box above the keyboard (`overlay.rs`). */
+    private var uiField: NativeField? = null
+
+    /** The game's focused field as the host last reported it: shown again when Turu's text box is done. */
+    private var lastGameTyping = ""
+
+    /** What the game's [NativeField] does with an edit: a status event "typing" to the host SWF. */
+    private val gameTarget = object : FieldTarget {
+        override fun edited(text: String, start: Int, end: Int) = send(
+            JSONObject().put("op", "set").put("text", text).put("start", start).put("end", end),
+        )
+
+        override fun enter() = send(JSONObject().put("op", "enter"))
+        override fun closed() = send(JSONObject().put("op", "close"))
+        private fun send(request: JSONObject) = dispatch("typing", request.toString())
+    }
+
+    /** What Turu's [NativeField] does with an edit: the overlay's text box takes it (`overlay.rs`). */
+    private val uiTarget = object : FieldTarget {
+        override fun edited(text: String, start: Int, end: Int) = nativeUiFieldEdited(text, start, end)
+        override fun enter() = nativeUiFieldEnter()
+        override fun closed() {
+            nativeUiFieldClosed()
+            gameTyping(lastGameTyping)
+        }
+    }
+
+    /** The field `current` if it's for `activity`, else a new one there (the old one gone). */
+    private fun fieldFor(current: NativeField?, activity: Activity, target: FieldTarget): NativeField =
+        current?.takeIf { it.activity === activity } ?: run {
+            current?.hide()
+            NativeField(activity, target)
+        }
+
+    /** Right of Turu's rail: where the fields go. */
+    private fun fieldLeft(): Int = (airView?.layoutParams as? ViewGroup.MarginLayoutParams)?.leftMargin ?: 0
 
     /**
      * The game's focused text field, from the host SWF (`gameTyping`) as JSON (`text`, `caret`,
      * `selStart`, `selEnd`, `password`, `max`), or empty when no field you type in has the focus:
-     * [GameField] shows it, follows it, or goes.
+     * its [NativeField] shows it, follows it, or goes. Not while Turu's text box has a field.
      */
     @JvmStatic
     fun gameTyping(json: String) {
         val activity = activity ?: return
         activity.runOnUiThread {
-            val field = gameField?.takeIf { it.activity === activity } ?: run {
-                gameField?.hide()
-                GameField(activity).also { gameField = it }
-            }
+            lastGameTyping = json
+            val field = fieldFor(gameField, activity, gameTarget).also { gameField = it }
             val typing = json.takeIf { it.isNotEmpty() }?.let { runCatching { JSONObject(it) }.getOrNull() }
-            if (typing == null) {
+            if (typing == null || uiField?.shown == true) {
                 field.hide()
                 return@runOnUiThread
             }
@@ -111,16 +147,90 @@ object Bridge {
             val caret = typing.optInt("caret", text.length)
             val start = typing.optInt("selStart", caret)
             val end = typing.optInt("selEnd", caret)
-            val password = typing.optBoolean("password")
-            val max = typing.optInt("max")
-            if (field.shown && field.password == password && field.max == max) {
+            val style = FieldStyle(typing.optBoolean("password"), typing.optInt("max"), "Type in the game")
+            if (field.shown && field.style == style) {
                 field.update(text, start, end)
             } else {
-                val left = (airView?.layoutParams as? ViewGroup.MarginLayoutParams)?.leftMargin ?: 0
-                field.show(text, start, end, password, max, left)
+                field.show(text, start, end, style, fieldLeft())
             }
         }
     }
+
+    /**
+     * Shows a [NativeField] for Turu's focused text box: its `text`, `start`..`end` selected
+     * (UTF-16 units), its `kind` (0 a line, 1 a password, 2 several lines, 3 a number) and `hint`.
+     * The game's field steps aside meanwhile. Called on the overlay's thread.
+     */
+    @JvmStatic
+    fun showUiField(text: String, start: Int, end: Int, kind: Int, hint: String) {
+        val activity = activity ?: return
+        val style = FieldStyle(password = kind == 1, hint = hint, lines = kind == 2, number = kind == 3)
+        activity.runOnUiThread {
+            gameField?.hide()
+            val field = fieldFor(uiField, activity, uiTarget).also { uiField = it }
+            field.show(text, start, end, style, fieldLeft())
+        }
+    }
+
+    /** Turu's focused text box changed: its [NativeField] shows it. Called on the overlay's thread. */
+    @JvmStatic
+    fun updateUiField(text: String, start: Int, end: Int) {
+        activity?.runOnUiThread { uiField?.update(text, start, end) }
+    }
+
+    /** None of Turu's text boxes has the focus now: its field goes, and the game's comes back. */
+    @JvmStatic
+    fun hideUiField() {
+        activity?.runOnUiThread {
+            val field = uiField ?: return@runOnUiThread
+            if (field.shown) {
+                field.hide()
+                gameTyping(lastGameTyping)
+            }
+        }
+    }
+
+    /** Where a native field is up, (top, left) in pixels from the overlay's corner ([nativeFieldPlace]). */
+    private var fieldPlace: Pair<Int, Int>? = null
+
+    /** A field above the keyboard moved, came or went: the overlay keeps clear of it. */
+    fun fieldsMoved() {
+        val view = overlay
+        val place = view?.let { listOfNotNull(uiField, gameField).firstNotNullOfOrNull { field -> field.place(it) } }
+        if (place != fieldPlace) {
+            fieldPlace = place
+            nativeFieldPlace(place?.first ?: -1, place?.second ?: -1)
+        }
+    }
+
+    /**
+     * The overlay draws nothing below `top` and right of `left` (pixels from its corner), where a
+     * field above the keyboard is (it's a surface over every view); -1: nothing to keep clear of.
+     */
+    @JvmStatic
+    external fun nativeFieldPlace(top: Int, left: Int)
+
+    /**
+     * A finger came down outside the fields above the keyboard (on Turu's windows or the game):
+     * both close, with the keyboard, and their owners lose the focus. On the UI thread.
+     */
+    fun touchedOutsideFields() {
+        uiField?.takeIf { it.shown }?.close()
+        // Closing Turu's field brings the game's back for its focused field: that one goes too.
+        gameField?.takeIf { it.shown }?.close()
+    }
+
+    /** The UI's [NativeField] changed its text or selection: Turu's text box takes it (`overlay.rs`). */
+    @JvmStatic
+    external fun nativeUiFieldEdited(text: String, start: Int, end: Int)
+
+    /** The keyboard's Send (or Enter) in the UI's [NativeField]: Enter in Turu's text box. */
+    @JvmStatic
+    external fun nativeUiFieldEnter()
+
+    /** The UI's [NativeField] was closed (Back): Turu's text box loses the focus. */
+    @JvmStatic
+    external fun nativeUiFieldClosed()
 
     /** The notification's buttons: "start", "pause" (or resume) and "stop" ([TuruAirService]). */
     @JvmStatic

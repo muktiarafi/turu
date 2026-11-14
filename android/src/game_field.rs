@@ -1,5 +1,5 @@
 //! The game's focused text field as a native Android text field just above the soft keyboard
-//! (Kotlin's `GameField`, as AQW's own Android launcher does): the keyboard covers the game's
+//! (Kotlin's `NativeField`, as AQW's own Android launcher does): the keyboard covers the game's
 //! field, and a native one has Android's own caret, selection handles, text toolbar, suggestions
 //! and clipboard.
 //!
@@ -43,9 +43,10 @@ pub struct GameField {
 }
 
 impl GameField {
-    /// Shows, updates or hides Kotlin's field to match the game's focused field.
-    pub fn sync(&mut self, player: &mut Player) {
-        let focused = focused(player);
+    /// Shows, updates or hides Kotlin's field to match the game's focused field; hidden while
+    /// `aside` (one of Turu's text boxes has the native field), the game's field keeping the focus.
+    pub fn sync(&mut self, player: &mut Player, aside: bool) {
+        let focused = if aside { None } else { focused(player) };
         match (&self.shown, focused) {
             (None, Some(focused)) => {
                 show(&focused);

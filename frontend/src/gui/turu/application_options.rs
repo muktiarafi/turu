@@ -4,6 +4,7 @@
 //! just those two fields of `options.json`. Frame Interpolation is Mugetsu's, saved by the
 //! frontend (`Platform::set_frame_interpolation`), as is Safe Drawing where it's offered. Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
+use super::native_field;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
 use egui::{RichText, ScrollArea, Ui, vec2};
@@ -509,10 +510,13 @@ impl ApplicationOptionsWindow {
                                                 .changed();
                                     }
                                     Field::Text(access) => {
-                                        let edit = egui::TextEdit::singleline(access(&mut settings))
+                                        let text = access(&mut settings);
+                                        let edit = egui::TextEdit::singleline(&mut *text)
                                             .desired_width(220.0)
                                             .margin(egui::Margin::symmetric(8, 4));
-                                        settings_changed |= ui.add(edit).changed();
+                                        let mut response = ui.add(edit);
+                                        native_field::follow(ui, &mut response, text, "", native_field::Kind::Line);
+                                        settings_changed |= response.changed();
                                     }
                                     Field::OptionBool(access) => {
                                         options_changed |= widgets::switch(ui, access(&mut options)).changed();
@@ -544,11 +548,15 @@ impl ApplicationOptionsWindow {
                                         self.clear_flash_cache(ui);
                                     }
                                     Field::Secret(access) => {
-                                        let edit = egui::TextEdit::singleline(access(&mut settings))
+                                        let text = access(&mut settings);
+                                        let edit = egui::TextEdit::singleline(&mut *text)
                                             .password(true)
                                             .desired_width(220.0)
                                             .margin(egui::Margin::symmetric(8, 4));
-                                        settings_changed |= ui.add(edit).changed();
+                                        let mut response = ui.add(edit);
+                                        let kind = native_field::Kind::Password;
+                                        native_field::follow(ui, &mut response, text, "", kind);
+                                        settings_changed |= response.changed();
                                     }
                                     Field::MonitorLinks => self.monitor_links(ui, &settings),
                                     Field::PhoneQr => {

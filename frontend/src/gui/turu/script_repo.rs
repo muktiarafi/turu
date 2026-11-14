@@ -493,15 +493,17 @@ impl ScriptRepoWindow {
             top: 5,
             bottom: 5,
         };
-        let response = ui.add(
+        let mut response = ui.add(
             egui::TextEdit::singleline(&mut self.search)
-                .hint_text(hint)
+                .hint_text(hint.as_str())
                 .desired_width(width.max(80.0))
                 .min_size(vec2(0.0, height))
                 .vertical_align(Align::Center)
                 .margin(margin)
                 .background_color(super::theme::INSET),
         );
+        let kind = super::native_field::Kind::Line;
+        super::native_field::follow(ui, &mut response, &mut self.search, &hint, kind);
         if !self.search.is_empty() {
             let rect = Rect::from_min_size(
                 pos2(response.rect.right() - height, response.rect.top()),

@@ -1709,7 +1709,7 @@ fn equip_set(set: &CosmeticSet) {
 
 /// A text box of the window's control height.
 fn input(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> egui::Response {
-    ui.add(
+    let mut response = ui.add(
         egui::TextEdit::singleline(text)
             .hint_text(hint)
             .desired_width(width - 16.0)
@@ -1717,7 +1717,9 @@ fn input(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> egui::Respon
             .vertical_align(Align::Center)
             .margin(Margin::symmetric(8, 4))
             .background_color(INSET),
-    )
+    );
+    super::native_field::follow(ui, &mut response, text, hint, super::native_field::Kind::Line);
+    response
 }
 
 /// Splits the rest of `ui` into a column that fills and a `side`-wide column on the right,

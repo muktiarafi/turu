@@ -1255,7 +1255,7 @@ fn password_field(ui: &mut Ui, form: &mut Form, editing: bool, width: f32) -> eg
         "Password"
     };
     let gap = ui.spacing().item_spacing.x;
-    let password = ui.add(
+    let mut password = ui.add(
         egui::TextEdit::singleline(&mut form.password)
             .password(!form.show_password)
             .hint_text(hint)
@@ -1266,6 +1266,12 @@ fn password_field(ui: &mut Ui, form: &mut Form, editing: bool, width: f32) -> eg
             .margin(egui::Margin::symmetric(8, 5))
             .background_color(super::theme::INSET),
     );
+    let kind = if form.show_password {
+        super::native_field::Kind::Line
+    } else {
+        super::native_field::Kind::Password
+    };
+    super::native_field::follow(ui, &mut password, &mut form.password, hint, kind);
     let eye = if form.show_password { "Hide" } else { "Show" };
     let size = vec2(SHOW_WIDTH, widgets::target(22.0, 40.0));
     if widgets::button(ui, eye, Kind::Normal, true, size, "").clicked() {

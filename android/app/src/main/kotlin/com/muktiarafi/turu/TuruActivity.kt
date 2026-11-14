@@ -92,26 +92,57 @@ class TuruActivity : NativeActivity() {
 
     private var keyInput: KeyInput? = null
 
-    /** The game's focused text field, above the keyboard ([GameField]). */
-    private val gameField = GameField(this)
+    /** The game's focused text field, above the keyboard (`game_field.rs`). */
+    private val gameField = NativeField(this, object : FieldTarget {
+        override fun edited(text: String, start: Int, end: Int) = nativeGameFieldEdited(text, start, end)
+        override fun enter() = nativeGameFieldEnter()
+        override fun closed() = nativeGameFieldClosed()
+    })
+
+    /** Turu's focused text box (egui's), above the keyboard (`ui_field.rs`). */
+    private val uiField = NativeField(this, object : FieldTarget {
+        override fun edited(text: String, start: Int, end: Int) = nativeUiFieldEdited(text, start, end)
+        override fun enter() = nativeUiFieldEnter()
+        override fun closed() = nativeUiFieldClosed()
+    })
 
     /**
-     * Shows [GameField] for the game's focused text field: its `text`, `start`..`end` selected
+     * Shows a [NativeField] for the game's focused text field: its `text`, `start`..`end` selected
      * (UTF-16 units), a password or not, `max` characters at most (0: no limit). Called on the
      * engine thread (`screen.rs`).
      */
     fun showGameField(text: String, start: Int, end: Int, password: Boolean, max: Int) {
-        runOnUiThread { gameField.show(text, start, end, password, max) }
+        runOnUiThread { gameField.show(text, start, end, FieldStyle(password, max, "Type in the game")) }
     }
 
-    /** The game changed its focused field: [GameField] shows it. Called on the engine thread. */
+    /** The game changed its focused field: its [NativeField] shows it. Called on the engine thread. */
     fun updateGameField(text: String, start: Int, end: Int) {
         runOnUiThread { gameField.update(text, start, end) }
     }
 
-    /** No game field has the focus now: [GameField] goes. Called on the engine thread. */
+    /** No game field has the focus now: its [NativeField] goes. Called on the engine thread. */
     fun hideGameField() {
         runOnUiThread { gameField.hide() }
+    }
+
+    /**
+     * Shows a [NativeField] for Turu's focused text box: its `text`, `start`..`end` selected
+     * (UTF-16 units), its `kind` (0 a line, 1 a password, 2 several lines, 3 a number) and `hint`.
+     * Called on the engine thread (`ui_field.rs`).
+     */
+    fun showUiField(text: String, start: Int, end: Int, kind: Int, hint: String) {
+        val style = FieldStyle(password = kind == 1, hint = hint, lines = kind == 2, number = kind == 3)
+        runOnUiThread { uiField.show(text, start, end, style) }
+    }
+
+    /** Turu's focused text box changed: its [NativeField] shows it. Called on the engine thread. */
+    fun updateUiField(text: String, start: Int, end: Int) {
+        runOnUiThread { uiField.update(text, start, end) }
+    }
+
+    /** None of Turu's text boxes has the focus now: its [NativeField] goes. Called on the engine thread. */
+    fun hideUiField() {
+        runOnUiThread { uiField.hide() }
     }
 
     /**
@@ -362,17 +393,29 @@ class TuruActivity : NativeActivity() {
         @JvmStatic
         private external fun nativeCutout(left: Int, right: Int)
 
-        /** [GameField]'s text or selection changed: the game's field takes it (`game_field.rs`). */
+        /** The game's [NativeField] changed its text or selection: the game's field takes it (`game_field.rs`). */
         @JvmStatic
         external fun nativeGameFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in [GameField]: Enter in the game. */
+        /** The keyboard's Send (or Enter) in the game's [NativeField]: Enter in the game. */
         @JvmStatic
         external fun nativeGameFieldEnter()
 
-        /** [GameField] was closed (Back, the keyboard went down): the game's field loses the focus. */
+        /** The game's [NativeField] was closed (Back): the game's field loses the focus. */
         @JvmStatic
         external fun nativeGameFieldClosed()
+
+        /** The UI's [NativeField] changed its text or selection: Turu's text box takes it (`ui_field.rs`). */
+        @JvmStatic
+        external fun nativeUiFieldEdited(text: String, start: Int, end: Int)
+
+        /** The keyboard's Send (or Enter) in the UI's [NativeField]: Enter in Turu's text box. */
+        @JvmStatic
+        external fun nativeUiFieldEnter()
+
+        /** The UI's [NativeField] was closed (Back): Turu's text box loses the focus. */
+        @JvmStatic
+        external fun nativeUiFieldClosed()
 
         /** The display's refresh rate in Hz, for frame interpolation's pacing (`ui.rs`). */
         @JvmStatic

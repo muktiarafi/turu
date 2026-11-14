@@ -292,7 +292,8 @@ impl SchedulerWindow {
         if let Some((id, text, before)) = &mut self.renaming
             && *id == entry.id
         {
-            let response = ui.add(TextEdit::singleline(text).desired_width(ui.available_width() - 12.0));
+            let mut response = ui.add(TextEdit::singleline(&mut *text).desired_width(ui.available_width() - 12.0));
+            super::native_field::follow(ui, &mut response, text, "", super::native_field::Kind::Line);
             if std::mem::take(&mut self.focus_rename) {
                 response.request_focus();
             }

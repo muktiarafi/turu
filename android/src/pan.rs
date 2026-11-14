@@ -1,8 +1,9 @@
-//! Keeps Turu's own text box above the soft keyboard: while an egui text field has the focus and
+//! Keeps a text box above the soft keyboard: while an egui text field has the focus and
 //! the keyboard is up, the window (layer) that holds it is moved up just enough for the field to
 //! show above the keyboard, like Android's `adjustPan` but for that window only; it moves back
 //! when the keyboard goes down or the field loses the focus. egui moves the window's input with
-//! it (a layer transform).
+//! it (a layer transform). Only for egui's own text boxes: Turu's are typed in through a native
+//! field above the keyboard (`ui_field.rs`), which shows what they hold.
 
 use egui::emath::TSTransform;
 use egui::output::IMEOutput;

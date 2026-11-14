@@ -365,6 +365,60 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeOnUi<'local>(
     crate::overlay::on_ui(x, y)
 }
 
+/// `Bridge.nativeUiFieldEdited(text, start, end)`: the native field for Turu's text box changed.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeUiFieldEdited<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    text: JString<'local>,
+    start: jint,
+    end: jint,
+) {
+    unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let text = text.try_to_string(env)?;
+            crate::overlay::field_action(crate::overlay::FieldAction::Edited(
+                turu_frontend::gui::turu::native_field::Contents {
+                    text,
+                    start: start.max(0) as usize,
+                    end: end.max(0) as usize,
+                },
+            ));
+            Ok(())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// `Bridge.nativeFieldPlace(top, left)`: a native text field above the keyboard is up there
+/// (pixels from the overlay's top and left edge), or none is (-1).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFieldPlace<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    top: jint,
+    left: jint,
+) {
+    crate::overlay::set_field_place((top >= 0).then_some((top as f32, left.max(0) as f32)));
+}
+
+/// `Bridge.nativeUiFieldEnter()`: the keyboard's Send in the native field for Turu's text box.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeUiFieldEnter<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) {
+    crate::overlay::field_action(crate::overlay::FieldAction::Enter);
+}
+
+/// `Bridge.nativeUiFieldClosed()`: the native field for Turu's text box was closed (Back).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeUiFieldClosed<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) {
+    crate::overlay::field_action(crate::overlay::FieldAction::Closed);
+}
+
 /// `Bridge.nativeText(text)`: the soft keyboard typed `text` into the UI's text box.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeText<'local>(

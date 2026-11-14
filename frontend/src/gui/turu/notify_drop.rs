@@ -106,16 +106,19 @@ impl NotifyDropWindow {
 
         row(ui, control, |ui| {
             let box_width = (ui.available_width() - 84.0 - spacing.x).max(120.0);
-            let response = ui
+            let hint = "Item name (separate several with |)";
+            let mut response = ui
                 .add_sized(
                     [box_width, control],
                     egui::TextEdit::singleline(&mut self.input)
-                        .hint_text("Item name (separate several with |)")
+                        .hint_text(hint)
                         .vertical_align(Align::Center)
                         .margin(egui::Margin::symmetric(8, 5))
                         .background_color(INSET),
                 )
                 .on_hover_text("Use the exact in-game item names");
+            let kind = super::native_field::Kind::Line;
+            super::native_field::follow(ui, &mut response, &mut self.input, hint, kind);
             let enter = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             let add = widgets::button(ui, "+  Add", Kind::Primary, true, vec2(84.0, control), "").clicked();
             if add || enter {

@@ -29,6 +29,7 @@ mod screen;
 mod storage;
 use turu_frontend::saved_tabs as tabs;
 mod ui;
+mod ui_field;
 
 use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
 use jni::JavaVM;

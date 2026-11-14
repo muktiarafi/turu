@@ -120,7 +120,7 @@ impl ConsoleWindow {
             .id_salt("console_code_scroll")
             .max_height(editor_height)
             .show(ui, |ui| {
-                ui.add_sized(
+                let mut response = ui.add_sized(
                     [ui.available_width(), editor_height],
                     TextEdit::multiline(&mut self.code)
                         .id(editor_id)
@@ -128,6 +128,8 @@ impl ConsoleWindow {
                         .lock_focus(true)
                         .hint_text("bot.player.gold"),
                 );
+                let kind = super::native_field::Kind::Lines;
+                super::native_field::follow(ui, &mut response, &mut self.code, "bot.player.gold", kind);
             });
 
         let can_run = !running && !script_active && !auto && !self.code.trim().is_empty();

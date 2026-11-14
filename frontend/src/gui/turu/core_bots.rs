@@ -1410,14 +1410,15 @@ fn option_row(ui: &mut Ui, opt: &mut Opt) {
             widgets::number(ui, opt.tag, n, 0..=i32::MAX, speed, &suffix, size);
         }
         Value::Text(text) => {
-            ui.add(
-                egui::TextEdit::singleline(text)
+            let mut response = ui.add(
+                egui::TextEdit::singleline(&mut *text)
                     .desired_width(TEXT_WIDTH - 16.0)
                     .min_size(vec2(0.0, widgets::target(26.0, 40.0)))
                     .vertical_align(Align::Center)
                     .margin(Margin::symmetric(8, 4))
                     .background_color(INSET),
             );
+            super::native_field::follow(ui, &mut response, text, opt.tag, super::native_field::Kind::Line);
         }
     }
     if show_reset {

@@ -117,7 +117,8 @@ How to build, run and check the Android app. The design and the plan are in
 > is copied into `scripts/Imported/`, other files into the app's cache). Accounts keeps
 > passwords in the Android Keystore (`storage.rs`, `Storage.kt`) and logs in by itself (once
 > tabs bring back the Army menu). A Turu
-> text box under the keyboard moves up above it with its window (`pan.rs`). After a kill the
+> text box is typed in through a native field above the keyboard, as the game's are (`ui_field.rs`,
+> docs/ANDROID_HANDOVER.md). After a kill the
 > script started by hand comes back too, with its options and the account (`restart.rs`).
 
 ## What's where

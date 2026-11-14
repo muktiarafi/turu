@@ -9,9 +9,10 @@
 //! down: the UI's touches come here, the others go to AIR's view below.
 //!
 //! As the Ruffle build's screen: the rail grows by the display cutout on its side; a window whose
-//! text box has the focus moves up above the soft keyboard (`android/src/pan.rs`). The game's own
-//! text fields (AIR's) are typed in through a native field above the keyboard, Kotlin's
-//! `GameField`, which the host SWF keeps in step with the focused one.
+//! text box isn't one of Turu's (egui's own) moves up above the soft keyboard when that box has
+//! the focus (`android/src/pan.rs`). Turu's own text boxes are typed in through a native field above the keyboard, Kotlin's `NativeField`
+//! (`turu_frontend::gui::turu::native_field`, as the Ruffle build's `ui_field.rs`); so are the
+//! game's own (AIR's), which the host SWF keeps in step with the focused one.
 
 use crate::host::BRIDGE;
 use jni::objects::JValue;
@@ -20,6 +21,7 @@ use ndk::native_window::NativeWindow;
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 use turu_frontend::gui::turu::TuruUi;
+use turu_frontend::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
 use wgpu::rwh::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 
 /// The longest the UI goes undrawn: its logs and status change without input.
@@ -38,6 +40,21 @@ struct Shared {
     /// The soft keyboard's height, and the display cutout's left and right insets, in pixels.
     keyboard: f32,
     cutout: (f32, f32),
+    /// What the native field for Turu's text boxes did, in order.
+    field: Vec<FieldAction>,
+    /// Where the native text field above the keyboard starts, in pixels from the overlay's top
+    /// and left edge, while one is up: the overlay draws nothing there ([`set_field_place`]).
+    field_place: Option<(f32, f32)>,
+}
+
+/// What the native field for Turu's text boxes did (Kotlin's `Bridge`, its UI target).
+pub(crate) enum FieldAction {
+    /// Its text or selection changed.
+    Edited(Contents),
+    /// The keyboard's Send.
+    Enter,
+    /// Back: done typing.
+    Closed,
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
@@ -49,6 +66,8 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     wake: false,
     keyboard: 0.0,
     cutout: (0.0, 0.0),
+    field: Vec::new(),
+    field_place: None,
 });
 static WAKE: Condvar = Condvar::new();
 /// The drawing thread took a surface change in.
@@ -136,6 +155,32 @@ pub(crate) fn touch(phase: egui::TouchPhase, x: f32, y: f32) {
     WAKE.notify_one();
 }
 
+/// The native field for Turu's text boxes did `action`: the drawing thread passes it on.
+pub(crate) fn field_action(action: FieldAction) {
+    {
+        let mut shared = shared();
+        shared.field.push(action);
+        shared.wake = true;
+    }
+    WAKE.notify_one();
+}
+
+/// A native text field above the keyboard is up at (`top`, `left`) (pixels from the overlay's
+/// top and left edge), or none is. The overlay is a surface on top of every view
+/// (`setZOrderOnTop`), so it would draw Turu's windows over the field: it leaves that strip (and
+/// the keyboard below it) clear; the rail left of it still shows.
+pub(crate) fn set_field_place(place: Option<(f32, f32)>) {
+    {
+        let mut shared = shared();
+        if shared.field_place == place {
+            return;
+        }
+        shared.field_place = place;
+        shared.wake = true;
+    }
+    WAKE.notify_one();
+}
+
 /// Events from the soft keyboard, for the UI's focused text box.
 pub(crate) fn input(events: Vec<egui::Event>) {
     {
@@ -215,9 +260,10 @@ fn run() {
     let mut keyboard_shown = false;
     let mut sent_insets = (u32::MAX, u32::MAX);
     let mut panned: Option<(egui::LayerId, f32)> = None;
+    let mut field = NativeField::default();
     loop {
         // Wait for input, a new window, or the next frame.
-        let (events, ppp, window, keyboard, cutout) = {
+        let (events, ppp, window, keyboard, cutout, actions, field_place) = {
             let mut shared = shared();
             while !shared.wake {
                 let now = Instant::now();
@@ -240,8 +286,17 @@ fn run() {
                 window,
                 shared.keyboard,
                 shared.cutout,
+                std::mem::take(&mut shared.field),
+                shared.field_place,
             )
         };
+        for action in actions {
+            match action {
+                FieldAction::Edited(contents) => field.edited(&egui, contents),
+                FieldAction::Enter => native_field::enter(&egui),
+                FieldAction::Closed => field.closed(&egui),
+            }
+        }
         if let Some(window) = window {
             target = None;
             // A new view may be in a new activity (the app swiped away and opened again, the
@@ -284,6 +339,8 @@ fn run() {
         if let Some(viewport) = raw_input.viewports.get_mut(&egui::ViewportId::ROOT) {
             viewport.native_pixels_per_point = Some(ppp);
         }
+        // The native field's Send, as Enter in Turu's text box.
+        raw_input.events.extend(native_field::input_events(&egui));
         // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
         turu_frontend::gui::set_cutout(cutout.0 / ppp, cutout.1 / ppp);
         let keyboard = keyboard / ppp;
@@ -291,14 +348,12 @@ fn run() {
             ui.show_bar(root);
             ui.show_windows(root.ctx());
         });
-        let ui_typing = output.platform_output.ime.is_some();
-        panned = follow_text_field(
-            &egui,
-            output.platform_output.ime.as_ref(),
-            target.size.1 as f32 / ppp,
-            keyboard,
-            panned,
-        );
+        // Turu's text boxes are typed in through a native field; a text box that isn't one of
+        // them (egui's own) gets the keyboard's keys, and moves up above it.
+        let native = sync_field(&mut field, &egui);
+        let ime = output.platform_output.ime.as_ref().filter(|_| !native);
+        let ui_typing = ime.is_some();
+        panned = follow_text_field(&egui, ime, target.size.1 as f32 / ppp, keyboard, panned);
 
         // The game's place: right of the rail, below the bar.
         let insets = (
@@ -324,7 +379,8 @@ fn run() {
             .get(&egui::ViewportId::ROOT)
             .map_or(IDLE_FRAME, |v| v.repaint_delay)
             .min(IDLE_FRAME);
-        draw(gpu, target, &egui, output);
+        let clear = field_place.map(|(top, left)| egui::pos2(left / ppp, top / ppp));
+        draw(gpu, target, &egui, output, clear);
         next = Instant::now() + delay;
     }
 }
@@ -548,7 +604,15 @@ fn configure(gpu: &Gpu, target: &mut Target) {
     }
 }
 
-fn draw(gpu: &mut Gpu, target: &mut Target, egui: &egui::Context, output: egui::FullOutput) {
+/// Draws a frame of the UI; nothing below and right of `clear_from` (points), where a native text
+/// field is (what lies only left of it, the rail, still draws).
+fn draw(
+    gpu: &mut Gpu,
+    target: &mut Target,
+    egui: &egui::Context,
+    output: egui::FullOutput,
+    clear_from: Option<egui::Pos2>,
+) {
     // egui's texture changes first, whether or not this frame gets drawn: it sends each one once
     // (the fonts' atlas, which every shape is drawn through, at the start), and one dropped with
     // a skipped frame (the surface not ready yet, coming back from the background) left the UI
@@ -604,7 +668,15 @@ fn draw(gpu: &mut Gpu, target: &mut Target, egui: &egui::Context, output: egui::
             return;
         }
     };
-    let primitives = egui.tessellate(output.shapes, output.pixels_per_point);
+    let mut primitives = egui.tessellate(output.shapes, output.pixels_per_point);
+    if let Some(corner) = clear_from {
+        for primitive in &mut primitives {
+            let clip = &mut primitive.clip_rect;
+            if clip.max.x > corner.x + 0.5 {
+                clip.max.y = clip.max.y.min(corner.y).max(clip.min.y);
+            }
+        }
+    }
     let screen = egui_wgpu::ScreenDescriptor {
         size_in_pixels: [target.size.0, target.size.1],
         pixels_per_point: output.pixels_per_point,
@@ -661,6 +733,63 @@ fn game_insets((left, top): (u32, u32)) -> bool {
         )?;
         Ok(())
     })
+}
+
+/// After a frame: shows, updates or hides the native field to match Turu's focused text box
+/// (`Bridge.showUiField`, `updateUiField`, `hideUiField`). True while it's up.
+fn sync_field(field: &mut NativeField, egui: &egui::Context) -> bool {
+    match field.sync(native_field::take_focused(egui)) {
+        Some(Change::Show(focused)) => {
+            let kind = match focused.kind {
+                Kind::Line => 0,
+                Kind::Password => 1,
+                Kind::Lines => 2,
+                Kind::Number => 3,
+            };
+            let contents = &focused.contents;
+            with_bridge(|env, class| {
+                let text = env.new_string(&contents.text)?;
+                let hint = env.new_string(&focused.hint)?;
+                env.call_static_method(
+                    class,
+                    jni_str!("showUiField"),
+                    jni_sig!("(Ljava/lang/String;IIILjava/lang/String;)V"),
+                    &[
+                        JValue::Object(&text),
+                        JValue::Int(contents.start as i32),
+                        JValue::Int(contents.end as i32),
+                        JValue::Int(kind),
+                        JValue::Object(&hint),
+                    ],
+                )?;
+                Ok(())
+            });
+        }
+        Some(Change::Update(contents)) => {
+            with_bridge(|env, class| {
+                let text = env.new_string(&contents.text)?;
+                env.call_static_method(
+                    class,
+                    jni_str!("updateUiField"),
+                    jni_sig!("(Ljava/lang/String;II)V"),
+                    &[
+                        JValue::Object(&text),
+                        JValue::Int(contents.start as i32),
+                        JValue::Int(contents.end as i32),
+                    ],
+                )?;
+                Ok(())
+            });
+        }
+        Some(Change::Hide) => {
+            with_bridge(|env, class| {
+                env.call_static_method(class, jni_str!("hideUiField"), jni_sig!("()V"), &[])?;
+                Ok(())
+            });
+        }
+        None => {}
+    }
+    field.is_shown()
 }
 
 /// Brings the soft keyboard up for the UI's text box, or down (`Bridge.softKeyboard(shown)`).

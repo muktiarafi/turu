@@ -150,14 +150,16 @@ impl SpammerWindow {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             let buttons = 84.0 + 112.0 + 2.0 * ui.spacing().item_spacing.x;
-            ui.add(
+            let hint = "%xt%zm%...  packet to add or send";
+            let mut response = ui.add(
                 egui::TextEdit::singleline(&mut self.text)
-                    .hint_text("%xt%zm%...  packet to add or send")
+                    .hint_text(hint)
                     .font(egui::TextStyle::Monospace)
                     .desired_width((ui.available_width() - buttons).max(120.0))
                     .margin(egui::Margin::symmetric(8, 6))
                     .background_color(super::theme::INSET),
             );
+            super::native_field::follow(ui, &mut response, &mut self.text, hint, super::native_field::Kind::Line);
             let filled = !self.text.trim().is_empty();
             if widgets::button(ui, "+  Add", Kind::Normal, filled, vec2(84.0, 28.0), "")
                 .on_hover_text("Add to the end of the queue")

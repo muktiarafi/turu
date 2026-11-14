@@ -53,6 +53,23 @@ Enter in the game; Back ends typing (the game's field loses the focus). The keyb
 alone doesn't close it: a hardware keyboard's key hides the soft keyboard.
 The player's clipboard is Android's now (`AndroidUiBackend`), so Ctrl+C/V reach it too.
 
+Since 2026-11-14: **Turu's own text boxes** are typed in the same way (Kotlin's `NativeField`,
+which the game's strip is one of, and `ui_field.rs`): suggestions, autocorrect, the text toolbar
+and autofill for Accounts' password, where egui alone got only keys (`KeyInput`). Each text box
+calls `turu_frontend::gui::turu::native_field::follow` after it's added: while it has the focus
+it says what it holds for the frame and takes the native field's edits, a frame later. The
+screen keeps the field in step after each frame (`NativeField::sync`); Send is Enter in the box
+once its last edit is in (`input_events`); Back takes the focus off it. The field shows the box's
+hint, dots for a password, a number keyboard for `widgets::touch_number`, and several lines for
+the Console. A new text box must call `follow` too, or it falls back to the keys-only keyboard and
+`pan.rs`. The game's strip steps aside while one of Turu's boxes has the field.
+
+A tap outside the field and the keyboard closes both, as Back does, and still reaches the game or
+Turu's window (the dialog watches outside touches: `FLAG_WATCH_OUTSIDE_TOUCH`). The field's place
+above the keyboard is worked out from where its window is (`fitAboveKeyboard`): on Android 15+
+the system already keeps the dialog above the keyboard, and the dialog's own insets, read while
+the keyboard slid up, went stale, so the field sometimes floated a field's height too high.
+
 ## Branches and workflow
 
 * `android` is the feature branch, cut from `main` at `db698ca36`. Each phase gets its own
@@ -247,8 +264,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 ## Known gaps
 
 * No real phone yet; no 6-hour run (phase 4's "done when").
-* The strip above the keyboard is for the game's fields; Turu's own text boxes (egui) move up
-  above the keyboard with their window (`pan.rs`; compiled, not tried on a device).
+* Text boxes egui makes itself (none of Turu's) still get keys only and move up above the
+  keyboard with their window (`pan.rs`).
 * OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
   made on Metal, Vulkan and DX12. Vulkan is the default.
 * File dialogs are the system picker (`saf.rs`, `TuruActivity.openDocument` /
@@ -276,7 +293,7 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 2. Bring the ruffle-aqw fix to `main` (desktop `--headless` on a fresh server has the same login
    bug).
 3. Log in by hand on the game's screen on a phone, now that typing shows above the keyboard.
-4. Try SAF import/export, the Keystore `SecretStore`, the text box pan and the restart of a
+4. Try SAF import/export, the Keystore `SecretStore`, the native text fields and the restart of a
    hand-started script on a phone (done in code, 2026-11-07).
 5. Proposal phase 5: tabs (several clients), Army scripts and Butler (steps and estimate in
    `ANDROID_PROPOSAL.md`, "Plan: tabs, Army and Butler"), a tablet layout, gamepads (Cosmetics is

@@ -467,12 +467,15 @@ impl ButlerWindow {
                 ui.horizontal(|ui| {
                     let height = widgets::target(26.0, 40.0);
                     let send_width = 64.0;
-                    let edit = ui.add(
+                    let hint = "Player name (not one of your butlers)";
+                    let mut edit = ui.add(
                         TextEdit::singleline(&mut self.send_target)
-                            .hint_text("Player name (not one of your butlers)")
+                            .hint_text(hint)
                             .desired_width(ui.available_width() - send_width - 8.0)
                             .min_size(vec2(0.0, height)),
                     );
+                    let kind = super::native_field::Kind::Line;
+                    super::native_field::follow(ui, &mut edit, &mut self.send_target, hint, kind);
                     if edit.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                         send = true;
                     }

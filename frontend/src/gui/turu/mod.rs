@@ -31,6 +31,7 @@ mod loader;
 mod loadouts;
 mod logs;
 mod message_box;
+pub mod native_field;
 mod nav_bar;
 mod notifications;
 mod notify_drop;
