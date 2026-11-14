@@ -21,9 +21,11 @@ Beta builds for Windows, macOS, Linux and Android (arm64, 8+) are on
 
 - **macOS:** the app isn't notarized. If it won't open, allow it in System Settings > Privacy &
   Security, or run `xattr -dr com.apple.quarantine Turu.app`.
-- **Android:** no Army, Butler or HotKeys yet ([docs/ANDROID.md](docs/ANDROID.md)).
+- **Android:** tabs, Army and Butler as on the desktop, up to 4 tabs; no Grid View or Army Queue
+  ([docs/ANDROID.md](docs/ANDROID.md)).
 - **Turu Mas** (`turumas-*.apk`): Turu for Android with the game in the Adobe® AIR® runtime
-  instead of Ruffle, an app of its own ([docs/TURU_MAS.md](docs/TURU_MAS.md)).
+  instead of Ruffle, an app of its own ([docs/TURU_MAS.md](docs/TURU_MAS.md)). It opens with the
+  AIR SDK's splash screen for about 1.6 s.
 - **Crash reports** (Sentry) are sent only if you say yes at first start; change it in Options >
   Application. [PRIVACY.md](PRIVACY.md) says what Turu sends.
 
@@ -70,7 +72,7 @@ Calls are synchronous (no `await`). API: [bot/js/turu.ts](bot/js/turu.ts). Guide
 ## Docs
 
 [Architecture](docs/ARCHITECTURE.md) · [Status](docs/STATUS.md) · [UI](docs/UI.md) ·
-[Headless](docs/HEADLESS.md) · [Android](docs/ANDROID.md) ·
+[Headless](docs/HEADLESS.md) · [Android](docs/ANDROID.md) · [Turu Mas](docs/TURU_MAS.md) ·
 [VibeSkua reference](docs/VIBESKUA_SPEC.md) · [Contributing](CONTRIBUTING.md)
 
 ## Credits
@@ -89,7 +91,7 @@ Calls are synchronous (no `await`). API: [bot/js/turu.ts](bot/js/turu.ts). Guide
 
 Turu is GPL-3.0-or-later ([LICENSE](LICENSE)), with an additional permission to combine it with
 the Adobe® AIR® runtime, as Turu Mas does ([LICENSE-EXCEPTION](LICENSE-EXCEPTION)). Ruffle is
-MIT / Apache-2.0 ([LICENSE-RUFFLE.md](LICENSE-RUFFLE.md)); Mugetsu is GPL-3.0. Skua, VibeSkua and Scripts publish
-no license, so the GPL doesn't cover the ported scripts; their authors keep their
-rights (open an issue if you're one of them and want something changed). Turu isn't affiliated
-with Artix Entertainment or any of the projects above.
+MIT / Apache-2.0 ([LICENSE-RUFFLE.md](LICENSE-RUFFLE.md)); Mugetsu is GPL-3.0. Skua, VibeSkua
+and Scripts publish no license, so the GPL doesn't cover the ported scripts; their authors keep
+their rights (open an issue if you're one of them and want something changed). Turu isn't
+affiliated with Artix Entertainment or any of the projects above.
