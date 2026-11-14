@@ -228,6 +228,13 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
   handler. The Bank hotkey (`litePreference.data.keys.Bank`).
 - Callbacks: `loadClient(frameRate?)`, `setBackgroundValues`, `hostInfo`, `setStrictErrors`,
   `setPacketEcho`, `catchPackets`, and `throwForTest` (unlisted: debug builds of Turu only).
+  Since 2026-11-14 also `setLoginImage(base64)`: Turu's login picture (`Background.as`, a JPEG
+  the bot sends from `bot/assets/login-background.jpg`, 960x550), loaded with `loadBytes` (Ruffle
+  and AIR both read a JPEG that way) and put in the login screen's title (`mcLogin.mcTitle`) each
+  frame one is there without it, sized to the game's area and kept on top of the game's own
+  background, which loads into the title after it; it takes no taps. `params.sBG` starts as
+  `Generic2.swf`, the file the bot names a second later, not VibeSkua's `hideme.swf` (none): a
+  client that built its login screen before then showed it black.
 - `hostInfo()`: `{"name": "turu", "version": 1, "features": [...], "callbacks": [...]}`. Rust
   asks for it in `Work::LoadClient`, before `loadClient`, and keeps it per tab until the next
   `requestLoadGame`; VibeSkua's SWF answers nothing, and calls go through as before. With it,

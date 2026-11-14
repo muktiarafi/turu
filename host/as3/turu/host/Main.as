@@ -94,6 +94,7 @@ public class Main extends MovieClip {
 
         expose("loadClient", loadClient);
         expose("setBackgroundValues", background.setValues);
+        expose("setLoginImage", background.setImage);
         expose("hostInfo", hostInfo);
         expose("setPacketCapture", packets.setCapture);
         expose("catchPackets", catchPackets);
@@ -281,6 +282,7 @@ public class Main extends MovieClip {
 
     private function onFrame(event:Event):void {
         packets.frame(game);
+        background.frame();
         try {
             options.frame();
         } catch (e:Error) {

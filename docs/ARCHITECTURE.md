@@ -155,7 +155,8 @@ Startup sequence (same as VibeSkua):
    data dir); `Work::LoadClient` asks it `hostInfo` first.
 2. `turu.swf` registers its callbacks and calls `requestLoadGame` → bot calls `loadClient`.
 3. AS3 fetches `https://game.aq.com/game/api/data/gameversion`, loads the game SWF and calls
-   `pre-load` (bot calls `setBackgroundValues`) and then `loaded` (the bot marks the game
+   `pre-load` (bot calls `setBackgroundValues`, then `setLoginImage` with Turu's login picture,
+   `bot/assets/login-background.jpg`) and then `loaded` (the bot marks the game
    loaded and sends `GameLoaded`; its 20 ms timer runs from startup).
 4. The user logs in with the game's own login screen, or the bot does with `--user` and
    `--password` (`startup.rs`: `loaded` → `ensure_relogin(server)`, then `--run-script`).
