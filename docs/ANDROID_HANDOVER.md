@@ -149,8 +149,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * **Log:** `adb logcat -s turu` (tag `turu`; the desktop's default filter). For AQW's script
   errors, change `ruffle_core::avm2=off` to `warn` in `init_logging_now` for one run (keep
   `avm_trace` off: it logs the login response with the account's details).
-* **Control API:** `--api=127.0.0.1:9021` in `turu-args.txt`, then `adb forward tcp:19021
-  tcp:9021` (adb reaches the phone's localhost; `0.0.0.0` would expose it to the Wi-Fi). The token file the app makes is owner-only and `adb` can't read it on shared
+* **Control API:** `--api=127.0.0.1:8080` in `turu-args.txt`, then `adb forward tcp:18080
+  tcp:8080` (adb reaches the phone's localhost; `0.0.0.0` would expose it to the Wi-Fi). The token file the app makes is owner-only and `adb` can't read it on shared
   storage: delete it and push your own (32+ chars) before starting the app. `/status`,
   `/snapshot`, `/script/start`, `/script/stop`, `/debug/perf` all work.
 * **Screens and input:** `adb exec-out screencap -p > shot.png`; `adb shell input tap X Y`

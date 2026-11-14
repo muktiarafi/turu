@@ -43,10 +43,10 @@ the web monitor shows an event too, and `--run-script` warns at startup. Set the
 desktop in the web monitor (a bot's Details > Script Options) or with the control API:
 
 ```bash
-curl -H "$T" localhost:9021/script/options        # the loaded script's options and values
-curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:9021/script/options
-curl -H "$T" -X POST "localhost:9021/script/options?reset=1"     # back to the defaults
-curl -H "$T" "localhost:9021/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
+curl -H "$T" localhost:8080/script/options        # the loaded script's options and values
+curl -H "$T" -X POST -d '{"UseBoost": true, "Group": {"Count": 5}}' localhost:8080/script/options
+curl -H "$T" -X POST "localhost:8080/script/options?reset=1"     # back to the defaults
+curl -H "$T" "localhost:8080/scheduler/options?id=<entry id>"    # a playlist entry's (GET or POST)
 ```
 
 Or copy these from a desktop's data folder to the server's:
@@ -105,10 +105,10 @@ Each account gets `/etc/turu/<account>.env`, readable by root only
 TURU_USER=YourName
 TURU_PASSWORD=your password
 TURU_SERVER=Twilly
-TURU_API=127.0.0.1:9021
+TURU_API=127.0.0.1:8080
 # The control API token: 32 characters at least, e.g. from `openssl rand -hex 32`
 TURU_API_TOKEN=a long random string
-# Extra flags, e.g. --monitor=127.0.0.1:8790 (systemd reads no comments after a value)
+# Extra flags, e.g. --monitor=127.0.0.1:9021 (systemd reads no comments after a value)
 TURU_ARGS=
 ```
 
@@ -142,7 +142,7 @@ ones reuse BuildKit's cargo cache. `--build-arg PROFILE=release` builds faster,
 
 `docker/entrypoint.sh` turns the env file into flags: `TURU_USER`, `TURU_SERVER`,
 `TURU_RUN_SCRIPT` / `TURU_LOAD_SCRIPT`, `TURU_RUN_PLAYLIST` / `TURU_LOAD_PLAYLIST`,
-`TURU_API` (the image sets `0.0.0.0:9021`; empty turns it off), `TURU_MONITOR`, `TURU_REPORT_TO`;
+`TURU_API` (the image sets `0.0.0.0:8080`; empty turns it off), `TURU_MONITOR`, `TURU_REPORT_TO`;
 `TURU_PASSWORD`, `TURU_API_TOKEN` and the other variables (Reference, below) are read as they are.
 Arguments after the image name are added last, so they win:
 
@@ -152,11 +152,11 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
 
 * `compose.yaml` publishes the control API and the web monitor on the host's loopback only.
   Requests come through Docker's network, so the web monitor asks for its key
-  (`http://localhost:8790/#<key>`, the key from `docker compose exec main cat /data/monitor-key`);
+  (`http://localhost:9021/#<key>`, the key from `docker compose exec main cat /data/monitor-key`);
   the control API wants its token as always.
 * Several accounts: one service each, all on the `turu-data` volume (as "Several accounts"
   below), each with its own env file and host port; the others report to the first one's
-  monitor at `http://main:8790`. `compose.yaml` has one commented out.
+  monitor at `http://main:9021`. `compose.yaml` has one commented out.
 * Settings, options and playlists go in the volume: `docker compose cp daily.json
   main:/data/playlists/` (then `TURU_RUN_PLAYLIST=/data/playlists/daily.json`), or the control
   API and the web monitor as below.
@@ -168,7 +168,7 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
 ## Several accounts
 
 Run one instance per account, all with **one data folder** (as above) and each with **its own
-`TURU_API` port** (`9021`, `9022`, ...). The shared folder is how clients find each other:
+`TURU_API` port** (`8080`, `8081`, ...). The shared folder is how clients find each other:
 Butler's sync files, army scripts' sync logs and their private room number
 (`bot.army.roomNumber()`, a hash of the folder's path) all live there. Start the instances a
 few seconds apart, so they don't update the same scripts at once.
@@ -177,9 +177,9 @@ Have one serve the web monitor and the others report to it:
 
 ```bash
 # The first account's env file:
-TURU_ARGS=--monitor=127.0.0.1:8790
+TURU_ARGS=--monitor=127.0.0.1:9021
 # The others' (the key file appears after the first one's first run):
-TURU_ARGS=--report-to http://127.0.0.1:8790
+TURU_ARGS=--report-to http://127.0.0.1:9021
 TURU_MONITOR_PUSH_KEY=<contents of /var/lib/turu/monitor-push-key>
 ```
 
@@ -202,20 +202,20 @@ Summons off in `butler.json` for the account you play by hand.
 shows more. Text layout's "Fallback font not found" errors are left out (no device fonts are
 loaded without a window, and nobody sees the text); a `RUST_LOG` of your own brings them back.
 
-**Web monitor** (`--monitor=127.0.0.1:8790`): each bot's state, last-hour trace, logs, history and commands.
+**Web monitor** (`--monitor=127.0.0.1:9021`): each bot's state, last-hour trace, logs, history and commands.
 Keep it on loopback and use a tunnel, which needs no key:
 
 ```bash
-ssh -L 8790:127.0.0.1:8790 you@server     # then open http://localhost:8790
+ssh -L 9021:127.0.0.1:9021 you@server     # then open http://localhost:9021
 ```
 
-From anywhere else (Tailscale Serve, a proxy, `--monitor=0.0.0.0:8790`) open
-`http://<address>:8790/#<key>` with the key from the data folder's `monitor-key`. Anyone with
+From anywhere else (Tailscale Serve, a proxy, `--monitor=0.0.0.0:9021`) open
+`http://<address>:9021/#<key>` with the key from the data folder's `monitor-key`. Anyone with
 the key can run commands on your bots.
 
 **Report to your desktop instead:** on the desktop, Options > Application > Monitor: Enable
 Web Monitor, Allow Other Devices, Copy Report Settings. On the server, `--report-to
-http://<desktop>:8790` with the push key in `TURU_MONITOR_PUSH_KEY`. The server's bots show on
+http://<desktop>:9021` with the push key in `TURU_MONITOR_PUSH_KEY`. The server's bots show on
 the desktop's page and take its commands.
 
 **Control API** (`--api`): every request needs the token (`TURU_API_TOKEN`, else the data
@@ -224,19 +224,19 @@ folder's `api-token`). All routes, and what each status means, are listed in
 
 ```bash
 T="Authorization: Bearer $TURU_API_TOKEN"
-curl -H "$T" localhost:9021/status
-curl -H "$T" "localhost:9021/log?since=0"
-curl -H "$T" -X POST "localhost:9021/script/start?path=farm/GoldFarm"
-curl -H "$T" -X POST localhost:9021/script/stop      # with a playlist: moves on to the next
-curl -H "$T" localhost:9021/scheduler
-curl -H "$T" -X POST --data-binary @daily.json localhost:9021/scheduler/load
-curl -H "$T" -X POST localhost:9021/scheduler/start  # and /scheduler/stop
-curl -H "$T" localhost:9021/butler                   # online accounts, who can be summoned
-curl -H "$T" -X POST "localhost:9021/butler/summon?user=MyAlt"   # also release, summon-all,
+curl -H "$T" localhost:8080/status
+curl -H "$T" "localhost:8080/log?since=0"
+curl -H "$T" -X POST "localhost:8080/script/start?path=farm/GoldFarm"
+curl -H "$T" -X POST localhost:8080/script/stop      # with a playlist: moves on to the next
+curl -H "$T" localhost:8080/scheduler
+curl -H "$T" -X POST --data-binary @daily.json localhost:8080/scheduler/load
+curl -H "$T" -X POST localhost:8080/scheduler/start  # and /scheduler/stop
+curl -H "$T" localhost:8080/butler                   # online accounts, who can be summoned
+curl -H "$T" -X POST "localhost:8080/butler/summon?user=MyAlt"   # also release, summon-all,
                                                                  # release-all, follow, unfollow
-curl -N -H "$T" "localhost:9021/events?logs=script,debug"       # follow it, instead of polling
-curl -H "$T" localhost:9021/tabs                     # with a window: the tabs
-curl -H "$T" localhost:9021/tabs/2/status            # any route, for one tab
+curl -N -H "$T" "localhost:8080/events?logs=script,debug"       # follow it, instead of polling
+curl -H "$T" localhost:8080/tabs                     # with a window: the tabs
+curl -H "$T" localhost:8080/tabs/2/status            # any route, for one tab
 ```
 
 `/events` sends server-sent events: `script` (path, status, running) when it changes, `log`
@@ -257,8 +257,8 @@ able to write the program's folder (`/opt/turu` above is root's: `chown` it to t
 update by hand). `SHA256SUMS.txt` proves the download is intact, not who published it.
 
 ```bash
-curl -H "$T" localhost:9021/status | jq .update
-curl -H "$T" -X POST localhost:9021/update            # ?stop=1 while a script runs
+curl -H "$T" localhost:8080/status | jq .update
+curl -H "$T" -X POST localhost:8080/update            # ?stop=1 while a script runs
 ```
 
 A command answers with what it changed: the script for `/script/*`, `/status` for the logins,
@@ -351,7 +351,7 @@ It also writes the samples to `<log>.csv`.
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
-| `--api[=<address>]` | The control API, default `127.0.0.1:9021`. |
+| `--api[=<address>]` | The control API, default `127.0.0.1:8080`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |
 | `--report-to <url>` | Report to another machine's web monitor. |
 

@@ -21,15 +21,15 @@ services:
     env_file: docker/main.env
     ports:
       # Loopback only: reach them from elsewhere with `ssh -L` (docs/HEADLESS.md).
-      - "127.0.0.1:9021:9021" # control API
-      - "127.0.0.1:8790:8790" # web monitor (TURU_MONITOR=0.0.0.0:8790 in main.env)
+      - "127.0.0.1:8080:8080" # control API
+      - "127.0.0.1:9021:9021" # web monitor (TURU_MONITOR=0.0.0.0:9021 in main.env)
 
   # A second account: its own env file, the same data folder, reporting to main's monitor.
   # alt:
   #   <<: *turu
-  #   env_file: docker/alt.env       # with TURU_REPORT_TO=http://main:8790 and TURU_MONITOR_PUSH_KEY
+  #   env_file: docker/alt.env       # with TURU_REPORT_TO=http://main:9021 and TURU_MONITOR_PUSH_KEY
   #   ports:
-  #     - "127.0.0.1:9022:9021"
+  #     - "127.0.0.1:8081:8080"
 
 volumes:
   turu-data:

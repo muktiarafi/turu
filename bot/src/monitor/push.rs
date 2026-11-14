@@ -275,14 +275,14 @@ mod tests {
 
     #[test]
     fn warns_about_plain_http_across_the_internet() {
-        assert!(insecure("http://203.0.113.5:8790"));
+        assert!(insecure("http://203.0.113.5:9021"));
         assert!(insecure("http://monitor.example.com"));
         assert!(!insecure("https://monitor.example.com"));
-        assert!(!insecure("http://100.101.102.103:8790"));
-        assert!(!insecure("http://192.168.1.20:8790"));
+        assert!(!insecure("http://100.101.102.103:9021"));
+        assert!(!insecure("http://192.168.1.20:9021"));
         assert!(!insecure("http://my-pc.tail1234.ts.net"));
-        assert!(!insecure("http://my-pc:8790"));
-        assert!(!insecure("http://127.0.0.1:8790"));
+        assert!(!insecure("http://my-pc:9021"));
+        assert!(!insecure("http://127.0.0.1:9021"));
     }
 
     #[test]

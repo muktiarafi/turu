@@ -350,7 +350,7 @@ fn vibeskua_entries() -> Vec<Entry> {
         entry!(
             Report,
             "Report To",
-            "Another Turu's monitor, e.g. https://my-pc.tail1234.ts.net or http://100.101.102.103:8790: this machine's bots show on its page. Empty: off",
+            "Another Turu's monitor, e.g. https://my-pc.tail1234.ts.net or http://100.101.102.103:9021: this machine's bots show on its page. Empty: off",
             Field::Text(|s| &mut s.monitor_report_to)
         ),
         entry!(

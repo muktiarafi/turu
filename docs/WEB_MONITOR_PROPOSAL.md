@@ -149,7 +149,7 @@ shared `http.rs`.
 The page shows character names, gold, rooms; control can run scripts as the account. Modelled on
 Nexus's, but stricter where it's cheap:
 
-* Listens on `127.0.0.1:8790` by default (9021 is the control API). "Allow other devices"
+* Listens on `127.0.0.1:9021` by default (8080 is the control API). "Allow other devices"
   switches to `0.0.0.0`. Never suggests port forwarding; the docs describe Tailscale Serve, as
   Nexus does.
 * Three keys in `monitor-keys.json` (owner-readable, like `api-token`): **view**, **control**,
@@ -158,7 +158,7 @@ Nexus's, but stricter where it's cheap:
   to it. Keys go in `Authorization: Bearer`, never in query strings (except SSE, where
   `EventSource` can't set headers: the page trades the key for a short-lived ticket with
   `POST /api/ticket` first).
-* Sharing a link puts the key in the URL **fragment** (`http://host:8790/#key=...`): browsers
+* Sharing a link puts the key in the URL **fragment** (`http://host:9021/#key=...`): browsers
   don't send fragments, so it's not in server or proxy logs. The page stores it in
   `localStorage` and removes it from the address bar.
 * Every POST checks `Origin` against the page's own origin (no CORS allowed), and the server
@@ -193,7 +193,7 @@ Options > Application gets a **Monitor** chip (in place of the Nexus entries und
 |---|---|
 | Enable Web Monitor | Starts / stops the server at once. |
 | Allow Other Devices | `127.0.0.1` or `0.0.0.0`; warns about the network. |
-| Port | Default 8790. |
+| Port | Default 9021. |
 | Allow Control | Off by default. |
 | Open Monitor / Copy Link / Copy Phone Link | Phone link: LAN or Tailscale name, with the view key in the fragment; shows a QR code (`qrcode` crate into an egui texture). |
 | Regenerate Keys | Asks twice. |

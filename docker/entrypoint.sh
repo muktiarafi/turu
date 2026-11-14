@@ -7,8 +7,8 @@
 #   TURU_SERVER                  the server to log in on
 #   TURU_RUN_SCRIPT              a script to start after the login (TURU_LOAD_SCRIPT: only load it)
 #   TURU_RUN_PLAYLIST            a playlist to start (TURU_LOAD_PLAYLIST: only load it)
-#   TURU_API                     the control API's address (default 0.0.0.0:9021; empty: off)
-#   TURU_MONITOR                 the web monitor's address, e.g. 0.0.0.0:8790
+#   TURU_API                     the control API's address (default 0.0.0.0:8080; empty: off)
+#   TURU_MONITOR                 the web monitor's address, e.g. 0.0.0.0:9021
 #   TURU_REPORT_TO               report to another web monitor (with TURU_MONITOR_PUSH_KEY)
 set -eu
 

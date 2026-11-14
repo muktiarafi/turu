@@ -655,8 +655,8 @@ mod tests {
     fn checks_the_origin() {
         let origin = |o: &str| HeaderValue::from_str(o).unwrap();
         assert!(same_origin(
-            &origin("http://127.0.0.1:8790"),
-            &host("127.0.0.1:8790")
+            &origin("http://127.0.0.1:9021"),
+            &host("127.0.0.1:9021")
         ));
         assert!(same_origin(
             &origin("https://pc.tail1.ts.net"),
@@ -664,13 +664,13 @@ mod tests {
         ));
         assert!(!same_origin(
             &origin("https://evil.example"),
-            &host("127.0.0.1:8790")
+            &host("127.0.0.1:9021")
         ));
         assert!(!same_origin(
-            &origin("http://127.0.0.1:9021"),
-            &host("127.0.0.1:8790")
+            &origin("http://127.0.0.1:8080"),
+            &host("127.0.0.1:9021")
         ));
-        assert!(!same_origin(&origin("null"), &host("127.0.0.1:8790")));
+        assert!(!same_origin(&origin("null"), &host("127.0.0.1:9021")));
     }
 
     #[test]
@@ -687,12 +687,12 @@ mod tests {
 
     #[test]
     fn knows_loopback_hosts() {
-        assert!(loopback_host(&host("127.0.0.1:8790")));
+        assert!(loopback_host(&host("127.0.0.1:9021")));
         assert!(loopback_host(&host("localhost")));
-        assert!(loopback_host(&host("LOCALHOST:8790")));
-        assert!(loopback_host(&host("[::1]:8790")));
+        assert!(loopback_host(&host("LOCALHOST:9021")));
+        assert!(loopback_host(&host("[::1]:9021")));
         assert!(!loopback_host(&host("my-pc.tail1234.ts.net")));
-        assert!(!loopback_host(&host("127.0.0.1.evil.example:8790")));
+        assert!(!loopback_host(&host("127.0.0.1.evil.example:9021")));
         assert!(!loopback_host(&HeaderMap::new()));
     }
 }

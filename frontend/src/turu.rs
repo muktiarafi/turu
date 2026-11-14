@@ -738,7 +738,7 @@ pub fn host_swf_url() -> anyhow::Result<String> {
 /// * `--headless`: no window (see `headless.rs`).
 /// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
-/// * `--api` (or `--api=<address>`, default `127.0.0.1:9021`): the control API (see
+/// * `--api` (or `--api=<address>`, default `127.0.0.1:8080`): the control API (see
 ///   `turu_bot::control_api`), started by [`start_api`].
 pub fn take_startup_args(args: &mut Vec<OsString>) {
     let Flags {
@@ -765,7 +765,7 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         && addr.parse::<std::net::SocketAddr>().is_err()
     {
         tracing::warn!(
-            "--monitor={addr}: expected an address like 0.0.0.0:8790; using the settings' port"
+            "--monitor={addr}: expected an address like 0.0.0.0:9021; using the settings' port"
         );
     }
     *MONITOR_FLAG.lock().unwrap_or_else(|e| e.into_inner()) = monitor;
@@ -857,7 +857,7 @@ pub fn start_api() {
     let addr: std::net::SocketAddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:9021)");
+            tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:8080)");
             return;
         }
     };
@@ -1323,7 +1323,7 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             "--headless" => flags.headless = true,
             "--exit-with-parent" => flags.exit_with_parent = true,
             // The address only inline (`--api=...`): the next argument may be anything.
-            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:9021".into())),
+            "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:8080".into())),
             // Likewise: `--monitor` alone takes Options > Application's port.
             "--monitor" => flags.monitor = Some(inline.unwrap_or_default()),
             "--report-to" => flags.report_to = value(),
@@ -1444,7 +1444,7 @@ mod tests {
             "turu",
             "--monitor",
             "--report-to",
-            "http://pc:8790",
+            "http://pc:9021",
             "x.swf",
         ]
         .into_iter()
@@ -1453,7 +1453,7 @@ mod tests {
         let flags = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "x.swf"]);
         assert_eq!(flags.monitor.as_deref(), Some(""));
-        assert_eq!(flags.report_to.as_deref(), Some("http://pc:8790"));
+        assert_eq!(flags.report_to.as_deref(), Some("http://pc:9021"));
         let mut args: Vec<OsString> = ["turu", "--monitor=0.0.0.0:9000"]
             .into_iter()
             .map(Into::into)
@@ -1497,7 +1497,7 @@ mod tests {
         } = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-p", "low", "-g", "metal"]);
         assert!(headless);
-        assert_eq!(api.as_deref(), Some("127.0.0.1:9021"));
+        assert_eq!(api.as_deref(), Some("127.0.0.1:8080"));
         assert_eq!(startup.username.as_deref(), Some("Hero"));
         assert_eq!(startup.password.as_deref(), Some("a=b"));
         assert_eq!(startup.server.as_deref(), Some("Artix"));

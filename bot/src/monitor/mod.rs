@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-pub const DEFAULT_PORT: u16 = 8790;
+pub const DEFAULT_PORT: u16 = 9021;
 pub const SAMPLE_EVERY: Duration = Duration::from_secs(2);
 pub const SLOW_EVERY: Duration = Duration::from_secs(30);
 /// A request keeps the samplers going this long; an open event stream keeps them going.
