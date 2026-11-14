@@ -272,6 +272,13 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   patched to call `TuruStage`, wouldn't find it (the menu never opened). `Options::shared_stage`
   gives each such domain a parent, `TuruStage.assetsParent`: the domain of the client's skua,
   which has `TuruStage` and names the tab, without the game's classes over the assets' own.
+* **Redrawn after the app comes back.** With several tabs, the tab on screen stayed black after
+  Home and back or a file dialog's picker (a phone, 2026-11-14), until another tab was picked and
+  then it again; the emulator did the same. Its display list was just as before, visible, scaled and
+  placed alike (the host logs it: `stage activate`, `stage select n`, `stage redrawn` in the Debug
+  log), so likely AIR didn't draw the scaled game anew. A few frames after `activate`, the host
+  hides what picking the tab shows (its game and its popups' layer, or its host SWF while the game
+  loads) for a frame and shows it again (`TuruAirHost.redrawShown`).
 * **World Camera** resets the game's root to scale 1 at (0, 0) when it closes, which undid the
   fit with several tabs; the host puts the fit back each frame it finds the shown game there
   (`TuruStage.keepFitted`).
@@ -280,11 +287,8 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
 
 * Tabs: a stage kept in a variable and used later (`MinigameSkip`, the keybinds' `onClose`)
   isn't seen by the popup rule, so those few still show over whichever tab is on screen.
-* The game stays black after the app comes back to the screen (Home and back, or a file dialog's
-  picker), on the Android 16 arm64 emulator (2026-11-14): AIR says `activate` but its view keeps
-  its black placeholder (an `ImageView` over AIR's `SurfaceView`) and never draws; Turu's windows
-  draw. A new activity (Back, then opening the app) draws again. Not yet tried on a phone, nor
-  known whether an earlier build did it.
+* A single tab after the app comes back: not tried on the emulator since the redraw (Tabs,
+  "Redrawn after the app comes back"); a phone drew it all along.
 
 From docs/AIR_PROPOSAL.md (A1–A3), still open:
 

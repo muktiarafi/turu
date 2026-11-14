@@ -182,10 +182,75 @@ package {
             native.flashCall("hostLog", JSON.stringify([text]));
         }
 
-        /** Silent off screen, as Turu's Ruffle build (the game keeps running there). */
+        /**
+         * Silent off screen, as Turu's Ruffle build (the game keeps running there). Back on screen,
+         * the tab's game is redrawn ([redrawShown]).
+         */
         private function onActivity(event:Event):void {
             say(new Date().toTimeString().substr(0, 8) + " " + event.type);
             SoundMixer.soundTransform = new SoundTransform(event.type == Event.ACTIVATE ? 1 : 0);
+            dumpStage(event.type);
+            if (event.type == Event.ACTIVATE) {
+                redrawShown();
+            }
+        }
+
+        /**
+         * With several tabs, the game on screen stayed black after the app came back (Home and
+         * back, a file dialog's picker), its display list just as before, until another tab was
+         * picked and then it again: likely AIR not drawing the scaled game anew. So a few frames
+         * after the app is back (its surface may come after the event), what picking the tab shows
+         * (its game and its popups' layer, or its host SWF while the game loads) is hidden for a
+         * frame and shown again, the tab on screen staying the same.
+         */
+        private function redrawShown():void {
+            var frames:int = 0;
+            addEventListener(Event.ENTER_FRAME, function later(e:Event):void {
+                frames++;
+                if (frames == 3) {
+                    var client:int = TuruStage.active;
+                    for each (var shown:DisplayObject in [TuruStage.games[client], TuruStage.overlays[client],
+                            TuruStage.mains[client]]) {
+                        if (shown != null && shown.parent != null) {
+                            shown.visible = false;
+                        }
+                    }
+                } else if (frames == 4) {
+                    removeEventListener(Event.ENTER_FRAME, later);
+                    TuruStage.activate(TuruStage.active);
+                    dumpStage("redrawn");
+                }
+            });
+        }
+
+        /**
+         * The stage's children as the Debug log's line `stage <when>: ...`: whose each is (game,
+         * host SWF or overlay of client n), its visibility, alpha, scale, place and size, with the
+         * fit and the stage's size: what a tab that stays black after the app comes back differs in.
+         */
+        private function dumpStage(when:String):void {
+            if (stage == null) {
+                return;
+            }
+            var parts:Array = [];
+            for (var i:int = 0; i < stage.numChildren; i++) {
+                var d:DisplayObject = stage.getChildAt(i);
+                var who:String = d == this ? "host" : "?";
+                var n:int = TuruStage.games.indexOf(d);
+                if (n >= 0) {
+                    who = "game" + n;
+                } else if ((n = TuruStage.mains.indexOf(d)) >= 0) {
+                    who = "main" + n;
+                } else if ((n = TuruStage.overlays.indexOf(d)) >= 0) {
+                    who = "layer" + n;
+                }
+                parts.push(i + ":" + who + (d.visible ? "" : " hidden") + " a" + d.alpha.toFixed(2) +
+                    " s" + d.scaleX.toFixed(3) + "/" + d.scaleY.toFixed(3) + " @" + d.x.toFixed(0) + "," +
+                    d.y.toFixed(0) + " " + d.width.toFixed(0) + "x" + d.height.toFixed(0));
+            }
+            say("stage " + when + ": active " + TuruStage.active + ", fit " + TuruStage.fitScale.toFixed(3) +
+                " @" + TuruStage.fitX.toFixed(1) + ", stage " + stage.stageWidth + "x" + stage.stageHeight +
+                " " + stage.scaleMode + "; " + parts.join(" | "));
         }
 
         /**
@@ -307,6 +372,7 @@ package {
                     break;
                 case "select":
                     TuruStage.activate(client);
+                    dumpStage("select " + client);
                     break;
                 case "close":
                     close(client);

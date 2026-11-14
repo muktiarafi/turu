@@ -281,8 +281,9 @@ Nothing from the survey these came from is left.
 
 ## Known gap
 
-On the Android 16 arm64 emulator (2026-11-14), Turu Mas's game stays black after the app comes
-back to the screen, after Home and back or a file dialog's picker alike: AIR says `activate`, but
-its view keeps its black placeholder and never draws; Turu's windows draw. A new activity (Back,
-then opening the app) draws again. Not tried on a phone yet, nor known whether an earlier build did
-it (`docs/TURU_MAS.md`, Known gaps).
+Turu Mas's game stayed black after the app came back to the screen (Home and back, or a file
+dialog's picker): on a phone (2026-11-14, `a703acb70`) only with several tabs, the tab on screen,
+until another tab was picked and then it again; the emulator did the same. The host SWF now
+redraws that tab's game a few frames after AIR's `activate` (`docs/TURU_MAS.md`, Tabs, "Redrawn
+after the app comes back"), tried on the emulator with four tabs, Home and back and Load Script's
+picker alike. Not yet on the phone; one tab on the emulator not tried since.
