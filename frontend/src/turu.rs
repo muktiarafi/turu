@@ -370,7 +370,7 @@ pub fn install_update(on_quit: bool) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
         let _ = on_quit;
-        Err("Android installs the APK itself".into())
+        install_package()
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -458,6 +458,78 @@ pub fn install_update(on_quit: bool) -> Result<String, String> {
         }
         Ok(format!("installing Turu {version}"))
     }
+}
+
+/// Android's Download & install, on a thread: downloads the available release's APK, checks it
+/// against `SHA256SUMS.txt` and hands it to the system's installer
+/// ([`crate::platform::Platform::install_package`]), which asks the user, installs it over this
+/// app and stops it; [`package_install_finished`] hears when it didn't.
+#[cfg(target_os = "android")]
+fn install_package() -> Result<String, String> {
+    use turu_bot::updates::{self, Install};
+    let platform = crate::platform::platform();
+    if !platform.installs_packages() {
+        return Err("this app can't install its updates".into());
+    }
+    let release = updates::available().ok_or("no update available")?;
+    let name = updates::app_name();
+    if !release.installable() {
+        return Err(format!("{name} {} has no APK", release.version));
+    }
+    let busy = updates::update_state(|s| {
+        let busy = matches!(s.install, Install::Busy(_));
+        if !busy {
+            s.install = Install::Busy(format!("Downloading {name} {}…", release.version));
+        }
+        busy
+    });
+    if busy {
+        return Err("an update is being installed already".into());
+    }
+    let version = release.version.clone();
+    let spawned = std::thread::Builder::new()
+        .name("Turu Client Update".into())
+        .spawn(move || {
+            let set = |install: Install| updates::update_state(|s| s.install = install);
+            let dir = bot().paths.updates_dir();
+            let installed = updates::download(&updates::Http::for_downloads(), &release, &dir)
+                .and_then(|apk| {
+                    set(Install::Busy(format!("Installing {name} {}…", release.version)));
+                    crate::platform::platform().install_package(&apk)
+                });
+            if let Err(e) = installed {
+                tracing::error!("Couldn't update {name}: {e}");
+                set(Install::Failed(e));
+            }
+        });
+    if let Err(e) = spawned {
+        updates::update_state(|s| s.install = Install::Failed(e.to_string()));
+        return Err(e.to_string());
+    }
+    Ok(format!("installing {name} {version}"))
+}
+
+/// How Android's installer ended [`install_update`]'s install, as both apps' `PackageUpdate.kt`
+/// reports it: `status` 0 installed (Android usually stops the app before), 1 cancelled by the
+/// user, 2 failed (with Android's `message`). Called on any thread.
+pub fn package_install_finished(status: i32, message: Option<String>) {
+    use turu_bot::updates::{self, Install};
+    let install = match status {
+        0 => {
+            tracing::info!("The update is installed");
+            Install::Busy("Installed: open the app again…".into())
+        }
+        1 => {
+            tracing::info!("The update's install was cancelled");
+            Install::Idle
+        }
+        _ => {
+            let why = message.unwrap_or_else(|| "Android's installer failed".into());
+            tracing::error!("Android couldn't install the update: {why}");
+            Install::Failed(why)
+        }
+    };
+    updates::update_state(|s| s.install = install);
 }
 
 /// Puts an update kept by Update when I quit in place; the app calls it once its window closed.

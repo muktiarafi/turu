@@ -413,6 +413,26 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeCrashUploadsAnswer<'
     std::thread::spawn(move || turu_frontend::gui::turu::answer_crash_upload_question(answer));
 }
 
+/// `Bridge.nativePackageInstalled(status, message)`, on the UI thread: how Android's installer
+/// ended the update's install (`PackageUpdate`: 0 installed, 1 cancelled, 2 failed).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativePackageInstalled<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    status: jint,
+    message: JString<'local>,
+) {
+    let message = unowned_env
+        .with_env(|env| -> jni::errors::Result<Option<String>> {
+            if message.is_null() {
+                return Ok(None);
+            }
+            Ok(Some(message.try_to_string(env)?))
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>();
+    turu_frontend::turu::package_install_finished(status, message);
+}
+
 /// `Bridge.nativeUiFieldEnter()`: the keyboard's Send in the native field for Turu's text box.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeUiFieldEnter<'local>(
@@ -513,12 +533,19 @@ fn engine(root: &Path) {
     );
     let mut args = read_args(&root.join(ARGS_FILE));
     let perf_log = take_value(&mut args, "--perf-log");
+    let releases_url = take_value(&mut args, "--releases-url");
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!(
             "{ARGS_FILE}: {} arguments aren't Turu's flags; ignored",
             args.len()
         );
+    }
+    // `--releases-url <url>`: `TURU_RELEASES_URL`, where client updates are looked for (a test
+    // feed, say), which an app can't be started with.
+    if let Some(url) = releases_url {
+        // SAFETY: before the engine's threads exist (the update checks' starts below).
+        unsafe { std::env::set_var("TURU_RELEASES_URL", url) };
     }
     // Before turu.swf's first call (`requestLoadGame`), which asks the bot to load the client:
     // the first tab is client 0, which the host SWF loads at start. The others open and close
@@ -535,7 +562,7 @@ fn engine(root: &Path) {
     }
     turu::start_perf_log(None);
     // At start and every 6 hours (Options > Application): a newer Turu Mas shows Update in the
-    // bar, whose button downloads its APK for Android to install.
+    // bar, whose button downloads its APK and hands it to Android's installer.
     turu::start_client_updates();
     // The notification's state and buttons (`TuruAirService`).
     crate::notify::start_updates();

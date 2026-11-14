@@ -339,9 +339,12 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   **Download & restart** (primary; greyed while any tab runs a script or a download runs, the
   tooltip says why) downloads the package, checks it against `SHA256SUMS.txt`, replaces Turu and
   starts it again with the same arguments; **Update when I quit** downloads and unpacks it now
-  and puts it in place when the window closes. On Android one button, **Download APK**, opens the
-  APK's URL (Android installs it over the app); a release without this platform's package says
-  to download it from the release page.
+  and puts it in place when the window closes. On Android one button, **Download & install**
+  (greyed while a script runs: installing stops the app), downloads the APK, checks it against
+  `SHA256SUMS.txt` and hands it to Android's installer, which asks before it installs over the
+  app; the user opens the new version (cancelling Android's dialog brings the button back). A
+  release without this platform's package says to download it from the release page; an APK
+  without sums gets **Download APK**, which opens its URL.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
   the password goes to the system keychain off the UI thread; no title when adding, "Editing
   Hero" when editing, whose greyed username says on hover it's the account's key; Enter in any

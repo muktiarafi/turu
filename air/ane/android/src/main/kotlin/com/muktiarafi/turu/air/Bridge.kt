@@ -17,6 +17,7 @@ import com.muktiarafi.turu.shared.CrashQuestion
 import com.muktiarafi.turu.shared.CrashUploads
 import com.muktiarafi.turu.shared.FieldStyle
 import com.muktiarafi.turu.shared.FieldTarget
+import com.muktiarafi.turu.shared.PackageUpdate
 import org.json.JSONObject
 
 /**
@@ -386,6 +387,21 @@ object Bridge {
     /** The answer to "Send crash reports?": 1 yes, 0 no, -1 closed without one (`platform.rs`). */
     @JvmStatic
     external fun nativeCrashUploadsAnswer(answer: Int)
+
+    /**
+     * Installs an update's APK at `path` with Android's installer ([PackageUpdate]); the outcome
+     * goes to [nativePackageInstalled]. Null when it started, else why not. From the update's
+     * thread (`platform.rs`).
+     */
+    @JvmStatic
+    fun installPackage(path: String): String? {
+        val activity = activity ?: return "open Turu Mas to install the update"
+        return PackageUpdate.install(activity, path) { status, message -> nativePackageInstalled(status, message) }
+    }
+
+    /** How Android's installer ended [installPackage]'s install ([PackageUpdate]'s status). */
+    @JvmStatic
+    external fun nativePackageInstalled(status: Int, message: String?)
 
     /** AIR's activity, while there is one ([PickerActivity] starts from it). */
     fun currentActivity(): Activity? = activity

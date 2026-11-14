@@ -280,6 +280,10 @@ lines: render passes, blend layers, cacheAsBitmap redraws, new textures).
 adb logcat -s turu | grep -E "engine thread|render per|per rendered"
 ```
 
+`--releases-url <url>` in `turu-args.txt` is the desktop's `TURU_RELEASES_URL`: where client
+updates are looked for, such as a test feed for the update window (docs/ANDROID_NATIVE_UI.md,
+"Updates"). Turu Mas reads it too.
+
 **Crowded rooms** (2026-11-08, emulator `-gpu host` on an Apple M5, battleon on Alteon, ~300 render
 passes a frame from the avatars' multiply and overlay blends, the same as on the desktop): one
 render of the game took ~45-50 ms (the desktop: ~8 ms), nearly all of it on the CPU in recording

@@ -1,7 +1,7 @@
 //! The "Update available" window, opened from the nav bar's notice (VibeSkua's Manager asks in
 //! a message box; Turu never interrupts: a script may be running). It shows the new version,
 //! its release notes link and, on desktops, Download & restart and Update when I quit; on
-//! Android, Download APK opens the package's URL for the system to install.
+//! Android, Download & install hands the checked APK to Android's installer.
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
@@ -63,7 +63,11 @@ fn contents(ui: &mut Ui, release: &Release, install: &Install) {
 
     let in_place = updates::Target::current().is_some_and(updates::Target::updates_in_place);
     if !in_place {
-        link_only(ui, release);
+        if crate::platform::platform().installs_packages() && release.installable() {
+            install_apk(ui, install);
+        } else {
+            link_only(ui, release);
+        }
         return;
     }
     if !release.installable() {
@@ -148,7 +152,63 @@ fn contents(ui: &mut Ui, release: &Release, install: &Install) {
     );
 }
 
-/// Android (and platforms without a package): the APK, or the release page.
+/// Android: Download & install, which hands the checked APK to Android's installer
+/// (`turu::install_update`). Installing stops the app, so it waits for running scripts.
+fn install_apk(ui: &mut Ui, install: &Install) {
+    let running = crate::turu::any_script_running();
+    let name = updates::app_name();
+    match install {
+        Install::Busy(what) => {
+            ui.horizontal(|ui| {
+                ui.add(Spinner::new().size(14.0).color(TEXT));
+                ui.label(RichText::new(what).color(TEXT));
+            });
+        }
+        Install::Failed(error) => note(ui, &format!("The update failed: {error}. Try again."), DANGER),
+        _ if running => note(
+            ui,
+            &format!("A script is running. Stop it to install: {name} closes."),
+            MUTED,
+        ),
+        _ => {}
+    }
+    let busy = matches!(install, Install::Busy(_));
+    let height = widgets::target(28.0, 40.0);
+    ui.add_space(2.0);
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), height),
+        Layout::right_to_left(Align::Center),
+        |ui| {
+            let why = if busy {
+                "The update is downloading"
+            } else {
+                "Stop the running script first"
+            };
+            if widgets::button(
+                ui,
+                "Download & install",
+                Kind::Primary,
+                !busy && !running,
+                vec2(160.0, height),
+                why,
+            )
+            .clicked()
+            {
+                start(false);
+            }
+        },
+    );
+    ui.label(
+        RichText::new(format!(
+            "Checked against the release's SHA256SUMS.txt, then Android asks before it installs over {name}; \
+             your settings and scripts stay. Open {name} again after."
+        ))
+        .size(widgets::small_label_size())
+        .color(MUTED),
+    );
+}
+
+/// Platforms without a package, or an APK without its sums: the APK, or the release page.
 fn link_only(ui: &mut Ui, release: &Release) {
     let height = widgets::target(28.0, 40.0);
     ui.add_space(2.0);

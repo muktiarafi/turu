@@ -1,10 +1,10 @@
 //! What the bot windows can do under AIR (`turu_frontend::platform::Platform`): links and the share
 //! sheet through Kotlin's `Bridge`; file dialogs through Android's system picker (`saf.rs`); tabs
 //! (game clients sharing AIR's one stage: `clients`), Army and Butler in tabs, under the Tab
-//! Limit, without Grid View.
+//! Limit, without Grid View. An update's APK goes to Android's installer (`Bridge.installPackage`).
 
 use crate::host::BRIDGE;
-use jni::objects::JValue;
+use jni::objects::{JString, JValue};
 use jni::{Env, jni_sig, jni_str};
 use std::path::Path;
 use turu_frontend::platform::{Answer, FileDialog, Platform, Question};
@@ -142,5 +142,33 @@ impl Platform for AirPlatform {
             )?;
             Ok(())
         });
+    }
+
+    fn installs_packages(&self) -> bool {
+        true
+    }
+
+    /// `Bridge.installPackage(path)`: Android's installer (`PackageUpdate.kt`).
+    fn install_package(&self, path: &Path) -> Result<(), String> {
+        let (vm, class) = BRIDGE.get().ok_or("the extension isn't started")?;
+        let error =
+            crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<Option<String>> {
+                let path = env.new_string(path.to_string_lossy())?;
+                let error = env
+                    .call_static_method(
+                        class,
+                        jni_str!("installPackage"),
+                        jni_sig!("(Ljava/lang/String;)Ljava/lang/String;"),
+                        &[JValue::Object(&path)],
+                    )?
+                    .l()?;
+                if error.is_null() {
+                    return Ok(None);
+                }
+                let error = env.cast_local::<JString>(error)?;
+                Ok(Some(error.try_to_string(env)?))
+            })
+            .map_err(|e| e.to_string())?;
+        error.map_or(Ok(()), Err)
     }
 }

@@ -2,7 +2,7 @@
 
 Turu's windows on Android are egui, the same code as the desktop's (`frontend/src/gui/turu/`),
 drawn over the game. Some of what they do works better as Android's own components: typing,
-first-start questions, file dialogs. This says which pieces were moved to native Android, in both
+first-start questions, file dialogs, installing an update. This says which pieces were moved to native Android, in both
 Android apps (Turu, on Ruffle, and Turu Mas, on AIR), how each works, what stays in egui and why,
 and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MAS.md` first.
 
@@ -12,10 +12,11 @@ and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MA
 | Turu's own text boxes as a native field; a tap outside closes it | `8174af2e9` | `ui_field.rs` | `overlay.rs`, `Bridge` |
 | "Send crash reports?" as Android's dialog | `b37f9f790` | `CrashQuestion.kt` (shared), `platform.rs` | `CrashQuestion.kt` (shared), `platform.rs` |
 | File dialogs through the system picker | `c013aa4c0` (Turu had them before) | `saf.rs` | `saf.rs`, `Documents.kt`, `PickerActivity.kt` |
+| An update's APK installed by Android's installer, not the browser | "Install an update's APK" (after `2f7bb166c`) | `PackageUpdate.kt` (shared), `platform.rs` | `PackageUpdate.kt` (shared), `platform.rs`, `Bridge` |
 
 What both apps share lives in `turu_frontend` (`gui/turu/native_field.rs`, `documents.rs`, the
 `Platform` hooks) and in the Gradle module `android/shared` (package `com.muktiarafi.turu.shared`):
-`NativeField`, `CrashQuestion`, `CrashReports`, `CrashUploads`, `Tombstone`. Turu's app depends on it
+`NativeField`, `CrashQuestion`, `CrashReports`, `CrashUploads`, `Tombstone`, `PackageUpdate`. Turu's app depends on it
 (`android/settings.gradle.kts`); Turu Mas's extension includes it by path
 (`air/ane/android/settings.gradle.kts`), and its classes reach the ANE's jar with the other
 libraries (`aneLibs`, `air/ane/build.sh`). It builds Java 8 class files, which AIR's own `d8`
@@ -103,6 +104,38 @@ scripts folder's `Imported/`; `save_request`: MIME type and suggested name), and
   picker's grant on the document ends with that activity, before the copy or the save is done, so
   `Documents.hold` takes a persistable grant and gives it up after.
 
+## Updates
+
+The update window's Android button was Download APK, which opened the APK's URL in the browser:
+the browser downloaded it, and the user found it and opened it. Now it's **Download & install**
+(`client_update.rs`, `turu::install_update`), as on a desktop: the engine downloads the APK with
+`turu_bot::updates::download`, the desktops' code, which checks it against the release's
+`SHA256SUMS.txt`, and `Platform::install_package` hands it to `PackageUpdate.kt` (shared). That
+writes it into a `PackageInstaller` session and commits it; Android asks the user to confirm and,
+the first time, to allow installs from this app ("install unknown apps", which needs
+`REQUEST_INSTALL_PACKAGES` in both manifests), installs it and stops the app. The user opens the
+new version. The session's outcome comes back through `nativePackageInstalled` to
+`turu::package_install_finished`: cancelled brings the button back, a failure shows Android's
+message.
+
+* **Not `DownloadManager`**, which the survey named: it would save the APK without the sums
+  check, and its progress wouldn't show in the window as the desktops' does. The engine's download
+  holds the APK in memory while it checks it (Turu's ~75 MB, Turu Mas's ~55 MB), as on a desktop.
+* **Android's confirmation is an activity**, which an app can start only while it's on screen.
+  `PackageUpdate` follows the app's resumed activity (starting from the one Download & install was
+  tapped in) and, when the download ends with the app in the background, shows the confirmation
+  when one of its activities comes back.
+* Installing stops every tab, so the button waits for running scripts, as Download & restart does.
+* **Testing**: neither app can be started with `TURU_RELEASES_URL`, so `--releases-url <url>` in
+  `turu-args.txt` stands in for it. A feed is a JSON list as GitHub's API gives it (`tag_name`,
+  `assets` with `name` and `browser_download_url`), naming `turu-<version>-android-arm64.apk`,
+  `turumas-<version>-android-arm64.apk` and `SHA256SUMS.txt` (`shasum -a 256`); serve it from the
+  host with `python3 -m http.server`, at `http://10.0.2.2:<port>/` from the emulator (the engine's
+  HTTP doesn't follow Android's network security config). A debug build offered as a newer version
+  installs over the same debug build. On the Android 16 arm64 emulator (2026-11-14), both apps
+  downloaded, checked and committed the APK, showed Android's dialog and went back to the button
+  when it was cancelled; the install itself, past "install unknown apps", wasn't tried.
+
 ## Platform calls
 
 The bot windows' links, share sheet and clipboard are one Kotlin method each, called from Rust over
@@ -130,8 +163,6 @@ keyboard while the game's field has the focus.
 
 From the survey these came from, not done:
 
-* Installing an update's APK in the app (`DownloadManager`, `PackageInstaller`) instead of the
-  browser.
 * Drop and script-stopped alerts as Android notifications, heard with the screen off.
 * Turu from `NativeActivity` to `GameActivity` (a real view hierarchy: the strip as a view, the
   platform's text input, activity results), if more native views come.
@@ -145,6 +176,11 @@ From the survey these came from, not done:
   (`FEATURE_NO_TITLE`).
 * **Turu's windows drew over Turu Mas's strip**: the overlay is a surface on top of every view.
 * **The first save came out empty** (Turu Mas): the picker's grant ended with `PickerActivity`.
+* **Android's install confirmation never showed** until the app was left and opened again:
+  `PackageUpdate` learnt which activity was on screen only from resume callbacks, registered
+  after the activity had resumed. It starts from the caller's activity now.
+* **`system_server` logs `ServiceNotFoundException: persistent_data_block`** when an install
+  session is committed on the emulator: the emulator lacks that service; harmless.
 * **rustfmt on `frontend/src/gui/turu/mod.rs`** with `max_width = 120` rewrites unrelated lines;
   format the files you changed one at a time, as `CLAUDE.md` says.
 * **Testing on the emulator**: `uiautomator dump` gives the strip's bounds, `dumpsys

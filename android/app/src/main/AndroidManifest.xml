@@ -10,6 +10,8 @@
     <!-- While a script runs, and leaving Turu out of battery optimisation (asked once). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Installing an update's APK (PackageUpdate.kt); Android asks the user each time. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- TuruActivity (a NativeActivity) runs the Rust side, libturu_android.so. -->
     <application

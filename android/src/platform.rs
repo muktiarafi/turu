@@ -3,6 +3,7 @@
 //! folders and files only get logged, so Edit Script and Open VSCode are hidden.
 //! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
 //! `OutputCommand::CopyText`, passed on by `screen.rs`) goes to Android's clipboard.
+//! An update's APK goes to Android's installer (`TuruActivity.installPackage`).
 //! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`). Frame interpolation
 //! (Options > Application) is saved in the data folder.
 
@@ -185,6 +186,53 @@ impl Platform for AndroidPlatform {
             None => tracing::info!("Not shared without the app on screen: {subject}"),
         }
     }
+
+    fn installs_packages(&self) -> bool {
+        true
+    }
+
+    /// `TuruActivity.installPackage(path)`: Android's installer (`PackageUpdate.kt`).
+    fn install_package(&self, path: &Path) -> Result<(), String> {
+        let app = crate::app().ok_or("open Turu to install the update")?;
+        let error = with_activity(&app, |env, activity| {
+            let path = env.new_string(path.to_string_lossy())?;
+            let error = env
+                .call_method(
+                    activity,
+                    jni_str!("installPackage"),
+                    jni_sig!("(Ljava/lang/String;)Ljava/lang/String;"),
+                    &[JValue::Object(&path)],
+                )?
+                .l()?;
+            if error.is_null() {
+                return Ok(None);
+            }
+            let error = env.cast_local::<JString>(error)?;
+            Ok(Some(error.try_to_string(env)?))
+        })
+        .map_err(|e| e.to_string())?;
+        error.map_or(Ok(()), Err)
+    }
+}
+
+/// `TuruActivity.nativePackageInstalled(status, message)`, on the UI thread: how Android's
+/// installer ended the update's install (`PackageUpdate`: 0 installed, 1 cancelled, 2 failed).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativePackageInstalled<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    status: jint,
+    message: JString<'local>,
+) {
+    let message = unowned_env
+        .with_env(|env| -> jni::errors::Result<Option<String>> {
+            if message.is_null() {
+                return Ok(None);
+            }
+            Ok(Some(message.try_to_string(env)?))
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>();
+    turu_frontend::turu::package_install_finished(status, message);
 }
 
 /// `TuruActivity.nativeCrashUploadsAnswer(answer)`, on the UI thread: "Send crash reports?" was

@@ -525,6 +525,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let mut test_gpu_loss =
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
+    let releases_url = take_value(&mut args, "--releases-url");
     restart::prepare(&mut args);
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
@@ -545,6 +546,12 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             // process's other threads (Java's) don't read Turu's environment.
             unsafe { std::env::set_var(var, "1") };
         }
+    }
+    // `--releases-url <url>`: `TURU_RELEASES_URL`, where client updates are looked for (a test
+    // feed, say), which an app can't be started with.
+    if let Some(url) = releases_url {
+        // SAFETY: as Safe Drawing's, before the update checks' thread exists.
+        unsafe { std::env::set_var("TURU_RELEASES_URL", url) };
     }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     turu::configure_startup();

@@ -27,6 +27,7 @@ import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
 import com.muktiarafi.turu.shared.FieldStyle
 import com.muktiarafi.turu.shared.FieldTarget
+import com.muktiarafi.turu.shared.PackageUpdate
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -199,6 +200,14 @@ class TuruActivity : NativeActivity() {
     fun copyText(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Turu", text))
     }
+
+    /**
+     * Installs an update's APK at `path` with Android's installer ([PackageUpdate]); the outcome
+     * goes to [nativePackageInstalled]. Null when it started, else why not. Called on the update's
+     * thread (`platform.rs`).
+     */
+    fun installPackage(path: String): String? =
+        PackageUpdate.install(this, path) { status, message -> nativePackageInstalled(status, message) }
 
     /** The clipboard's text, or null when it holds none (the game's Ctrl+V). Called on the engine thread. */
     fun clipText(): String? {
@@ -447,6 +456,10 @@ class TuruActivity : NativeActivity() {
          */
         @JvmStatic
         private external fun nativeCutout(left: Int, right: Int)
+
+        /** How Android's installer ended [installPackage]'s install ([PackageUpdate]'s status). */
+        @JvmStatic
+        external fun nativePackageInstalled(status: Int, message: String?)
 
         /** The game's [DialogField] changed its text or selection: the game's field takes it (`game_field.rs`). */
         @JvmStatic

@@ -17,8 +17,9 @@
 //! * [`install`] (desktops): unpacks it ([`install::stage`]), swaps the program
 //!   ([`install::apply`]) and starts the new one ([`install::Relaunch`]).
 //!
-//! Android only notifies: its button opens the APK's URL. Turu Mas ([`set_turu_mas`]) looks for
-//! its own APK, not Turu's.
+//! Android downloads the APK with [`download`] too and hands it to the system's installer, which
+//! asks the user and installs it over the app (`turu_frontend::turu::install_update`,
+//! `PackageUpdate.kt`). Turu Mas ([`set_turu_mas`]) looks for its own APK, not Turu's.
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -124,7 +125,8 @@ impl Target {
         }
     }
 
-    /// Whether Turu can replace itself with the package (else it only opens its URL).
+    /// Whether Turu can replace itself with the package (else, on Android, the system's installer
+    /// does it, and elsewhere Turu only opens its URL).
     pub fn updates_in_place(self) -> bool {
         !matches!(self, Self::AndroidArm64 | Self::TuruMasArm64)
     }

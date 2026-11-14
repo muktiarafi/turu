@@ -138,6 +138,19 @@ pub trait Platform: Send + Sync {
         false
     }
 
+    /// Whether [`Platform::install_package`] installs a downloaded app package (Android's APK):
+    /// the update window then downloads and installs an update instead of linking to it.
+    fn installs_packages(&self) -> bool {
+        false
+    }
+
+    /// Hands the package at `path` (downloaded and checked) to the system's installer, which asks
+    /// the user to confirm; the outcome comes back through `turu::package_install_finished`.
+    /// Err when it couldn't start. Called on a thread of its own.
+    fn install_package(&self, _path: &Path) -> Result<(), String> {
+        Err("this platform doesn't install packages".into())
+    }
+
     /// Plays VibeSkua's `Console.Beep()` ([`beep_sample`]: 800 Hz for 200 ms) on the system's
     /// default sound output, apart from the game's sound (heard while the game is muted), and
     /// returns once it has played. Called on a thread of its own (Notify Drop); nothing plays
