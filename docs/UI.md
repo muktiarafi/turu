@@ -342,7 +342,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   and puts it in place when the window closes. On Android one button, **Download & install**
   (greyed while a script runs: installing stops the app), downloads the APK, checks it against
   `SHA256SUMS.txt` and hands it to Android's installer, which asks before it installs over the
-  app; the user opens the new version (cancelling Android's dialog brings the button back). A
+  app; the user opens the new version (cancelling Android's dialog brings the button back). The
+  note under it: "Checked against SHA256SUMS.txt; your settings and scripts stay. The first time,
+  Android asks you to allow installs from Turu." A
   release without this platform's package says to download it from the release page; an APK
   without sums gets **Download APK**, which opens its URL.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;

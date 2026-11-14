@@ -200,8 +200,8 @@ fn install_apk(ui: &mut Ui, install: &Install) {
     );
     ui.label(
         RichText::new(format!(
-            "Checked against the release's SHA256SUMS.txt, then Android asks before it installs over {name}; \
-             your settings and scripts stay. Open {name} again after."
+            "Checked against SHA256SUMS.txt; your settings and scripts stay. \
+             The first time, Android asks you to allow installs from {name}."
         ))
         .size(widgets::small_label_size())
         .color(MUTED),
