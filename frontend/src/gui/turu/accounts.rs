@@ -6,7 +6,6 @@ use super::files::{self, Pending};
 use super::theme::{ACCENT, DANGER, HOVER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::platform::FileDialog;
-use crate::turu::TabRequest;
 use egui::{Align, Checkbox, ComboBox, Context, Label, Layout, Modal, RichText, ScrollArea, Ui, vec2};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -1223,7 +1222,7 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<Status>, states: &Mutex<Launc
                 launch.username
             ));
         }
-        let (text, state) = if crate::turu::request_tab(TabRequest::Open(Box::new(startup))) {
+        let (text, state) = if super::tab_limit::open_tab(startup) {
             let state = if logs_in {
                 Launched::Started
             } else {
@@ -1231,7 +1230,11 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<Status>, states: &Mutex<Launc
             };
             (format!("Opened a tab for {}.", launch.username), state)
         } else {
-            let failed = "couldn't open a tab".to_owned();
+            let failed = if super::tab_limit::reached() {
+                "the Tab Limit is reached".to_owned()
+            } else {
+                "couldn't open a tab".to_owned()
+            };
             (format!("{}: {failed}", launch.username), Launched::Failed(failed))
         };
         let failed = matches!(state, Launched::Failed(_));

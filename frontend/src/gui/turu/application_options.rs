@@ -139,7 +139,7 @@ fn entries() -> Vec<Entry> {
         entries.push(entry!(
             General,
             "Tab Limit",
-            "How many tabs (game clients) can be open at once. Each one takes about 400 MB of memory: a phone holds 2, maybe 3, before Android stops Turu",
+            "How many tabs (game clients) can be open at once. Each one takes 200-400 MB of memory: on a phone with less of it, Android may stop Turu with more open",
             Field::Int(|s| &mut s.tab_limit, "tabs", 1, 4)
         ));
     }
@@ -410,6 +410,12 @@ impl Default for ApplicationOptionsWindow {
 }
 
 impl ApplicationOptionsWindow {
+    /// Shows the options matching `search` (the Tab Limit notice's "Raise Tab Limit").
+    pub fn find(&mut self, search: &str) {
+        self.search = search.to_owned();
+        self.filter = None;
+    }
+
     pub fn show(&mut self, ctx: &egui::Context, open: &mut bool) {
         if !*open {
             self.confirm_clear = false;

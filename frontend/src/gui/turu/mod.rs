@@ -44,6 +44,7 @@ mod script_repo;
 mod skills;
 mod spammer;
 mod stats;
+mod tab_limit;
 mod tab_strip;
 pub mod theme;
 mod widgets;
@@ -393,6 +394,13 @@ impl TuruUi {
         // Last, so the script's message box sits over the other windows.
         message_box::show(ctx);
         butler::show_suspend_notice(ctx);
+        if tab_limit::show(ctx) {
+            let tab = self.active();
+            tab.application_options.find("Tab Limit");
+            tab.windows.application_options = true;
+            let id = egui::Id::new(("turu_window", "Application Options"));
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+        }
     }
 
     /// Whether the bot is doing something the UI shows live (a script, a Console snippet, Auto

@@ -960,7 +960,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
             // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
             if item(ui, "New Tab") {
-                crate::turu::request_tab(crate::turu::TabRequest::Open(Box::default()));
+                super::tab_limit::open_tab(Default::default());
             }
         }
     }

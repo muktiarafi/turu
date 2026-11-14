@@ -57,7 +57,7 @@ impl TabStrip {
                                     "New tab (log in there, or start an account in it from Army > Accounts)",
                                 );
                             if plus.clicked() {
-                                turu::request_tab(TabRequest::Open(Box::default()));
+                                super::tab_limit::open_tab(Default::default());
                             }
                         });
                     });
