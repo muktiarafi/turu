@@ -16,12 +16,11 @@ import android.provider.Settings
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
+import androidx.activity.result.contract.ActivityResultContracts
 import com.google.androidgamesdk.GameActivity
 import com.muktiarafi.turu.shared.CrashQuestion
 import com.muktiarafi.turu.shared.CrashReports
@@ -50,11 +49,15 @@ class TuruActivity : GameActivity() {
         super.onCreate(savedInstanceState)
         // Before it resumes: alerts wait while it's on screen, the install confirmation shows on it.
         Foreground.watch(this)
-        // The window's soft input mode is set again after super.onCreate (NativeActivity, before
-        // GameActivity, set "unspecified, resize" there, over the manifest's setting). Unspecified shows the keyboard whenever the window comes to the front (start,
-        // back from the background), as KeyInput holds the focus as a text editor; always hidden
-        // leaves it to a game field taking the focus (`ui.rs`). Nothing: the window stays as it is
-        // under the keyboard (Turu shows the field above it).
+        // GameTextInput listens to the surface's keys and takes them into its text as well, which
+        // came back as text after the key had typed already. Keys reach the Rust side as key
+        // events; the text input brings only what a keyboard commits without keys (`lib.rs`).
+        mSurfaceView?.setOnKeyListener(null)
+        // The window's soft input mode, set again here (NativeActivity set "unspecified, resize" in
+        // its onCreate, over the manifest's). Unspecified showed the keyboard whenever the window
+        // came to the front, as a text editor held the focus; always hidden leaves it to a field
+        // taking the focus. Nothing: the window stays as it is under the keyboard (Turu shows the
+        // field above it).
         window.setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,
@@ -95,15 +98,8 @@ class TuruActivity : GameActivity() {
             }
             view.onApplyWindowInsets(insets)
         }
-        // What the soft keyboard types into (KeyInput: a tap on delete works).
-        val keys = KeyInput(this)
-        keyInput = keys
-        addContentView(keys, ViewGroup.LayoutParams(1, 1))
-        keys.requestFocus()
         askOnce()
     }
-
-    private var keyInput: KeyInput? = null
 
     /** The game's focused text field, above the keyboard (`game_field.rs`). */
     private val gameField = SurfaceField(this, object : FieldTarget {
@@ -158,9 +154,12 @@ class TuruActivity : GameActivity() {
         runOnUiThread { uiField.hide() }
     }
 
-    /** Gives [KeyInput] the focus again once a [SurfaceField] is gone: the keyboard types into it. */
-    fun focusKeys() {
-        keyInput?.requestFocus()
+    /**
+     * Gives GameActivity's surface the focus again once a [SurfaceField] is gone: its text input is
+     * what the keyboard types into for egui's own text boxes (`ui::soft_keyboard`).
+     */
+    fun focusSurface() {
+        mSurfaceView?.requestFocus()
     }
 
     /**
@@ -174,23 +173,6 @@ class TuruActivity : GameActivity() {
             }
         }
         return super.dispatchTouchEvent(event)
-    }
-
-    /**
-     * Shows or hides the soft keyboard for [KeyInput] (`ui.rs`, `screen.rs`). Called on the engine
-     * thread; the input method only takes it on the UI thread (Android 15 throws otherwise).
-     */
-    fun softKeyboard(show: Boolean) {
-        runOnUiThread {
-            val keys = keyInput ?: return@runOnUiThread
-            val methods = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            if (show) {
-                keys.requestFocus()
-                methods.showSoftInput(keys, 0)
-            } else {
-                methods.hideSoftInputFromWindow(keys.windowToken, 0)
-            }
-        }
     }
 
     /** Opens `url` in the browser (or the app for the link). Called on the engine thread (`platform.rs`). */
@@ -353,10 +335,17 @@ class TuruActivity : GameActivity() {
         runOnUiThread { startPicker(intent, CREATE_DOCUMENT) }
     }
 
+    /** The pickers' launchers (the Activity Result API): each answers [answer] with its document. */
+    private val openPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        answer(OPEN_DOCUMENT, if (it.resultCode == Activity.RESULT_OK) it.data?.data else null)
+    }
+    private val createPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        answer(CREATE_DOCUMENT, if (it.resultCode == Activity.RESULT_OK) it.data?.data else null)
+    }
+
     private fun startPicker(intent: Intent, request: Int) {
         try {
-            @Suppress("DEPRECATION")
-            startActivityForResult(intent, request)
+            (if (request == OPEN_DOCUMENT) openPicker else createPicker).launch(intent)
         } catch (e: ActivityNotFoundException) {
             Log.w("turu", "No document picker on this phone: $e")
             answer(request, null)
@@ -396,14 +385,6 @@ class TuruActivity : GameActivity() {
         }
     }
 
-    @Deprecated("The pickers use startActivityForResult (from NativeActivity days; GameActivity has it too)")
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == OPEN_DOCUMENT || requestCode == CREATE_DOCUMENT) {
-            answer(requestCode, if (resultCode == Activity.RESULT_OK) data?.data else null)
-        }
-    }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)

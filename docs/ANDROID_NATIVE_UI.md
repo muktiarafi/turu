@@ -35,8 +35,8 @@ The foreground service and its notification, the notification and battery-optimi
 
 ## Text fields
 
-egui alone gets only keys from the soft keyboard (`KeyInput.kt` in Turu, `TuruOverlay`'s
-connection in Turu Mas: `TYPE_NULL`): no suggestions, autocorrect, composing, selection handles,
+egui alone gets only keys from the soft keyboard (GameActivity's text input asked for keys only in
+Turu, `ui::soft_keyboard`; `TuruOverlay`'s connection in Turu Mas: `TYPE_NULL`): no suggestions, autocorrect, composing, selection handles,
 text toolbar or autofill. And the keyboard covers the field being typed in. So while a field has
 the focus, a real Android `EditText` sits just above the keyboard holding what the field holds
 (as AQW's own Android launcher does), and edits go back to the field.
@@ -73,7 +73,8 @@ How the strip is placed differs:
   GameActivity's `SurfaceView`, where the game and Turu's windows are drawn: a view over a
   `SurfaceView` draws on top of it, so nothing has to keep clear of the strip. Its bottom padding is
   the keyboard's height from the window's insets (the window stays put: `adjustNothing`). Once it
-  goes, `KeyInput` takes the focus back (`TuruActivity.focusKeys`). Under NativeActivity, whose
+  goes, GameActivity's surface takes the focus back (`TuruActivity.focusSurface`), its text input
+  what the keyboard types into for egui's own boxes. Under NativeActivity, whose
   views don't show, it was a `Dialog` of its own (`DialogField`) placed above the keyboard from
   where its window was (`fitAboveKeyboard`).
 * **Turu Mas** puts the strip in AIR's view hierarchy, right of the rail: a window of its own
@@ -162,12 +163,31 @@ back. Choosing a file in the picker wasn't tried.
 
 The strip followed as a view (`SurfaceField`, "How the strip is placed" above): on the same
 emulator the game's field and Search Scripts' box typed through it, it sat right above the keyboard,
-Back and a tap outside closed it (the tap reaching the game or the window), and `KeyInput` had the
-focus after. Not tried: Android before 11, where the keyboard's height comes from the deprecated
+Back and a tap outside closed it (the tap reaching the game or the window), and the keys-only
+text view had the focus after. Not tried: Android before 11, where the keyboard's height comes from the deprecated
 `systemWindowInsetBottom` (`NativeField.keyboardHeight`).
 
-Not done yet: the soft keyboard through `GameTextInput` (android-activity's `TextEvent`) instead
-of `KeyInput.kt`; the pickers through the Activity Result API.
+Then the rest of what NativeActivity had needed:
+
+* **The keyboard for egui's own text boxes** (those that don't go through the strip) is
+  GameActivity's text input (`GameTextInput`), not `KeyInput.kt`, an invisible view of Turu's
+  that held the focus for it. `ui::soft_keyboard` asks for keys only (`TYPE_NULL`: no
+  suggestions, no composing), empties the input and shows or hides the keyboard, all through
+  android-activity (GameActivity passes these calls to the UI thread itself; NativeActivity's
+  didn't, which Android 15 refused). The keys come as key events, as before. GameTextInput also
+  listens to the surface's keys and took each one into its text, which came back as a `TextEvent`
+  after the key had typed: the letters came out twice or three times, so `TuruActivity` takes its
+  key listener off the surface. A `TextEvent` now only brings what a keyboard commits without keys
+  (voice, an emoji), typed key by key (`input::typed`), and the input is emptied again.
+* **The pickers** start through the Activity Result API (`registerForActivityResult`, one
+  launcher each for open and save, with Turu's own intents), not `startActivityForResult` and
+  `onActivityResult`.
+
+Tested on the same emulator: every text box sent down the keys-only path for the test (`follow`
+doing nothing), Search Scripts' box took "token" typed on the keyboard's keys exactly and one
+delete; Back hid the keyboard. Logs > Save went through the save picker and the log was in the
+document. With `follow` as it is, the strips worked as before. Not tried: text committed without
+keys (voice, emoji) and choosing a file to open.
 
 ## Alerts
 
@@ -222,10 +242,7 @@ keyboard while the game's field has the focus.
 
 ## Still open
 
-From the survey these came from, not done:
-
-* What `GameActivity` makes possible (see "GameActivity"): the keyboard through `GameTextInput`
-  instead of `KeyInput.kt`, the pickers through the Activity Result API.
+Nothing from the survey these came from is left.
 
 ## Pitfalls
 
@@ -246,6 +263,8 @@ From the survey these came from, not done:
   session is committed on the emulator: the emulator lacks that service; harmless.
 * **rustfmt on `frontend/src/gui/turu/mod.rs`** with `max_width = 120` rewrites unrelated lines;
   format the files you changed one at a time, as `CLAUDE.md` says.
+* **Every letter typed two or three times** on the keys-only keyboard under GameActivity: its
+  text input took the surface's keys in too. Its key listener is taken off (`TuruActivity`).
 * **Clearing the game's field with adb's Ctrl+A then Delete, at once,** left it one character
   short: the game took the delete before the selection. A human's pace (or 0.5 s between them)
   clears it.

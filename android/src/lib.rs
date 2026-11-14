@@ -273,6 +273,20 @@ fn forward_input(app: &AndroidApp) {
             }
             None => InputStatus::Unhandled,
         },
+        // What the keyboard committed in GameActivity's text input (`ui::soft_keyboard`) without
+        // keys (voice, an emoji; keys come as key events: `TuruActivity` keeps GameTextInput from
+        // taking them in too): typed key by key, and the input emptied again.
+        android_activity::input::InputEvent::TextEvent(state) => {
+            if state.text.is_empty() {
+                return InputStatus::Handled;
+            }
+            app.set_text_input_state(android_activity::input::TextInputState::default());
+            let keys: Vec<_> = state.text.chars().flat_map(input::typed).collect();
+            run_on_engine(move |player| {
+                with_screen(|screen| keys.iter().for_each(|key| screen.key(player, key)))
+            });
+            InputStatus::Handled
+        }
         _ => InputStatus::Unhandled,
     }) {}
 }

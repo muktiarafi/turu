@@ -3,6 +3,7 @@
 //! the keyboard's height and the display cutout's sides, which the activity reads from the
 //! window's insets, and the display's refresh rate.
 
+use android_activity::input::{ImeOptions, InputType, TextInputAction, TextInputState};
 use jni::EnvUnowned;
 use jni::objects::JClass;
 use jni::sys::{jfloat, jint};
@@ -36,27 +37,26 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeKeyboardHeight<'lo
 static CUTOUT_LEFT: AtomicU32 = AtomicU32::new(0);
 static CUTOUT_RIGHT: AtomicU32 = AtomicU32::new(0);
 
-/// Shows or hides the soft keyboard: `TuruActivity.softKeyboard(show)`, which does it on the UI
-/// thread (android-activity's `show_soft_input` calls the input method on this one, which Android
-/// 15 refuses with a `CalledFromWrongThreadException`, so the keyboard never came up).
+/// Shows or hides the soft keyboard for a text box of the UI that isn't typed in through the native
+/// field (egui's own): GameActivity's text input (`GameTextInput`), asked for keys only (`TYPE_NULL`:
+/// no suggestions, no composing) and kept empty, so a delete comes as a key (with text before the
+/// cursor, keyboards ask to delete it instead, and there is none). What the keyboard commits anyway
+/// comes back as a `TextEvent` and is typed key by key (`lib.rs`, `forward_input`). These calls go
+/// to the UI thread themselves.
 pub fn soft_keyboard(show: bool) {
     let Some(app) = crate::app() else {
         return;
     };
-    let result = crate::platform::with_activity(&app, |env, activity| {
-        env.call_method(
-            activity,
-            jni::jni_str!("softKeyboard"),
-            jni::jni_sig!("(Z)V"),
-            &[jni::objects::JValue::Bool(show)],
-        )?;
-        Ok(())
-    });
-    if let Err(e) = result {
-        tracing::warn!(
-            "Couldn't {} the soft keyboard: {e}",
-            if show { "show" } else { "hide" }
+    if show {
+        app.set_ime_editor_info(
+            InputType::TYPE_NULL,
+            TextInputAction::None,
+            ImeOptions::IMG_FLAG_NO_EXTRACT_UI | ImeOptions::IME_FLAG_NO_FULLSCREEN,
         );
+        app.set_text_input_state(TextInputState::default());
+        app.show_soft_input(false);
+    } else {
+        app.hide_soft_input(false);
     }
 }
 

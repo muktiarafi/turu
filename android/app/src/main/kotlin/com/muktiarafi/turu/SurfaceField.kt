@@ -52,7 +52,7 @@ internal class SurfaceField(private val turu: TuruActivity, target: FieldTarget)
         field?.clearFocus()
         (bar.parent as? ViewGroup)?.removeView(bar)
         // What the keyboard types into when no field is up.
-        turu.focusKeys()
+        turu.focusSurface()
     }
 
     /**

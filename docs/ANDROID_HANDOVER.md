@@ -58,7 +58,7 @@ What of Turu's UI is native Android, in both apps, and what stays egui: `docs/AN
 
 Since 2026-11-14: **Turu's own text boxes** are typed in the same way (Kotlin's `NativeField`,
 which the game's strip is one of, and `ui_field.rs`): suggestions, autocorrect, the text toolbar
-and autofill for Accounts' password, where egui alone got only keys (`KeyInput`). Each text box
+and autofill for Accounts' password, where egui alone got only keys (then `KeyInput`, now GameActivity's text input: docs/ANDROID_NATIVE_UI.md, "GameActivity"). Each text box
 calls `turu_frontend::gui::turu::native_field::follow` after it's added: while it has the focus
 it says what it holds for the frame and takes the native field's edits, a frame later. The
 screen keeps the field in step after each frame (`NativeField::sync`); Send is Enter in the box

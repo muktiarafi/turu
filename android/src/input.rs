@@ -2,7 +2,7 @@
 //! mouse: a finger down is a left click, dragging moves the mouse (several fingers share the
 //! game's one mouse: `turu_frontend::touch`); egui also gets it as a touch, so that it knows
 //! it's on a touch screen (a drag on a list scrolls it). Keys (a hardware keyboard, or
-//! the soft keyboard, whose `KeyInput.kt` sends key events) are named from Android's key code,
+//! the soft keyboard: GameActivity's text input, `ui::soft_keyboard`) are named from Android's key code,
 //! and their character comes from the device's key character map, so Shift and other layouts
 //! type what they show. `screen.rs` decides who gets which.
 
@@ -251,6 +251,27 @@ pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Key> {
             command: meta.ctrl_on(),
         },
     })
+}
+
+/// A character the soft keyboard committed (GameActivity's text input, `ui::soft_keyboard`), as
+/// the key pressing it and letting go: Enter for a new line, else the character's key.
+pub fn typed(c: char) -> [Key; 2] {
+    let (logical_key, typed) = match c {
+        '\n' | '\r' => (LogicalKey::Named(NamedKey::Enter), None),
+        c => (LogicalKey::Character(c), Some(c)),
+    };
+    let key = |down: bool| Key {
+        down,
+        key: KeyDescriptor {
+            physical_key: PhysicalKey::Unknown,
+            logical_key,
+            key_location: KeyLocation::Standard,
+        },
+        typed: typed.filter(|_| down),
+        control: text_control(logical_key, false, false).filter(|_| down),
+        modifiers: egui::Modifiers::default(),
+    };
+    [key(true), key(false)]
 }
 
 /// A key's text field action: the desktop's `winit_to_ruffle_text_control`.
