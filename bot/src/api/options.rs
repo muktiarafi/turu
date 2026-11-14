@@ -55,7 +55,7 @@ impl Applied {
         self.headless == Some(true)
     }
 
-    /// Sends `killLag(false)` on the next tick even when Lag Killer wasn't on, which shows the
+    /// Turns the Lag Killer module off on the next tick even when it wasn't on, which shows the
     /// world again (VibeSkua's `ScriptStopped` toggles Lag Killer on and off for this).
     pub fn restore_world(&mut self) {
         self.lag_killer = Some(true);
@@ -221,13 +221,10 @@ pub fn apply(bot: &Bot) -> BotResult<()> {
 }
 
 fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> BotResult<()> {
-    // Re-applied every tick (CheckOptions); turning it off restores the world once.
-    if o.lag_killer {
-        bot.flash.call("killLag", vec![true.into()])?;
-        a.lag_killer = Some(true);
-    } else if a.lag_killer == Some(true) {
-        bot.flash.call("killLag", vec![false.into()])?;
-        a.lag_killer = Some(false);
+    // turu.swf keeps the world hidden while it's on (VibeSkua's CheckOptions called `killLag`
+    // on every pass); turning it off shows the world again.
+    if changed(&mut a.lag_killer, o.lag_killer) {
+        module(bot, "LagKiller", o.lag_killer)?;
     }
 
     if !player::playing(bot)? {

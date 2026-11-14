@@ -158,6 +158,16 @@ pub fn username(bot: &Bot) -> BotResult<String> {
         .unwrap_or_default())
 }
 
+/// The logged-in username as Turu recorded it at login (`state.username`), read from the game
+/// only before then: for what asks on every tick (Butler's broadcast, Army Travel).
+pub fn known_username(bot: &Bot) -> BotResult<String> {
+    let known = bot.state.lock().username.clone();
+    match known {
+        Some(name) if !name.is_empty() => Ok(name),
+        _ => username(bot),
+    }
+}
+
 pub fn server_ip(bot: &Bot) -> BotResult<String> {
     Ok(bot
         .flash

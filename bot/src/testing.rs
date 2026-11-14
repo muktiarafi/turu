@@ -1,6 +1,6 @@
 //! For fake games in tests: answers turu.swf's batched reads (`snapshot`, `getMany`,
-//! `selectArrayObjectsWhere`, docs/HOST_SWF_PROPOSAL.md M4) from the single reads a fake already
-//! answers, as turu.swf would from the game. A fake's `call` starts with
+//! `selectArrayObjectsWhere`, docs/HOST_SWF_PROPOSAL.md M4; `questStates`) from the single reads
+//! a fake already answers, as turu.swf would from the game. A fake's `call` starts with
 //!
 //! ```ignore
 //! if let Some(answer) = turu_bot::testing::batched(name, &args, |n, a| self.call(n, a).unwrap_or_default()) {
@@ -56,6 +56,30 @@ pub fn batched(
                 .map(|(key, path)| match path {
                     FlashArg::String(path) => (key.clone(), get(path)),
                     _ => (key.clone(), Value::Null),
+                })
+                .collect();
+            Value::Object(out).to_string()
+        }
+        "questStates" => {
+            let Some(FlashArg::List(ids)) = args.first() else {
+                return Some("{}".into());
+            };
+            let out: Map<String, Value> = ids
+                .iter()
+                .filter_map(|id| match id {
+                    FlashArg::Number(n) => Some(*n as i64),
+                    _ => None,
+                })
+                .map(|id| {
+                    let in_progress = parse_bool(&single(
+                        "callGameFunction",
+                        vec!["world.isQuestInProgress".into(), id.into()],
+                    ));
+                    let quest = get(&format!("world.questTree.{id}"));
+                    (
+                        id.to_string(),
+                        json!({ "inProgress": in_progress, "quest": quest }),
+                    )
                 })
                 .collect();
             Value::Object(out).to_string()

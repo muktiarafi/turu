@@ -10,6 +10,7 @@ use super::Command;
 use crate::Bot;
 use crate::api::{map, player};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -147,26 +148,43 @@ impl Location {
                 return None;
             }
         }
-        if !player::logged_in(bot).ok()? || !map::loaded(bot).ok()? {
+        if !player::logged_in(bot).ok()? {
             return None;
         }
-        let name = map::name(bot).ok()?;
-        let cell = player::cell(bot).ok()?;
-        if name.trim().is_empty() || cell.trim().is_empty() {
+        // One call (turu.swf's `getMany`); the loading screen is up when its stage is (a number
+        // to read: JSON can't write the stage itself).
+        let read = bot
+            .flash
+            .get_many(&[
+                ("loading", "world.mapLoadInProgress"),
+                ("screen", "mcConnDetail.stage.frameRate"),
+                ("map", "world.strMapName"),
+                ("area", "world.strAreaName"),
+                ("cell", "world.strFrame"),
+                ("pad", "world.strPad"),
+            ])
+            .ok()?;
+        let text = |key: &str| read.get(key).and_then(Value::as_str).unwrap_or_default();
+        if read.get("loading").and_then(Value::as_bool) == Some(true)
+            || !read.get("screen").is_none_or(Value::is_null)
+        {
             return None;
         }
-        let room = map::room_number(bot).unwrap_or(0);
-        let username = player::username(bot).unwrap_or_default();
+        let (name, cell) = (text("map").trim(), text("cell").trim());
+        if name.is_empty() || cell.is_empty() {
+            return None;
+        }
+        let room = map::parse_room_number(text("area"));
         Some(Self {
-            map: name.trim().to_owned(),
+            map: name.to_owned(),
             room: if room > 0 {
                 room.to_string()
             } else {
                 String::new()
             },
-            cell: cell.trim().to_owned(),
-            pad: or(&player::pad(bot).unwrap_or_default(), "Spawn"),
-            username,
+            cell: cell.to_owned(),
+            pad: or(text("pad"), "Spawn"),
+            username: player::known_username(bot).unwrap_or_default(),
         })
     }
 

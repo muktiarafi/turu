@@ -8,9 +8,9 @@ import flash.utils.getTimer;
  * on: Hide Players (other avatars hidden), Disable FX (avatars' effects off: the game plays one
  * only while an avatar's `pMC.spFX` is set), Disable Collisions (`world.arrSolid`, the walls,
  * emptied), and Turu's own Infinite Range, Untarget Lite (Lite's untarget-self and
- * untarget-dead on) and Skip Cutscenes (the overlay taken off, the world shown again unless Lag
- * Killer is on, and a cutscene the game waits to show cancelled), which the engine did on every
- * options pass before. An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
+ * untarget-dead on), Skip Cutscenes (the overlay taken off, the world shown again unless Lag
+ * Killer is on, and a cutscene the game waits to show cancelled) and Lag Killer (the world kept
+ * hidden), which the engine did on every options pass before. An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
  * off restores what it changed, which VibeSkua's Disable FX doesn't.
  */
 public class Options {
@@ -27,9 +27,11 @@ public class Options {
     private var infiniteRange:Boolean = false;
     /** Lite's "untarget self" and "untarget dead" kept on, as Turu always wants them. */
     private var untargetLite:Boolean = false;
-    /** Skip Cutscenes, and Lag Killer as `killLag` last set it (a skipped cutscene leaves the
-     * world hidden: it's shown again unless Lag Killer hides it). */
+    /** Skip Cutscenes (a skipped cutscene leaves the world hidden: it's shown again unless Lag
+     * Killer hides it). */
     private var skipCutscenesOn:Boolean = false;
+    /** Lag Killer, as the module or `killLag` last set it: the world hidden, and kept so (the
+     * game shows it again, after a cutscene for one). */
     private var lagKiller:Boolean = false;
     private var lastFrame:int = 0;
     /** Disable FX: each avatar MC's `spFX`, to give back. */
@@ -65,7 +67,7 @@ public class Options {
         preference.data.bDeathAd = !isOn(enable);
     }
 
-    /** Lag Killer: the world isn't drawn. */
+    /** Lag Killer: the world isn't drawn. The `LagKiller` module does this and keeps it so. */
     private function killLag(enable:*):void {
         lagKiller = isOn(enable);
         world.visible = !lagKiller;
@@ -152,6 +154,13 @@ public class Options {
             case "SkipCutscenes":
                 skipCutscenesOn = on;
                 break;
+            case "LagKiller":
+                // Off shows the world again even when it wasn't on (a stopping script does that).
+                lagKiller = on;
+                if (!on && gameOf() != null && world != null) {
+                    world.visible = true;
+                }
+                break;
         }
         if (on) {
             apply();
@@ -161,7 +170,7 @@ public class Options {
     /** Every frame (from `Main`): re-applies the enabled modules every 100 ms. */
     public function frame():void {
         if (!hidePlayers && !disableFX && !disableCollisions && !infiniteRange && !untargetLite &&
-            !skipCutscenesOn) {
+            !skipCutscenesOn && !lagKiller) {
             return;
         }
         var now:int = getTimer();
@@ -185,6 +194,9 @@ public class Options {
                 cancelPendingCutscene(w);
             } catch (e:Error) {
             }
+        }
+        if (lagKiller && w.visible) {
+            w.visible = false;
         }
         if (infiniteRange) {
             try {

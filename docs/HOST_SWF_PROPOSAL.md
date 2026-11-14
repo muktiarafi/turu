@@ -6,7 +6,7 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
 four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b done (VibeSkua's SWF,
-parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7 measured (only stopping animations paid, and only where it's visible; nothing kept on by default); cleanups after it done ("After M7: cleanups", with what's left); M8 on hold. Replaces the plan to fork VibeSkua's
+parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7 measured (only stopping animations paid, and only where it's visible; nothing kept on by default); cleanups after it done ("After M7: cleanups"); M8 on hold. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -617,20 +617,24 @@ Done, once `turu.swf` was the only host SWF:
 - Events pass their arguments as the call's own, not as one array (VibeSkua's
   `Externalizer.call` convention): `ExternalHost` and Turu Mas's `TuruHost.call` send them flat,
   and `events.rs` no longer unwraps them.
+- The rest of that GoldFarm run's busiest calls (~70/s; these four would bring it to about 55),
+  `turu.swf` version 9:
+  1. **Lag Killer** (3.8 calls/s): a `LagKiller` module like the others, switched on a change,
+     where the engine sent `killLag(true)` on every options pass (VibeSkua re-applies it). A
+     stopping script turns the module off to show the world.
+  2. **Butler's username** (2/s): the broadcast uses the username Turu records at login
+     (`state.username`, `player::known_username`), not a read of `loginInfo.strUsername` a tick.
+  3. **The registered-quest loop** (~9/s: `isQuestInProgress` 5/s, `world.questTree.<id>` ~2/s):
+     one `questStates(ids)` a pass answers both for every registered quest. A pass that accepts
+     a quest (seconds) reads the game again for the rest of it.
+  4. **The Army Travel window** (~7/s per tab while open): `Location::read` takes map, area, cell,
+     pad and the loading screen in one `getMany`, and the recorded username.
 
-Left, from that GoldFarm run's busiest calls (~70/s); 1-3 would bring it to about 55:
+  Checked by the engine's tests (the fakes answer `questStates` from the single reads);
+  `host/checks/after-m7.ts` checks `questStates` against the single reads and Lag Killer kept on
+  in game, not run yet. Not measured on GoldFarm again yet.
 
-1. **Lag Killer**, 3.8 calls/s: `killLag(true)` on every options pass (VibeSkua re-applies it).
-   A `turu.swf` module like the others, switched on a change.
-2. **Butler's username**, 2/s: each broadcast tick reads `loginInfo.strUsername`, which Turu
-   already records at login (`state.username`).
-3. **The registered-quest loop**, ~9/s: `isQuestInProgress` 5/s, and each registered quest's
-   `world.questTree.<id>` ~2/s. One read per pass: a `getMany` of the entries and a
-   `turu.swf` call answering which of the quests are in progress.
-4. **The Army Travel window**, ~7/s per tab while it's open: map, area, cell, pad, the loading
-   screen and the username read one by one (`army_travel.rs`'s `Location::read`); one `getMany`.
-
-The rest of that run's repeated reads are the script's own (CoreBots), or one-off work per drop.
+That run's other repeated reads are the script's own (CoreBots), or one-off work per drop.
 
 Left as they are, by decision:
 

@@ -272,16 +272,17 @@ fn options_send_toggles_once_and_repeat_ticks() {
     }
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
-    // Lite's untarget options are forced on: turu.swf keeps them so, asked once.
+    // Lag Killer and Lite's untarget options: turu.swf keeps them applied, asked once.
     assert_eq!(
         game.calls_to("modEnable"),
         [
+            [FlashArg::String("LagKiller".into())],
             [FlashArg::String("HidePlayers".into())],
             [FlashArg::String("UntargetLite".into())]
         ]
     );
     assert!(game.calls_to("modDisable").is_empty());
-    assert_eq!(game.calls_to("killLag").len(), 2);
+    assert!(game.calls_to("killLag").is_empty());
     let speed_sets = game
         .calls_to("setGameObject")
         .into_iter()
@@ -298,13 +299,11 @@ fn options_send_toggles_once_and_repeat_ticks() {
     options::apply(&bot).unwrap();
     assert_eq!(
         game.calls_to("modDisable"),
-        [[FlashArg::String("HidePlayers".into())]]
+        [
+            [FlashArg::String("LagKiller".into())],
+            [FlashArg::String("HidePlayers".into())]
+        ]
     );
-    assert_eq!(
-        game.calls_to("killLag").last().unwrap(),
-        &[FlashArg::Bool(false)]
-    );
-    assert_eq!(game.calls_to("killLag").len(), 3);
 }
 
 #[test]
@@ -465,15 +464,15 @@ fn a_stopping_script_shows_the_world() {
     let game = FakeGame::new();
     let bot = new_bot(&game);
     options::apply(&bot).unwrap();
-    // A stopping script shows the world even when Lag Killer was never on.
-    let kills = game.calls_to("killLag").len();
+    // A stopping script shows the world even when Lag Killer was never on: the module is
+    // turned off once.
+    assert!(game.calls_to("modDisable").is_empty());
     bot.state.lock().options_applied.restore_world();
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
-    assert_eq!(game.calls_to("killLag").len(), kills + 1);
     assert_eq!(
-        game.calls_to("killLag").last().unwrap(),
-        &[FlashArg::Bool(false)]
+        game.calls_to("modDisable"),
+        [[FlashArg::String("LagKiller".into())]]
     );
 }
 

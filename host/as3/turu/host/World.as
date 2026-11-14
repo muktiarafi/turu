@@ -9,8 +9,8 @@ import flash.utils.getQualifiedClassName;
 
 /**
  * You and the world (docs/VIBESKUA_SPEC.md, "Player", "World" and "Packets"): logged in or
- * kicked, gender, other avatars, walking, moving between cells, the open dialog, and packets
- * handed to the client as if the server sent them.
+ * kicked, gender, other avatars, walking, moving between cells, the open dialog, packets
+ * handed to the client as if the server sent them, and the registered quests' state.
  */
 public class World {
     /** `jumpCorrectRoom`'s check: every 50 ms, 40 times. */
@@ -35,6 +35,7 @@ public class World {
         expose("gender", gender, undefined, true);
         expose("getAvatar", getAvatar, undefined, true);
         expose("getActiveModalMessage", getActiveModalMessage, undefined, true);
+        expose("questStates", questStates, undefined, true);
         expose("walkTo", walkTo);
         expose("jumpCorrectRoom", jumpCorrectRoom);
         expose("sendClientPacket", sendClientPacket);
@@ -61,6 +62,24 @@ public class World {
     /** The client's own `strGender` (`"M"` or `"F"`), as JSON. */
     private function gender():String {
         return JSON.stringify(world.myAvatar.objData.strGender);
+    }
+
+    /**
+     * The registered-quest loop's read, once a pass rather than twice a quest: for each quest ID,
+     * whether the game has it in progress (`world.isQuestInProgress`) and its `world.questTree`
+     * entry (null when it isn't loaded), as `{"<id>": {"inProgress": bool, "quest": entry}}`.
+     */
+    private function questStates(ids:*):String {
+        var w:* = world;
+        var out:Object = {};
+        for each (var id:* in ids) {
+            var quest:* = w.questTree != null ? w.questTree[String(id)] : null;
+            out[String(id)] = {
+                inProgress: w.isQuestInProgress(int(id)) == true,
+                quest: quest === undefined ? null : quest
+            };
+        }
+        return JSON.stringify(out);
     }
 
     private function getAvatar(id:*):String {

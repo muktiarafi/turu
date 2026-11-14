@@ -226,9 +226,42 @@ fn wait_cancellable(
     wait::safe(predicate())
 }
 
+/// What a pass of the registered-quest loop read of a quest when it began.
+struct QuestState {
+    in_progress: bool,
+    quest: Option<Quest>,
+}
+
+/// turu.swf's `questStates`: whether each quest is in progress and its `world.questTree` entry,
+/// in one call rather than two reads a quest (docs/HOST_SWF_PROPOSAL.md, "After M7"). `None`
+/// when the answer can't be read: the pass then reads each quest itself.
+fn quest_states(bot: &Bot, ids: &[i64]) -> BotResult<Option<HashMap<i64, QuestState>>> {
+    let ids_arg = crate::FlashArg::List(ids.iter().map(|&id| id.into()).collect());
+    let raw = bot.flash.call("questStates", vec![ids_arg])?;
+    let Ok(answer) = serde_json::from_str::<serde_json::Map<String, Value>>(raw.trim()) else {
+        return Ok(None);
+    };
+    let mut states = HashMap::new();
+    for &id in ids {
+        let Some(entry) = answer.get(&id.to_string()) else {
+            continue;
+        };
+        let quest = entry.get("quest").filter(|q| !q.is_null()).and_then(|q| {
+            Quest::tree_from(serde_json::json!({ id.to_string(): q }))
+                .into_iter()
+                .find(|q| q.id == id)
+        });
+        let in_progress = entry.get("inProgress").and_then(Value::as_bool) == Some(true);
+        states.insert(id, QuestState { in_progress, quest });
+    }
+    Ok(Some(states))
+}
+
 /// VibeSkua `_CompleteQuest`: accepts registered quests that aren't in progress (2 s
 /// cooldown each) and turns in the first one that can be completed (3 s cooldown), with
-/// `tryQuestComplete` as many times as the game allows.
+/// `tryQuestComplete` as many times as the game allows. What each quest is at the start of the
+/// pass is read in one call ([`quest_states`]); once the pass accepts a quest, which takes
+/// seconds, the rest of it reads the game again.
 fn complete_registered(
     bot: &Bot,
     shared: &QuestShared,
@@ -261,10 +294,12 @@ fn complete_registered(
         Ok(())
     };
 
+    let mut states = quest_states(bot, registered)?;
     for &quest in registered {
         if cancel.load(Ordering::Acquire) {
             return Ok(());
         }
+        let mut state = states.as_mut().and_then(|s| s.remove(&quest));
         let recently_tried = shared
             .registry
             .lock()
@@ -274,7 +309,11 @@ fn complete_registered(
         if recently_tried {
             continue;
         }
-        if !is_in_progress(bot, quest)? {
+        let in_progress = match &state {
+            Some(state) => state.in_progress,
+            None => is_in_progress(bot, quest)?,
+        };
+        if !in_progress {
             let recently_accepted = shared
                 .registry
                 .lock()
@@ -285,13 +324,16 @@ fn complete_registered(
                 continue;
             }
             accept_again(quest)?;
+            // Accepting took seconds: from here, this pass reads the game again.
+            states = None;
+            state = None;
         }
 
-        if !can_complete(bot, quest)? {
-            continue;
-        }
-        let Some(data) = get(bot, quest)? else {
-            tracing::debug!("Quest Thread: quest {quest} is completable but not in the quest tree");
+        let data = match state {
+            Some(state) => state.quest,
+            None => get(bot, quest)?,
+        };
+        let Some(data) = data.filter(Quest::completable) else {
             continue;
         };
         let turn_ins = if data.once || !data.field.is_empty() {

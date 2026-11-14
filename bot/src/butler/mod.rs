@@ -539,7 +539,7 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
         write_offline(bot);
         return Ok(());
     }
-    let username = player::username(bot)?;
+    let username = player::known_username(bot)?;
     if username.is_empty() {
         return Ok(());
     }

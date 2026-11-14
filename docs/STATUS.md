@@ -754,8 +754,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 - **The black screen after a cutscene is fixed only in tests:** VibeSkua's `skipCutscenes` removes
   the cutscene but leaves `world.visible` off, so the game stayed black until Lag Killer was
   toggled. turu.swf's `skipCutscenes(showWorld)` shows the world again after a skipped cutscene
-  (the engine asks it to unless Lag Killer is on), and a stopping script sends `killLag(false)`
-  even when Lag Killer was off (VibeSkua's `ScriptStopped` toggle). That the cutscene hides the world is inferred, not seen in game.
+  (the engine asks it to unless Lag Killer is on), and a stopping script turns the `LagKiller`
+  module off even when Lag Killer was off (VibeSkua's `ScriptStopped` toggle). That the cutscene hides the world is inferred, not seen in game.
 - **Skip Cutscenes cancels the cutscene the game waits for:** a map's `world.cHandle.showCutscene`
   (lichwar's intro, while quest value 602 is 0) makes the game hold back the monsters of the cells
   you enter until the overlay appears, for up to 450 frames (~225 s at 2 FPS headless). Skipping

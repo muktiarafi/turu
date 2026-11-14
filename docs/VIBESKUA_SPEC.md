@@ -1090,7 +1090,10 @@ differences" and the list below say otherwise:
   and answers whether there was one; the modules `InfiniteRange`, `UntargetLite` (Lite's
   untarget-self and untarget-dead) and `SkipCutscenes` (version 8: the overlay off, the world
   shown again unless Lag Killer, a pending cutscene cancelled) are re-applied every 100 ms like
-  Hide Players.
+  Hide Players, and so is `LagKiller` (version 9: the world kept hidden; off shows it again).
+- `questStates(ids)` (version 9): for each quest, `world.isQuestInProgress` and its
+  `world.questTree` entry in one call (`{"<id>": {inProgress, quest}}`), for the registered-quest
+  loop.
 - Found in game and matched (this survey was wrong or silent): `gender` answers the client's
   `"M"`/`"F"`; `jumpCorrectRoom` always moves again once the cell settles; `isKicked` is `false` in
   game; `getActiveModalMessage` is plain text, `""` without a dialog; `selectArrayObjects` answers
