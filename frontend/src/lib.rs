@@ -14,6 +14,9 @@ pub mod grid;
 pub mod gui;
 pub mod map_items;
 pub mod map_pads;
+// Mugetsu's code (GPL-3.0, its author's): only for Ruffle, and kept out of Turu Mas
+// (docs/TURU_MAS.md, "Licenses").
+#[cfg(feature = "ruffle")]
 pub mod pacing;
 pub mod platform;
 #[cfg(feature = "ruffle")]

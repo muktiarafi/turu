@@ -1,0 +1,15 @@
+Additional permission under GNU GPL version 3 section 7
+
+If you modify this Program, or any covered work, by linking or combining it
+with the Adobe AIR runtime, or with the other components of the Adobe AIR SDK
+that its packager (ADT) puts into an application (or a modified version of
+them), containing parts covered by the terms of the Adobe AIR SDK License
+Agreement, the licensors of this Program grant you additional permission to
+convey the resulting work.
+
+This permission covers Turu's own code in this repository, which is licensed
+under the GNU General Public License, version 3 or (at your option) any later
+version (LICENSE). It doesn't cover code its licensors don't hold the
+copyright to: third-party code keeps its own terms (README.md, "License").
+As section 7 allows, you may remove this permission from your copies of the
+Program or parts of it.

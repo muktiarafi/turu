@@ -1,18 +1,21 @@
 [package]
 # Turu's library inside the AIR native extension (docs/AIR_PROPOSAL.md): the bot engine, with the
 # game in Adobe AIR instead of Ruffle (`AirFlashHost`), and the AS3 bytecode patcher. Empty on
-# other systems, so the workspace still builds there.
+# other systems.
 name = "turu_air"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
-version.workspace = true
-
-[lints]
-workspace = true
+authors = ["muktiarafi <muktiarafi@gmail.com>"]
+edition = "2024"
+license = "GPL-3.0-or-later"
+version = "0.2.0"
 
 [lib]
 crate-type = ["cdylib"]
+
+# A workspace of its own, out of the root one (docs/TURU_MAS.md, "Licenses"): the root workspace
+# patches wgpu-core and wgpu-hal with Mugetsu's changes (GPL-3.0, Mugetsu's author's), which Turu
+# Mas doesn't ship, so it builds with crates.io's. Its own lockfile, seeded from the root's: keep
+# the versions below, the profiles and the egui-wgpu patch equal to the root `Cargo.toml`'s.
+[workspace]
 
 [target.'cfg(target_os = "android")'.dependencies]
 turu_bot = { path = "../../../bot", default-features = false }
@@ -22,22 +25,37 @@ jni = { version = "0.22.4", default-features = false }
 android_logger = "0.15.1"
 log = "0.4"
 # The bot's messages, as `log` records for logcat.
-tracing = { workspace = true, features = ["log", "log-always"] }
-serde_json = { workspace = true }
+tracing = { version = "0.1.43", features = ["log", "log-always"] }
+serde_json = "1.0.150"
 # TLS as the Ruffle build does it (android/Cargo.toml): reqwest's rustls without a crypto
 # provider, `ring` installed as the provider, and certificates checked against Android's trust
 # store by rustls-platform-verifier (initialised over JNI; its Kotlin part goes into the
 # extension's jar).
-reqwest = { workspace = true, features = ["rustls-no-provider"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-platform-verifier = "0.7.1"
 # Turu's windows over the game (`overlay.rs`), drawn as the Ruffle build draws them (keep equal to
-# its versions: `[workspace.dependencies]`).
-egui = { workspace = true }
-egui-wgpu = { workspace = true }
-wgpu = { workspace = true }
-futures = { workspace = true }
+# its versions: the root `[workspace.dependencies]`).
+egui = "0.36.1"
+egui-wgpu = "0.36.1"
+wgpu = "30.0.1"
+futures = "0.3.32"
 ndk = "0.9"
 # rquickjs ships no QuickJS bindings for Android: generate them (air/ane/build.sh sets up
 # bindgen, as the Ruffle build's `cargoNdk` task does).
 rquickjs = { version = "0.14", features = ["bindgen"] }
+
+# Turu's own fix to egui-wgpu (ruffle-aqw, MIT / Apache-2.0), as in the root workspace. Not
+# Mugetsu's wgpu-core and wgpu-hal.
+[patch.crates-io]
+egui-wgpu = { path = "../../../ruffle/patches/egui-wgpu" }
+
+# As the root workspace's: the crash reports count on `panic = "abort"` (docs/TURU_MAS.md).
+[profile.release.build-override]
+opt-level = 0
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "abort"

@@ -87,8 +87,9 @@ Calls are synchronous (no `await`). API: [bot/js/turu.ts](bot/js/turu.ts). Guide
 
 ## License
 
-Turu is GPL-3.0-or-later ([LICENSE](LICENSE)). Ruffle is MIT / Apache-2.0
-([LICENSE-RUFFLE.md](LICENSE-RUFFLE.md)); Mugetsu is GPL-3.0. Skua, VibeSkua and Scripts publish
+Turu is GPL-3.0-or-later ([LICENSE](LICENSE)), with an additional permission to combine it with
+the Adobe® AIR® runtime, as Turu Mas does ([LICENSE-EXCEPTION](LICENSE-EXCEPTION)). Ruffle is
+MIT / Apache-2.0 ([LICENSE-RUFFLE.md](LICENSE-RUFFLE.md)); Mugetsu is GPL-3.0. Skua, VibeSkua and Scripts publish
 no license, so the GPL doesn't cover the ported scripts; their authors keep their
 rights (open an issue if you're one of them and want something changed). Turu isn't affiliated
 with Artix Entertainment or any of the projects above.

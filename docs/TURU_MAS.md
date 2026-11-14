@@ -35,7 +35,7 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 | Path | What |
 |---|---|
 | `air_patch/` | crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's sandbox, at run time. |
-| `air/ane/rust/` | crate `turu_air` (`libturu_air.so`): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
+| `air/ane/rust/` | crate `turu_air` (`libturu_air.so`), a Cargo workspace of its own ("Licenses"): the engine (`android.rs`), `AirFlashHost` (`host.rs`), Turu's windows over the game (`overlay.rs`), `AirPlatform` (`platform.rs`), crash reports' engine side (`crash_uploads.rs`). |
 | `air/ane/android/` | the extension's Kotlin: `TuruAirExtension` (AIR's calls), `TuruAirService` (the foreground service), `TuruOverlay` (the view Turu's windows draw in), `Passwords` (Accounts' passwords, with `passwords.rs`: the Ruffle build's `Storage.kt` and `KeystoreStore`), `CrashUploads` (Sentry), `CrashReports` and `Tombstone` (how earlier runs ended). |
 | `air/ane/as3/`, `air/ane/extension.xml` | the extension's AS3 face (`TuruAirNative`) and descriptor. `air/ane/build.sh` builds the `.ane`. |
 | `air/app/` | the app: the host SWF (`src/TuruAirHost.as`, `TuruExternal`, `TuruLoader`, and `TuruHost` for Turu's own `turu.swf`), `app.xml` (ID, name, manifest additions), `build.sh` (the APK). Icons: `res/` (the adaptive one: gold `#D4A72C`, dark eyes) and `icons/` (PNGs from `turu-air-symbol.svg`: `qlmanage -t -s 512`, then `sips -z`). `build.sh` adds rustls-platform-verifier's network security config to `res/` (plain HTTP only to the certificate authorities' hosts, for revocation lists). |
@@ -173,7 +173,7 @@ Read 2026-11-11: the agreement shipped in the SDK (`$AIR_HOME/AIR SDK license.pd
   [PRIVACY.md](../PRIVACY.md), linked from the "Send crash reports?" question.
 * **Licenses on the SDK (3.2, 3.3(iv)).** "In no event" may the SDK be made subject to a license
   that requires it be distributed as source, licensed for derivative works, or redistributable at
-  no charge. Turu is GPL-3.0-or-later, and the APK carries AIR's runtime: see "Open question".
+  no charge. Turu is GPL-3.0-or-later, and the APK carries AIR's runtime: see "Licenses" below.
 * **Development (6.1, 8).** Only documented ways into the runtime (an ANE is one), no reverse
   engineering of the SDK. Turu patches AQW's and VibeSkua's SWFs, not AIR.
 * **The build tools phone home (6.4).** ADT sends Wipro the OS, the app ID, packaging settings,
@@ -181,14 +181,31 @@ Read 2026-11-11: the agreement shipped in the SDK (`$AIR_HOME/AIR SDK license.pd
   sends nothing about users.
 * **Audits (4), indemnity (5), governing law (15):** English law for a licensee in Indonesia.
 
-**Open question: GPL and the runtime.** The APK combines Turu's GPL code (`libturu_air.so`,
-the extension) with AIR's proprietary runtime. GPLv3's "System Libraries" exception likely
-doesn't cover a runtime bundled in the app, so a recipient could argue the whole APK must be
-GPL, which AIR's license forbids. The usual fix is an additional permission (GPLv3 section 7)
-from Turu's copyright holders, for example: "As an additional permission, you may convey Turu
-Mas combined with the Adobe AIR runtime and SDK components that ADT packages into it, without
-those components being covered by this License." Not added yet: the license is the author's
-call (decision 4 in docs/AIR_PROPOSAL.md).
+## Licenses
+
+The APK combines Turu's GPL code (`libturu_air.so`, the extension) with AIR's proprietary
+runtime. GPLv3's "System Libraries" exception doesn't cover a runtime bundled in the app, so
+without more the GPL would ask for the whole APK under it, which AIR's license forbids (3.2). So:
+
+* **An additional permission (GPLv3 section 7):** [LICENSE-EXCEPTION](../LICENSE-EXCEPTION) lets
+  Turu's code be combined with AIR's runtime and the SDK parts ADT packages, and the result
+  conveyed. It's the FSF's wording for linking with a library under other terms, without the
+  part that asks for the library's source. Only copyright holders can grant it, for their own
+  code, so every contributor of code in the APK has to agree (`git shortlog -sn -- bot frontend
+  air air_patch`): muktiarafi; leeteryx (`bot/`, `frontend/`): **asked, not yet agreed**. New
+  contributions come with it (CONTRIBUTING.md). Release Turu Mas only once everyone has.
+* **No Mugetsu in the APK.** Mugetsu's changes are GPL-3.0 and its author's, so the permission
+  can't cover them. The root workspace patches wgpu-core and wgpu-hal with them (Ruffle's
+  drawing); Turu Mas only draws egui with wgpu, so `turu_air` is a workspace of its own
+  (`air/ane/rust/Cargo.toml`, with its own `Cargo.lock`) built with crates.io's wgpu-core and
+  wgpu-hal. Its other patch, egui-wgpu, is Turu's (MIT / Apache-2.0). `frontend`'s `pacing`
+  (Mugetsu's frame interpolation pacing) builds only with the `ruffle` feature. To check:
+  `cd air/ane/rust && cargo tree --target aarch64-linux-android -e normal | grep ruffle/` lists
+  no `wgpu-core` or `wgpu-hal`.
+* The rest of the APK is permissive: Ruffle's `swf` and `http-cache` (MIT / Apache-2.0), Sentry
+  (MIT), AndroidX and Kotlin's library (Apache-2.0).
+
+Not legal advice.
 
 ## Tabs
 

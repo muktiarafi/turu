@@ -367,7 +367,7 @@ key from the `MAS_KEYSTORE` secrets; `turumas-<version>-android-arm64.apk`, out 
 updater's way), version codes as Turu's, Sentry for Rust panics (`crash_uploads.rs`, symbols
 uploaded), PRIVACY.md (the license asks for one), docs/TURU_MAS.md, and the license read (its
 "The AIR SDK's license"). **Left:** the release key itself and the secrets (by hand), the job's
-first run in CI, the GPL question (docs/TURU_MAS.md, "Open question").
+first run in CI, the GPL question (answered since: docs/TURU_MAS.md, "Licenses").
 
 ## Why consider it: what Ruffle costs on Android
 
@@ -541,5 +541,6 @@ alternative, rather than the reverse.
 1. Run the spike? It's the cheapest way to answer the question for real.
 2. One app with a switch, or two apps? (After the spike's ADT check.)
 3. Harman's terms and the splash screen: acceptable for Turu?
-4. Add a GPL linking permission for the AIR runtime to Turu's license?
+4. ~~Add a GPL linking permission for the AIR runtime to Turu's license?~~ Yes:
+   LICENSE-EXCEPTION, and no Mugetsu code in Turu Mas (docs/TURU_MAS.md, "Licenses").
 5. If AIR is clearly more stable: which client is the default on Android?

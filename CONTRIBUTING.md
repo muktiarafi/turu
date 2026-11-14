@@ -90,4 +90,6 @@ check most:
 
 ## License
 
-Turu is GPL-3.0-or-later. By contributing you agree your contribution is licensed under it.
+Turu is GPL-3.0-or-later, with the additional permission in [LICENSE-EXCEPTION](LICENSE-EXCEPTION)
+(combining it with the Adobe AIR runtime, for Turu Mas). By contributing you agree your
+contribution is licensed under both.

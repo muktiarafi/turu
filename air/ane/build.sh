@@ -33,7 +33,9 @@ export ANDROID_NDK_HOME="$ndk" BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$ndk/toolchai
 if [ "$host" = darwin-x86_64 ] && [ -z "${LIBCLANG_PATH:-}" ]; then
   export LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib
 fi
-cargo ndk --platform 26 -t arm64-v8a -o "$out/jni" build -q --release -p turu_air
+# turu_air is a workspace of its own (its Cargo.toml says why), built into the root's target/.
+(cd air/ane/rust && CARGO_TARGET_DIR="$OLDPWD/target" \
+  cargo ndk --platform 26 -t arm64-v8a -o "$OLDPWD/$out/jni" build -q --release --locked)
 # The APK's copy without debug info (its symbol table stays, for panics' backtraces); the one in
 # $out/jni keeps it, for Sentry (the release workflow uploads it: built with line tables there).
 mkdir -p "$out/Android-ARM64/libs/arm64-v8a"

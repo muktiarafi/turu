@@ -7327,29 +7327,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "turu_air"
-version = "0.2.0"
-dependencies = [
- "android_logger",
- "egui",
- "egui-wgpu",
- "futures",
- "jni 0.22.4",
- "log",
- "ndk",
- "reqwest",
- "rquickjs",
- "rustls",
- "rustls-platform-verifier",
- "serde_json",
- "tracing",
- "turu_air_patch",
- "turu_bot",
- "turu_frontend",
- "wgpu",
-]
-
-[[package]]
 name = "turu_air_patch"
 version = "0.2.0"
 dependencies = [

@@ -1,9 +1,11 @@
 [workspace]
-members = ["air/ane/rust", "air_patch", "android", "app", "bot", "frontend", "host"]
+members = ["air_patch", "android", "app", "bot", "frontend", "host"]
 default-members = ["app"]
 # `ruffle/` is the ruffle-aqw submodule (Ruffle with Mugetsu's AQW patches), a workspace of its
-# own; `app` uses its crates by path. `scripts/` is the turu-scripts submodule.
-exclude = ["ruffle", "scripts"]
+# own; `app` uses its crates by path. `scripts/` is the turu-scripts submodule. `air/ane/rust`
+# (Turu Mas's library) is a workspace of its own too, built without Mugetsu's patches below
+# (docs/TURU_MAS.md, "Licenses").
+exclude = ["air/ane/rust", "ruffle", "scripts"]
 resolver = "2"
 
 [workspace.package]
