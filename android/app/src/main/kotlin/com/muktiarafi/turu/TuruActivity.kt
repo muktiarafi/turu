@@ -15,12 +15,14 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.MotionEvent
-import android.view.View
 import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.view.WindowManager
-import android.window.OnBackInvokedDispatcher
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.google.androidgamesdk.GameActivity
 import com.muktiarafi.turu.shared.CrashQuestion
 import com.muktiarafi.turu.shared.CrashReports
@@ -72,17 +74,18 @@ class TuruActivity : GameActivity() {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-        }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         started = true
         TuruService.start(this)
         Storage.init(this)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+        // Back goes to the background like Home, instead of closing the activity: the game and a
+        // script keep running either way, but this keeps the screen as it was. AndroidX's
+        // dispatcher: Android 13+'s back callback (and its predictive back) and older Back alike.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
                 moveTaskToBack(true)
             }
-        }
+        })
         // The display's refresh rate, for frame interpolation's pacing (`ui.rs`): now and whenever
         // the display changes mode (phones with adaptive rates switch between 60 and 120 Hz).
         sendRefreshRate()
@@ -265,15 +268,10 @@ class TuruActivity : GameActivity() {
 
     private fun displays() = getSystemService(DISPLAY_SERVICE) as DisplayManager
 
-    private fun currentDisplay(): android.view.Display? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        this.display
-    } else {
-        @Suppress("DEPRECATION")
-        windowManager.defaultDisplay
-    }
+    private fun currentDisplay(): android.view.Display = ContextCompat.getDisplayOrDefault(this)
 
     private fun sendRefreshRate() {
-        currentDisplay()?.let { nativeRefreshRate(it.refreshRate) }
+        nativeRefreshRate(currentDisplay().refreshRate)
     }
 
     /**
@@ -285,7 +283,7 @@ class TuruActivity : GameActivity() {
      */
     fun preferRefreshRate(hz: Float) {
         runOnUiThread {
-            val display = currentDisplay() ?: return@runOnUiThread
+            val display = currentDisplay()
             val now = display.mode
             val modes = display.supportedModes.filter {
                 it.physicalWidth == now.physicalWidth && it.physicalHeight == now.physicalHeight
@@ -392,36 +390,14 @@ class TuruActivity : GameActivity() {
         askOnce()
     }
 
-    /**
-     * Back goes to the background like Home, instead of closing the activity: the game and a
-     * script keep running either way, but this keeps the screen as it was.
-     */
-    @Deprecated("Android 13+ calls the back callback set in onCreate instead")
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        moveTaskToBack(true)
-    }
-
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus) {
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.insetsController?.let { insets ->
-                insets.hide(WindowInsets.Type.systemBars())
-                insets.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                )
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 
@@ -498,12 +474,9 @@ class TuruActivity : GameActivity() {
         private external fun nativeRefreshRate(hz: Float)
 
         private fun keyboardHeight(insets: WindowInsets): Int {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                return if (insets.isVisible(WindowInsets.Type.ime())) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
-            }
-            // Full screen with the navigation bar hidden: what's left at the bottom is the keyboard.
-            @Suppress("DEPRECATION")
-            return insets.systemWindowInsetBottom
+            val compat = WindowInsetsCompat.toWindowInsetsCompat(insets)
+            val ime = WindowInsetsCompat.Type.ime()
+            return if (compat.isVisible(ime)) compat.getInsets(ime).bottom else 0
         }
     }
 }

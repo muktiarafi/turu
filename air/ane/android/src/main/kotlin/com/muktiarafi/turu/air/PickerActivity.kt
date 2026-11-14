@@ -8,7 +8,8 @@ import android.util.Log
 
 /**
  * Starts the system's document picker for [Documents] and hands back its answer. See-through and
- * without animations, it shows only the picker. Declared in `air/app/app.xml`.
+ * without window animations (its theme, `TuruAirPicker` in `air/app/res`), it shows only the
+ * picker. Declared in `air/app/app.xml`.
  */
 class PickerActivity : Activity() {
     private var answered = false
@@ -32,7 +33,6 @@ class PickerActivity : Activity() {
                 .apply { if (types.size > 1) putExtra(Intent.EXTRA_MIME_TYPES, types.toTypedArray()) }
         }
         try {
-            @Suppress("DEPRECATION")
             startActivityForResult(picker, REQUEST)
         } catch (e: ActivityNotFoundException) {
             Log.w("turu", "No document picker on this phone: $e")
@@ -40,8 +40,6 @@ class PickerActivity : Activity() {
         }
     }
 
-    @Deprecated("The picker is started with startActivityForResult")
-    @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST) {
@@ -65,8 +63,6 @@ class PickerActivity : Activity() {
         val kind = intent.getIntExtra(KIND, OPEN)
         Documents.answer(kind, uri, if (kind == OPEN) intent.getStringExtra(NAME).orEmpty() else "")
         finish()
-        @Suppress("DEPRECATION")
-        overridePendingTransition(0, 0)
     }
 
     companion object {
@@ -89,8 +85,6 @@ class PickerActivity : Activity() {
                     .putExtra(NAME, name)
                 try {
                     activity.startActivity(intent)
-                    @Suppress("DEPRECATION")
-                    activity.overridePendingTransition(0, 0)
                 } catch (e: Exception) {
                     Log.w("turu", "Couldn't start the document picker: $e")
                     Documents.answer(kind, null, "")

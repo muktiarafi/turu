@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- PickerActivity (the file dialogs): see-through, no title, and no window animations, so
+         only the system's picker shows, without the old per-call overridePendingTransition. -->
+    <style name="TuruAirPicker" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>
