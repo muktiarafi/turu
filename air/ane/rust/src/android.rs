@@ -420,23 +420,6 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeInsets<'local>(
     crate::overlay::set_insets(keyboard as f32, (cutout_left as f32, cutout_right as f32));
 }
 
-/// `Bridge.nativeGameTyping(json)`: the game's focused text field, from the host SWF (an empty
-/// string: none).
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeGameTyping<'local>(
-    mut unowned_env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    json: JString<'local>,
-) {
-    unowned_env
-        .with_env(|env| -> jni::errors::Result<()> {
-            let json = json.try_to_string(env)?;
-            crate::overlay::set_game_typing(crate::overlay::GameTyping::from_json(&json));
-            Ok(())
-        })
-        .resolve::<ThrowRuntimeExAndDefault>()
-}
-
 /// Starts the engine thread once per process, with `root` as the data folder.
 fn start_engine(root: PathBuf) {
     static ENGINE: Once = Once::new();

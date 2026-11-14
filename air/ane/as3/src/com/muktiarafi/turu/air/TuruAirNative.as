@@ -83,7 +83,7 @@ package com.muktiarafi.turu.air {
         }
 
         /**
-         * The game's focused text field for the strip above the soft keyboard, as JSON (`text`,
+         * The game's focused text field for the native field above the soft keyboard, as JSON (`text`,
          * `caret`, `selStart`, `selEnd`, `password`, `max`), or "" when there's none.
          */
         public function gameTyping(json:String):void {

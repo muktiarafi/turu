@@ -70,7 +70,7 @@ class TuruAirExtension : FREExtension {
                 id?.let { Bridge.nativeFetchResult(it) }?.let(::byteArray)
             },
             "gameTyping" to FREFunction { _, args ->
-                Bridge.nativeGameTyping(args?.getOrNull(0)?.asString ?: "")
+                Bridge.gameTyping(args?.getOrNull(0)?.asString ?: "")
                 null
             },
         )

@@ -133,13 +133,11 @@ impl AndroidUiBackend {
 }
 
 impl UiBackend for AndroidUiBackend {
-    fn open_virtual_keyboard(&self) {
-        soft_keyboard(true);
-    }
+    /// The game's text field shows as a native one above the keyboard, which brings the keyboard
+    /// up itself (`game_field.rs`, each time the screen draws).
+    fn open_virtual_keyboard(&self) {}
 
-    fn close_virtual_keyboard(&self) {
-        soft_keyboard(false);
-    }
+    fn close_virtual_keyboard(&self) {}
 
     fn mouse_visible(&self) -> bool {
         self.inner.mouse_visible()
@@ -153,12 +151,14 @@ impl UiBackend for AndroidUiBackend {
         self.inner.set_mouse_cursor(cursor);
     }
 
+    /// Android's clipboard: a game text field's Copy, Cut and Paste (Ctrl+C, Ctrl+X, Ctrl+V, or
+    /// the toolbar over the strip above the soft keyboard).
     fn clipboard_content(&mut self) -> String {
-        self.inner.clipboard_content()
+        crate::platform::clip_text().unwrap_or_default()
     }
 
     fn set_clipboard_content(&mut self, content: String) {
-        self.inner.set_clipboard_content(content);
+        crate::platform::copy_text(&content);
     }
 
     fn set_fullscreen(&mut self, is_full: bool) -> Result<(), FullscreenError> {

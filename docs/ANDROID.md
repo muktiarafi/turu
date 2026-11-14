@@ -59,7 +59,8 @@ How to build, run and check the Android app. The design and the plan are in
 > done).
 >
 > **Known gaps:** the soft keyboard covers the game's own text fields (close it to see the
-> text; a strip above it shows what they hold); the windows are the desktop's, at the phone's
+> text; a native text field above it holds what they hold, with Android's caret, selection
+> handles and text toolbar); the windows are the desktop's, at the phone's
 > density: a window too big for the screen opens as a full-screen sheet, and the side bar hides
 > (its logo, or Menu > Hide Side Bar; the `›` tab at the left edge brings it back; it stays
 > hidden when Turu opens again: `sideBarHidden` in `settings.json`); OpenGL ES draws only parts of the game (use

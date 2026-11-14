@@ -9,9 +9,9 @@
 //! down: the UI's touches come here, the others go to AIR's view below.
 //!
 //! As the Ruffle build's screen: the rail grows by the display cutout on its side; a window whose
-//! text box has the focus moves up above the soft keyboard (`android/src/pan.rs`); and while the
-//! keyboard is up for one of the game's text fields (AIR's), a strip above it shows what the field
-//! holds ([`GameTyping`], which the host SWF reads), as the keyboard covers the field itself.
+//! text box has the focus moves up above the soft keyboard (`android/src/pan.rs`). The game's own
+//! text fields (AIR's) are typed in through a native field above the keyboard, Kotlin's
+//! `GameField`, which the host SWF keeps in step with the focused one.
 
 use crate::host::BRIDGE;
 use jni::objects::JValue;
@@ -38,8 +38,6 @@ struct Shared {
     /// The soft keyboard's height, and the display cutout's left and right insets, in pixels.
     keyboard: f32,
     cutout: (f32, f32),
-    /// The game's focused text field, while there's one you type in.
-    game_typing: Option<GameTyping>,
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
@@ -51,7 +49,6 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     wake: false,
     keyboard: 0.0,
     cutout: (0.0, 0.0),
-    game_typing: None,
 });
 static WAKE: Condvar = Condvar::new();
 /// The drawing thread took a surface change in.
@@ -101,19 +98,6 @@ pub(crate) fn set_insets(keyboard: f32, cutout: (f32, f32)) {
         let mut shared = shared();
         shared.keyboard = keyboard.max(0.0);
         shared.cutout = (cutout.0.max(0.0), cutout.1.max(0.0));
-        shared.wake = true;
-    }
-    WAKE.notify_one();
-}
-
-/// The game's focused text field (from the host SWF), or `None` when there's none to type in.
-pub(crate) fn set_game_typing(typing: Option<GameTyping>) {
-    {
-        let mut shared = shared();
-        if shared.game_typing == typing {
-            return;
-        }
-        shared.game_typing = typing;
         shared.wake = true;
     }
     WAKE.notify_one();
@@ -229,12 +213,11 @@ fn run() {
     let mut target_for = 0;
     let mut next = Instant::now();
     let mut keyboard_shown = false;
-    let mut ui_typing = false;
     let mut sent_insets = (u32::MAX, u32::MAX);
     let mut panned: Option<(egui::LayerId, f32)> = None;
     loop {
         // Wait for input, a new window, or the next frame.
-        let (events, ppp, window, keyboard, cutout, game_typing) = {
+        let (events, ppp, window, keyboard, cutout) = {
             let mut shared = shared();
             while !shared.wake {
                 let now = Instant::now();
@@ -257,7 +240,6 @@ fn run() {
                 window,
                 shared.keyboard,
                 shared.cutout,
-                shared.game_typing.clone(),
             )
         };
         if let Some(window) = window {
@@ -305,16 +287,11 @@ fn run() {
         // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
         turu_frontend::gui::set_cutout(cutout.0 / ppp, cutout.1 / ppp);
         let keyboard = keyboard / ppp;
-        let cutout = (cutout.0 / ppp, cutout.1 / ppp);
-        let game_typing = game_typing.filter(|_| keyboard > 0.0 && !ui_typing);
         let output = egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
             ui.show_windows(root.ctx());
-            if let Some(typing) = &game_typing {
-                typing.show(root.ctx(), keyboard, cutout);
-            }
         });
-        ui_typing = output.platform_output.ime.is_some();
+        let ui_typing = output.platform_output.ime.is_some();
         panned = follow_text_field(
             &egui,
             output.platform_output.ime.as_ref(),
@@ -395,135 +372,6 @@ fn follow_text_field(
     }
     ctx.request_repaint();
     wanted
-}
-
-/// What the game's focused text field holds, shown in a strip above the soft keyboard (the Ruffle
-/// build's `Typing`): the keyboard covers the field itself. The host SWF reads it from AIR's
-/// `stage.focus`.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct GameTyping {
-    /// The text on one line, a password's characters hidden.
-    pub text: String,
-    /// The caret, in characters of `text`.
-    pub caret: usize,
-    /// The selected characters, when some are.
-    pub selected: Option<(usize, usize)>,
-    /// The field's `maxChars` (0: no limit).
-    pub max: usize,
-}
-
-impl GameTyping {
-    const HEIGHT: f32 = 44.0;
-
-    /// From the host's JSON (`{"text", "caret", "selStart", "selEnd", "password", "max"}`), or
-    /// `None` for anything else (no field).
-    pub(crate) fn from_json(json: &str) -> Option<Self> {
-        let value: serde_json::Value = serde_json::from_str(json).ok()?;
-        let text = value.get("text")?.as_str()?;
-        let length = text.chars().count();
-        let number = |key: &str| {
-            value
-                .get(key)
-                .and_then(serde_json::Value::as_u64)
-                .map(|n| n as usize)
-        };
-        let caret = number("caret").unwrap_or(length).min(length);
-        let selected = match (number("selStart"), number("selEnd")) {
-            (Some(start), Some(end)) if start != end => {
-                Some((start.min(end).min(length), start.max(end).min(length)))
-            }
-            _ => None,
-        };
-        let text = if value.get("password").and_then(serde_json::Value::as_bool) == Some(true) {
-            "•".repeat(length)
-        } else {
-            text.replace(['\r', '\n'], " ")
-        };
-        Some(Self {
-            text,
-            caret,
-            selected,
-            max: number("max").unwrap_or(0),
-        })
-    }
-
-    /// The strip, its bottom `keyboard` points above the screen's, as wide as the screen less
-    /// `cutout`'s (left, right) insets, in points.
-    fn show(&self, ctx: &egui::Context, keyboard: f32, cutout: (f32, f32)) {
-        use turu_frontend::gui::turu::theme::{ACCENT, CARD, DANGER, EDGE, MUTED, TEXT};
-        let screen = ctx.content_rect();
-        let bottom = (screen.bottom() - keyboard).max(screen.top() + Self::HEIGHT);
-        let rect = egui::Rect::from_min_max(
-            egui::pos2(screen.left() + cutout.0, bottom - Self::HEIGHT),
-            egui::pos2(
-                (screen.right() - cutout.1).max(screen.left() + cutout.0),
-                bottom,
-            ),
-        );
-        // An area of its own, above the windows; a touch on it stays off the game, so the field
-        // keeps the focus.
-        egui::Area::new(egui::Id::new("turu_typing"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(rect.min)
-            .show(ctx, |ui| {
-                let (rect, _) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
-                let painter = ui.painter();
-                painter.rect_filled(rect, 0.0, CARD);
-                painter.hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0, EDGE));
-                let mut inner = rect.shrink2(egui::vec2(16.0, 8.0));
-                let length = self.text.chars().count();
-                if self.max > 0 {
-                    // The count on the right, red at the limit.
-                    let count = format!("{length}/{}", self.max);
-                    let color = if length >= self.max { DANGER } else { MUTED };
-                    let count =
-                        painter.layout_no_wrap(count, egui::FontId::proportional(13.0), color);
-                    let count_at = egui::pos2(
-                        inner.right() - count.size().x,
-                        inner.center().y - count.size().y / 2.0,
-                    );
-                    inner.max.x -= count.size().x + 16.0;
-                    painter.galley(count_at, count, color);
-                }
-                let font = egui::FontId::proportional(18.0);
-                if self.text.is_empty() {
-                    let galley = painter.layout_no_wrap("Typing in the game".into(), font, MUTED);
-                    let at =
-                        egui::pos2(inner.left() + 4.0, inner.center().y - galley.size().y / 2.0);
-                    painter.galley(at, galley, MUTED);
-                    painter.vline(
-                        inner.left(),
-                        inner.y_range(),
-                        egui::Stroke::new(2.0, ACCENT),
-                    );
-                    return;
-                }
-                let galley = painter.layout_no_wrap(self.text.clone(), font, TEXT);
-                let caret = galley
-                    .pos_from_cursor(egui::text::CCursor::new(self.caret))
-                    .min
-                    .x;
-                // Scrolled so the caret is in sight, as the field itself scrolls.
-                let shift = (caret - inner.width() + 4.0).max(0.0);
-                let left = inner.left() - shift;
-                let clipped = painter.with_clip_rect(inner.expand2(egui::vec2(2.0, 0.0)));
-                if let Some((start, end)) = self.selected {
-                    let x = |at| left + galley.pos_from_cursor(egui::text::CCursor::new(at)).min.x;
-                    let selection = egui::Rect::from_x_y_ranges(x(start)..=x(end), inner.y_range());
-                    clipped.rect_filled(selection, 2.0, ACCENT.gamma_multiply(0.35));
-                }
-                clipped.galley(
-                    egui::pos2(left, inner.center().y - galley.size().y / 2.0),
-                    galley,
-                    TEXT,
-                );
-                clipped.vline(
-                    left + caret,
-                    inner.y_range(),
-                    egui::Stroke::new(2.0, ACCENT),
-                );
-            });
-    }
 }
 
 fn make_target(gpu: &mut Option<Gpu>, window: NativeWindow) -> Option<Target> {

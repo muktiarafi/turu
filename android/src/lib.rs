@@ -17,6 +17,7 @@
 
 mod audio;
 mod frame_perf;
+mod game_field;
 mod input;
 mod memory;
 mod notify;

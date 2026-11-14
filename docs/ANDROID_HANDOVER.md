@@ -41,6 +41,18 @@ its text) keeps clear of the display cutout's left and right insets, as the keyb
 S24 FE) sits at the side, at about the strip's height. Backspace, Delete, the arrows, Home/End and
 Ctrl+A/C/V/X now edit the field (Ruffle's `TextControl`, as the desktop sends it).
 
+The strip is now a native Android text field (`GameField.kt`, `game_field.rs`), as AQW's own
+Android launcher has it: Android's caret, selection handles, text toolbar (Cut, Copy, Paste, Share,
+Select all, Translate), suggestions and clipboard. NativeActivity draws its window itself, so the
+field is a window of its own: a dialog along the bottom, its bottom padding the keyboard's height,
+letting touches outside it through to the game. The screen keeps it in step with the game's focused
+field each time it draws (shown when an editable field takes the focus, updated when the game
+changes it, gone with the focus); each edit there is typed into the game's field as the change it
+is (`textInput` for the replaced part), so the game sees ordinary typing. Send (or Enter) presses
+Enter in the game; Back ends typing (the game's field loses the focus). The keyboard going down
+alone doesn't close it: a hardware keyboard's key hides the soft keyboard.
+The player's clipboard is Android's now (`AndroidUiBackend`), so Ctrl+C/V reach it too.
+
 ## Branches and workflow
 
 * `android` is the feature branch, cut from `main` at `db698ca36`. Each phase gets its own

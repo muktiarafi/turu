@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import com.adobe.fre.FREContext
+import org.json.JSONObject
 
 /**
  * Turu's engine (`libturu_air.so`, crate `turu_air`) and the way back from it to AS3 and the
@@ -85,9 +86,41 @@ object Bridge {
     @JvmStatic
     external fun nativeInsets(keyboard: Int, cutoutLeft: Int, cutoutRight: Int)
 
-    /** The game's focused text field as JSON (from the host SWF); empty when there's none. */
+    /** The game's focused text field above the keyboard, and the activity it's in. */
+    private var gameField: GameField? = null
+
+    /**
+     * The game's focused text field, from the host SWF (`gameTyping`) as JSON (`text`, `caret`,
+     * `selStart`, `selEnd`, `password`, `max`), or empty when no field you type in has the focus:
+     * [GameField] shows it, follows it, or goes.
+     */
     @JvmStatic
-    external fun nativeGameTyping(json: String)
+    fun gameTyping(json: String) {
+        val activity = activity ?: return
+        activity.runOnUiThread {
+            val field = gameField?.takeIf { it.activity === activity } ?: run {
+                gameField?.hide()
+                GameField(activity).also { gameField = it }
+            }
+            val typing = json.takeIf { it.isNotEmpty() }?.let { runCatching { JSONObject(it) }.getOrNull() }
+            if (typing == null) {
+                field.hide()
+                return@runOnUiThread
+            }
+            val text = typing.optString("text")
+            val caret = typing.optInt("caret", text.length)
+            val start = typing.optInt("selStart", caret)
+            val end = typing.optInt("selEnd", caret)
+            val password = typing.optBoolean("password")
+            val max = typing.optInt("max")
+            if (field.shown && field.password == password && field.max == max) {
+                field.update(text, start, end)
+            } else {
+                val left = (airView?.layoutParams as? ViewGroup.MarginLayoutParams)?.leftMargin ?: 0
+                field.show(text, start, end, password, max, left)
+            }
+        }
+    }
 
     /** The notification's buttons: "start", "pause" (or resume) and "stop" ([TuruAirService]). */
     @JvmStatic

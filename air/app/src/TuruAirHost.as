@@ -11,6 +11,7 @@ package {
     import flash.events.ErrorEvent;
     import flash.events.Event;
     import flash.events.IOErrorEvent;
+    import flash.events.KeyboardEvent;
     import flash.events.StatusEvent;
     import flash.events.TimerEvent;
     import flash.events.UncaughtErrorEvent;
@@ -24,6 +25,7 @@ package {
     import flash.system.Security;
     import flash.text.TextField;
     import flash.text.TextFieldType;
+    import flash.ui.Keyboard;
     import flash.utils.ByteArray;
     import flash.utils.Timer;
     import flash.utils.getQualifiedClassName;
@@ -187,8 +189,9 @@ package {
         }
 
         /**
-         * The game's focused text field, for the engine's strip above the soft keyboard (the
-         * keyboard covers the field; AIR doesn't pan the stage: `softKeyboardBehavior` none).
+         * The game's focused text field, for the native field above the soft keyboard (Kotlin's
+         * `GameField`: the keyboard covers the game's field; AIR doesn't pan the stage:
+         * `softKeyboardBehavior` none).
          */
         private function watchTyping(event:Event):void {
             var field:TextField = stage.focus as TextField;
@@ -209,6 +212,54 @@ package {
             }
         }
 
+        /**
+         * Typing in the native field above the keyboard (Kotlin's `GameField`), for the game's focused
+         * text field: `{"op": "set", "text", "start", "end"}` (its text and selection now: only the
+         * changed part is replaced, as typing does), `{"op": "enter"}` (the keyboard's Send: Enter, as
+         * a key press) or `{"op": "close"}` (Back: done typing, the field loses the focus).
+         */
+        private function editTyping(level:String):void {
+            var field:TextField = stage.focus as TextField;
+            if (field == null || field.type != TextFieldType.INPUT) {
+                return;
+            }
+            var request:Object;
+            try {
+                request = JSON.parse(level);
+            } catch (e:Error) {
+                say("ERROR: typing request " + level);
+                return;
+            }
+            switch (request.op) {
+                case "set":
+                    var old:String = field.text;
+                    var now:String = String(request.text);
+                    if (old != now) {
+                        var prefix:int = 0;
+                        while (prefix < old.length && prefix < now.length && old.charCodeAt(prefix) == now.charCodeAt(prefix)) {
+                            prefix++;
+                        }
+                        var suffix:int = 0;
+                        while (suffix < old.length - prefix && suffix < now.length - prefix &&
+                            old.charCodeAt(old.length - 1 - suffix) == now.charCodeAt(now.length - 1 - suffix)) {
+                            suffix++;
+                        }
+                        field.replaceText(prefix, old.length - suffix, now.substring(prefix, now.length - suffix));
+                        field.dispatchEvent(new Event(Event.CHANGE, true));
+                    }
+                    field.setSelection(int(request.start), int(request.end));
+                    break;
+                case "enter":
+                    field.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN, true, false, Keyboard.ENTER, Keyboard.ENTER));
+                    field.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_UP, true, false, Keyboard.ENTER, Keyboard.ENTER));
+                    break;
+                case "close":
+                    stage.focus = null;
+                    break;
+            }
+            watchTyping(null);
+        }
+
         private function onFail(event:ErrorEvent):void {
             say("ERROR " + event.type + ": " + event.text);
         }
@@ -223,6 +274,10 @@ package {
          * and AIR's view's size (`layout`: "width height", from Kotlin).
          */
         private function onTab(event:StatusEvent):void {
+            if (event.code == "typing") {
+                editTyping(event.level);
+                return;
+            }
             if (event.code == "layout") {
                 var size:Array = event.level.split(" ");
                 viewSize = [Number(size[0]), Number(size[1])];

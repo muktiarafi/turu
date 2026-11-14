@@ -16,8 +16,8 @@
 
 use crate::input::{self, Key, Touch};
 use ndk::native_window::NativeWindow;
-use ruffle_core::Player;
 use ruffle_core::events::TouchPhase;
+use ruffle_core::{Player, PlayerEvent};
 use ruffle_render::backend::ViewportDimensions;
 use ruffle_render_wgpu::backend::{
     WgpuRenderBackend, create_wgpu_instance, request_adapter_and_device,
@@ -84,6 +84,8 @@ pub struct Screen {
     /// Not `egui_wants_keyboard_input`: that's true for any focused widget, such as a modal's
     /// button, which would bring the keyboard up over the modal.
     ui_typing: bool,
+    /// The game's focused text field, as a native one above the keyboard.
+    pub game_field: crate::game_field::GameField,
     /// The game's viewport, last set.
     movie_size: (u32, u32),
     /// Frame interpolation's pacing, with the display's refresh rate.
@@ -230,6 +232,7 @@ impl Screen {
             egui_finger: None,
             keyboard_shown: false,
             ui_typing: false,
+            game_field: Default::default(),
             movie_size: (0, 0),
             pacing: Pacing::new(),
             refresh_millihertz: 0,
@@ -480,7 +483,7 @@ impl Screen {
     }
 
     /// A key: the UI's while a text box of it has the focus, else the game's (and HotKeys'). A game text field
-    /// takes no more characters once it's full ([`Typing::MAX_CHARS`]).
+    /// takes no more characters once it's full ([`crate::game_field::MAX_CHARS`]).
     pub fn key(&mut self, player: &mut Player, key: &Key) {
         if self.ui_typing {
             self.events.extend(key.egui_events());
@@ -488,11 +491,10 @@ impl Screen {
         }
         // Turu's HotKeys see the press too (no text: nothing types into a window).
         self.events.extend(key.egui_key_events());
-        let full = key.typed.is_some()
-            && key.control.is_none()
-            && Typing::read(player).is_some_and(|t| t.is_full());
+        let full =
+            key.typed.is_some() && key.control.is_none() && crate::game_field::is_full(player);
         for event in key.player_events() {
-            if !(full && matches!(event, ruffle_core::PlayerEvent::TextInput { .. })) {
+            if !(full && matches!(event, PlayerEvent::TextInput { .. })) {
                 player.handle_event(event);
             }
         }
@@ -672,13 +674,9 @@ impl Screen {
             viewport.native_pixels_per_point = Some(ppp);
         }
         let top = self.top() / ppp;
-        // The game's text field under the keyboard, while the keyboard is up for it.
         let keyboard = crate::ui::keyboard_height() as f32 / ppp;
-        let (cutout_left, cutout_right) = crate::ui::cutout();
-        let cutout = (cutout_left as f32 / ppp, cutout_right as f32 / ppp);
-        let typing = (keyboard > 0.0 && !self.ui_typing)
-            .then(|| Typing::read(player))
-            .flatten();
+        // The game's focused text field, as a native one above the keyboard (`game_field.rs`).
+        self.game_field.sync(player);
         let ui = &mut self.ui;
         let output = self.egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
@@ -686,9 +684,6 @@ impl Screen {
                 turu_frontend::gui::turu::show_headless_screen(root.ctx(), top);
             }
             ui.show_windows(root.ctx());
-            if let Some(typing) = &typing {
-                typing.show(root.ctx(), keyboard, cutout);
-            }
         });
         self.ui_typing = output.platform_output.ime.is_some();
         let ime = output.platform_output.ime.as_ref();
@@ -772,141 +767,6 @@ impl Screen {
             self.keyboard_shown = wanted;
             crate::ui::soft_keyboard(wanted);
         }
-    }
-}
-
-/// What the game's focused text field holds, shown in a strip above the soft keyboard: the
-/// keyboard covers the field itself, and NativeActivity has no view to scroll it into sight.
-struct Typing {
-    /// The text on one line, a password's characters hidden.
-    text: String,
-    /// The caret, in characters of `text`.
-    caret: usize,
-    /// Its length in characters.
-    length: usize,
-    /// The selected characters, when some are (typing replaces them).
-    selected: Option<(usize, usize)>,
-}
-
-impl Typing {
-    const HEIGHT: f32 = 44.0;
-    /// The most the game takes in a message: typing stops there.
-    const MAX_CHARS: usize = 150;
-
-    /// Typing a character would go past [`Self::MAX_CHARS`].
-    fn is_full(&self) -> bool {
-        self.length >= Self::MAX_CHARS && self.selected.is_none()
-    }
-
-    /// The focused field, when it's one you type in.
-    fn read(player: &mut Player) -> Option<Self> {
-        player.mutate_with_update_context(|context| {
-            let field = context.focus_tracker.get_as_edit_text()?;
-            if !field.is_editable() {
-                return None;
-            }
-            let text = field.text();
-            // Positions in the field are in its code units; the strip counts characters.
-            let chars_to = |at: usize| {
-                text.slice(..at.min(text.len()))
-                    .map_or(0, |before| before.chars().count())
-            };
-            let selection = field.selection();
-            let caret = chars_to(selection.map_or(text.len(), |s| s.to()));
-            let selected = selection
-                .filter(|s| s.start() != s.end())
-                .map(|s| (chars_to(s.start()), chars_to(s.end())));
-            let length = text.chars().count();
-            let text = if field.is_password() {
-                "•".repeat(length)
-            } else {
-                text.to_utf8_lossy().replace(['\r', '\n'], " ")
-            };
-            Some(Self {
-                text,
-                caret,
-                length,
-                selected,
-            })
-        })
-    }
-
-    /// The strip, its bottom `keyboard` points above the screen's, as wide as the screen less
-    /// `cutout`, the display cutout's (left, right) insets in points: held sideways, a punch-hole
-    /// camera sits at the side, about where the strip is, and the keyboard below keeps clear of it too.
-    fn show(&self, ctx: &egui::Context, keyboard: f32, cutout: (f32, f32)) {
-        use turu_frontend::gui::turu::theme::{ACCENT, CARD, DANGER, EDGE, MUTED, TEXT};
-        let screen = ctx.content_rect();
-        let bottom = (screen.bottom() - keyboard).max(screen.top() + Self::HEIGHT);
-        let rect = egui::Rect::from_min_max(
-            egui::pos2(screen.left() + cutout.0, bottom - Self::HEIGHT),
-            egui::pos2(
-                (screen.right() - cutout.1).max(screen.left() + cutout.0),
-                bottom,
-            ),
-        );
-        // An area of its own, above the windows: a touch on it stays off the game, so the field keeps the focus.
-        egui::Area::new(egui::Id::new("turu_typing"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(rect.min)
-            .show(ctx, |ui| {
-                let (rect, _) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
-                let painter = ui.painter();
-                painter.rect_filled(rect, 0.0, CARD);
-                painter.hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0, EDGE));
-                let mut inner = rect.shrink2(egui::vec2(16.0, 8.0));
-                // The count on the right, red at the limit.
-                let count = format!("{}/{}", self.length, Self::MAX_CHARS);
-                let color = if self.length >= Self::MAX_CHARS {
-                    DANGER
-                } else {
-                    MUTED
-                };
-                let count = painter.layout_no_wrap(count, egui::FontId::proportional(13.0), color);
-                let count_at = egui::pos2(
-                    inner.right() - count.size().x,
-                    inner.center().y - count.size().y / 2.0,
-                );
-                inner.max.x -= count.size().x + 16.0;
-                painter.galley(count_at, count, color);
-                let font = egui::FontId::proportional(18.0);
-                if self.text.is_empty() {
-                    let galley = painter.layout_no_wrap("Typing in the game".into(), font, MUTED);
-                    let at =
-                        egui::pos2(inner.left() + 4.0, inner.center().y - galley.size().y / 2.0);
-                    painter.galley(at, galley, MUTED);
-                    painter.vline(
-                        inner.left(),
-                        inner.y_range(),
-                        egui::Stroke::new(2.0, ACCENT),
-                    );
-                    return;
-                }
-                let galley = painter.layout_no_wrap(self.text.clone(), font, TEXT);
-                let caret = galley
-                    .pos_from_cursor(egui::text::CCursor::new(self.caret))
-                    .min
-                    .x;
-                // Scrolled so the caret is in sight, as the field itself scrolls.
-                let shift = (caret - inner.width() + 4.0).max(0.0);
-                let left = inner.left() - shift;
-                let clipped = painter.with_clip_rect(inner.expand2(egui::vec2(2.0, 0.0)));
-                if let Some((start, end)) = self.selected {
-                    let x = |at| left + galley.pos_from_cursor(egui::text::CCursor::new(at)).min.x;
-                    let selection = egui::Rect::from_x_y_ranges(x(start)..=x(end), inner.y_range());
-                    clipped.rect_filled(selection, 2.0, ACCENT.gamma_multiply(0.35));
-                }
-                clipped.galley(
-                    egui::pos2(left, inner.center().y - galley.size().y / 2.0),
-                    galley,
-                    TEXT,
-                );
-                clipped.vline(
-                    left + caret,
-                    inner.y_range(),
-                    egui::Stroke::new(2.0, ACCENT),
-                );
-            });
     }
 }
 

@@ -8,7 +8,7 @@
 
 use android_activity::AndroidApp;
 use jni::JavaVM;
-use jni::objects::{JObject, JValue};
+use jni::objects::{JObject, JString, JValue};
 use jni::sys::jobject;
 use jni::{jni_sig, jni_str};
 use std::path::Path;
@@ -162,6 +162,16 @@ pub fn copy_text(text: &str) {
     }
 }
 
+/// The text on Android's clipboard, if it holds some (the game's Ctrl+V).
+pub fn clip_text() -> Option<String> {
+    let app = crate::app()?;
+    paste(&app)
+        .inspect_err(|e| tracing::warn!("Couldn't read the clipboard: {e}"))
+        .ok()
+        .flatten()
+        .filter(|text| !text.is_empty())
+}
+
 /// Runs `work` with the activity, on a thread attached to the JavaVM.
 pub(crate) fn with_activity<T>(
     app: &AndroidApp,
@@ -228,18 +238,78 @@ fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()>
     })
 }
 
+/// `getSystemService("clipboard")`.
+fn clipboard<'local>(
+    env: &mut jni::Env<'local>,
+    activity: &JObject,
+) -> jni::errors::Result<JObject<'local>> {
+    let name = env.new_string("clipboard")?;
+    env.call_method(
+        activity,
+        jni_str!("getSystemService"),
+        jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+        &[JValue::Object(&name)],
+    )?
+    .l()
+}
+
+/// `getSystemService("clipboard").getPrimaryClip().getItemAt(0).coerceToText(activity)`, or
+/// `None` for an empty clipboard.
+fn paste(app: &AndroidApp) -> jni::errors::Result<Option<String>> {
+    with_activity(app, |env, activity| {
+        let clipboard = clipboard(env, activity)?;
+        let clip = env
+            .call_method(
+                &clipboard,
+                jni_str!("getPrimaryClip"),
+                jni_sig!("()Landroid/content/ClipData;"),
+                &[],
+            )?
+            .l()?;
+        if clip.is_null()
+            || env
+                .call_method(&clip, jni_str!("getItemCount"), jni_sig!("()I"), &[])?
+                .i()?
+                < 1
+        {
+            return Ok(None);
+        }
+        let item = env
+            .call_method(
+                &clip,
+                jni_str!("getItemAt"),
+                jni_sig!("(I)Landroid/content/ClipData$Item;"),
+                &[JValue::Int(0)],
+            )?
+            .l()?;
+        let text = env
+            .call_method(
+                &item,
+                jni_str!("coerceToText"),
+                jni_sig!("(Landroid/content/Context;)Ljava/lang/CharSequence;"),
+                &[JValue::Object(activity)],
+            )?
+            .l()?;
+        if text.is_null() {
+            return Ok(None);
+        }
+        let text = env
+            .call_method(
+                &text,
+                jni_str!("toString"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        let text = env.cast_local::<JString>(text)?;
+        Ok(Some(text.try_to_string(env)?))
+    })
+}
+
 /// `getSystemService("clipboard").setPrimaryClip(ClipData.newPlainText("Turu", text))`.
 fn copy(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
     with_activity(app, |env, activity| {
-        let name = env.new_string("clipboard")?;
-        let clipboard = env
-            .call_method(
-                activity,
-                jni_str!("getSystemService"),
-                jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
-                &[JValue::Object(&name)],
-            )?
-            .l()?;
+        let clipboard = clipboard(env, activity)?;
         let label = env.new_string("Turu")?;
         let text = env.new_string(text)?;
         let clip = env

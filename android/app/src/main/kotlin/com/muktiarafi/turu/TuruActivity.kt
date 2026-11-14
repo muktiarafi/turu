@@ -92,6 +92,28 @@ class TuruActivity : NativeActivity() {
 
     private var keyInput: KeyInput? = null
 
+    /** The game's focused text field, above the keyboard ([GameField]). */
+    private val gameField = GameField(this)
+
+    /**
+     * Shows [GameField] for the game's focused text field: its `text`, `start`..`end` selected
+     * (UTF-16 units), a password or not, `max` characters at most (0: no limit). Called on the
+     * engine thread (`screen.rs`).
+     */
+    fun showGameField(text: String, start: Int, end: Int, password: Boolean, max: Int) {
+        runOnUiThread { gameField.show(text, start, end, password, max) }
+    }
+
+    /** The game changed its focused field: [GameField] shows it. Called on the engine thread. */
+    fun updateGameField(text: String, start: Int, end: Int) {
+        runOnUiThread { gameField.update(text, start, end) }
+    }
+
+    /** No game field has the focus now: [GameField] goes. Called on the engine thread. */
+    fun hideGameField() {
+        runOnUiThread { gameField.hide() }
+    }
+
     /**
      * Shows or hides the soft keyboard for [KeyInput] (`ui.rs`, `screen.rs`). Called on the engine
      * thread; the input method only takes it on the UI thread (Android 15 throws otherwise).
@@ -339,6 +361,18 @@ class TuruActivity : NativeActivity() {
          */
         @JvmStatic
         private external fun nativeCutout(left: Int, right: Int)
+
+        /** [GameField]'s text or selection changed: the game's field takes it (`game_field.rs`). */
+        @JvmStatic
+        external fun nativeGameFieldEdited(text: String, start: Int, end: Int)
+
+        /** The keyboard's Send (or Enter) in [GameField]: Enter in the game. */
+        @JvmStatic
+        external fun nativeGameFieldEnter()
+
+        /** [GameField] was closed (Back, the keyboard went down): the game's field loses the focus. */
+        @JvmStatic
+        external fun nativeGameFieldClosed()
 
         /** The display's refresh rate in Hz, for frame interpolation's pacing (`ui.rs`). */
         @JvmStatic
