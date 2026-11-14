@@ -503,11 +503,16 @@ pub fn touch_number<'a, N: egui::emath::Numeric>(
 /// A one-line text box with a hint, in Turu's inset style; on a touch screen as tall as the
 /// small buttons (40 points).
 pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
+    text_box_sized(ui, text, hint, vec2(width, target(0.0, 40.0)))
+}
+
+/// [`text_box`] `size.x` wide and at least `size.y` tall, to line up with buttons beside it.
+pub fn text_box_sized(ui: &mut Ui, text: &mut String, hint: &str, size: Vec2) -> Response {
     ui.add(
         egui::TextEdit::singleline(text)
             .hint_text(hint)
-            .desired_width(width)
-            .min_size(vec2(0.0, target(0.0, 40.0)))
+            .desired_width(size.x)
+            .min_size(vec2(0.0, size.y))
             .vertical_align(Align::Center)
             .margin(Margin::symmetric(8, 5))
             .background_color(INSET),
@@ -854,27 +859,115 @@ pub fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
 /// `current` when it isn't in it. Returns the name picked.
 pub fn server_combo(ui: &mut Ui, id: &str, bot: &std::sync::Arc<turu_bot::Bot>, current: &str) -> Option<String> {
     let mut picked = None;
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(current)
-        .width(150.0)
-        .show_ui(ui, |ui| {
-            // Finger-sized rows on a touch screen.
-            ui.spacing_mut().interact_size.y = target(24.0, 40.0);
-            turu_bot::api::servers::refresh_in_background(bot);
-            if bot.servers.is_refreshing() {
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    // The list fills in while it is open, so it is a `dropdown`, which grows with it.
+    let size = vec2(150.0, target(ui.spacing().interact_size.y, 40.0));
+    let height = ui.spacing().combo_height;
+    dropdown(ui, id, current, size, size.x, height, |ui| {
+        // Finger-sized rows on a touch screen.
+        ui.spacing_mut().interact_size.y = target(24.0, 40.0);
+        turu_bot::api::servers::refresh_in_background(bot);
+        if bot.servers.is_refreshing() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        let mut names = server_names(bot);
+        if !current.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(current)) {
+            names.insert(0, current.to_owned());
+        }
+        for name in names {
+            if ui.selectable_label(current == name, &name).clicked() {
+                picked = Some(name);
             }
-            let mut names = server_names(bot);
-            if !current.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(current)) {
-                names.insert(0, current.to_owned());
-            }
-            for name in names {
-                if ui.selectable_label(current == name, &name).clicked() {
-                    picked = Some(name);
-                }
-            }
-        });
+        }
+    });
     picked
+}
+
+/// A drop-down `size` big: the picked text (cut short with "…" when it doesn't fit, the whole of
+/// it on hover) and, while open, a list under it (or over it, when there's more room there) at
+/// least `list_width` wide and at most `max_height` tall, or what the screen has room for. A
+/// click on a row closes it. Returns what `contents` returned while it was open.
+///
+/// egui's `ComboBox` measures its list only on the frame it opens and keeps it that tall, so a
+/// list that fills in afterwards (loaded in the background when it opens) stays as short as it
+/// first was, scrolling, until it is opened again. This list asks for its full height on every
+/// frame, so it grows as its rows arrive.
+pub fn dropdown<R>(
+    ui: &mut Ui,
+    id_salt: &str,
+    selected: &str,
+    size: Vec2,
+    list_width: f32,
+    max_height: f32,
+    contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let popup_id = ui.make_persistent_id(id_salt).with("popup");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
+    if ui.is_rect_visible(rect) {
+        let visuals = if open {
+            &ui.visuals().widgets.open
+        } else {
+            ui.style().interact(&response)
+        };
+        ui.painter().rect(
+            rect.expand(visuals.expansion),
+            visuals.corner_radius,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke,
+            StrokeKind::Inside,
+        );
+        let pad = ui.spacing().button_padding.x;
+        let icon = ui.spacing().icon_width;
+        let icon_rect = Rect::from_center_size(
+            pos2(rect.right() - pad - icon / 2.0, rect.center().y),
+            vec2(icon * 0.7, icon * 0.45),
+        );
+        ui.painter().add(Shape::convex_polygon(
+            vec![icon_rect.left_top(), icon_rect.right_top(), icon_rect.center_bottom()],
+            visuals.fg_stroke.color,
+            Stroke::NONE,
+        ));
+        let text_width = (rect.width() - 2.0 * pad - icon - ui.spacing().icon_spacing).max(0.0);
+        let galley = egui::WidgetText::from(selected).into_galley(
+            ui,
+            Some(TextWrapMode::Truncate),
+            text_width,
+            TextStyle::Button,
+        );
+        let elided = galley.elided;
+        let at = pos2(rect.left() + pad, rect.center().y - galley.size().y / 2.0);
+        ui.painter().galley(at, galley, visuals.text_color());
+        if elided && !open {
+            response = response.on_hover_text(selected);
+        }
+    }
+
+    // Room for the list on the roomier side of the button, less a margin.
+    let screen = ui.ctx().content_rect();
+    let room = (screen.bottom() - rect.bottom()).max(rect.top() - screen.top()) - 16.0;
+    let height = max_height.min(room).max(80.0);
+    let width = list_width.max(size.x);
+    let inner = egui::Popup::menu(&response)
+        .id(popup_id)
+        .width(width)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        // Rows look like a ComboBox's, not like a menu's.
+        .style(egui::style::StyleModifier::default())
+        .show(|ui| {
+            ui.set_min_width(width - ui.spacing().menu_margin.sum().x);
+            ScrollArea::vertical()
+                .max_height(height)
+                // At least `height` (or the whole list, when shorter), whatever size the
+                // popup was measured at.
+                .min_scrolled_height(height)
+                .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+                    contents(ui)
+                })
+                .inner
+        })
+        .map(|shown| shown.inner);
+    egui::InnerResponse { inner, response }
 }
 
 /// A list well `height` tall and as wide as `ui` (inset colour, rounded edge).

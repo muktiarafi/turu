@@ -13,10 +13,11 @@ use crate::map_pads::MapCells;
 use egui::containers::menu::{MenuBar, MenuConfig};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Align2, Button, Color32, ComboBox, CornerRadius, FontId, Frame, Id, Layout, Margin, Panel, Popup,
-    PopupCloseBehavior, Rect, RectAlign, Response, RichText, Sense, Spinner, Stroke, Style, Ui, pos2, vec2,
+    Align, Align2, Button, Color32, CornerRadius, FontId, Frame, Id, Layout, Margin, Panel, Popup, PopupCloseBehavior,
+    Rect, RectAlign, Response, RichText, Sense, Spinner, Stroke, Style, Ui, pos2, vec2,
 };
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use turu_bot::api::dispatch;
@@ -98,6 +99,8 @@ pub struct NavBar {
     sets: SkillSets,
     /// The Class items in the inventory, for Auto's class drop-down (VibeSkua `PlayerClasses`).
     owned_classes: Arc<Mutex<Vec<String>>>,
+    /// While [`Self::reload_classes`] reads them.
+    classes_loading: Arc<AtomicBool>,
     class_dropdown_was_open: bool,
     auto_class: Option<String>,
     auto_mode: Option<String>,
@@ -149,6 +152,7 @@ impl Default for NavBar {
         Self {
             sets: SkillSets::default(),
             owned_classes: Arc::default(),
+            classes_loading: Arc::default(),
             class_dropdown_was_open: false,
             auto_class: None,
             auto_mode: None,
@@ -430,13 +434,16 @@ impl NavBar {
         self.auto_open = open;
     }
 
+    /// VibeSkua's Auto view: Auto Attack and Auto Hunt, Stop, then the class and mode to fight
+    /// with and the maps to hunt in. The two drop-downs line up under the two buttons, and every
+    /// control in it is as tall as the buttons (finger-sized on a touch screen).
     fn auto_panel(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
-        let running = auto::running(&crate::turu::bot());
+        let running = auto::running(&bot);
         let script_active = bot.scripts.status().is_active();
         let snippet = bot.scripts.is_snippet_running();
-        ui.set_width(256.0);
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        ui.set_width(AUTO_PANEL_WIDTH);
+        ui.spacing_mut().item_spacing = vec2(AUTO_GAP, AUTO_GAP);
         touch_controls(ui);
         ui.horizontal(|ui| {
             ui.label(RichText::new("Combat Automation").strong());
@@ -448,7 +455,10 @@ impl NavBar {
                 });
             }
         });
-        let half = (ui.available_width() - 6.0) / 2.0;
+        ui.separator();
+        let width = ui.available_width();
+        let half = (width - AUTO_GAP) / 2.0;
+        let height = widgets::target(30.0, 48.0);
         ui.horizontal(|ui| {
             let tip = if running {
                 "Already running"
@@ -457,22 +467,9 @@ impl NavBar {
             } else {
                 "Stop the script first"
             };
-            let attack = widgets::button(
-                ui,
-                "Auto Attack",
-                Kind::Primary,
-                !running && !script_active && !snippet,
-                vec2(half, widgets::target(30.0, 48.0)),
-                tip,
-            );
-            let hunt = widgets::button(
-                ui,
-                "Auto Hunt",
-                Kind::Normal,
-                !running && !script_active && !snippet,
-                vec2(half, widgets::target(30.0, 48.0)),
-                tip,
-            );
+            let can_start = !running && !script_active && !snippet;
+            let attack = widgets::button(ui, "Auto Attack", Kind::Primary, can_start, vec2(half, height), tip);
+            let hunt = widgets::button(ui, "Auto Hunt", Kind::Normal, can_start, vec2(half, height), tip);
             let mode = if attack.clicked() {
                 Some(auto::AutoMode::Attack)
             } else if hunt.clicked() {
@@ -489,65 +486,70 @@ impl NavBar {
             "Stop Automation",
             Kind::Danger,
             running,
-            vec2(ui.available_width(), widgets::target(30.0, 48.0)),
+            vec2(width, height),
             "Nothing is running",
         )
         .clicked()
         {
             auto::stop();
         }
+        ui.add_space(4.0);
         let mut picked_class = None;
         let mut class_open = false;
         ui.horizontal(|ui| {
             let owned = lock(&self.owned_classes).clone();
-            let combo = ComboBox::from_id_salt("auto_class")
-                .selected_text(self.auto_class.as_deref().unwrap_or("Select Class..."))
-                .width(half - 18.0)
-                .height(420.0)
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    // The drop-down is as wide as its button; class names need more room.
-                    ui.set_min_width(260.0);
-                    if owned.is_empty() {
+            let loading = self.classes_loading.load(Ordering::Relaxed);
+            let class = self.auto_class.clone().unwrap_or_else(|| "Select Class...".into());
+            // The class list spans the panel: class names are longer than half of it.
+            let list = widgets::dropdown(ui, "auto_class", &class, vec2(half, height), width, 420.0, |ui| {
+                touch_rows(ui);
+                if owned.is_empty() {
+                    if loading {
+                        ui.horizontal(|ui| {
+                            ui.add(Spinner::new().size(12.0));
+                            ui.label(RichText::new("Loading classes...").small().color(MUTED));
+                        });
+                    } else {
                         ui.label(RichText::new("No classes (not logged in?)").small().color(MUTED));
                     }
-                    for class in &owned {
-                        if ui
-                            .selectable_label(self.auto_class.as_deref() == Some(class), class)
-                            .clicked()
-                        {
-                            picked_class = Some(class.clone());
-                        }
+                }
+                for class in &owned {
+                    if ui
+                        .selectable_label(self.auto_class.as_deref() == Some(class), class)
+                        .clicked()
+                    {
+                        picked_class = Some(class.clone());
                     }
-                });
-            class_open = combo.inner.is_some();
+                }
+            });
+            class_open = list.inner.is_some();
             let modes = self
                 .auto_class
                 .as_deref()
                 .map(|c| self.sets.modes_for(c))
                 .unwrap_or_default();
-            ComboBox::from_id_salt("auto_mode")
-                .selected_text(self.auto_mode.as_deref().unwrap_or("Select Mode..."))
-                .width(half - 18.0)
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    if self.auto_class.is_some() && modes.is_empty() {
-                        ui.label(RichText::new("No saved skills for this class").small().color(MUTED));
+            let mode = self.auto_mode.clone().unwrap_or_else(|| "Select Mode...".into());
+            widgets::dropdown(ui, "auto_mode", &mode, vec2(half, height), half, 320.0, |ui| {
+                touch_rows(ui);
+                if self.auto_class.is_none() {
+                    ui.label(RichText::new("Pick a class first").small().color(MUTED));
+                } else if modes.is_empty() {
+                    ui.label(RichText::new("No saved skills for this class").small().color(MUTED));
+                }
+                for mode in modes {
+                    if ui
+                        .selectable_label(self.auto_mode.as_deref() == Some(&mode), &mode)
+                        .clicked()
+                    {
+                        self.auto_mode = Some(mode);
                     }
-                    for mode in modes {
-                        if ui
-                            .selectable_label(self.auto_mode.as_deref() == Some(&mode), &mode)
-                            .clicked()
-                        {
-                            self.auto_mode = Some(mode);
-                        }
-                    }
-                });
+                }
+            });
         });
         // VibeSkua `ReloadClasses` (on opening the class drop-down): re-read the owned classes
         // and the skill sets, and clear the selection.
         if class_open && !self.class_dropdown_was_open {
-            self.reload_classes();
+            self.reload_classes(ui.ctx());
         }
         self.class_dropdown_was_open = class_open;
         // VibeSkua `SelectedClass`: list its modes, pick the first, and equip the class.
@@ -558,36 +560,29 @@ impl NavBar {
                 dispatch(bot, "inventory.equipItem", &[json!(class)]).map(|_| ())
             });
         }
-        widgets::text_box(
+        widgets::text_box_sized(
             ui,
             &mut self.map_ids,
             "Manual MapIDs (optional, e.g. 1, 2)",
-            ui.available_width(),
+            vec2(width, height),
         );
     }
 
-    /// Reads the inventory's Class items (sorted, ignoring case) and the skill sets again.
-    fn reload_classes(&mut self) {
+    /// Reads the inventory's Class items (sorted, ignoring case) and the skill sets again, and
+    /// draws the drop-down again once they are in.
+    fn reload_classes(&mut self, ctx: &egui::Context) {
         self.sets = SkillSets::load();
         self.auto_class = None;
         self.auto_mode = None;
         let owned = self.owned_classes.clone();
+        let loading = self.classes_loading.clone();
+        loading.store(true, Ordering::Relaxed);
+        let ctx = ctx.clone();
         crate::turu::spawn_action("Auto classes", move |bot| {
-            let items: Vec<serde_json::Value> =
-                serde_json::from_value(dispatch(bot, "inventory.items", &[])?).unwrap_or_default();
-            let mut classes: Vec<String> = items
-                .iter()
-                .filter(|item| {
-                    item.get("category")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|c| c.eq_ignore_ascii_case("Class"))
-                })
-                .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
-                .map(str::to_owned)
-                .collect();
-            classes.sort_by_key(|name| name.to_lowercase());
-            *lock(&owned) = classes;
-            Ok(())
+            let read = read_classes(bot, &owned);
+            loading.store(false, Ordering::Relaxed);
+            ctx.request_repaint();
+            read
         });
     }
 
@@ -621,6 +616,7 @@ impl NavBar {
         ui.label(RichText::new("Fast Map Jump").strong());
         ui.separator();
         let half = (ui.available_width() - 6.0) / 2.0;
+        let height = widgets::target(28.0, 48.0);
         let mut state = lock(&self.jump);
         let mut picked = None;
         let mut picked_pad = false;
@@ -628,22 +624,20 @@ impl NavBar {
         let auto_jump = crate::turu::bot().settings.read().auto_jump_on_position_change;
         ui.horizontal(|ui| {
             let cells = state.cells.clone();
-            let combo = ComboBox::from_id_salt("jump_cell")
-                .selected_text(state.cell.as_deref().unwrap_or("Select Cell..."))
-                .width(half - 18.0)
-                .height(320.0)
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    if cells.is_empty() {
-                        ui.label(RichText::new("No cells (not in a map?)").small().color(MUTED));
+            let selected = state.cell.clone().unwrap_or_else(|| "Select Cell...".into());
+            // The cells are read again when it opens: a `dropdown` grows as they arrive.
+            let list = widgets::dropdown(ui, "jump_cell", &selected, vec2(half, height), half, 320.0, |ui| {
+                touch_rows(ui);
+                if cells.is_empty() {
+                    ui.label(RichText::new("No cells (not in a map?)").small().color(MUTED));
+                }
+                for cell in &cells {
+                    if ui.selectable_label(state.cell.as_deref() == Some(cell), cell).clicked() {
+                        picked = Some(cell.clone());
                     }
-                    for cell in &cells {
-                        if ui.selectable_label(state.cell.as_deref() == Some(cell), cell).clicked() {
-                            picked = Some(cell.clone());
-                        }
-                    }
-                });
-            cells_open = combo.inner.is_some();
+                }
+            });
+            cells_open = list.inner.is_some();
             let current = state.pad.clone();
             let pads = state
                 .cell
@@ -651,20 +645,18 @@ impl NavBar {
                 .and_then(|cell| state.map()?.pads(cell))
                 .map(<[String]>::to_vec)
                 .unwrap_or_else(|| PADS.map(str::to_owned).to_vec());
-            ComboBox::from_id_salt("jump_pad")
-                .selected_text(if current.is_empty() { "Select Pad..." } else { &current })
-                .width(half - 18.0)
-                .show_ui(ui, |ui| {
-                    touch_rows(ui);
-                    for pad in pads {
-                        if ui.selectable_label(current == pad, &pad).clicked() {
-                            if pad != current {
-                                picked_pad = true;
-                            }
-                            state.pad = pad;
+            let selected = if current.is_empty() { "Select Pad..." } else { &current };
+            widgets::dropdown(ui, "jump_pad", selected, vec2(half, height), half, 320.0, |ui| {
+                touch_rows(ui);
+                for pad in pads {
+                    if ui.selectable_label(current == pad, &pad).clicked() {
+                        if pad != current {
+                            picked_pad = true;
                         }
+                        state.pad = pad;
                     }
-                });
+                }
+            });
         });
         if let Some(cell) = picked {
             // Turu: the map SWF says which pads the cell has, so the jump lands on one of them
@@ -707,16 +699,7 @@ impl NavBar {
         self.cells_dropdown_was_open = cells_open;
 
         ui.horizontal(|ui| {
-            if widgets::button(
-                ui,
-                "Current",
-                Kind::Normal,
-                true,
-                vec2(half, widgets::target(28.0, 48.0)),
-                "",
-            )
-            .clicked()
-            {
+            if widgets::button(ui, "Current", Kind::Normal, true, vec2(half, height), "").clicked() {
                 self.refresh_cells();
                 let state = self.jump.clone();
                 crate::turu::spawn_action("Fast Map Jump current", move |bot| {
@@ -737,7 +720,7 @@ impl NavBar {
                 "Jump",
                 Kind::Primary,
                 target.is_some(),
-                vec2(half, widgets::target(28.0, 48.0)),
+                vec2(half, height),
                 "Select a cell and a pad first",
             );
             if jump.clicked()
@@ -997,6 +980,29 @@ fn touch_controls(ui: &mut Ui) {
         ui.spacing_mut().interact_size.y = 48.0;
     }
 }
+
+/// The inventory's Class items, sorted ignoring case, into `owned`.
+fn read_classes(bot: &Arc<turu_bot::Bot>, owned: &Mutex<Vec<String>>) -> turu_bot::BotResult<()> {
+    let items: Vec<serde_json::Value> =
+        serde_json::from_value(dispatch(bot, "inventory.items", &[])?).unwrap_or_default();
+    let mut classes: Vec<String> = items
+        .iter()
+        .filter(|item| {
+            item.get("category")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|c| c.eq_ignore_ascii_case("Class"))
+        })
+        .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+        .collect();
+    classes.sort_by_key(|name| name.to_lowercase());
+    *lock(owned) = classes;
+    Ok(())
+}
+
+/// The Auto popup's content width, and the room between its controls.
+const AUTO_PANEL_WIDTH: f32 = 256.0;
+const AUTO_GAP: f32 = 6.0;
 
 /// On a touch screen, a drop-down's rows are about 44 points high, as the menus' are.
 fn touch_rows(ui: &mut Ui) {
