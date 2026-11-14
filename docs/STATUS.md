@@ -761,8 +761,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   removed the overlay before the game saw it, so a hunt in /lichwar found no monster to attack
   (ColossalWaresMerge's Grimskull's Favor). turu.swf's Skip Cutscenes module now cancels the
   pending cutscene and enters the cell again, checking every 100 ms (it was the engine's, every
-  options pass). Seen in game with a forced cutscene whose overlay never appears (the lost
-  race); the intro itself plays once per character, so the real one isn't reproduced yet.
+  options pass). Seen in game with the real intro (2026-11-14, ColossalWaresMerge headless on a
+  character that hadn't been to lichwar): cancelled 1.7 s after joining the map.
 - **The counter-attack pause is unverified in game:** its tests run the `ct` packets against a
   fake game. Check the skill timer's 10 s wait and the re-attack on a real counter-attack boss.
 - **The FarmerJoe Core members are unverified in game:** the new CoreBots (`killKitsune`,
