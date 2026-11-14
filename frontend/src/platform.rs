@@ -132,6 +132,12 @@ pub trait Platform: Send + Sync {
     /// `send_crash_reports`, which the app reads at start).
     fn set_crash_uploads(&self, _on: bool) {}
 
+    /// Asks "Send crash reports?" with the system's own dialog (Android), which answers through
+    /// `gui::turu::answer_crash_upload_question`; false where there is none, and the UI asks.
+    fn ask_crash_uploads(&self, _question: &Question) -> bool {
+        false
+    }
+
     /// Plays VibeSkua's `Console.Beep()` ([`beep_sample`]: 800 Hz for 200 ms) on the system's
     /// default sound output, apart from the game's sound (heard while the game is muted), and
     /// returns once it has played. Called on a thread of its own (Notify Drop); nothing plays
@@ -176,6 +182,19 @@ pub const BEEP_MS: u64 = 200;
 
 /// The beep's sample `frame` at `sample_rate`, in -1..=1: a sine at [`BEEP_HZ`] for [`BEEP_MS`],
 /// faded in and out over 5 ms so it doesn't click, then silence.
+/// A question for the system's own dialog ([`Platform::ask_crash_uploads`]): `message` and,
+/// smaller, `note`; a link (`link`, opening `link_url`) that leaves it open; `no` and `yes`.
+#[derive(Clone, Debug)]
+pub struct Question {
+    pub title: String,
+    pub message: String,
+    pub note: String,
+    pub link: String,
+    pub link_url: String,
+    pub no: String,
+    pub yes: String,
+}
+
 pub fn beep_sample(frame: u64, sample_rate: u32) -> f32 {
     let rate = sample_rate.max(1) as f32;
     let length = rate * BEEP_MS as f32 / 1000.0;

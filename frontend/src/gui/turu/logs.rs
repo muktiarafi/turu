@@ -340,45 +340,71 @@ pub fn show_crash_upload_question(ctx: &Context) {
     {
         return;
     }
+    let question = crash_upload_question();
+    // Android asks with its own dialog, once a run; it answers through
+    // `answer_crash_upload_question`.
+    if crate::platform::platform().ask_crash_uploads(&question) {
+        DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed);
+        return;
+    }
     let (clicked, close) = dialog(
         ctx,
         "turu_crash_upload_question",
-        "Send crash reports?",
+        &question.title,
         |ui| {
-            // "Turu", or "Turu Mas".
-            let app = turu_bot::updates::app_name();
-            ui.label(format!(
-                "When {app} crashes, it can send a report to its developers so they can fix it: what crashed, \
-                 the device and system version, and {app}'s version."
-            ));
+            ui.label(&question.message);
             ui.add_space(6.0);
             ui.label(
-                RichText::new(
-                    "No account names, passwords or game data. You can change this in Options > Application.",
-                )
-                .size(widgets::small_label_size() + 1.0)
-                .color(MUTED),
+                RichText::new(&question.note)
+                    .size(widgets::small_label_size() + 1.0)
+                    .color(MUTED),
             );
             // The AIR SDK's license (section 6.4) wants the policy linked in the app: Turu Mas.
             ui.add_space(6.0);
-            if ui.link("Privacy policy").clicked() {
-                crate::platform::platform().open_url(PRIVACY_POLICY_URL);
+            if ui.link(&question.link).clicked() {
+                crate::platform::platform().open_url(&question.link_url);
             }
         },
-        ["Don't send", "Send reports"],
+        [question.no.as_str(), question.yes.as_str()],
     );
     match clicked {
-        Some(i) => {
-            let on = i == 1;
-            let mut settings = bot.settings.read().clone();
-            settings.send_crash_reports = Some(on);
-            *bot.settings.write() = settings;
-            bot.save_settings();
-            crate::platform::platform().set_crash_uploads(on);
-        }
+        Some(i) => answer_crash_upload_question(Some(i == 1)),
         None if close => DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed),
         None => {}
     }
+}
+
+/// "Send crash reports?": what it says and its buttons, in the UI or the system's dialog.
+fn crash_upload_question() -> crate::platform::Question {
+    // "Turu", or "Turu Mas".
+    let app = turu_bot::updates::app_name();
+    crate::platform::Question {
+        title: "Send crash reports?".into(),
+        message: format!(
+            "When {app} crashes, it can send a report to its developers so they can fix it: what crashed, \
+             the device and system version, and {app}'s version."
+        ),
+        note: "No account names, passwords or game data. You can change this in Options > Application.".into(),
+        link: "Privacy policy".into(),
+        link_url: PRIVACY_POLICY_URL.into(),
+        no: "Don't send".into(),
+        yes: "Send reports".into(),
+    }
+}
+
+/// The answer to "Send crash reports?": `Some(on)` is kept in `settings.json`
+/// (`send_crash_reports`) and turns the uploads on or off now; `None` (closed without one) asks
+/// again at the next start. From the UI's dialog, or the system's (any thread).
+pub fn answer_crash_upload_question(answer: Option<bool>) {
+    let Some(on) = answer else {
+        return;
+    };
+    let bot = crate::turu::bot();
+    let mut settings = bot.settings.read().clone();
+    settings.send_crash_reports = Some(on);
+    *bot.settings.write() = settings;
+    bot.save_settings();
+    crate::platform::platform().set_crash_uploads(on);
 }
 
 /// The crash dialogs' layout, for a desktop window and a phone alike: as wide as the text reads

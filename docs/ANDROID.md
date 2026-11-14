@@ -334,7 +334,9 @@ $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-symbolizer --o
 ### Sent to Sentry
 
 Builds made with a Sentry DSN also send crash reports to the developers, once the user agrees:
-the first start asks "Send crash reports?" (closing it asks again next time), and Options >
+the first start asks "Send crash reports?" in Android's own dialog (`CrashQuestion.kt`, through
+`Platform::ask_crash_uploads`; the desktop asks in Turu's window; closing it asks again next
+time), and Options >
 Application > Send Crash Reports changes it (`sendCrashReports` in `settings.json`, applied at
 once). Nothing is sent before a yes; builds without a DSN never ask. `CrashUploads.kt` starts
 Sentry (`io.sentry:sentry-android`, auto-init off in the manifest):

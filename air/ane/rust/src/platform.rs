@@ -7,7 +7,7 @@ use crate::host::BRIDGE;
 use jni::objects::JValue;
 use jni::{Env, jni_sig, jni_str};
 use std::path::Path;
-use turu_frontend::platform::{Answer, FileDialog, Platform};
+use turu_frontend::platform::{Answer, FileDialog, Platform, Question};
 
 pub(crate) struct AirPlatform;
 
@@ -86,6 +86,45 @@ impl Platform for AirPlatform {
 
     fn set_crash_uploads(&self, on: bool) {
         crate::crash_uploads::set_enabled(on);
+    }
+
+    fn ask_crash_uploads(&self, question: &Question) -> bool {
+        let Some((vm, class)) = BRIDGE.get() else {
+            return false;
+        };
+        let asked = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<bool> {
+            let strings = [
+                &question.title,
+                &question.message,
+                &question.note,
+                &question.link,
+                &question.link_url,
+                &question.no,
+                &question.yes,
+            ]
+            .map(|text| env.new_string(text));
+            let [title, message, note, link, link_url, no, yes] = strings;
+            let (title, message, note, link, link_url, no, yes) =
+                (title?, message?, note?, link?, link_url?, no?, yes?);
+            env.call_static_method(
+                class,
+                jni_str!("askCrashUploads"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"),
+                &[
+                    JValue::Object(&title),
+                    JValue::Object(&message),
+                    JValue::Object(&note),
+                    JValue::Object(&link),
+                    JValue::Object(&link_url),
+                    JValue::Object(&no),
+                    JValue::Object(&yes),
+                ],
+            )?
+            .z()
+        });
+        asked
+            .inspect_err(|e| tracing::warn!("Couldn't ask about crash reports: {e}"))
+            .unwrap_or(false)
     }
 
     fn shares_text(&self) -> bool {

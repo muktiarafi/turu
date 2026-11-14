@@ -48,6 +48,7 @@ mod stats;
 mod tab_limit;
 mod tab_strip;
 pub mod theme;
+pub use logs::answer_crash_upload_question;
 mod widgets;
 
 use crate::gui::top_height;

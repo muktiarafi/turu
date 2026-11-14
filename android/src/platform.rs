@@ -8,11 +8,11 @@
 
 use android_activity::AndroidApp;
 use jni::JavaVM;
-use jni::objects::{JObject, JString, JValue};
-use jni::sys::jobject;
-use jni::{jni_sig, jni_str};
+use jni::objects::{JClass, JObject, JString, JValue};
+use jni::sys::{jint, jobject};
+use jni::{EnvUnowned, jni_sig, jni_str};
 use std::path::Path;
-use turu_frontend::platform::{Answer, FileDialog, Platform};
+use turu_frontend::platform::{Answer, FileDialog, Platform, Question};
 
 pub struct AndroidPlatform;
 
@@ -136,6 +136,45 @@ impl Platform for AndroidPlatform {
         crate::audio::beep();
     }
 
+    fn ask_crash_uploads(&self, question: &Question) -> bool {
+        let Some(app) = crate::app() else {
+            return false;
+        };
+        let asked = with_activity(&app, |env, activity| {
+            let strings = [
+                &question.title,
+                &question.message,
+                &question.note,
+                &question.link,
+                &question.link_url,
+                &question.no,
+                &question.yes,
+            ]
+            .map(|text| env.new_string(text));
+            let [title, message, note, link, link_url, no, yes] = strings;
+            let (title, message, note, link, link_url, no, yes) =
+                (title?, message?, note?, link?, link_url?, no?, yes?);
+            env.call_method(
+                activity,
+                jni_str!("askCrashUploads"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"),
+                &[
+                    JValue::Object(&title),
+                    JValue::Object(&message),
+                    JValue::Object(&note),
+                    JValue::Object(&link),
+                    JValue::Object(&link_url),
+                    JValue::Object(&no),
+                    JValue::Object(&yes),
+                ],
+            )?;
+            Ok(())
+        });
+        asked
+            .inspect_err(|e| tracing::warn!("Couldn't ask about crash reports: {e}"))
+            .is_ok()
+    }
+
     fn share_text(&self, subject: &str, text: &str) {
         match crate::app() {
             Some(app) => {
@@ -146,6 +185,18 @@ impl Platform for AndroidPlatform {
             None => tracing::info!("Not shared without the app on screen: {subject}"),
         }
     }
+}
+
+/// `TuruActivity.nativeCrashUploadsAnswer(answer)`, on the UI thread: "Send crash reports?" was
+/// answered yes (1) or no (0), or closed without one (-1).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeCrashUploadsAnswer<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    answer: jint,
+) {
+    let answer = (answer >= 0).then_some(answer == 1);
+    std::thread::spawn(move || turu_frontend::gui::turu::answer_crash_upload_question(answer));
 }
 
 /// What a clip or a share holds at most (Android's binder limit is ~1 MB a transaction).

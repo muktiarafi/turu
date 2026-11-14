@@ -116,7 +116,9 @@ MAS_KEYSTORE_PASSWORD=... air/app/build.sh`.
 ## Crash reports
 
 Sentry runs in the extension's Kotlin (`CrashUploads.kt`, with `io.sentry:sentry-android` and its
-NDK part), as in Turu's Android app: the same question at first start and the same switch
+NDK part), as in Turu's Android app: the same question at first start, in Android's own dialog
+(`CrashQuestion.kt`, through `Bridge.askCrashUploads`; a window of its own, it has AIR's focus
+while it's up), and the same switch
 (`sendCrashReports` in `settings.json`; the engine's `crash_uploads.rs` asks and answers through
 `Bridge`). It catches Java and native crashes as they happen, Turu's and AIR's runtime's alike,
 and hangs (ANRs), merged with the tombstone where Android keeps one (Android 12+), and sends them at

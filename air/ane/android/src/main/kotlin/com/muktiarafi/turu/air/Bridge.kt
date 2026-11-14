@@ -366,6 +366,23 @@ object Bridge {
         }
     }
 
+    /**
+     * Asks "Send crash reports?" with Android's dialog ([CrashQuestion]); the answer goes to
+     * [nativeCrashUploadsAnswer]. False without an activity to ask on. From the overlay's thread.
+     */
+    @JvmStatic
+    fun askCrashUploads(title: String, message: String, note: String, link: String, linkUrl: String, no: String, yes: String): Boolean {
+        val activity = activity ?: return false
+        activity.runOnUiThread {
+            CrashQuestion.show(activity, title, message, note, link, linkUrl, no, yes) { nativeCrashUploadsAnswer(it) }
+        }
+        return true
+    }
+
+    /** The answer to "Send crash reports?": 1 yes, 0 no, -1 closed without one (`platform.rs`). */
+    @JvmStatic
+    external fun nativeCrashUploadsAnswer(answer: Int)
+
     /** Whether this build can send crash reports ([CrashUploads]). */
     @JvmStatic
     fun crashUploadsAvailable(): Boolean = CrashUploads.available()

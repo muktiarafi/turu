@@ -162,6 +162,16 @@ class TuruActivity : NativeActivity() {
         }
     }
 
+    /**
+     * Asks "Send crash reports?" with Android's dialog ([CrashQuestion]); the answer goes to
+     * [nativeCrashUploadsAnswer]. Called on the engine thread (`platform.rs`).
+     */
+    fun askCrashUploads(title: String, message: String, note: String, link: String, linkUrl: String, no: String, yes: String) {
+        runOnUiThread {
+            CrashQuestion.show(this, title, message, note, link, linkUrl, no, yes) { nativeCrashUploadsAnswer(it) }
+        }
+    }
+
     private fun askOnce() {
         val asked = getSharedPreferences("asked", MODE_PRIVATE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -416,6 +426,10 @@ class TuruActivity : NativeActivity() {
         /** The UI's [NativeField] was closed (Back): Turu's text box loses the focus. */
         @JvmStatic
         external fun nativeUiFieldClosed()
+
+        /** The answer to "Send crash reports?": 1 yes, 0 no, -1 closed without one (`platform.rs`). */
+        @JvmStatic
+        private external fun nativeCrashUploadsAnswer(answer: Int)
 
         /** The display's refresh rate in Hz, for frame interpolation's pacing (`ui.rs`). */
         @JvmStatic

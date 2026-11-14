@@ -401,6 +401,18 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFieldPlace<'local>(
     crate::overlay::set_field_place((top >= 0).then_some((top as f32, left.max(0) as f32)));
 }
 
+/// `Bridge.nativeCrashUploadsAnswer(answer)`, on the UI thread: "Send crash reports?" was
+/// answered yes (1) or no (0), or closed without one (-1).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeCrashUploadsAnswer<'local>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    answer: jint,
+) {
+    let answer = (answer >= 0).then_some(answer == 1);
+    std::thread::spawn(move || turu_frontend::gui::turu::answer_crash_upload_question(answer));
+}
+
 /// `Bridge.nativeUiFieldEnter()`: the keyboard's Send in the native field for Turu's text box.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeUiFieldEnter<'local>(
