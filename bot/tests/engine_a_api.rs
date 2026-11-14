@@ -273,9 +273,13 @@ fn options_send_toggles_once_and_repeat_ticks() {
     }
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
+    // Lite's untarget options are forced on: turu.swf keeps them so, asked once.
     assert_eq!(
         game.calls_to("modEnable"),
-        [[FlashArg::String("HidePlayers".into())]]
+        [
+            [FlashArg::String("HidePlayers".into())],
+            [FlashArg::String("UntargetLite".into())]
+        ]
     );
     assert!(game.calls_to("modDisable").is_empty());
     assert_eq!(game.calls_to("killLag").len(), 2);
@@ -285,12 +289,6 @@ fn options_send_toggles_once_and_repeat_ticks() {
         .filter(|a| arg(a, 0) == "world.WALKSPEED")
         .count();
     assert_eq!(speed_sets, 2);
-    // Lite's untarget options are forced on.
-    assert!(
-        game.calls_to("setGameObject")
-            .iter()
-            .any(|a| arg(a, 0) == "litePreference.data.bUntargetSelf")
-    );
 
     {
         let mut o = bot.options.write();
@@ -333,7 +331,10 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
     // Hide Players comes with it; the drawn names are rewritten on every pass, never objData.
     assert_eq!(
         game.calls_to("modEnable"),
-        [[FlashArg::String("HidePlayers".into())]]
+        [
+            [FlashArg::String("HidePlayers".into())],
+            [FlashArg::String("UntargetLite".into())]
+        ]
     );
     let name = FlashArg::String(options::STREAMER_NAME.into());
     assert_eq!(
@@ -435,31 +436,40 @@ fn streamer_mode_hides_names_and_gives_custom_names_back() {
 fn skipping_a_cutscene_shows_the_world_unless_lag_killer_is_on() {
     let game = FakeGame::new();
     let bot = new_bot(&game);
-    let world_shown = |game: &FakeGame| {
-        game.calls_to("setGameObject")
+    // turu.swf's `skipCutscenes(showWorld)` shows the world again after a skipped cutscene.
+    let show_world = |game: &FakeGame| -> Vec<bool> {
+        game.calls_to("skipCutscenes")
             .iter()
-            .filter(|a| arg(a, 0) == "world.visible")
-            .count()
+            .map(|a| matches!(a.first(), Some(FlashArg::Bool(true))))
+            .collect()
     };
     bot.options.write().skip_cutscenes = true;
     options::apply(&bot).unwrap();
-    assert_eq!(game.calls_to("skipCutscenes").len(), 1);
-    assert_eq!(world_shown(&game), 0, "no cutscene, nothing to show");
+    assert_eq!(show_world(&game), [true], "one call, the world shown");
 
     // A cutscene comes up: turu.swf's `cutscene` event makes the next tick look at once.
-    game.set("mcExtSWF.numChildren", "1");
     bot.control.fire(Topics::CUTSCENE);
     bot.options.write().lag_killer = true;
     options::apply(&bot).unwrap();
-    assert_eq!(world_shown(&game), 0, "Lag Killer keeps the world hidden");
+    assert_eq!(
+        show_world(&game),
+        [true, false],
+        "Lag Killer keeps the world hidden"
+    );
 
     // Without an event it looks again within a second.
     bot.options.write().lag_killer = false;
     options::apply(&bot).unwrap();
-    assert_eq!(world_shown(&game), 0, "not due yet");
+    assert_eq!(show_world(&game).len(), 2, "not due yet");
     std::thread::sleep(std::time::Duration::from_millis(1050));
     options::apply(&bot).unwrap();
-    assert_eq!(world_shown(&game), 1);
+    assert_eq!(show_world(&game), [true, false, true]);
+    assert!(
+        game.calls_to("setGameObject")
+            .iter()
+            .all(|a| arg(a, 0) != "world.visible"),
+        "the engine never sets it itself"
+    );
 
     // A stopping script shows the world even when Lag Killer was never on.
     let kills = game.calls_to("killLag").len();

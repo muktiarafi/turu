@@ -56,19 +56,21 @@ pub fn full_name(bot: &Bot) -> BotResult<String> {
         return Ok(String::new());
     }
     let raw: Option<String> = bot.flash.get_opt("ui.mcInterface.areaList.title.t1.text")?;
-    if let Some(raw) = raw {
-        let raw = raw.replace('"', "");
-        if let Some(last) = raw.split_whitespace().last() {
-            let area = match last.get(..5) {
-                Some(prefix) if prefix.eq_ignore_ascii_case("Area:") => last[5..].trim(),
-                _ => last.trim(),
-            };
-            if !area.is_empty() && !area.eq_ignore_ascii_case("null") {
-                return Ok(area.to_owned());
-            }
-        }
+    match raw.as_deref().and_then(area_of_title) {
+        Some(area) => Ok(area),
+        None => name(bot),
     }
-    name(bot)
+}
+
+/// The `map-room` the area list's title shows ("Area: battleon-1234"), if it shows one.
+pub fn area_of_title(raw: &str) -> Option<String> {
+    let raw = raw.replace('"', "");
+    let last = raw.split_whitespace().last()?;
+    let area = match last.get(..5) {
+        Some(prefix) if prefix.eq_ignore_ascii_case("Area:") => last[5..].trim(),
+        _ => last.trim(),
+    };
+    (!area.is_empty() && !area.eq_ignore_ascii_case("null")).then(|| area.to_owned())
 }
 
 /// The map name `Join` uses: `map` itself, or `map-<number>` when private rooms are on and

@@ -4,11 +4,10 @@
 //! data, so [`apply`] (every 250 ms while playing) sends what changed since it last ran,
 //! plus the options VibeSkua's `CheckOptions` re-applies on every tick.
 
-use super::{Args, lite, monsters, ok, player, send};
+use super::{Args, monsters, ok, player, send};
 use crate::Bot;
 use crate::control::{Mark, Topics};
 use crate::error::{BotError, BotResult};
-use crate::host::FlashArg;
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -48,6 +47,9 @@ pub struct Applied {
     /// When Skip Cutscenes last looked, and the events then: it looks again when turu.swf says
     /// a cutscene came or went, else every [`CUTSCENE_CHECK`].
     cutscene_check: Option<(Instant, Mark)>,
+    /// turu.swf's Infinite Range and Untarget Lite modules, kept applied by the SWF itself.
+    infinite_range: Option<bool>,
+    untarget_lite: Option<bool>,
 }
 
 /// How often Skip Cutscenes looks without a `cutscene` event (M5 of HOST_SWF_PROPOSAL.md; it
@@ -353,8 +355,10 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         // VibeSkua calls "magnetise" here, which isn't registered; the callback is "magnetize".
         bot.flash.call("magnetize", vec![])?;
     }
-    if o.infinite_range {
-        bot.flash.call("infiniteRange", vec![])?;
+    // turu.swf keeps it applied (every 100 ms, as the game resets ranges on a class change);
+    // VibeSkua's CheckOptions called `infiniteRange` on every pass.
+    if changed(&mut a.infinite_range, o.infinite_range) {
+        module(bot, "InfiniteRange", o.infinite_range)?;
     }
     if o.aggro_monsters {
         bot.flash.call_game_function("world.aggroAllMon", vec![])?;
@@ -376,14 +380,10 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
     });
     if o.skip_cutscenes && cutscene_due {
         a.cutscene_check = Some((Instant::now(), bot.control.mark()));
-        // `skipCutscenes` removes the cutscene but leaves the world as the cutscene left it,
-        // hidden: show it again unless Lag Killer hides it (VibeSkua's black screen until Lag
-        // Killer is toggled).
-        let cutscene = bot.flash.get_or::<i64>("mcExtSWF.numChildren", 0)? > 0;
-        bot.flash.call("skipCutscenes", vec![])?;
-        if cutscene && !o.lag_killer {
-            bot.flash.set("world.visible", true)?;
-        }
+        // A cutscene leaves the world hidden: turu.swf shows it again with the skip, unless
+        // Lag Killer hides it (VibeSkua's black screen until Lag Killer is toggled).
+        bot.flash
+            .call("skipCutscenes", vec![(!o.lag_killer).into()])?;
         cancel_pending_cutscene(bot)?;
     }
     if o.walk_speed != 8 {
@@ -393,10 +393,10 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
         player::set_walk_speed(bot, 8)?;
         a.walk_speed = Some(8);
     }
-    for key in ["bUntargetSelf", "bUntargetDead"] {
-        if lite::get(bot, key)?.and_then(|v| v.as_bool()) != Some(true) {
-            lite::set(bot, key, FlashArg::Bool(true))?;
-        }
+    // Lite's untarget-self and untarget-dead, always on (VibeSkua's CheckOptions sets them on
+    // every pass): turu.swf keeps them so.
+    if changed(&mut a.untarget_lite, true) {
+        module(bot, "UntargetLite", true)?;
     }
     Ok(())
 }

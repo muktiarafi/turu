@@ -29,6 +29,7 @@ use debug_log::{DebugLog, LogLine};
 use follower::{Follow, Mode};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -550,10 +551,30 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
             name.clone_from(&username);
         }
     }
-    let map_name = map::name(bot)?.to_lowercase();
+    // What the broadcast reads of the game, in one call (turu.swf's `getMany`); the loading
+    // screen is up when its stage is (a number to read: JSON can't write the stage itself).
+    let read = bot.flash.get_many(&[
+        ("map", "world.strMapName"),
+        ("loading", "world.mapLoadInProgress"),
+        ("screen", "mcConnDetail.stage.frameRate"),
+        ("title", "ui.mcInterface.areaList.title.t1.text"),
+        ("cell", "world.strFrame"),
+        ("pad", "world.strPad"),
+        ("server", "objServerInfo.sName"),
+        ("goto", "uoPref.bGoto"),
+    ])?;
+    let text = |key: &str| {
+        read.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let map_name = text("map").to_lowercase();
+    let loaded = read.get("loading").and_then(Value::as_bool) != Some(true)
+        && read.get("screen").is_none_or(Value::is_null);
     // Mid-transition the map isn't loaded or is named "-1": keep the last state, but keep
     // the heartbeat going.
-    if !map::loaded(bot)? || map_name.is_empty() || map_name == "-1" {
+    if !loaded || map_name.is_empty() || map_name == "-1" {
         let mut b = butler.broadcast.lock();
         if let Some((data, at)) = &b.written
             && !butler.closed.load(Ordering::Acquire)
@@ -572,11 +593,12 @@ fn broadcast(bot: &Bot) -> crate::BotResult<()> {
     }
 
     let raw_attacking = player::in_combat(bot)? || player::has_target(bot)?;
-    let server = server_name(bot);
-    let off_goto = bot.flash.get_opt::<bool>("uoPref.bGoto")?.map(|on| !on);
-    let room = room_of(&map::full_name(bot)?);
-    let cell = non_empty(player::cell(bot)?, "Enter");
-    let pad = non_empty(player::pad(bot)?, "Spawn");
+    let server = server_name_from(bot, &text("server"));
+    let off_goto = read.get("goto").and_then(Value::as_bool).map(|on| !on);
+    let full_name = map::area_of_title(&text("title")).unwrap_or_else(|| text("map"));
+    let room = room_of(&full_name);
+    let cell = non_empty(text("cell"), "Enter");
+    let pad = non_empty(text("pad"), "Spawn");
     let check_class = {
         let mut b = butler.broadcast.lock();
         if !b.username.eq_ignore_ascii_case(&username) {
@@ -796,11 +818,20 @@ pub fn room_of(full_name: &str) -> Option<String> {
 /// The game server's name (`objServerInfo.sName`), else the last login's, else its IP. Not
 /// the IP first: several servers share a socket host.
 pub fn server_name(bot: &Bot) -> String {
-    if let Ok(Some(name)) = bot.flash.get_opt::<String>("objServerInfo.sName") {
-        let name = name.trim();
-        if !name.is_empty() && name != "null" {
-            return name.to_owned();
-        }
+    let read = bot
+        .flash
+        .get_opt::<String>("objServerInfo.sName")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    server_name_from(bot, &read)
+}
+
+/// [`server_name`] with `objServerInfo.sName` already read.
+fn server_name_from(bot: &Bot, read: &str) -> String {
+    let name = read.trim();
+    if !name.is_empty() && name != "null" {
+        return name.to_owned();
     }
     let last = bot.servers.last_name();
     if !last.is_empty() {

@@ -25,6 +25,7 @@ const PATH_CALLS: &[&str] = &[
     "callGameFunction",
     "callGameFunction0",
     "selectArrayObjects",
+    "selectArrayObjectsWhere",
     "isNull",
 ];
 

@@ -1084,6 +1084,10 @@ differences" and the list below say otherwise:
   `loading`, `cutscene`). Turu wakes its waits on them; VibeSkua's SWF has nothing like them.
 - `setLever` and `setFrameReport` (version 5) are for measuring (M7a): levers such as stopping
   the animations of the map's art and other players, and the gaps between frames.
+- Work it keeps applied itself (version 7), where VibeSkua's C# called on every options pass:
+  `skipCutscenes(showWorld)` shows the world again after a skipped cutscene (unless Lag Killer)
+  and answers whether there was one; the modules `InfiniteRange` and `UntargetLite` (Lite's
+  untarget-self and untarget-dead) are re-applied every 100 ms like Hide Players.
 - Found in game and matched (this survey was wrong or silent): `gender` answers the client's
   `"M"`/`"F"`; `jumpCorrectRoom` always moves again once the cell settles; `isKicked` is `false` in
   game; `getActiveModalMessage` is plain text, `""` without a dialog; `selectArrayObjects` answers

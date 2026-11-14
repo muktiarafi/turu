@@ -6,8 +6,9 @@ import flash.utils.getTimer;
  * The game-side options and modules (docs/VIBESKUA_SPEC.md, "World" and "Modules"):
  * `disableDeathAd`, `killLag`, `skipCutscenes`, and the modules `modEnable`/`modDisable` turn
  * on: Hide Players (other avatars hidden), Disable FX (avatars' effects off: the game plays one
- * only while an avatar's `pMC.spFX` is set) and Disable Collisions (`world.arrSolid`, the walls,
- * emptied). An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
+ * only while an avatar's `pMC.spFX` is set), Disable Collisions (`world.arrSolid`, the walls,
+ * emptied), and Turu's own Infinite Range and Untarget Lite (Lite's untarget-self and
+ * untarget-dead on), which the engine set on every options pass before. An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
  * off restores what it changed, which VibeSkua's Disable FX doesn't.
  */
 public class Options {
@@ -18,6 +19,11 @@ public class Options {
     private var hidePlayers:Boolean = false;
     private var disableFX:Boolean = false;
     private var disableCollisions:Boolean = false;
+    /** Infinite Range: every skill reaches across the map (the game resets ranges on a class
+     * change, so it's kept applied). */
+    private var infiniteRange:Boolean = false;
+    /** Lite's "untarget self" and "untarget dead" kept on, as Turu always wants them. */
+    private var untargetLite:Boolean = false;
     private var lastFrame:int = 0;
     /** Disable FX: each avatar MC's `spFX`, to give back. */
     private var savedFX:Dictionary = new Dictionary(true);
@@ -56,14 +62,24 @@ public class Options {
         world.visible = !isOn(enable);
     }
 
-    /** Takes the cutscene off (`mcExtSWF`'s children) and shows the game's interface again. */
-    private function skipCutscenes():void {
+    /**
+     * Takes the cutscene off (`mcExtSWF`'s children) and shows the game's interface again. A
+     * cutscene leaves the world hidden: with `showWorld` (Lag Killer off), a skipped one also
+     * shows the world again (VibeSkua's stayed black until Lag Killer was toggled). Answers
+     * whether there was one.
+     */
+    private function skipCutscenes(showWorld:* = false):String {
         var game:* = gameOf();
         var scenes:* = game.mcExtSWF;
+        var skipped:Boolean = scenes.numChildren > 0;
         while (scenes.numChildren > 0) {
             scenes.removeChildAt(0);
         }
         game.showInterface();
+        if (skipped && isOn(showWorld) && game.world != null) {
+            game.world.visible = true;
+        }
+        return String(skipped);
     }
 
     private function modEnable(name:*):void {
@@ -98,6 +114,12 @@ public class Options {
                     restoreSolid();
                 }
                 break;
+            case "InfiniteRange":
+                infiniteRange = on;
+                break;
+            case "UntargetLite":
+                untargetLite = on;
+                break;
         }
         if (on) {
             apply();
@@ -106,7 +128,7 @@ public class Options {
 
     /** Every frame (from `Main`): re-applies the enabled modules every 100 ms. */
     public function frame():void {
-        if (!hidePlayers && !disableFX && !disableCollisions) {
+        if (!hidePlayers && !disableFX && !disableCollisions && !infiniteRange && !untargetLite) {
             return;
         }
         var now:int = getTimer();
@@ -121,6 +143,29 @@ public class Options {
         var w:* = gameOf() != null ? world : null;
         if (w == null) {
             return;
+        }
+        if (infiniteRange) {
+            try {
+                var active:* = w.actions.active;
+                for (var i:int = 0; active != null && i < 6; i++) {
+                    if (active[i] != null && active[i].range != 20000) {
+                        active[i].range = 20000;
+                    }
+                }
+            } catch (e:Error) {
+            }
+        }
+        if (untargetLite) {
+            try {
+                var lite:* = gameOf().litePreference.data;
+                if (lite.bUntargetSelf !== true) {
+                    lite.bUntargetSelf = true;
+                }
+                if (lite.bUntargetDead !== true) {
+                    lite.bUntargetDead = true;
+                }
+            } catch (e:Error) {
+            }
         }
         if (hidePlayers || disableFX) {
             for each (var avatar:* in otherAvatars(w, disableFX)) {
