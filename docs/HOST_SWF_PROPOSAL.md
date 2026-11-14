@@ -6,7 +6,7 @@ Status: R0 done (`host/`, crate `turu_host`); R1 done (`turu.swf` starts the gam
 list, login); R3d done (options, modules, the "Use Turu's Host SWF" setting: `turu.swf`
 answers every callback Turu calls); R4 done (Turu Mas runs `turu.swf`, checked on the emulator with
 four tabs); R5 done (packets from the player); R6a done (`turu.swf` the default); R6b done (VibeSkua's SWF,
-parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7 measured (only stopping animations paid, and only where it's visible; nothing kept on by default); the rest are proposals. Replaces the plan to fork VibeSkua's
+parity mode and the opt-out removed; merged after 0.3.0-beta.5 shipped R6a); M4 done (batched reads); M5a done (events that wake waits); M7 measured (only stopping animations paid, and only where it's visible; nothing kept on by default); cleanups after it done ("After M7: cleanups", with what's left); M8 on hold. Replaces the plan to fork VibeSkua's
 `skua.swf` (formerly `docs/SKUA_SWF_PROPOSAL.md`). Touches a new `host/` (AS3 source and crate
 `turu_host`), `bot/assets/`, `bot/src/flash.rs`, `events.rs`, `background.rs`, `perf.rs`,
 `api/wait.rs`, `api/player.rs`, `api/options.rs`, `api/send.rs`, `butler/`, `air_patch/`,
@@ -599,6 +599,47 @@ On hold: it serves PACKET_BUTLER_PROPOSAL, and a packet-based Butler isn't decid
 - `outgoing(packet)` events carry what the client sent, for PACKET_BUTLER_PROPOSAL's mirror.
 - Done when: Butler's proposal uses them and the warning count doesn't rise.
 
+### After M7: cleanups
+
+Done, once `turu.swf` was the only host SWF:
+
+- VibeSkua-only paths removed: `load_client`'s fallbacks for a host without `hostInfo` or
+  `loadClientFrameRate`; the callbacks nothing called (`setStrictErrors`, `setPacketEcho`,
+  `isTrue`, `setArrayObject`) and `packetFromServer`; `turu_air_patch::Target`, and the
+  patcher's test-only API. Comments that still described VibeSkua's SWF as present fixed.
+- Per-tick work moved into `turu.swf` (version 7-8): Infinite Range, Lite's untarget settings and
+  Skip Cutscenes are modules it keeps applied every 100 ms, switched only when the option
+  changes; Skip Cutscenes shows the world again itself and cancels a cutscene the game waits to
+  show (lichwar's intro), so the engine's skip, its cancel and the `cutscene` event went;
+  Butler's broadcast reads with one `getMany`. GoldFarm (release): ~101 -> ~70 calls/s, the same
+  turn-in rate. Checked in game: lichwar's real intro cancelled 1.7 s after joining
+  (ColossalWaresMerge, headless), and `host/checks/ticks-options.ts` (ranges and Lite settings).
+
+Left, from that GoldFarm run's busiest calls (~70/s); 1-3 would bring it to about 55:
+
+1. **Lag Killer**, 3.8 calls/s: `killLag(true)` on every options pass (VibeSkua re-applies it).
+   A `turu.swf` module like the others, switched on a change.
+2. **Butler's username**, 2/s: each broadcast tick reads `loginInfo.strUsername`, which Turu
+   already records at login (`state.username`).
+3. **The registered-quest loop**, ~9/s: `isQuestInProgress` 5/s, and each registered quest's
+   `world.questTree.<id>` ~2/s. One read per pass: a `getMany` of the entries and a
+   `turu.swf` call answering which of the quests are in progress.
+4. **The Army Travel window**, ~7/s per tab while it's open: map, area, cell, pad, the loading
+   screen and the username read one by one (`army_travel.rs`'s `Location::read`); one `getMany`.
+
+The rest of that run's repeated reads are the script's own (CoreBots), or one-off work per drop.
+
+Left as they are, by decision:
+
+- The `TURU_HOST_SWF` / `TURU_HOST_PARITY` notice: it goes once a release has carried R6b.
+- Turu Mas's number for the kind of SWF patched (`nativePatch`: 0 the client, 2 others; 1 was
+  VibeSkua's SWF): a yes/no would touch the AS3 host, the Kotlin bridge and the extension
+  together, for no change in behaviour.
+- Typed answers instead of JSON strings (booleans as `"true"`, `parse_bool`'s leniency): every
+  call site, for little gain.
+- Events passing their arguments as one array (VibeSkua's `Externalizer.call` convention): both
+  `turu.swf` and Turu Mas's host would change.
+
 ## Risks
 
 - **Different answers.** Scripts and behaviour are checked against VibeSkua's C#; a rewritten
@@ -630,3 +671,9 @@ On hold: it serves PACKET_BUTLER_PROPOSAL, and a packet-based Butler isn't decid
   only the engine's waits?
 - What can CI check of `turu.swf` beyond the build, without a game login (a Ruffle harness with
   a stub client)?
+- Four idle Turu Mas tabs in Battleon and Yulgar pace unevenly: about a quarter of frames over
+  50 ms at a steady 24 FPS, against ~30 a minute per tab while farming in houses. Not `turu.swf`'s
+  animations (M7b); not explained yet.
+- In M5's debug run the player's ticks doubled while an armour's frame scripts threw ~8 errors a
+  second. Not M5's event watcher (M7a), but the error stream never came back to measure what
+  ruffle-aqw's log-errors-once saves.
