@@ -4,7 +4,7 @@
 //! data, so [`apply`] (every 250 ms while playing) sends what changed since it last ran,
 //! plus the options VibeSkua's `CheckOptions` re-applies on every tick.
 
-use super::{Args, monsters, ok, player, send};
+use super::{Args, ok, player};
 use crate::Bot;
 use crate::error::{BotError, BotResult};
 use serde_json::Value;
@@ -35,6 +35,7 @@ pub struct Applied {
     slowed: Option<Option<i32>>,
     /// LOW quality: Headless Mode only.
     low_quality: Option<bool>,
+    /// The walk speed turu.swf keeps (`keepWalkSpeed`).
     walk_speed: Option<i32>,
     custom_name: Option<String>,
     custom_guild: Option<String>,
@@ -45,6 +46,10 @@ pub struct Applied {
     /// turu.swf's Infinite Range and Untarget Lite modules, kept applied by the SWF itself.
     infinite_range: Option<bool>,
     untarget_lite: Option<bool>,
+    /// turu.swf's Magnetise, Aggro Monsters and Aggro All Monsters modules.
+    magnetise: Option<bool>,
+    aggro_monsters: Option<bool>,
+    aggro_all_monsters: Option<bool>,
 }
 
 impl Applied {
@@ -71,10 +76,33 @@ fn changed(applied: &mut Option<bool>, value: bool) -> bool {
     send
 }
 
-fn module(bot: &Bot, name: &str, enable: bool) -> BotResult<()> {
+fn module(bot: &Bot, name: &'static str, enable: bool) -> BotResult<()> {
     let callback = if enable { "modEnable" } else { "modDisable" };
     bot.flash.call(callback, vec![name.into()])?;
+    let mut state = bot.state.lock();
+    if enable {
+        state.swf_modules.insert(name);
+    } else {
+        state.swf_modules.remove(name);
+    }
     Ok(())
+}
+
+/// A turu.swf module switched as [`changed`] says, and also off at the first pass of a login
+/// (`applied` still `None`) when the SWF, which outlives a login, still has it on. Answers
+/// whether it was sent.
+fn switch(
+    bot: &Bot,
+    name: &'static str,
+    value: bool,
+    applied: &mut Option<bool>,
+) -> BotResult<bool> {
+    let stale = applied.is_none() && !value && bot.state.lock().swf_modules.contains(name);
+    if changed(applied, value) || stale {
+        module(bot, name, value)?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// Writes the name tag / portrait name (VibeSkua `CustomName`).
@@ -128,9 +156,7 @@ pub fn apply(bot: &Bot) -> BotResult<()> {
 fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> BotResult<()> {
     // turu.swf keeps the world hidden while it's on (VibeSkua's CheckOptions called `killLag`
     // on every pass); turning it off shows the world again.
-    if changed(&mut a.lag_killer, o.lag_killer) {
-        module(bot, "LagKiller", o.lag_killer)?;
-    }
+    switch(bot, "LagKiller", o.lag_killer, &mut a.lag_killer)?;
 
     if !player::playing(bot)? {
         return Ok(());
@@ -151,9 +177,7 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
             &mut a.disable_collisions,
         ),
     ] {
-        if changed(slot, value) {
-            module(bot, name, value)?;
-        }
+        switch(bot, name, value, slot)?;
     }
     if changed(&mut a.disable_death_ads, o.disable_death_ads) {
         bot.flash
@@ -232,65 +256,63 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
     }
     // Streamer Mode: turu.swf's module covers the names on every frame (VibeSkua's 500 ms loop)
     // and gives them back when it's turned off; then Custom Name and Guild apply again.
-    // Turned off while logged out, it's still on in the SWF: told at the next login.
-    let was_on = a.streamer == Some(true);
-    let stale = a.streamer.is_none() && !o.streamer_mode && bot.state.lock().streamer_in_swf;
-    if changed(&mut a.streamer, o.streamer_mode) || stale {
-        module(bot, "StreamerMode", o.streamer_mode)?;
-        bot.state.lock().streamer_in_swf = o.streamer_mode;
-        if was_on || stale {
-            a.custom_name = None;
-            a.custom_guild = None;
-        }
+    if switch(bot, "StreamerMode", o.streamer_mode, &mut a.streamer)? && !o.streamer_mode {
+        a.custom_name = None;
+        a.custom_guild = None;
     }
     if !o.streamer_mode {
         apply_custom_names(bot, o, a)?;
     }
 
-    // CheckOptions: every tick while on.
-    if o.magnetise {
-        // VibeSkua calls "magnetise" here, which isn't registered; the callback is "magnetize".
-        bot.flash.call("magnetize", vec![])?;
+    // CheckOptions' per-tick options: turu.swf's modules keep them applied while you're logged in
+    // and alive, the aggro ones every 250 ms as this pass did (VibeSkua calls them on every pass;
+    // its "magnetise" isn't even registered).
+    for (name, value, slot) in [
+        ("Magnetise", o.magnetise, &mut a.magnetise),
+        ("AggroMonsters", o.aggro_monsters, &mut a.aggro_monsters),
+        (
+            "AggroAllMonsters",
+            o.aggro_all_monsters,
+            &mut a.aggro_all_monsters,
+        ),
+    ] {
+        switch(bot, name, value, slot)?;
     }
     // turu.swf keeps it applied (every 100 ms, as the game resets ranges on a class change);
     // VibeSkua's CheckOptions called `infiniteRange` on every pass.
-    if changed(&mut a.infinite_range, o.infinite_range) {
-        module(bot, "InfiniteRange", o.infinite_range)?;
-    }
-    if o.aggro_monsters {
-        bot.flash.call_game_function("world.aggroAllMon", vec![])?;
-    }
-    if o.aggro_all_monsters {
-        let room = super::map::room_id(bot)?;
-        let ids: Vec<String> = monsters::map_monsters(bot)?
-            .iter()
-            .map(|m| m.map_id.to_string())
-            .collect();
-        send::packet(
-            bot,
-            &format!("%xt%zm%aggroMon%{room}%{}%", ids.join("%")),
-            "String",
-        )?;
-    }
+    switch(
+        bot,
+        "InfiniteRange",
+        o.infinite_range,
+        &mut a.infinite_range,
+    )?;
     // turu.swf keeps it applied every 100 ms: it takes a cutscene's overlay off, shows the
     // world again unless Lag Killer hides it, and cancels a cutscene the game is waiting to
     // show (lichwar's intro), which held back the cell's monsters (VibeSkua's CheckOptions
     // called `skipCutscenes` on every pass).
-    if changed(&mut a.skip_cutscenes, o.skip_cutscenes) {
-        module(bot, "SkipCutscenes", o.skip_cutscenes)?;
+    switch(
+        bot,
+        "SkipCutscenes",
+        o.skip_cutscenes,
+        &mut a.skip_cutscenes,
+    )?;
+    // Walk Speed: turu.swf keeps `world.WALKSPEED` at it (the game sets it again on a new map);
+    // 8, the game's own, leaves it alone (and sets 8 back after another).
+    // Sent at a login's first pass too while the SWF still keeps another speed.
+    let kept = bot.state.lock().swf_walk_speed;
+    let speed_sent = match a.walk_speed {
+        Some(old) => old != o.walk_speed,
+        None => o.walk_speed != 8 || kept != 0,
+    };
+    if speed_sent {
+        bot.flash
+            .call("keepWalkSpeed", vec![i64::from(o.walk_speed).into()])?;
+        bot.state.lock().swf_walk_speed = if o.walk_speed == 8 { 0 } else { o.walk_speed };
     }
-    if o.walk_speed != 8 {
-        player::set_walk_speed(bot, o.walk_speed.into())?;
-        a.walk_speed = Some(o.walk_speed);
-    } else if a.walk_speed.is_some_and(|s| s != 8) {
-        player::set_walk_speed(bot, 8)?;
-        a.walk_speed = Some(8);
-    }
+    a.walk_speed = Some(o.walk_speed);
     // Lite's untarget-self and untarget-dead, always on (VibeSkua's CheckOptions sets them on
     // every pass): turu.swf keeps them so.
-    if changed(&mut a.untarget_lite, true) {
-        module(bot, "UntargetLite", true)?;
-    }
+    switch(bot, "UntargetLite", true, &mut a.untarget_lite)?;
     Ok(())
 }
 

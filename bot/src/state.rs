@@ -94,9 +94,11 @@ pub struct GameState {
     pub before_slowed: Option<i32>,
     /// The game's quality when Headless Mode set it to LOW, restored when it's turned off.
     pub before_low_quality: Option<String>,
-    /// turu.swf's Streamer Mode module is on (kept across relogins, unlike `options_applied`:
-    /// the SWF outlives a login, so turned off meanwhile it must still be told).
-    pub streamer_in_swf: bool,
+    /// turu.swf's modules on, and the walk speed it keeps (0: none). Kept across relogins, unlike
+    /// `options_applied`: the SWF outlives a login, so an option turned off meanwhile must still
+    /// be sent ([`crate::api::options::apply`]).
+    pub swf_modules: std::collections::BTreeSet<&'static str>,
+    pub swf_walk_speed: i32,
     /// This client is a tab the window doesn't show: [`crate::api::options::apply`] slows its
     /// game down (VibeSkua's tabbed host `WM_SKUA_THROTTLE`).
     pub hidden_tab: bool,

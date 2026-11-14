@@ -642,6 +642,17 @@ Done, once `turu.swf` was the only host SWF:
   reads for loaded, accepted and unloaded quests; Lag Killer on, kept on, and off). Not measured
   on GoldFarm again yet.
 
+- The rest of the options pass's per-tick work, `turu.swf` version 10: Streamer Mode
+  (`Streamer.as`, checked on every frame, writing only what the game changed back; was ~16 calls
+  a pass), Magnetise, Aggro Monsters and Aggro All Monsters (the aggro ones every 250 ms, as the
+  pass sent them, and only while you're logged in and alive) are modules, and Walk Speed is
+  `keepWalkSpeed(speed)`; each is sent only when the option changes. The SWF outlives a login,
+  so the engine records which modules it has on (`swf_modules`, `swf_walk_speed`) and turns off
+  at a login's first pass what was turned off meanwhile. A `kicked` event (the login screen's
+  warning, what `isKicked` reads, came up or went) makes the timer's kick check look at once;
+  it asks on its own only every 10 s, where VibeSkua asks every second. Checked by the engine's
+  tests; not yet in game.
+
 That run's other repeated reads are the script's own (CoreBots), or one-off work per drop.
 
 Left as they are, by decision:

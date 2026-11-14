@@ -264,46 +264,109 @@ fn living_monster_cells() {
 fn options_send_toggles_once_and_repeat_ticks() {
     let game = FakeGame::new();
     let bot = new_bot(&game);
+    let strings = |names: &[&str]| -> Vec<Vec<FlashArg>> {
+        names
+            .iter()
+            .map(|n| vec![FlashArg::String((*n).into())])
+            .collect()
+    };
+    let speeds = |game: &FakeGame| -> Vec<FlashArg> {
+        game.calls_to("keepWalkSpeed")
+            .into_iter()
+            .map(|a| a[0].clone())
+            .collect()
+    };
     {
         let mut o = bot.options.write();
         o.hide_players = true;
         o.lag_killer = true;
         o.walk_speed = 12;
+        o.magnetise = true;
+        o.aggro_monsters = true;
+        o.aggro_all_monsters = true;
     }
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
-    // Lag Killer and Lite's untarget options: turu.swf keeps them applied, asked once.
+    // What VibeSkua re-applies on every pass, turu.swf keeps applied: each asked once.
     assert_eq!(
         game.calls_to("modEnable"),
-        [
-            [FlashArg::String("LagKiller".into())],
-            [FlashArg::String("HidePlayers".into())],
-            [FlashArg::String("UntargetLite".into())]
-        ]
+        strings(&[
+            "LagKiller",
+            "HidePlayers",
+            "Magnetise",
+            "AggroMonsters",
+            "AggroAllMonsters",
+            "UntargetLite"
+        ])
     );
     assert!(game.calls_to("modDisable").is_empty());
     assert!(game.calls_to("killLag").is_empty());
-    let speed_sets = game
-        .calls_to("setGameObject")
+    assert!(game.calls_to("magnetize").is_empty());
+    let aggro_calls = game
+        .calls_to("callGameFunction")
         .into_iter()
-        .filter(|a| arg(a, 0) == "world.WALKSPEED")
+        .chain(game.calls_to("callGameFunction0"))
+        .filter(|a| arg(a, 0).contains("aggro") || arg(a, 0).starts_with("sfc."))
         .count();
-    assert_eq!(speed_sets, 2);
+    assert_eq!(aggro_calls, 0);
+    assert_eq!(speeds(&game), [FlashArg::Number(12.0)]);
+    assert!(
+        game.calls_to("setGameObject")
+            .iter()
+            .all(|a| arg(a, 0) != "world.WALKSPEED")
+    );
 
     {
         let mut o = bot.options.write();
         o.hide_players = false;
         o.lag_killer = false;
+        o.walk_speed = 8;
+        o.magnetise = false;
+        o.aggro_monsters = false;
+        o.aggro_all_monsters = false;
     }
     options::apply(&bot).unwrap();
     options::apply(&bot).unwrap();
     assert_eq!(
         game.calls_to("modDisable"),
-        [
-            [FlashArg::String("LagKiller".into())],
-            [FlashArg::String("HidePlayers".into())]
-        ]
+        strings(&[
+            "LagKiller",
+            "HidePlayers",
+            "Magnetise",
+            "AggroMonsters",
+            "AggroAllMonsters"
+        ])
     );
+    assert_eq!(
+        speeds(&game),
+        [FlashArg::Number(12.0), FlashArg::Number(8.0)]
+    );
+
+    // On, a relogin, and turned off before its first pass: the SWF, which outlived the login,
+    // is still told, once.
+    {
+        let mut o = bot.options.write();
+        o.aggro_all_monsters = true;
+        o.walk_speed = 15;
+    }
+    options::apply(&bot).unwrap();
+    bot.state.lock().reset_session();
+    {
+        let mut o = bot.options.write();
+        o.aggro_all_monsters = false;
+        o.walk_speed = 8;
+    }
+    options::apply(&bot).unwrap();
+    bot.state.lock().reset_session();
+    options::apply(&bot).unwrap();
+    let aggro_offs = game
+        .calls_to("modDisable")
+        .iter()
+        .filter(|a| arg(a, 0) == "AggroAllMonsters")
+        .count();
+    assert_eq!(aggro_offs, 2);
+    assert_eq!(speeds(&game).last(), Some(&FlashArg::Number(8.0)));
+    assert_eq!(speeds(&game).len(), 4);
 }
 
 #[test]

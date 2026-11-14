@@ -10,12 +10,18 @@ import flash.utils.getTimer;
  * emptied), and Turu's own Infinite Range, Untarget Lite (Lite's untarget-self and
  * untarget-dead on), Skip Cutscenes (the overlay taken off, the world shown again unless Lag
  * Killer is on, and a cutscene the game waits to show cancelled), Lag Killer (the world kept
- * hidden) and Streamer Mode (`Streamer`, checked on every frame), which the engine did on every
- * options pass before. An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
+ * hidden), Streamer Mode (`Streamer`, checked on every frame), Magnetise (your target pulled to
+ * you), Aggro Monsters (`world.aggroAllMon`), Aggro All Monsters (an `aggroMon` packet naming
+ * every monster of the map) and Walk Speed (`keepWalkSpeed`: `world.WALKSPEED` kept at a speed),
+ * which the engine did on every options pass before. Magnetise and the aggro modules act only
+ * while you're logged in and alive, the aggro ones every 250 ms (the engine's pass, so the server
+ * gets the packets as often as before). An enabled module is re-applied every 100 ms (new avatars, a new map), and turning it
  * off restores what it changed, which VibeSkua's Disable FX doesn't.
  */
 public class Options {
     private static const EVERY_MS:int = 100;
+    /** The aggro modules' rate: the engine's options pass, which sent them before. */
+    private static const AGGRO_EVERY_MS:int = 250;
 
     /** Returns the game, or null before it loads. */
     private var gameOf:Function;
@@ -34,7 +40,13 @@ public class Options {
     /** Lag Killer, as the module or `killLag` last set it: the world hidden, and kept so (the
      * game shows it again, after a cutscene for one). */
     private var lagKiller:Boolean = false;
+    private var magnetise:Boolean = false;
+    private var aggroMonsters:Boolean = false;
+    private var aggroAllMonsters:Boolean = false;
+    /** The walk speed kept, 0 when the game's own is left alone. */
+    private var walkSpeed:int = 0;
     private var lastFrame:int = 0;
+    private var lastAggro:int = 0;
     private var streamer:Streamer;
     /** Disable FX: each avatar MC's `spFX`, to give back. */
     private var savedFX:Dictionary = new Dictionary(true);
@@ -55,6 +67,7 @@ public class Options {
         expose("skipCutscenes", skipCutscenes);
         expose("modEnable", modEnable);
         expose("modDisable", modDisable);
+        expose("keepWalkSpeed", keepWalkSpeed);
     }
 
     private function get world():* {
@@ -157,6 +170,15 @@ public class Options {
             case "SkipCutscenes":
                 skipCutscenesOn = on;
                 break;
+            case "Magnetise":
+                magnetise = on;
+                break;
+            case "AggroMonsters":
+                aggroMonsters = on;
+                break;
+            case "AggroAllMonsters":
+                aggroAllMonsters = on;
+                break;
             case "StreamerMode":
                 streamer.enabled = on;
                 return;
@@ -180,7 +202,8 @@ public class Options {
             streamer.frame();
         }
         if (!hidePlayers && !disableFX && !disableCollisions && !infiniteRange && !untargetLite &&
-            !skipCutscenesOn && !lagKiller) {
+            !skipCutscenesOn && !lagKiller && !magnetise && !aggroMonsters && !aggroAllMonsters &&
+            walkSpeed == 0) {
             return;
         }
         var now:int = getTimer();
@@ -246,10 +269,85 @@ public class Options {
                 }
             }
         }
+        if (walkSpeed > 0 && int(w.WALKSPEED) != walkSpeed) {
+            w.WALKSPEED = walkSpeed;
+        }
+        if ((magnetise || aggroMonsters || aggroAllMonsters) && playing(w)) {
+            if (magnetise) {
+                try {
+                    pullTarget(w);
+                } catch (e:Error) {
+                }
+            }
+            var now:int = getTimer();
+            if ((aggroMonsters || aggroAllMonsters) && now - lastAggro >= AGGRO_EVERY_MS) {
+                lastAggro = now;
+                if (aggroMonsters) {
+                    try {
+                        w.aggroAllMon();
+                    } catch (e:Error) {
+                    }
+                }
+                if (aggroAllMonsters) {
+                    try {
+                        aggroAll(w);
+                    } catch (e:Error) {
+                    }
+                }
+            }
+        }
         if (disableCollisions && w.arrSolid !== noSolid) {
             savedSolid = w.arrSolid;
             noSolid = [];
             w.arrSolid = noSolid;
+        }
+    }
+
+    /**
+     * Walk Speed: `world.WALKSPEED` kept at `speed` (the game sets it again on a new map); 8, the
+     * game's own, or less turns it off, setting 8 back if it was kept at another.
+     */
+    private function keepWalkSpeed(speed:*):void {
+        var wanted:int = int(speed);
+        var was:int = walkSpeed;
+        walkSpeed = wanted > 0 && wanted != 8 ? wanted : 0;
+        if (walkSpeed > 0) {
+            apply();
+        } else if (was > 0 && gameOf() != null && world != null) {
+            world.WALKSPEED = 8;
+        }
+    }
+
+    /** Logged in, and your avatar alive (the engine's options pass waits for that too). */
+    private function playing(w:*):Boolean {
+        var game:* = gameOf();
+        if (game.sfc == null || game.sfc.isConnected != true || w.myAvatar == null) {
+            return false;
+        }
+        var leaf:* = w.myAvatar.dataLeaf;
+        return leaf != null && int(leaf.intState) > 0;
+    }
+
+    /** Magnetise: your target moves to you. */
+    private static function pullTarget(w:*):void {
+        var target:* = w.myAvatar.target;
+        var me:* = w.myAvatar.pMC;
+        if (target != null && target.pMC != null && me != null) {
+            target.pMC.x = me.x;
+            target.pMC.y = me.y;
+        }
+    }
+
+    /** Aggro All Monsters: one `aggroMon` naming every monster of the map, by map ID. */
+    private function aggroAll(w:*):void {
+        var ids:Array = [];
+        for each (var monster:* in w.monsters) {
+            if (monster != null && monster.objData != null && monster.objData.MonMapID != null) {
+                ids.push(monster.objData.MonMapID);
+            }
+        }
+        if (ids.length > 0) {
+            gameOf().sfc.sendString("%xt%zm%aggroMon%" + w.curRoom + "%" + ids.join("%") + "%");
         }
     }
 

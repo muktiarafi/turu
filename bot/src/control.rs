@@ -41,8 +41,10 @@ impl Topics {
     pub const LOADING: Self = Self(1 << 4);
     /// turu.swf `world`: the world came or went (login, logout, lost connection).
     pub const SESSION: Self = Self(1 << 5);
+    /// turu.swf `kicked`: the login screen's warning (`isKicked`) came up or went.
+    pub const KICKED: Self = Self(1 << 6);
 
-    const COUNT: usize = 6;
+    const COUNT: usize = 7;
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0

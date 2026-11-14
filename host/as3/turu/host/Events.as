@@ -12,6 +12,8 @@ import flash.utils.getTimer;
  * - `cellChanged` `{cell}`: `world.strFrame` changed.
  * - `arrived` `{x, y}`: the avatar moved, then stood still for two frames.
  * - `loading` `{shown}`: the loading screen (`mcConnDetail` on the stage) came up or went.
+ * - `kicked` `{shown}`: the login screen's warning (`mcLogin.warning`, what `isKicked` reads)
+ *   came up or went.
  *
  * - `frames` `{frames, avgMs, maxMs, slow}`: with `setFrameReport(seconds)`, every that many
  *   seconds, the gaps between frames (`slow`: over 50 ms). For Turu Mas, where AIR draws and
@@ -34,6 +36,7 @@ public class Events {
     private var mapLoading:Boolean = false;
     private var cell:String = null;
     private var loading:Boolean = false;
+    private var kicked:Boolean = false;
     private var x:Number = NaN;
     private var y:Number = NaN;
     private var moving:Boolean = false;
@@ -126,6 +129,15 @@ public class Events {
         if (shown != loading) {
             loading = shown;
             emit("loading", {shown: shown});
+        }
+        var warned:Boolean = false;
+        try {
+            warned = game.mcLogin != null && game.mcLogin.warning.visible == true;
+        } catch (e:Error) {
+        }
+        if (warned != kicked) {
+            kicked = warned;
+            emit("kicked", {shown: warned});
         }
     }
 

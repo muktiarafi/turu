@@ -619,6 +619,40 @@ fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
 }
 
 #[test]
+fn a_kick_is_checked_on_turu_swfs_event_not_every_second() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    {
+        let mut o = bot.options.write();
+        o.auto_relogin = true;
+        // Only the kick check, not the watchdog, may notice it.
+        o.relogin_watchdog = false;
+    }
+    bot.state.lock().game_loaded = true;
+    assert!(wait_until(Duration::from_secs(2), || game
+        .calls_to("catchPackets")
+        .len()
+        == 1));
+    let kick_checks = || game.calls_to("isKicked").len();
+
+    // Without turu.swf's `kicked` event: no asking every second (the fallback is 10 s).
+    std::thread::sleep(Duration::from_millis(300));
+    let before = kick_checks();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(kick_checks(), before);
+
+    // Kicked: the login screen's warning, and its event, relog at once.
+    game.leave_world();
+    game.set("mcLogin.warning.visible", "true");
+    bot.on_flash_call("event", vec![json!("kicked"), json!("{\"shown\":true}")]);
+    assert!(wait_until(Duration::from_millis(500), || bot
+        .servers
+        .is_relogging()));
+    assert!(bot.logs.script.text().contains("Player kick detected"));
+    bot.on_flash_call("userIntentionalAction", vec![json!("logout")]);
+}
+
+#[test]
 fn a_login_that_retries_keeps_its_server_and_isnt_raced_by_the_watchdog() {
     let game = FakeGame::new();
     game.leave_world();
@@ -710,6 +744,7 @@ fn a_login_from_the_server_list_that_fails_isnt_relogged() {
     // Back: the login screen, with its warning up (what the kick check reads as a kick).
     game.values.lock().remove("mcConnDetail.stage");
     game.set("mcLogin.warning.visible", "true");
+    bot.on_flash_call("event", vec![json!("kicked"), json!("{\"shown\":true}")]);
     std::thread::sleep(Duration::from_millis(1500));
     assert!(!bot.servers.is_relogging());
     assert!(!game.game_functions().contains(&"login".to_owned()));

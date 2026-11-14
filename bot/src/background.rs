@@ -182,16 +182,20 @@ fn item_added(bot: &Bot, item_id: i64, quantity_now: i64, fallback: &ItemBase) {
 /// `catchPackets` sent, as soon as the world appears.
 const IN_GAME_CHECK: Duration = Duration::from_secs(1);
 const IN_GAME_LOAD_CHECK: Duration = Duration::from_secs(1);
+/// How often the timer asks whether you were kicked when turu.swf's `kicked` event hasn't said
+/// so (VibeSkua: every 1 s). The event makes it look at once.
+const KICK_CHECK: Duration = Duration::from_secs(10);
 
 /// 20 ms tick (VibeSkua `ScriptInterface.ScriptTimer`): tracks login state, calls
 /// `catchPackets` once per login, sends rest packets every 1200 ms and applies the options
 /// every 250 ms while playing. Its watchdog starts auto-relogin on an unexpected disconnect,
-/// a kick (checked every 1 s) or a loading screen that's stuck (checked every 100 ms, in game
+/// a kick (checked on turu.swf's `kicked` event, and every [`KICK_CHECK`]) or a loading screen that's stuck (checked every 100 ms, in game
 /// every [`IN_GAME_LOAD_CHECK`]).
 fn timer(weak: Weak<Bot>) {
     let mut last_options = Instant::now();
     let mut last_rest = Instant::now();
     let mut last_kick_check = Instant::now();
+    let mut kick_mark = None;
     let mut last_load_check = Instant::now();
     let mut last_game_check = Instant::now();
     let mut last_gameplay = Instant::now();
@@ -258,8 +262,12 @@ fn timer(weak: Weak<Bot>) {
                 servers::begin_logout(&bot, false);
             }
         }
-        if last_kick_check.elapsed() >= Duration::from_secs(1) {
+        let kick_shown = kick_mark
+            .as_ref()
+            .is_none_or(|mark| bot.control.fired_since(mark, Topics::KICKED));
+        if kick_shown || last_kick_check.elapsed() >= KICK_CHECK {
             last_kick_check = Instant::now();
+            kick_mark = Some(bot.control.mark());
             if !bot.servers.is_relogging()
                 && bot.opts().auto_relogin
                 && !bot.state.lock().intentional_logout
