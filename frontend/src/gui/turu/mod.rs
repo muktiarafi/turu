@@ -422,6 +422,9 @@ pub fn show_headless_screen(ctx: &Context, top: f32) {
     egui::Area::new(egui::Id::new("turu_headless_screen"))
         .order(egui::Order::Background)
         .fixed_pos(rect.min)
+        // Exactly where it's drawn: egui moves an area that overflows `content_rect` (here by
+        // rounding, 0.2 points on Turu Mas) back in, which put its touch area over the tab strip.
+        .constrain(false)
         .interactable(true)
         .show(ctx, |ui| {
             ui.allocate_rect(rect, egui::Sense::click_and_drag());
