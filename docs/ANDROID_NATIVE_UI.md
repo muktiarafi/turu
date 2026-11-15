@@ -225,7 +225,11 @@ which spelled the `Intent`s and the `ClipboardManager` out as JNI call chains be
 `Bridge` has them. Both apps work the same way here: `copyText` and `shareText` run on the UI
 thread, `clipText` answers on the engine thread (the game waits for it; `ClipboardManager` reads
 from any thread), and what Rust hands them is cut to `crash_reports::SHARE_BYTES` (400 KB), below
-Android's ~1 MB binder limit, past which Kotlin throws. Logs > Copy and Share exercise `copyText` and `shareText`;
+Android's ~1 MB binder limit, past which Kotlin throws. Turu Mas has no `clipText`, and needs
+none: in Turu it's Ruffle's clipboard hook (`UiBackend::clipboard_content`), while in both apps a
+paste happens in the native field above the keyboard, an `EditText` that pastes by itself, and
+reaches the game's field or Turu's box as any other edit (tried in Turu Mas, 2026-11-15: Search
+Scripts' box and the game's username field). Logs > Copy and Share exercise `copyText` and `shareText`;
 `openUrl` and `clipText` (the game's Ctrl+V) are harder to reach on a phone: a link only shows in
 some windows (an update's release page, Options' web control), and the native field holds the
 keyboard while the game's field has the focus.
