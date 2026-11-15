@@ -3,8 +3,9 @@
 //! | Route | What |
 //! |---|---|
 //! | `GET /` | The page (`bot/assets/monitor/index.html`). |
-//! | `GET /api/state` | Every entry (latest snapshot, recent events), Turu's version and uptime, a newer Turu (`update`, or null), and whether control is allowed. |
+//! | `GET /api/state` | Every entry (latest snapshot, recent events), this machine's CPU and memory and Turu's (`machines`), Turu's version and uptime, a newer Turu (`update`, or null), and whether control is allowed. |
 //! | `GET /api/events` | Server-Sent Events: the same state as an `event: state` when it changes (looked at every second), and a comment every 15 s. The page keeps its clock running between them. |
+//! | `GET /api/machines/<host>/history` | A machine's last hour, a point a minute, by its `host` in the state's `machines` (`this` for this one): `points` (`[[at, all of Turu's memory there, available memory], ...]`) and each Turu process's own (`turu`: `id`, `points`). |
 //! | `GET /api/bots/<id>` | One entry with all its events and its history. |
 //! | `GET /api/bots/<id>/log?type=script\|debug[&since=]` | Its log lines from number `since` (the control API's `/log`). |
 //! | `GET /api/bots/<id>/log/stream?type=script\|debug[&since=]` | Server-Sent Events: the same lines as `event: lines` (`lines`, `next`) as they're logged, read every half second, until the bot goes. |
@@ -90,6 +91,8 @@ struct State {
     /// A newer Turu (`crate::updates::status_json`), or null.
     update: serde_json::Value,
     bots: Vec<super::hub::View>,
+    /// This machine's CPU and memory, and Turu's (`resources::MachineView`).
+    machines: Vec<super::resources::MachineView>,
 }
 
 struct Shared {
@@ -108,13 +111,16 @@ impl Shared {
 
     /// The state, with the clock or without it: what changed, for `/api/events`. Without, `now`
     /// and `uptimeSeconds` are 0, and so is an online bot's `lastSeen`, which moves every second
-    /// and which the page shows only once the bot is offline.
+    /// and which the page shows only once the bot is offline; machine readings lose their time
+    /// and their small moves ([`MachineView::steady`](super::resources::MachineView::steady)).
     fn state_with_clock(&self, clock: bool) -> String {
         let mut bots = self.hub.views();
+        let mut machines = self.hub.machines();
         if !clock {
             for bot in bots.iter_mut().filter(|b| b.online) {
                 bot.last_seen = 0;
             }
+            machines.iter_mut().for_each(|m| m.steady());
         }
         let state = State {
             version: self.version.clone(),
@@ -127,6 +133,7 @@ impl Shared {
             allow_control: self.allow_control.load(Ordering::Relaxed),
             update: crate::updates::status_json(),
             bots,
+            machines,
         };
         serde_json::to_string(&state).unwrap_or_else(|_| "{}".into())
     }
@@ -345,6 +352,18 @@ async fn handle(
     match (post, path.as_str()) {
         (false, "/api/state") => reply(StatusCode::OK, "application/json", full(shared.state())),
         (false, "/api/events") => events(shared),
+        (false, path) if path.starts_with("/api/machines/") && path.ends_with("/history") => {
+            let host = percent_decode(&path["/api/machines/".len()..path.len() - "/history".len()]);
+            let host = if host == "this" {
+                super::resources::host_id()
+            } else {
+                host
+            };
+            match shared.hub.machine_history(&host) {
+                Some(history) => json_reply(StatusCode::OK, &history),
+                None => error(StatusCode::NOT_FOUND, "no such machine"),
+            }
+        }
         (_, path) => match path.strip_prefix("/api/bots/") {
             Some(rest) => {
                 let body = if post {

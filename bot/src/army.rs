@@ -626,8 +626,10 @@ impl Army {
         let snapshot = serde_json::from_value(reply["snapshot"].clone());
         let events = serde_json::from_value(reply["events"].clone()).unwrap_or_default();
         let next = reply["next"].as_u64().unwrap_or(since);
+        // `None` from a client before 2026-11.
+        let process = serde_json::from_value(reply["process"].clone()).ok();
         match snapshot {
-            Ok(snapshot) => hub.record_army(self, client, snapshot, events, next),
+            Ok(snapshot) => hub.record_army(self, client, snapshot, events, next, process),
             Err(e) => client.state.lock().error = Some(format!("a snapshot I can't read: {e}")),
         }
     }

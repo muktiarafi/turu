@@ -14,10 +14,11 @@ use std::fmt;
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
 
+// The `/proc` parsers the web monitor shares (`turu_bot::monitor::resources`).
+use turu_bot::monitor::resources::field_kb;
+pub use turu_bot::monitor::resources::parse_cpu_time;
+
 const MB: u64 = 1 << 20;
-/// `/proc`'s clock ticks per second (`USER_HZ`): 100 on Linux and Android, whatever the kernel's
-/// own rate.
-const TICKS_PER_SECOND: u64 = 100;
 
 /// One reading of this process's memory, in bytes.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -68,18 +69,6 @@ impl Reading {
 pub fn cpu_percent(before: &Reading, now: &Reading, elapsed: Duration) -> Option<f64> {
     let used = now.cpu_time?.checked_sub(before.cpu_time?)?;
     (!elapsed.is_zero()).then(|| used.as_secs_f64() * 100.0 / elapsed.as_secs_f64())
-}
-
-/// `utime` + `stime` from `/proc/<pid>/stat`. Its second field, the thread's name in
-/// parentheses, can hold spaces and parentheses, so the fields are counted after its last `)`.
-pub fn parse_cpu_time(stat: &str) -> Option<Duration> {
-    let rest = &stat[stat.rfind(')')? + 1..];
-    // Fields 3 (state) onwards: utime is field 14, stime 15.
-    let mut fields = rest.split_whitespace().skip(11);
-    let utime: u64 = fields.next()?.parse().ok()?;
-    let stime: u64 = fields.next()?.parse().ok()?;
-    let ticks = utime + stime;
-    Some(Duration::from_millis(ticks * 1000 / TICKS_PER_SECOND))
 }
 
 /// One thread's CPU time so far, from `/proc/self/task/<tid>/stat`.
@@ -255,13 +244,6 @@ pub fn parse_status(text: &str) -> Option<Reading> {
     })
 }
 
-/// A `Name:   1234 kB` line's value, in bytes.
-fn field_kb(text: &str, name: &str) -> Option<u64> {
-    let value = text.lines().find_map(|line| line.strip_prefix(name))?;
-    let kb: u64 = value.trim().trim_end_matches("kB").trim().parse().ok()?;
-    Some(kb * 1024)
-}
-
 /// Groups `maps` lines by name (anonymous ones without a name as `[anon]`), largest first.
 pub fn group_mappings(maps: impl BufRead, n: usize) -> Vec<(String, u64, u64)> {
     let mut groups: std::collections::HashMap<String, (u64, u64)> =
@@ -337,15 +319,6 @@ mod tests {
             reading.to_string(),
             "RSS 100 MB (anon 0, file 0, shared 0), PSS 120 MB, heap 80 MB, swap 5 MB, virtual 0 MB, 4000 maps, 3 threads"
         );
-    }
-
-    #[test]
-    fn reads_cpu_time_after_the_name() {
-        // A name with a space and a parenthesis; utime 1234, stime 566 ticks.
-        let stat =
-            "4043 (Turu (x) y) S 1 4043 0 0 -1 4194624 9000 0 0 0 1234 566 0 0 20 0 60 0 100 0";
-        assert_eq!(parse_cpu_time(stat), Some(Duration::from_secs(18)));
-        assert_eq!(parse_cpu_time("4043 (turu) S 1"), None);
     }
 
     #[test]

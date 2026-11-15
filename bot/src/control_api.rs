@@ -10,7 +10,7 @@
 //! | `GET /tabs` | The tabs: `id`, `label` and `default` (the one the routes without `/tabs/<id>` act on). |
 //! | `GET /events[?logs=script,debug,packet]` | A stream of server-sent events, so a client needn't poll: `script` (as `/status`'s `script`) at the start and when it changes, `log` (`type`, `time`, `text`) for each new line of the logs asked for (`script` by default; `logs=` for none), `event` for each web monitor event (`seq`, `at`, `kind`, `text`), and a comment every 15 s. It reads the bot's state only, never the game. |
 //! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats, and `update`: a newer Turu (`version`, `current`, `url` of its notes, `download`, `prerelease`) or `null`. Asks the game: prefer `/events` to polling it. |
-//! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, and `next`. Army polls it. |
+//! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, `next`, and this process's CPU and memory (`process`, its CPU since the last call). Army polls it. |
 //! | `POST /script/load?path=` | Load a script (relative to the scripts folder, or absolute). |
 //! | `POST /script/start[?path=][&configure=1]` | Start the loaded script, or load and start `path`; with `configure=1` it shows the Script Options window first, as Start does in the window (Army Control sends it). Answers `started`, `options` (as `GET /script/options`) and `optionsWindow`: whether this run may show the window (not with `--headless` or without `configure=1`); without it the script uses `options` and its log says so. |
 //! | `POST /script/stop`, `/script/pause`, `/script/resume` | |
@@ -783,7 +783,9 @@ static ROUTES: &[Route] = &[
         };
         let snapshot = crate::monitor::sample(r.bot, r.flag("slow"));
         let (events, next) = r.bot.monitor.events_since(since);
-        ok(json!({ "snapshot": snapshot, "events": events, "next": next }))
+        // The client's own process, for the web monitor (its CPU since the last poll).
+        let process = crate::monitor::resources::this_process();
+        ok(json!({ "snapshot": snapshot, "events": events, "next": next, "process": process }))
     }),
     Route::post("/update", update),
     Route::get("/debug/perf", |r| {

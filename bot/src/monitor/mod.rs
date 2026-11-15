@@ -7,10 +7,12 @@
 //!   changes them.
 //! * The [`Hub`] keeps every bot's latest snapshot, events and history: this window's tabs and
 //!   the clients Army > Accounts launched.
+//! * [`resources`] reads this process's and this machine's CPU and memory; the hub keeps them.
 //! * [`server`] serves the page, the hub's entries, and commands for them.
 
 pub mod hub;
 pub mod push;
+pub mod resources;
 pub mod server;
 pub mod snapshot;
 

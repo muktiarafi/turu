@@ -266,9 +266,9 @@ Each phase is usable on its own; phase 1 is about the size of the webhook module
    headless server makes that process the host.
 2. **No Nexus-compatible webhook route.** VibeSkua clients don't show up; nothing scrapes
    embeds.
-3. **Turu's own counters only.** No CPU / RAM and no `sysinfo`. (To be reversed:
-   `docs/MONITOR_RESOURCES_PROPOSAL.md` adds each process's and each machine's CPU and memory,
-   for headless servers, without `sysinfo`.)
+3. **Turu's own counters only.** No CPU / RAM and no `sysinfo`. (Reversed by
+   `docs/MONITOR_RESOURCES_PROPOSAL.md`: each process's and each machine's CPU and memory, for
+   headless servers, without `sysinfo`. Phase 1, this machine, is built: `monitor/resources.rs`.)
 4. **The hub is the one store of bot state; Army keeps the processes.** `army.rs` still owns
    each `Client`'s process, PID, launch and exit (what `ClientState.exited` and `error` say),
    but its poll writes the answer into the hub instead of `ClientState.status`, and the Army

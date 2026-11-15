@@ -7381,6 +7381,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "keyring",
+ "libc",
  "oxc",
  "parking_lot",
  "regex",
@@ -7395,6 +7396,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

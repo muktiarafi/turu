@@ -119,6 +119,8 @@ fn run(
             machine: to.machine.clone(),
             instance: instance().to_owned(),
             version: to.version.clone(),
+            host: super::resources::host_id(),
+            resources: hub.resources(),
             bots,
             results: std::mem::take(&mut results),
         };

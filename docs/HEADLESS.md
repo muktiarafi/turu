@@ -154,6 +154,9 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
   Requests come through Docker's network, so the web monitor asks for its key
   (`http://localhost:9021/#<key>`, the key from `docker compose exec main cat /data/monitor-key`);
   the control API wants its token as always.
+* With a memory limit (`docker run --memory=1g`, or `mem_limit` in `compose.yaml`), the web
+  monitor's machine line shows the container's use of it ("Container 0.4 of 1.0 GB"), read from
+  the cgroup: the free memory beside it is the host's.
 * Several accounts: one service each, all on the `turu-data` volume (as "Several accounts"
   below), each with its own env file and host port; the others report to the first one's
   monitor at `http://main:9021`. `compose.yaml` has one commented out.
@@ -185,7 +188,11 @@ TURU_MONITOR_PUSH_KEY=<contents of /var/lib/turu/monitor-push-key>
 
 Leave Enable Web Monitor off in the shared `settings.json`, or every client tries to serve it.
 The reporters all show under the machine's name, one row per client (each run reports with
-an id of its own, so sharing the name and settings is fine).
+an id of its own, so sharing the name and settings is fine). The machine gets one CPU and memory
+line for all of them ("Turu ×3"), with each process in its details; so do containers on one host,
+which share the kernel's boot id. "Needs you" says when a machine is almost out of memory, a
+container is near its limit, the CPU has been over 90% for 5 minutes, or a Turu process keeps
+growing (over 100 MB an hour).
 
 **Army:** Army > Accounts and Army Control need a window. On a server the systemd unit is the
 launcher, and the web monitor covers most of Army Control (Start / Stop / Relog / Join map on
@@ -204,7 +211,9 @@ Summons off in `butler.json` for the account you play by hand.
 shows more. Text layout's "Fallback font not found" errors are left out (no device fonts are
 loaded without a window, and nobody sees the text); a `RUST_LOG` of your own brings them back.
 
-**Web monitor** (`--monitor=127.0.0.1:9021`): each bot's state, last-hour trace, logs, history and commands.
+**Web monitor** (`--monitor=127.0.0.1:9021`): each bot's state, last-hour trace, logs, history and
+commands, and a line for the machine: its CPU and free memory, and Turu's own CPU (a share of one
+core, as `top` shows it) and memory, with the last hour of Turu's memory (click it for details).
 Keep it on loopback and use a tunnel, which needs no key:
 
 ```bash

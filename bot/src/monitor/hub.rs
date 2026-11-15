@@ -17,6 +17,10 @@
 //! Each entry keeps its last [`EVENTS_KEPT`] events and a point a minute for
 //! [`HISTORY_KEPT`] minutes.
 
+use super::resources::{
+    self, HostHistory, MachineReading, MachineResources, MachineView, MinuteRing, ProcessHistory,
+    ProcessReading, Recorder, TuruProcess,
+};
 use super::snapshot::now_ms;
 use super::{EVENTS_KEPT, Event, Snapshot};
 use crate::Bot;
@@ -134,6 +138,9 @@ struct Entry {
     /// The bot's next event number: what to ask for next.
     next_event: u64,
     history: VecDeque<Point>,
+    /// An Army client's own process (tabs share this one's), and its memory a minute at a time.
+    process: Option<ProcessReading>,
+    process_history: MinuteRing,
 }
 
 impl Entry {
@@ -148,7 +155,17 @@ impl Entry {
             events: VecDeque::new(),
             next_event: 0,
             history: VecDeque::new(),
+            process: None,
+            process_history: MinuteRing::default(),
         }
+    }
+
+    /// An Army client's process reading, from its `/snapshot` or a report.
+    fn set_process(&mut self, process: Option<ProcessReading>) {
+        if let Some(process) = &process {
+            self.process_history.push((now_ms(), process.memory(), 0));
+        }
+        self.process = process;
     }
 
     fn online(&self, now: u64) -> bool {
@@ -205,6 +222,7 @@ impl Entry {
             last_seen: self.last_seen,
             snapshot: self.snapshot.clone(),
             recent: self.events.iter().rev().take(RECENT).cloned().collect(),
+            process: self.process.clone().filter(|_| self.online(now)),
         }
     }
 
@@ -238,6 +256,9 @@ pub struct View {
     pub snapshot: Option<Snapshot>,
     /// The newest events first.
     pub recent: Vec<Event>,
+    /// An Army client's own process, while it's live (tabs share the window's: the machine's
+    /// line has it).
+    pub process: Option<ProcessReading>,
 }
 
 /// An entry with all its events and history.
@@ -272,6 +293,12 @@ pub struct Report {
     /// share its name. Empty from a Turu before 2026-11 (one process per name, as then).
     pub instance: String,
     pub version: String,
+    /// The computer it runs on ([`resources::host_id`]): processes and containers on one
+    /// computer share it. Empty from a Turu before 2026-11.
+    pub host: String,
+    /// Its machine's CPU and memory and its own, with its last hour. `None` from a Turu before
+    /// 2026-11.
+    pub resources: Option<MachineResources>,
     /// Its live tabs and Army clients.
     pub bots: Vec<Pushed>,
     /// What the commands of earlier replies did.
@@ -288,6 +315,9 @@ pub struct Pushed {
     pub snapshot: Option<Snapshot>,
     pub events: Vec<Event>,
     pub next: u64,
+    /// An Army client's own process; `None` for a tab, and from a Turu before 2026-11.
+    #[serde(default)]
+    pub process: Option<ProcessReading>,
 }
 
 /// A command waiting for a remote machine's next report.
@@ -334,6 +364,31 @@ pub struct Hub {
     tabs: Mutex<Option<Sources>>,
     file: Option<PathBuf>,
     started: Instant,
+    /// This process's and this machine's CPU and memory.
+    resources: Mutex<Recorder>,
+    /// What each process reporting here sent of its resources, by [`remote_source`].
+    reporters: Mutex<HashMap<String, Reported>>,
+}
+
+/// A reporting process's resources.
+struct Reported {
+    /// Its machine's name on the page.
+    machine: String,
+    /// [`resources::host_id`] there; empty from a Turu before 2026-11.
+    host: String,
+    /// ms since 1970 here, of its last report.
+    last_seen: u64,
+    latest: Option<(MachineReading, ProcessReading, u64)>,
+    history: MinuteRing,
+}
+
+/// A Turu process for [`Hub::machines`] and [`Hub::machine_history`].
+struct Part {
+    host: String,
+    turu: TuruProcess,
+    /// Its machine's reading, and when it was taken.
+    machine: Option<(MachineReading, u64)>,
+    history: Vec<resources::Point>,
 }
 
 impl Hub {
@@ -365,6 +420,8 @@ impl Hub {
             tabs: Mutex::new(None),
             file,
             started: Instant::now(),
+            resources: Mutex::default(),
+            reporters: Mutex::default(),
         })
     }
 
@@ -376,8 +433,9 @@ impl Hub {
         self.started.elapsed()
     }
 
-    /// The "Turu Monitor Hub" thread: refreshes the tabs every second and saves every minute,
-    /// until the hub is gone.
+    /// The "Turu Monitor Hub" thread: refreshes the tabs every second, reads this process's and
+    /// this machine's CPU and memory every 2 s while the page is open and every minute always,
+    /// and saves every minute, until the hub is gone.
     pub fn start(self: &Arc<Self>) {
         let weak = Arc::downgrade(self);
         let spawned = std::thread::Builder::new()
@@ -386,6 +444,7 @@ impl Hub {
                 let mut saved = Instant::now();
                 while let Some(hub) = weak.upgrade() {
                     hub.refresh_tabs();
+                    hub.resources.lock().tick(now_ms(), super::watched());
                     if saved.elapsed() >= SAVE_EVERY {
                         saved = Instant::now();
                         hub.save();
@@ -447,6 +506,7 @@ impl Hub {
         snapshot: Snapshot,
         events: Vec<Event>,
         next_event: u64,
+        process: Option<ProcessReading>,
     ) {
         let id = army_id(&client.username);
         let mut entries = self.entries.lock();
@@ -460,6 +520,7 @@ impl Hub {
         entry.target = Target::Army(Arc::downgrade(army), Arc::downgrade(client));
         entry.label = client.label.clone();
         entry.record(Some(snapshot), events, next_event);
+        entry.set_process(process);
         let character = entry.character().map(str::to_owned);
         if let Some(name) = character {
             entries.remove(&offline_id(&name));
@@ -471,6 +532,32 @@ impl Hub {
     pub fn record_report(&self, report: Report) {
         let machine = machine_name(&report.machine);
         let instance = instance_name(&report.instance);
+        {
+            let now = now_ms();
+            let mut reporters = self.reporters.lock();
+            // A process that stopped reporting an hour ago won't again (a new run has a new
+            // instance).
+            reporters.retain(|_, r| now.saturating_sub(r.last_seen) < 60 * POINT_EVERY_MS);
+            let reported = reporters
+                .entry(remote_source(&machine, &instance))
+                .or_insert_with(|| Reported {
+                    machine: machine.clone(),
+                    host: String::new(),
+                    last_seen: now,
+                    latest: None,
+                    history: MinuteRing::default(),
+                });
+            reported.machine = machine.clone();
+            reported.host = host_name(&report.host);
+            reported.last_seen = now;
+            if let Some(res) = report.resources {
+                reported.history.seed(&res.history);
+                reported
+                    .history
+                    .push((res.at, res.process.memory(), res.machine.memory_available));
+                reported.latest = Some((res.machine, res.process, res.at));
+            }
+        }
         {
             let mut entries = self.entries.lock();
             let prefix = format!("remote:{}:", remote_source(&machine, &instance));
@@ -494,6 +581,7 @@ impl Hub {
                 entry.machine = Some(machine.clone());
                 entry.label = pushed.label;
                 entry.record(pushed.snapshot, pushed.events, pushed.next);
+                entry.set_process(pushed.process);
                 let character = entry.character().map(str::to_owned);
                 if let Some(name) = character {
                     entries.remove(&offline_id(&name));
@@ -608,9 +696,15 @@ impl Hub {
                         .cloned()
                         .collect(),
                     next: e.next_event,
+                    process: e.process.clone(),
                 }
             })
             .collect()
+    }
+
+    /// This process's latest reading and last hour, for a report.
+    pub fn resources(&self) -> Option<MachineResources> {
+        self.resources.lock().resources()
     }
 
     /// The event number an Army client's next `/snapshot` asks from.
@@ -672,6 +766,149 @@ impl Hub {
         };
         views.sort_by_key(key);
         views
+    }
+
+    /// Every live Turu process this monitor knows of: this one, its Army clients, the processes
+    /// reporting here and their Army clients.
+    fn parts(&self) -> Vec<Part> {
+        let now = now_ms();
+        let this_host = resources::host_id();
+        let mut parts = Vec::new();
+        {
+            let recorder = self.resources.lock();
+            if let Some(sample) = recorder.latest() {
+                parts.push(Part {
+                    host: this_host.clone(),
+                    turu: TuruProcess {
+                        id: None,
+                        machine: None,
+                        label: "Turu".into(),
+                        process: sample.process,
+                    },
+                    machine: Some((sample.machine, sample.at)),
+                    history: recorder.history(),
+                });
+            }
+        }
+        // Each reporting process's host, for its Army clients.
+        let mut hosts: HashMap<String, String> = HashMap::new();
+        for (source, reported) in self.reporters.lock().iter() {
+            // A Turu before 2026-11 sends no host: its own, so it's never merged with another.
+            let host = if reported.host.is_empty() {
+                format!("remote:{source}")
+            } else {
+                reported.host.clone()
+            };
+            hosts.insert(source.clone(), host.clone());
+            let Some((machine, process, at)) = &reported.latest else {
+                continue;
+            };
+            if now.saturating_sub(reported.last_seen) >= OFFLINE_AFTER_MS {
+                continue;
+            }
+            parts.push(Part {
+                host,
+                turu: TuruProcess {
+                    id: Some(format!("remote:{source}:")),
+                    machine: Some(reported.machine.clone()),
+                    label: format!("Turu on {}", reported.machine),
+                    process: process.clone(),
+                },
+                machine: Some((machine.clone(), *at)),
+                history: reported.history.points(),
+            });
+        }
+        for (id, entry) in self.entries.lock().iter() {
+            let Some(process) = entry.process.clone().filter(|_| entry.online(now)) else {
+                continue;
+            };
+            let host = match &entry.target {
+                Target::Remote {
+                    machine, instance, ..
+                } => match hosts.get(&remote_source(machine, instance)) {
+                    Some(host) => host.clone(),
+                    None => continue,
+                },
+                _ => this_host.clone(),
+            };
+            parts.push(Part {
+                host,
+                turu: TuruProcess {
+                    id: Some(id.clone()),
+                    machine: entry.machine.clone(),
+                    label: entry.label.clone(),
+                    process,
+                },
+                machine: None,
+                history: entry.process_history.points(),
+            });
+        }
+        parts
+    }
+
+    /// The machines and the Turu processes on each, one per computer ([`resources::host_id`]):
+    /// this one first, then the others by name. A machine's reading is the latest any of its
+    /// processes took.
+    pub fn machines(&self) -> Vec<MachineView> {
+        let mut machines: Vec<MachineView> = Vec::new();
+        for part in self.parts() {
+            let view = match machines.iter_mut().find(|m| m.host == part.host) {
+                Some(view) => view,
+                None => {
+                    machines.push(MachineView {
+                        host: part.host.clone(),
+                        at: 0,
+                        machine: MachineReading::default(),
+                        turu: Vec::new(),
+                    });
+                    machines.last_mut().expect("just pushed")
+                }
+            };
+            if let Some((machine, at)) = part.machine
+                && at >= view.at
+            {
+                view.machine = machine;
+                view.at = at;
+            }
+            view.turu.push(part.turu);
+        }
+        // A host whose processes are all Army clients has no machine reading yet.
+        machines.retain(|m| m.at > 0);
+        let this_host = resources::host_id();
+        machines.sort_by_key(|m| {
+            (
+                m.host != this_host,
+                m.turu
+                    .iter()
+                    .find_map(|t| t.machine.clone())
+                    .unwrap_or_default()
+                    .to_lowercase(),
+            )
+        });
+        machines
+    }
+
+    /// A machine's last hour, by its host id: the line's points and each process's own.
+    pub fn machine_history(&self, host: &str) -> Option<HostHistory> {
+        let parts: Vec<Part> = self
+            .parts()
+            .into_iter()
+            .filter(|p| p.host == host)
+            .collect();
+        let base = parts
+            .iter()
+            .filter(|p| p.machine.is_some())
+            .max_by_key(|p| p.history.len())?
+            .history
+            .clone();
+        let turu = parts
+            .into_iter()
+            .map(|p| ProcessHistory {
+                id: p.turu.id,
+                points: p.history,
+            })
+            .collect();
+        Some(HostHistory::new(&base, turu))
     }
 
     pub fn detail(&self, id: &str) -> Option<Detail> {
@@ -777,6 +1014,15 @@ pub fn machine_name(name: &str) -> String {
     } else {
         clean
     }
+}
+
+/// A reported host id: letters, digits, `-`, `_` and `.`, at most 64.
+fn host_name(host: &str) -> String {
+    host.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .take(64)
+        .collect::<String>()
+        .to_lowercase()
 }
 
 /// A reporting process's instance as ids carry it: letters and digits, at most 16.
@@ -900,6 +1146,7 @@ mod tests {
             snapshot: Some(playing(name, 1)),
             events: Vec::new(),
             next: 0,
+            process: None,
         }
     }
 
@@ -912,6 +1159,7 @@ mod tests {
             version: "test".into(),
             bots,
             results: Vec::new(),
+            ..Default::default()
         };
         hub.record_report(report(vec![
             pushed("tab:0", "Hero"),
@@ -943,6 +1191,7 @@ mod tests {
             version: "test".into(),
             bots: vec![pushed("tab:0", "Hero")],
             results,
+            ..Default::default()
         };
         hub.record_report(report(Vec::new()));
         let control = hub.control("remote:vps:tab:0").expect("online");
@@ -980,7 +1229,117 @@ mod tests {
             version: "test".into(),
             bots,
             results: Vec::new(),
+            ..Default::default()
         }
+    }
+
+    const MB: u64 = 1 << 20;
+
+    fn resources(at: u64, memory: u64, available: u64) -> MachineResources {
+        MachineResources {
+            at,
+            machine: MachineReading {
+                os: "linux".into(),
+                cores: 4,
+                memory_total: 8192 * MB,
+                memory_available: available,
+                ..Default::default()
+            },
+            process: ProcessReading {
+                rss: memory,
+                ..Default::default()
+            },
+            history: vec![(at - 60_000, memory - MB, available)],
+        }
+    }
+
+    fn reporting(
+        instance: &str,
+        host: &str,
+        res: Option<MachineResources>,
+        bots: Vec<Pushed>,
+    ) -> Report {
+        Report {
+            host: host.into(),
+            resources: res,
+            ..from(instance, bots)
+        }
+    }
+
+    #[test]
+    fn machines_are_kept_by_host() {
+        let hub = Hub::new(None);
+        let now = now_ms();
+        let mut army = pushed("army:alt", "Alt");
+        army.process = Some(ProcessReading {
+            rss: 300 * MB,
+            ..Default::default()
+        });
+        // Two processes on one VPS (one with an Army client), and an older Turu elsewhere.
+        hub.record_report(reporting(
+            "aaaa",
+            "BOOT-1",
+            Some(resources(now - 5_000, 400 * MB, 2048 * MB)),
+            vec![pushed("tab:0", "Hero"), army],
+        ));
+        hub.record_report(reporting(
+            "bbbb",
+            "boot-1",
+            Some(resources(now - 1_000, 420 * MB, 2000 * MB)),
+            vec![pushed("tab:0", "Mage")],
+        ));
+        hub.record_report(reporting("cccc", "", None, vec![pushed("tab:0", "Old")]));
+        let machines = hub.machines();
+        // The older Turu sent no reading: no machine for it.
+        assert_eq!(machines.len(), 1, "{machines:?}");
+        let vps = &machines[0];
+        assert_eq!(vps.host, "boot-1");
+        // The latest reading of the two.
+        assert_eq!(vps.machine.memory_available, 2000 * MB);
+        let ids: Vec<_> = vps.turu.iter().map(|t| t.id.clone().unwrap()).collect();
+        assert_eq!(
+            ids,
+            [
+                "remote:vps:aaaa:",
+                "remote:vps:bbbb:",
+                "remote:vps:aaaa:army:alt"
+            ]
+        );
+        assert!(vps.turu.iter().all(|t| t.machine.as_deref() == Some("vps")));
+        // The Army client's process shows on its entry too.
+        let view = hub
+            .views()
+            .into_iter()
+            .find(|v| v.id == "remote:vps:aaaa:army:alt")
+            .unwrap();
+        assert_eq!(view.process.unwrap().rss, 300 * MB);
+        // Its hour: the first report's hour taken on, and the processes added up.
+        let history = hub.machine_history("boot-1").unwrap();
+        assert_eq!(history.turu.len(), 3);
+        assert_eq!(history.turu[0].points.len(), 2);
+        assert!(hub.machine_history("elsewhere").is_none());
+        // A process that stops reporting leaves the machine.
+        hub.reporters
+            .lock()
+            .values_mut()
+            .for_each(|r| r.last_seen -= OFFLINE_AFTER_MS);
+        assert!(hub.machines().is_empty());
+    }
+
+    #[test]
+    fn takes_reports_from_older_turu() {
+        // A report as a Turu before 2026-11 sends it: no host, resources or process.
+        let report: Report = serde_json::from_value(json!({
+            "machine": "old", "instance": "dddd", "version": "0.2.0", "results": [],
+            "bots": [{ "id": "tab:0", "label": "Tab 1", "snapshot": null, "events": [], "next": 0 }]
+        }))
+        .unwrap();
+        assert!(report.host.is_empty() && report.resources.is_none());
+        assert!(report.bots[0].process.is_none());
+        let hub = Hub::new(None);
+        hub.record_report(report);
+        assert_eq!(hub.views().len(), 1);
+        assert!(hub.machines().is_empty());
     }
 
     #[test]

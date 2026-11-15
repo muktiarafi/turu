@@ -1,6 +1,6 @@
 # Proposal: CPU and memory in the web monitor
 
-Status: proposal, nothing built. Touches `bot/src/monitor/` (`hub.rs`, `server.rs`, `push.rs`,
+Status: built, all three phases (this machine; Army clients and reporting machines; warnings). Touches `bot/src/monitor/` (`hub.rs`, `server.rs`, `push.rs`,
 `mod.rs`, a new `resources.rs`), `control_api.rs` (`/snapshot`), `bot/Cargo.toml`,
 `bot/assets/monitor/index.html`, and `frontend/src/process_memory.rs` with its user
 `android/src/memory.rs` (the `/proc` parsing moves into the engine). Reverses decision 3 of `docs/WEB_MONITOR_PROPOSAL.md` ("Turu's
@@ -59,14 +59,24 @@ One module in the engine crate (no Ruffle, no window, so headless, Army clients 
 all get it):
 
 ```rust
-pub struct ProcessReading { pub cpu_percent: Option<f32>, pub rss: u64, pub peak_rss: u64, pub footprint: Option<u64> }
+pub struct ProcessReading {
+    pub cpu_percent: Option<f32>, pub rss: u64, pub peak_rss: u64,
+    /// macOS (`proc_pid_rusage`): Activity Monitor's figure and its peak.
+    pub footprint: Option<u64>, pub peak_footprint: Option<u64>,
+    /// A cgroup memory limit (Linux containers), and what the group uses: per container, so
+    /// per process, not per machine (see "One machine, several Turu processes").
+    pub container: Option<Container>,
+}
 pub struct MachineReading {
+    pub os: String, // so the page can treat phones apart (no machine CPU, no low-memory warning)
     pub cores: u32,
     pub cpu_percent: Option<f32>,
     pub memory_total: u64,
     pub memory_available: u64,
-    /// A cgroup memory limit (Linux containers), and what the group uses.
-    pub container: Option<(u64, u64)>,
+    /// Read once per process: `kern.osproductversion`; `/etc/os-release` and the kernel (and
+    /// whether in a container); `ro.build.version.release`; `RtlGetVersion` (not
+    /// `GetVersionExW`, which says 6.2 without a manifest).
+    pub os_version: Option<String>,
 }
 pub struct Probe { /* the previous CPU times, for the next percentage */ }
 impl Probe { pub fn process(&mut self) -> Option<ProcessReading>; pub fn machine(&mut self) -> Option<MachineReading>; }
@@ -78,7 +88,7 @@ CPU % needs two readings, so `Probe` keeps the last CPU times. The first reading
 | | Process | Machine |
 |---|---|---|
 | Linux, Android | `/proc/self/status` (`VmRSS`, `VmHWM`), `/proc/self/stat` (CPU time): the parsing in `process_memory.rs`, moved here and re-exported from there | `/proc/meminfo` (`MemTotal`, `MemAvailable`), `/proc/stat`'s `cpu` line; cgroup v2 `memory.max` / `memory.current` (v1: `memory.limit_in_bytes` / `usage_in_bytes`), only when the limit isn't "max" |
-| macOS | `task_info(MACH_TASK_BASIC_INFO)` (resident), `TASK_VM_INFO`'s `phys_footprint`, `getrusage` (CPU time, peak) | `sysctl hw.memsize`; `host_statistics64(HOST_VM_INFO64)` free + inactive + purgeable pages as available; `host_statistics(HOST_CPU_LOAD_INFO)` ticks |
+| macOS | `proc_pid_rusage(RUSAGE_INFO_V4)` (resident, footprint and its lifetime peak: libc has no `TASK_VM_INFO`), `getrusage` (CPU time, peak resident) | `sysctl hw.memsize`; `host_statistics64(HOST_VM_INFO64)` free + inactive + purgeable pages as available; `host_statistics(HOST_CPU_LOAD_INFO)` ticks |
 | Windows | `GetProcessMemoryInfo` (working set and its peak), `GetProcessTimes` | `GlobalMemoryStatusEx`, `GetSystemTimes` |
 
 Cores come from `std::thread::available_parallelism`, which counts a container's CPU quota on
@@ -156,9 +166,12 @@ send every second, so that pass sets `at` to 0, rounds CPU to whole percent and 
 as it already zeroes `now`, `uptimeSeconds` and `lastSeen`.
 
 The history stays out of `/api/state`, so `/api/events` doesn't resend an hour of points with
-every change. `GET /api/machines/<name>/history` (`this` for this machine) answers
-`[[at, turu rss, machine available], ...]`, a minute apart. The page asks for it when it
-loads, and again every few minutes, for the sparkline and the growth warning.
+every change. `GET /api/machines/<host>/history` (`this` for this machine) answers
+`{ "points": [[at, all of Turu's memory, machine available], ...], "turu": [{ "id", "points" }] }`,
+a minute apart: the line's points add up each process's latest point within the minute, and
+each process's own series is there for the growth warning. The page asks for it when it loads,
+and again every few minutes, for the sparkline and the growth warning. (As built: keyed by host
+id rather than the name on the page, since one host can carry several names.)
 
 **Army clients.** Each client's `/snapshot` reply gains `"process": ProcessReading`, read by
 the client from its own `Probe`, so its CPU % covers the time since the Army poll last asked
@@ -186,6 +199,12 @@ unchanged. A reporter takes a reading with every report but at most every 5 s.
 | A container using over 90% of its limit | "vps-1's container is at 1.8 of its 2 GB limit." |
 | A Turu process's memory growing over 100 MB an hour, across the last 60 minutes, once it has run for 10 | "Turu on vps-1 grew from 420 to 610 MB in the last hour." |
 | Machine CPU over 90% for 5 minutes | "vps-1's CPU has been over 90% for 5 minutes." |
+
+(As built: the probe keeps since when the machine's CPU has been over 90% in every reading,
+`MachineReading::cpu_busy_since`, so the 5 minutes count whether or not a page was open; the page
+holds the other thresholds. Growth compares the average of the first and last three minutes of
+the process's hour, after its first 10 minutes when it's younger than an hour, over at least 20
+minutes. Phones get no low-memory entry.)
 
 The 10-minute wait follows `tools/farmrun/summarize.py`, which measures memory growth only after
 the first 10 minutes (`docs/HEADLESS.md`): memory climbs during the first joins and then levels

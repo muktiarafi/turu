@@ -384,7 +384,41 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `/api/bots/<id>/log/stream`, server-sent events read every half second through the hub, so
   tabs, Army clients and other machines alike), and an hour-by-hour history (gold, XP, kills,
   drops; a point a minute, 6 h). `/api/events` sends the state only when it changed, with a
-  comment every 15 s; the page keeps the server's clock going between frames.
+  comment every 15 s; the page keeps the server's clock going between frames. **CPU and memory**
+  (`docs/MONITOR_RESOURCES_PROPOSAL.md`, phase 1 of 3): `monitor/resources.rs` reads this process
+  (share of a core, resident memory and its peak, the footprint and its peak on macOS, a Linux
+  container's cgroup limit) and this machine (cores, CPU, total and available memory, and the
+  system's version, read once: "macOS 15.2", "Windows 11 (build 22631)", a Linux distribution
+  with the kernel and whether it's in a container, "Android 14, kernel 5.15") with the
+  OS's own calls (`/proc` and the cgroup files; `proc_pid_rusage`, `host_statistics`; Win32), no
+  `sysinfo`. The hub reads every 2 s while the page is open and once a minute always, keeping an
+  hour (`/api/machines/this/history`); `/api/state` has `machines`. The page shows one line under
+  "This PC" (above the toolbar when there are no machine headings), the hour of Turu's memory as
+  wax dots, and details on click. Checked by hand on macOS (Apple Silicon): RSS against `ps`, the
+  footprint against `footprint`, available memory against `vm_stat`, the version against `sw_vers`;
+  the page at 375 px and in both
+  themes. Linux, Windows and Android only type-checked (`cargo clippy --target`), with the
+  `/proc`, cgroup and `os-release` parsers unit-tested; the page's other states (machine
+  headings, a container, Android without machine CPU, the first reading) against a stub server.
+  Not run yet on Linux, Windows or Android, nor in the Docker image with `--memory=1g`. **Phase 2:**
+  an Army client's `/snapshot` carries its own `process` (its CPU since the last poll), shown in
+  its side panel; a report carries `host` and `resources` (the machine reading, the reporter's
+  process and its last hour, which the monitor takes on at the first report), and each pushed
+  Army client its `process`. The hub groups every live process by host id, so one server running
+  several Turu processes (or containers) has one line ("Turu ×3"), its details listing each
+  process by its characters; `/api/machines/<host>/history` has the line's points and each
+  process's own. Checked by hand with one `--monitor` and two `--report-to` processes on this Mac
+  (one line, footprints against `footprint`, history taken on after the monitor restarted) and
+  a real Army client (`army_clients_reach_the_hub`, ignored by default, run with `TURU_EXE`);
+  older Turu on either side only through unit tests (an old report's JSON; the monitor's types
+  ignore unknown fields). Not checked: two Compose containers on one host. **Phase 3:** machine
+  entries head "Needs you", one per problem with its numbers and a Details button that opens the
+  machine's line: almost out of memory (under 10% or 300 MB free, this reading and the minute's
+  point before; not on phones), a container over 90% of its limit, CPU over 90% for 5 minutes
+  (`cpu_busy_since`, kept by the probe), a Turu process growing over 100 MB an hour (after its
+  first 10 minutes, seen for 20). The thresholds are constants at the top of the page's script.
+  Checked by hand against a stub server with made-up states and history (every rule firing, and
+  a phone low on memory staying quiet); not yet on a real server running out.
   **Control** (Allow Control, on by default): Start / Pause / Resume / Stop the loaded script, Log
   in, Relogin, Log out, House and Join map, on one bot or the selected ones (asking first for the
   ones that interrupt), and Forget for offline entries. The hub (`monitor/hub.rs`) keeps every

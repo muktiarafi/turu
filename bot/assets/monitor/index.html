@@ -158,6 +158,7 @@ main { padding: 16px 20px 96px; min-width: 0; }
 .attention .who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attention .why { color: var(--ink-2); min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attention .acts { display: flex; gap: 6px; flex: none; }
+.attention li.machine .why { white-space: normal; } /* the numbers are the point: no ellipsis */
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin: 0 0 14px; }
 .search { position: relative; flex: 1 1 200px; max-width: 320px; }
@@ -172,6 +173,35 @@ main { padding: 16px 20px 96px; min-width: 0; }
 .group:first-child { margin-top: 0; }
 .group small { font-weight: 500; color: var(--ink-3); }
 .group::after { content: ""; flex: 1; border-top: 1px solid var(--rule-soft); translate: 0 -3px; }
+/* The machine line: this computer's CPU and memory, and Turu's, under its group head (or above the
+   toolbar when there are no heads). Its hour of Turu's memory is drawn as wax dots, like a trace. */
+.host { margin: -2px 0 8px; font-size: 13px; color: var(--ink-2); }
+.host[hidden] { display: none; }
+#hostLine { margin: 0 0 12px; }
+#hostLine .host { margin: 0; }
+#hostLine .host + .host { margin-top: 6px; }
+.host-sum {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 18px; width: 100%; padding: 2px 0; margin: 0;
+  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 4px;
+}
+.host-sum > span { white-space: nowrap; }
+.host-sum .turu { display: inline-flex; align-items: center; gap: 12px; }
+.host-sum b { color: var(--ink); font-weight: 600; }
+.host-sum .name { color: var(--ink-3); font-weight: 600; margin-right: -6px; }
+.host-sum:hover .hdots circle { fill: var(--wax); }
+.host-sum:hover .i { color: var(--soga); }
+@media (pointer: coarse) { .host-sum { min-height: 40px; } }
+.host-sum .i { width: 14px; height: 14px; margin-left: 6px; color: var(--ink-3); transition: rotate .2s cubic-bezier(.16, 1, .3, 1); }
+.host-sum[aria-expanded="true"] .i { rotate: 90deg; }
+.hdots { width: 66px; height: 16px; margin-left: 10px; overflow: visible; vertical-align: middle; }
+.hdots circle { fill: color-mix(in srgb, var(--wax) 55%, var(--wax-dim)); transition: fill .15s ease-out; }
+.hdots circle.now { fill: var(--wax); }
+.hdots circle.off, .host-sum:hover .hdots circle.off { fill: var(--wax-dim); }
+.host-more { margin: 8px 0 4px; padding: 10px 0 2px; border-top: 1px solid var(--rule-soft); max-width: 520px; }
+.host-more dl.facts { font-size: 13px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.host-more dl.facts dd b { color: var(--ink); font-weight: 600; }
+.host-more dl.facts dd { white-space: normal; overflow-wrap: anywhere; }
+.host-more p { margin: 8px 0 0; color: var(--ink-3); font-size: 12px; }
 .sheet { background: var(--field); border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
 .row, .rowhead {
   display: grid; align-items: center; column-gap: 14px; padding: 9px 14px;
@@ -236,6 +266,7 @@ main { padding: 16px 20px 96px; min-width: 0; }
 .axis { display: flex; justify-content: space-between; color: var(--ink-3); font-size: 11px; margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .trace i.now.w::after, .state.changed .mark { animation: none; }
+  .host-sum .i, .hdots circle { transition: none; }
   .bar i { transition: none; }
 }
 
@@ -417,6 +448,13 @@ body.streamer .priv { filter: blur(6px); }
   .attention .who { flex: 1; }
   .attention .why { flex-basis: 100%; order: 2; white-space: normal; padding-left: 20px; }
   .attention .acts { order: 3; padding-left: 20px; }
+  /* The machine on the left, Turu on the right. */
+  .host-sum { display: grid; grid-template-columns: max-content 1fr; grid-template-areas: "name name" "cpu tcpu" "mem tmem" "box box"; gap: 3px 16px; }
+  .host-sum .name { grid-area: name; }
+  .host-sum .turu { display: contents; }
+  .host-sum.nocpu { grid-template-areas: "name name" "mem tcpu" "box tmem"; }
+  .host-sum .cpu { grid-area: cpu; } .host-sum .mem { grid-area: mem; } .host-sum .box { grid-area: box; }
+  .host-sum .tcpu { grid-area: tcpu; } .host-sum .tmem { grid-area: tmem; }
 }
 </style>
 </head>
@@ -466,6 +504,7 @@ body.streamer .priv { filter: blur(6px); }
       <h2 id="attentionTitle">Needs you</h2>
       <ul id="attentionList"></ul>
     </section>
+    <div class="host" id="hostLine" hidden></div>
     <div class="toolbar">
       <label class="search"><svg class="i"><use href="#i-search"/></svg><span class="sr">Filter bots</span><input type="search" id="filter" placeholder="Filter by name, script, map or machine" autocomplete="off"></label>
       <div class="seg" id="views" role="tablist" aria-label="View"></div>
@@ -512,6 +551,13 @@ const $ = s => document.querySelector(s);
 const STALE_MS = 15000;
 const KEY = "turu-monitor-key";
 const SLOTS = 30, SLOT_MS = 120000; // the trace: the last hour, two minutes a dot
+// Machine warnings in "Needs you" (docs/MONITOR_RESOURCES_PROPOSAL.md, "Warnings"): starting
+// points, to tune after a week of real servers.
+const LOW_FREE_SHARE = 0.10, LOW_FREE_BYTES = 300 * 1024 ** 2; // free memory under either...
+const CONTAINER_SHARE = 0.90; // a container using more of its limit than this
+const GROWTH_PER_HOUR = 100 * 1024 ** 2; // a Turu process growing faster than this...
+const GROWTH_WARMUP_MS = 10 * 60000, GROWTH_SPAN_MS = 20 * 60000; // ...after its first 10 minutes, seen for 20
+const BUSY_FOR_MS = 5 * 60000; // the machine's CPU over 90% (resources.rs, BUSY_PERCENT) this long
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
@@ -733,7 +779,7 @@ function renderRoster(list, main) {
   const shape = groups.map(([t, l]) => `${t}:${l.length}`).join("|") + (groups.length > 1 ? "+h" : "");
   if (main.dataset.shape !== shape) {
     main.dataset.shape = shape;
-    main.innerHTML = groups.map(([t, l], n) => `${groups.length > 1 ? `<h2 class="group">${esc(t)} <small>${l.length} bot${l.length > 1 ? "s" : ""}</small></h2>` : ""}<div class="sheet" data-group="${n}">${ROWHEAD}</div>`).join("");
+    main.innerHTML = groups.map(([t, l], n) => `${groups.length > 1 ? `<h2 class="group">${esc(t)} <small>${l.length} bot${l.length > 1 ? "s" : ""}</small></h2>${t !== "Offline" ? `<div class="host" data-group-host="${esc(t)}"></div>` : ""}` : ""}<div class="sheet" data-group="${n}">${ROWHEAD}</div>`).join("");
   }
   const sheets = main.querySelectorAll(".sheet");
   groups.forEach(([, l], n) => {
@@ -828,18 +874,19 @@ function render() {
   const kills = live.reduce((n, b) => n + (b.snapshot?.stats.kills ?? 0), 0);
   const gph = live.reduce((n, b) => { const s = b.snapshot?.session; return n + ((s && perHour(s.gold, s.seconds)) ?? 0); }, 0);
   const needs = state.bots.map(b => [b, trouble(b)]).filter(x => x[1]);
+  const machineNeeds = machineTrouble();
 
   const sep = `<span class="sep">·</span>`;
   const night = !state.bots.length ? "No bots yet"
-    : `<b>${playing}</b> of ${live.length} playing${sep}<b>${running}</b> running${sep}${needs.length ? `<b class="bad">${needs.length}</b> need${needs.length > 1 ? "" : "s"} you` : "nothing needs you"}`;
+    : `<b>${playing}</b> of ${live.length} playing${sep}<b>${running}</b> running${sep}${needs.length + machineNeeds.length ? `<b class="bad">${needs.length + machineNeeds.length}</b> need${needs.length + machineNeeds.length > 1 ? "" : "s"} you` : "nothing needs you"}`;
   setHtml($("#night"), night);
   setHtml($("#mobileNight"), night);
   setHtml($("#meta"), `Turu ${esc(state.version)} · up ${clock(state.uptimeSeconds)}`);
   setHtml($("#update"), state.update ? `<a class="update" href="${esc(state.update.url)}" target="_blank" rel="noopener">Update to ${esc(state.update.version)}</a>` : "");
   setHtml($("#totals"), live.length ? `<b class="priv">${fmt(gph)}</b> gold/h<span class="sep" style="margin:0 8px;color:var(--ink-3)">·</span><b>${fmt(kills)}</b> kills` : "");
 
-  $("#attention").hidden = !needs.length;
-  setHtml($("#attentionList"), needs.map(([b, [why, fix]]) => `<li><span class="mark bad"></span><span class="who priv">${esc(name(b))}</span><span class="why">${esc(why)}</span><span class="acts">${fix && control() ? `<button type="button" class="btn primary" data-act="${fix[1]}" data-id="${esc(b.id)}">${icon(fix[2])}${fix[0]}</button>` : ""}<button type="button" class="btn" data-open="${esc(b.id)}">Details</button></span></li>`).join(""));
+  $("#attention").hidden = !needs.length && !machineNeeds.length;
+  setHtml($("#attentionList"), machineNeeds.map(([host, who, kind, why]) => `<li class="machine"><span class="mark ${kind}"></span><span class="who">${esc(who)}</span><span class="why">${why}</span><span class="acts"><button type="button" class="btn" data-host-open="${esc(host)}">Details</button></span></li>`).join("") + needs.map(([b, [why, fix]]) => `<li><span class="mark bad"></span><span class="who priv">${esc(name(b))}</span><span class="why">${esc(why)}</span><span class="acts">${fix && control() ? `<button type="button" class="btn primary" data-act="${fix[1]}" data-id="${esc(b.id)}">${icon(fix[2])}${fix[0]}</button>` : ""}<button type="button" class="btn" data-open="${esc(b.id)}">Details</button></span></li>`).join(""));
 
   if (!list.length) {
     main.dataset.shape = "";
@@ -854,6 +901,7 @@ function render() {
     if (main._table !== html) { main._table = html; main.innerHTML = html; }
   }
   if (view !== "roster") rowEls.clear();
+  renderHost();
   renderBulk();
   if (detailId) renderPanel();
 }
@@ -1042,7 +1090,8 @@ function renderOverview(b) {
   const traceBox = `<section class="tracebox"><h3>Last hour</h3>${tr.html}<div class="axis"><span>${short(state.now - 3600000)}</span><span>now</span></div><p>${tr.said[0].toUpperCase() + tr.said.slice(1)}.${seen.has(b.id) ? "" : ""}</p></section>`;
   let html;
   if (!s || !isLive(s)) {
-    const script = s?.script?.name ? `<dl class="facts"><dt>Script</dt><dd>${esc(s.script.name)} · ${esc(plain(s.script.status))}</dd></dl>` : `<p class="when">${b.online ? "Not in the game right now." : `Last seen ${b.lastSeen ? ago(state.now - b.lastSeen) + " ago" : "a while ago"}.`}</p>`;
+    const proc = b.process ? `<dl class="facts"><dt>Its process</dt><dd>${procLine(b.process)}</dd></dl>` : "";
+    const script = s?.script?.name ? `<dl class="facts"><dt>Script</dt><dd>${esc(s.script.name)} · ${esc(plain(s.script.status))}</dd>${b.process ? `<dt>Its process</dt><dd>${procLine(b.process)}</dd>` : ""}</dl>` : proc + `<p class="when">${b.online ? "Not in the game right now." : `Last seen ${b.lastSeen ? ago(state.now - b.lastSeen) + " ago" : "a while ago"}.`}</p>`;
     html = `<section>${script}</section>${traceBox}${recentList(b)}`;
   } else {
     const inv = s.inventory.slots ? `${fmt(s.inventory.used)} / ${fmt(s.inventory.slots)}` : `${fmt(s.inventory.items)} items`;
@@ -1062,6 +1111,7 @@ function renderOverview(b) {
         <dt>Gold</dt><dd class="priv">${fmt(s.gold)}</dd>
         <dt>AdventureCoins</dt><dd>${fmt(s.coins)}</dd>
         <dt>Inventory</dt><dd>${inv}</dd>
+        ${b.process ? `<dt>Its process</dt><dd>${procLine(b.process)}</dd>` : ""}
       </dl></section>
       <section class="lists">${list("Quests", s.quests)}${list("Equipment", s.equipment)}</section>`;
   }
@@ -1133,6 +1183,136 @@ function showLines({ lines, next }) {
   logNext = next;
   if (atEnd) box.scrollTop = box.scrollHeight;
 }
+// The machine lines: one per computer in the state's `machines`, under the first group head of
+// the bots its Turu processes run (above the toolbar when there are no heads), with its hour from
+// /api/machines/<host>/history.
+const hostHistory = new Map(), hostAsked = new Map();
+let hostOpen = new Set((() => { try { return JSON.parse(store.get("turu-monitor-hosts") || "[]"); } catch { return []; } })());
+const GB = 1024 ** 3, MB = 1024 ** 2;
+const bytes = n => n == null ? "–" : n >= GB ? `${(n / GB).toFixed(1)} GB` : `${Math.round(n / MB)} MB`;
+const gb = n => (n / GB).toFixed(1);
+const cpu = p => p == null ? "–" : `${Math.round(p)}%`;
+const turuMemory = t => t.footprint ?? t.rss;
+const SYSTEMS = { macos: "macOS", linux: "Linux", windows: "Windows", android: "Android" };
+async function loadHostHistory(host) {
+  hostAsked.set(host, Date.now());
+  try {
+    const r = await fetch(`/api/machines/${encodeURIComponent(host)}/history`, { headers: headers(), cache: "no-store" });
+    if (!r.ok) return;
+    hostHistory.set(host, await r.json());
+    renderHost();
+  } catch {}
+}
+// Turu's memory over the hour as wax dots: one per two minutes, higher for more memory.
+function hostDots(points) {
+  const pts = points.filter((_, i) => (points.length - 1 - i) % 2 === 0).slice(-SLOTS);
+  if (pts.length < 2) return "";
+  const vs = pts.map(p => p[1]), min = Math.min(...vs), max = Math.max(...vs);
+  const span = Math.max(max - min, 64 * MB); // a flat hour stays flat, not magnified noise
+  const w = 66, h = 16, step = w / (SLOTS - 1), x0 = w - step * (pts.length - 1);
+  // Slots not reached yet stay as unlit dots on the baseline, as on a bot's trace.
+  const empty = Array.from({ length: SLOTS - pts.length }, (_, i) => `<circle class="off" r="1" cx="${(i * step).toFixed(1)}" cy="${h - 2.5}"/>`).join("");
+  const dots = empty + pts.map((p, i) => `<circle${i === pts.length - 1 ? ' class="now" r="2.2"' : ' r="1.3"'} cx="${(x0 + i * step).toFixed(1)}" cy="${(h - 2.5 - (p[1] - min) / span * (h - 5)).toFixed(1)}"/>`).join("");
+  return `<svg class="hdots" viewBox="0 0 ${w} ${h}" aria-hidden="true">${dots}</svg>`;
+}
+const machineName = t => t.machine ?? "This PC";
+// A process by the characters it runs: tabs share their window's process, a reporting process's
+// bots carry its prefix, and an Army client is its own row.
+function procLabel(t) {
+  if (t.id != null && !t.id.endsWith(":")) return esc(t.label);
+  const bots = state.bots.filter(b => b.online && (t.id == null ? b.kind === "tab" : b.id.startsWith(t.id) && !b.id.slice(t.id.length).startsWith("army:")));
+  const names = bots.map(b => `<span class="priv">${esc(name(b))}</span>`).join(", ");
+  const base = t.id == null ? "Turu serving this page" : `Turu on ${esc(t.machine)}`;
+  return names ? `${base}: ${names}` : base;
+}
+const procLine = t => `${cpu(t.cpuPercent)} of a core · ${bytes(turuMemory(t))}${t.container ? ` · container ${gb(t.container.used)} of ${gb(t.container.limit)} GB` : ""}`;
+function hostLine(m, n, labelled) {
+  const turu = m.turu, one = turu.length === 1 ? turu[0] : null;
+  const points = hostHistory.get(m.host)?.points ?? [];
+  const open = hostOpen.has(m.host), more = `hostMore${n}`;
+  const parts = [
+    ...(m.os === "android" && m.cpuPercent == null ? [] : [`<span class="cpu">CPU <b>${cpu(m.cpuPercent)}</b> of ${m.cores} core${m.cores > 1 ? "s" : ""}</span>`]),
+    `<span class="mem">Memory <b>${gb(m.memoryAvailable)}</b> of ${gb(m.memoryTotal)} GB free</span>`,
+    ...(one?.container ? [`<span class="box">Container <b>${gb(one.container.used)}</b> of ${gb(one.container.limit)} GB</span>`] : []),
+  ];
+  const cpus = turu.map(t => t.cpuPercent).filter(p => p != null);
+  const turuCpu = cpus.length ? cpus.reduce((a, b) => a + b, 0) : null;
+  const turuMem = turu.reduce((a, t) => a + turuMemory(t), 0);
+  const who = one ? "Turu" : `<span title="${turu.length} Turu processes on this machine">Turu ×${turu.length}</span>`;
+  const hourTitle = points.length >= 2 ? ` title="Turu's memory over the last ${points.length} minutes: ${bytes(points[0][1])} to ${bytes(points.at(-1)[1])}"` : "";
+  parts.push(`<span class="turu"><span class="tcpu">${who} <b>${cpu(turuCpu)}</b> of a core</span><span class="tmem"${hourTitle}><b>${bytes(turuMem)}</b>${hostDots(points)}${icon("open")}</span></span>`);
+  const label = labelled ? `<span class="name">${esc(machineName(turu[0]))}</span>` : "";
+  const noCpu = !parts[0].startsWith('<span class="cpu"');
+  const sum = `<button type="button" class="host-sum${noCpu ? " nocpu" : ""}" data-host-toggle="${esc(m.host)}" aria-expanded="${open}" aria-controls="${more}">${label}${parts.join("")}</button>`;
+  if (!open) return sum;
+  const hour = points.length >= 2 ? points : null;
+  const tm = hour?.map(p => p[1]), free = hour?.map(p => p[2]);
+  const system = m.osVersion ?? SYSTEMS[m.os] ?? m.os;
+  const facts = [
+    ...(system ? [["System", `${esc(system)} (${m.cores}&nbsp;core${m.cores > 1 ? "s" : ""})`]] : []),
+    [one ? "Turu's memory, last hour" : "All of Turu's memory, last hour", hour ? `<b>${bytes(tm[0])}</b> to <b>${bytes(tm.at(-1))}</b>` : "–"],
+    ...(one?.footprint != null ? [["Resident", bytes(one.rss)]] : []),
+    ...(one ? [["Most it has used", bytes(Math.max(one.peakFootprint ?? one.peakRss, turuMemory(one)))]] : []),
+    ["Least memory free, last hour", free ? bytes(Math.min(...free)) : "–"],
+    // Several processes: each one, by where its bots show.
+    ...(one ? [] : turu.map(t => [procLabel(t), procLine(t)])),
+  ];
+  const note = hour ? `${hour.length} minute${hour.length > 1 ? "s" : ""} kept, a point a minute. Turu's CPU is a share of one core; the machine's, of all ${m.cores}.`
+    : "A point a minute, kept for an hour: the first comes within a minute of Turu starting.";
+  return sum + `<div class="host-more" id="${more}"><dl class="facts">${facts.map(([t, v]) => `<dt>${t}</dt><dd>${v}</dd>`).join("")}</dl><p>${note}</p></div>`;
+}
+// What's wrong with the machines, worst first: [host, machine name, "bad" | "warn", reason].
+function machineTrouble() {
+  const out = [];
+  for (const m of state.machines ?? []) {
+    const name = machineName(m.turu[0]), h = hostHistory.get(m.host);
+    const low = free => free < m.memoryTotal * LOW_FREE_SHARE || free < LOW_FREE_BYTES;
+    // Two readings in a row: this one and the minute's point before it. Phones keep their memory
+    // full on purpose, so they're left out.
+    const before = h?.points.filter(p => p[0] <= m.at - 30000).at(-1);
+    if (m.os !== "android" && low(m.memoryAvailable) && before && low(before[2])) {
+      out.push([m.host, name, "bad", `Almost out of memory: ${bytes(m.memoryAvailable)} free of ${gb(m.memoryTotal)} GB. Stop a bot or add memory.`]);
+    }
+    for (const t of m.turu) {
+      if (t.container && t.container.used > t.container.limit * CONTAINER_SHARE) {
+        out.push([m.host, name, "bad", `${procLabel(t)} is at ${gb(t.container.used)} of its container's ${gb(t.container.limit)} GB limit.`]);
+      }
+    }
+    if (m.cpuBusySince && m.at - m.cpuBusySince >= BUSY_FOR_MS) {
+      out.push([m.host, name, "warn", `CPU over 90% for ${Math.round((m.at - m.cpuBusySince) / 60000)} minutes.`]);
+    }
+    for (const series of h?.turu ?? []) {
+      const t = m.turu.find(t => t.id === series.id);
+      // A full hour started before it; a shorter one started with the process, whose first
+      // minutes (the first joins) always climb.
+      const pts = series.points.length >= 60 ? series.points : series.points.filter(p => p[0] >= series.points[0][0] + GROWTH_WARMUP_MS);
+      if (!t || pts.length < 6) continue;
+      const span = pts.at(-1)[0] - pts[0][0];
+      const avg = list => list.reduce((a, p) => a + p[1], 0) / list.length;
+      const from = avg(pts.slice(0, 3)), to = avg(pts.slice(-3));
+      if (span >= GROWTH_SPAN_MS && (to - from) / span * 3600000 > GROWTH_PER_HOUR) {
+        const minutes = Math.round(span / 60000);
+        out.push([m.host, name, "warn", `Turu grew from ${bytes(from)} to ${bytes(to)} in the last ${minutes >= 55 ? "hour" : `${minutes} minutes`} (${procLabel(t)}).`]);
+      }
+    }
+  }
+  return out.sort((a, b) => (a[2] === "bad" ? 0 : 1) - (b[2] === "bad" ? 0 : 1));
+}
+function renderHost() {
+  const machines = state?.machines ?? [], line = $("#hostLine");
+  const slots = [...document.querySelectorAll(".host[data-group-host]")];
+  const filled = new Set(), loose = [];
+  machines.forEach((m, n) => {
+    if (Date.now() - (hostAsked.get(m.host) ?? 0) > 180000) loadHostHistory(m.host);
+    const names = new Set(m.turu.map(machineName));
+    const slot = slots.find(s => !filled.has(s) && names.has(s.dataset.groupHost));
+    if (slot) { filled.add(slot); setHtml(slot, hostLine(m, n, false)); } else loose.push([m, n]);
+  });
+  for (const s of slots) if (!filled.has(s)) setHtml(s, "");
+  line.hidden = !loose.length;
+  setHtml(line, loose.map(([m, n]) => `<div class="host">${hostLine(m, n, true)}</div>`).join(""));
+}
+
 function spark(points, field, color) {
   const w = 400, h = 64;
   const vs = points.map(p => p[field]);
@@ -1263,6 +1443,24 @@ $("#views").addEventListener("click", e => {
   if (v) { view = v; sort = { col: null, dir: 1 }; store.set("turu-monitor-view", v); $("#main").dataset.shape = ""; $("#main")._table = ""; render(); }
 });
 document.addEventListener("click", e => {
+  const opener = e.target.closest("[data-host-open]");
+  if (opener) {
+    const host = opener.dataset.hostOpen;
+    hostOpen.add(host);
+    store.set("turu-monitor-hosts", JSON.stringify([...hostOpen]));
+    loadHostHistory(host);
+    renderHost();
+    [...document.querySelectorAll("[data-host-toggle]")].find(b => b.dataset.hostToggle === host)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    return;
+  }
+  const toggle = e.target.closest("[data-host-toggle]");
+  if (toggle) {
+    const host = toggle.dataset.hostToggle;
+    if (hostOpen.has(host)) hostOpen.delete(host); else { hostOpen.add(host); loadHostHistory(host); }
+    store.set("turu-monitor-hosts", hostOpen.size ? JSON.stringify([...hostOpen]) : null);
+    renderHost();
+    return;
+  }
   const t = e.target.closest("button");
   if (!t) {
     // A click anywhere on a row (not on its controls) opens it.

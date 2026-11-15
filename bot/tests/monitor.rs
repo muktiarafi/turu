@@ -285,6 +285,14 @@ fn army_clients_reach_the_hub() {
         .find(|v| v.id == "army:monitortest")
         .unwrap();
     assert!(view.online);
+    // Its own process: read by the client, so a separate one from this test's.
+    eventually("the client's process reading", || {
+        hub.views()
+            .into_iter()
+            .find(|v| v.id == "army:monitortest")
+            .and_then(|v| v.process)
+            .is_some_and(|p| p.rss > 1 << 20)
+    });
     assert!(matches!(
         hub.control("army:monitortest"),
         Some(turu_bot::monitor::hub::Control::Army(..))
@@ -348,6 +356,34 @@ fn remote_machines_report_and_take_commands() {
         })
     });
     assert!(reporter.status().error.is_none());
+
+    // It runs on this computer, so its process joins this machine's line, and the machine's
+    // hour has both.
+    let prefix = format!("remote:vps 1:{}:", turu_bot::monitor::push::instance());
+    eventually("the reporting process on this machine", || {
+        let (_, body) = get(&format!("{base}/api/state"), None, None);
+        let state: Value = serde_json::from_str(&body).unwrap();
+        let machines = state["machines"].as_array().unwrap();
+        machines.len() == 1
+            && machines[0]["turu"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["id"] == prefix.as_str())
+            && machines[0]["turu"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["id"].is_null())
+    });
+    let (status, body) = get(&format!("{base}/api/machines/this/history"), None, None);
+    assert_eq!(status, 200, "{body}");
+    let history: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(history["turu"].as_array().unwrap().len(), 2, "{history}");
+    assert_eq!(
+        get(&format!("{base}/api/machines/nowhere/history"), None, None).0,
+        404
+    );
 
     // A command makes the round trip: queued here, run there, answered with the next report.
     let url = format!(
