@@ -11,9 +11,9 @@
 //! typing. Positions are UTF-16 units on both sides (Java's strings, Flash's text).
 
 use crate::platform::with_activity;
-use jni::objects::{JClass, JString, JValue};
+use jni::EnvUnowned;
+use jni::objects::{JClass, JString};
 use jni::sys::jint;
-use jni::{EnvUnowned, jni_sig, jni_str};
 use ruffle_core::events::{
     KeyDescriptor, KeyLocation, LogicalKey, NamedKey, PhysicalKey, TextControlCode,
 };
@@ -163,17 +163,13 @@ fn show(focused: &Focused) {
     let Contents { text, start, end } = &focused.contents;
     let result = with_activity(&app, |env, activity| {
         let text = env.new_string(text)?;
-        env.call_method(
-            activity,
-            jni_str!("showGameField"),
-            jni_sig!("(Ljava/lang/String;IIZI)V"),
-            &[
-                JValue::Object(&text),
-                JValue::Int(*start as jint),
-                JValue::Int(*end as jint),
-                JValue::Bool(focused.password),
-                JValue::Int(MAX_CHARS as jint),
-            ],
+        activity.show_game_field(
+            env,
+            &text,
+            *start as jint,
+            *end as jint,
+            focused.password,
+            MAX_CHARS as jint,
         )?;
         Ok(())
     });
@@ -189,16 +185,7 @@ fn update(contents: &Contents) {
     };
     let result = with_activity(&app, |env, activity| {
         let text = env.new_string(&contents.text)?;
-        env.call_method(
-            activity,
-            jni_str!("updateGameField"),
-            jni_sig!("(Ljava/lang/String;II)V"),
-            &[
-                JValue::Object(&text),
-                JValue::Int(contents.start as jint),
-                JValue::Int(contents.end as jint),
-            ],
-        )?;
+        activity.update_game_field(env, &text, contents.start as jint, contents.end as jint)?;
         Ok(())
     });
     if let Err(e) = result {
@@ -212,7 +199,7 @@ fn hide() {
         return;
     };
     let result = with_activity(&app, |env, activity| {
-        env.call_method(activity, jni_str!("hideGameField"), jni_sig!("()V"), &[])?;
+        activity.hide_game_field(env)?;
         Ok(())
     });
     if let Err(e) = result {

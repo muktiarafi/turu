@@ -4,8 +4,8 @@
 //! Limit, without Grid View. An update's APK goes to Android's installer (`Bridge.installPackage`).
 
 use crate::host::BRIDGE;
-use jni::objects::{JString, JValue};
-use jni::{Env, jni_sig, jni_str};
+use crate::java::Bridge;
+use jni::Env;
 use std::path::Path;
 use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
 
@@ -21,17 +21,12 @@ impl Platform for AirPlatform {
     }
 
     fn open_url(&self, url: &str) {
-        let Some((vm, class)) = BRIDGE.get() else {
+        let Some(vm) = BRIDGE.get() else {
             return;
         };
         let opened = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
             let url = env.new_string(url)?;
-            env.call_static_method(
-                class,
-                jni_str!("openUrl"),
-                jni_sig!("(Ljava/lang/String;)V"),
-                &[JValue::Object(&url)],
-            )?;
+            Bridge::open_url(env, &url)?;
             Ok(())
         });
         if let Err(e) = opened {
@@ -85,7 +80,7 @@ impl Platform for AirPlatform {
     }
 
     fn ask_crash_uploads(&self, question: &Question) -> bool {
-        let Some((vm, class)) = BRIDGE.get() else {
+        let Some(vm) = BRIDGE.get() else {
             return false;
         };
         let asked = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<bool> {
@@ -102,21 +97,7 @@ impl Platform for AirPlatform {
             let [title, message, note, link, link_url, no, yes] = strings;
             let (title, message, note, link, link_url, no, yes) =
                 (title?, message?, note?, link?, link_url?, no?, yes?);
-            env.call_static_method(
-                class,
-                jni_str!("askCrashUploads"),
-                jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"),
-                &[
-                    JValue::Object(&title),
-                    JValue::Object(&message),
-                    JValue::Object(&note),
-                    JValue::Object(&link),
-                    JValue::Object(&link_url),
-                    JValue::Object(&no),
-                    JValue::Object(&yes),
-                ],
-            )?
-            .z()
+            Bridge::ask_crash_uploads(env, &title, &message, &note, &link, &link_url, &no, &yes)
         });
         asked
             .inspect_err(|e| tracing::warn!("Couldn't ask about crash reports: {e}"))
@@ -128,18 +109,13 @@ impl Platform for AirPlatform {
     }
 
     fn share_text(&self, subject: &str, text: &str) {
-        let Some((vm, class)) = BRIDGE.get() else {
+        let Some(vm) = BRIDGE.get() else {
             return;
         };
         let _ = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
             let subject = env.new_string(subject)?;
             let text = env.new_string(text)?;
-            env.call_static_method(
-                class,
-                jni_str!("shareText"),
-                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
-                &[JValue::Object(&subject), JValue::Object(&text)],
-            )?;
+            Bridge::share_text(env, &subject, &text)?;
             Ok(())
         });
     }
@@ -150,22 +126,13 @@ impl Platform for AirPlatform {
 
     /// `Bridge.alert(kind, title, text)`: a notification while the app isn't on screen.
     fn alert(&self, kind: Alert, title: &str, text: &str) {
-        let Some((vm, class)) = BRIDGE.get() else {
+        let Some(vm) = BRIDGE.get() else {
             return;
         };
         let posted = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
             let title = env.new_string(title)?;
             let text = env.new_string(text)?;
-            env.call_static_method(
-                class,
-                jni_str!("alert"),
-                jni_sig!("(ILjava/lang/String;Ljava/lang/String;)V"),
-                &[
-                    JValue::Int(kind as i32),
-                    JValue::Object(&title),
-                    JValue::Object(&text),
-                ],
-            )?;
+            Bridge::alert(env, kind as i32, &title, &text)?;
             Ok(())
         });
         if let Err(e) = posted {
@@ -179,22 +146,14 @@ impl Platform for AirPlatform {
 
     /// `Bridge.installPackage(path)`: Android's installer (`PackageUpdate.kt`).
     fn install_package(&self, path: &Path) -> Result<(), String> {
-        let (vm, class) = BRIDGE.get().ok_or("the extension isn't started")?;
+        let vm = BRIDGE.get().ok_or("the extension isn't started")?;
         let error =
             crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<Option<String>> {
                 let path = env.new_string(path.to_string_lossy())?;
-                let error = env
-                    .call_static_method(
-                        class,
-                        jni_str!("installPackage"),
-                        jni_sig!("(Ljava/lang/String;)Ljava/lang/String;"),
-                        &[JValue::Object(&path)],
-                    )?
-                    .l()?;
+                let error = Bridge::install_package(env, &path)?;
                 if error.is_null() {
                     return Ok(None);
                 }
-                let error = env.cast_local::<JString>(error)?;
                 Ok(Some(error.try_to_string(env)?))
             })
             .map_err(|e| e.to_string())?;

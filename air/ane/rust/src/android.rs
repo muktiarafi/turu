@@ -22,7 +22,7 @@ static CRASH_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
     mut unowned_env: EnvUnowned<'local>,
-    class: JClass<'local>,
+    _class: JClass<'local>,
     context: JObject<'local>,
     files_dir: JString<'local>,
 ) {
@@ -30,8 +30,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
         .with_env(|env| -> jni::errors::Result<()> {
             init_logging();
             let _ = AIR_THREAD.set(std::thread::current().id());
+            // Here, on a Java thread whose loader sees the extension's classes, before the engine
+            // calls into Kotlin.
+            crate::java::check(env, &jni::refs::LoaderContext::FromObject(&context));
             if BRIDGE.get().is_none() {
-                let _ = BRIDGE.set((env.get_java_vm()?, env.new_global_ref(&class)?));
+                let _ = BRIDGE.set(env.get_java_vm()?);
             }
             // Before any reqwest client is built.
             let _ = rustls::crypto::ring::default_provider().install_default();
@@ -40,10 +43,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
                 log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
             }
             let root = PathBuf::from(files_dir.try_to_string(env)?);
-            // Here, on a Java thread: the engine's threads can't find the extension's classes.
             if let Err(e) = crate::passwords::install(env) {
-                // A missing class leaves its exception pending: not ours to throw to AIR.
-                env.exception_clear();
                 log::error!(
                     "Couldn't set up the password store; Accounts won't keep passwords: {e}"
                 );
@@ -269,11 +269,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeFetch<'local>(
                         }
                         Err(why) => format!("{id} {why}"),
                     };
-                    let Some((vm, class)) = BRIDGE.get() else {
+                    let Some(vm) = BRIDGE.get() else {
                         return;
                     };
                     let sent = attach(vm, |env: &mut jni::Env| {
-                        crate::host::dispatch(env, class, "fetched", &level)
+                        crate::host::dispatch(env, "fetched", &level)
                     });
                     if let Err(e) = sent {
                         fetched().get_or_insert_default().remove(&id);

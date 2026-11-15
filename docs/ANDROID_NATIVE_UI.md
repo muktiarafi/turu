@@ -222,12 +222,39 @@ a switch in Options.
 The bot windows' links, share sheet and clipboard are one Kotlin method each, called from Rust over
 JNI: Turu's `TuruActivity.openUrl`, `shareText`, `copyText` and `clipText` (`android/src/platform.rs`,
 which spelled the `Intent`s and the `ClipboardManager` out as JNI call chains before), as Turu Mas's
-`Bridge` has them. Rust names each by its JNI signature, which nothing checks at build time: a
-renamed method or a changed parameter fails only when it's called (`dexdump` on the APK lists the
-methods with their signatures). Logs > Copy and Share exercise `copyText` and `shareText`;
+`Bridge` has them. Logs > Copy and Share exercise `copyText` and `shareText`;
 `openUrl` and `clipText` (the game's Ctrl+V) are harder to reach on a phone: a link only shows in
 some windows (an update's release page, Options' web control), and the native field holds the
 keyboard while the game's field has the focus.
+
+**Every Kotlin class Rust reaches is bound in one file per app**, `android/src/java.rs` (Turu:
+`TuruActivity`, `TuruService`, `Storage`) and `air/ane/rust/src/java.rs` (Turu Mas: `Bridge`,
+`Passwords`), with jni 0.22's `bind_java_type!`: each method Rust calls, and each `external` it
+implements, is written there once, with its Java types. Rust calls the generated methods
+(`activity.show_ui_field(env, ...)`, `TuruService::status(env, ...)`), never a method by name. The
+`native*` functions keep their bodies and `Java_...` exports where they are; the binding names
+each one (`fn = ...`), so a Rust function that doesn't match its declared signature doesn't
+compile, and registers them with `RegisterNatives`.
+
+`java::check` looks up every bound method and registers the natives when the app starts: Turu from
+`android_main` (through the activity's class loader) and from `TuruService.nativeStart` (the
+service alone, after a kill), Turu Mas from `Bridge.nativeStart`. A renamed Kotlin method, a
+changed parameter, or a Rust binding with no Kotlin method behind it stops the app at once,
+naming it ("Kotlin and Rust disagree on Storage: Method not found: deletePasswords
+(Ljava/lang/String;)V"), instead of failing the first time that feature is used. Release builds
+too: a build that was never started is the only way one ships. The service restarts a crashed
+process, so the message repeats in logcat a few times before Android gives up.
+
+What it can't catch: a new Kotlin `external` that nobody bound (it fails, as before, when called:
+bind it in `java.rs`), and a Kotlin method Rust no longer calls (harmless). After the check,
+calls from engine threads use the cached class and method IDs, so the class loader no longer
+matters there. Tried on the Android 16 arm64 emulator (2026-11-15): a wrong method name and a
+wrong native signature each stopped Turu at launch with that message, and a wrong method name
+stopped Turu Mas (from AIR's thread, the process aborts rather than AIR carrying on); with them
+right, Turu's activity and service-only starts and Turu Mas's start logged "Kotlin bindings
+checked", and the game's text fields, Turu's text boxes and the notification worked through the
+bindings in both. Not tried since: the clipboard, links, the share sheet, the pickers, installing
+an update, alerts and passwords (the same generated calls, checked at start).
 
 ## Kept in egui
 

@@ -74,6 +74,10 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
   locked). Post `events::Work` or update state instead.
 * Bot calls on the script thread honour Stop/Pause through `ScriptControl::check`; long
   loops must call `bot.sleep`/`Flash::call` (or check `bot.should_exit()`) so Stop works.
+* Kotlin and Rust meet only through each Android app's `java.rs` (`android/src/`,
+  `air/ane/rust/src/`): every Kotlin method Rust calls and every `external` it implements is
+  bound there (`bind_java_type!`) and checked when the app starts. Change both sides together and
+  start the build once (docs/ANDROID_NATIVE_UI.md, "Platform calls").
 * Behaviour follows VibeSkua's C# exactly (timeouts in 100 ms "tries", `ActionDelay` 800 ms,
   `world.lock` cooldowns, packet formats). When unsure, read the C#.
 * Scripts are synchronous TypeScript: no `async`/`await` in the API. Types are stripped by

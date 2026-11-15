@@ -21,8 +21,8 @@ import javax.crypto.spec.GCMParameterSpec
  * * Documents the system picker chose (`TuruActivity.openDocument` / `createDocument`): copying
  *   a picked one into a folder, writing a saved one from the file the window wrote.
  *
- * The Rust side reaches this class through the reference [nativeInit] hands it, so keep these
- * methods static (`@JvmStatic`) with the same names and parameter types.
+ * The Rust side calls these static (`@JvmStatic`) methods, bound in `android/src/java.rs`: change
+ * them there too (a mismatch stops the app at start).
  */
 object Storage {
     private const val KEY_ALIAS = "turu-passwords"

@@ -16,8 +16,8 @@ import javax.crypto.spec.GCMParameterSpec
  * Keystore (it never leaves it), one file per account in the app's internal storage
  * (`noBackupFilesDir/passwords`), out of the shared data folder `adb` reads.
  *
- * `Bridge.nativeStart` looks this class up for the engine's threads, so keep these methods static
- * (`@JvmStatic`) with the same names and parameter types.
+ * The Rust side calls these static (`@JvmStatic`) methods, bound in `air/ane/rust/src/java.rs`:
+ * change them there too (a mismatch stops the app at start).
  */
 object Passwords {
     private const val KEY_ALIAS = "turu-passwords"

@@ -4,29 +4,32 @@
 //! Start while one is loaded and stopped (and a line per tab with several), and it holds a wake lock while any tab's script runs. A thread here sends
 //! it the bots' state every 2 s, when it changed, and keeps `android-tabs.json` up to date.
 
+use crate::java::TuruService;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{Global, JClass, JObject, JString, JValue};
-use jni::{Env, EnvUnowned, JavaVM, jni_sig, jni_str};
+use jni::objects::{JClass, JObject, JString};
+use jni::{Env, EnvUnowned, JavaVM};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use turu_bot::Bot;
 use turu_frontend::turu;
 
-/// The JVM and `TuruService`'s class: a native thread can't look the app's classes up itself.
-static SERVICE: OnceLock<(JavaVM, Global<JClass<'static>>)> = OnceLock::new();
+/// The JVM, once the service started (`TuruService`'s methods are bound in `java.rs`).
+static SERVICE: OnceLock<JavaVM> = OnceLock::new();
 
 /// `TuruService.nativeStart(context, filesDir)`: starts the engine, if the activity hasn't.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeStart<'local>(
     mut unowned_env: EnvUnowned<'local>,
-    class: JClass<'local>,
+    _class: JClass<'local>,
     context: JObject<'local>,
     files_dir: JString<'local>,
 ) {
     unowned_env
         .with_env(|env| -> jni::errors::Result<()> {
             crate::init_logging();
+            // Before the engine calls into Kotlin (the service starts it alone after a kill).
+            crate::java::check(env, &jni::refs::LoaderContext::FromObject(&context));
             let context = env.new_local_ref(&context)?;
             if let Err(e) = rustls_platform_verifier::android::init_with_env(env, context) {
                 log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
@@ -35,7 +38,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeStart<'local>(
             crate::start_engine(root);
             // After the engine set the data folder: the first status read makes the bot.
             if SERVICE.get().is_none() {
-                let _ = SERVICE.set((env.get_java_vm()?, env.new_global_ref(&class)?));
+                let _ = SERVICE.set(env.get_java_vm()?);
                 start_updates();
             }
             Ok(())
@@ -197,40 +200,28 @@ fn start_updates() {
 
 /// Runs `work` with `TuruService`'s class on this thread (attached to the JVM); `None` before the
 /// service started the engine or when the call failed.
-pub(crate) fn with_service<T>(
-    work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>,
-) -> Option<T> {
-    let (vm, class) = SERVICE.get()?;
-    crate::attach(vm, |env: &mut Env| work(env, class))
+pub(crate) fn with_service<T>(work: impl FnOnce(&mut Env) -> jni::errors::Result<T>) -> Option<T> {
+    let vm = SERVICE.get()?;
+    crate::attach(vm, work)
         .inspect_err(|e| tracing::warn!("A call to TuruService failed: {e}"))
         .ok()
 }
 
 /// `TuruService.panicked(message)`: the panic's message goes with the crash report Sentry sends.
 pub(crate) fn panicked(message: &str) {
-    with_service(|env, class| {
+    with_service(|env| {
         let message = env.new_string(message)?;
-        env.call_static_method(
-            class,
-            jni_str!("panicked"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&message)],
-        )?;
+        TuruService::panicked(env, &message)?;
         Ok(())
     });
 }
 
 /// `TuruService.breadcrumb(category, message)`: a warning that goes with the next crash report.
 pub(crate) fn breadcrumb(category: &str, message: &str) {
-    with_service(|env, class| {
+    with_service(|env| {
         let category = env.new_string(category)?;
         let message = env.new_string(message)?;
-        env.call_static_method(
-            class,
-            jni_str!("breadcrumb"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
-            &[JValue::Object(&category), JValue::Object(&message)],
-        )?;
+        TuruService::breadcrumb(env, &category, &message)?;
         Ok(())
     });
 }
@@ -238,14 +229,9 @@ pub(crate) fn breadcrumb(category: &str, message: &str) {
 /// `TuruService.gpuLost(why)`: the GPU dropped the device ([`crate::memory`]), sent to Sentry as a
 /// warning of its own.
 pub(crate) fn gpu_lost(why: &str) {
-    with_service(|env, class| {
+    with_service(|env| {
         let why = env.new_string(why)?;
-        env.call_static_method(
-            class,
-            jni_str!("gpuLost"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&why)],
-        )?;
+        TuruService::gpu_lost(env, &why)?;
         Ok(())
     });
 }
@@ -253,22 +239,13 @@ pub(crate) fn gpu_lost(why: &str) {
 /// `TuruService.alert(kind, title, text)`: a notification while the app isn't on screen
 /// (`Platform::alert`). Through the service's class, as the activity may be gone.
 pub(crate) fn alert(kind: turu_frontend::platform::Alert, title: &str, text: &str) {
-    let Some((vm, class)) = SERVICE.get() else {
+    let Some(vm) = SERVICE.get() else {
         return;
     };
     let posted = crate::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
         let title = env.new_string(title)?;
         let text = env.new_string(text)?;
-        env.call_static_method(
-            class,
-            jni_str!("alert"),
-            jni_sig!("(ILjava/lang/String;Ljava/lang/String;)V"),
-            &[
-                JValue::Int(kind as i32),
-                JValue::Object(&title),
-                JValue::Object(&text),
-            ],
-        )?;
+        TuruService::alert(env, kind as i32, &title, &text)?;
         Ok(())
     });
     if let Err(e) = posted {
@@ -278,24 +255,20 @@ pub(crate) fn alert(kind: turu_frontend::platform::Alert, title: &str, text: &st
 
 /// `TuruService.status(title, text, running, paused, startable, awake)`.
 fn send(status: &Status) -> jni::errors::Result<()> {
-    let Some((vm, class)) = SERVICE.get() else {
+    let Some(vm) = SERVICE.get() else {
         return Ok(());
     };
     crate::attach(vm, |env: &mut Env| {
         let title = env.new_string(&status.title)?;
         let text = env.new_string(&status.text)?;
-        env.call_static_method(
-            class,
-            jni_str!("status"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZZ)V"),
-            &[
-                JValue::Object(&title),
-                JValue::Object(&text),
-                JValue::Bool(status.running),
-                JValue::Bool(status.paused),
-                JValue::Bool(status.startable),
-                JValue::Bool(status.awake),
-            ],
+        TuruService::status(
+            env,
+            &title,
+            &text,
+            status.running,
+            status.paused,
+            status.startable,
+            status.awake,
         )?;
         Ok(())
     })

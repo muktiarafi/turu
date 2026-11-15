@@ -130,13 +130,13 @@ fn select(tab: TabId) {
 
 /// A status event "tab" to the host SWF: `{"op": op, "client": client}`.
 fn send_host(op: &str, client: u8) {
-    let Some((vm, class)) = BRIDGE.get() else {
+    let Some(vm) = BRIDGE.get() else {
         tracing::warn!("No AIR yet: can't {op} client {client}");
         return;
     };
     let level = serde_json::json!({ "op": op, "client": client }).to_string();
     let sent = crate::android::attach(vm, |env: &mut jni::Env| {
-        crate::host::dispatch(env, class, "tab", &level)
+        crate::host::dispatch(env, "tab", &level)
     });
     if let Err(e) = sent {
         tracing::warn!("Couldn't {op} client {client}: {e}");

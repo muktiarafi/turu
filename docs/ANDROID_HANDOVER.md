@@ -240,11 +240,12 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   configuration changed, as insets come and go) reconfigured the surface, which drops its
   pictures; `Screen::resize` now does that only for a new size, and draws right away.
 * **The app's code is Kotlin, called from Rust over JNI** (package `com.muktiarafi.turu`, so the
-  native functions are `Java_com_muktiarafi_turu_<Class>_<method>`). What Rust calls or
-  implements must stay `@JvmStatic` in the class's `companion object` (`TuruService.status`,
-  `panicked`, `crashUploadsAvailable`, `setCrashUploads`, the `native*` externals), the methods
-  Rust calls not `internal` (their JVM names get mangled), and with the same parameter types, or
-  the call fails at run time (`NoSuchMethodError`, `UnsatisfiedLinkError`), not at build time.
+  native functions are `Java_com_muktiarafi_turu_<Class>_<method>`). Every method Rust calls or
+  implements is bound in `android/src/java.rs` (`bind_java_type!`); change it there with the
+  Kotlin. The methods Rust calls stay not `internal` (their JVM names get mangled), and the
+  `native*` externals `@JvmStatic` in the class's `companion object`. A mismatch stops the app at
+  start with the method's name (`java::check`; docs/ANDROID_NATIVE_UI.md, "Platform calls"), not
+  at build time: start the build once after changing either side.
   Keep the app ID (`applicationId`) as it is: a new one is a separate app to Android, installed
   next to the old one with its own empty data folder, and no update for people who have it.
 * **AGP 9's built-in Kotlin** compiles only `kotlin` source folders: the verifier module lists

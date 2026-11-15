@@ -15,8 +15,8 @@
 //! game's own (AIR's), which the host SWF keeps in step with the focused one.
 
 use crate::host::BRIDGE;
-use jni::objects::JValue;
-use jni::{Env, jni_sig, jni_str};
+use crate::java::Bridge;
+use jni::Env;
 use ndk::native_window::NativeWindow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
@@ -736,13 +736,8 @@ fn draw(
 /// Tells Kotlin where the game goes (`Bridge.gameInsets(left, top)`, pixels); false when it
 /// couldn't.
 fn game_insets((left, top): (u32, u32)) -> bool {
-    with_bridge(|env, class| {
-        env.call_static_method(
-            class,
-            jni_str!("gameInsets"),
-            jni_sig!("(II)V"),
-            &[JValue::Int(left as i32), JValue::Int(top as i32)],
-        )?;
+    with_bridge(|env| {
+        Bridge::game_insets(env, left as i32, top as i32)?;
         Ok(())
     })
 }
@@ -759,43 +754,30 @@ fn sync_field(field: &mut NativeField, egui: &egui::Context) -> bool {
                 Kind::Number => 3,
             };
             let contents = &focused.contents;
-            with_bridge(|env, class| {
+            with_bridge(|env| {
                 let text = env.new_string(&contents.text)?;
                 let hint = env.new_string(&focused.hint)?;
-                env.call_static_method(
-                    class,
-                    jni_str!("showUiField"),
-                    jni_sig!("(Ljava/lang/String;IIILjava/lang/String;)V"),
-                    &[
-                        JValue::Object(&text),
-                        JValue::Int(contents.start as i32),
-                        JValue::Int(contents.end as i32),
-                        JValue::Int(kind),
-                        JValue::Object(&hint),
-                    ],
+                Bridge::show_ui_field(
+                    env,
+                    &text,
+                    contents.start as i32,
+                    contents.end as i32,
+                    kind,
+                    &hint,
                 )?;
                 Ok(())
             });
         }
         Some(Change::Update(contents)) => {
-            with_bridge(|env, class| {
+            with_bridge(|env| {
                 let text = env.new_string(&contents.text)?;
-                env.call_static_method(
-                    class,
-                    jni_str!("updateUiField"),
-                    jni_sig!("(Ljava/lang/String;II)V"),
-                    &[
-                        JValue::Object(&text),
-                        JValue::Int(contents.start as i32),
-                        JValue::Int(contents.end as i32),
-                    ],
-                )?;
+                Bridge::update_ui_field(env, &text, contents.start as i32, contents.end as i32)?;
                 Ok(())
             });
         }
         Some(Change::Hide) => {
-            with_bridge(|env, class| {
-                env.call_static_method(class, jni_str!("hideUiField"), jni_sig!("()V"), &[])?;
+            with_bridge(|env| {
+                Bridge::hide_ui_field(env)?;
                 Ok(())
             });
         }
@@ -806,38 +788,26 @@ fn sync_field(field: &mut NativeField, egui: &egui::Context) -> bool {
 
 /// Brings the soft keyboard up for the UI's text box, or down (`Bridge.softKeyboard(shown)`).
 fn soft_keyboard(shown: bool) -> bool {
-    with_bridge(|env, class| {
-        env.call_static_method(
-            class,
-            jni_str!("softKeyboard"),
-            jni_sig!("(Z)V"),
-            &[JValue::Bool(shown)],
-        )?;
+    with_bridge(|env| {
+        Bridge::soft_keyboard(env, shown)?;
         Ok(())
     })
 }
 
 fn copy_text(text: &str) {
-    with_bridge(|env, class| {
+    with_bridge(|env| {
         let text = env.new_string(text)?;
-        env.call_static_method(
-            class,
-            jni_str!("copyText"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&text)],
-        )?;
+        Bridge::copy_text(env, &text)?;
         Ok(())
     });
 }
 
 /// Runs `work` with Kotlin's `Bridge` on this thread; false when it couldn't.
-fn with_bridge(
-    work: impl FnOnce(&mut Env, &jni::objects::JClass) -> jni::errors::Result<()>,
-) -> bool {
-    let Some((vm, class)) = BRIDGE.get() else {
+fn with_bridge(work: impl FnOnce(&mut Env) -> jni::errors::Result<()>) -> bool {
+    let Some(vm) = BRIDGE.get() else {
         return false;
     };
-    crate::android::attach(vm, |env: &mut Env| work(env, class))
+    crate::android::attach(vm, work)
         .inspect_err(|e| tracing::warn!("A call to Kotlin's Bridge failed: {e}"))
         .is_ok()
 }

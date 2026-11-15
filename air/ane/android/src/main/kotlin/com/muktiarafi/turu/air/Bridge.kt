@@ -27,6 +27,9 @@ import org.json.JSONObject
  * status event; AS3 answers through the extension's `reply`, which lands in [nativeReply]. Turu's
  * windows are drawn into a [TuruOverlay] over AIR's view, which [gameInsets] moves right of the
  * rail.
+ *
+ * Every `@JvmStatic` method the Rust side calls, and every `external`, is bound in
+ * `air/ane/rust/src/java.rs`: change it there too (a mismatch stops the app at start).
  */
 object Bridge {
     init {

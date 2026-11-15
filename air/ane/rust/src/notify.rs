@@ -5,9 +5,10 @@
 //! when it changed, and keeps `android-tabs.json` up to date.
 
 use crate::host::BRIDGE;
+use crate::java::Bridge;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{JClass, JString, JValue};
-use jni::{Env, EnvUnowned, jni_sig, jni_str};
+use jni::objects::{JClass, JString};
+use jni::{Env, EnvUnowned};
 use std::sync::Arc;
 use std::time::Duration;
 use turu_bot::Bot;
@@ -158,24 +159,20 @@ pub(crate) fn start_updates() {
 /// `Bridge.status(title, text, running, paused, startable, awake)`; false before Kotlin's `Bridge` is
 /// known.
 fn send(status: &Status) -> jni::errors::Result<bool> {
-    let Some((vm, class)) = BRIDGE.get() else {
+    let Some(vm) = BRIDGE.get() else {
         return Ok(false);
     };
     crate::android::attach(vm, |env: &mut Env| {
         let title = env.new_string(&status.title)?;
         let text = env.new_string(&status.text)?;
-        env.call_static_method(
-            class,
-            jni_str!("status"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;ZZZZ)V"),
-            &[
-                JValue::Object(&title),
-                JValue::Object(&text),
-                JValue::Bool(status.running),
-                JValue::Bool(status.paused),
-                JValue::Bool(status.startable),
-                JValue::Bool(status.awake),
-            ],
+        Bridge::status(
+            env,
+            &title,
+            &text,
+            status.running,
+            status.paused,
+            status.startable,
+            status.awake,
         )?;
         Ok(true)
     })

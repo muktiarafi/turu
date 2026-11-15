@@ -9,9 +9,9 @@
 //! Enter in the box, and Back takes the focus off it.
 
 use crate::platform::with_activity;
-use jni::objects::{JClass, JString, JValue};
+use jni::EnvUnowned;
+use jni::objects::{JClass, JString};
 use jni::sys::jint;
-use jni::{EnvUnowned, jni_sig, jni_str};
 use turu_frontend::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
 
 /// Kotlin's field for Turu's text boxes, as last shown or edited.
@@ -50,17 +50,13 @@ fn show(contents: &Contents, kind: Kind, hint: &str) {
     call("showUiField", |env, activity| {
         let text = env.new_string(&contents.text)?;
         let hint = env.new_string(hint)?;
-        env.call_method(
-            activity,
-            jni_str!("showUiField"),
-            jni_sig!("(Ljava/lang/String;IIILjava/lang/String;)V"),
-            &[
-                JValue::Object(&text),
-                JValue::Int(contents.start as jint),
-                JValue::Int(contents.end as jint),
-                JValue::Int(kind),
-                JValue::Object(&hint),
-            ],
+        activity.show_ui_field(
+            env,
+            &text,
+            contents.start as jint,
+            contents.end as jint,
+            kind,
+            &hint,
         )?;
         Ok(())
     });
@@ -70,16 +66,7 @@ fn show(contents: &Contents, kind: Kind, hint: &str) {
 fn update(contents: &Contents) {
     call("updateUiField", |env, activity| {
         let text = env.new_string(&contents.text)?;
-        env.call_method(
-            activity,
-            jni_str!("updateUiField"),
-            jni_sig!("(Ljava/lang/String;II)V"),
-            &[
-                JValue::Object(&text),
-                JValue::Int(contents.start as jint),
-                JValue::Int(contents.end as jint),
-            ],
-        )?;
+        activity.update_ui_field(env, &text, contents.start as jint, contents.end as jint)?;
         Ok(())
     });
 }
@@ -87,7 +74,7 @@ fn update(contents: &Contents) {
 /// `TuruActivity.hideUiField()`.
 fn hide() {
     call("hideUiField", |env, activity| {
-        env.call_method(activity, jni_str!("hideUiField"), jni_sig!("()V"), &[])?;
+        activity.hide_ui_field(env)?;
         Ok(())
     });
 }
@@ -95,7 +82,7 @@ fn hide() {
 /// Runs `work` with the activity, logging a failure of `what`.
 fn call(
     what: &str,
-    work: impl FnOnce(&mut jni::Env, &jni::objects::JObject) -> jni::errors::Result<()>,
+    work: impl FnOnce(&mut jni::Env, &crate::java::TuruActivity) -> jni::errors::Result<()>,
 ) {
     let Some(app) = crate::app() else {
         return;

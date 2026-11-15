@@ -4,9 +4,10 @@
 //! activity of the extension's own: AIR's is AIR's) and answers through `Bridge`.
 
 use crate::host::BRIDGE;
+use crate::java::Bridge;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{JClass, JObject, JString, JValue};
-use jni::{Env, EnvUnowned, jni_sig, jni_str};
+use jni::objects::{JClass, JObject, JString};
+use jni::{Env, EnvUnowned};
 use std::path::{Path, PathBuf};
 use turu_frontend::documents::{self, Waiting};
 use turu_frontend::platform::{Answer, FileDialog};
@@ -14,34 +15,27 @@ use turu_frontend::platform::{Answer, FileDialog};
 /// Shows the system's "open" picker; false when it can't (no activity, or a dialog is open).
 pub(crate) fn pick_file(dialog: &FileDialog, answer: Answer) -> bool {
     let (mime_types, folder) = documents::open_request(dialog);
-    show(Waiting::Open(answer), "openDocument", &mime_types, &folder)
+    show(Waiting::Open(answer), true, &mime_types, &folder)
 }
 
 /// Shows the system's "save" picker, like [`pick_file`].
 pub(crate) fn save_file(dialog: &FileDialog, answer: Answer) -> bool {
     let (mime_type, file_name) = documents::save_request(dialog);
-    show(
-        Waiting::Save(answer),
-        "createDocument",
-        &mime_type,
-        &file_name,
-    )
+    show(Waiting::Save(answer), false, &mime_type, &file_name)
 }
 
-/// `Bridge.<method>(first, second)`, which shows a picker; waits for its answer.
-fn show(dialog: Waiting, method: &str, first: &str, second: &str) -> bool {
+/// `Bridge.openDocument` (`open`) or `createDocument` with `first` and `second`, which shows a
+/// picker; waits for its answer.
+fn show(dialog: Waiting, open: bool, first: &str, second: &str) -> bool {
     documents::begin(dialog, || {
-        let shown = with_bridge(|env, class| {
+        let shown = with_bridge(|env| {
             let first = env.new_string(first)?;
             let second = env.new_string(second)?;
-            let method = jni::strings::JNIString::from(method);
-            env.call_static_method(
-                class,
-                &method,
-                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Z"),
-                &[JValue::Object(&first), JValue::Object(&second)],
-            )?
-            .z()
+            if open {
+                Bridge::open_document(env, &first, &second)
+            } else {
+                Bridge::create_document(env, &first, &second)
+            }
         });
         match shown {
             Ok(shown) => shown,
@@ -54,11 +48,9 @@ fn show(dialog: Waiting, method: &str, first: &str, second: &str) -> bool {
 }
 
 /// Runs `work` with Kotlin's `Bridge` class on this thread.
-fn with_bridge<T>(
-    work: impl FnOnce(&mut Env, &JClass) -> jni::errors::Result<T>,
-) -> Result<T, String> {
-    let (vm, class) = BRIDGE.get().ok_or("the bridge isn't set up yet")?;
-    crate::android::attach(vm, |env: &mut Env| work(env, class)).map_err(|e| e.to_string())
+fn with_bridge<T>(work: impl FnOnce(&mut Env) -> jni::errors::Result<T>) -> Result<T, String> {
+    let vm = BRIDGE.get().ok_or("the bridge isn't set up yet")?;
+    crate::android::attach(vm, work).map_err(|e| e.to_string())
 }
 
 /// The text of a nullable Java string.
@@ -109,18 +101,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeDocumentCreated<'loc
 /// `Bridge.writeDocument(uri, path)`: copies the file the window wrote into the document.
 fn write_document(uri: &str, path: &Path) -> Result<(), String> {
     let path = path.to_string_lossy().into_owned();
-    let error = with_bridge(|env, class| {
+    let error = with_bridge(|env| {
         let uri = env.new_string(uri)?;
         let path = env.new_string(&path)?;
-        let error = env
-            .call_static_method(
-                class,
-                jni_str!("writeDocument"),
-                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
-                &[JValue::Object(&uri), JValue::Object(&path)],
-            )?
-            .l()?;
-        optional_string(env, error)
+        let error = Bridge::write_document(env, &uri, &path)?;
+        optional_string(env, error.into())
     })?;
     error.map_or(Ok(()), Err)
 }

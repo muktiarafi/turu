@@ -8,11 +8,12 @@
 //! Notify Drop's beep plays on an AAudio stream of its own (`audio::beep`). Frame interpolation
 //! (Options > Application) is saved in the data folder.
 
+use crate::java::{TuruActivity, TuruService};
 use android_activity::AndroidApp;
+use jni::EnvUnowned;
 use jni::JavaVM;
-use jni::objects::{JClass, JObject, JString, JValue};
+use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jint, jobject};
-use jni::{EnvUnowned, jni_sig, jni_str};
 use std::path::Path;
 use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
 
@@ -108,28 +109,17 @@ impl Platform for AndroidPlatform {
         if let Some(available) = AVAILABLE.get() {
             return *available;
         }
-        let Some(available) = crate::notify::with_service(|env, class| {
-            env.call_static_method(
-                class,
-                jni_str!("crashUploadsAvailable"),
-                jni_sig!("()Z"),
-                &[],
-            )?
-            .z()
-        }) else {
+        let Some(available) =
+            crate::notify::with_service(|env| TuruService::crash_uploads_available(env))
+        else {
             return false;
         };
         *AVAILABLE.get_or_init(|| available)
     }
 
     fn set_crash_uploads(&self, on: bool) {
-        crate::notify::with_service(|env, class| {
-            env.call_static_method(
-                class,
-                jni_str!("setCrashUploads"),
-                jni_sig!("(Z)V"),
-                &[JValue::Bool(on)],
-            )?;
+        crate::notify::with_service(|env| {
+            TuruService::set_crash_uploads(env, on)?;
             Ok(())
         });
     }
@@ -156,20 +146,8 @@ impl Platform for AndroidPlatform {
             let [title, message, note, link, link_url, no, yes] = strings;
             let (title, message, note, link, link_url, no, yes) =
                 (title?, message?, note?, link?, link_url?, no?, yes?);
-            env.call_method(
-                activity,
-                jni_str!("askCrashUploads"),
-                jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"),
-                &[
-                    JValue::Object(&title),
-                    JValue::Object(&message),
-                    JValue::Object(&note),
-                    JValue::Object(&link),
-                    JValue::Object(&link_url),
-                    JValue::Object(&no),
-                    JValue::Object(&yes),
-                ],
-            )?;
+            activity
+                .ask_crash_uploads(env, &title, &message, &note, &link, &link_url, &no, &yes)?;
             Ok(())
         });
         asked
@@ -205,18 +183,10 @@ impl Platform for AndroidPlatform {
         let app = crate::app().ok_or("open Turu to install the update")?;
         let error = with_activity(&app, |env, activity| {
             let path = env.new_string(path.to_string_lossy())?;
-            let error = env
-                .call_method(
-                    activity,
-                    jni_str!("installPackage"),
-                    jni_sig!("(Ljava/lang/String;)Ljava/lang/String;"),
-                    &[JValue::Object(&path)],
-                )?
-                .l()?;
+            let error = activity.install_package(env, &path)?;
             if error.is_null() {
                 return Ok(None);
             }
-            let error = env.cast_local::<JString>(error)?;
             Ok(Some(error.try_to_string(env)?))
         })
         .map_err(|e| e.to_string())?;
@@ -280,8 +250,25 @@ pub fn clip_text() -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-/// Runs `work` with the activity, on a thread attached to the JavaVM.
+/// Runs `work` with the activity (its methods bound in `java.rs`), on a thread attached to the
+/// JavaVM. Only after [`crate::java::check`]: the cast looks the class up.
 pub(crate) fn with_activity<T>(
+    app: &AndroidApp,
+    work: impl FnOnce(&mut jni::Env, &TuruActivity) -> jni::errors::Result<T>,
+) -> jni::errors::Result<T> {
+    // SAFETY: android-activity hands out the process's JavaVM.
+    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+    // A global reference: it can only be borrowed, not wrapped as a local one.
+    let activity_raw = app.activity_as_ptr() as jobject;
+    crate::attach(&vm, |env| {
+        // SAFETY: the activity outlives this call.
+        let activity = unsafe { env.as_cast_raw::<TuruActivity>(&activity_raw) }?;
+        work(env, &activity)
+    })
+}
+
+/// Runs `work` with the activity as a plain object, on a thread attached to the JavaVM.
+pub(crate) fn with_activity_object<T>(
     app: &AndroidApp,
     work: impl FnOnce(&mut jni::Env, &JObject) -> jni::errors::Result<T>,
 ) -> jni::errors::Result<T> {
@@ -302,12 +289,7 @@ fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()>
     with_activity(app, |env, activity| {
         let subject = env.new_string(subject)?;
         let text = env.new_string(&text)?;
-        env.call_method(
-            activity,
-            jni_str!("shareText"),
-            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
-            &[JValue::Object(&subject), JValue::Object(&text)],
-        )?;
+        activity.share_text(env, &subject, &text)?;
         Ok(())
     })
 }
@@ -315,18 +297,10 @@ fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()>
 /// `TuruActivity.clipText()`: the clipboard's text, or `None` for an empty clipboard.
 fn paste(app: &AndroidApp) -> jni::errors::Result<Option<String>> {
     with_activity(app, |env, activity| {
-        let text = env
-            .call_method(
-                activity,
-                jni_str!("clipText"),
-                jni_sig!("()Ljava/lang/String;"),
-                &[],
-            )?
-            .l()?;
+        let text = activity.clip_text(env)?;
         if text.is_null() {
             return Ok(None);
         }
-        let text = env.cast_local::<JString>(text)?;
         Ok(Some(text.try_to_string(env)?))
     })
 }
@@ -335,12 +309,7 @@ fn paste(app: &AndroidApp) -> jni::errors::Result<Option<String>> {
 fn copy(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
     with_activity(app, |env, activity| {
         let text = env.new_string(text)?;
-        env.call_method(
-            activity,
-            jni_str!("copyText"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&text)],
-        )?;
+        activity.copy_text(env, &text)?;
         Ok(())
     })
 }
@@ -349,12 +318,7 @@ fn copy(app: &AndroidApp, text: &str) -> jni::errors::Result<()> {
 fn open_in_browser(app: &AndroidApp, url: &str) -> jni::errors::Result<()> {
     with_activity(app, |env, activity| {
         let url = env.new_string(url)?;
-        env.call_method(
-            activity,
-            jni_str!("openUrl"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&url)],
-        )?;
+        activity.open_url(env, &url)?;
         Ok(())
     })
 }

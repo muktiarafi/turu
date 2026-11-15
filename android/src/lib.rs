@@ -19,6 +19,7 @@ mod audio;
 mod frame_perf;
 mod game_field;
 mod input;
+mod java;
 mod memory;
 mod notify;
 mod pan;
@@ -94,6 +95,13 @@ fn android_main(app: AndroidApp) {
     *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
     if let Err(e) = init_certificates(&app) {
         log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
+    }
+    // Before the engine calls into Kotlin: the bindings checked, through the activity's loader.
+    if let Err(e) = platform::with_activity_object(&app, |env, activity| {
+        java::check(env, &jni::refs::LoaderContext::FromObject(activity));
+        Ok(())
+    }) {
+        log::error!("Couldn't check the Kotlin bindings: {e}");
     }
     let root = app
         .external_data_path()

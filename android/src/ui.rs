@@ -67,12 +67,7 @@ pub fn prefer_refresh_rate(hz: u32) {
         return;
     };
     let result = crate::platform::with_activity(&app, |env, activity| {
-        env.call_method(
-            activity,
-            jni::jni_str!("preferRefreshRate"),
-            jni::jni_sig!("(F)V"),
-            &[jni::objects::JValue::Float(hz as f32)],
-        )?;
+        activity.prefer_refresh_rate(env, hz as f32)?;
         Ok(())
     });
     if let Err(e) = result {

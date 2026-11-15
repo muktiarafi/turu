@@ -33,8 +33,8 @@ internal val CRASH_APP = CrashApp(
  * also when Android restarts the service after killing the process, with no activity), shows
  * the script's state with Pause and Stop (Start while one is loaded and stopped), and holds a wake lock while a script runs.
  *
- * The Rust side reaches only this class (its `@JvmStatic` methods, by name and JNI signature:
- * `notify.rs`, `platform.rs`), so keep those static, public and with the same parameter types.
+ * The Rust side reaches only this class's `@JvmStatic` methods, bound in `android/src/java.rs`:
+ * change them there too (a mismatch stops the app at start).
  */
 class TuruService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock

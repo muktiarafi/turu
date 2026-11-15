@@ -5,8 +5,8 @@
 //! SWF runs the callback on AIR's thread and answers with the extension's `reply`, which lands in
 //! [`answer`] here; the calling thread waits for it, as the Ruffle host waits on its event loop.
 
-use jni::objects::{Global, JClass, JValue};
-use jni::{Env, JavaVM, jni_sig, jni_str};
+use crate::java::Bridge;
+use jni::{Env, JavaVM};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,8 +19,8 @@ use turu_bot::{FlashArg, FlashHost, HostError};
 /// How long a bot thread waits for AIR to answer one call (as the Ruffle host).
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// The JVM and Kotlin's `Bridge` class: a native thread can't look the app's classes up itself.
-pub(crate) static BRIDGE: OnceLock<(JavaVM, Global<JClass<'static>>)> = OnceLock::new();
+/// The JVM, once `Bridge.nativeStart` ran (`Bridge`'s methods are bound in `java.rs`).
+pub(crate) static BRIDGE: OnceLock<JavaVM> = OnceLock::new();
 /// AIR's thread, which runs the AS3: a call from it would wait for itself.
 pub(crate) static AIR_THREAD: OnceLock<ThreadId> = OnceLock::new();
 
@@ -52,7 +52,7 @@ impl FlashHost for AirFlashHost {
             tracing::error!("Flash call {name} from AIR's thread; it would wait for itself");
             return Err(HostError::Closed);
         }
-        let Some((vm, class)) = BRIDGE.get() else {
+        let Some(vm) = BRIDGE.get() else {
             return Err(HostError::NoPlayer);
         };
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -65,7 +65,7 @@ impl FlashHost for AirFlashHost {
             "args": args.into_iter().map(to_json).collect::<Vec<_>>(),
         });
         let sent = crate::android::attach(vm, |env: &mut Env| {
-            dispatch(env, class, "call", &request.to_string())
+            dispatch(env, "call", &request.to_string())
         });
         if let Err(e) = sent {
             pending().get_or_insert_default().remove(&id);
@@ -117,19 +117,9 @@ fn to_json(arg: FlashArg) -> Value {
 }
 
 /// `Bridge.dispatch(code, level)`: a status event to AS3.
-pub(crate) fn dispatch(
-    env: &mut Env,
-    class: &JClass,
-    code: &str,
-    level: &str,
-) -> jni::errors::Result<()> {
+pub(crate) fn dispatch(env: &mut Env, code: &str, level: &str) -> jni::errors::Result<()> {
     let code = env.new_string(code)?;
     let level = env.new_string(level)?;
-    env.call_static_method(
-        class,
-        jni_str!("dispatch"),
-        jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
-        &[JValue::Object(&code), JValue::Object(&level)],
-    )?;
+    Bridge::dispatch(env, &code, &level)?;
     Ok(())
 }

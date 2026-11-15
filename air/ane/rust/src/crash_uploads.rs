@@ -9,8 +9,8 @@
 //! and Sentry's native handler then reports the abort with it, as one event.
 
 use crate::host::BRIDGE;
-use jni::objects::JValue;
-use jni::{Env, jni_sig, jni_str};
+use crate::java::Bridge;
+use jni::Env;
 use std::sync::OnceLock;
 
 /// Whether this build can send crash reports (the extension was built with a DSN).
@@ -20,18 +20,10 @@ pub(crate) fn available() -> bool {
     if let Some(available) = AVAILABLE.get() {
         return *available;
     }
-    let Some((vm, class)) = BRIDGE.get() else {
+    let Some(vm) = BRIDGE.get() else {
         return false;
     };
-    let asked = crate::android::attach(vm, |env: &mut Env| {
-        env.call_static_method(
-            class,
-            jni_str!("crashUploadsAvailable"),
-            jni_sig!("()Z"),
-            &[],
-        )?
-        .z()
-    });
+    let asked = crate::android::attach(vm, |env: &mut Env| Bridge::crash_uploads_available(env));
     match asked {
         Ok(available) => *AVAILABLE.get_or_init(|| available),
         Err(e) => {
@@ -43,16 +35,11 @@ pub(crate) fn available() -> bool {
 
 /// The user's answer (Options > Application, or the question): applied at once.
 pub(crate) fn set_enabled(on: bool) {
-    let Some((vm, class)) = BRIDGE.get() else {
+    let Some(vm) = BRIDGE.get() else {
         return;
     };
     let set = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
-        env.call_static_method(
-            class,
-            jni_str!("setCrashUploads"),
-            jni_sig!("(Z)V"),
-            &[JValue::Bool(on)],
-        )?;
+        Bridge::set_crash_uploads(env, on)?;
         Ok(())
     });
     if let Err(e) = set {
@@ -66,17 +53,12 @@ pub(crate) fn set_enabled(on: bool) {
 /// From the panic hook, before a release build's abort: the panic's message goes with the native
 /// crash Sentry reports.
 pub(crate) fn panicked(message: &str) {
-    let Some((vm, class)) = BRIDGE.get() else {
+    let Some(vm) = BRIDGE.get() else {
         return;
     };
     let _ = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
         let message = env.new_string(message)?;
-        env.call_static_method(
-            class,
-            jni_str!("panicked"),
-            jni_sig!("(Ljava/lang/String;)V"),
-            &[JValue::Object(&message)],
-        )?;
+        Bridge::panicked(env, &message)?;
         Ok(())
     });
 }
