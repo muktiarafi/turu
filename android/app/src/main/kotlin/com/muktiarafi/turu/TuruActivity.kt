@@ -76,7 +76,18 @@ class TuruActivity : GameActivity() {
         }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         started = true
-        TuruService.start(this)
+        // M1 spike: with turu-slots.txt the engines run in the slot services' processes, and
+        // this activity is only their shell (SlotShell).
+        val files = getExternalFilesDir(null) ?: filesDir
+        if (File(files, "turu-slots.txt").exists()) {
+            val view = mSurfaceView
+            if (view != null) {
+                shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start() }
+                handleSlotIntent(intent)
+            }
+        } else {
+            TuruService.start(this)
+        }
         Storage.init(this)
         // Back goes to the background like Home, instead of closing the activity: the game and a
         // script keep running either way, but this keeps the screen as it was. AndroidX's
@@ -170,6 +181,10 @@ class TuruActivity : GameActivity() {
      * goes on to what it landed on (the game, or Turu's windows).
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        shell?.let {
+            it.touch(event)
+            return true
+        }
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             for (field in arrayOf(gameField, uiField)) {
                 if (field.touchedOutside(event.rawX, event.rawY)) field.close()
@@ -261,7 +276,35 @@ class TuruActivity : GameActivity() {
         }
     }
 
+    /** M1 spike: the slot shell, while turu-slots.txt is in the data folder. */
+    private var shell: SlotShell? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleSlotIntent(intent)
+    }
+
+    /**
+     * M1 spike's adb controls (`am start -n com.muktiarafi.turu/.TuruActivity ...`): `--ei slot N`
+     * shows slot N; `--ei lock N --ei lockAction A` runs the file-lock probe in slot N (1 take,
+     * 2 let go); `--ei restartSlot N --ei restartDelay S` stops slot N and starts it again after S s.
+     */
+    private fun handleSlotIntent(intent: Intent?) {
+        val shell = shell ?: return
+        val extras = intent?.extras ?: return
+        if (extras.containsKey("slot")) shell.switchTo(extras.getInt("slot"))
+        if (extras.containsKey("lock")) {
+            val slot = extras.getInt("lock")
+            val action = extras.getInt("lockAction", 1)
+            thread(name = "Turu Lock Probe") { shell.lockProbe(slot, action) }
+        }
+        if (extras.containsKey("restartSlot")) {
+            shell.restartLater(extras.getInt("restartSlot"), extras.getInt("restartDelay", 30) * 1000L)
+        }
+    }
+
     override fun onDestroy() {
+        shell?.stop()
         displays().unregisterDisplayListener(displayListener)
         super.onDestroy()
     }

@@ -155,6 +155,39 @@ jni::bind_java_type! {
     },
 }
 
+jni::bind_java_type! {
+    rust_type = SlotService,
+    rust_type_vis = pub(crate),
+    java_type = com.muktiarafi.turu.SlotService,
+    native_methods_export = false,
+    native_methods {
+        static raw fn native_start_slot {
+            sig = (context: android.content.Context, files_dir: JString, slot: jint) -> void,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeStartSlot,
+        },
+        static raw fn native_attach {
+            sig = (surface: android.view.Surface, density: jfloat) -> jint,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeAttach,
+        },
+        static raw fn native_detach {
+            sig = () -> jint,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeDetach,
+        },
+        static raw fn native_resize {
+            sig = () -> void,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeResize,
+        },
+        static raw fn native_touch {
+            sig = (kind: jint, id: jint, x: jfloat, y: jfloat) -> void,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeTouch,
+        },
+        static raw fn native_lock_probe {
+            sig = (action: jint) -> jint,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeLockProbe,
+        },
+    },
+}
+
 /// Looks up every bound class's methods and registers its native methods, through `loader` (a
 /// native thread's own class loader doesn't see the app's classes). Each mismatch is logged with
 /// what Java said, and the app stops: a mismatch shows the first time a build is started.
@@ -163,6 +196,7 @@ pub(crate) fn check(env: &mut Env, loader: &LoaderContext) {
         ("TuruActivity", TuruActivityAPI::get(env, loader).map(drop)),
         ("TuruService", TuruServiceAPI::get(env, loader).map(drop)),
         ("Storage", StorageAPI::get(env, loader).map(drop)),
+        ("SlotService", SlotServiceAPI::get(env, loader).map(drop)),
     ];
     let count = checked.len();
     let failures: Vec<String> = checked

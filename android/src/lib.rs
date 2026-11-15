@@ -27,6 +27,7 @@ mod platform;
 mod restart;
 mod saf;
 mod screen;
+mod slots;
 mod storage;
 use turu_frontend::saved_tabs as tabs;
 mod ui;
@@ -107,15 +108,30 @@ fn android_main(app: AndroidApp) {
         .external_data_path()
         .or_else(|| app.internal_data_path())
         .expect("Android gives every app a files folder");
-    start_engine(root);
+    // M1 spike: the slot services' processes run the engines; this one is only the shell.
+    let shell = slots::spike_on(&root);
+    if shell {
+        tracing::info!(
+            "Slots on ({}): no engine in the activity's process",
+            slots::SWITCH_FILE
+        );
+    } else {
+        start_engine(root);
+    }
     let mut destroyed = false;
     while !destroyed {
         app.poll_events(None, |event| match event {
+            PollEvent::Main(MainEvent::Destroy) if shell => destroyed = true,
+            // The shell's activity hands its surface and touches to the slots itself.
+            PollEvent::Main(MainEvent::InputAvailable) if shell => drop_input(&app),
+            _ if shell => {}
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 *lock_window() = app.native_window();
                 run_on_engine(attach_surface);
             }
-            PollEvent::Main(MainEvent::TerminateWindow { .. }) => detach_surface(),
+            PollEvent::Main(MainEvent::TerminateWindow { .. }) => {
+                detach_surface();
+            }
             PollEvent::Main(
                 MainEvent::WindowResized { .. }
                 | MainEvent::ConfigChanged { .. }
@@ -150,19 +166,27 @@ pub(crate) fn start_engine(root: PathBuf) {
     });
 }
 
-fn lock_window() -> std::sync::MutexGuard<'static, Option<NativeWindow>> {
+/// Takes the shell's input events (keys; touches go to the slots from Kotlin) without using them.
+fn drop_input(app: &AndroidApp) {
+    if let Ok(mut inputs) = app.input_events_iter() {
+        while inputs.next(|_| InputStatus::Unhandled) {}
+    }
+}
+
+pub(crate) fn lock_window() -> std::sync::MutexGuard<'static, Option<NativeWindow>> {
     WINDOW.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn run_on_engine(work: impl FnOnce(&mut Player) + Send + 'static) {
+pub(crate) fn run_on_engine(work: impl FnOnce(&mut Player) + Send + 'static) {
     if let Some(sender) = ENGINE_TX.get() {
         let _ = sender.send(EngineEvent::Run(Box::new(work)));
     }
 }
 
 /// Stops drawing before Android takes the window away: the engine acknowledges between ticks
-/// (or not at all while it has no player yet, which draws nothing anyway).
-fn detach_surface() {
+/// (or not at all while it has no player yet, which draws nothing anyway). Whether it answered:
+/// a slot passes the surface on only then (`slots.rs`).
+pub(crate) fn detach_surface() -> bool {
     let (done, wait) = sync_channel(1);
     run_on_engine(move |player| {
         with_screen(Screen::detach);
@@ -174,11 +198,12 @@ fn detach_surface() {
         // Nothing is drawn until a window comes back. After the answer: it waits for the GPU.
         memory::trim(player, "the window went away");
     });
-    let _ = wait.recv_timeout(Duration::from_secs(2));
+    let answered = wait.recv_timeout(Duration::from_secs(2)).is_ok();
     *lock_window() = None;
+    answered
 }
 
-fn with_screen(work: impl FnOnce(&mut Screen)) {
+pub(crate) fn with_screen(work: impl FnOnce(&mut Screen)) {
     SCREEN.with_borrow_mut(|screen| {
         if let Some(screen) = screen {
             work(screen);
@@ -221,7 +246,7 @@ fn set_touchable(player: &mut Player, on: bool) {
 
 /// Draws in the current window from now on: the first one gets the screen. Without a window (the
 /// service started the engine alone), the game stays muted.
-fn attach_surface(player: &mut Player) {
+pub(crate) fn attach_surface(player: &mut Player) {
     let Some(window) = lock_window().clone() else {
         set_heard(player, false);
         set_touchable(player, false);
@@ -236,7 +261,10 @@ fn attach_surface(player: &mut Player) {
         }
         None => {
             let gpu = GPU.with_borrow(Clone::clone);
-            let density = app().as_ref().map_or(1.0, density) as f32;
+            let density = app()
+                .as_ref()
+                .map_or_else(|| f64::from(slots::density()), density)
+                as f32;
             *screen = gpu
                 .and_then(|(descriptors, blit)| Screen::new(descriptors, blit, &window, density));
             screen.is_some()
@@ -247,7 +275,7 @@ fn attach_surface(player: &mut Player) {
     }
 }
 
-fn resize(player: &mut Player) {
+pub(crate) fn resize(player: &mut Player) {
     // A copy: the lock isn't held while drawing.
     let Some(window) = lock_window().clone() else {
         return;
@@ -538,7 +566,8 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         root.display()
     );
 
-    let args_file = root.join(ARGS_FILE);
+    let in_slot = slots::slot().is_some();
+    let args_file = slots::args_file(root).unwrap_or_else(|| root.join(ARGS_FILE));
     let mut args = read_args(&args_file);
     let graphics = take_graphics(&mut args);
     let safe_drawing =
@@ -548,7 +577,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
     let releases_url = take_value(&mut args, "--releases-url");
-    restart::prepare(&mut args);
+    if !in_slot {
+        restart::prepare(&mut args);
+    }
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!(
@@ -577,10 +608,14 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     turu::configure_startup();
-    restart::start();
     turu::start_api();
-    turu::start_monitor();
-    turu::start_client_updates();
+    // A slot shares the data folder with the other: one web monitor and update check, the
+    // restart and saved tabs left to the normal app (M1 spike).
+    if !in_slot {
+        restart::start();
+        turu::start_monitor();
+        turu::start_client_updates();
+    }
     // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with.
     if let Some(seconds) = perf_log {
         // SAFETY: before the engine's threads exist (the perf log's is started just below).
@@ -647,7 +682,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // taken again when a tab request may have made another player the active one.
     let frames_seen = Cell::new(players.get().map_or(0, |player| player.frames_run()));
     // The tabs open before Android stopped the app, after this one (`android-tabs.json`).
-    tabs::reopen();
+    if !in_slot {
+        tabs::reopen();
+    }
     engine::run_loop_paced(
         &mut players,
         events,

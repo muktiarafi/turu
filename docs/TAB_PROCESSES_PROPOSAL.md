@@ -227,6 +227,65 @@ reports from earlier releases have no `tabs_most`.
   Tab Limit), and whether hidden slots' bindings waive priority (`BIND_WAIVE_PRIORITY`) so that
   Android kills a hidden slot first.
 
+#### M1 results so far (2026-11-16, emulator; phones open)
+
+Built on branch `spike/m1-slots`: `SlotService.kt` (`Slot1Service` in `:c1`, `Slot2Service` in
+`:c2`), `SlotShell.kt` (the activity as the shell: binds both, hands the surface over through a
+`Messenger` and waits for the slot to let go, forwards touches), `android/src/slots.rs` (the slot's
+natives), switched on by `turu-slots.txt`; each slot reads `turu-args-c<N>.txt` and skips the
+restart, saved tabs, web monitor and update checks. adb controls are in `TuruActivity`
+(`--ei slot N`, `--ei lock N --ei lockAction A`, `--ei restartSlot N --ei restartDelay S`).
+`tools/slots/run.sh` runs the checks below on a phone with two accounts.
+
+On the Android 16 arm64 emulator (one account in game, one at the login screen; debuggable APK;
+Vulkan on llvmpipe, a CPU renderer, so "GPU" memory is in each process's RAM, unlike a phone):
+
+| | PSS |
+|---|---|
+| Tabs, 1 account in game, shown | 359 MB |
+| Tabs, the same in game but never drawn + a 2nd tab at the login screen, shown | 360-368 MB |
+| Slots, the same states: shell + slot 1 (in game, never drawn) + slot 2 (login, shown) | 47 + 259-265 + 163-167 = **~475 MB** |
+| Slots, other states: slot 1 in game once drawn, shown / hidden | 346 / 334-337 MB |
+| Slots, other states: slot 2 at the login screen, never shown | 117 MB |
+| Slots, app in the background: shell / slot 1 / slot 2 | 41 (+29 swap) / 334 / 116 (+58 swap) MB |
+
+In the same states, two accounts cost about 365 MB as tabs and about 475 MB as slots: **about
+110 MB more**, of which the shell is ~45 MB. Which client was drawn matters as much as that (an
+in-game client is ~260 MB never drawn, ~340 MB once drawn), so only matched states compare. llvmpipe
+keeps GPU memory in each process's RAM, so the phone runs decide.
+
+Mechanics, all on the emulator:
+
+* **Hand-over works**: 11 switches over two runs, 25-326 ms each; the slot drops its wgpu surface
+  (swapchain) before answering, and neither slot logged "Couldn't set up the window" or "Couldn't
+  draw in the new window" (a refused swapchain). Slot 2's login
+  screen and slot 1's game showed in turn; touches reach the shown slot (a field took the focus,
+  Menu opened). Keys and the soft keyboard aren't forwarded (spike).
+* **A slot killed** (`kill -9`, the other slot on screen): back in 2 s (`START_STICKY`, restart
+  scheduled after 1 s) and logged back in by its own args; the other slot kept its process.
+* **Repeated kills back off**: 1 s, 4 s, 16 s (Android's own schedule): the restart policy can
+  lean on it.
+* **The shell killed**: both slots kept running. The first time, slot 2 was still drawing into the
+  dead activity's surface and the emulator's GPU layer aborted (`Failed to unbox VkDescriptorSet`,
+  in the emulator, not Turu; possibly caused by that, from one run each way). Each slot now watches the shell's Binder (`linkToDeath`) and lets
+  the surface go; rerun: both let go, the emulator stayed up, and opening the app again showed slot
+  1's game at once (same process, no relogin). Exit reports of slot processes show in the app's
+  crash list too (one record list per package).
+* **No shell at all**: `START_STICKY` alone restarts a killed slot (2 s), without any binding.
+* **Background starts**: a slot's foreground service started 70 s after Home was allowed, with
+  battery optimisation on and off alike; the reason read (exempt run) was `PROC_STATE_FGS`: the
+  other slot's foreground service keeps the app's uid in that state.
+* **Priority**: a hidden slot killed while the activity was in front died as `vis BTOP`: the
+  shell's plain binding (`BIND_AUTO_CREATE`) lifts every slot while the app is on screen, not only
+  the shown one. Before the phones' low-memory run, decide whether hidden slots' bindings should
+  waive priority (`Context.BIND_WAIVE_PRIORITY`), so that Android picks a hidden slot first.
+* **File locks between processes** on the shared-storage data folder (`File::try_lock`, as the
+  army's): slot 1 held, slot 2 refused; slot 1 let go, slot 2 got it; and back. They work.
+* **Notifications**: each slot's foreground service has its own (ids 101, 102), side by side.
+
+Not tried: which process the low-memory killer picks (no memory pressure on the emulator: the
+script's last step on a phone), phones' GPUs, a 4 GB phone.
+
 ### M2: client mode and shell messages (shared, built on the desktop)
 
 * `frontend/`: the screen from `android/src/screen.rs`, made to draw to any wgpu target; the
