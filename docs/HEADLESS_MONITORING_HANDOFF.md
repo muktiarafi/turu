@@ -97,6 +97,42 @@ you were on); left as is.
 (`LOAD_REPEAT_GAP`). In game with `TURU_PACKET_LOG=1`: one `getQuests` for quest 2777 per
 registration. Test: `quest_loads_skip_ids_asked_for_within_a_second` (`bot/tests/loader_grabber.rs`).
 
+### 3b. Monster SWFs piled up again: your avatar's spell-effect queue (turu.swf, 2026-11-16)
+
+Measured with a local script, not committed (so nobody runs it instead of `farm/rep/BlacksmithingREP`):
+`CoreFarms.blacksmithingREP`'s quest 2777 loop (`Core.registerQuests(2777)`, then `Core.huntMonster`
+Wolf in greenguardeast and Slime in greenguardwest) run until stopped, past rank 4: every Greenguard East monster stayed **x19 after 20 rounds**, 37 -> 157 live SWFs,
+though fix 1 was in.
+
+**Cause.** `TURU_RETAIN_URL=mon/` (all monster libraries hidden from the walk) gave the chain
+`World.myAvatar.pMC._spFXQueue -> {strl, fx, avts} -> Avatar.pMC -> MonsterMC -> frame script ->
+the left map's monster domain`. AQW's `Game.doAnim` pushes `{strl, fx, avts}` (`avts`: the targets)
+onto the private `AvatarMC._spFXQueue` whenever an effect is already pending; only the skeleton's frame
+scripts (`castSpellFX` -> `canCastSpFX` -> the `nextSpFX` getter, a `shift`) take entries off, and
+`clearSpFXQueue` runs only in `fClose` and some `World.castSpellFX` branches. 3-19 entries were left
+per map visit, at 2 FPS and at 24 FPS alike (frame rate isn't the cause), and one entry keeps a whole
+map's monsters (their shared domain, fix 1).
+
+**Fix.** turu.swf's `Events` calls `myAvatar.pMC.clearSpFXQueue()` when a map finishes loading
+(`clearSpellFX`). Same loop, 14 min (~27 rounds, 217 kills): 75-94 live SWFs, every
+monster x1-2, the Rust heap without growth. Again for 10 min (20 rounds, `20261116-015032-*`):
+72-84 live SWFs, resident 251 -> 262 MB, flat over the last 5 min (before the fix: 250 -> 283 MB
+over 20 rounds, still climbing). Turu Mas packs the same `bot/assets/turu.swf`
+(`air/app/build.sh`). Not established:
+- anything past ~15 min;
+- whether the queue grows during a long stay on one map (each entry holds that map's live monsters, so
+  it would cost only the entries);
+- why only Greenguard East's monsters were pinned, though West left entries too;
+- whether Flash Player drains the queue faster: the client doesn't clear it on a map change, which may
+  or may not show there.
+
+The clear fires on `mapLoadInProgress` going true -> false, sampled once a frame; at 2 FPS a quick
+cached load can fall between frames, and the next seen load clears everything, so it stays bounded.
+
+The client's bytecode was read with a throwaway disassembler on Ruffle's `swf` crate
+(`swf::avm2::read::Reader`, `read_op`), over `Game*.swf` from the disk cache (`<data>/cache/gamefiles`,
+the SWF after the entry's text header).
+
 ## Open issues (most valuable first)
 
 ### 4. Skills sent less than 1 s apart are sometimes rejected

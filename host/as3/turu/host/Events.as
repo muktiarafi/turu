@@ -8,7 +8,8 @@ import flash.utils.getTimer;
  * frame it looks at a few values and calls `event(name, json)` only when one changed.
  *
  * - `world` `{present}`: `world` came or went (login, logout, a lost connection).
- * - `mapLoaded` `{map}`: `world.mapLoadInProgress` went from true to false.
+ * - `mapLoaded` `{map}`: `world.mapLoadInProgress` went from true to false. It also empties
+ *   your avatar's queue of undrawn spell effects then (`clearSpellFX`).
  * - `cellChanged` `{cell}`: `world.strFrame` changed.
  * - `arrived` `{x, y}`: the avatar moved, then stood still for two frames.
  * - `loading` `{shown}`: the loading screen (`mcConnDetail` on the stage) came up or went.
@@ -124,6 +125,25 @@ public class Events {
         }
     }
 
+    /**
+     * Empties your avatar's queue of spell effects waiting to be drawn (`AvatarMC._spFXQueue`) on
+     * a new map. `Game.doAnim` queues one, with the monsters it hit, whenever an effect is
+     * already pending, and the game clears the queue only in `fClose` and in some branches of
+     * `World.castSpellFX`, so entries outlive the map. Each one kept the left map's monster clips
+     * and with them the shared domain of all its monster SWFs: a copy of every monster stayed
+     * loaded per visit (x19 after 20 rounds of Greenguard East and West, at any frame rate).
+     * What's dropped is only effects not yet drawn for monsters no longer there.
+     */
+    private function clearSpellFX(w:*):void {
+        try {
+            var pMC:* = w.myAvatar != null ? w.myAvatar.pMC : null;
+            if (pMC != null) {
+                pMC.clearSpFXQueue();
+            }
+        } catch (e:Error) {
+        }
+    }
+
     private function lookAtScreens(game:*):void {
         var shown:Boolean = game.mcConnDetail != null && game.mcConnDetail.stage != null;
         if (shown != loading) {
@@ -144,6 +164,7 @@ public class Events {
     private function lookAtWorld(w:*):void {
         var inProgress:Boolean = w.mapLoadInProgress === true;
         if (mapLoading && !inProgress) {
+            clearSpellFX(w);
             emit("mapLoaded", {map: String(w.strMapName)});
         }
         mapLoading = inProgress;
