@@ -155,7 +155,7 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
   (`http://localhost:9021/#<key>`, the key from `docker compose exec main cat /data/monitor-key`);
   the control API wants its token as always.
 * With a memory limit (`docker run --memory=1g`, or `mem_limit` in `compose.yaml`), the web
-  monitor's machine line shows the container's use of it ("Container 0.4 of 1.0 GB"), read from
+  monitor's machine strip shows the container's use of it ("Container 0.4 GB of 1.0 GB"), read from
   the cgroup: the free memory beside it is the host's.
 * Several accounts: one service each, all on the `turu-data` volume (as "Several accounts"
   below), each with its own env file and host port; the others report to the first one's

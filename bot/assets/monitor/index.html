@@ -173,54 +173,90 @@ main { padding: 16px 20px 96px; min-width: 0; }
 .group:first-child { margin-top: 0; }
 .group small { font-weight: 500; color: var(--ink-3); }
 .group::after { content: ""; flex: 1; border-top: 1px solid var(--rule-soft); translate: 0 -3px; }
-/* The machine line: this computer's CPU and memory, and Turu's, under its group head (or above the
-   toolbar when there are no heads). Its hour of Turu's memory is drawn as wax dots, like a trace. */
-.host { margin: -2px 0 8px; font-size: 13px; color: var(--ink-2); }
-.host[hidden] { display: none; }
-#hostLine { margin: 0 0 12px; }
-#hostLine .host { margin: 0; }
-#hostLine .host + .host { margin-top: 6px; }
+/* The machine strip: this computer's CPU and memory, and Turu's, as the top of its group's sheet
+   (a sheet of its own above the toolbar when there are no group heads). Fixed-width readouts so
+   figures change in place; Turu's hour of memory is drawn as wax dots, like a bot's trace. */
+.host:empty, .host[hidden] { display: none; }
+.host { container-type: inline-size; background: var(--field); border: 1px solid var(--rule); border-bottom: 0; border-radius: var(--r) var(--r) 0 0; overflow: hidden; }
+.host:not(:empty) + .sheet { border-top-left-radius: 0; border-top-right-radius: 0; }
+#hostLine { display: grid; gap: 8px; margin: 0 0 14px; background: none; border: 0; border-radius: 0; overflow: visible; }
+#hostLine[hidden] { display: none; }
+#hostLine .host { border-bottom: 1px solid var(--rule); border-radius: var(--r); }
 .host-sum {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 18px; width: 100%; padding: 2px 0; margin: 0;
-  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: flex-start; gap: 24px; width: 100%; min-height: 56px; padding: 10px 14px; margin: 0;
+  border: 0; border-radius: 0; background: none; font: inherit; color: var(--ink-2); text-align: left; cursor: pointer;
+  transition: background-color .15s ease-out;
 }
-.host-sum > span { white-space: nowrap; }
-.host-sum .turu { display: inline-flex; align-items: center; gap: 12px; }
-.host-sum b { color: var(--ink); font-weight: 600; }
-.host-sum .name { color: var(--ink-3); font-weight: 600; margin-right: -6px; }
-.host-sum:hover .hdots circle { fill: var(--wax); }
-.host-sum:hover .i { color: var(--soga); }
-@media (pointer: coarse) { .host-sum { min-height: 40px; } }
-.host-sum .i { width: 14px; height: 14px; margin-left: 6px; color: var(--ink-3); transition: rotate .2s cubic-bezier(.16, 1, .3, 1); }
-.host-sum[aria-expanded="true"] .i { rotate: 90deg; }
-.hdots { width: 66px; height: 16px; margin-left: 10px; overflow: visible; vertical-align: middle; }
-.hdots circle { fill: color-mix(in srgb, var(--wax) 55%, var(--wax-dim)); transition: fill .15s ease-out; }
+.host-sum:hover { background: color-mix(in srgb, var(--raise) 70%, var(--field)); }
+.host-sum:focus-visible { outline-offset: -2px; }
+.host-sum .name { flex: 0 1 auto; align-self: center; min-width: 72px; max-width: 160px; font-size: 13px; font-weight: 650; color: var(--ink-2); overflow-wrap: break-word; }
+.hs-group { display: flex; align-items: flex-start; gap: 10px 24px; min-width: 0; }
+.hs-sys { flex: 0 1 auto; flex-wrap: wrap; min-width: 168px; }
+.hs-turu { flex: none; margin-left: auto; padding-left: 24px; border-left: 1px solid var(--rule-soft); }
+.rd { display: grid; gap: 3px; flex: none; min-width: 0; }
+.rd.cpu, .rd.tcpu { width: 116px; } .rd.mem, .rd.tmem { width: 168px; } .rd.box { width: 148px; }
+.rd .k { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.rd .v { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd .v b { color: var(--ink); font-weight: 600; }
+.rd .v small { font-size: 12px; color: var(--ink-3); }
+/* A thread under a share: how full the machine is. Neutral ink; a warned figure takes its dye. */
+.rd .bar { display: block; height: 3px; border-radius: 2px; background: var(--rule-soft); overflow: hidden; }
+.rd .bar i { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--ink) 40%, var(--rule)); transition: width .4s cubic-bezier(.16, 1, .3, 1); }
+.hdots { display: block; width: 100%; max-width: 168px; height: auto; overflow: visible; }
+.hdots circle { fill: color-mix(in srgb, var(--wax) 55%, var(--wax-dim)); }
 .hdots circle.now { fill: var(--wax); }
-.hdots circle.off, .host-sum:hover .hdots circle.off { fill: var(--wax-dim); }
+.hdots circle.off { fill: var(--wax-dim); }
+.hs-more { flex: none; align-self: center; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-size: 12px; color: var(--ink-3); transition: color .15s ease-out; }
+.host-sum:hover .hs-more { color: var(--soga); }
+.hs-more .i { width: 14px; height: 14px; transition: rotate .2s cubic-bezier(.16, 1, .3, 1); }
+.host-sum[aria-expanded="true"] .hs-more .i { rotate: 90deg; }
 /* A figure the "Needs you" band warns about wears the warning's dye, with its dot. */
-.host-sum .mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
-.host-sum .bad b { color: var(--mengkudu); } .host-sum .warn b { color: var(--kunyit); }
+.host .mark, .procs .mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
+.rd.bad .v b { color: var(--mengkudu); } .rd.warn .v b { color: var(--kunyit); }
+.rd.bad .bar i { background: var(--mengkudu); } .rd.warn .bar i { background: var(--kunyit); }
 /* The details: the system, the hour as a trace, then each Turu process in steady columns. */
-.host-more { display: grid; gap: 14px; margin: 8px 0 6px; padding: 12px 0 2px; border-top: 1px solid var(--rule-soft); max-width: 640px; }
-.host-more h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.host-more {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 14px 32px;
+  padding: 14px 14px 16px; border-top: 1px solid var(--rule-soft); background: color-mix(in srgb, var(--sunk) 25%, var(--field));
+}
+.host-more h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
 .host-more p { margin: 0; }
-.host-sys { color: var(--ink-2); overflow-wrap: anywhere; }
-.host-range { margin-top: 8px !important; color: var(--ink-2); }
+.host-sys { grid-column: 1 / -1; font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+.host-range { margin-top: 10px !important; font-size: 13px; color: var(--ink-2); }
 .host-range b, .procs b { color: var(--ink); font-weight: 600; }
 .host-note { color: var(--ink-3); font-size: 12px; }
+.host-more > .host-note { grid-column: 1 / -1; }
 .hgraph { position: relative; height: 34px; margin: 0 3px; }
 .hgraph i { position: absolute; width: 4px; height: 4px; border-radius: 50%; translate: -50% 50%; background: color-mix(in srgb, var(--wax) 60%, var(--wax-dim)); }
 .hgraph i.off { width: 3px; height: 3px; background: var(--wax-dim); }
 .hgraph i.now { width: 7px; height: 7px; background: var(--wax); }
 .procs { font-size: 13px; }
-.procs th, .procs td { padding: 6px 0; background: none; white-space: nowrap; }
+.procs th, .procs td { padding: 7px 0; background: none; white-space: nowrap; }
 .procs th { padding-top: 0; font-weight: 400; }
 .procs tbody tr:last-child td { border-bottom: 0; }
 .procs .num { width: 1%; padding-left: 18px; text-align: right; }
-.procs .who { white-space: normal; overflow-wrap: anywhere; }
+.procs .who { white-space: normal; overflow-wrap: anywhere; color: var(--ink-2); }
 .procs small { display: block; color: var(--ink-3); font-size: 12px; }
-.procs .mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
 .procs .bad b, .procs small .bad { color: var(--mengkudu); } .procs .warn b { color: var(--kunyit); }
+/* A narrow strip (a phone, or beside the docked panel): the machine on the left, Turu on the
+   right, the chevron at the end. */
+@container (max-width: 840px) {
+  .host-sum { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: start; gap: 10px 14px; padding: 12px; }
+  .host-sum .name { grid-column: 1 / -1; min-width: 0; max-width: none; }
+  .hs-sys { min-width: 0; }
+  .hs-group { flex-direction: column; gap: 10px; }
+  .hs-sys { flex-wrap: nowrap; }
+  .hs-turu { margin-left: 0; padding-left: 14px; }
+  .rd.cpu, .rd.tcpu, .rd.mem, .rd.tmem, .rd.box { width: auto; }
+  .rd .v small { display: block; }
+  .hs-more { grid-column: 3; align-self: center; }
+  .hs-more span { display: none; }
+  .host-more { padding: 12px; }
+}
+@media (max-width: 900px) {
+  .host-more { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) { .host-sum { min-height: 56px; } }
 .sheet { background: var(--field); border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
 .row, .rowhead {
   display: grid; align-items: center; column-gap: 14px; padding: 9px 14px;
@@ -285,7 +321,7 @@ main { padding: 16px 20px 96px; min-width: 0; }
 .axis { display: flex; justify-content: space-between; color: var(--ink-3); font-size: 11px; margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .trace i.now.w::after, .state.changed .mark { animation: none; }
-  .host-sum .i, .hdots circle { transition: none; }
+  .hs-more .i, .rd .bar i { transition: none; }
   .bar i { transition: none; }
 }
 
@@ -467,16 +503,6 @@ body.streamer .priv { filter: blur(6px); }
   .attention .who { flex: 1; }
   .attention .why { flex-basis: 100%; order: 2; white-space: normal; padding-left: 20px; }
   .attention .acts { order: 3; padding-left: 20px; }
-  /* The machine on the left, Turu on the right. */
-  .host-sum { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); grid-template-areas: "name name" "cpu tcpu" "mem tmem" "box box"; gap: 3px 14px; }
-  .host-sum > span, .host-sum .turu > span { white-space: normal; }
-  .hdots { width: 46px; margin-left: 8px; }
-  .host-sum .lbl { display: none; } /* "free" says it: room for Turu's column */
-  .host-sum .name { grid-area: name; }
-  .host-sum .turu { display: contents; }
-  .host-sum.nocpu { grid-template-areas: "name name" "mem tcpu" "box tmem"; }
-  .host-sum .cpu { grid-area: cpu; } .host-sum .mem { grid-area: mem; } .host-sum .box { grid-area: box; }
-  .host-sum .tcpu { grid-area: tcpu; } .host-sum .tmem { grid-area: tmem; }
 }
 </style>
 </head>
@@ -1225,17 +1251,17 @@ async function loadHostHistory(host) {
     renderHost();
   } catch {}
 }
-// Turu's memory over the hour as wax dots: one per two minutes, higher for more memory.
+// Turu's memory over the hour as wax dots under its figure: one per two minutes, higher for more
+// memory; slots not reached yet stay unlit on the baseline, as on a bot's trace.
 function hostDots(points) {
   const pts = points.filter((_, i) => (points.length - 1 - i) % 2 === 0).slice(-SLOTS);
-  if (pts.length < 2) return "";
+  const w = 168, h = 10, step = (w - 3) / (SLOTS - 1), base = h - 1.5;
   const vs = pts.map(p => p[1]), min = Math.min(...vs), max = Math.max(...vs);
   const span = Math.max(max - min, 64 * MB); // a flat hour stays flat, not magnified noise
-  const w = 66, h = 16, step = w / (SLOTS - 1), x0 = w - step * (pts.length - 1);
-  // Slots not reached yet stay as unlit dots on the baseline, as on a bot's trace.
-  const empty = Array.from({ length: SLOTS - pts.length }, (_, i) => `<circle class="off" r="1" cx="${(i * step).toFixed(1)}" cy="${h - 2.5}"/>`).join("");
-  const dots = empty + pts.map((p, i) => `<circle${i === pts.length - 1 ? ' class="now" r="2.2"' : ' r="1.3"'} cx="${(x0 + i * step).toFixed(1)}" cy="${(h - 2.5 - (p[1] - min) / span * (h - 5)).toFixed(1)}"/>`).join("");
-  return `<svg class="hdots" viewBox="0 0 ${w} ${h}" aria-hidden="true">${dots}</svg>`;
+  const x0 = 1.5 + step * (SLOTS - pts.length);
+  const empty = Array.from({ length: SLOTS - pts.length }, (_, i) => `<circle class="off" r="1.2" cx="${(1.5 + i * step).toFixed(1)}" cy="${base}"/>`).join("");
+  const dots = pts.map((p, i) => `<circle${i === pts.length - 1 ? ' class="now" r="2.2"' : ' r="1.5"'} cx="${(x0 + i * step).toFixed(1)}" cy="${(base - (p[1] - min) / span * (h - 3)).toFixed(1)}"/>`).join("");
+  return `<svg class="hdots" viewBox="0 0 ${w} ${h}" aria-hidden="true">${empty}${dots}</svg>`;
 }
 const machineName = t => t.machine ?? "This PC";
 // A process in a few words, for "Needs you": an Army client by its label, else where Turu runs.
@@ -1271,27 +1297,30 @@ function hostLine(m, n, labelled, issues) {
   const points = hostHistory.get(m.host)?.points ?? [];
   const open = hostOpen.has(m.host), more = `hostMore${n}`;
   // A figure "Needs you" warns about: its dye and dot.
-  const flag = (cls, field) => { const kind = issues.find(i => i[4] === field)?.[2]; return [kind ? `${cls} ${kind}` : cls, kind ? `<span class="mark ${kind}"></span>` : ""]; };
-  const span = (cls, field, html) => { const [c, mark] = flag(cls, field); return `<span class="${c}">${mark}${html}</span>`; };
-  const parts = [
-    ...(m.os === "android" && m.cpuPercent == null ? [] : [span("cpu", "cpu", `CPU <b>${cpu(m.cpuPercent)}</b> of ${m.cores} core${m.cores > 1 ? "s" : ""}`)]),
-    span("mem", "mem", `<span class="lbl">Memory </span><b>${bytes(m.memoryAvailable)}</b> free of ${gb(m.memoryTotal)} GB`),
-    ...(one?.container ? [span("box", "box", `Container <b>${gb(one.container.used)}</b> of ${gb(one.container.limit)} GB`)] : []),
+  const flag = field => issues.find(i => i[4] === field)?.[2];
+  const bar = share => `<span class="bar"><i style="width:${Math.max(0, Math.min(100, share * 100)).toFixed(1)}%"></i></span>`;
+  const rd = (cls, field, label, value, under) => {
+    const kind = flag(field);
+    return `<span class="rd ${cls}${kind ? ` ${kind}` : ""}"><span class="k">${kind ? `<span class="mark ${kind}"></span>` : ""}${label}</span><span class="v">${value}</span>${under}</span>`;
+  };
+  const sys = [
+    ...(m.os === "android" && m.cpuPercent == null ? [] : [rd("cpu", "cpu", "CPU", `<b>${cpu(m.cpuPercent)}</b> <small>of ${m.cores} core${m.cores > 1 ? "s" : ""}</small>`, bar((m.cpuPercent ?? 0) / 100))]),
+    rd("mem", "mem", "Memory", `<b>${bytes(m.memoryAvailable)}</b> <small>free of ${gb(m.memoryTotal)} GB</small>`, bar(1 - m.memoryAvailable / m.memoryTotal)),
+    ...(one?.container ? [rd("box", "box", "Container", `<b>${gb(one.container.used)} GB</b> <small>of ${gb(one.container.limit)} GB</small>`, bar(one.container.used / one.container.limit))] : []),
   ];
   const cpus = turu.map(t => t.cpuPercent).filter(p => p != null);
   const turuCpu = cpus.length ? cpus.reduce((a, b) => a + b, 0) : null;
   const turuMem = turu.reduce((a, t) => a + turuMemory(t), 0);
   const who = one ? "Turu" : `<span title="${turu.length} Turu processes on this machine">Turu ×${turu.length}</span>`;
-  const hourTitle = points.length >= 2 ? ` title="Turu's memory over the last ${points.length} minutes: ${range(points[0][1], points.at(-1)[1])}"` : "";
-  const [memCls, memMark] = flag("tmem", "grow");
-  parts.push(`<span class="turu"><span class="tcpu">${who} <b>${cpu(turuCpu)}</b> of a core</span><span class="${memCls}"${hourTitle}>${memMark}<b>${bytes(turuMem)}</b>${hostDots(points)}${icon("open")}</span></span>`);
+  const hourTitle = points.length >= 2 ? `Turu's memory over the last ${points.length} minutes: ${range(points[0][1], points.at(-1)[1])}` : "";
+  const tmem = rd("tmem", "grow", `${who} memory`, `<b>${bytes(turuMem)}</b>`, hostDots(points)).replace('<span class="rd', `<span${hourTitle ? ` title="${hourTitle}"` : ""} class="rd`);
+  const turuParts = [rd("tcpu", "", `${who} CPU`, `<b>${cpu(turuCpu)}</b> <small>of a core</small>`, ""), tmem];
   const label = labelled ? `<span class="name">${esc(machineName(turu[0]))}</span>` : "";
-  const noCpu = !parts[0].startsWith('<span class="cpu');
-  const sum = `<button type="button" class="host-sum${noCpu ? " nocpu" : ""}" data-host-toggle="${esc(m.host)}" aria-expanded="${open}" aria-controls="${more}">${label}${parts.join("")}</button>`;
+  const sum = `<button type="button" class="host-sum" data-host-toggle="${esc(m.host)}" aria-expanded="${open}" aria-controls="${more}">${label}<span class="hs-group hs-sys">${sys.join("")}</span><span class="hs-group hs-turu">${turuParts.join("")}</span><span class="hs-more"><span>Details</span>${icon("open")}</span></button>`;
   if (!open) return sum;
   const hour = points.length >= 2 ? points : null;
   const system = m.osVersion ?? SYSTEMS[m.os] ?? m.os;
-  const sys = `<p class="host-sys">${esc(system)} · ${m.cores} core${m.cores > 1 ? "s" : ""}</p>`;
+  const sysLine = `<p class="host-sys">${esc(system)} · ${m.cores} core${m.cores > 1 ? "s" : ""}</p>`;
   const hourHtml = hour
     ? `<section><h3>Turu's memory, last hour</h3>${hostGraph(hour)}<p class="host-range">Turu used <b>${range(hour[0][1], hour.at(-1)[1])}</b>${hour.length < 55 ? ` over ${hour.length} minutes` : ""}; the machine had at least <b>${bytes(Math.min(...hour.map(p => p[2])))}</b> free.</p></section>`
     : `<section><h3>Turu's memory, last hour</h3><p class="host-note">It fills in a point a minute; the first comes within a minute of Turu starting.</p></section>`;
@@ -1306,7 +1335,7 @@ function hostLine(m, n, labelled, issues) {
   }).join("");
   const procs = `<section><h3>${one ? "Turu" : `${turu.length} Turu processes`}</h3><table class="procs"><thead><tr><th scope="col">Process</th><th scope="col" class="num" title="A share of one core">CPU</th><th scope="col" class="num">Memory</th><th scope="col" class="num" title="The most it has used">Most</th></tr></thead><tbody>${rows}</tbody></table></section>`;
   const note = `<p class="host-note">Turu's CPU is a share of one core (above 100% when several are busy); the machine's, of all ${m.cores}.</p>`;
-  return sum + `<div class="host-more" id="${more}">${sys}${hourHtml}${procs}${note}</div>`;
+  return sum + `<div class="host-more" id="${more}">${sysLine}${hourHtml}${procs}${note}</div>`;
 }
 // What's wrong with the machines, worst first: [host, who, "bad" | "warn", reason, the line's
 // figure it's about, and for a process's own trouble its id].

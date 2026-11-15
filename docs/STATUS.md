@@ -393,9 +393,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   with the kernel and whether it's in a container, "Android 14, kernel 5.15") with the
   OS's own calls (`/proc` and the cgroup files; `proc_pid_rusage`, `host_statistics`; Win32), no
   `sysinfo`. The hub reads every 2 s while the page is open and once a minute always, keeping an
-  hour (`/api/machines/this/history`); `/api/state` has `machines`. The page shows one line under
-  "This PC" (above the toolbar when there are no machine headings), the hour of Turu's memory as
-  wax dots, and details on click. Checked by hand on macOS (Apple Silicon): RSS against `ps`, the
+  hour (`/api/machines/this/history`); `/api/state` has `machines`. The page shows a machine strip at
+  the top of each machine's roster sheet (its own sheet above the toolbar when there are no
+  machine headings): fixed-width CPU, memory and container readouts with a thin meter each,
+  Turu's CPU and memory with its hour as wax dots, and details on click. Checked by hand on macOS (Apple Silicon): RSS against `ps`, the
   footprint against `footprint`, available memory against `vm_stat`, the version against `sw_vers`;
   the page at 375 px and in both
   themes. Linux, Windows and Android only type-checked (`cargo clippy --target`), with the
