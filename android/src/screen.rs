@@ -98,6 +98,9 @@ pub struct Screen {
     refresh_millihertz: u32,
     /// When the last draw started.
     draw_started: Instant,
+    /// When the last draw for the game's frames started (a draw of the UI alone isn't one): what
+    /// the game's own draws are paced by ([`Screen::step`], [`Screen::behind`]).
+    picture_started: Instant,
     /// When the UI wants drawing again (egui's repaint delay after the last draw), if it does.
     ui_due: Option<Instant>,
     /// Whether the surface's last `configure` worked, and when to try again if it didn't
@@ -244,6 +247,7 @@ impl Screen {
             pacing: Pacing::new(),
             refresh_millihertz: 0,
             draw_started: Instant::now(),
+            picture_started: Instant::now(),
             ui_due: None,
             configured: false,
             retry_configure: Instant::now(),
@@ -431,9 +435,13 @@ impl Screen {
                 }
             }
             Touch::Move(id, x, y) => {
+                // A finger on the game moves without egui: each move would draw the UI alone
+                // (`next_ui_draw`), dozens a second while the joystick is held.
                 if let Some(finger) = self.egui_finger.as_mut().filter(|finger| finger.id == id) {
                     finger.at = (x, y);
-                    self.egui_touch(egui::TouchPhase::Move, (x, y));
+                    if finger.on_ui {
+                        self.egui_touch(egui::TouchPhase::Move, (x, y));
+                    }
                 }
                 if let Some((_, at)) = self
                     .touch_points
@@ -539,7 +547,7 @@ impl Screen {
                 // ticks at its rate and the screen shows the newest picture once a refresh.
                 self.update_refresh_rate();
                 let refresh = self.pacing.refresh_interval();
-                if self.draw_started.elapsed() < refresh.mul_f32(0.75) {
+                if self.picture_started.elapsed() < refresh.mul_f32(0.75) {
                     return self.next_ui_draw();
                 }
                 if self.behind(player) {
@@ -547,15 +555,22 @@ impl Screen {
                     return self.next_ui_draw();
                 }
                 let new_picture = player.needs_render();
+                self.picture_started = Instant::now();
                 self.draw(player, new_picture);
                 self.next_ui_draw()
             }
             // Turu: the UI is drawn on its own between the game's frames when it asks (a touch,
             // egui's animations, the logs while a script runs), as the desktop's window repaints
             // it: at Headless Mode's 2 FPS it was drawn only with the game's frames, 500 ms apart.
+            // A game frame not drawn yet (its tick came too soon after the last picture, above) is
+            // drawn with it, unless the game is behind.
             (Step::Due, false) => {
                 if self.ui_due.is_some_and(|due| due <= Instant::now()) {
-                    self.draw(player, false);
+                    let new_picture = player.needs_render() && !self.behind(player);
+                    if new_picture {
+                        self.picture_started = Instant::now();
+                    }
+                    self.draw(player, new_picture);
                 }
                 self.next_ui_draw()
             }
@@ -597,7 +612,7 @@ impl Screen {
     /// in half a frame never skips; the screen is drawn at least every [`MAX_DRAW_GAP`].
     fn behind(&self, player: &Player) -> bool {
         player.is_playing()
-            && self.draw_started.elapsed() < MAX_DRAW_GAP
+            && self.picture_started.elapsed() < MAX_DRAW_GAP
             && player.time_til_next_frame() * 2
                 < Duration::from_secs_f64(1.0 / player.frame_rate().max(1.0))
     }
