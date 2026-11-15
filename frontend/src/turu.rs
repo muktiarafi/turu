@@ -49,6 +49,10 @@ static SCRIPT_REPO: OnceLock<Arc<turu_bot::repo::ScriptRepo>> = OnceLock::new();
 static LAUNCHED_BY_ARMY: AtomicBool = AtomicBool::new(false);
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
+/// `--client=<address>`: the shell this process is a client of (docs/TAB_PROCESSES_PROPOSAL.md).
+static CLIENT_OF: Mutex<Option<String>> = Mutex::new(None);
+/// `--shell`: this process is a shell over client processes.
+static SHELL: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
 static API: Mutex<Option<String>> = Mutex::new(None);
 /// The startup flags, until `configure_startup`.
@@ -790,6 +794,8 @@ pub fn host_swf_url() -> anyhow::Result<String> {
 /// * `--exit-on-script-stop` (or `--exit-on-finish`): log out and quit when the script stops
 ///   (not when auto-relogin stops it), or with a playlist, when the playlist ends.
 /// * `--headless`: no window (see `headless.rs`).
+/// * `--client=<address>` / `--shell`: a tab in a process of its own, drawn for a shell / the
+///   shell over such clients (docs/TAB_PROCESSES_PROPOSAL.md, M2; `app/src/client.rs`, `shell.rs`).
 /// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
 /// * `--api` (or `--api=<address>`, default `127.0.0.1:9091`): the control API (see
@@ -800,6 +806,8 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         exit_on_stop,
         exit_with_parent,
         headless,
+        client,
+        shell,
         api,
         monitor,
         report_to,
@@ -812,6 +820,8 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         });
     }
     HEADLESS.store(headless, Ordering::Relaxed);
+    SHELL.store(shell, Ordering::Relaxed);
+    *CLIENT_OF.lock().unwrap_or_else(|e| e.into_inner()) = client;
     if let Ok(mut slot) = API.lock() {
         *slot = api;
     }
@@ -1311,6 +1321,18 @@ pub fn headless() -> bool {
     HEADLESS.load(Ordering::Relaxed)
 }
 
+/// `--client=<address>`: the shell to connect to; this process runs one tab without a window and
+/// draws it for the shell (`app/src/client.rs`).
+pub fn client_of() -> Option<String> {
+    CLIENT_OF.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// `--shell`: this process owns the window and runs each tab in a client process
+/// (`app/src/shell.rs`).
+pub fn shell() -> bool {
+    SHELL.load(Ordering::Relaxed)
+}
+
 /// The active tab's game is in Headless Mode (the option, not `--headless`): the window covers
 /// it with VibeSkua's headless overlay and doesn't draw it.
 pub fn headless_mode() -> bool {
@@ -1324,6 +1346,9 @@ struct Flags {
     exit_on_stop: bool,
     exit_with_parent: bool,
     headless: bool,
+    /// `--client`'s address.
+    client: Option<String>,
+    shell: bool,
     /// `--api`'s address.
     api: Option<String>,
     /// `--monitor[=address]`: empty without an address.
@@ -1376,6 +1401,9 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             "--exit-on-script-stop" | "--exit-on-finish" => flags.exit_on_stop = true,
             "--headless" => flags.headless = true,
             "--exit-with-parent" => flags.exit_with_parent = true,
+            // The address only inline (`--client=127.0.0.1:port`).
+            "--client" => flags.client = inline,
+            "--shell" => flags.shell = true,
             // The address only inline (`--api=...`): the next argument may be anything.
             "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:9091".into())),
             // Likewise: `--monitor` alone takes Options > Application's port.

@@ -231,6 +231,63 @@ reports from earlier releases have no `tabs_most`.
   **one backend (Metal, through IOSurface) shows a client's texture shared across processes**, the
   desktop's riskiest piece, before M5 relies on it; Android's single-tab build still works the same.
 
+#### M2 as built (2026-11-16, branch `m2-client-mode`)
+
+Narrowed on one point: Android's `Screen` stays where it is (about ten Android hooks, and no
+phone to check a move on); only its window-free pieces moved to `frontend/`
+(`movie_texture.rs`: `Blit`, `MovieTexture`), and the client draws with a screen of its own
+(`client_screen.rs`) that reuses them. Merging the two belongs with M3.
+
+* **Messages** (`frontend/src/shell.rs`, no Ruffle, no window): `ToClient` (show, hide, pointer,
+  wheel, key, text, focus, tabs, answer, dump) and `ToShell` (hello, frame, open URL, select tab),
+  4-byte length plus JSON, a frame's BGRA pixels after its header, unknown types skipped; the
+  client connects to the shell's loopback port with `TURU_SHELL_TOKEN`; `serve` hands messages to
+  a `ClientEnd`; `FrameSender` sends on its own thread, frames newest-wins.
+* **Client** (`turu --client=<address>`, `app/src/client.rs`): `--headless`'s loop and player
+  (`headless::build_player`, now taking the renderer) with a wgpu renderer on a GPU set up without
+  a window; `ClientScreen` draws the game and Turu's UI into a BGRA texture at the shell's size and
+  scale, reads it back without making the engine wait (map, then look next step), and routes input
+  as the desktop does (a press egui wants stays egui's until release, else the game's; keys go to
+  egui while one of its text boxes has the focus). `Platform::open_url` goes to the shell; file
+  dialogs aren't offered yet. The client quits when the shell's connection closes. No sound.
+* **Shell** (`turu --shell`, `app/src/shell.rs`): a winit window that starts one client with its
+  own flags, accepts it by token, copies each picture into the window's surface (`COPY_DST`) and
+  sends the window's mouse, wheel, keys, text, focus and size.
+* **Shared texture** (`app/examples/iosurface_share.rs`, macOS): the parent checks a unique name in
+  with the bootstrap server, the child looks it up, writes a pattern into an IOSurface-backed
+  Metal texture through wgpu (`wgpu::hal::metal::Device::texture_from_raw`, already in the patched
+  `wgpu-hal`) and sends the surface's Mach port; the parent opens the same surface as a texture of
+  its own wgpu device.
+
+Checked against "done when" (debug builds, on a Mac, at the login screen, no account):
+
+* `cargo test -p turu_frontend`: the messages round-trip, unknown ones are skipped, an oversized
+  one is refused, a fake shell on loopback drives a client end (hello with the token, then its
+  messages), and frames are newest-wins while messages aren't dropped (`OpenUrl` included); with
+  `-p turu -p turu_frontend` and Ruffle's features, the client's key mapping too.
+* A real client driven by `tools/shell/fake_shell.py` (no window, a scratch data folder, the login
+  screen): ~29 pictures a second at 1280x720; a click opened the Scripts menu, a click on the
+  game's username field and End and "xyz" typed into it, a new size and scale (1600x900 at 1.25)
+  redrew at that size; `hide` stopped the pictures (one readback under way still went out) and
+  `show` resumed them; the client quit when the shell closed. A URL opened from the UI wasn't
+  triggered in a run: `ClientPlatform::open_url` queues `ToShell::OpenUrl` on the `FrameSender`
+  that test covers.
+* `turu --shell` on a Mac: the window started its client, which connected by token, and drew 600
+  of its pictures in 21 s; the client quit with the shell.
+* The shared texture: all 230 400 pixels the child's GPU wrote read back on the parent's GPU, no
+  CPU copy, no change under `ruffle/`.
+* Android's single-tab build on the emulator: in game, drawn through the moved `MovieTexture` and
+  `Blit`, no panic. Turu Mas's crate checks (`cargo ndk check`). `--headless` and the normal
+  window still reach the login screen after the `build_player` and `main.rs` changes.
+
+Defined but not used yet: `Tabs` (the client draws no tab strip), `Answer` (no file dialogs through
+the shell), `SelectTab`. Not done: sound in the client, the shell drawing more than one client, the
+IOSurface route inside the shell (M5), Windows and Linux shared textures, the debug-only epaint
+check Android's `Screen` would also hit (it ships release builds only). The shell and its client
+both start the control API, web monitor and update checks, so they collide when one is turned on
+(M5: the shell owns them). M1's results are on `spike/m1-slots`, M2's on `m2-client-mode`: this
+file differs between the two until they're merged.
+
 ### M3: Android process tabs
 
 * The slot pool in the manifest; slot services with grouped notifications and per-slot wake locks;

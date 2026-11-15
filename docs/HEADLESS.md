@@ -361,6 +361,8 @@ It also writes the samples to `<log>.csv`.
 | `--server <name>` | The server to log in on (default Twilly), and the one relogins go back to for this run (Relogin Server; not saved). |
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
+| `--client=<address>` | Run one tab without a window and draw it for a shell at `<address>` (needs `TURU_SHELL_TOKEN`; docs/TAB_PROCESSES_PROPOSAL.md, M2). Quits when the shell closes. |
+| `--shell` | A window that runs its tab in a `--client` process and shows it (M2: one tab), passing it the other flags. |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
 | `--api[=<address>]` | The control API, default `127.0.0.1:9091`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |

@@ -15,7 +15,9 @@ mod custom_event;
 mod dbus;
 mod desktop_platform; // Turu: file dialogs and links for the bot windows
 mod gui;
+mod client;
 mod headless;
+mod shell;
 mod heap_census;
 mod log;
 mod mugetsu;
@@ -454,7 +456,7 @@ fn main() -> Result<(), Error> {
     };
     // Turu: without a window no device fonts are loaded, so every text field in one ("Times New
     // Roman", ...) logs "Fallback font not found" each time it's laid out; nobody sees the text.
-    let default_filter = if turu::headless() {
+    let default_filter = if turu::headless() || turu::client_of().is_some() {
         format!("{default_filter},ruffle_core::html::layout=off")
     } else {
         default_filter.to_owned()
@@ -511,6 +513,20 @@ fn main() -> Result<(), Error> {
         }) as turu::ThreadReport
     }));
     turu::start_grid_test();
+
+    // Turu: `--client=<address>` runs one tab for a shell, `--shell` the window over such clients
+    // (docs/TAB_PROCESSES_PROPOSAL.md, M2).
+    if let Some(address) = turu::client_of() {
+        let Some(movie_url) = preferences.cli.movie_url.clone() else {
+            return Err(anyhow!("--client needs the host SWF, turu.swf"));
+        };
+        return client::run(preferences, movie_url, &address);
+    }
+    if turu::shell() {
+        // The client gets the shell's own flags (`--user`, `--run-script`, ...).
+        let client_args = env::args().skip(1).filter(|arg| arg != "--shell").collect();
+        return shell::run(preferences, client_args);
+    }
 
     // Turu: `--headless` runs the game without a window.
     if turu::headless() {

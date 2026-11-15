@@ -6,6 +6,8 @@
 
 #[cfg(feature = "ruffle")]
 pub mod capture;
+#[cfg(feature = "ruffle")]
+pub mod client_screen;
 pub mod crash_reports;
 pub mod documents;
 #[cfg(feature = "ruffle")]
@@ -15,6 +17,8 @@ pub mod grid;
 pub mod gui;
 pub mod map_items;
 pub mod map_pads;
+#[cfg(feature = "ruffle")]
+pub mod movie_texture;
 // Mugetsu's code (GPL-3.0, its author's): only for Ruffle, and kept out of Turu Mas
 // (docs/TURU_MAS.md, "Licenses").
 #[cfg(feature = "ruffle")]
@@ -24,6 +28,7 @@ pub mod platform;
 pub mod players;
 pub mod process_memory;
 pub mod saved_tabs;
+pub mod shell;
 pub mod tabs_log;
 pub mod touch;
 pub mod turu;

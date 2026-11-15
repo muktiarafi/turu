@@ -13,6 +13,7 @@ use ruffle_core::{LoadBehavior, Player, PlayerBuilder};
 use ruffle_frontend_utils::backends::navigator::ExternalNavigatorBackend;
 use ruffle_frontend_utils::content::{ContentDescriptor, PlayingContent};
 use ruffle_render::backend::ViewportDimensions;
+use ruffle_render::backend::RenderBackend;
 use ruffle_render::backend::null::NullRenderer;
 use ruffle_render::quality::StageQuality;
 use std::rc::Rc;
@@ -31,7 +32,13 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     // One tab, through the loop that runs Android's tabs.
     let tab = turu::active_tab();
     let mut players = Players::new();
-    players.add(Slot::new(Some(tab), build_player(&preferences, movie_url, sender.clone(), tab), ()));
+    let renderer = NullRenderer::new(ViewportDimensions {
+        width: STAGE.0,
+        height: STAGE.1,
+        scale_factor: 1.0,
+    });
+    let player = build_player(&preferences, movie_url, sender.clone(), tab, renderer, StageQuality::Low);
+    players.add(Slot::new(Some(tab), player, ()));
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender, tab))));
     // Turu: nothing is drawn, so in game it runs at a hidden tab's 2 FPS (`api::options`; the
     // login screen keeps full speed). Halved the process's CPU on a farm, with the same kills.
@@ -95,11 +102,15 @@ fn log_memory(player: &mut Player) {
     }
 }
 
-fn build_player(
+/// turu.swf's player without a window, drawing with `renderer` (the null renderer here; the
+/// client mode's offscreen one, `client.rs`), with its mouse off the stage.
+pub(crate) fn build_player(
     preferences: &GlobalPreferences,
     movie_url: Url,
     sender: Sender<EngineEvent>,
     tab: turu::TabId,
+    renderer: impl RenderBackend + 'static,
+    quality: StageQuality,
 ) -> Arc<Mutex<Player>> {
     let opt = LaunchOptions::from(preferences);
     let content = PlayingContent::DirectFile(ContentDescriptor {
@@ -123,18 +134,14 @@ fn build_player(
     let navigator = crate::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));
     let player = PlayerBuilder::new()
         .with_navigator(navigator)
-        .with_renderer(NullRenderer::new(ViewportDimensions {
-            width: STAGE.0,
-            height: STAGE.1,
-            scale_factor: 1.0,
-        }))
+        .with_renderer(renderer)
         .with_ui(NullUiBackend::new())
         .with_storage(preferences.storage_backend().create_backend(&opt))
         .with_external_interface(Box::new(turu::TuruExternalInterface { bot: turu::bot() }))
         // Turu: the game's packets, from its socket (R5).
         .with_socket_observer(Box::new(turu::TuruSocketObserver { bot: turu::bot() }))
         .with_autoplay(true)
-        .with_quality(StageQuality::Low)
+        .with_quality(quality)
         .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
         .with_load_behavior(opt.player.load_behavior.unwrap_or(LoadBehavior::Streaming))
         .with_spoofed_url(opt.player.spoof_url.clone().map(|url| url.to_string()))
