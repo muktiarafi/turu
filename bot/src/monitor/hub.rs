@@ -366,8 +366,9 @@ pub struct Hub {
     started: Instant,
     /// This process's and this machine's CPU and memory.
     resources: Mutex<Recorder>,
-    /// What each process reporting here sent of its resources, by [`remote_source`].
-    reporters: Mutex<HashMap<String, Reported>>,
+    /// What each process reporting here sent of its resources, by [`remote_source`]: sorted, so
+    /// a machine's processes keep their order on the page.
+    reporters: Mutex<BTreeMap<String, Reported>>,
 }
 
 /// A reporting process's resources.
