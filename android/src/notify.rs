@@ -181,8 +181,10 @@ fn start_updates() {
         .name("Turu Notify".into())
         .spawn(|| {
             let mut shown: Option<Status> = None;
+            let crash_dir = turu_frontend::crash_reports::dir();
             loop {
                 turu_frontend::saved_tabs::save();
+                turu_frontend::tabs_log::record(&crash_dir);
                 let now = status();
                 if shown.as_ref() != Some(&now) {
                     match send(&now) {

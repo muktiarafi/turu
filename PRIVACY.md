@@ -25,7 +25,8 @@ the developer.
   you say yes, a crash sends a report to the developer through [Sentry](https://sentry.io): what
   crashed (the program's stack trace and error message), the device model and system version,
   and Turu's version. Turu on Android also sends how the app last ended (for example, stopped by
-  the system for low memory) and counts sessions under an anonymous install ID. Reports carry no
+  the system for low memory), how many game tabs were open and what each was doing (logged in,
+  running a script; no names), and counts sessions under an anonymous install ID. Reports carry no
   IP address, no account name, password or game data, no screenshots and no logs. Change your
   answer any time in Options > Application > Send Crash Reports. Builds made without crash
   reporting never ask.

@@ -129,12 +129,17 @@ object CrashUploads {
     }
 
     /** An exit Sentry doesn't catch itself (low memory, a kill), with the app's report attached. */
-    fun exit(reason: String, summary: String, report: File) {
+    /** `tabs`: the tabs open at the end and the most this run, when the tabs log had them. */
+    fun exit(reason: String, summary: String, report: File, tabs: Pair<Int, Int>? = null) {
         if (!started) {
             return
         }
         Sentry.captureMessage(summary, SentryLevel.WARNING) { scope ->
             scope.setTag("exit_reason", reason)
+            tabs?.let { (open, most) ->
+                scope.setTag("tabs", open.toString())
+                scope.setTag("tabs_most", most.toString())
+            }
             // One issue per exit reason: Sentry otherwise groups every exit by this call's stack,
             // and a ColorOS CPU kill, low-memory kills and a start timeout became one issue.
             scope.fingerprint = listOf("android-exit", reason)

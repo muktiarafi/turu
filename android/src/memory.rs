@@ -304,9 +304,13 @@ fn log_memory(log: &mut MemoryLog, now: Instant) {
             .map(|time| format!("CPU {:.1} s so far, ", time.as_secs_f64())),
     }
     .unwrap_or_default();
+    // The tabs' states are in `crash/tabs-<pid>.log` (`turu_frontend::tabs_log`); the count here
+    // ties each reading to it.
+    let tabs = turu::tabs().len();
     let mut line = format!(
-        "{} up {up} min: {cpu}{reading}",
-        chrono::Local::now().format("%H:%M:%S")
+        "{} up {up} min, {tabs} tab{}: {cpu}{reading}",
+        chrono::Local::now().format("%H:%M:%S"),
+        if tabs == 1 { "" } else { "s" }
     );
     tracing::info!("Memory: {cpu}{reading}");
     if detail {

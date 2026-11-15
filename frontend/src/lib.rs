@@ -24,5 +24,6 @@ pub mod platform;
 pub mod players;
 pub mod process_memory;
 pub mod saved_tabs;
+pub mod tabs_log;
 pub mod touch;
 pub mod turu;

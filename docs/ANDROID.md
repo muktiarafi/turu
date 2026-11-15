@@ -319,7 +319,13 @@ in the data folder's `crash/` (`/sdcard/Android/data/com.muktiarafi.turu/files/c
 * `memory-<pid>.log`: the running process's memory and CPU share, a reading a minute (GPU memory,
   below). An
   exit report gets its process's log under "Memory over the run", and the logs of earlier
-  processes are then deleted.
+  processes are then deleted. Each reading says how many tabs were open.
+* `tabs-<pid>.log` (`turu_frontend::tabs_log`, Turu Mas too): a line each time the tabs change:
+  how many are open, the most this run, and each one's state (not logged in, in game, script
+  running; which is shown), with no account names. An exit report starts with "Tabs at the end"
+  and gets the log under "Tabs over the run", and its Sentry event the tags `tabs` and
+  `tabs_most`, so low-memory kills with one account can be told from those with several
+  (docs/TAB_PROCESSES_PROPOSAL.md, M0). The report's phone line has Android's memory class too.
 
 The first start after a new report shows "Turu closed unexpectedly"; Diagnostics > Logs >
 Crashes lists them, with Share (Android's share sheet: mail, a chat, Drive), Copy and Delete. The

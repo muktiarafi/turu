@@ -84,12 +84,30 @@ object CrashReports {
         deleteMemoryLogs(dir)
     }
 
-    /** The memory logs of earlier processes, once their reports have them (or they ended well). */
+    /**
+     * The memory and tabs logs of earlier processes, once their reports have them (or they ended
+     * well).
+     */
     private fun deleteMemoryLogs(dir: File) {
-        val mine = "memory-${android.os.Process.myPid()}.log"
-        dir.listFiles { file -> file.name.startsWith("memory-") && file.name.endsWith(".log") && file.name != mine }
-            ?.forEach { it.delete() }
+        val pid = android.os.Process.myPid()
+        val mine = setOf("memory-$pid.log", "tabs-$pid.log")
+        dir.listFiles { file ->
+            (file.name.startsWith("memory-") || file.name.startsWith("tabs-")) && file.name.endsWith(".log") &&
+                file.name !in mine
+        }?.forEach { it.delete() }
     }
+
+    /**
+     * The tabs open at the end and the most this run, from the tabs log's last line
+     * ("12:00:00 2 tabs, at most 3 this run: ...").
+     */
+    internal fun tabCounts(log: String): Pair<Int, Int>? {
+        val line = log.lineSequence().lastOrNull { TAB_COUNTS.containsMatchIn(it) } ?: return null
+        val match = TAB_COUNTS.find(line) ?: return null
+        return match.groupValues[1].toInt() to match.groupValues[2].toInt()
+    }
+
+    private val TAB_COUNTS = Regex("""(\d+) tabs?, at most (\d+)""")
 
     /** Not a stop someone asked for (Force stop, an update, the app's own clean exit). */
     private fun unexpected(exit: ApplicationExitInfo): Boolean = when (exit.reason) {
@@ -131,7 +149,20 @@ object CrashReports {
         if (sizes.isNotEmpty()) {
             report.append("Memory at the end: ").append(sizes).append('\n')
         }
+        // How many game clients the process held (turu_frontend's tabs_log): Sentry can then tell
+        // one account's low-memory kills from several (docs/TAB_PROCESSES_PROPOSAL.md, M0).
+        val tabsLog = File(dir, "tabs-${exit.pid}.log")
+        val tabsText = if (tabsLog.isFile) tabsLog.readText() else null
+        val tabs = tabsText?.let(::tabCounts)
+        if (tabs != null) {
+            report.append("Tabs at the end: ").append(tabs.first).append(" (at most ").append(tabs.second)
+                .append(" this run)\n")
+        }
         appendDevice(context, activities, report)
+        if (tabsText != null) {
+            report.append("\nTabs over the run (").append(tabsLog.name).append(", a line per change)\n")
+                .append(tabsText)
+        }
         val memory = File(dir, "memory-${exit.pid}.log")
         if (memory.isFile) {
             report.append("\nMemory over the run (").append(memory.name).append(", a reading a minute)\n")
@@ -157,7 +188,7 @@ object CrashReports {
         if (reason != ApplicationExitInfo.REASON_CRASH && reason != ApplicationExitInfo.REASON_CRASH_NATIVE &&
             reason != ApplicationExitInfo.REASON_ANR
         ) {
-            CrashUploads.exit(reasonName(reason), summary(exit), file)
+            CrashUploads.exit(reasonName(reason), summary(exit), file, tabs)
         }
         Log.w(TAG, "The last run ended: ${summary(exit)} ($file)")
     }
@@ -224,7 +255,9 @@ object CrashReports {
         val memory = ActivityManager.MemoryInfo()
         activities.getMemoryInfo(memory)
         report.append("Phone memory: ").append(memory.totalMem / (1024 * 1024)).append(" MB, ")
-            .append(memory.availMem / (1024 * 1024)).append(" MB free now\n")
+            .append(memory.availMem / (1024 * 1024)).append(" MB free now, memory class ")
+            .append(activities.memoryClass).append(" MB (large ").append(activities.largeMemoryClass)
+            .append(" MB)").append(if (activities.isLowRamDevice) ", a low-RAM phone" else "").append('\n')
         try {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
             report.append(app.name).append(": ").append(info.versionName).append(" (").append(info.longVersionCode).append(")\n")

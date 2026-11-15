@@ -139,7 +139,8 @@ crash in Turu or in AIR's runtime (Java or native, with its tombstone on Android
 low-memory kill, a battery saver's kill. Force stop, an update and a clean exit write none.
 Diagnostics > Logs > Crashes lists them and a notice shows each new one, as in Turu. The exits
 Sentry doesn't catch itself (low memory, a kill) are sent too, one issue per reason, with the
-report attached.
+report attached. As in Turu, the report has the tabs over the run (`crash/tabs-<pid>.log`,
+`turu_frontend::tabs_log`) and the event the tags `tabs` and `tabs_most`.
 
 **Packaging:** an ANE gives AIR one jar and its native libraries, so the extension's `aneLibs`
 task collects what it needs at run time (Sentry, the AndroidX parts it uses, Kotlin's standard
