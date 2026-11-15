@@ -117,6 +117,7 @@ fn run(
         let bots = hub.export(&sent);
         let report = Report {
             machine: to.machine.clone(),
+            instance: instance().to_owned(),
             version: to.version.clone(),
             bots,
             results: std::mem::take(&mut results),
@@ -220,6 +221,22 @@ fn execute(hub: &Arc<Hub>, accept: bool, command: RemoteCommand, done: Sender<Co
     if let Err(e) = spawned {
         tracing::warn!("Couldn't run a monitor command: {e}");
     }
+}
+
+/// This process's id in its reports, random for each run: the clients of one server share a
+/// data folder, so a settings file and a machine name, and the monitor tells them apart by it.
+pub fn instance() -> &'static str {
+    static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    INSTANCE.get_or_init(|| {
+        let mut bytes = [0u8; 4];
+        if getrandom::fill(&mut bytes).is_err() {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos());
+            bytes = (nanos ^ std::process::id()).to_le_bytes();
+        }
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    })
 }
 
 /// This computer's name, for the page: `COMPUTERNAME` on Windows, else `hostname`'s answer

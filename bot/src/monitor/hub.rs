@@ -8,6 +8,9 @@
 //! * **Remote clients:** Turu on other machines reporting here (`POST /api/ingest`,
 //!   [`super::push`]): their tabs and Army clients, as [`Report`]s. Commands for them wait in
 //!   a queue that the next report's reply carries; the results come with the report after.
+//!   Several processes may report under one machine name (one per account on a server, all
+//!   sharing a data folder and so a name): each report carries its process's `instance`, and
+//!   entries and queues are kept per process, under the one machine heading.
 //! * **Offline:** what was saved in `monitor.json` (every minute) for a character that isn't
 //!   live now; at most a day old. A live entry for the same character replaces it.
 //!
@@ -99,9 +102,10 @@ pub struct Point {
 pub enum Control {
     Tab(Arc<Bot>),
     Army(Arc<Army>, Arc<Client>),
-    /// The machine's queue, and the bot's id there.
+    /// The reporting process's queue, and the bot's id there.
     Remote {
         machine: String,
+        instance: String,
         bot: String,
     },
 }
@@ -109,7 +113,11 @@ pub enum Control {
 enum Target {
     Tab(Weak<Bot>),
     Army(Weak<Army>, Weak<Client>),
-    Remote { machine: String, bot: String },
+    Remote {
+        machine: String,
+        instance: String,
+        bot: String,
+    },
     None,
 }
 
@@ -200,6 +208,12 @@ impl Entry {
         }
     }
 
+    /// A remote entry from the process `instance` on `machine`.
+    fn reported_by(&self, machine: &str, instance: &str) -> bool {
+        matches!(&self.target, Target::Remote { machine: m, instance: i, .. }
+            if m.eq_ignore_ascii_case(machine) && i == instance)
+    }
+
     /// The character, when the bot has logged in once.
     fn character(&self) -> Option<&str> {
         self.snapshot
@@ -254,6 +268,9 @@ struct Saved {
 pub struct Report {
     /// Its name on the page ("vps-1").
     pub machine: String,
+    /// The reporting process, random for each run (`push::instance`): processes on one machine
+    /// share its name. Empty from a Turu before 2026-11 (one process per name, as then).
+    pub instance: String,
     pub version: String,
     /// Its live tabs and Army clients.
     pub bots: Vec<Pushed>,
@@ -305,7 +322,7 @@ pub struct ReportReply {
 #[derive(Default)]
 struct Queue {
     next_seq: u64,
-    /// By machine (lowercase).
+    /// By reporting process ([`remote_source`]).
     pending: HashMap<String, Vec<RemoteCommand>>,
     /// Who waits for each command's result.
     waiting: HashMap<u64, Sender<(u16, Value)>>,
@@ -449,22 +466,25 @@ impl Hub {
         }
     }
 
-    /// Takes in a remote machine's report: its bots replace the machine's entries, and the
+    /// Takes in a remote process's report: its bots replace that process's entries, and the
     /// results go to whoever waits for them.
     pub fn record_report(&self, report: Report) {
         let machine = machine_name(&report.machine);
+        let instance = instance_name(&report.instance);
         {
             let mut entries = self.entries.lock();
-            let prefix = format!("remote:{}:", machine.to_lowercase());
+            let prefix = format!("remote:{}:", remote_source(&machine, &instance));
             let ids: Vec<String> = report
                 .bots
                 .iter()
                 .map(|b| format!("{prefix}{}", b.id))
                 .collect();
-            entries.retain(|id, _| !id.starts_with(&prefix) || ids.contains(id));
+            entries.retain(|id, e| !e.reported_by(&machine, &instance) || ids.contains(id));
+            let mut characters = Vec::new();
             for (pushed, id) in report.bots.into_iter().zip(ids) {
                 let target = || Target::Remote {
                     machine: machine.clone(),
+                    instance: instance.clone(),
                     bot: pushed.id.clone(),
                 };
                 let entry = entries
@@ -477,8 +497,27 @@ impl Hub {
                 let character = entry.character().map(str::to_owned);
                 if let Some(name) = character {
                     entries.remove(&offline_id(&name));
+                    characters.push(name.to_lowercase());
                 }
             }
+            // An earlier run of a process on this machine (each run has its own instance) left
+            // entries that went offline: drop those this report now shows, and those that never
+            // had a character, which would pile up as unnamed rows with every restart.
+            let now = now_ms();
+            entries.retain(|_, e| {
+                let earlier = match &e.target {
+                    Target::Remote {
+                        machine: m,
+                        instance: i,
+                        ..
+                    } => m.eq_ignore_ascii_case(&machine) && *i != instance,
+                    _ => false,
+                };
+                !earlier
+                    || e.online(now)
+                    || e.character()
+                        .is_some_and(|c| !characters.contains(&c.to_lowercase()))
+            });
         }
         let mut queue = self.queue.lock();
         for result in report.results {
@@ -488,9 +527,9 @@ impl Hub {
         }
     }
 
-    /// The commands waiting for `machine`, for the reply to its report.
-    pub fn take_commands(&self, machine: &str) -> Vec<RemoteCommand> {
-        let key = machine_name(machine).to_lowercase();
+    /// The commands waiting for a reporting process, for the reply to its report.
+    pub fn take_commands(&self, machine: &str, instance: &str) -> Vec<RemoteCommand> {
+        let key = remote_source(&machine_name(machine), &instance_name(instance));
         self.queue.lock().pending.remove(&key).unwrap_or_default()
     }
 
@@ -509,7 +548,11 @@ impl Hub {
                     Err(e) => (502, json!({ "error": e })),
                 }
             }
-            Control::Remote { machine, bot } => {
+            Control::Remote {
+                machine,
+                instance,
+                bot,
+            } => {
                 let (tx, rx) = bounded(1);
                 let seq = {
                     let mut queue = self.queue.lock();
@@ -525,7 +568,7 @@ impl Hub {
                     };
                     queue
                         .pending
-                        .entry(machine.to_lowercase())
+                        .entry(remote_source(&machine, &instance))
                         .or_default()
                         .push(command);
                     seq
@@ -650,12 +693,15 @@ impl Hub {
                 let client = client.upgrade().filter(|c| c.is_running())?;
                 Some(Control::Army(army.upgrade()?, client))
             }
-            Target::Remote { machine, bot } => {
-                entries.get(id)?.online(now_ms()).then(|| Control::Remote {
-                    machine: machine.clone(),
-                    bot: bot.clone(),
-                })
-            }
+            Target::Remote {
+                machine,
+                instance,
+                bot,
+            } => entries.get(id)?.online(now_ms()).then(|| Control::Remote {
+                machine: machine.clone(),
+                instance: instance.clone(),
+                bot: bot.clone(),
+            }),
             Target::None => None,
         }
     }
@@ -730,6 +776,27 @@ pub fn machine_name(name: &str) -> String {
         "remote".into()
     } else {
         clean
+    }
+}
+
+/// A reporting process's instance as ids carry it: letters and digits, at most 16.
+fn instance_name(instance: &str) -> String {
+    instance
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(16)
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// A reporting process in ids and queue keys: the machine (lowercase), then its instance
+/// (`vps-1:3fa9c2`); the machine alone for a Turu that sends none.
+fn remote_source(machine: &str, instance: &str) -> String {
+    let machine = machine.to_lowercase();
+    if instance.is_empty() {
+        machine
+    } else {
+        format!("{machine}:{instance}")
     }
 }
 
@@ -841,6 +908,7 @@ mod tests {
         let hub = Hub::new(None);
         let report = |bots: Vec<Pushed>| Report {
             machine: "VPS/1".into(),
+            instance: String::new(),
             version: "test".into(),
             bots,
             results: Vec::new(),
@@ -871,6 +939,7 @@ mod tests {
         let hub = Hub::new(None);
         let report = |results| Report {
             machine: "vps".into(),
+            instance: String::new(),
             version: "test".into(),
             bots: vec![pushed("tab:0", "Hero")],
             results,
@@ -882,7 +951,7 @@ mod tests {
             std::thread::spawn(move || hub.run(control, true, "/script/stop", b""))
         };
         let commands = loop {
-            let commands = hub.take_commands("VPS");
+            let commands = hub.take_commands("VPS", "");
             if !commands.is_empty() {
                 break commands;
             }
@@ -901,7 +970,77 @@ mod tests {
         // Routes the page can't send aren't queued.
         let control = hub.control("remote:vps:tab:0").unwrap();
         assert_eq!(hub.run(control, true, "/game/options", b"").0, 403);
-        assert!(hub.take_commands("vps").is_empty());
+        assert!(hub.take_commands("vps", "").is_empty());
+    }
+
+    fn from(instance: &str, bots: Vec<Pushed>) -> Report {
+        Report {
+            machine: "vps".into(),
+            instance: instance.into(),
+            version: "test".into(),
+            bots,
+            results: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn processes_on_one_machine_stay_apart() {
+        let hub = Hub::new(None);
+        // Two clients on one server, both called "vps", both with a tab 0.
+        hub.record_report(from("aaaa", vec![pushed("tab:0", "Hero")]));
+        hub.record_report(from("bbbb", vec![pushed("tab:0", "Alt")]));
+        hub.record_report(from("aaaa", vec![pushed("tab:0", "Hero")]));
+        let views = hub.views();
+        let ids: Vec<&str> = views.iter().map(|v| v.id.as_str()).collect();
+        assert_eq!(ids, ["remote:vps:aaaa:tab:0", "remote:vps:bbbb:tab:0"]);
+        assert!(
+            views
+                .iter()
+                .all(|v| v.online && v.machine.as_deref() == Some("vps"))
+        );
+
+        // A command goes to the process whose bot it names, not to whichever reports first.
+        let control = hub.control("remote:vps:bbbb:tab:0").unwrap();
+        let waiting = {
+            let hub = hub.clone();
+            std::thread::spawn(move || hub.run(control, true, "/script/stop", b""))
+        };
+        let commands = loop {
+            assert!(hub.take_commands("vps", "aaaa").is_empty());
+            let commands = hub.take_commands("vps", "bbbb");
+            if !commands.is_empty() {
+                break commands;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let mut done = from("bbbb", vec![pushed("tab:0", "Alt")]);
+        done.results.push(CommandResult {
+            seq: commands[0].seq,
+            status: 200,
+            body: json!({}),
+        });
+        hub.record_report(done);
+        assert_eq!(waiting.join().unwrap().0, 200);
+    }
+
+    #[test]
+    fn a_restarted_process_replaces_its_old_entries() {
+        let hub = Hub::new(None);
+        hub.record_report(from(
+            "aaaa",
+            vec![pushed("tab:0", "Hero"), pushed("tab:1", "Turu Bot")],
+        ));
+        hub.record_report(from("bbbb", vec![pushed("tab:0", "Other")]));
+        // The first process stops; the second is still reporting.
+        hub.entries
+            .lock()
+            .iter_mut()
+            .filter(|(id, _)| id.contains(":aaaa:"))
+            .for_each(|(_, e)| e.last_seen -= OFFLINE_AFTER_MS);
+        // It starts again with a new instance and the same character.
+        hub.record_report(from("cccc", vec![pushed("tab:0", "Hero")]));
+        let ids: Vec<String> = hub.views().into_iter().map(|v| v.id).collect();
+        assert_eq!(ids, ["remote:vps:bbbb:tab:0", "remote:vps:cccc:tab:0"]);
     }
 
     #[test]

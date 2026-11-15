@@ -394,7 +394,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Application > Report, or `--report-to <url>` with `TURU_MONITOR_PUSH_KEY`; `monitor/push.rs`):
   their tabs and Army clients show under the machine's name and take the same commands, which
   ride back in the reply to the next report (the monitor holds it up to 4 s, so they land at
-  once; their logs too). Reports need the monitor's push key (`monitor-push-key`, Copy Report
+  once; their logs too). Several processes may report under one name (one per account on a
+  server, sharing a data folder and so a name): each report carries a random id for its process
+  (`push::instance`), and the hub keeps their entries and command queues apart
+  (`remote:<machine>:<instance>:<bot>`); a restarted process's offline rows go when it reports
+  again. Checked with one `--monitor` and two `--report-to` processes on one data folder at the
+  login screen, and a reporter restarted. Reports need the monitor's push key (`monitor-push-key`, Copy Report
   Settings), which opens nothing else; Accept Commands on the reporting machine can refuse
   commands. `--monitor[=address]` serves the monitor without the setting. Options shows the
   phone link as a QR code. Each tab's sampler reads a `Snapshot` every 2 s

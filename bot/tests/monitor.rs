@@ -335,7 +335,8 @@ fn remote_machines_report_and_take_commands() {
     let (_bot, _server, base) = start();
     let (remote_bot, _remote_hub, reporter) = remote(&base, true);
     remote_bot.log("hello from the vps");
-    let id = "remote:vps 1:tab:0";
+    let id = format!("remote:vps 1:{}:tab:0", turu_bot::monitor::push::instance());
+    let id = id.as_str();
     eventually("the remote tab on the page", || {
         let (_, body) = get(&format!("{base}/api/state"), None, None);
         let state: Value = serde_json::from_str(&body).unwrap();
@@ -379,7 +380,10 @@ fn remote_machines_report_and_take_commands() {
 fn remote_commands_need_accept_commands() {
     let (_bot, _server, base) = start();
     let (_remote_bot, _hub, _reporter) = remote(&base, false);
-    let id = "remote%3Avps%201%3Atab%3A0";
+    let id = format!(
+        "remote%3Avps%201%3A{}%3Atab%3A0",
+        turu_bot::monitor::push::instance()
+    );
     eventually("the remote tab", || {
         get(&format!("{base}/api/bots/{id}"), None, None).0 == 200
     });

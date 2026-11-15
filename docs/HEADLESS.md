@@ -184,6 +184,8 @@ TURU_MONITOR_PUSH_KEY=<contents of /var/lib/turu/monitor-push-key>
 ```
 
 Leave Enable Web Monitor off in the shared `settings.json`, or every client tries to serve it.
+The reporters all show under the machine's name, one row per client (each run reports with
+an id of its own, so sharing the name and settings is fine).
 
 **Army:** Army > Accounts and Army Control need a window. On a server the systemd unit is the
 launcher, and the web monitor covers most of Army Control (Start / Stop / Relog / Join map on

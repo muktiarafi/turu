@@ -555,11 +555,11 @@ async fn ingest(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bod
         Ok(report) => report,
         Err(e) => return error(StatusCode::BAD_REQUEST, &format!("not a report: {e}")),
     };
-    let machine = machine_name(&report.machine);
+    let (machine, instance) = (machine_name(&report.machine), report.instance.clone());
     shared.hub.record_report(report);
     let held = tokio::time::Instant::now();
     let commands = loop {
-        let commands = shared.hub.take_commands(&machine);
+        let commands = shared.hub.take_commands(&machine, &instance);
         if !commands.is_empty()
             || held.elapsed() >= INGEST_HOLD
             || shared.stop.load(Ordering::Relaxed)
