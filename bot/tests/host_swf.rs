@@ -70,10 +70,11 @@ fn wait_for_call(swf: &FakeSwf, name: &str) -> Vec<FlashArg> {
 fn turus_swf_gets_the_frame_rate_with_load_client_and_refuses_unlisted_names() {
     let swf = FakeSwf::new(turu_info());
     let bot = bot_with(&swf);
+    bot.settings.write().animation_frame_rate = 60;
     bot.on_flash_call("requestLoadGame", vec![]);
 
     let args = wait_for_call(&swf, "loadClient");
-    assert!(matches!(args.as_slice(), [FlashArg::Number(fps)] if *fps > 0.0));
+    assert!(matches!(args.as_slice(), [FlashArg::Number(fps)] if *fps == 60.0));
     let info = bot.flash.host_info().expect("asked");
     assert_eq!(info.name, "turu");
     assert!(
@@ -93,16 +94,27 @@ fn turus_swf_gets_the_frame_rate_with_load_client_and_refuses_unlisted_names() {
     assert!(bot.flash.call("setBackgroundValues", vec![]).is_ok());
 }
 
-/// A host without `hostInfo` (the tests' fake games): the client still loads at the frame rate,
-/// and no call is refused.
+/// The default starting rate (24, which every older settings file holds) leaves turu.swf at its
+/// own 30: `loadClient` gets no rate.
+#[test]
+fn the_default_starting_rate_leaves_turus_swf_at_its_own() {
+    let swf = FakeSwf::new(turu_info());
+    let bot = bot_with(&swf);
+    bot.on_flash_call("requestLoadGame", vec![]);
+
+    let args = wait_for_call(&swf, "loadClient");
+    assert!(args.is_empty(), "{args:?}");
+}
+
+/// A host without `hostInfo` (the tests' fake games): the client still loads, and no call is
+/// refused.
 #[test]
 fn a_host_without_host_info_lets_every_call_through() {
     let swf = FakeSwf::new(Value::Null);
     let bot = bot_with(&swf);
     bot.on_flash_call("requestLoadGame", vec![]);
 
-    let args = wait_for_call(&swf, "loadClient");
-    assert!(matches!(args.as_slice(), [FlashArg::Number(fps)] if *fps > 0.0));
+    wait_for_call(&swf, "loadClient");
     assert!(bot.flash.host_info().is_none());
     assert!(bot.flash.call("getGameObject", vec!["x".into()]).is_ok());
 }

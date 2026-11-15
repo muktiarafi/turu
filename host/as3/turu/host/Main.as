@@ -188,7 +188,8 @@ public class Main extends MovieClip {
 
     /**
      * Fetches the game's version, then loads its client, first setting the stage to `frameRate`
-     * (Turu passes the client's animation frame rate).
+     * when Turu passes one (the client's animation frame rate, when it isn't the default; the
+     * stage keeps this SWF's own 30 otherwise).
      */
     private function loadClient(frameRate:* = undefined):void {
         var fps:Number = Number(frameRate);

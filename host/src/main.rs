@@ -12,7 +12,7 @@
 //!   wrapper's order (Flex gives each class a script of its own, run when first used). A static
 //!   initializer must not use another class.
 //! - asc's `-swf` writes no End tag and a `DoABC`, so only its ABC is used, and the SWF around it
-//!   is written here: version 43, zlib, 958x550 at 24 fps (the game's own rate), with the tags a
+//!   is written here: version 43, zlib, 958x550 at 30 fps (as VibeSkua's skua.swf), with the tags a
 //!   Flex build has (less its `Metadata` and `ProductInfo`).
 //! - Where Flex emits `callpropvoid`, asc emits `callproperty` then `pop`, and `findpropstrict x;
 //!   getproperty x` for `getlex x`: bytecode rules written against Flex's output miss them.
@@ -32,8 +32,11 @@ const MAIN_CLASS: &str = "turu.host.Main";
 const SWF_VERSION: u8 = 43;
 const WIDTH: f64 = 958.0;
 const HEIGHT: f64 = 550.0;
-/// The game's own frame rate: what Turu sets when the client loads anyway.
-const FRAME_RATE: u8 = 24;
+/// VibeSkua's skua.swf's rate, which the client keeps until the game's FPS setting or Set FPS
+/// applies: 30 shows evenly on a 60 Hz screen, where the game's own 24 alternates two and three
+/// refreshes a picture (judder, plain on a phone). Keep it in step with
+/// `turu_bot::settings::HOST_FRAME_RATE`.
+const FRAME_RATE: u8 = 30;
 
 fn main() -> anyhow::Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

@@ -6,13 +6,19 @@ use serde::{Deserialize, Serialize};
 /// The frame rate AQW's `Game.swf` is made for (its SWF header says 24).
 pub const GAME_FRAME_RATE: i32 = 24;
 
+/// The frame rate turu.swf runs at (its SWF header, `host/src/main.rs`), as VibeSkua's skua.swf
+/// did: the client keeps it until the game's FPS setting or Set FPS applies. 30 shows evenly on a
+/// 60 Hz screen; 24 alternates two and three refreshes a picture, a judder plain on a phone.
+pub const HOST_FRAME_RATE: i32 = 30;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
     // General & Performance
     pub show_username_in_title: bool,
     /// VibeSkua's "Client Animation Frame-rate": the frame rate the client starts with, until
-    /// the game's own FPS setting (or Options > Game > Set FPS) applies in game.
+    /// the game's own FPS setting (or Options > Game > Set FPS) applies in game. The default, 24,
+    /// leaves turu.swf's own rate ([`AppSettings::client_frame_rate`]).
     pub animation_frame_rate: i32,
     /// VibeSkua's "Grandpa Mode" (`GrandpaMode`): larger text in the logs and the packet tools.
     pub grandpa_mode: bool,
@@ -82,6 +88,21 @@ pub struct AppSettings {
     /// The side bar (the rail on a touch screen) was hidden with its logo or Menu > Hide Side
     /// Bar: it stays hidden when Turu opens again, until the tab at the left edge brings it back.
     pub side_bar_hidden: bool,
+}
+
+impl AppSettings {
+    /// The frame rate the client is started at, or `None` for turu.swf's own
+    /// ([`HOST_FRAME_RATE`]). The default 24 means turu.swf's: every settings file saved before
+    /// it ran at 30 holds 24, and Turu ran at 30 anyway until then (VibeSkua's skua.swf).
+    pub fn client_frame_rate(&self) -> Option<i32> {
+        (self.animation_frame_rate != GAME_FRAME_RATE).then(|| self.animation_frame_rate.max(1))
+    }
+
+    /// The rate the client runs at when nothing else set one: [`Self::client_frame_rate`], else
+    /// turu.swf's.
+    pub fn starting_frame_rate(&self) -> i32 {
+        self.client_frame_rate().unwrap_or(HOST_FRAME_RATE)
+    }
 }
 
 impl Default for AppSettings {
@@ -205,7 +226,17 @@ impl FastTravel {
 
 #[cfg(test)]
 mod tests {
-    use super::FastTravel;
+    use super::{AppSettings, FastTravel, HOST_FRAME_RATE};
+
+    #[test]
+    fn the_default_starting_rate_is_turus_swfs_own() {
+        let mut settings = AppSettings::default();
+        assert_eq!(settings.client_frame_rate(), None);
+        assert_eq!(settings.starting_frame_rate(), HOST_FRAME_RATE);
+        settings.animation_frame_rate = 60;
+        assert_eq!(settings.client_frame_rate(), Some(60));
+        assert_eq!(settings.starting_frame_rate(), 60);
+    }
 
     #[test]
     fn the_old_host_swf_settings_are_ignored() {

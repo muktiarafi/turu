@@ -34,8 +34,8 @@ pub(crate) fn start(bot: &Arc<Bot>) {
 /// Asks turu.swf what it is, then has it load the game's client at the client's frame rate.
 fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
     // VibeSkua's "Client Animation Frame-rate": the client runs at this rate until the game's
-    // FPS setting (or Set FPS) applies in game.
-    let fps = bot.settings.read().animation_frame_rate.max(1);
+    // FPS setting (or Set FPS) applies in game; without one, at turu.swf's own (30).
+    let fps = bot.settings.read().client_frame_rate();
     for gone in ["TURU_HOST_SWF", "TURU_HOST_PARITY"] {
         if std::env::var_os(gone).is_some() {
             bot.logs.debug.push(format!(
@@ -54,7 +54,8 @@ fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
     {
         tracing::debug!("setPacketCapture failed: {e}");
     }
-    bot.flash.call("loadClient", vec![fps.into()]).map(|_| ())
+    let args = fps.map(|fps| vec![fps.into()]).unwrap_or_default();
+    bot.flash.call("loadClient", args).map(|_| ())
 }
 
 /// The login screen's picture (`setLoginImage`): 960x550, the game's size, over its background.

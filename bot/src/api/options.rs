@@ -215,7 +215,7 @@ fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> Bot
             let fps = match bot.state.lock().before_slowed.take() {
                 _ if o.set_fps > 0 => o.set_fps,
                 Some(fps) if fps > 2 => fps,
-                _ => crate::settings::GAME_FRAME_RATE,
+                _ => bot.settings.read().starting_frame_rate(),
             };
             bot.flash.set("stage.frameRate", fps)?;
         }
