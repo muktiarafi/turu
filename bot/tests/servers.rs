@@ -585,10 +585,15 @@ fn the_timer_checks_less_often_in_game_but_still_catches_logins_at_once() {
             .filter(|a| arg(a, 0) == "world")
             .count()
     };
+    // Over two and a half seconds, not one: the last check was the login's own tick, a little
+    // before `catchPackets` was seen, so the next is due about when a one-second window closes.
     let before = world_checks();
-    std::thread::sleep(Duration::from_millis(1000));
+    std::thread::sleep(Duration::from_millis(2500));
     let checks = world_checks() - before;
-    assert!((1..=3).contains(&checks), "{checks} checks in a second");
+    assert!(
+        (2..=3).contains(&checks),
+        "{checks} checks in two and a half seconds"
+    );
 
     // A logout with its `world` event is noticed at once.
     game.leave_world();
