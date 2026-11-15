@@ -16,8 +16,11 @@ import java.io.File
  * Installs a downloaded update's APK over the running app with Android's [PackageInstaller]
  * (both apps' update windows: `turu_frontend`'s `client_update.rs`). The engine downloads the APK
  * and checks it against the release's `SHA256SUMS.txt` first; this writes it into an install
- * session and commits it. Android then asks the user to confirm (and, the first time, to allow
- * installs from this app), installs, and stops the app; the user opens the new version.
+ * session and commits it. Android then (the first time) asks to allow installs from this app,
+ * installs, and stops the app; the user opens the new version. Android 12+ installs an app's own
+ * update without a confirmation (`setRequireUserAction` below, with
+ * `UPDATE_PACKAGES_WITHOUT_USER_ACTION` in both manifests); before 12, or when Android still wants
+ * one, it asks the user to confirm.
  *
  * Android's confirmation is an activity, which an app can start only while it's on screen: when
  * the download ends with the app in the background, it is shown when one of the app's
@@ -56,6 +59,12 @@ object PackageUpdate {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(app.packageName)
         params.setSize(file.length())
+        // Android 12+: an app updating itself, with REQUEST_INSTALL_PACKAGES and a recent target
+        // SDK, may install without Android's confirmation. Android decides; when it still wants
+        // one, the session reports STATUS_PENDING_USER_ACTION as before and [receiver] shows it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
         val id = installer.createSession(params)
         try {
             installer.openSession(id).use { session ->

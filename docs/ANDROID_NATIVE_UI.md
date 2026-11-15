@@ -117,10 +117,14 @@ the browser downloaded it, and the user found it and opened it. Now it's **Downl
 (`client_update.rs`, `turu::install_update`), as on a desktop: the engine downloads the APK with
 `turu_bot::updates::download`, the desktops' code, which checks it against the release's
 `SHA256SUMS.txt`, and `Platform::install_package` hands it to `PackageUpdate.kt` (shared). That
-writes it into a `PackageInstaller` session and commits it; Android asks the user to confirm and,
-the first time, to allow installs from this app ("install unknown apps", which needs
-`REQUEST_INSTALL_PACKAGES` in both manifests), installs it and stops the app. The user opens the
-new version. The session's outcome comes back through `nativePackageInstalled` to
+writes it into a `PackageInstaller` session and commits it; Android asks, the first time, to
+allow installs from this app ("install unknown apps", which needs `REQUEST_INSTALL_PACKAGES` in
+both manifests), installs it and stops the app. The user opens the new version. On Android 12+
+the app updating itself installs without Android's "Do you want to update this app?": the session
+asks for that (`setRequireUserAction(USER_ACTION_NOT_REQUIRED)`), and both manifests declare
+`UPDATE_PACKAGES_WITHOUT_USER_ACTION`, which it needs (without it Android still asked). Before 12,
+or whenever Android still wants one, the session reports `STATUS_PENDING_USER_ACTION` and the
+confirmation shows as below. The session's outcome comes back through `nativePackageInstalled` to
 `turu::package_install_finished`: cancelled brings the button back, a failure shows Android's
 message.
 
@@ -140,7 +144,12 @@ message.
   HTTP doesn't follow Android's network security config). A debug build offered as a newer version
   installs over the same debug build. On the Android 16 arm64 emulator (2026-11-14), both apps
   downloaded, checked and committed the APK, showed Android's dialog and went back to the button
-  when it was cancelled; the install itself, past "install unknown apps", wasn't tried.
+  when it was cancelled. On 2026-11-15, with installs from the app already allowed (`adb shell
+  appops set <package> REQUEST_INSTALL_PACKAGES allow`) and a 0.3.0 debug build offered 0.3.1
+  (`-PturuVersion=0.3.1`; Turu Mas `TURU_VERSION=0.3.1 air/app/build.sh`), both apps installed
+  the update with no dialog and stopped; the new version was installed. Not tried: the first
+  update, where Android asks to allow installs from the app, and whether its confirmation then
+  shows too.
 
 ## GameActivity
 

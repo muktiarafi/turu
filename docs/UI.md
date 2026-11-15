@@ -355,8 +355,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   starts it again with the same arguments; **Update when I quit** downloads and unpacks it now
   and puts it in place when the window closes. On Android one button, **Download & install**
   (greyed while a script runs: installing stops the app), downloads the APK, checks it against
-  `SHA256SUMS.txt` and hands it to Android's installer, which asks before it installs over the
-  app; the user opens the new version (cancelling Android's dialog brings the button back). The
+  `SHA256SUMS.txt` and hands it to Android's installer, which installs it over the app (asking
+  first only before Android 12); the user opens the new version (cancelling Android's dialog
+  brings the button back). The
   note under it: "Checked against SHA256SUMS.txt; your settings and scripts stay. The first time,
   Android asks you to allow installs from Turu." A
   release without this platform's package says to download it from the release page; an APK

@@ -27,8 +27,8 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
   account opened in a tab logs in by itself.
 * Updates: as Turu on Android, it checks the releases at start and every 6 hours (Options >
   Application) and shows Update in the bar; the window's Download & install fetches Turu Mas's
-  APK, checks it against the release's sums and hands it to Android's installer, which asks and
-  installs it over the app (same signature, so data stays; docs/ANDROID_NATIVE_UI.md, "Updates").
+  APK, checks it against the release's sums and hands it to Android's installer, which installs it
+  over the app (on Android 12+ without asking, once installs from Turu Mas are allowed) (same signature, so data stays; docs/ANDROID_NATIVE_UI.md, "Updates").
   A release without a Turu Mas APK (those before it) offers its release page instead.
 * Crash reports (Sentry) are sent only if you say yes at first start, as in Turu; change it in
   Options > Application. [PRIVACY.md](../PRIVACY.md) says what's sent.
