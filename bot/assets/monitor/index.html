@@ -197,11 +197,30 @@ main { padding: 16px 20px 96px; min-width: 0; }
 .hdots circle { fill: color-mix(in srgb, var(--wax) 55%, var(--wax-dim)); transition: fill .15s ease-out; }
 .hdots circle.now { fill: var(--wax); }
 .hdots circle.off, .host-sum:hover .hdots circle.off { fill: var(--wax-dim); }
-.host-more { margin: 8px 0 4px; padding: 10px 0 2px; border-top: 1px solid var(--rule-soft); max-width: 520px; }
-.host-more dl.facts { font-size: 13px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.host-more dl.facts dd b { color: var(--ink); font-weight: 600; }
-.host-more dl.facts dd { white-space: normal; overflow-wrap: anywhere; }
-.host-more p { margin: 8px 0 0; color: var(--ink-3); font-size: 12px; }
+/* A figure the "Needs you" band warns about wears the warning's dye, with its dot. */
+.host-sum .mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
+.host-sum .bad b { color: var(--mengkudu); } .host-sum .warn b { color: var(--kunyit); }
+/* The details: the system, the hour as a trace, then each Turu process in steady columns. */
+.host-more { display: grid; gap: 14px; margin: 8px 0 6px; padding: 12px 0 2px; border-top: 1px solid var(--rule-soft); max-width: 640px; }
+.host-more h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.host-more p { margin: 0; }
+.host-sys { color: var(--ink-2); overflow-wrap: anywhere; }
+.host-range { margin-top: 8px !important; color: var(--ink-2); }
+.host-range b, .procs b { color: var(--ink); font-weight: 600; }
+.host-note { color: var(--ink-3); font-size: 12px; }
+.hgraph { position: relative; height: 34px; margin: 0 3px; }
+.hgraph i { position: absolute; width: 4px; height: 4px; border-radius: 50%; translate: -50% 50%; background: color-mix(in srgb, var(--wax) 60%, var(--wax-dim)); }
+.hgraph i.off { width: 3px; height: 3px; background: var(--wax-dim); }
+.hgraph i.now { width: 7px; height: 7px; background: var(--wax); }
+.procs { font-size: 13px; }
+.procs th, .procs td { padding: 6px 0; background: none; white-space: nowrap; }
+.procs th { padding-top: 0; font-weight: 400; }
+.procs tbody tr:last-child td { border-bottom: 0; }
+.procs .num { width: 1%; padding-left: 18px; text-align: right; }
+.procs .who { white-space: normal; overflow-wrap: anywhere; }
+.procs small { display: block; color: var(--ink-3); font-size: 12px; }
+.procs .mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
+.procs .bad b, .procs small .bad { color: var(--mengkudu); } .procs .warn b { color: var(--kunyit); }
 .sheet { background: var(--field); border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
 .row, .rowhead {
   display: grid; align-items: center; column-gap: 14px; padding: 9px 14px;
@@ -449,7 +468,10 @@ body.streamer .priv { filter: blur(6px); }
   .attention .why { flex-basis: 100%; order: 2; white-space: normal; padding-left: 20px; }
   .attention .acts { order: 3; padding-left: 20px; }
   /* The machine on the left, Turu on the right. */
-  .host-sum { display: grid; grid-template-columns: max-content 1fr; grid-template-areas: "name name" "cpu tcpu" "mem tmem" "box box"; gap: 3px 16px; }
+  .host-sum { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); grid-template-areas: "name name" "cpu tcpu" "mem tmem" "box box"; gap: 3px 14px; }
+  .host-sum > span, .host-sum .turu > span { white-space: normal; }
+  .hdots { width: 46px; margin-left: 8px; }
+  .host-sum .lbl { display: none; } /* "free" says it: room for Turu's column */
   .host-sum .name { grid-area: name; }
   .host-sum .turu { display: contents; }
   .host-sum.nocpu { grid-template-areas: "name name" "mem tcpu" "box tmem"; }
@@ -886,7 +908,7 @@ function render() {
   setHtml($("#totals"), live.length ? `<b class="priv">${fmt(gph)}</b> gold/h<span class="sep" style="margin:0 8px;color:var(--ink-3)">·</span><b>${fmt(kills)}</b> kills` : "");
 
   $("#attention").hidden = !needs.length && !machineNeeds.length;
-  setHtml($("#attentionList"), machineNeeds.map(([host, who, kind, why]) => `<li class="machine"><span class="mark ${kind}"></span><span class="who">${esc(who)}</span><span class="why">${why}</span><span class="acts"><button type="button" class="btn" data-host-open="${esc(host)}">Details</button></span></li>`).join("") + needs.map(([b, [why, fix]]) => `<li><span class="mark bad"></span><span class="who priv">${esc(name(b))}</span><span class="why">${esc(why)}</span><span class="acts">${fix && control() ? `<button type="button" class="btn primary" data-act="${fix[1]}" data-id="${esc(b.id)}">${icon(fix[2])}${fix[0]}</button>` : ""}<button type="button" class="btn" data-open="${esc(b.id)}">Details</button></span></li>`).join(""));
+  setHtml($("#attentionList"), machineNeeds.map(([host, who, kind, why, field]) => `<li class="machine"><span class="mark ${kind}"></span><span class="who${field === "box" || field === "grow" ? " priv" : ""}">${esc(who)}</span><span class="why">${why}</span><span class="acts"><button type="button" class="btn" data-host-open="${esc(host)}">Details</button></span></li>`).join("") + needs.map(([b, [why, fix]]) => `<li><span class="mark bad"></span><span class="who priv">${esc(name(b))}</span><span class="why">${esc(why)}</span><span class="acts">${fix && control() ? `<button type="button" class="btn primary" data-act="${fix[1]}" data-id="${esc(b.id)}">${icon(fix[2])}${fix[0]}</button>` : ""}<button type="button" class="btn" data-open="${esc(b.id)}">Details</button></span></li>`).join(""));
 
   if (!list.length) {
     main.dataset.shape = "";
@@ -1216,6 +1238,8 @@ function hostDots(points) {
   return `<svg class="hdots" viewBox="0 0 ${w} ${h}" aria-hidden="true">${dots}</svg>`;
 }
 const machineName = t => t.machine ?? "This PC";
+// A process in a few words, for "Needs you": an Army client by its label, else where Turu runs.
+const procName = t => t.id == null ? "Turu on this PC" : t.id.endsWith(":") ? `Turu on ${t.machine}` : t.label;
 // A process by the characters it runs: tabs share their window's process, a reporting process's
 // bots carry its prefix, and an Army client is its own row.
 function procLabel(t) {
@@ -1226,42 +1250,66 @@ function procLabel(t) {
   return names ? `${base}: ${names}` : base;
 }
 const procLine = t => `${cpu(t.cpuPercent)} of a core · ${bytes(turuMemory(t))}${t.container ? ` · container ${gb(t.container.used)} of ${gb(t.container.limit)} GB` : ""}`;
-function hostLine(m, n, labelled) {
+// "922 to 976 MB"; "980 MB to 1.1 GB" when the units differ.
+function range(a, b) {
+  const x = bytes(a), y = bytes(b);
+  return x.slice(-2) === y.slice(-2) ? `${x.slice(0, -3)} to ${y}` : `${x} to ${y}`;
+}
+// The hour in the details: a wax dot a minute, higher for more of Turu's memory; minutes not
+// reached yet stay unlit on the baseline, as on a bot's trace.
+function hostGraph(points) {
+  const t1 = points.at(-1)[0], t0 = t1 - 3600000;
+  const vs = points.map(p => p[1]), min = Math.min(...vs), span = Math.max(Math.max(...vs) - min, 64 * MB);
+  const x = at => Math.max(0, Math.min(100, (at - t0) / 36000)).toFixed(2);
+  const unlit = [];
+  for (let at = t0; at < points[0][0] - 60000; at += 120000) unlit.push(`<i class="off" style="left:${x(at)}%;bottom:0"></i>`);
+  const lit = points.map((p, i) => `<i${i === points.length - 1 ? ' class="now"' : ""} style="left:${x(p[0])}%;bottom:${((p[1] - min) / span * 100).toFixed(1)}%"></i>`);
+  return `<div class="hgraph" role="img" aria-label="Turu's memory over the last hour, ${range(min, Math.max(...vs))}">${unlit.join("")}${lit.join("")}</div><div class="axis"><span>${short(t0)}</span><span>now</span></div>`;
+}
+function hostLine(m, n, labelled, issues) {
   const turu = m.turu, one = turu.length === 1 ? turu[0] : null;
   const points = hostHistory.get(m.host)?.points ?? [];
   const open = hostOpen.has(m.host), more = `hostMore${n}`;
+  // A figure "Needs you" warns about: its dye and dot.
+  const flag = (cls, field) => { const kind = issues.find(i => i[4] === field)?.[2]; return [kind ? `${cls} ${kind}` : cls, kind ? `<span class="mark ${kind}"></span>` : ""]; };
+  const span = (cls, field, html) => { const [c, mark] = flag(cls, field); return `<span class="${c}">${mark}${html}</span>`; };
   const parts = [
-    ...(m.os === "android" && m.cpuPercent == null ? [] : [`<span class="cpu">CPU <b>${cpu(m.cpuPercent)}</b> of ${m.cores} core${m.cores > 1 ? "s" : ""}</span>`]),
-    `<span class="mem">Memory <b>${gb(m.memoryAvailable)}</b> of ${gb(m.memoryTotal)} GB free</span>`,
-    ...(one?.container ? [`<span class="box">Container <b>${gb(one.container.used)}</b> of ${gb(one.container.limit)} GB</span>`] : []),
+    ...(m.os === "android" && m.cpuPercent == null ? [] : [span("cpu", "cpu", `CPU <b>${cpu(m.cpuPercent)}</b> of ${m.cores} core${m.cores > 1 ? "s" : ""}`)]),
+    span("mem", "mem", `<span class="lbl">Memory </span><b>${bytes(m.memoryAvailable)}</b> free of ${gb(m.memoryTotal)} GB`),
+    ...(one?.container ? [span("box", "box", `Container <b>${gb(one.container.used)}</b> of ${gb(one.container.limit)} GB`)] : []),
   ];
   const cpus = turu.map(t => t.cpuPercent).filter(p => p != null);
   const turuCpu = cpus.length ? cpus.reduce((a, b) => a + b, 0) : null;
   const turuMem = turu.reduce((a, t) => a + turuMemory(t), 0);
   const who = one ? "Turu" : `<span title="${turu.length} Turu processes on this machine">Turu ×${turu.length}</span>`;
-  const hourTitle = points.length >= 2 ? ` title="Turu's memory over the last ${points.length} minutes: ${bytes(points[0][1])} to ${bytes(points.at(-1)[1])}"` : "";
-  parts.push(`<span class="turu"><span class="tcpu">${who} <b>${cpu(turuCpu)}</b> of a core</span><span class="tmem"${hourTitle}><b>${bytes(turuMem)}</b>${hostDots(points)}${icon("open")}</span></span>`);
+  const hourTitle = points.length >= 2 ? ` title="Turu's memory over the last ${points.length} minutes: ${range(points[0][1], points.at(-1)[1])}"` : "";
+  const [memCls, memMark] = flag("tmem", "grow");
+  parts.push(`<span class="turu"><span class="tcpu">${who} <b>${cpu(turuCpu)}</b> of a core</span><span class="${memCls}"${hourTitle}>${memMark}<b>${bytes(turuMem)}</b>${hostDots(points)}${icon("open")}</span></span>`);
   const label = labelled ? `<span class="name">${esc(machineName(turu[0]))}</span>` : "";
-  const noCpu = !parts[0].startsWith('<span class="cpu"');
+  const noCpu = !parts[0].startsWith('<span class="cpu');
   const sum = `<button type="button" class="host-sum${noCpu ? " nocpu" : ""}" data-host-toggle="${esc(m.host)}" aria-expanded="${open}" aria-controls="${more}">${label}${parts.join("")}</button>`;
   if (!open) return sum;
   const hour = points.length >= 2 ? points : null;
-  const tm = hour?.map(p => p[1]), free = hour?.map(p => p[2]);
   const system = m.osVersion ?? SYSTEMS[m.os] ?? m.os;
-  const facts = [
-    ...(system ? [["System", `${esc(system)} (${m.cores}&nbsp;core${m.cores > 1 ? "s" : ""})`]] : []),
-    [one ? "Turu's memory, last hour" : "All of Turu's memory, last hour", hour ? `<b>${bytes(tm[0])}</b> to <b>${bytes(tm.at(-1))}</b>` : "–"],
-    ...(one?.footprint != null ? [["Resident", bytes(one.rss)]] : []),
-    ...(one ? [["Most it has used", bytes(Math.max(one.peakFootprint ?? one.peakRss, turuMemory(one)))]] : []),
-    ["Least memory free, last hour", free ? bytes(Math.min(...free)) : "–"],
-    // Several processes: each one, by where its bots show.
-    ...(one ? [] : turu.map(t => [procLabel(t), procLine(t)])),
-  ];
-  const note = hour ? `${hour.length} minute${hour.length > 1 ? "s" : ""} kept, a point a minute. Turu's CPU is a share of one core; the machine's, of all ${m.cores}.`
-    : "A point a minute, kept for an hour: the first comes within a minute of Turu starting.";
-  return sum + `<div class="host-more" id="${more}"><dl class="facts">${facts.map(([t, v]) => `<dt>${t}</dt><dd>${v}</dd>`).join("")}</dl><p>${note}</p></div>`;
+  const sys = `<p class="host-sys">${esc(system)} · ${m.cores} core${m.cores > 1 ? "s" : ""}</p>`;
+  const hourHtml = hour
+    ? `<section><h3>Turu's memory, last hour</h3>${hostGraph(hour)}<p class="host-range">Turu used <b>${range(hour[0][1], hour.at(-1)[1])}</b>${hour.length < 55 ? ` over ${hour.length} minutes` : ""}; the machine had at least <b>${bytes(Math.min(...hour.map(p => p[2])))}</b> free.</p></section>`
+    : `<section><h3>Turu's memory, last hour</h3><p class="host-note">It fills in a point a minute; the first comes within a minute of Turu starting.</p></section>`;
+  const rows = turu.map(t => {
+    const kind = field => issues.find(i => i[4] === field && i[5] === t.id)?.[2];
+    const box = kind("box"), grow = kind("grow"), mark = box ?? grow;
+    const notes = [
+      t.container ? `<span class="${box ?? ""}">container ${gb(t.container.used)} of ${gb(t.container.limit)} GB</span>` : "",
+      t.footprint != null ? `resident ${bytes(t.rss)}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<tr><td class="who">${mark ? `<span class="mark ${mark}"></span>` : ""}${procLabel(t)}${notes ? `<small>${notes}</small>` : ""}</td><td class="num"><b>${cpu(t.cpuPercent)}</b></td><td class="num${grow ? ` ${grow}` : ""}"><b>${bytes(turuMemory(t))}</b></td><td class="num">${bytes(Math.max(t.peakFootprint ?? t.peakRss, turuMemory(t)))}</td></tr>`;
+  }).join("");
+  const procs = `<section><h3>${one ? "Turu" : `${turu.length} Turu processes`}</h3><table class="procs"><thead><tr><th scope="col">Process</th><th scope="col" class="num" title="A share of one core">CPU</th><th scope="col" class="num">Memory</th><th scope="col" class="num" title="The most it has used">Most</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+  const note = `<p class="host-note">Turu's CPU is a share of one core (above 100% when several are busy); the machine's, of all ${m.cores}.</p>`;
+  return sum + `<div class="host-more" id="${more}">${sys}${hourHtml}${procs}${note}</div>`;
 }
-// What's wrong with the machines, worst first: [host, machine name, "bad" | "warn", reason].
+// What's wrong with the machines, worst first: [host, who, "bad" | "warn", reason, the line's
+// figure it's about, and for a process's own trouble its id].
 function machineTrouble() {
   const out = [];
   for (const m of state.machines ?? []) {
@@ -1271,15 +1319,15 @@ function machineTrouble() {
     // full on purpose, so they're left out.
     const before = h?.points.filter(p => p[0] <= m.at - 30000).at(-1);
     if (m.os !== "android" && low(m.memoryAvailable) && before && low(before[2])) {
-      out.push([m.host, name, "bad", `Almost out of memory: ${bytes(m.memoryAvailable)} free of ${gb(m.memoryTotal)} GB. Stop a bot or add memory.`]);
+      out.push([m.host, name, "bad", `Almost out of memory: ${bytes(m.memoryAvailable)} free of ${gb(m.memoryTotal)} GB. Stop a bot or add memory.`, "mem"]);
     }
     for (const t of m.turu) {
       if (t.container && t.container.used > t.container.limit * CONTAINER_SHARE) {
-        out.push([m.host, name, "bad", `${procLabel(t)} is at ${gb(t.container.used)} of its container's ${gb(t.container.limit)} GB limit.`]);
+        out.push([m.host, procName(t), "bad", `At ${gb(t.container.used)} of its container's ${gb(t.container.limit)} GB limit.`, "box", t.id]);
       }
     }
     if (m.cpuBusySince && m.at - m.cpuBusySince >= BUSY_FOR_MS) {
-      out.push([m.host, name, "warn", `CPU over 90% for ${Math.round((m.at - m.cpuBusySince) / 60000)} minutes.`]);
+      out.push([m.host, name, "warn", `CPU over 90% for ${Math.round((m.at - m.cpuBusySince) / 60000)} minutes.`, "cpu"]);
     }
     for (const series of h?.turu ?? []) {
       const t = m.turu.find(t => t.id === series.id);
@@ -1292,25 +1340,26 @@ function machineTrouble() {
       const from = avg(pts.slice(0, 3)), to = avg(pts.slice(-3));
       if (span >= GROWTH_SPAN_MS && (to - from) / span * 3600000 > GROWTH_PER_HOUR) {
         const minutes = Math.round(span / 60000);
-        out.push([m.host, name, "warn", `Turu grew from ${bytes(from)} to ${bytes(to)} in the last ${minutes >= 55 ? "hour" : `${minutes} minutes`} (${procLabel(t)}).`]);
+        out.push([m.host, procName(t), "warn", `Grew from ${range(from, to)} in the last ${minutes >= 55 ? "hour" : `${minutes} minutes`}.`, "grow", t.id]);
       }
     }
   }
   return out.sort((a, b) => (a[2] === "bad" ? 0 : 1) - (b[2] === "bad" ? 0 : 1));
 }
 function renderHost() {
-  const machines = state?.machines ?? [], line = $("#hostLine");
+  const machines = state?.machines ?? [], line = $("#hostLine"), issues = state ? machineTrouble() : [];
   const slots = [...document.querySelectorAll(".host[data-group-host]")];
   const filled = new Set(), loose = [];
   machines.forEach((m, n) => {
     if (Date.now() - (hostAsked.get(m.host) ?? 0) > 180000) loadHostHistory(m.host);
     const names = new Set(m.turu.map(machineName));
     const slot = slots.find(s => !filled.has(s) && names.has(s.dataset.groupHost));
-    if (slot) { filled.add(slot); setHtml(slot, hostLine(m, n, false)); } else loose.push([m, n]);
+    const mine = issues.filter(i => i[0] === m.host);
+    if (slot) { filled.add(slot); setHtml(slot, hostLine(m, n, false, mine)); } else loose.push([m, n, mine]);
   });
   for (const s of slots) if (!filled.has(s)) setHtml(s, "");
   line.hidden = !loose.length;
-  setHtml(line, loose.map(([m, n]) => `<div class="host">${hostLine(m, n, true)}</div>`).join(""));
+  setHtml(line, loose.map(([m, n, mine]) => `<div class="host">${hostLine(m, n, true, mine)}</div>`).join(""));
 }
 
 function spark(points, field, color) {
