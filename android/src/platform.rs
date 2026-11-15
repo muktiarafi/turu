@@ -15,6 +15,7 @@ use jni::JavaVM;
 use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jint, jobject};
 use std::path::Path;
+use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
 use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
 
 pub struct AndroidPlatform;
@@ -226,15 +227,12 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeCrashUploadsAnswer
     std::thread::spawn(move || turu_frontend::gui::turu::answer_crash_upload_question(answer));
 }
 
-/// What a clip or a share holds at most (Android's binder limit is ~1 MB a transaction).
-const MAX_TEXT_BYTES: usize = 400_000;
-
 /// Puts `text` on Android's clipboard (egui's Copy).
 pub fn copy_text(text: &str) {
     let Some(app) = crate::app() else {
         return;
     };
-    let text = turu_frontend::crash_reports::shareable(text, MAX_TEXT_BYTES);
+    let text = shareable(text, SHARE_BYTES);
     if let Err(e) = copy(&app, &text) {
         tracing::warn!("Couldn't copy to the clipboard: {e}");
     }
@@ -285,7 +283,7 @@ pub(crate) fn with_activity_object<T>(
 
 /// `TuruActivity.shareText(subject, text)`: the share sheet.
 fn share(app: &AndroidApp, subject: &str, text: &str) -> jni::errors::Result<()> {
-    let text = turu_frontend::crash_reports::shareable(text, MAX_TEXT_BYTES);
+    let text = shareable(text, SHARE_BYTES);
     with_activity(app, |env, activity| {
         let subject = env.new_string(subject)?;
         let text = env.new_string(&text)?;

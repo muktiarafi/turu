@@ -99,6 +99,10 @@ pub fn take_unseen() -> Vec<Report> {
     take_unseen_in(&dir())
 }
 
+/// What a share sheet or the clipboard is handed at most: Android's binder limit is ~1 MB for a
+/// whole transaction, and a bigger one throws in Kotlin.
+pub const SHARE_BYTES: usize = 400_000;
+
 /// What a share sheet or the clipboard can take in one go (Android's binder limit is ~1 MB for
 /// a whole transaction): the start of `text`, cut at a line, with a note when it was cut.
 pub fn shareable(text: &str, max_bytes: usize) -> String {

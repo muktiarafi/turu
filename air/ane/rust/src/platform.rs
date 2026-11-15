@@ -7,6 +7,7 @@ use crate::host::BRIDGE;
 use crate::java::Bridge;
 use jni::Env;
 use std::path::Path;
+use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
 use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
 
 pub(crate) struct AirPlatform;
@@ -112,9 +113,10 @@ impl Platform for AirPlatform {
         let Some(vm) = BRIDGE.get() else {
             return;
         };
+        let text = shareable(text, SHARE_BYTES);
         let _ = crate::android::attach(vm, |env: &mut Env| -> jni::errors::Result<()> {
             let subject = env.new_string(subject)?;
-            let text = env.new_string(text)?;
+            let text = env.new_string(&text)?;
             Bridge::share_text(env, &subject, &text)?;
             Ok(())
         });

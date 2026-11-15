@@ -11,8 +11,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Once};
 use turu_bot::log::{LogBuffer, LogLine};
 
-/// What a Share hands over at most (Android's binder limit is ~1 MB a transaction).
-const SHARE_BYTES: usize = 400_000;
 
 /// How long Clear can be undone.
 const UNDO_CLEAR_FOR: f64 = 8.0;
@@ -79,7 +77,7 @@ pub fn log_buttons(ui: &mut Ui, buffer: &LogBuffer, save: &mut SaveText, file_na
     if crate::platform::platform().shares_text()
         && widgets::button(ui, "Share", Kind::Normal, !buffer.is_empty(), size, "").clicked()
     {
-        let text = crash_reports::shareable(&buffer.text(), SHARE_BYTES);
+        let text = crash_reports::shareable(&buffer.text(), crash_reports::SHARE_BYTES);
         crate::platform::platform().share_text(&format!("Turu {file_name}"), &text);
     }
     if widgets::button(ui, "Copy", Kind::Normal, !buffer.is_empty(), size, "").clicked() {
@@ -224,13 +222,13 @@ impl Crashes {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("crash report");
             platform.share_text(
                 &format!("Turu {} crash report: {name}", crate::turu::VERSION),
-                &crash_reports::shareable(text, SHARE_BYTES),
+                &crash_reports::shareable(text, crash_reports::SHARE_BYTES),
             );
         }
         if widgets::button(ui, "Copy", Kind::Normal, has, size, "").clicked()
             && let Some((_, text)) = &self.text
         {
-            ui.ctx().copy_text(crash_reports::shareable(text, SHARE_BYTES));
+            ui.ctx().copy_text(crash_reports::shareable(text, crash_reports::SHARE_BYTES));
         }
     }
 

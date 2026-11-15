@@ -21,6 +21,7 @@ use ndk::native_window::NativeWindow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
+use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
 use turu_frontend::gui::turu::TuruUi;
 use turu_frontend::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
 use wgpu::rwh::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
@@ -794,9 +795,12 @@ fn soft_keyboard(shown: bool) -> bool {
     })
 }
 
+/// `Bridge.copyText(text)`: egui's Copy, cut to what Android's clipboard takes in one go, as
+/// the Ruffle build's `copy_text`.
 fn copy_text(text: &str) {
+    let text = shareable(text, SHARE_BYTES);
     with_bridge(|env| {
-        let text = env.new_string(text)?;
+        let text = env.new_string(&text)?;
         Bridge::copy_text(env, &text)?;
         Ok(())
     });

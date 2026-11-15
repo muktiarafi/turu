@@ -222,7 +222,10 @@ a switch in Options.
 The bot windows' links, share sheet and clipboard are one Kotlin method each, called from Rust over
 JNI: Turu's `TuruActivity.openUrl`, `shareText`, `copyText` and `clipText` (`android/src/platform.rs`,
 which spelled the `Intent`s and the `ClipboardManager` out as JNI call chains before), as Turu Mas's
-`Bridge` has them. Logs > Copy and Share exercise `copyText` and `shareText`;
+`Bridge` has them. Both apps work the same way here: `copyText` and `shareText` run on the UI
+thread, `clipText` answers on the engine thread (the game waits for it; `ClipboardManager` reads
+from any thread), and what Rust hands them is cut to `crash_reports::SHARE_BYTES` (400 KB), below
+Android's ~1 MB binder limit, past which Kotlin throws. Logs > Copy and Share exercise `copyText` and `shareText`;
 `openUrl` and `clipText` (the game's Ctrl+V) are harder to reach on a phone: a link only shows in
 some windows (an update's release page, Options' web control), and the native field holds the
 keyboard while the game's field has the focus.

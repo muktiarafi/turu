@@ -204,9 +204,14 @@ class TuruActivity : GameActivity() {
         }
     }
 
-    /** Puts `text` on the clipboard (egui's Copy, the game's Ctrl+C). Called on the engine thread. */
+    /**
+     * Puts `text` on the clipboard (egui's Copy, the game's Ctrl+C), on the UI thread as Turu Mas's
+     * `Bridge.copyText`. Called on the engine thread.
+     */
     fun copyText(text: String) {
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Turu", text))
+        runOnUiThread {
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Turu", text))
+        }
     }
 
     /**
@@ -217,7 +222,10 @@ class TuruActivity : GameActivity() {
     fun installPackage(path: String): String? =
         PackageUpdate.install(this, path) { status, message -> nativePackageInstalled(status, message) }
 
-    /** The clipboard's text, or null when it holds none (the game's Ctrl+V). Called on the engine thread. */
+    /**
+     * The clipboard's text, or null when it holds none (the game's Ctrl+V). Called on the engine
+     * thread and answered there: the game waits for it, and `ClipboardManager` reads from any thread.
+     */
     fun clipText(): String? {
         val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return null
         if (clip.itemCount < 1) return null
