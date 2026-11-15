@@ -1585,11 +1585,17 @@ impl ApplicationHandler<RuffleEvent> for App {
                 (Some(frame), Some(draw)) => Some(frame.min(draw)),
                 (frame, draw) => frame.or(draw),
             };
-            // Turu: a UI repaint held back by the cap (see `check_redraw`).
-            let wake = match (wake, main_window.ui_redraw_at.get()) {
-                (Some(wake), Some(ui)) => Some(wake.min(ui)),
-                (wake, ui) => wake.or(ui),
-            };
+            // Turu: a UI repaint held back by the cap (see `check_redraw`), and the next one egui
+            // asked for (not before the cap allows it, and not while nothing is drawn): they don't
+            // wait for the movie's next frame.
+            let ui_next = (!main_window.minimized && !main_window.occluded)
+                .then(|| main_window.gui.next_repaint_at())
+                .flatten()
+                .map(|at| at.max(main_window.last_redraw + main_window.ui_redraw_interval()));
+            let wake = [wake, main_window.ui_redraw_at.get(), ui_next]
+                .into_iter()
+                .flatten()
+                .min();
             if let Some(wake) = wake {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
             }

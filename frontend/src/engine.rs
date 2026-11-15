@@ -67,6 +67,10 @@ pub enum Step {
     Ticked { frame_ms: Option<f64> },
     /// The time the callback asked for came, before the next frame.
     Due,
+    /// Work ran on the active tab's player between frames ([`EngineEvent::Run`]: input, the
+    /// UI's actions): the callback says when it wants to be called next (Android draws its UI
+    /// soon after a touch, not at the game's next frame, 500 ms away at Headless Mode's 2 FPS).
+    Event,
 }
 
 /// Runs the tabs' players until every sender is gone. The active tab's player ticks at its frame
@@ -127,6 +131,7 @@ pub fn run_loop_paced<E>(
                 Ok(EngineEvent::Run(work)) => {
                     if let Some(mut player) = players.get() {
                         work(&mut player);
+                        next_step = step(&mut player, Step::Event);
                     }
                 }
                 Ok(EngineEvent::Tab(request)) => {

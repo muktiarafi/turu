@@ -283,8 +283,17 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   fit with several tabs; the host puts the fit back each frame it finds the shown game there
   (`TuruStage.keepFitted`).
 
+## Headless Mode
+
+The game option draws VibeSkua's headless screen over the game, as Turu's other builds do
+(`overlay.rs`, `show_headless_screen`), and the screen takes the game's touches (`on_ui`). The
+options pass slows the game to 2 FPS, LOW quality and no sound, as elsewhere. It's every tab's at
+once, as in Turu's other builds (`docs/UI.md`); here the stage, and so its frame rate and quality,
+is every tab's anyway.
+
 ## Known gaps
 
+* AIR still draws the game under Headless Mode's cover.
 * Tabs: a stage kept in a variable and used later (`MinigameSkip`, the keybinds' `onClose`)
   isn't seen by the popup rule, so those few still show over whichever tab is on screen.
 * A single tab after the app comes back: not tried on the emulator since the redraw (Tabs,

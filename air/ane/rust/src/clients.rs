@@ -9,7 +9,9 @@
 //! order on a thread of their own, as they may wait for a script to stop.
 //!
 //! Unlike Ruffle, AIR has one frame rate for all its clients, so a hidden tab's game isn't
-//! slowed (that would slow the one on screen too); the host hides it, so it isn't drawn.
+//! slowed (that would slow the one on screen too); the host hides it, so it isn't drawn. Headless
+//! Mode, which slows the stage, is every tab's at once, as in Turu's other builds
+//! (`turu::start_updates`).
 
 use crate::host::{AirFlashHost, BRIDGE};
 use std::sync::mpsc::channel;

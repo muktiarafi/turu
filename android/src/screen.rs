@@ -38,6 +38,8 @@ use wgpu::util::DeviceExt;
 
 /// The longest the screen goes undrawn while the game is behind (see [`Screen::behind`]).
 const MAX_DRAW_GAP: Duration = Duration::from_millis(250);
+/// The shortest time between two draws of the UI alone, between the game's frames (30 a second).
+const UI_FRAME: Duration = Duration::from_millis(33);
 
 thread_local! {
     /// The engine thread's screen, once the first window came.
@@ -96,6 +98,8 @@ pub struct Screen {
     refresh_millihertz: u32,
     /// When the last draw started.
     draw_started: Instant,
+    /// When the UI wants drawing again (egui's repaint delay after the last draw), if it does.
+    ui_due: Option<Instant>,
     /// Whether the surface's last `configure` worked, and when to try again if it didn't
     /// ([`Screen::configure`]).
     configured: bool,
@@ -240,6 +244,7 @@ impl Screen {
             pacing: Pacing::new(),
             refresh_millihertz: 0,
             draw_started: Instant::now(),
+            ui_due: None,
             configured: false,
             retry_configure: Instant::now(),
             asked_refresh: None,
@@ -535,19 +540,27 @@ impl Screen {
                 self.update_refresh_rate();
                 let refresh = self.pacing.refresh_interval();
                 if self.draw_started.elapsed() < refresh.mul_f32(0.75) {
-                    return None;
+                    return self.next_ui_draw();
                 }
                 if self.behind(player) {
                     crate::frame_perf::skipped();
-                    return None;
+                    return self.next_ui_draw();
                 }
                 let new_picture = player.needs_render();
                 self.draw(player, new_picture);
-                None
+                self.next_ui_draw()
             }
-            // Turned off, or the movie stopped, since the last draw was asked for.
-            (Step::Due, false) => None,
-            (Step::Ticked { .. }, true) => {
+            // Turu: the UI is drawn on its own between the game's frames when it asks (a touch,
+            // egui's animations, the logs while a script runs), as the desktop's window repaints
+            // it: at Headless Mode's 2 FPS it was drawn only with the game's frames, 500 ms apart.
+            (Step::Due, false) => {
+                if self.ui_due.is_some_and(|due| due <= Instant::now()) {
+                    self.draw(player, false);
+                }
+                self.next_ui_draw()
+            }
+            (Step::Event, false) => self.next_ui_draw(),
+            (Step::Ticked { .. } | Step::Event, true) => {
                 Some(self.draw_started + self.pacing.refresh_interval() / 2)
             }
             (Step::Due, true) => {
@@ -559,6 +572,19 @@ impl Screen {
                 Some(self.draw_started + self.pacing.refresh_interval() / 2)
             }
         }
+    }
+
+    /// When to draw the UI alone next, if it wants drawing: when egui asked, or now after input,
+    /// but at most every [`UI_FRAME`].
+    fn next_ui_draw(&mut self) -> Option<Instant> {
+        // Nothing is drawn without a GPU device (`draw`).
+        if ruffle_render_wgpu::device_lost().is_some() {
+            return None;
+        }
+        if !self.events.is_empty() {
+            self.ui_due = Some(Instant::now());
+        }
+        self.ui_due.map(|due| due.max(self.draw_started + UI_FRAME))
     }
 
     /// Whether to skip this tick's draw because the game is behind: more than half a frame of
@@ -630,7 +656,8 @@ impl Screen {
             new_picture = true;
             tracing::info!("game area now {}x{}", movie_size.0, movie_size.1);
         }
-        if new_picture {
+        // Headless Mode's screen hides the game: it isn't rendered, as on the desktop (`app.rs`).
+        if new_picture && !turu::headless_mode() {
             player.render();
             let took = started.elapsed();
             crate::frame_perf::add(crate::frame_perf::Phase::Render, took);
@@ -695,6 +722,11 @@ impl Screen {
             }
             ui.show_windows(root.ctx());
         });
+        // Duration::MAX (nothing to animate or update) overflows: no draw wanted.
+        self.ui_due = output
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .and_then(|viewport| Instant::now().checked_add(viewport.repaint_delay));
         // Turu's text boxes are typed in through a native field (`ui_field.rs`); a text box that
         // isn't one of them (egui's own) gets the keyboard's keys, and moves up above it.
         let native = self.ui_field.sync(&self.egui);

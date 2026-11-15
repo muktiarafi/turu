@@ -328,6 +328,7 @@ pub fn script_repo() -> &'static Arc<turu_bot::repo::ScriptRepo> {
 /// updated before the game starts. Clients launched by Army > Accounts skip both: their
 /// launcher has the same data folder.
 pub fn start_updates() {
+    start_headless_mode_sync();
     start_skill_set_updates();
     if headless() || LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
         return;
@@ -341,6 +342,59 @@ pub fn start_updates() {
         tracing::info!("Scripts: {message}");
         Ok(message)
     });
+}
+
+/// How often [`start_headless_mode_sync`] looks at the tabs' options (the options pass's rate).
+const HEADLESS_MODE_SYNC: Duration = Duration::from_millis(250);
+
+/// Keeps Headless Mode (the game option) the same on every tab, as VibeSkua's tabbed host sends it
+/// to every tab (`BroadcastOption`). A tab that turns it on or off (Game Options, a HotKey, a
+/// script, Army Control, the control API) turns it on or off on all; a tab that opens gets it as
+/// the others have it. On Turu Mas the tabs share AIR's one stage, whose 2 FPS and LOW quality are
+/// every tab's anyway. Once, on a thread of its own.
+pub fn start_headless_mode_sync() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let spawned = std::thread::Builder::new()
+            .name("Turu Headless Mode".into())
+            .spawn(|| {
+                let mut seen = HashMap::new();
+                let mut on = bot().opts().headless_mode;
+                loop {
+                    on = sync_headless_mode(&tabs(), &mut seen, on);
+                    std::thread::sleep(HEADLESS_MODE_SYNC);
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::error!("Couldn't start Headless Mode's thread; it stays each tab's: {e}");
+        }
+    });
+}
+
+/// One pass of [`start_headless_mode_sync`]: `seen` is each tab's Headless Mode as last passed,
+/// `on` every tab's; returns every tab's now.
+fn sync_headless_mode(
+    tabs: &[(TabId, Arc<Bot>)],
+    seen: &mut HashMap<TabId, bool>,
+    mut on: bool,
+) -> bool {
+    let changed = tabs.iter().find_map(|(tab, bot)| {
+        let value = bot.opts().headless_mode;
+        seen.get(tab)
+            .is_some_and(|old| *old != value)
+            .then_some(value)
+    });
+    if let Some(value) = changed {
+        on = value;
+    }
+    for (tab, bot) in tabs {
+        if bot.opts().headless_mode != on {
+            bot.options.write().headless_mode = on;
+        }
+        seen.insert(*tab, on);
+    }
+    seen.retain(|tab, _| tabs.iter().any(|(t, _)| t == tab));
+    on
 }
 
 /// Client updates (`turu_bot::updates`): checks Turu's GitHub releases at launch and every 6
@@ -1413,6 +1467,48 @@ pub fn spawn_action_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headless_mode_follows_the_tab_that_changed_it() {
+        let bots: Vec<_> = (0..3).map(|i| (TabId(100 + i), Bot::new())).collect();
+        for (_, bot) in &bots {
+            bot.options.write().headless_mode = false;
+        }
+        let modes = |tabs: &[(TabId, Arc<Bot>)]| {
+            tabs.iter()
+                .map(|(_, b)| b.opts().headless_mode)
+                .collect::<Vec<_>>()
+        };
+        let mut seen = HashMap::new();
+        let mut on = sync_headless_mode(&bots, &mut seen, false);
+        assert!(!on);
+
+        // One tab turns it on: every tab has it.
+        bots[1].1.options.write().headless_mode = true;
+        on = sync_headless_mode(&bots, &mut seen, on);
+        assert!(on);
+        assert_eq!(modes(&bots), [true, true, true]);
+
+        // A new tab, off in its options.json, gets it rather than turning it off for the others.
+        let mut tabs = bots.clone();
+        let new = Bot::new();
+        new.options.write().headless_mode = false;
+        tabs.push((TabId(200), new));
+        on = sync_headless_mode(&tabs, &mut seen, on);
+        assert!(on);
+        assert_eq!(modes(&tabs), [true, true, true, true]);
+
+        // Another tab turns it off: off on every tab.
+        tabs[3].1.options.write().headless_mode = false;
+        on = sync_headless_mode(&tabs, &mut seen, on);
+        assert!(!on);
+        assert_eq!(modes(&tabs), [false, false, false, false]);
+
+        // A closed tab is forgotten.
+        on = sync_headless_mode(&tabs[..2], &mut seen, on);
+        assert!(!on);
+        assert_eq!(seen.len(), 2);
+    }
 
     #[test]
     fn script_stopped_alert_says_how_it_ended() {

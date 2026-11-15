@@ -285,6 +285,15 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   While Headless Mode is on in game, the game area shows VibeSkua's headless overlay ("Headless
   Mode Active", `show_headless_screen` in `mod.rs`) instead of the 2 FPS game: the movie isn't
   drawn and the overlay takes the game's clicks; the bar and tool windows work as usual.
+  Headless Mode is every tab's at once, as VibeSkua's tabbed host sends it to every tab: a tab
+  that turns it on or off (Game Options, a HotKey, a script, Army Control, the control API) turns
+  it on or off on all, and a new tab gets it as the others have it
+  (`turu::start_headless_mode_sync`). The other tabs' Game Options mark it "Changed outside".
+  The bar and the windows keep their own pace at its 2 FPS, as VibeSkua's separate window does:
+  the desktop's event loop also wakes for egui's next repaint (`GuiController::next_repaint_at`),
+  and Android's screen draws the UI alone between the game's frames, after a touch or when egui
+  asks, at most 30 times a second (`Screen::next_ui_draw`, `engine::Step::Event`); neither renders
+  the game under the cover.
   Streamer Mode (VibeSkua `ApplyStreamerMode`) turns Hide Players on and turu.swf's
   `StreamerMode` module (`host/as3/turu/host/Streamer.as`; one call when it changes, where VibeSkua
   rewrites everything every 500 ms) checks on every frame and writes only what the game changed back.

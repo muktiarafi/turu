@@ -18,6 +18,7 @@ use crate::host::BRIDGE;
 use jni::objects::JValue;
 use jni::{Env, jni_sig, jni_str};
 use ndk::native_window::NativeWindow;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 use turu_frontend::gui::turu::TuruUi;
@@ -78,6 +79,9 @@ const RELEASE_TIMEOUT: Duration = Duration::from_secs(2);
 static EGUI: OnceLock<egui::Context> = OnceLock::new();
 /// What's above and left of the game, in pixels, as last drawn.
 static INSETS: Mutex<(f32, f32)> = Mutex::new((0.0, 0.0));
+/// Headless Mode's screen covers the game, as last drawn: it takes the game's touches, for
+/// [`on_ui`] (Kotlin's thread, which shouldn't wait on a bot's state).
+static COVERED: AtomicBool = AtomicBool::new(false);
 
 fn shared() -> MutexGuard<'static, Shared> {
     SHARED.lock().unwrap_or_else(|e| e.into_inner())
@@ -196,7 +200,7 @@ pub(crate) fn input(events: Vec<egui::Event>) {
 /// count), as the Ruffle build decides.
 pub(crate) fn on_ui(x: f32, y: f32) -> bool {
     let (left, top) = *INSETS.lock().unwrap_or_else(|e| e.into_inner());
-    if x < left || y < top {
+    if x < left || y < top || COVERED.load(Ordering::Relaxed) {
         return true;
     }
     let Some(egui) = EGUI.get() else {
@@ -344,10 +348,18 @@ fn run() {
         // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
         turu_frontend::gui::set_cutout(cutout.0 / ppp, cutout.1 / ppp);
         let keyboard = keyboard / ppp;
+        // Headless Mode's screen over the game, as the Ruffle builds draw it (an opaque page: AIR's
+        // view below doesn't show through), under the windows.
+        let covered = turu_frontend::turu::headless_mode();
         let output = egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
+            if covered {
+                let top = turu_frontend::gui::top_height() as f32;
+                turu_frontend::gui::turu::show_headless_screen(root.ctx(), top);
+            }
             ui.show_windows(root.ctx());
         });
+        COVERED.store(covered, Ordering::Relaxed);
         // Turu's text boxes are typed in through a native field; a text box that isn't one of
         // them (egui's own) gets the keyboard's keys, and moves up above it.
         let native = sync_field(&mut field, &egui);

@@ -719,6 +719,16 @@ impl GuiController {
         Instant::now().duration_since(self.last_update) >= self.repaint_after
     }
 
+    /// Turu: when egui wants its next repaint (an animation, the logs while a script runs), if it
+    /// does and it shows something: the event loop wakes for it, not only for the movie's next
+    /// frame, 500 ms away at Headless Mode's 2 FPS.
+    pub fn next_repaint_at(&self) -> Option<Instant> {
+        if !self.wants_redraws() {
+            return None;
+        }
+        self.last_update.checked_add(self.repaint_after)
+    }
+
     pub fn show_open_dialog(&mut self) {
         self.gui.dialogs.open_file_advanced()
     }
