@@ -400,6 +400,11 @@ in-process tabs stay the default; an Options switch for it is still to come).
   screen, and nothing waits on the activity's main thread (only when the surface is destroyed or
   a slot is stopped, where it must be gone first). A slot that dies before answering counts as
   having let go; one that doesn't let go in 30 s keeps the screen, and the Rust side is told.
+* **While no slot draws** (a tab starting, a slot coming back after a kill, a new surface on its
+  way) a plain Android view over the game area says "Starting the tab…" with a spinner, instead of
+  black: it shows until a slot whose engine is up (its hello carries its control API) has the
+  surface. Checked on the emulator at the first tab's start and right after the slot on screen was
+  killed; it went once the slot drew.
 * **The app's once-only jobs** (decided 2026-11-16, after how VibeSkua does it: its tab host, a
   process without a game that's always there, downloads scripts; its Manager checks for client
   updates; skill sets are refreshed in every process, made safe by atomic writes). Android has no
@@ -460,7 +465,11 @@ it's made before the slots start). On the emulator, switching back one second af
 now works (slot 1 let go after 3.9 s, busy while slot 2 started, and kept the screen meanwhile), and
 three switches 0.4 s apart ended on the last one. A slot shown again after its textures were freed
 can take seconds to let go (9.7 s once on the emulator's CPU renderer): its first pictures back
-rebuild them; to measure on phones.
+rebuild them; to measure on phones. Another let-go took 14 s on the emulator, a slot at the
+login screen while another started, both on the CPU renderer. For M4: read the "let go (… ms)"
+lines on phones; if seconds are common there, have the engine look for the request during long
+steps (startup, the first pictures after textures were freed), not only between ticks. Holding the
+surface until a new slot has drawn was set aside (it shows a frozen tab rather than a black one).
 
 ### M4: Android on phones
 

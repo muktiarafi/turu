@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -13,10 +14,16 @@ import android.os.Message
 import android.os.Messenger
 import android.os.SystemClock
 import android.util.Log
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -49,7 +56,47 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
     private val messengers = ConcurrentHashMap<Int, Messenger>()
     private val bound = mutableSetOf<Int>()
     private var surfaceValid = false
+
+    /** The slot drawing in the surface; the "starting" overlay shows while it's none (or not up yet). */
     private var attached: Int? = null
+        set(value) {
+            field = value
+            updateOverlay()
+        }
+
+    /** The slots whose engine is up (they said hello with their control API). */
+    private val ready = mutableSetOf<Int>()
+
+    /**
+     * What shows where the game goes while no slot draws there: a tab starting, coming back after
+     * Android stopped it, or a new surface on its way (the activity's process has no GPU of its own
+     * to draw anything). A plain view over the surface.
+     */
+    private val overlay = FrameLayout(context).apply {
+        setBackgroundColor(Color.rgb(14, 17, 22))
+        val column = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(ProgressBar(context).apply { isIndeterminate = true })
+            addView(
+                TextView(context).apply {
+                    text = "Starting the tab…"
+                    setTextColor(Color.rgb(200, 205, 214))
+                    textSize = 15f
+                    gravity = Gravity.CENTER
+                    setPadding(0, (12 * density).toInt(), 0, 0)
+                },
+            )
+        }
+        addView(
+            column,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ),
+        )
+    }
     private var stopped = false
 
     // Answers and the slots' messages come on a thread of their own: the main thread waits for answers.
@@ -61,7 +108,11 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
             if (msg.what == SlotService.MSG_TO_SHELL) {
                 val slot = msg.arg1
                 val json = msg.data.getString("json") ?: return
-                main.post { if (!stopped) run(nativeFromSlot(slot, json)) }
+                main.post {
+                    if (stopped) return@post
+                    noteReady(slot, json)
+                    run(nativeFromSlot(slot, json))
+                }
                 return
             }
             val waited = waiting.remove(msg.arg2)
@@ -87,6 +138,7 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
 
             override fun onServiceDisconnected(name: ComponentName) {
                 messengers.remove(slot)
+                ready.remove(slot)
                 Log.w(SlotService.TAG, "Shell: slot $slot disconnected (its process died)")
                 if (attached == slot) {
                     attached = null
@@ -111,6 +163,11 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
     }
 
     fun start(filesDir: String) {
+        (view.parent as? ViewGroup)?.addView(
+            overlay,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        updateOverlay()
         view.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 surfaceValid = true
@@ -247,6 +304,21 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
      * Hiding and showing the view makes a new surface, which goes to the slot on screen once it's
      * back (`surfaceCreated`, or its hello).
      */
+    /** A slot's hello with its control API: its engine is up, and draws as soon as it has the surface. */
+    private fun noteReady(slot: Int, json: String) {
+        val message = runCatching { JSONObject(json) }.getOrNull() ?: return
+        if (message.optString("type") == "hello" && !message.isNull("api")) {
+            ready.add(slot)
+            updateOverlay()
+        }
+    }
+
+    /** The overlay shows while no slot whose engine is up has the surface. */
+    private fun updateOverlay() {
+        val drawing = attached?.let { it in ready } == true
+        overlay.visibility = if (drawing) View.GONE else View.VISIBLE
+    }
+
     private fun renewSurface() {
         main.post {
             Log.i(SlotService.TAG, "Shell: a new surface for the next slot (the last one's died with it)")
