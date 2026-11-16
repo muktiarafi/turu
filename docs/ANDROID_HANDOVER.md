@@ -197,6 +197,13 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   bubbling `touchBegin`/`touchMove`/`touchEnd` to the object under the finger. `Screen::touch`
   gives a finger that comes while another holds the mouse to `handle_touch` first, and taps with
   the mouse only when no listener took it. egui follows one finger at a time.
+* **AQW's touch controls are on by default:** its "Mobile Controls" setting
+  (`litePreference.data.sTouchMode`: Auto, On, Off; Auto when unset) shows them on Auto when
+  `Mobile.isTouchDevice`: under AIR (Turu Mas), or when `Capabilities.touchscreenType` is
+  "finger". ruffle-aqw reports "finger" where `UiBackend::supports_touch_events` (`// Turu:`;
+  Ruffle's stub says "none"), so Turu shows them too, emulators included; Off in the game's
+  settings hides them. Their sizes come out as with the setting On: the client measures
+  millimetres with `Capabilities.screenDPI` (72 in Ruffle) and clamps to its 44 px minimum.
 * **Android makes a new activity in the same process** for some configuration changes (an
   assets-path change right after boot; `configChanges` can't opt out of it). Its `android_main`
   runs again: `lib.rs`'s `APP` is replaced each time, or the keyboard and the browser go through

@@ -178,7 +178,8 @@ impl UiBackend for AndroidUiBackend {
     }
 
     /// AQW's dash button and keys listen for the fingers that aren't the mouse
-    /// (`Screen::touch`).
+    /// (`Screen::touch`), and AQW shows its touch controls by default on a touch screen
+    /// (`Capabilities.touchscreenType`).
     fn supports_touch_events(&self) -> bool {
         true
     }
