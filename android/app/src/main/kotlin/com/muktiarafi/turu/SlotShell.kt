@@ -37,6 +37,14 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
     /** The slot on screen (0 before the first is shown). */
     private var current = 0
 
+    /** The slot to show: [current] once the surface has moved there. */
+    private var target = 0
+
+    /** The let-go under way (its token, 0 when none) and the slot asked. */
+    private var handingToken = 0
+    private var handingSlot = 0
+    private var handingStarted = 0L
+
     private val main = Handler(Looper.getMainLooper())
     private val messengers = ConcurrentHashMap<Int, Messenger>()
     private val bound = mutableSetOf<Int>()
@@ -56,9 +64,13 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
                 main.post { if (!stopped) run(nativeFromSlot(slot, json)) }
                 return
             }
-            waiting.remove(msg.arg2)?.let { (latch, answer) ->
-                answer[0] = msg.arg1
-                latch.countDown()
+            val waited = waiting.remove(msg.arg2)
+            if (waited != null) {
+                waited.second[0] = msg.arg1
+                waited.first.countDown()
+            } else if (msg.what == SlotService.MSG_DETACH) {
+                val (token, answer) = msg.arg2 to msg.arg1
+                main.post { if (!stopped) detached(token, answer) }
             }
         }
     })
@@ -80,7 +92,12 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
                     attached = null
                     renewSurface()
                 }
-                if (!stopped) run(nativeSlotGone(slot))
+                // A slot asked to let go that died instead: let go all the same.
+                if (handingToken != 0 && handingSlot == slot) handingToken = 0
+                if (!stopped) {
+                    run(nativeSlotGone(slot))
+                    handOver()
+                }
             }
         }
     }
@@ -97,11 +114,11 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
         view.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 surfaceValid = true
-                if (current != 0) attach(current)
+                handOver()
             }
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                if (attached == current) send(current, SlotService.MSG_RESIZE) else if (current != 0) attach(current)
+                if (attached != null && attached == current) send(current, SlotService.MSG_RESIZE) else handOver()
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -151,9 +168,12 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
 
     private fun stopSlot(slot: Int) {
         if (slot !in 1..SLOTS) return
-        if (attached == slot) {
-            detach()
+        if (attached == slot && !detach()) {
+            // Stopped while it still had the surface: the next slot needs a new one.
+            attached = null
+            renewSurface()
         }
+        if (handingToken != 0 && handingSlot == slot) handingToken = 0
         // Unbound first: a bound service isn't destroyed by stopService.
         if (bound.remove(slot)) runCatching { context.unbindService(connections.getValue(slot)) }
         messengers.remove(slot)
@@ -161,33 +181,64 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
         Log.i(SlotService.TAG, "Shell: slot $slot stopped")
     }
 
-    /**
-     * Moves the surface to `slot`: the slot before lets go of it first, or it stays there. A slot
-     * still starting may not answer in time: tried again `tries` more times, a second apart, then
-     * the Rust side is told the slot before is still on screen.
-     */
-    private fun show(slot: Int, tries: Int = 3) {
+    /** Shows `slot`: the surface moves there once the slot on screen has let go of it ([handOver]). */
+    private fun show(slot: Int) {
         if (slot !in 1..SLOTS) return
-        if (slot == current) {
-            if (surfaceValid && attached != slot) attach(slot)
-            return
-        }
-        val started = SystemClock.elapsedRealtime()
-        if (surfaceValid && attached != null && !detach()) {
-            if (tries > 0) {
-                Log.w(SlotService.TAG, "Shell: slot $attached didn't let go of the surface; trying again")
-                main.postDelayed({ if (!stopped) show(slot, tries - 1) }, 1000)
-            } else {
-                Log.w(SlotService.TAG, "Shell: slot $attached didn't let go of the surface; staying on it")
-                run(nativeStillShown(current))
+        target = slot
+        handOver()
+    }
+
+    /**
+     * Moves the surface toward [target], without waiting on the main thread: the slot that has it is
+     * asked to let go, and its answer ([detached]) carries on. A slot still starting answers once its
+     * engine gets to it; meanwhile it keeps the screen, and a newer choice replaces the target.
+     */
+    private fun handOver() {
+        if (handingToken != 0 || target == 0) return
+        val from = attached
+        if (from != null && from != target && surfaceValid) {
+            val messenger = messengers[from]
+            if (messenger != null) {
+                handingToken = tokens.incrementAndGet()
+                handingSlot = from
+                handingStarted = SystemClock.elapsedRealtime()
+                val message = Message.obtain(null, SlotService.MSG_DETACH, 0, handingToken).apply {
+                    replyTo = this@SlotShell.replyTo
+                }
+                try {
+                    messenger.send(message)
+                    return
+                } catch (e: Exception) {
+                    Log.w(SlotService.TAG, "Shell: couldn't reach slot $from: $e")
+                    handingToken = 0
+                }
             }
-            return
+            attached = null
         }
-        if (current != 0) runCatching { context.unbindService(important.getValue(current)) }
-        current = slot
-        context.bindService(intent(slot), important.getValue(slot), Context.BIND_IMPORTANT)
-        if (surfaceValid) attach(slot)
-        Log.i(SlotService.TAG, "Shell: showing slot $slot (${SystemClock.elapsedRealtime() - started} ms)")
+        if (current != target) {
+            if (current != 0) runCatching { context.unbindService(important.getValue(current)) }
+            current = target
+            context.bindService(intent(current), important.getValue(current), Context.BIND_IMPORTANT)
+            Log.i(SlotService.TAG, "Shell: showing slot $current")
+        }
+        if (surfaceValid && attached != current) attach(current)
+    }
+
+    /** The answer to the let-go [handOver] asked for: on to the target, or (it didn't let go) stay. */
+    private fun detached(token: Int, answer: Int) {
+        if (token != handingToken) return
+        val from = handingSlot
+        handingToken = 0
+        val waited = SystemClock.elapsedRealtime() - handingStarted
+        if (answer == 1 || messengers[from] == null) {
+            Log.i(SlotService.TAG, "Shell: slot $from let go ($waited ms)")
+            if (attached == from) attached = null
+            handOver()
+        } else {
+            Log.w(SlotService.TAG, "Shell: slot $from didn't let go of the surface ($waited ms); staying on it")
+            target = from
+            run(nativeStillShown(from))
+        }
     }
 
     /**
@@ -236,7 +287,11 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
         Log.i(SlotService.TAG, "Shell: surface to slot $slot: ${if (answer == 1) "taken" else "not taken ($answer)"}")
     }
 
-    /** Takes the surface back from the slot that has it; true once it let go (or none had it). */
+    /**
+     * Takes the surface back from the slot that has it, waiting (at most 3 s): only where it must be
+     * gone before returning (the surface destroyed, the slot stopped). True once it let go (or none
+     * had it).
+     */
     private fun detach(): Boolean {
         val slot = attached ?: return true
         val started = SystemClock.elapsedRealtime()

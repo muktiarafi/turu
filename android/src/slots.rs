@@ -288,15 +288,25 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeAttach<'local>(
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+/// How long a slot's engine has to let go of the surface: a slot still starting (building its
+/// player, loading turu.swf) gets to it only after that step. The caller waits off the main thread.
+const DETACH_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// `SlotService.nativeDetach()`: stops drawing in the surface and lets it go. 1 once the engine
-/// has dropped it (the surface can then go to another slot), 0 when it didn't answer in time.
+/// has dropped it (the surface can then go to another slot), 0 when it didn't in [`DETACH_LIMIT`].
+/// Blocks until then: called on a thread of its own.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeDetach<'local>(
     _unowned_env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) -> jint {
-    let answered = crate::detach_surface();
-    tracing::info!("Slot {:?}: surface detached (answered: {answered})", slot());
+    let started = std::time::Instant::now();
+    let answered = crate::detach_surface(DETACH_LIMIT);
+    tracing::info!(
+        "Slot {:?}: surface detached (answered: {answered}, after {} ms)",
+        slot(),
+        started.elapsed().as_millis()
+    );
     jint::from(answered)
 }
 

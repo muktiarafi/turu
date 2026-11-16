@@ -392,9 +392,14 @@ in-process tabs stay the default; an Options switch for it is still to come).
   slot is muted and frees its spare textures, as a backgrounded app does today.
 * **The surface after a death**: a slot that dies while drawing stays the window's producer, and the
   next one's Vulkan surface on it is refused (`ERROR_NATIVE_WINDOW_IN_USE_KHR`, which wgpu panics
-  on). The shell makes a new surface (its view hidden and shown) when that happens. A hand-over the
-  slot on screen doesn't answer in time (one still starting) is tried again three times a second
-  apart, then the Rust side is told which slot is still on screen.
+  on). The shell makes a new surface (its view hidden and shown) when that happens, and when it
+  stops a slot that didn't let go.
+* **The hand-over is asynchronous**: the shell asks the slot on screen to let go and returns; the
+  slot's engine lets go when it gets to it (up to 30 s, waited for on a thread of the slot's own),
+  and its answer moves the surface to the slot chosen last. Meanwhile the old slot keeps the
+  screen, and nothing waits on the activity's main thread (only when the surface is destroyed or
+  a slot is stopped, where it must be gone first). A slot that dies before answering counts as
+  having let go; one that doesn't let go in 30 s keeps the screen, and the Rust side is told.
 * **The app's once-only jobs** (decided 2026-11-16, after how VibeSkua does it: its tab host, a
   process without a game that's always there, downloads scripts; its Manager checks for client
   updates; skill sets are refreshed in every process, made safe by atomic writes). Android has no
@@ -451,8 +456,11 @@ shell killed and then slot 1, slot 2 took the monitor over within seconds and li
 (restarted, in game) from its address file. An update found by the monitor's slot is installed
 only from the activity. Also: the Keystore's key is made the first time a password is
 kept; two processes doing that at once could each make one (the shell keeps the first tab's, so
-it's made before the slots start). The hand-over retry wasn't seen on the emulator (the slot let
-go in time); its Rust side is tested.
+it's made before the slots start). On the emulator, switching back one second after opening a tab
+now works (slot 1 let go after 3.9 s, busy while slot 2 started, and kept the screen meanwhile), and
+three switches 0.4 s apart ended on the last one. A slot shown again after its textures were freed
+can take seconds to let go (9.7 s once on the emulator's CPU renderer): its first pictures back
+rebuild them; to measure on phones.
 
 ### M4: Android on phones
 

@@ -19,6 +19,7 @@ import android.os.PowerManager
 import android.util.Log
 import android.view.Surface
 import androidx.core.os.BundleCompat
+import kotlin.concurrent.thread
 
 /**
  * Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): one tab's engine in a process of its own
@@ -103,7 +104,7 @@ abstract class SlotService(private val slot: Int) : Service() {
     private val shellDied = IBinder.DeathRecipient {
         Log.w(TAG, "Slot $slot: the shell died; letting its surface go")
         shell = null
-        nativeDetach()
+        thread(name = "Turu Detach") { nativeDetach() }
     }
 
     /** Keeps `replyTo` as the shell to send to, and watches it. */
@@ -122,8 +123,25 @@ abstract class SlotService(private val slot: Int) : Service() {
         }
     }
 
+    /** Answers a shell's request with `answer`, when it waits for one (its `token`, from arg2). */
+    private fun answer(what: Int, token: Int, replyTo: Messenger?, answer: Int) {
+        if (token == 0) return
+        try {
+            replyTo?.send(Message.obtain(null, what, answer, token))
+        } catch (e: Exception) {
+            Log.w(TAG, "Slot $slot: couldn't answer the shell: $e")
+        }
+    }
+
     private val messenger = Messenger(object : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
+            if (msg.what == MSG_DETACH) {
+                // The engine lets go when it gets to it (later while it's starting up): waited for
+                // on a thread of its own, answered then.
+                val (token, replyTo) = msg.arg2 to msg.replyTo
+                thread(name = "Turu Detach") { answer(MSG_DETACH, token, replyTo, nativeDetach()) }
+                return
+            }
             val answer = when (msg.what) {
                 MSG_HELLO -> {
                     watchShell(msg.replyTo)
@@ -145,7 +163,6 @@ abstract class SlotService(private val slot: Int) : Service() {
                         nativeAttach(surface, data.getFloat("density"))
                     }
                 }
-                MSG_DETACH -> nativeDetach()
                 MSG_RESIZE -> {
                     nativeResize()
                     1
@@ -161,16 +178,7 @@ abstract class SlotService(private val slot: Int) : Service() {
                 }
                 else -> -1
             }
-            // Answered when the shell waits for it (a token in arg2).
-            if (msg.arg2 != 0) {
-                msg.replyTo?.let { reply ->
-                    try {
-                        reply.send(Message.obtain(null, msg.what, answer, msg.arg2))
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Slot $slot: couldn't answer the shell: $e")
-                    }
-                }
-            }
+            answer(msg.what, msg.arg2, msg.replyTo, answer)
         }
     })
 

@@ -132,7 +132,8 @@ fn android_main(app: AndroidApp) {
                 run_on_engine(attach_surface);
             }
             PollEvent::Main(MainEvent::TerminateWindow { .. }) => {
-                detach_surface();
+                // Android takes the window back once this returns: no longer.
+                detach_surface(Duration::from_secs(2));
             }
             PollEvent::Main(
                 MainEvent::WindowResized { .. }
@@ -188,7 +189,9 @@ pub(crate) fn run_on_engine(work: impl FnOnce(&mut Player) + Send + 'static) {
 /// Stops drawing before Android takes the window away: the engine acknowledges between ticks
 /// (or not at all while it has no player yet, which draws nothing anyway). Whether it answered:
 /// a slot passes the surface on only then (`slots.rs`).
-pub(crate) fn detach_surface() -> bool {
+/// Stops drawing in the window and lets it go; whether the engine did within `limit` (it's busy
+/// while a frame or its startup runs).
+pub(crate) fn detach_surface(limit: Duration) -> bool {
     let (done, wait) = sync_channel(1);
     run_on_engine(move |player| {
         with_screen(Screen::detach);
@@ -200,7 +203,7 @@ pub(crate) fn detach_surface() -> bool {
         // Nothing is drawn until a window comes back. After the answer: it waits for the GPU.
         memory::trim(player, "the window went away");
     });
-    let answered = wait.recv_timeout(Duration::from_secs(2)).is_ok();
+    let answered = wait.recv_timeout(limit).is_ok();
     *lock_window() = None;
     answered
 }
