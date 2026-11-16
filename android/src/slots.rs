@@ -144,6 +144,26 @@ fn hello() {
     });
 }
 
+/// Puts `text` on the clipboard (`SlotService.copyText`).
+pub(crate) fn copy_text(text: &str) {
+    with_service(|env| {
+        let text = env.new_string(text)?;
+        SlotService::copy_text(env, &text)
+    });
+}
+
+/// The clipboard's text (`SlotService.clipText`).
+pub(crate) fn clip_text() -> Option<String> {
+    let vm = VM.get()?;
+    crate::attach(vm, |env: &mut Env| {
+        let text = SlotService::clip_text(env)?;
+        crate::storage::optional_string(env, text.into())
+    })
+    .inspect_err(|e| tracing::warn!("Slot {:?}: couldn't read the clipboard: {e}", slot()))
+    .ok()
+    .flatten()
+}
+
 /// Sends a message to the shell, when one is bound (`SlotService.toShell`).
 pub(crate) fn to_shell(message: ToShell) {
     let Ok(json) = serde_json::to_string(&message) else {
@@ -274,6 +294,18 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                     // Read at each frame, as the activity's own are.
                     crate::ui::set_insets(keyboard, cutout_left, cutout_right);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
+                }
+                // The answers to what the shell's activity did for this slot.
+                Ok(ToClient::DocumentPicked { path }) => {
+                    turu_frontend::documents::picked(path.map(std::path::PathBuf::from));
+                }
+                Ok(ToClient::DocumentCreated { uri, path }) => turu_frontend::documents::created(
+                    uri,
+                    path.map(std::path::PathBuf::from),
+                    crate::saf::write_document,
+                ),
+                Ok(ToClient::Installed { status, message }) => {
+                    turu::package_install_finished(status, message);
                 }
                 // The surface, input and size come over Binder (`SlotService`), not as messages.
                 Ok(_) => {}

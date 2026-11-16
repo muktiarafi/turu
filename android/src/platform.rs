@@ -17,6 +17,7 @@ use jni::sys::{jint, jobject};
 use std::path::Path;
 use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
 use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
+use turu_frontend::shell::ToShell;
 
 pub struct AndroidPlatform;
 
@@ -35,6 +36,12 @@ impl Platform for AndroidPlatform {
                 if let Err(e) = open_in_browser(&app, url) {
                     tracing::warn!("Couldn't open {url}: {e}");
                 }
+            }
+            // A process tab: the shell's activity opens it.
+            None if crate::slots::slot().is_some() => {
+                crate::slots::to_shell(ToShell::OpenUrl {
+                    url: url.to_owned(),
+                });
             }
             None => tracing::info!("Not opened without the app on screen: {url}"),
         }
@@ -175,6 +182,10 @@ impl Platform for AndroidPlatform {
                     tracing::warn!("Couldn't open the share sheet: {e}");
                 }
             }
+            None if crate::slots::slot().is_some() => crate::slots::to_shell(ToShell::Share {
+                subject: subject.to_owned(),
+                text: shareable(text, SHARE_BYTES),
+            }),
             None => tracing::info!("Not shared without the app on screen: {subject}"),
         }
     }
@@ -193,6 +204,13 @@ impl Platform for AndroidPlatform {
 
     /// `TuruActivity.installPackage(path)`: Android's installer (`PackageUpdate.kt`).
     fn install_package(&self, path: &Path) -> Result<(), String> {
+        // A process tab: the shell's activity installs it, and says how it went (`Installed`).
+        if crate::app().is_none() && crate::slots::slot().is_some() {
+            crate::slots::to_shell(ToShell::Install {
+                path: path.to_string_lossy().into_owned(),
+            });
+            return Ok(());
+        }
         let app = crate::app().ok_or("open Turu to install the update")?;
         let error = with_activity(&app, |env, activity| {
             let path = env.new_string(path.to_string_lossy())?;
@@ -241,10 +259,13 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeCrashUploadsAnswer
 
 /// Puts `text` on Android's clipboard (egui's Copy).
 pub fn copy_text(text: &str) {
+    let text = shareable(text, SHARE_BYTES);
     let Some(app) = crate::app() else {
+        // A process tab's slot uses the clipboard itself (Android lets any of the app's processes
+        // while the app has the focus).
+        crate::slots::copy_text(&text);
         return;
     };
-    let text = shareable(text, SHARE_BYTES);
     if let Err(e) = copy(&app, &text) {
         tracing::warn!("Couldn't copy to the clipboard: {e}");
     }
@@ -252,7 +273,9 @@ pub fn copy_text(text: &str) {
 
 /// The text on Android's clipboard, if it holds some (the game's Ctrl+V).
 pub fn clip_text() -> Option<String> {
-    let app = crate::app()?;
+    let Some(app) = crate::app() else {
+        return crate::slots::clip_text().filter(|text| !text.is_empty());
+    };
     paste(&app)
         .inspect_err(|e| tracing::warn!("Couldn't read the clipboard: {e}"))
         .ok()

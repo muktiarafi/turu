@@ -218,8 +218,9 @@ pub enum Action {
     Show(u32),
     /// Send slot `n` a message.
     Send(u32, ToClient),
-    /// Show, update or hide the text field above the keyboard, for the slot on screen.
-    Field(ToShell),
+    /// Something only the activity can do, for slot `n`: the text field above the keyboard (for
+    /// the slot on screen), a link, the share sheet, a file picker, installing an update.
+    Activity(u32, ToShell),
 }
 
 /// A slot whose process is bound and has said hello.
@@ -324,11 +325,17 @@ impl SlotShell {
             | ToShell::FieldUpdate { .. }
             | ToShell::FieldHide { .. }) => {
                 if slot == self.shown {
-                    vec![Action::Field(field)]
+                    vec![Action::Activity(slot, field)]
                 } else {
                     Vec::new()
                 }
             }
+            // From any slot: a hidden one's update may be installed, say.
+            call @ (ToShell::OpenUrl { .. }
+            | ToShell::Share { .. }
+            | ToShell::PickFile { .. }
+            | ToShell::SaveFile { .. }
+            | ToShell::Install { .. }) => vec![Action::Activity(slot, call)],
             _ => Vec::new(),
         }
     }
@@ -648,9 +655,17 @@ mod tests {
         };
         assert_eq!(
             shell.message(2, field.clone()),
-            [Action::Field(field.clone())]
+            [Action::Activity(2, field.clone())]
         );
         assert!(shell.message(1, field).is_empty());
+        // A hidden slot's update goes to the installer all the same.
+        let install = ToShell::Install {
+            path: "/u.apk".into(),
+        };
+        assert_eq!(
+            shell.message(1, install.clone()),
+            [Action::Activity(1, install)]
+        );
     }
 
     #[test]

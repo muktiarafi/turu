@@ -3,7 +3,8 @@
 //! the tab list (`turu_frontend::slots::SlotShell`), writes the slots' records and keeps their
 //! passwords itself, and answers each call with what the activity is to do next: a JSON list of
 //! `{"kind": "start" | "stop" | "show", "slot": n}`, `{"kind": "send", "slot": n, "json": ...}` and
-//! `{"kind": "field", "json": ...}` (the text field above the keyboard, for the slot on screen).
+//! `{"kind": "activity", "slot": n, "json": ...}` (what only the activity does: the text field above
+//! the keyboard, links, sharing, file pickers, installing updates).
 
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
@@ -51,8 +52,8 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
             Action::Start(slot) => list.push(json!({ "kind": "start", "slot": slot })),
             Action::Stop(slot) => list.push(json!({ "kind": "stop", "slot": slot })),
             Action::Show(slot) => list.push(json!({ "kind": "show", "slot": slot })),
-            Action::Field(message) => match serde_json::to_string(&message) {
-                Ok(text) => list.push(json!({ "kind": "field", "slot": 0, "json": text })),
+            Action::Activity(slot, message) => match serde_json::to_string(&message) {
+                Ok(text) => list.push(json!({ "kind": "activity", "slot": slot, "json": text })),
                 Err(e) => tracing::warn!("Shell: a message I can't write: {e}"),
             },
             Action::Send(slot, message) => match serde_json::to_string(&message) {

@@ -24,12 +24,14 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import com.muktiarafi.turu.shared.PackageUpdate
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 /**
  * Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): the activity as the shell over the slots
@@ -218,7 +220,7 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
                 "stop" -> stopSlot(slot)
                 "show" -> show(slot)
                 "send" -> sendJson(slot, action.getString("json"))
-                "field" -> field(JSONObject(action.getString("json")))
+                "activity" -> forActivity(slot, JSONObject(action.getString("json")))
             }
         }
     }
@@ -259,6 +261,56 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         if (slot != target) closeFields()
         target = slot
         handOver()
+    }
+
+    /** The slot waiting for a file picker's answer, or 0. */
+    private var picking = 0
+
+    /** What only the activity does, for `slot`: its text field, a link, sharing, a picker, an install. */
+    private fun forActivity(slot: Int, message: JSONObject) {
+        when (message.optString("type")) {
+            "field_show", "field_update", "field_hide" -> field(message)
+            "open_url" -> activity.openUrl(message.optString("url"))
+            "share" -> activity.shareText(message.optString("subject"), message.optString("text"))
+            "pick_file" -> {
+                picking = slot
+                activity.openDocument(message.optString("mime_types"), message.optString("folder"))
+            }
+            "save_file" -> {
+                picking = slot
+                activity.createDocument(message.optString("mime_type"), message.optString("file_name"))
+            }
+            "install" -> install(slot, message.optString("path"))
+        }
+    }
+
+    /** The slot that asked for the picker, now answered. */
+    private fun takePicking(): Int = picking.also { picking = 0 }
+
+    /** The "open" picker's answer: to the slot that asked. */
+    fun documentPicked(path: String?) {
+        val message = JSONObject().put("type", "document_picked").put("path", path ?: JSONObject.NULL)
+        main.post { sendJson(takePicking(), message.toString()) }
+    }
+
+    /** The "save" picker's answer: to the slot that asked, which writes the file and copies it in. */
+    fun documentCreated(uri: String?, path: String?) {
+        val message = JSONObject().put("type", "document_created")
+            .put("uri", uri ?: JSONObject.NULL).put("path", path ?: JSONObject.NULL)
+        main.post { sendJson(takePicking(), message.toString()) }
+    }
+
+    /** An update's APK to Android's installer, off the main thread; the outcome goes back to `slot`. */
+    private fun install(slot: Int, path: String) {
+        val installed = { status: Int, message: String? ->
+            val answer = JSONObject().put("type", "installed").put("status", status)
+                .put("message", message ?: JSONObject.NULL)
+            main.post { sendJson(slot, answer.toString()) }
+        }
+        thread(name = "Turu Install") {
+            val error = PackageUpdate.install(activity, path) { status, message -> installed(status, message) }
+            if (error != null) installed(2, error)
+        }
     }
 
     /** The slot on screen's text field above the keyboard: shown, updated or hidden. */

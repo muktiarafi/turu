@@ -218,6 +218,9 @@ impl ClientScreen {
             | ToClient::FieldEnter { .. }
             | ToClient::FieldClosed { .. }
             | ToClient::Insets { .. }
+            | ToClient::DocumentPicked { .. }
+            | ToClient::DocumentCreated { .. }
+            | ToClient::Installed { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

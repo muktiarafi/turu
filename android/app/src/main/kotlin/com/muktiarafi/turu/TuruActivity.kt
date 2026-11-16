@@ -430,7 +430,7 @@ class TuruActivity : GameActivity() {
     private fun answer(request: Int, uri: Uri?) {
         if (request == CREATE_DOCUMENT) {
             if (uri == null) {
-                nativeDocumentCreated(null, null)
+                documentCreated(null, null)
             } else {
                 val path = try {
                     Storage.saveFile(uri).absolutePath
@@ -438,12 +438,12 @@ class TuruActivity : GameActivity() {
                     Log.w("turu", "Couldn't make a file to save into: $e")
                     null
                 }
-                nativeDocumentCreated(path?.let { uri.toString() }, path)
+                documentCreated(path?.let { uri.toString() }, path)
             }
             return
         }
         if (uri == null) {
-            nativeDocumentPicked(null)
+            documentPicked(null)
             return
         }
         val folder = pickFolder
@@ -455,8 +455,18 @@ class TuruActivity : GameActivity() {
                 Log.w("turu", "Couldn't copy the chosen document: $e")
                 null
             }
-            nativeDocumentPicked(path)
+            documentPicked(path)
         }
+    }
+
+    /** The "open" picker's answer: to the engine, or with process tabs to the slot that asked. */
+    private fun documentPicked(path: String?) {
+        shell?.documentPicked(path) ?: nativeDocumentPicked(path)
+    }
+
+    /** The "save" picker's answer, as [documentPicked]. */
+    private fun documentCreated(uri: String?, path: String?) {
+        shell?.documentCreated(uri, path) ?: nativeDocumentCreated(uri, path)
     }
 
 

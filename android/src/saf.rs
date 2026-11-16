@@ -14,10 +14,18 @@ use jni::objects::{JClass, JString};
 use std::path::{Path, PathBuf};
 use turu_frontend::documents::{self, Waiting};
 use turu_frontend::platform::{Answer, FileDialog};
+use turu_frontend::shell::ToShell;
 
 /// Shows the system's "open" picker; false when it can't (no activity, or a dialog is open).
 pub fn pick_file(dialog: &FileDialog, answer: Answer) -> bool {
     let (mime_types, folder) = documents::open_request(dialog);
+    if in_slot() {
+        // The shell's activity shows it; its answer comes back as `DocumentPicked`.
+        return documents::begin(Waiting::Open(answer), || {
+            crate::slots::to_shell(ToShell::PickFile { mime_types, folder });
+            true
+        });
+    }
     show(Waiting::Open(answer), |env, activity| {
         let mime_types = env.new_string(&mime_types)?;
         let folder = env.new_string(&folder)?;
@@ -29,12 +37,27 @@ pub fn pick_file(dialog: &FileDialog, answer: Answer) -> bool {
 /// Shows the system's "save" picker, like [`pick_file`].
 pub fn save_file(dialog: &FileDialog, answer: Answer) -> bool {
     let (mime_type, file_name) = documents::save_request(dialog);
+    if in_slot() {
+        // As `pick_file`; the answer comes back as `DocumentCreated`.
+        return documents::begin(Waiting::Save(answer), || {
+            crate::slots::to_shell(ToShell::SaveFile {
+                mime_type,
+                file_name,
+            });
+            true
+        });
+    }
     show(Waiting::Save(answer), |env, activity| {
         let mime_type = env.new_string(&mime_type)?;
         let file_name = env.new_string(&file_name)?;
         activity.create_document(env, &mime_type, &file_name)?;
         Ok(())
     })
+}
+
+/// A process tab's slot: the pickers are the shell's activity's.
+fn in_slot() -> bool {
+    crate::app().is_none() && crate::slots::slot().is_some()
 }
 
 /// Waits for the activity's answer to the dialog `call` shows.
@@ -90,7 +113,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeDocumentCreated<'l
 }
 
 /// `Storage.writeDocument(uri, path)`: copies the file the window wrote into the document.
-fn write_document(uri: &str, path: &Path) -> Result<(), String> {
+pub(crate) fn write_document(uri: &str, path: &Path) -> Result<(), String> {
     let path = path.to_string_lossy().into_owned();
     let error = crate::storage::with_storage(|env| {
         let uri = env.new_string(uri)?;

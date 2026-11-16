@@ -163,6 +163,8 @@ jni::bind_java_type! {
     methods {
         static fn to_shell(json: JString),
         static fn status(title: JString, text: JString, awake: jboolean),
+        static fn copy_text(text: JString),
+        static fn clip_text() -> JString,
     },
     native_methods {
         static raw fn native_start_slot {

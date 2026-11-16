@@ -92,6 +92,20 @@ pub enum ToClient {
         cutout_left: u32,
         cutout_right: u32,
     },
+    /// Android: the "open" picker's document, copied to `path` (`None`: cancelled, or the copy
+    /// failed): the answer to `PickFile`.
+    DocumentPicked { path: Option<String> },
+    /// Android: the "save" picker made the document `uri`; the slot writes `path`, then copies it
+    /// in (`None`: cancelled). The answer to `SaveFile`.
+    DocumentCreated {
+        uri: Option<String>,
+        path: Option<String>,
+    },
+    /// Android: how the installer ended `Install` (0 installed, 1 cancelled, 2 failed) and why.
+    Installed {
+        status: i32,
+        message: Option<String>,
+    },
     /// A message this client doesn't know.
     #[serde(other)]
     Unknown,
@@ -179,6 +193,18 @@ pub enum ToShell {
     },
     /// Android: no text box of this kind has the focus now.
     FieldHide { field: FieldId },
+    /// Android: the system's "open" picker for these MIME types, the document copied into
+    /// `folder` (`turu_frontend::documents`); answered with `DocumentPicked`.
+    PickFile { mime_types: String, folder: String },
+    /// Android: the system's "save" picker; answered with `DocumentCreated`.
+    SaveFile {
+        mime_type: String,
+        file_name: String,
+    },
+    /// Android: the share sheet.
+    Share { subject: String, text: String },
+    /// Android: an update's APK to the installer; answered with `Installed`.
+    Install { path: String },
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
@@ -588,6 +614,13 @@ mod tests {
                 number: false,
             },
             ToShell::FieldHide { field: FieldId::Ui },
+            ToShell::PickFile {
+                mime_types: "application/json".into(),
+                folder: "/data/picked".into(),
+            },
+            ToShell::Install {
+                path: "/data/updates/turu.apk".into(),
+            },
         ];
         let mut bytes = Vec::new();
         for message in &to_shell {
@@ -709,6 +742,14 @@ mod tests {
                     keyboard: 800,
                     cutout_left: 0,
                     cutout_right: 120,
+                },
+                ToClient::DocumentCreated {
+                    uri: Some("content://a/b".into()),
+                    path: None,
+                },
+                ToClient::Installed {
+                    status: 2,
+                    message: Some("no space".into()),
                 },
                 ToClient::Hide,
             ];

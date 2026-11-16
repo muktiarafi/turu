@@ -718,6 +718,10 @@ impl ShellApp {
             | ToShell::FieldShow { .. }
             | ToShell::FieldUpdate { .. }
             | ToShell::FieldHide { .. }
+            | ToShell::PickFile { .. }
+            | ToShell::SaveFile { .. }
+            | ToShell::Share { .. }
+            | ToShell::Install { .. }
             | ToShell::Unknown => {}
         }
     }

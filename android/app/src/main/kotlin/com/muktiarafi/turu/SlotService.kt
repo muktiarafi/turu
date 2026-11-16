@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -229,6 +231,28 @@ abstract class SlotService(private val slot: Int) : Service() {
             } catch (e: Exception) {
                 Log.w(TAG, "Slot $slot: couldn't reach the shell: $e")
             }
+        }
+
+        /**
+         * Puts `text` on the clipboard (egui's Copy, the game's Ctrl+C). Android lets any of the app's
+         * processes use it while the app has the focus. Called from Rust.
+         */
+        @JvmStatic
+        fun copyText(text: String) {
+            val service = instance ?: return
+            Handler(Looper.getMainLooper()).post {
+                service.getSystemService(ClipboardManager::class.java)
+                    .setPrimaryClip(ClipData.newPlainText("Turu", text))
+            }
+        }
+
+        /** The clipboard's text, or null when it holds none (the game's Ctrl+V). Called from Rust. */
+        @JvmStatic
+        fun clipText(): String? {
+            val service = instance ?: return null
+            val clip = service.getSystemService(ClipboardManager::class.java).primaryClip ?: return null
+            if (clip.itemCount < 1) return null
+            return clip.getItemAt(0).coerceToText(service)?.toString()
         }
 
         /** The tab's notification and whether the CPU stays awake (its script runs). Called from Rust. */
