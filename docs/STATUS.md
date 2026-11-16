@@ -104,6 +104,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (`release_free_memory`; `TURU_MI_COLLECT=0` turns it off). macOS's footprint barely moved
   (~260 -> ~254 MB): it already left out those pages. Not measured on Linux or Windows, where
   RSS / the working set is what counts. Android uses its own allocator (scudo), not mimalloc.
+  Sounds piled up headless too (2026-11-17, measured in a Mac probe; the VPS grew the same way):
+  `--headless`, and a client that can't open an audio device, build the player with Ruffle's null
+  audio backend, which reported every sound as playing forever, so AQW's mixer
+  (`Game.mixer.activeChannels`) never got `soundComplete` and kept every `SoundChannel` and its
+  listener: ~3.3 per kill, ~5,000 an hour at ~13 kills a minute. The null backend
+  (`ruffle/core/src/backend/audio.rs`, marked `Turu:`) now knows each sound's length (with its in
+  and out points and loops, as Ruffle's mixer plays it) and reports it over once it has played;
+  streams play on as before. An MP3 loaded with `Sound.load` has no length there and completes at
+  once (none seen in AQW's cached files).
   The Headless Mode option is separate: it lowers the game's frame rate in either mode, and
   with a window it covers the game with VibeSkua's overlay and stops drawing it.
 - **Control API** (`--api`, or `--api=<address>`; default `127.0.0.1:9091`): HTTP routes for
@@ -902,6 +911,18 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   script a relogin restarts runs with Auto Relogin on again (VibeSkua leaves it off until the
   script turns it on), so a drop right after a relogin (a Mac waking from sleep) relogs again
   and `--exit-on-script-stop` waits out a relogin that starts within 2 s of the script stopping.
+- **The spell-effect queue is emptied every 10 s:** turu.swf's `Events` already emptied your
+  avatar's `AvatarMC._spFXQueue` on a new map (`clearSpellFX`); it now also does it every 10 s on
+  the same map (not while `eventsOff` is on). A headless kill-only probe (Greenguard West, ~13 kills
+  a minute) gained ~2.7 queued entries per kill, about 1,400 in 26 minutes, with their
+  `Object`/`Array`/string garbage: ~16k Flash objects an hour, roughly half of the ~27k an hour the
+  probe leaked in all (the sound channels, under "Windowless mode" above, were the rest). That is
+  the same order as the VPS's growth (+35k to 65k objects an hour), not yet confirmed there. Emptying the queue once
+  freed the entries; with both fixes the object count stayed flat for 16 minutes (not yet measured
+  over hours, or with quests and drops). What's dropped is effects queued in the last 10 s and
+  not yet drawn, perhaps ones for monsters still there; only the avatar's animation was found to
+  read the queue, so it looks visual only (not proven). Why the game's own animation doesn't keep
+  up isn't known.
 
 ## Things to know
 
