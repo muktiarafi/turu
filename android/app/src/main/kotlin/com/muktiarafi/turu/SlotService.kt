@@ -59,6 +59,7 @@ abstract class SlotService(private val slot: Int) : Service() {
         } else {
             startForeground(NOTIFICATION + slot, build())
         }
+        postSummary()
         // Held while the tab's script runs (`status`), as the app's service does.
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "turu:slot$slot")
@@ -72,6 +73,10 @@ abstract class SlotService(private val slot: Int) : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "Slot $slot: service destroyed")
+        // Its notification goes with the service: the summary loses its line, or goes with the last.
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.cancel(NOTIFICATION + slot)
+        postSummary(without = NOTIFICATION + slot)
         if (wakeLock.isHeld) wakeLock.release()
         if (instance === this) instance = null
         super.onDestroy()
@@ -110,6 +115,62 @@ abstract class SlotService(private val slot: Int) : Service() {
             .build()
     }
 
+    /**
+     * The group's summary, one line per tab, which Android shows over the tabs' notifications
+     * (collapsed, it's the one row). Every slot posts it again after its own changes, from the
+     * notifications the app has up (all the slots', whichever process posted them): it needs no
+     * state shared between the slots. `without`: a notification going away. With no tab left, the
+     * summary goes too.
+     */
+    private fun postSummary(without: Int = 0) {
+        val manager = getSystemService(NotificationManager::class.java)
+        val mine = NOTIFICATION + slot
+        // The other slots' from Android (this one's just posted may not be listed yet: its own
+        // title and text instead).
+        val tabs = manager.activeNotifications
+            .filter { it.id != mine && it.id in NOTIFICATION + 1..NOTIFICATION + SLOTS }
+            .associate { tab ->
+                val extras = tab.notification.extras
+                tab.id to (
+                    extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty() to
+                        extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+                    )
+            }
+            .toMutableMap()
+        if (without != mine) tabs[mine] = title to text
+        if (tabs.isEmpty()) {
+            manager.cancel(NOTIFICATION)
+            return
+        }
+        // The text names the tab ("dod is in game, ..."); the title is the app's ("Turu").
+        val lines = tabs.toSortedMap().values.map { (title, text) ->
+            text.lineSequence().firstOrNull().orEmpty().ifEmpty { title }
+        }
+        val open = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, TuruActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val count = if (tabs.size == 1) "1 tab" else "${tabs.size} tabs"
+        val style = Notification.InboxStyle().setSummaryText(count)
+        lines.forEach { style.addLine(it) }
+        val summary = Notification.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Turu")
+            .setContentText(lines.joinToString(" · "))
+            .setStyle(style)
+            .setContentIntent(open)
+            .setGroup(GROUP)
+            .setGroupSummary(true)
+            // The tabs' own notifications say what changed; the summary never makes a sound.
+            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .build()
+        manager.notify(NOTIFICATION, summary)
+    }
+
     private fun show(title: String, text: String, awake: Boolean) {
         this.title = title
         this.text = text
@@ -119,6 +180,7 @@ abstract class SlotService(private val slot: Int) : Service() {
             wakeLock.release()
         }
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION + slot, build())
+        postSummary()
     }
 
     /** The shell that last bound, watched so that its death lets the surface go. */
@@ -213,7 +275,11 @@ abstract class SlotService(private val slot: Int) : Service() {
         const val TAG = "turu-slots"
         private const val CHANNEL = "turu-slots"
         private const val GROUP = "turu-tabs"
+        /** The group summary's notification ID; each slot's is this plus its slot. */
         private const val NOTIFICATION = 100
+
+        /** The slots in the manifest (`Slot1Service` ... `Slot4Service`). */
+        private const val SLOTS = 4
         const val MSG_ATTACH = 1
         const val MSG_DETACH = 2
         const val MSG_RESIZE = 3

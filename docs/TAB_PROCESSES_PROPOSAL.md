@@ -428,8 +428,13 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   install while hidden). The clipboard a slot uses itself (`SlotService.copyText` / `clipText`:
   Android lets any of the app's processes while the app has the focus). Checked on the emulator:
   the web monitor's Open started the browser, Logs' Share opened the share sheet with the log, and
-  Logs' Save wrote the file through the save picker. Not run: the "open" picker, an install, the
-  clipboard.
+  Logs' Save wrote the file through the save picker. An update installed from a slot (host GPU,
+  a debug 0.3.1 over 0.3.0, served from the Mac through `--releases-url`): slot 1, which runs the
+  update checks, found it, its Menu offered "Update to 0.3.1", Download & install fetched and
+  checked the APK in the slot and sent `Install` to the shell, whose activity installed it with no
+  confirmation (Android 12+, an app updating itself); Android stopped every process, and the app
+  opened again came back on 0.3.1 with both slots logged in and no update offered. Not run: the
+  "open" picker, the clipboard.
 * **Crash reports from slots**: each slot's service starts Sentry in its process and reads
   Android's exit records, as the app's service does, and its Rust side reaches them (a panic's
   message, the GPU's warnings, Options' Send Crash Reports). The processes that start together
@@ -441,6 +446,13 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   SIGSEGV sent to slot 2 left a tombstone, slot 2 came back in 1.5 s and Sentry had one fatal event
   tagged `c2`; four earlier kills went once each, tagged with the slot that died, though the
   activity sent them; both live slots kept their memory logs; Options showed the switch in a slot.
+* **The notifications' summary**: the tabs' notifications (one per slot, IDs 101 to 104) have a
+  group summary over them (ID 100), one line per tab and "n tabs". Any slot posts it again after
+  its own notification changes, from the app's notifications up (the other slots', whichever
+  process posted them, and its own as it stands now), so the slots share no state for it; a slot
+  that ends takes its line out, and the last takes the summary. Checked on the emulator: three tabs
+  gave a summary of three lines; closing one left "2 tabs" and two lines, shown by Android as one
+  "Turu • 2 tabs" group.
 * **Alerts from slots** (Notify Drop, a stopped script): each slot sets up `Alerts` in its process,
   numbering its notifications apart from the other slots' (from 100 000 times its slot), and posts
   while the app isn't on screen, which the shell tells every slot (`MSG_ON_SCREEN`, from the
@@ -501,7 +513,6 @@ Checked on the emulator (Android 16, one account on Twig):
   through the native field today).
 
 Not done yet:
-* **Notifications:** a group summary.
 * **Tab Limit** from the phone's memory (with M4's numbers; the four slots cap it meanwhile).
 Accounts' "In a tab" in a slot, checked on the emulator (host GPU): Start on a saved account opened
 slot 3 in a process of its own and showed it (the slot on screen let go in 6 ms); its record held
