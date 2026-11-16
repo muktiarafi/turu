@@ -91,7 +91,9 @@ public class Events {
         if (gap > 50) {
             slow++;
         }
-        if (now - reported >= reportEvery) {
+        // An int, so it wraps with `getTimer()` (see `lookAtWorld`).
+        var sinceReport:int = now - reported;
+        if (sinceReport >= reportEvery || sinceReport < 0) {
             emit("frames", {frames: frames, avgMs: frames > 0 ? Math.round(gapTotal / frames * 10) / 10 : 0,
                 maxMs: gapMax, slow: slow});
             reported = now;

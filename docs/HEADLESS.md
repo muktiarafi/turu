@@ -152,7 +152,7 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
 
 * `compose.yaml` publishes the control API and the web monitor on the host's loopback only.
   Requests come through Docker's network, so the web monitor asks for its key
-  (`http://localhost:9021/#<key>`, the key from `docker compose exec main cat /data/monitor-key`);
+  (`http://localhost:9021/#key=<key>`, the key from `docker compose exec main cat /data/monitor-key`);
   the control API wants its token as always.
 * With a memory limit (`docker run --memory=1g`, or `mem_limit` in `compose.yaml`), the web
   monitor's machine strip shows the container's use of it ("Container 0.4 GB of 1.0 GB"), read from
@@ -221,7 +221,7 @@ ssh -L 9021:127.0.0.1:9021 you@server     # then open http://localhost:9021
 ```
 
 From anywhere else (Tailscale Serve, a proxy, `--monitor=0.0.0.0:9021`) open
-`http://<address>:9021/#<key>` with the key from the data folder's `monitor-key`. Anyone with
+`http://<address>:9021/#key=<key>` with the key from the data folder's `monitor-key`. Anyone with
 the key can run commands on your bots.
 
 **Report to your desktop instead:** on the desktop, Options > Application > Monitor: Enable

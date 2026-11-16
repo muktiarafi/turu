@@ -207,7 +207,10 @@ public class Options {
             return;
         }
         var now:int = getTimer();
-        if (now - lastFrame < EVERY_MS) {
+        // `elapsed` is an int so the subtraction wraps back to the right gap when `getTimer()`
+        // turns negative after ~24.8 days; a negative gap (the timer went back) applies too.
+        var elapsed:int = now - lastFrame;
+        if (elapsed < EVERY_MS && elapsed >= 0) {
             return;
         }
         lastFrame = now;
@@ -280,7 +283,9 @@ public class Options {
                 }
             }
             var now:int = getTimer();
-            if ((aggroMonsters || aggroAllMonsters) && now - lastAggro >= AGGRO_EVERY_MS) {
+            // An int, so it wraps with `getTimer()` (see `frame`).
+            var sinceAggro:int = now - lastAggro;
+            if ((aggroMonsters || aggroAllMonsters) && (sinceAggro >= AGGRO_EVERY_MS || sinceAggro < 0)) {
                 lastAggro = now;
                 if (aggroMonsters) {
                     try {

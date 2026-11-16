@@ -93,7 +93,10 @@ public class Animations {
         } catch (e:Error) {
         }
         var map:* = world != null ? world.map : null;
-        if (map != lastMap || getTimer() - lastLook >= AGAIN_MS) {
+        // `elapsed` is an int so the subtraction wraps back to the right gap when `getTimer()`
+        // turns negative after ~24.8 days; a negative gap (the timer went back) looks too.
+        var elapsed:int = getTimer() - lastLook;
+        if (map != lastMap || elapsed >= AGAIN_MS || elapsed < 0) {
             look();
         }
     }
