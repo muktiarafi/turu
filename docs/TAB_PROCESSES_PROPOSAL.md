@@ -7,8 +7,7 @@ still a player on one thread of one process (`frontend/src/players.rs`, `fronten
 docs/STATUS.md, "Tabs share one thread and one process"), on the desktop and on Android. This
 proposal keeps the tabs as the user sees them, but runs each tab's game and bot in a process of its
 own, so that Android killing one for memory, a crash or a lost GPU device ends one account instead
-of all of them. Turu Mas is out of scope (see "Turu Mas"). How this meets
-`docs/NATIVE_UI_PROPOSAL.md` is in "How this meets the native UI proposal".
+of all of them. Turu Mas is out of scope (see "Turu Mas").
 
 ## Summary
 
@@ -27,100 +26,6 @@ of all of them. Turu Mas is out of scope (see "Turu Mas"). How this meets
   way today.
 * Milestone 0 is a measurement gate: whether enough of the memory kills Sentry shows had two or
   more accounts open for this to help.
-
-## How this meets the native UI proposal
-
-`docs/NATIVE_UI_PROPOSAL.md` (2026-11-15, nothing built) turns `turu_frontend` into a library with
-view models and generated bindings, so each platform can draw Turu's windows with its own toolkit,
-Jetpack Compose on Android first. It was written a day before this one's milestones were built, and
-neither mentioned the other. This section and that one's "How this meets process tabs" say the
-same thing from each side.
-
-### Where they conflict
-
-* **Where a native window sits relative to its bot.** Native UI's L5 puts Compose in
-  GameActivity's view hierarchy and its view models with the bot, in one process ("One client per
-  process"). Here the activity's process is the shell and runs no engine
-  (`android/src/slot_shell.rs`, `SlotShell.kt`); the bot, and so its models, are in a slot. A
-  Compose window in the activity is a process away from its model. The desktop is the same: the
-  window is the shell's (`app/src/shell.rs`), and macOS can't put another process's views in it
-  ("Desktop").
-* **This proposal's simplification covers egui only.** "Nothing in `frontend/src/gui/turu/` has to
-  talk to a bot in another process" holds because the client draws the windows. A native window in
-  the shell gives that up for that window, unless what crosses the boundary is the window's model
-  rather than the window.
-* **Who owns the tab list.** Native UI's `Client` has `tabs`, `add_tab` and `select_tab`, and its
-  L2 a tab strip model in the client. Here the list is the shell's (`slots::SlotShell` on Android,
-  `app/src/shell.rs` on the desktop) and a client only mirrors it (`client_link::set_tabs`). After
-  M6 a Ruffle client has one tab.
-* **M6 and Turu Mas.** Turu Mas keeps several bots in one process through `turu_frontend`'s tab
-  list (`turu::add_tab`, from `air/ane/rust/src/clients.rs`), the shape native UI's `Client` tab
-  methods describe. M6 can remove Ruffle's player swapping and the Ruffle frontends' several tabs
-  in one process, but not `turu::TABS` (M6 says so now).
-* **What the link can carry.** A message is JSON of at most 1 MB (`shell::MAX_MESSAGE`); on Android
-  it is a string in a `Bundle` sent through a `Messenger` (`SlotService.toShell`), under Binder's
-  transaction limit, and a send that fails is logged and dropped. That suits today's messages. A
-  whole Logs or Packet Logger view sent again on every change, as native UI's "Changes are
-  revisions" has it, would not fit.
-
-### Where they agree
-
-* **The shell answers the platform's calls.** A client's `Platform` sends links, pickers, sharing
-  and installs to the shell and gets answers back (`ToShell::OpenUrl`, `PickFile`, `SaveFile`,
-  `Share`, `Install`); native UI's `Host` is "implemented by the shell". Under both, the process
-  that owns the window implements `Host`, and a client's is a forwarder.
-* **Requests with an ID.** `ToClient::Answer { id, value }` and the picker and installer answers
-  are native UI's L3 (questions as events with an ID, and `answer(id, ...)`) in small.
-* **The player without winit.** M2's client (`turu --client`) runs the player on the engine's own
-  thread with a wgpu device and no window: the desktop half of native UI's L6. M2 left Android's
-  `Screen` and `ClientScreen` apart; merging them (M3's job) is the same work as L6's
-  `attach_surface`, to be done once by whichever comes first.
-* **One process per account.** Native UI's reason for one client per process is that Army starts a
-  process per account; a slot and a desktop client are such a process, with one client in it.
-* **Settings.** Files written under a lock (`Paths::merge_settings`) work for a native Options
-  window in the shell as for a client; native UI leaves the data folder as it is.
-* **Typing.** A native window's text fields are real ones in the shell's process, so they need no
-  `FieldShow` / `FieldEdited` round trip (`FieldId::Ui`); only the game's field still crosses. Each
-  window ported lowers this proposal's text-input risk.
-
-### Recommended (awaiting the owner's decision)
-
-Keep the bot, its view models and the egui windows in the client, as this proposal has them. A
-native window lives in the shell and reads a copy of its model that the client keeps up to date over
-the shell link; its actions go back over the same link.
-
-* **Models stay with their bot.** The client sends a model's view when its revision changes, only
-  for the models the shell has open and only from the tab on screen (hidden clients send no views,
-  as they draw nothing). Questions and alerts (native UI's L3) come from every client, shown or not:
-  a hidden tab's script can ask. Actions are messages and wait for nothing; they post work already.
-* **The shell keeps the last view of each open model**, so a native window reads it locally, never
-  through a Binder call on the UI thread. Models fed line by line (Logs, Packet Logger) send the
-  lines added, or the window of lines shown, not the whole view.
-* **The first native windows are the shell's own**: the tab strip, "Starting the tab…" and
-  "closed: Restart", Accounts opening a tab. What they show is in the shell's process already
-  (`slots::SlotShell`, the Keystore's passwords) or in files any process reads (the accounts list),
-  so they need no copy of a model. That is the first step of the same path, not an alternative to
-  it.
-* **Not recommended: native views in the clients' processes.** An activity per slot gives each tab
-  its own entry in Recents, its own Back and a UI runtime in every slot; showing a slot's views
-  inside the activity (`SurfaceControlViewHost`) needs API 30 (from memory, to confirm) where
-  Turu's minimum is 26, and the keyboard and TalkBack in such embedded views are unknown (a spike
-  of their own); macOS can't embed another process's views at all.
-* **Why this way round.** For containment the shell never runs a bot, so the models can't move to
-  it. The link exists, carries JSON both ways on both platforms, tells each side when the other dies
-  (Binder on Android) and skips messages it doesn't know, so nothing needs reserving now. And a slot
-  keeps working with no shell (after the shell's death), which a model in the shell would break.
-* **What it costs.** Every model's view must serialise (serde) and stay small enough for the link;
-  the shell keeps a copy of each open model, one revision behind; the shell's process loads
-  Compose's runtime (not measured; paid once, not per slot). Native UI's "typed records or bytes"
-  stays open for the hop from Rust to Kotlin inside the shell's process.
-
-For the milestones here: M3, M4 and M5 stay as written, and M6 says what it removes. Cheap now, and
-only restraint: keep `Platform` the one seam for what a client asks of the shell, and add no new
-decisions to the egui files beyond drawing (they are what native UI's L2 has to move out). New
-request and answer pairs can use `Answer { id }` rather than a message pair each. If native UI's L5
-starts before M6, it has to work with both kinds of tabs, or M6 waits for it ("Decisions to make",
-7).
 
 ## Why
 
@@ -713,11 +618,9 @@ shell checks). A down tab keeps its last monitor entry online for up to 15 s.
 * Remove the in-process tabs of the Ruffle frontends (the thread-local swapping in `players.rs`
   goes with them, as each client has one player). `turu_frontend`'s tab list (`turu::TABS`,
   `turu::add_tab`) stays: Turu Mas keeps several bots in one process through it
-  (`air/ane/rust/src/clients.rs`), and native UI's `Client` tab methods are that shape. Update
-  docs/STATUS.md, docs/ANDROID.md, docs/UI.md, docs/HEADLESS.md and docs/GPU_RECOVERY_PROPOSAL.md
-  (a lost device becomes "restart that client").
-* If native UI's L5 has started on Android, it must run on process tabs before this removes the
-  other path (decision 7).
+  (`air/ane/rust/src/clients.rs`). Update docs/STATUS.md, docs/ANDROID.md, docs/UI.md,
+  docs/HEADLESS.md and docs/GPU_RECOVERY_PROPOSAL.md (a lost device becomes "restart that
+  client").
 * **Done when** CI passes without the in-process path and the docs describe one model.
 
 ## Testing
@@ -741,11 +644,6 @@ shell checks). A down tab keeps its last monitor entry online for up to 15 s.
 * **Shared files written by several processes**: settings today; anything else that assumes one
   writer needs the same lock.
 * **Desktop texture sharing** is per graphics backend, in `wgpu-hal`, which ruffle-aqw patches.
-* **Native windows a process away from their bot.** If native UI goes ahead and decision 6 goes as
-  recommended, its windows sit in the shell and their models in the clients ("How this meets the
-  native UI proposal"): the link then
-  carries views and actions as well as input, and a view too big for Binder is dropped, not
-  delayed. Line-fed models need a shape of their own (lines added, not the whole view).
 
 ## Decisions to make
 
@@ -758,22 +656,13 @@ shell checks). A down tab keeps its last monitor entry online for up to 15 s.
    in the background Android can drop the shell's activity first), or the first tab in the
    shell's own process with only the others in processes.
 5. **Settings ownership**: every process writes under a lock (recommended), or the shell owns
-   settings and clients ask it. A native Options window in the shell (native UI) writes under the
-   same lock, so it doesn't change this.
-6. **Native windows under process tabs** (with `docs/NATIVE_UI_PROPOSAL.md`, decision 8 there):
-   the models stay in the clients and native windows in the shell read copies sent over the shell
-   link, the shell's own windows first (recommended); native windows only for the shell's own
-   windows, the bot windows staying egui for good; native views in the clients' processes (not
-   recommended: Recents and Back per slot, API 30, no macOS); or no native windows on platforms
-   with process tabs.
-7. **Order with native UI's L5**: L5 starts after M4 makes process tabs Android's default and
-   builds on them only (recommended), or L5 starts earlier and M6 waits until it runs on process
-   tabs.
+   settings and clients ask it.
 
 ## Not in this proposal
 
 * Lowering one client's memory. That is what helps single-account kills, and M0 may show it
   matters more.
 * Turu Mas (above).
-* Native windows (`docs/NATIVE_UI_PROPOSAL.md`; how the two fit is near the top).
+* Native windows: not planned. The client draws the whole tab, Turu's egui windows included;
+  `docs/NATIVE_UI_PROPOSAL.md`, withdrawn on 2026-11-16, is the record of that proposal.
 * A thread per tab within one process (more cores, no containment).
