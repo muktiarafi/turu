@@ -739,20 +739,38 @@ its own client's surface, the active outline on tab 2. A click on tab 1's tile m
 dump showed it), and the toggle went back to one tab. Script Loader's Load Script in a client
 opened the shell's "Load Script" dialog as a sheet of the window (a file wasn't picked: the answer's
 way back isn't run). Tests (the new messages' round trips) and clippy pass. Android's and Turu Mas's
-crates check. Not run: an Intel Mac (its surfaces are made `Managed`, Apple's chips `Shared`), a
-resize by hand, Windows and Linux (they compile on the copy path; their shared textures, DX12
+crates check. Resizing (`TURU_SHELL_TEST`'s `resize`, the window's size asked of macOS: no mouse
+here, so AppKit's live resize while the corner is held wasn't run): the pictures followed each
+size, from 900x560 to 1485x852 points, without a stretched or stale one left; a burst of 40 sizes
+20 ms apart, five times each way in Grid View with two tabs, left no error, Grid View re-tiled at
+each size, and the shell and clients' memory stayed flat (about 172 and 260 MB). Not run: an Intel
+Mac (its surfaces are made `Managed`, Apple's chips `Shared`), Windows and Linux (they compile on the copy path; their shared textures, DX12
 handles and dmabuf, aren't written).
+
+With accounts (2026-11-17, a Mac, debug build, two of the data folder's saved accounts on Twig,
+`TURU_SHELL_TEST_FOLLOW` driving the running shell):
+* **Army > Accounts' "In a tab" through the shell**: Start Selected in tab 1's client opened both
+  accounts as tabs 2 and 3, each its own process, logged in with Accounts' passwords and in game.
+  Their device-font text (names, chat) showed.
+* **A client killed** (`kill -9` of tab 3, on screen): the shell showed tab 1, started tab 3 again
+  after 1 s with its login, and it was back in game (its chat: battleon joined again) within
+  seconds.
+* **Butler across tabs**: tab 3 followed tab 2's account (`/butler/follow` on its control API); tab
+  2 joined Yulgar, and tab 3 was there 7 s later (by way of a house, battleon-1 being full).
+* **Army barrier across tabs**: a script in both met at `bot.army.barrier` three times, one
+  arriving 5 s later; the first waited each time, and both went on within 0.2 s of the second's
+  arrival.
+* **Army Control** in tab 2 listed all three tabs, tab 3 from its process, with its script and map.
+* **Switching**: a tab already drawn showed its first picture 125-150 ms after it was selected; an
+  in-game tab shown for the first time took 1.6 s (its scene drawn the first time). A shown in-game
+  tab sent about 10 pictures a second in this debug build: to measure in a release build.
 
 Not done yet, of "done when": the clients Army > Accounts launches "In its own window" from a tab
 stay that tab's client's (its Army Control has them), and the shell's monitor and Report To don't
 list them, and they end when that client restarts; shared textures on Windows and Linux; the
-clipboard without a display handle on Wayland (not tried); a tab coming back
-logged in after a kill, and Army Control, Butler and an army script across tabs while in game (no
-account here: Butler and `bot.army` already work across processes through files, as with Army >
-Accounts' clients); Windows and Linux. Not built: Map Travel and Jump to Player in Army Control
+clipboard without a display handle on Wayland (not tried); Windows and Linux. Not built: Map Travel and Jump to Player in Army Control
 for the shell's tabs (they read in-process tabs and Army clients only); the shell's own `--api`
-(ignored with a warning: each client has one). Built but not run: Army > Accounts' "In a tab"
-through the shell. `OpenTab` doesn't carry a login's playlist or options storage yet. A client's
+(ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A client's
 Options > Application > Check Now for updates is off (`--exit-with-parent` marks it launched; the
 shell checks). A down tab keeps its last monitor entry online for up to 15 s.
 

@@ -17,10 +17,12 @@
 //! with the older one is done. Elsewhere, or if that fails, the client sends its pixels, uploaded
 //! into a texture here. Either way the window is drawn on the GPU, Grid View's tiles included.
 //!
-//! Testing without anyone at the window: `TURU_SHELL_TEST=<file>` runs its lines in order:
+//! Testing without anyone at the window: `TURU_SHELL_TEST=<file>` runs its lines in order (and,
+//! with `TURU_SHELL_TEST_FOLLOW=1`, lines appended to it later):
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
 //! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would),
-//! `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`)
+//! `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
+//! `resize <width> <height>` (the window's size in points)
 //! and `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG).
 //!
 //! Grid View (the bar's Grid toggle, `ToShell::Grid`): the tab on screen draws the window with its
@@ -257,24 +259,41 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
     Ok(())
 }
 
-/// Feeds `TURU_SHELL_TEST`'s lines to the event loop, waiting where it says.
+/// Feeds `TURU_SHELL_TEST`'s lines to the event loop, waiting where it says. With
+/// `TURU_SHELL_TEST_FOLLOW` set, lines added to the file later are run too (driving a running shell
+/// step by step).
 fn spawn_test(file: String, proxy: EventLoopProxy<ShellEvent>) {
-    let lines = match std::fs::read_to_string(&file) {
-        Ok(text) => text,
-        Err(e) => {
-            tracing::warn!("Shell: TURU_SHELL_TEST {file}: {e}");
-            return;
-        }
-    };
+    let follow = std::env::var_os("TURU_SHELL_TEST_FOLLOW").is_some();
     let _ = std::thread::Builder::new()
         .name("Turu Shell Test".into())
         .spawn(move || {
-            for line in lines.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                if let Some(seconds) = line.strip_prefix("wait ").and_then(|s| s.trim().parse::<f64>().ok()) {
-                    std::thread::sleep(Duration::from_secs_f64(seconds));
-                } else if proxy.send_event(ShellEvent::Test(line.to_owned())).is_err() {
+            let mut done = 0;
+            loop {
+                let text = match std::fs::read_to_string(&file) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        tracing::warn!("Shell: TURU_SHELL_TEST {file}: {e}");
+                        return;
+                    }
+                };
+                // Whole lines only: one being written is read next time.
+                let complete = text.rfind('\n').map_or(0, |at| at + 1).max(done);
+                for line in text[done..complete]
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                {
+                    if let Some(seconds) = line.strip_prefix("wait ").and_then(|s| s.trim().parse::<f64>().ok()) {
+                        std::thread::sleep(Duration::from_secs_f64(seconds));
+                    } else if proxy.send_event(ShellEvent::Test(line.to_owned())).is_err() {
+                        return;
+                    }
+                }
+                done = complete;
+                if !follow {
                     return;
                 }
+                std::thread::sleep(Duration::from_millis(200));
             }
         });
 }
@@ -1382,6 +1401,14 @@ impl ShellApp {
                     pressed,
                     mods,
                 });
+            }
+            return;
+        }
+        // `resize 1600 900`: the window's inner size in points, as dragging its edge would.
+        if command == "resize" {
+            let size: Vec<f64> = arg.split_whitespace().filter_map(|v| v.parse().ok()).collect();
+            if let (&[width, height], Some(window)) = (size.as_slice(), &self.window) {
+                let _ = window.request_inner_size(winit::dpi::LogicalSize::new(width, height));
             }
             return;
         }
