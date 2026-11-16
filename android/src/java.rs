@@ -193,6 +193,10 @@ jni::bind_java_type! {
             sig = (kind: jint, id: jint, x: jfloat, y: jfloat) -> void,
             fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeTouch,
         },
+        static raw fn native_trim_memory {
+            sig = (level: jint) -> void,
+            fn = crate::memory::Java_com_muktiarafi_turu_SlotService_nativeTrimMemory,
+        },
     },
 }
 

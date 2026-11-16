@@ -393,7 +393,15 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   desktop's clients.
 * **Slots**: four in the manifest (`:c1` ... `:c4`), each with its own notification (grouped) and a
   wake lock held only while its script runs; a closed tab's process ends with its service. A hidden
-  slot is muted and frees its spare textures, as a backgrounded app does today.
+  slot is muted and frees its spare textures, as a backgrounded app does today. Each slot gets
+  Android's memory levels itself (`onTrimMemory` in `SlotService`; the activity's say nothing about
+  the slots') and frees what it can spare.
+* **Which slot Android stops first**: the shell binds every slot waiving priority
+  (`BIND_WAIVE_PRIORITY`), so a hidden slot stays at its foreground service's importance (adj 200),
+  and binds the one on screen important too (`BIND_AUTO_CREATE | BIND_IMPORTANT`; without
+  `BIND_AUTO_CREATE` Android didn't count it), lifting it to the activity's (adj 0). Checked on the
+  emulator (`dumpsys activity oom`): the shown slot at 0 and the hidden at 200, swapped by a
+  switch; a trim level sent to a hidden slot freed its textures.
 * **The surface after a death**: a slot that dies while drawing stays the window's producer, and the
   next one's Vulkan surface on it is refused (`ERROR_NATIVE_WINDOW_IN_USE_KHR`, which wgpu panics
   on). The shell makes a new surface (its view hidden and shown) when that happens, and when it
@@ -459,8 +467,7 @@ Not done yet:
 * **The other Platform calls through the shell:** the file picker, sharing, links and installing
   updates do nothing in a slot.
 * **Notifications:** a group summary.
-* **`BIND_WAIVE_PRIORITY`** on hidden slots.
-* **Memory and limits:** Android's memory levels to the slots, and Tab Limit from the phone's memory.
+* **Tab Limit** from the phone's memory (with M4's numbers; the four slots cap it meanwhile).
 * **Runs not done yet:** Accounts' "In a tab" and Army Control, and two accounts in game with Butler
   and an army script across slots.
 

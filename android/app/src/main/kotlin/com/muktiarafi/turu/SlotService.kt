@@ -69,6 +69,15 @@ abstract class SlotService(private val slot: Int) : Service() {
 
     override fun onBind(intent: Intent?): IBinder = messenger.binder
 
+    /**
+     * Android's memory levels for this slot's process (each process gets its own): the engine frees
+     * what it can spare, as the app's service does.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        nativeTrimMemory(level)
+    }
+
     /** The notification: the tab's script and state, grouped with the other tabs'; a tap opens Turu. */
     private fun build(): Notification {
         val open = PendingIntent.getActivity(
@@ -249,6 +258,9 @@ abstract class SlotService(private val slot: Int) : Service() {
 
         @JvmStatic
         private external fun nativeTouch(kind: Int, id: Int, x: Float, y: Float)
+
+        @JvmStatic
+        private external fun nativeTrimMemory(level: Int)
     }
 }
 

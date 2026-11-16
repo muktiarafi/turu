@@ -371,6 +371,22 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeTrimMemory(
     _class: jni::objects::JClass<'_>,
     level: jni::sys::jint,
 ) {
+    trim_asked(level);
+}
+
+/// `SlotService.nativeTrimMemory(level)`: the same for a process tab's slot (each process gets its
+/// own `onTrimMemory`: the activity's says nothing about the slots').
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeTrimMemory(
+    _env: jni::EnvUnowned<'_>,
+    _class: jni::objects::JClass<'_>,
+    level: jni::sys::jint,
+) {
+    trim_asked(level);
+}
+
+/// Frees what the engine can spare, as Android asked at `level`.
+fn trim_asked(level: jni::sys::jint) {
     crate::run_on_engine(move |player| {
         trim(player, &format!("Android asked (trim level {level})"))
     });

@@ -226,8 +226,15 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     private fun startSlot(slot: Int) {
         if (slot !in 1..SLOTS) return
         context.startForegroundService(intent(slot))
+        // Waiving priority: this binding doesn't lift the slot to the activity's importance, so a
+        // hidden slot stays at its foreground service's and Android stops it before the one on
+        // screen, which `important` lifts.
         if (bound.add(slot)) {
-            context.bindService(intent(slot), connections.getValue(slot), Context.BIND_AUTO_CREATE)
+            context.bindService(
+                intent(slot),
+                connections.getValue(slot),
+                Context.BIND_AUTO_CREATE or Context.BIND_WAIVE_PRIORITY,
+            )
         }
     }
 
@@ -352,7 +359,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         if (current != target) {
             if (current != 0) runCatching { context.unbindService(important.getValue(current)) }
             current = target
-            context.bindService(intent(current), important.getValue(current), Context.BIND_IMPORTANT)
+            context.bindService(
+                intent(current),
+                important.getValue(current),
+                Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT,
+            )
             Log.i(SlotService.TAG, "Shell: showing slot $current")
         }
         if (surfaceValid && attached != current) attach(current)
