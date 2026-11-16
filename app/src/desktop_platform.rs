@@ -94,4 +94,13 @@ impl Platform for DesktopPlatform {
     fn beep(&self) {
         crate::beep::beep();
     }
+
+    // Turu: each tab in a process of its own (`shell.rs`, M5), for the next start.
+    fn process_tabs(&self) -> Option<bool> {
+        Some(crate::shell::switched_on())
+    }
+
+    fn set_process_tabs(&self, on: bool) {
+        crate::shell::save_switch(on);
+    }
 }

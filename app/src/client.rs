@@ -269,6 +269,15 @@ impl ClientPlatform {
 }
 
 impl Platform for ClientPlatform {
+    // Options lives in the clients: turned off here, the next start is the window again.
+    fn process_tabs(&self) -> Option<bool> {
+        Some(crate::shell::switched_on())
+    }
+
+    fn set_process_tabs(&self, on: bool) {
+        crate::shell::save_switch(on);
+    }
+
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
         self.dialog(dialog, false, answer)
     }

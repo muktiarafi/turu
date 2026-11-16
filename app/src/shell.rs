@@ -24,7 +24,7 @@
 //! with `TURU_SHELL_TEST_FOLLOW=1`, lines appended to it later):
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
 //! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would),
-//! `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
+//! `text <string>` (typed), `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
 //! `resize <width> <height>` (the window's size in points), `minimize on|off`, `cover off|on` (the
 //! window counts as seen though covered, or not), `nosurfaces` (the
 //! next shared surface fails to open), `rate` (each tab's pictures a second
@@ -191,6 +191,42 @@ impl Tab {
             None
         }
     }
+}
+
+/// Options > Application > Process Tabs, saved in the data folder for the next start (the same
+/// file as Android's switch, `android/src/slots.rs`).
+const SWITCH_FILE: &str = "turu-process-tabs.txt";
+
+/// Whether process tabs are saved on.
+pub fn switched_on() -> bool {
+    turu_bot::paths::Paths::new().root.join(SWITCH_FILE).exists()
+}
+
+/// Saves process tabs on or off for the next start.
+pub fn save_switch(on: bool) {
+    let path = turu_bot::paths::Paths::new().root.join(SWITCH_FILE);
+    let result = if on {
+        std::fs::write(&path, "on\n")
+    } else {
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
+    };
+    match result {
+        Ok(()) => tracing::info!(
+            "Process tabs turned {} for the next start",
+            if on { "on" } else { "off" }
+        ),
+        Err(e) => tracing::warn!("Couldn't save {}: {e}", path.display()),
+    }
+}
+
+/// Whether this start runs as the shell because process tabs are saved on: a plain start of
+/// Turu's own window (AQW, not a movie given), not `--headless` nor a client Army > Accounts
+/// launched (`--exit-with-parent`), which stay as they are.
+pub fn switched_on_for_this_start() -> bool {
+    crate::mugetsu::plays_aqw() && !turu::headless() && !turu::launched_by_army() && switched_on()
 }
 
 /// The flags a tab's client gets from the shell's: all but `--shell`, and the control API, web
@@ -1549,6 +1585,11 @@ impl ShellApp {
         tracing::info!("Shell test: {line}");
         let (command, arg) = line.split_once(' ').unwrap_or((line, ""));
         let id = arg.trim().parse::<u32>().ok();
+        // `text <string>`: typed text, as a keyboard's.
+        if command == "text" {
+            self.send_shown(&ToClient::Text { text: arg.to_owned() });
+            return;
+        }
         // `key cmd+V`: a press and release, with `cmd`, `ctrl`, `shift` or `alt` before the key.
         if command == "key" {
             let mut mods = Mods::default();

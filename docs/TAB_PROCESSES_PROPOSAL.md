@@ -746,6 +746,17 @@ size, from 900x560 to 1485x852 points, without a stretched or stale one left; a 
 each size, and the shell and clients' memory stayed flat (about 172 and 260 MB). Not run: an Intel
 Mac (its surfaces are made `Managed`, Apple's chips `Shared`), Windows and Linux (below).
 
+**Options > Application > Process Tabs (experimental)** on the desktop too (2026-11-17): saved
+as `turu-process-tabs.txt` in the data folder, as on Android, and read at start: on, a plain start
+of Turu's window runs as the shell (`shell::switched_on_for_this_start`); `--headless` and the
+clients Army > Accounts launches (`--exit-with-parent`) stay as they are. The switch is in the
+window's Options and in every client's (Options lives in the clients), so it's turned off where
+it's on. Checked on the Mac (scratch data folder): with the file, a plain `turu` logged "Process
+tabs are on: this window is the shell" and started its client, while `--headless` reached the
+login screen and an `--exit-with-parent` start opened the window as before; the switch shown on in
+a client's Options, turned off there, removed the file, and the next start was the window again.
+`TURU_SHELL_TEST` takes `text <string>` (typed).
+
 **Shared surfaces on Windows and Linux** (2026-11-17, `app/src/shared_gpu.rs`; written without
 those machines, to be tried on them). The route follows the backend the client's GPU runs, which
 on Windows may be Vulkan or DX12 (Turu's default is wgpu's primary backends):

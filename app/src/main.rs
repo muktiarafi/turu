@@ -526,7 +526,11 @@ fn main() -> Result<(), Error> {
         };
         return client::run(preferences, movie_url, &address);
     }
-    if turu::shell() {
+    // `--shell`, or Options > Application > Process Tabs saved on (M5).
+    if turu::shell() || shell::switched_on_for_this_start() {
+        if !turu::shell() {
+            tracing::info!("Process tabs are on: this window is the shell (Options > Application)");
+        }
         // The client gets the shell's own flags (`--user`, `--run-script`, ...).
         let client_args = shell::client_args(env::args().skip(1));
         return shell::run(preferences, client_args);
