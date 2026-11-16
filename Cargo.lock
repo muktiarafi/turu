@@ -7272,6 +7272,7 @@ name = "turu"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "ash",
  "ashpd",
  "async-channel",
  "async-task",
@@ -7291,6 +7292,7 @@ dependencies = [
  "futures",
  "gilrs",
  "image",
+ "libc",
  "libmimalloc-sys",
  "mach2",
  "memmap2",

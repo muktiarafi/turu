@@ -11,18 +11,23 @@
 //! is running (then it goes on trying every 60 s). When the tab on screen dies, a running one is
 //! shown instead. A client quits when the shell does (its connection and stdin close).
 //!
-//! Pictures: on macOS a client draws into IOSurfaces it hands to the shell (`shared_surface.rs`),
+//! Pictures: a client draws into GPU surfaces it hands to the shell (IOSurfaces on macOS,
+//! `shared_surface.rs`; Vulkan memory or D3D12 resources on Linux and Windows, `shared_gpu.rs`),
 //! and says which one has its newest picture (`ToShell::Surface`); the shell draws from it on its
-//! own GPU, and gives each back (`ToClient::Release`) once a newer one came and its own GPU work
-//! with the older one is done. Elsewhere, or if that fails, the client sends its pixels, uploaded
-//! into a texture here. Either way the window is drawn on the GPU, Grid View's tiles included.
+//! own GPU, chosen as the clients choose theirs, and gives each back (`ToClient::Release`) once a
+//! newer one came and its own GPU work with the older one is done. A client on another GPU
+//! (`ToShell::Gpu`), a surface the shell can't open, or `TURU_NO_SHARED_SURFACES`: the client
+//! sends its pixels (`ToClient::NoSurfaces`), uploaded into a texture here. Either way the window is
+//! drawn on the GPU, Grid View's tiles included.
 //!
 //! Testing without anyone at the window: `TURU_SHELL_TEST=<file>` runs its lines in order (and,
 //! with `TURU_SHELL_TEST_FOLLOW=1`, lines appended to it later):
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
 //! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would),
 //! `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
-//! `resize <width> <height>` (the window's size in points), `minimize on|off`, `rate` (each tab's pictures a second
+//! `resize <width> <height>` (the window's size in points), `minimize on|off`, `cover off|on` (the
+//! window counts as seen though covered, or not), `nosurfaces` (the
+//! next shared surface fails to open), `rate` (each tab's pictures a second
 //! since the last `rate`)
 //! and `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG).
 //!
@@ -66,19 +71,22 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often the GPU is asked whether the work before a surface's release is done.
 const RELEASE_POLL: Duration = Duration::from_millis(4);
 
-/// A client's surface as the shell got it (macOS: an IOSurface; elsewhere there are none).
+/// A client's surface as the shell got it: an IOSurface (macOS), Vulkan memory or a D3D12
+/// resource (Windows, Linux: `shared_gpu.rs`); elsewhere there are none.
 #[cfg(target_os = "macos")]
 type SharedSurface = crate::shared_surface::Surface;
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(windows, target_os = "linux"))]
+type SharedSurface = crate::shared_gpu::Surface;
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 enum SharedSurface {}
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 impl SharedSurface {
     fn size(&self) -> (u32, u32) {
         match *self {}
     }
 
-    fn texture(&self, _device: &wgpu::Device) -> Option<wgpu::Texture> {
+    fn texture(&mut self, _device: &wgpu::Device) -> Option<wgpu::Texture> {
         match *self {}
     }
 }
@@ -156,6 +164,10 @@ struct Tab {
     upload: Option<(wgpu::Texture, wgpu::BindGroup)>,
     /// The newest picture is in this surface, whose port hasn't come yet.
     waiting: Option<u64>,
+    /// Its client's GPU (`ToShell::Gpu`), for shared surfaces.
+    adapter: Option<String>,
+    /// Its client was told to send pixels (`ToClient::NoSurfaces`), until it's started again.
+    pixels_only: bool,
 }
 
 impl Tab {
@@ -202,7 +214,7 @@ pub fn client_args(args: impl IntoIterator<Item = String>) -> Vec<String> {
 }
 
 /// Starts the first tab's client and runs the window until it's closed.
-pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(), Error> {
+pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(), Error> {
     let listener = TcpListener::bind("127.0.0.1:0").context("Couldn't listen for the clients")?;
     let address = listener.local_addr()?.to_string();
     let token = turu_bot::control_api::new_token().map_err(|e| anyhow!(e))?;
@@ -215,16 +227,14 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
     turu::follow_settings_file(true);
     // The clients leave the launch updates (scripts, skill sets) to the shell.
     turu::start_app_updates();
-    // Clients hand their pictures over as GPU surfaces where the shell can take them.
+    // Clients hand their pictures over as GPU surfaces where the shell can take them, unless
+    // `TURU_NO_SHARED_SURFACES` says pixels.
     let surfaces_proxy = event_loop.create_proxy();
-    #[cfg(target_os = "macos")]
-    let surfaces_name = crate::shared_surface::listen(move |pid, id, surface| {
-        let _ = surfaces_proxy.send_event(ShellEvent::SurfaceArrived { pid, id, surface });
-    });
-    #[cfg(not(target_os = "macos"))]
-    let surfaces_name: Option<String> = {
-        drop(surfaces_proxy);
+    let surfaces_name = if std::env::var_os("TURU_NO_SHARED_SURFACES").is_some() {
+        tracing::info!("Shell: TURU_NO_SHARED_SURFACES: the clients send pixels");
         None
+    } else {
+        listen_for_surfaces(surfaces_proxy)
     };
     let peers: Arc<Mutex<Vec<PeerSource>>> = Arc::default();
     let listed = peers.clone();
@@ -256,6 +266,10 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
         covered: false,
         occluded: false,
         minimized: false,
+        preferences,
+        adapter: String::new(),
+        fail_surfaces: false,
+        never_covered: false,
     };
     // The first tab logs in as `--headless` would: with the shell's own `TURU_PASSWORD`.
     app.open_tab(client_args, std::env::var("TURU_PASSWORD").ok());
@@ -264,6 +278,29 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
         stop(tab);
     }
     Ok(())
+}
+
+/// Where the clients hand over their surfaces, set up by platform: a Mach service (macOS), a Unix
+/// socket (Linux), the clients' own messages (Windows: "handles"). `None`: they send pixels.
+fn listen_for_surfaces(proxy: EventLoopProxy<ShellEvent>) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    return crate::shared_surface::listen(move |pid, id, surface| {
+        let _ = proxy.send_event(ShellEvent::SurfaceArrived { pid, id, surface });
+    });
+    #[cfg(target_os = "linux")]
+    return crate::shared_gpu::listen(move |pid, id, surface| {
+        let _ = proxy.send_event(ShellEvent::SurfaceArrived { pid, id, surface });
+    });
+    #[cfg(windows)]
+    {
+        drop(proxy);
+        return Some("handles".to_owned());
+    }
+    #[allow(unreachable_code)]
+    {
+        drop(proxy);
+        None
+    }
 }
 
 /// Feeds `TURU_SHELL_TEST`'s lines to the event loop, waiting where it says. With
@@ -441,6 +478,16 @@ struct ShellApp {
     covered: bool,
     occluded: bool,
     minimized: bool,
+    /// The backends and power preference the clients' GPUs are chosen by: the window's is chosen
+    /// the same way, so they can share surfaces.
+    preferences: GlobalPreferences,
+    /// The window's GPU (`shell::adapter_key`), set when it's made.
+    adapter: String,
+    /// `TURU_SHELL_TEST`'s `nosurfaces`: the next surface is taken as one that couldn't be opened.
+    fail_surfaces: bool,
+    /// `TURU_SHELL_TEST`'s `cover off`: the window counts as seen even when it's covered (a test
+    /// behind other windows).
+    never_covered: bool,
 }
 
 impl ShellApp {
@@ -472,6 +519,8 @@ impl ShellApp {
             shown: None,
             upload: None,
             waiting: None,
+            adapter: None,
+            pixels_only: false,
         };
         self.start(&mut tab);
         self.tabs.push(tab);
@@ -510,6 +559,8 @@ impl ShellApp {
         if let Some(password) = tab.password.as_deref().filter(|p| !p.is_empty()) {
             command.env("TURU_PASSWORD", password);
         }
+        tab.adapter = None;
+        tab.pixels_only = false;
         match command.spawn() {
             Ok(child) => {
                 tracing::info!("Shell: tab {} started its client (process {})", tab.id, child.id());
@@ -868,6 +919,39 @@ impl ShellApp {
                 }
             }
             ToShell::Surface { id: surface, .. } => self.surface_picture(id, surface),
+            ToShell::Gpu { adapter } => {
+                tracing::info!("Shell: tab {id}'s client draws on {adapter}");
+                if let Some(tab) = self.tab(id) {
+                    tab.adapter = Some(adapter);
+                }
+            }
+            #[cfg(windows)]
+            ToShell::SharedHandle {
+                id: surface,
+                route,
+                handle,
+                width,
+                height,
+                size,
+                memory_type,
+            } => {
+                let taken = self.tab(id).and_then(|tab| {
+                    let child = tab.child.as_ref()?;
+                    let taken =
+                        crate::shared_gpu::take_handle(child, &route, handle, width, height, size, memory_type)?;
+                    Some((child.id(), taken))
+                });
+                match taken {
+                    Some((pid, taken)) => self.surface_arrived(pid, surface, taken),
+                    None => {
+                        if let Some(index) = self.tabs.iter().position(|tab| tab.id == id)
+                            && let Some(pid) = self.tabs[index].pid()
+                        {
+                            self.no_surfaces(index, pid, "its handle couldn't be copied");
+                        }
+                    }
+                }
+            }
             ToShell::FileDialog {
                 id: request,
                 save,
@@ -897,6 +981,8 @@ impl ShellApp {
                 }
             }
             // The text-field messages are Android's (its slots); a desktop client sends keys.
+            #[cfg(not(windows))]
+            ToShell::SharedHandle { .. } => {}
             ToShell::Frame { .. }
             | ToShell::Hello { .. }
             | ToShell::FieldShow { .. }
@@ -992,6 +1078,7 @@ impl ShellApp {
     /// The window was covered or minimized, or is seen again: the clients stop or start drawing,
     /// as the window's own tabs do (`app.rs`, `occluded`).
     fn set_covered(&mut self, covered: bool) {
+        let covered = covered && !self.never_covered;
         if self.covered == covered {
             return;
         }
@@ -1114,6 +1201,19 @@ impl ShellApp {
             self.retiring.push((id, pid, surface));
             return;
         }
+        // A client on another GPU or backend can't share its surfaces with this one.
+        if let Some(theirs) = self.tabs[index]
+            .adapter
+            .as_ref()
+            .filter(|theirs| **theirs != self.adapter)
+            && !self.adapter.is_empty()
+        {
+            let reason = format!("its GPU is {theirs}, the shell's {}", self.adapter);
+            self.retiring.push((id, pid, surface));
+            self.no_surfaces(index, pid, &reason);
+            return;
+        }
+        let mut failed = std::mem::take(&mut self.fail_surfaces);
         let opened = match (&self.gpu, self.surfaces.get_mut(&pid)) {
             (Some(gpu), Some(kept)) => kept.iter_mut().find(|kept| kept.id == surface).and_then(|kept| {
                 if kept.opened.is_none() {
@@ -1122,12 +1222,18 @@ impl ShellApp {
                         let bind_group = gpu.blit.bind_group(&gpu.device, &view);
                         (texture, bind_group)
                     });
+                    failed = kept.opened.is_none();
                 }
                 let size = kept.surface.size();
                 kept.opened.as_ref().map(|(_, bind_group)| (bind_group.clone(), size))
             }),
             _ => None,
         };
+        if failed {
+            self.retiring.push((id, pid, surface));
+            self.no_surfaces(index, pid, "the shell couldn't open one");
+            return;
+        }
         let tab = &mut self.tabs[index];
         let Some((bind_group, size)) = opened else {
             // Its port is on its way (another channel): drawn when it comes.
@@ -1150,6 +1256,27 @@ impl ShellApp {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    /// The tab at `index`'s client goes back to pixels: its surfaces are dropped here.
+    fn no_surfaces(&mut self, index: usize, pid: u32, reason: &str) {
+        let tab = &mut self.tabs[index];
+        if tab.pixels_only {
+            return;
+        }
+        tracing::warn!(
+            "Shell: tab {}'s surfaces can't be used ({reason}): it sends pixels",
+            tab.id
+        );
+        tab.pixels_only = true;
+        tab.waiting = None;
+        send(
+            tab,
+            &ToClient::NoSurfaces {
+                reason: reason.to_owned(),
+            },
+        );
+        self.surfaces.remove(&pid);
     }
 
     /// Tab `id`'s client sent its pixels: uploaded into its texture.
@@ -1449,6 +1576,19 @@ impl ShellApp {
             return;
         }
         // `resize 1600 900`: the window's inner size in points, as dragging its edge would.
+        // `nosurfaces`: the next shared surface counts as one the shell couldn't open (the fallback
+        // to pixels, tried where every surface opens).
+        // `cover off`: the window counts as seen even when covered; `cover on`: as reported.
+        if command == "cover" {
+            self.never_covered = arg.trim() == "off";
+            let covered = self.occluded || self.minimized;
+            self.set_covered(covered);
+            return;
+        }
+        if command == "nosurfaces" {
+            self.fail_surfaces = true;
+            return;
+        }
         // `rate`: each tab's pictures a second since the last `rate`.
         if command == "rate" {
             let elapsed = self.rate_since.elapsed().as_secs_f64();
@@ -1547,8 +1687,11 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                 return;
             }
         };
-        match make_gpu(window.clone()) {
-            Ok(gpu) => self.gpu = Some(gpu),
+        match make_gpu(window.clone(), &self.preferences) {
+            Ok((gpu, adapter)) => {
+                self.gpu = Some(gpu);
+                self.adapter = adapter;
+            }
             Err(e) => {
                 tracing::error!("Shell: {e}");
                 event_loop.exit();
@@ -1660,16 +1803,36 @@ fn pointer(kind: PointerKind, button: Button, at: PhysicalPosition<f64>) -> ToCl
 }
 
 /// The window's surface on the GPU, and what draws the clients' pictures into it.
-fn make_gpu(window: Arc<Window>) -> Result<Gpu, Error> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+///
+/// The GPU is chosen as the clients choose theirs (`client.rs`: Options' backends, high
+/// performance), so that both sides are on the same GPU and backend and can share surfaces; with
+/// it, its key (`shell::adapter_key`).
+fn make_gpu(window: Arc<Window>, preferences: &GlobalPreferences) -> Result<(Gpu, String), Error> {
+    let backends: wgpu::Backends = preferences.graphics_backends().into();
+    let instance = ruffle_render_wgpu::backend::create_wgpu_instance(backends, Default::default(), None);
     let surface = instance.create_surface(window.clone())?;
-    let adapter = futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        compatible_surface: Some(&surface),
-        ..Default::default()
-    }))?;
+    let (adapter, device, queue) =
+        match futures::executor::block_on(ruffle_render_wgpu::backend::request_adapter_and_device(
+            backends,
+            &instance,
+            Some(&surface),
+            wgpu::PowerPreference::HighPerformance,
+        )) {
+            Ok(found) => found,
+            // Any GPU that can show the window, if the clients' choice can't.
+            Err(e) => {
+                tracing::warn!("Shell: no GPU as the clients choose theirs ({e}); taking any");
+                let adapter = futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    compatible_surface: Some(&surface),
+                    ..Default::default()
+                }))?;
+                let (device, queue) = futures::executor::block_on(adapter.request_device(&Default::default()))?;
+                (adapter, device, queue)
+            }
+        };
     let info = adapter.get_info();
     tracing::info!("Shell graphics: {} on {}", info.backend.to_str(), info.name);
-    let (device, queue) = futures::executor::block_on(adapter.request_device(&Default::default()))?;
+    let key = shell::adapter_key(info.backend.to_str(), info.vendor, info.device, &info.name);
     let caps = surface.get_capabilities(&adapter);
     // The pictures are BGRA: drawn as they are into a window that takes BGRA, else converted.
     let format = [wgpu::TextureFormat::Bgra8Unorm, wgpu::TextureFormat::Rgba8Unorm]
@@ -1693,7 +1856,7 @@ fn make_gpu(window: Arc<Window>) -> Result<Gpu, Error> {
     let blit = Blit::new(&device);
     let replace = blit.pipeline(&device, format);
     let over = blit.pipeline_blending(&device, format, wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-    Ok(Gpu {
+    let gpu = Gpu {
         device,
         queue,
         surface,
@@ -1701,7 +1864,8 @@ fn make_gpu(window: Arc<Window>) -> Result<Gpu, Error> {
         blit,
         replace,
         over,
-    })
+    };
+    Ok((gpu, key))
 }
 
 /// egui's name for a key (`egui::Key::name`), for the client.

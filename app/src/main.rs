@@ -20,6 +20,8 @@ mod headless;
 mod shell;
 #[cfg(target_os = "macos")]
 mod shared_surface; // Turu: the shell's pictures as IOSurfaces (M5)
+#[cfg(any(windows, target_os = "linux"))]
+mod shared_gpu; // Turu: the shell's pictures as Vulkan or D3D12 surfaces (M5)
 mod heap_census;
 mod log;
 mod mugetsu;

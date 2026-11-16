@@ -55,6 +55,12 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let runtime = tokio::runtime::Runtime::new()?;
     let _guard = runtime.enter();
     let (descriptors, blit, renderer) = gpu(&preferences)?;
+    // The shell checks it's on the same GPU before using shared surfaces.
+    let info = descriptors.adapter.get_info();
+    out.send(ToShell::Gpu {
+        adapter: shell::adapter_key(info.backend.to_str(), info.vendor, info.device, &info.name),
+    });
+    let device = descriptors.device.clone();
     let (sender, events) = channel();
     let tab = turu::active_tab();
     let mut fonts = fontdb::Database::default();
@@ -92,14 +98,26 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             Picture::Shared { id, width, height } => sink_out.send(ToShell::Surface { id, width, height }),
         }),
     );
-    // A shell that takes GPU surfaces names where to hand them (macOS); `Dump` needs pixels.
+    // A shell that takes GPU surfaces names where to hand them; `Dump` needs pixels.
     #[cfg(target_os = "macos")]
     if let Ok(name) = std::env::var(shell::SURFACES_ENV)
         && let Some(sender) = crate::shared_surface::Sender::connect(&name)
     {
-        tracing::info!("Pictures go to the shell as shared surfaces");
+        tracing::info!("Pictures go to the shell as shared surfaces (IOSurface)");
         screen.share_surfaces(Box::new(sender));
     }
+    #[cfg(any(windows, target_os = "linux"))]
+    if let Ok(surfaces) = std::env::var(shell::SURFACES_ENV)
+        && let Some(sender) = crate::shared_gpu::Sender::connect(&device, info.backend, &surfaces, &out)
+    {
+        tracing::info!(
+            "Pictures go to the shell as shared surfaces ({})",
+            sender.route().name()
+        );
+        screen.share_surfaces(Box::new(sender));
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    drop(device);
     screen.set_volume(if preferences.mute() {
         0.0
     } else {

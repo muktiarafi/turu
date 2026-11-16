@@ -22,8 +22,13 @@ use std::sync::{Arc, Condvar, Mutex};
 /// The token's environment variable.
 pub const TOKEN_ENV: &str = "TURU_SHELL_TOKEN";
 /// Set by a shell that takes pictures as shared GPU surfaces instead of pixels: where to hand them
-/// over (macOS: the Mach service the shell checked in, M5). Without it, a client sends pixels.
+/// over (macOS: the Mach service the shell checked in; Linux: its Unix socket; Windows: "handles",
+/// sent as [`ToShell::SharedHandle`], M5). Without it, a client sends pixels.
 pub const SURFACES_ENV: &str = "TURU_SHELL_SURFACES";
+/// A GPU and backend, as both sides name it: shared surfaces need the same on both.
+pub fn adapter_key(backend: &str, vendor: u32, device: u32, name: &str) -> String {
+    format!("{backend}:{vendor:x}:{device:x}:{name}")
+}
 /// How many shared surfaces a client draws into in turn: one the shell shows, one it may still be
 /// reading, one being drawn. The shell keeps the newest this many of a client's.
 pub const SHARED_POOL: usize = 3;
@@ -134,6 +139,9 @@ pub enum ToClient {
     /// the tab can be seen meanwhile, so it draws nothing; its game, sound and pace go on, as the
     /// window's own tabs do while it's covered.
     Covered { covered: bool },
+    /// The shell can't use this client's shared surfaces (it couldn't open one, or its GPU isn't
+    /// the client's): send pixels from now on ([`ToShell::Frame`]).
+    NoSurfaces { reason: String },
     /// The shell is done with shared surface `id` ([`ToShell::Surface`]): the client may draw
     /// into it again.
     Release { id: u64 },
@@ -184,6 +192,23 @@ pub enum ToShell {
         /// Name and extensions (without the dot), as `platform::FileDialog`'s.
         #[serde(default)]
         filters: Vec<(String, Vec<String>)>,
+    },
+    /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
+    Gpu { adapter: String },
+    /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
+    /// copies into its own (`DuplicateHandle`, from the client it started): a D3D12 resource's
+    /// (`route` "dx12") or Vulkan memory's (`route` "vulkan-win32", `size` bytes in memory type
+    /// `memory_type`, as allocated). Sent before the surface's first [`ToShell::Surface`].
+    SharedHandle {
+        id: u64,
+        route: String,
+        handle: u64,
+        width: u32,
+        height: u32,
+        #[serde(default)]
+        size: u64,
+        #[serde(default)]
+        memory_type: u32,
     },
     /// `Platform::open_url`: the shell opens it (in the browser).
     OpenUrl { url: String },
@@ -687,6 +712,18 @@ mod tests {
                 width: 1280,
                 height: 720,
             },
+            ToShell::Gpu {
+                adapter: adapter_key("metal", 0x106b, 0, "Apple M5"),
+            },
+            ToShell::SharedHandle {
+                id: 4,
+                route: "vulkan-win32".into(),
+                handle: 0x2c4,
+                width: 1280,
+                height: 720,
+                size: 3_686_400,
+                memory_type: 7,
+            },
             ToShell::FileDialog {
                 id: 3,
                 save: true,
@@ -835,6 +872,9 @@ mod tests {
                 ToClient::HeadlessMode { on: true },
                 ToClient::Release { id: 7 },
                 ToClient::Covered { covered: true },
+                ToClient::NoSurfaces {
+                    reason: "another GPU".into(),
+                },
                 ToClient::Hide,
             ];
             for message in &messages {

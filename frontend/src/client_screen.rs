@@ -294,6 +294,22 @@ impl ClientScreen {
                 }
             }
             ToClient::Key { key, pressed, mods } => self.key(player, &key, pressed, mods),
+            ToClient::NoSurfaces { reason } => {
+                if self.shared.is_some() {
+                    tracing::warn!(
+                        "The shell can't use shared surfaces ({reason}): sending pixels"
+                    );
+                }
+                self.shared = None;
+                self.pool.clear();
+                if matches!(self.readback, Some(Readback::Shared { .. })) {
+                    self.readback = None;
+                }
+                if self.shown.is_some() {
+                    self.picture_due = true;
+                    self.ui_due = Some(Instant::now());
+                }
+            }
             ToClient::Covered { covered } => {
                 self.covered = covered;
                 self.follow_mouse(player);

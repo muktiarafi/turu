@@ -744,8 +744,49 @@ here, so AppKit's live resize while the corner is held wasn't run): the pictures
 size, from 900x560 to 1485x852 points, without a stretched or stale one left; a burst of 40 sizes
 20 ms apart, five times each way in Grid View with two tabs, left no error, Grid View re-tiled at
 each size, and the shell and clients' memory stayed flat (about 172 and 260 MB). Not run: an Intel
-Mac (its surfaces are made `Managed`, Apple's chips `Shared`), Windows and Linux (they compile on the copy path; their shared textures, DX12
-handles and dmabuf, aren't written).
+Mac (its surfaces are made `Managed`, Apple's chips `Shared`), Windows and Linux (below).
+
+**Shared surfaces on Windows and Linux** (2026-11-17, `app/src/shared_gpu.rs`; written without
+those machines, to be tried on them). The route follows the backend the client's GPU runs, which
+on Windows may be Vulkan or DX12 (Turu's default is wgpu's primary backends):
+* **Vulkan, Linux**: each surface is an image with exportable memory
+  (`VK_KHR_external_memory_fd`, opaque fd, a dedicated allocation, device-local); the client sends
+  the fd with the memory's size and type over the shell's Unix socket (`SCM_RIGHTS`, in
+  `$XDG_RUNTIME_DIR`, mode 0600), and the shell makes the same image and imports the memory, with
+  the exporter's size and type as the spec asks. The format is checked first for exportable and
+  importable memory.
+* **Vulkan, Windows**: the same with the memory as a Win32 handle (`VK_KHR_external_memory_win32`,
+  opaque), its value in `ToShell::SharedHandle`; the shell copies it out of the client it started
+  (`DuplicateHandle` on the child's process handle).
+* **DX12, Windows**: a committed resource on a shared heap, simultaneous-access (each process
+  tracks its states blind to the other's, and such a texture decays to common after each
+  `ExecuteCommandLists`), its shared handle copied the same way and opened with
+  `OpenSharedHandle`.
+* **Both sides on one GPU**: the shell now picks its GPU as the clients do (Options' backends,
+  high performance, through Ruffle's `request_adapter_and_device`), and each client says which it
+  has (`ToShell::Gpu`). On another GPU or backend, on a surface the shell can't open, or with a
+  handle it can't copy, the shell tells the client (`ToClient::NoSurfaces`) and it sends pixels.
+  `TURU_NO_SHARED_SURFACES=1` for the shell starts with pixels.
+
+Checked: the module type-checks and passes clippy for `x86_64-unknown-linux-gnu` and
+`x86_64-pc-windows-msvc` against the patched wgpu-hal (alone, with stand-ins for the three
+`turu_frontend` items it uses: the whole app doesn't cross-compile here, its C dependencies
+want those systems' compilers); the shell's and client's Windows and Linux branches aren't
+compiled here. On the Mac the fallback ran: `TURU_SHELL_TEST`'s `nosurfaces` made the shell refuse
+the next surface, the client said "sending pixels" and its tab went on at 30 pictures a second,
+drawn right; killed, its new process was back on IOSurfaces at 30.
+
+To check on each machine (a debug build is enough), `turu --shell`, then open a second tab:
+1. The log: `Shell graphics: <backend> on <GPU>`, `tab N's client draws on <the same>`, and
+   `Pictures go to the shell as shared surfaces (vulkan-fd | vulkan-win32 | dx12)`, or why pixels
+   (`no route for ...`, `the GPU can't share ...`, `surfaces can't be used (...)`).
+2. The picture: the game and Turu's UI with right colours (blue sky, not orange), moving, no
+   garbage or flicker; switch tabs, Grid View, resize, `kill` a client. Garbage rather than an
+   error would be an image layout or resource state the other process doesn't expect: report it,
+   and `TURU_NO_SHARED_SURFACES=1` meanwhile.
+3. On Windows both routes: `turu --shell --graphics dx12` and `--graphics vulkan` (the clients get
+   the flag too).
+4. CPU against pixels: the tab on screen with and without `TURU_NO_SHARED_SURFACES=1`.
 
 With accounts (2026-11-17, a Mac, debug build, two of the data folder's saved accounts on Twig,
 `TURU_SHELL_TEST_FOLLOW` driving the running shell):
@@ -791,8 +832,8 @@ CPU. Measuring found three things, fixed:
 
 Not done yet, of "done when": the clients Army > Accounts launches "In its own window" from a tab
 stay that tab's client's (its Army Control has them), and the shell's monitor and Report To don't
-list them, and they end when that client restarts; shared textures on Windows and Linux; the
-clipboard without a display handle on Wayland (not tried); Windows and Linux. Not built: Map Travel and Jump to Player in Army Control
+list them, and they end when that client restarts; the clipboard without a display handle on
+Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: Map Travel and Jump to Player in Army Control
 for the shell's tabs (they read in-process tabs and Army clients only); the shell's own `--api`
 (ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A client's
 Options > Application > Check Now for updates is off (`--exit-with-parent` marks it launched; the
