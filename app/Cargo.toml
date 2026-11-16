@@ -82,6 +82,11 @@ ashpd = { version = "0.13.0", features = ["settings", "game_mode"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }
+# Turu: the shell's pictures as IOSurfaces handed over by Mach (`shared_surface.rs`, M5).
+objc2-metal = { version = "0.3.2", features = ["objc2-io-surface"] }
+objc2-io-surface = "0.3.2"
+objc2-core-foundation = "0.3.2"
+mach2 = "0.4.3"
 
 [target.'cfg(windows)'.dependencies]
 # AQW build: DXGI, to see which graphics chip Mugetsu will use (see `mugetsu::intel_graphics`).
@@ -132,10 +137,3 @@ render_debug_labels = ["ruffle_render_wgpu/render_debug_labels"]
 # sandboxing
 sandbox = []
 
-# Turu: examples/iosurface_share.rs (M2's shared-texture check); the binary doesn't use them.
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-objc2 = "0.6.4"
-objc2-metal = { version = "0.3.2", features = ["objc2-io-surface"] }
-objc2-io-surface = "0.3.2"
-objc2-core-foundation = "0.3.2"
-mach2 = "0.4.3"

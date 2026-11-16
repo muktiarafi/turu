@@ -686,10 +686,67 @@ web monitor in the shell within 2 s. Tests: the hub
 polling a peer through a real control API, settings merged from two writers, the flags clients
 get, the new messages.
 
+Then (2026-11-16, on `m3-android-tabs`): shared GPU surfaces, sound, the clipboard, device fonts
+and file dialogs.
+
+* **Pictures as IOSurfaces on macOS** (`app/src/shared_surface.rs`): the shell checks in a Mach
+  service and names it to its clients (`TURU_SHELL_SURFACES`). A client draws the tab straight into
+  one of three IOSurface-backed Metal textures (`client_screen::SharedSurfaces`, the pool
+  `shell::SHARED_POOL`), sends each surface's Mach port to that service once with its process id
+  and the surface's id, and after the GPU has finished a picture says which surface holds it
+  (`ToShell::Surface`). There's no readback and no copy through the CPU. The shell opens the same
+  surface as a texture of its own device and keeps the newest three of each client. It gives a
+  surface back (`ToClient::Release`) once a newer one has come and its own GPU work with the older
+  one is done (`on_submitted_work_done`). A surface whose port hasn't come yet (another channel)
+  is drawn when it comes. A hidden tab's client drops its surfaces, and so does the shell. Without
+  the variable, or if a surface can't be made or sent, the client sends pixels as before
+  (Windows, Linux, `fake_shell.py`).
+* **The shell draws on the GPU** in every case: pixel pictures are uploaded into a texture, and the
+  window is drawn with `movie_texture::Blit`. Grid View's tiles are drawn as they are, and the
+  active tab's picture over them with premultiplied alpha. The CPU compose is gone. The window takes
+  any format the surface offers (BGRA, else RGBA, else the first), no longer only BGRA.
+* **A click on another tile** is decided by the active tab's client (it knows where its windows
+  are), which asks for that tab with `SelectTab`. Before, the shell read the picture's alpha on the
+  CPU. `TURU_SHELL_TEST`'s `dump` reads the window back from the GPU.
+* **Sound** in a client: its player has the window's audio (CPAL, Options' output device), at
+  the window's volume and mute while it's the tab on screen (in Grid View, the active one), and
+  muted while hidden or another tab's tile, as the window's in-process tabs are. `--headless` stays
+  silent. Checked on the Mac: each client opened a CoreAudio output of its own (macOS's power
+  assertions listed one, then two); which one is heard wasn't listened to.
+* **The clipboard and device fonts** in a client: its game has a UI backend of its own
+  (`backends::ClientUiBackend`) with the window's device fonts (`DeviceFonts`, taken out of
+  `DesktopUiBackend`) and the system clipboard. Before, the null backend gave a client neither:
+  AQW's device-font text (combat text, "AQW Recovered Helvetica Neue", Calibri) was missing, and
+  the game's Ctrl/Cmd+C and V did nothing. Turu's text boxes get Cut, Copy and Paste as egui-winit
+  makes them in a window (`client_screen::Clipboard`), and what egui copies goes to the clipboard.
+  A link the game opens goes to the shell unless Options deny it: a client has no "Open website?"
+  question to ask. Checked on the Mac (`TURU_SHELL_TEST`'s new `key cmd+V` line): a text on the
+  clipboard pasted into Script Loader's Find box and into the game's Username field; Cmd+A and
+  Cmd+C in the Find box put it back on the clipboard. The client loaded its device fonts (Arial
+  for both names), with no "Fallback font not found". Found on the way, in the window too: the
+  Find box lost the focus after its first character, because the count shown before it changed
+  the box's egui id; it has a fixed id now.
+* **File dialogs** in a client: `Platform::pick_file` / `save_file` send `ToShell::FileDialog`. The
+  shell shows rfd's dialog over its window, one at a time, and answers with `ToClient::Answer`
+  (a path, or none when cancelled or another dialog is open).
+
+Checked on a Mac (Apple M5, debug build, login screen, no account): both clients said "Pictures go
+to the shell as shared surfaces". Two tabs' dumps read back from the shell's GPU showed each
+client's login screen and tab strip. After `kill -9` of tab 2 its new process handed over new
+surfaces, and the dump showed it. The Scripts menu opened in a client after many pictures, so the
+surfaces were given back and drawn into again. In Grid View two tiles showed side by side, each from
+its own client's surface, the active outline on tab 2. A click on tab 1's tile made tab 1 active (the
+dump showed it), and the toggle went back to one tab. Script Loader's Load Script in a client
+opened the shell's "Load Script" dialog as a sheet of the window (a file wasn't picked: the answer's
+way back isn't run). Tests (the new messages' round trips) and clippy pass. Android's and Turu Mas's
+crates check. Not run: an Intel Mac (its surfaces are made `Managed`, Apple's chips `Shared`), a
+resize by hand, Windows and Linux (they compile on the copy path; their shared textures, DX12
+handles and dmabuf, aren't written).
+
 Not done yet, of "done when": the clients Army > Accounts launches "In its own window" from a tab
 stay that tab's client's (its Army Control has them), and the shell's monitor and Report To don't
-list them, and they end when that client restarts; the IOSurface route in the shell (pictures are copied, and Grid
-View composes them on the CPU: fine for a few tiles, slow in debug builds); a tab coming back
+list them, and they end when that client restarts; shared textures on Windows and Linux; the
+clipboard without a display handle on Wayland (not tried); a tab coming back
 logged in after a kill, and Army Control, Butler and an army script across tabs while in game (no
 account here: Butler and `bot.army` already work across processes through files, as with Army >
 Accounts' clients); Windows and Linux. Not built: Map Travel and Jump to Player in Army Control

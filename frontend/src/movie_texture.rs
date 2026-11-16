@@ -78,6 +78,17 @@ impl Blit {
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
     ) -> wgpu::RenderPipeline {
+        self.pipeline_blending(device, format, wgpu::BlendState::REPLACE)
+    }
+
+    /// [`Self::pipeline`] with another blend: the desktop shell draws a client's picture with
+    /// premultiplied alpha over the Grid View tiles (`app/src/shell.rs`).
+    pub fn pipeline_blending(
+        &self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        blend: wgpu::BlendState,
+    ) -> wgpu::RenderPipeline {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[Some(&self.layout)],
@@ -108,13 +119,31 @@ impl Blit {
                 }),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(blend),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
             }),
             multiview_mask: None,
             cache: None,
+        })
+    }
+
+    /// What [`Self::draw`] takes to draw `view`.
+    pub fn bind_group(&self, device: &wgpu::Device, view: &wgpu::TextureView) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
         })
     }
 
@@ -162,20 +191,7 @@ impl MovieTexture {
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &blit.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&blit.sampler),
-                },
-            ],
-        });
+        let bind_group = blit.bind_group(device, &view);
         Self {
             blit,
             texture,

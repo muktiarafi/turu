@@ -18,6 +18,8 @@ mod gui;
 mod client;
 mod headless;
 mod shell;
+#[cfg(target_os = "macos")]
+mod shared_surface; // Turu: the shell's pictures as IOSurfaces (M5)
 mod heap_census;
 mod log;
 mod mugetsu;

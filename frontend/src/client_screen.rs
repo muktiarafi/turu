@@ -4,13 +4,18 @@
 //! picture to a sink (the client sends it to the shell). Input comes from the shell's messages
 //! and goes, as on the desktop, to Turu's UI when a press starts on it, else to the game.
 //!
+//! With [`SharedSurfaces`] (macOS, M5) the picture is drawn straight into one of a few GPU surfaces
+//! the shell can open too, and only its id goes out once the GPU has finished it: no readback,
+//! no copy through the CPU. The shell hands each back ([`ToClient::Release`]) when it has a newer
+//! one.
+//!
 //! Android's screen (`android/src/screen.rs`) draws the same way into a window; the two share
 //! [`crate::movie_texture`]. Everything here runs on the engine thread.
 
 use crate::engine::Step;
 use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
-use crate::shell::{Button, GridShow, Mods, PointerKind, ToClient};
+use crate::shell::{Button, GridShow, Mods, PointerKind, SHARED_POOL, ToClient};
 use crate::turu;
 use ruffle_core::ViewportDimensions;
 use ruffle_core::events::{
@@ -33,8 +38,42 @@ const UI_FRAME: Duration = Duration::from_millis(33);
 /// How often a readback is looked at while one is under way.
 const READBACK_POLL: Duration = Duration::from_millis(4);
 
-/// Where each picture goes: its width, height and BGRA rows.
-pub type FrameSink = Box<dyn FnMut(u32, u32, Vec<u8>)>;
+/// A finished picture, for the shell.
+pub enum Picture {
+    /// Its BGRA rows, read back.
+    Pixels {
+        width: u32,
+        height: u32,
+        pixels: Vec<u8>,
+    },
+    /// In shared surface `id`, finished on the GPU.
+    Shared { id: u64, width: u32, height: u32 },
+}
+
+/// Where each picture goes.
+pub type FrameSink = Box<dyn FnMut(Picture)>;
+
+/// Makes GPU surfaces the shell can open too (the client's, by platform: `app/src/client.rs`).
+pub trait SharedSurfaces {
+    /// A new `FORMAT` texture of `size` that can be drawn into, already handed to the shell, with
+    /// its id; `None` if that failed (the client goes back to sending pixels).
+    fn make(&mut self, device: &wgpu::Device, size: (u32, u32)) -> Option<(u64, wgpu::Texture)>;
+}
+
+/// The system clipboard, for Turu's text boxes (the client's, by platform).
+pub trait Clipboard {
+    fn get(&mut self) -> Option<String>;
+    fn set(&mut self, text: String);
+}
+
+/// One of the shared surfaces drawn into in turn.
+struct SharedSurface {
+    id: u64,
+    texture: wgpu::Texture,
+    size: (u32, u32),
+    /// Not the shell's: free to draw into.
+    free: bool,
+}
 
 /// The texture drawn into and the buffer it's read back through, at one size.
 struct Target {
@@ -45,12 +84,20 @@ struct Target {
     padded_row: u32,
 }
 
-/// A readback under way: done when the buffer is mapped.
-struct Readback {
-    buffer: Arc<wgpu::Buffer>,
-    size: (u32, u32),
-    padded_row: u32,
-    mapped: Arc<AtomicBool>,
+/// A picture under way: a readback (done when the buffer is mapped), or a shared surface (done
+/// when the GPU finished the work that drew it).
+enum Readback {
+    Pixels {
+        buffer: Arc<wgpu::Buffer>,
+        size: (u32, u32),
+        padded_row: u32,
+        mapped: Arc<AtomicBool>,
+    },
+    Shared {
+        id: u64,
+        size: (u32, u32),
+        done: Arc<AtomicBool>,
+    },
 }
 
 pub struct ClientScreen {
@@ -68,6 +115,9 @@ pub struct ClientScreen {
     grid: Option<GridShow>,
     target: Option<Target>,
     readback: Option<Readback>,
+    /// Draws into surfaces shared with the shell, when it offered them.
+    shared: Option<Box<dyn SharedSurfaces>>,
+    pool: Vec<SharedSurface>,
     events: Vec<egui::Event>,
     modifiers: egui::Modifiers,
     /// The button held, and whether its press went to the UI (else the game).
@@ -78,6 +128,9 @@ pub struct ClientScreen {
     last_draw: Instant,
     /// When the UI wants drawing again, if it does.
     ui_due: Option<Instant>,
+    /// The game's volume while it's the tab on screen (else muted).
+    volume: f32,
+    clipboard: Option<Box<dyn Clipboard>>,
     /// A new picture of the game is wanted (a resize, a frame not drawn because a readback was
     /// under way).
     picture_due: bool,
@@ -112,6 +165,8 @@ impl ClientScreen {
             grid: None,
             target: None,
             readback: None,
+            shared: None,
+            pool: Vec::new(),
             events: Vec::new(),
             modifiers: egui::Modifiers::NONE,
             pressed: None,
@@ -120,7 +175,24 @@ impl ClientScreen {
             last_draw: Instant::now(),
             ui_due: None,
             picture_due: false,
+            volume: 1.0,
+            clipboard: None,
         }
+    }
+
+    /// The game's volume while the tab is on screen (Mugetsu's volume and mute); muted otherwise.
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume;
+    }
+
+    /// Where Turu's text boxes copy to and paste from.
+    pub fn set_clipboard(&mut self, clipboard: Box<dyn Clipboard>) {
+        self.clipboard = Some(clipboard);
+    }
+
+    /// Draws into surfaces shared with the shell instead of reading pictures back.
+    pub fn share_surfaces(&mut self, shared: Box<dyn SharedSurfaces>) {
+        self.shared = Some(shared);
     }
 
     /// Draws the UI again soon (the shell's tab list changed, say).
@@ -163,6 +235,8 @@ impl ClientScreen {
                 // Another tab's tile takes no input and runs at the tiles' rate.
                 let tile = grid.as_ref().is_some_and(|grid| !grid.active);
                 set_mouse(player, !tile);
+                // Only the tab on screen is heard (in Grid View, the active one).
+                player.set_volume(if tile { 0.0 } else { self.volume });
                 turu::bot().state.lock().hidden_tab = tile;
                 set_grid(grid.as_ref());
                 self.grid = grid;
@@ -172,8 +246,14 @@ impl ClientScreen {
                 self.grid = None;
                 self.shown = None;
                 self.target = None;
+                // A hidden tab keeps no surfaces (the shell lets go of its own).
+                self.pool.clear();
+                if matches!(self.readback, Some(Readback::Shared { .. })) {
+                    self.readback = None;
+                }
                 self.pressed = None;
                 set_mouse(player, false);
+                player.set_volume(0.0);
                 turu::bot().state.lock().hidden_tab = true;
             }
             ToClient::Pointer { kind, button, x, y } => self.pointer(player, kind, button, x, y),
@@ -193,6 +273,15 @@ impl ClientScreen {
                 }
             }
             ToClient::Key { key, pressed, mods } => self.key(player, &key, pressed, mods),
+            ToClient::Release { id } => {
+                if let Some(surface) = self.pool.iter_mut().find(|surface| surface.id == id) {
+                    surface.free = true;
+                }
+                // A picture waiting for a free surface.
+                if self.picture_due {
+                    self.ui_due = Some(Instant::now());
+                }
+            }
             ToClient::Text { text } => {
                 if self.egui.egui_wants_keyboard_input() {
                     self.events.push(egui::Event::Text(text));
@@ -287,30 +376,83 @@ impl ClientScreen {
         }
     }
 
-    /// Hands a finished readback to the sink.
+    /// Hands a finished picture to the sink.
     fn collect(&mut self) {
         let Some(readback) = &self.readback else {
             return;
         };
         let _ = self.descriptors.device.poll(wgpu::PollType::Poll);
-        if !readback.mapped.load(Ordering::Acquire) {
+        let done = match readback {
+            Readback::Pixels { mapped, .. } => mapped,
+            Readback::Shared { done, .. } => done,
+        };
+        if !done.load(Ordering::Acquire) {
             return;
         }
-        let readback = self.readback.take().expect("checked above");
-        let (width, height) = readback.size;
-        let row = width as usize * 4;
-        let mut pixels = Vec::with_capacity(row * height as usize);
-        match readback.buffer.slice(..).get_mapped_range() {
-            Ok(data) => {
-                for y in 0..height as usize {
-                    let start = y * readback.padded_row as usize;
-                    pixels.extend_from_slice(&data[start..start + row]);
+        match self.readback.take().expect("checked above") {
+            Readback::Pixels {
+                buffer,
+                size: (width, height),
+                padded_row,
+                ..
+            } => {
+                let row = width as usize * 4;
+                let mut pixels = Vec::with_capacity(row * height as usize);
+                match buffer.slice(..).get_mapped_range() {
+                    Ok(data) => {
+                        for y in 0..height as usize {
+                            let start = y * padded_row as usize;
+                            pixels.extend_from_slice(&data[start..start + row]);
+                        }
+                    }
+                    Err(e) => tracing::warn!("Couldn't read the picture back: {e}"),
                 }
+                buffer.unmap();
+                (self.sink)(Picture::Pixels {
+                    width,
+                    height,
+                    pixels,
+                });
             }
-            Err(e) => tracing::warn!("Couldn't read the picture back: {e}"),
+            Readback::Shared {
+                id,
+                size: (width, height),
+                ..
+            } => (self.sink)(Picture::Shared { id, width, height }),
         }
-        readback.buffer.unmap();
-        (self.sink)(width, height, pixels);
+    }
+
+    /// A shared surface of `size` to draw into, taken from the shell's: `Ok(None)` without shared
+    /// surfaces, `Err` while the shell has every one.
+    fn take_surface(&mut self, size: (u32, u32)) -> Result<Option<(u64, wgpu::Texture)>, ()> {
+        if self.shared.is_none() {
+            return Ok(None);
+        }
+        self.pool.retain(|surface| surface.size == size);
+        if let Some(surface) = self.pool.iter_mut().find(|surface| surface.free) {
+            surface.free = false;
+            return Ok(Some((surface.id, surface.texture.clone())));
+        }
+        if self.pool.len() >= SHARED_POOL {
+            return Err(());
+        }
+        let made = self
+            .shared
+            .as_mut()
+            .and_then(|shared| shared.make(&self.descriptors.device, size));
+        let Some((id, texture)) = made else {
+            tracing::warn!("No shared surface for the shell: sending pixels instead");
+            self.shared = None;
+            self.pool.clear();
+            return Ok(None);
+        };
+        self.pool.push(SharedSurface {
+            id,
+            texture: texture.clone(),
+            size,
+            free: false,
+        });
+        Ok(Some((id, texture)))
     }
 
     /// The game's part of the picture's left and top, in pixels: its tile's in Grid View.
@@ -370,6 +512,21 @@ impl ClientScreen {
                 .is_some_and(|layer| layer.order != egui::Order::Background)
     }
 
+    /// In Grid View, as the active tab: the other tab whose tile is at (`x`, `y`) with nothing of
+    /// Turu's over it (its label is the tile's).
+    fn other_tile_at(&self, x: f32, y: f32) -> Option<u32> {
+        let grid = self.grid.as_ref().filter(|grid| grid.active)?;
+        let tile = grid.tiles.iter().find(|tile| {
+            let (x0, y0) = (tile.x as f32, tile.y as f32);
+            x >= x0 && y >= y0 && x < x0 + tile.width as f32 && y < y0 + tile.height as f32
+        })?;
+        let covered = self
+            .egui
+            .layer_id_at(self.point(x, y))
+            .is_some_and(|layer| layer.order != egui::Order::Background);
+        (tile.id != grid.mine && !covered).then_some(tile.id)
+    }
+
     fn pointer(&mut self, player: &mut Player, kind: PointerKind, button: Button, x: f32, y: f32) {
         let pos = self.point(x, y);
         let (left, top) = self.offsets();
@@ -399,6 +556,14 @@ impl ClientScreen {
                 }
             }
             PointerKind::Down => {
+                // Grid View: a press on another tab's tile, where none of Turu's windows covers it,
+                // makes that tab the active one (VibeSkua's tabbed host's click); its release
+                // goes nowhere.
+                if let Some(id) = self.other_tile_at(x, y) {
+                    self.pressed = Some((button, true));
+                    turu::shell_tab_action(turu::ShellTabAction::Select(id));
+                    return;
+                }
                 // egui sees every press: one on the game closes an open menu, as on the desktop.
                 let on_ui = self.on_ui(x, y) || self.egui.egui_wants_pointer_input();
                 self.pressed = Some((button, on_ui));
@@ -451,6 +616,23 @@ impl ClientScreen {
             mac_cmd: cfg!(target_os = "macos") && mods.command,
             command: mods.command,
         };
+        // Cut, copy and paste in Turu's text boxes, as egui-winit makes them in a window.
+        if pressed && mods.command && self.egui.egui_wants_keyboard_input() {
+            let event = match name {
+                "X" => Some(egui::Event::Cut),
+                "C" => Some(egui::Event::Copy),
+                "V" => self
+                    .clipboard
+                    .as_mut()
+                    .and_then(|clipboard| clipboard.get())
+                    .map(egui::Event::Paste),
+                _ => None,
+            };
+            if let Some(event) = event {
+                self.events.push(event);
+                return;
+            }
+        }
         if let Some(key) = egui::Key::from_name(name) {
             self.events.push(egui::Event::Key {
                 key,
@@ -489,10 +671,16 @@ impl ClientScreen {
         if ruffle_render_wgpu::device_lost().is_some() {
             return;
         }
-        if self
-            .target
-            .as_ref()
-            .is_none_or(|target| target.size != size)
+        let Ok(surface) = self.take_surface(size) else {
+            // The shell has every surface: drawn once it lets one go.
+            self.picture_due |= new_picture;
+            return;
+        };
+        if surface.is_none()
+            && self
+                .target
+                .as_ref()
+                .is_none_or(|target| target.size != size)
         {
             self.target = Some(self.make_target(size));
         }
@@ -543,9 +731,17 @@ impl ClientScreen {
             .viewport_output
             .get(&egui::ViewportId::ROOT)
             .and_then(|viewport| Instant::now().checked_add(viewport.repaint_delay));
-        for command in &output.platform_output.commands {
-            if let egui::OutputCommand::OpenUrl(open) = command {
-                crate::platform::platform().open_url(&open.url);
+        for command in output.platform_output.commands {
+            match command {
+                egui::OutputCommand::OpenUrl(open) => {
+                    crate::platform::platform().open_url(&open.url)
+                }
+                egui::OutputCommand::CopyText(text) => {
+                    if let Some(clipboard) = &mut self.clipboard {
+                        clipboard.set(text);
+                    }
+                }
+                egui::OutputCommand::CopyImage(_) => {}
             }
         }
 
@@ -568,9 +764,16 @@ impl ClientScreen {
         let mut buffers =
             self.egui_renderer
                 .update_buffers(device, queue, &mut encoder, &primitives, &screen);
-        let target = self.target.as_ref().expect("made above");
+        let target = match &surface {
+            Some(_) => None,
+            None => Some(self.target.as_ref().expect("made above")),
+        };
         {
-            let view = target.texture.create_view(&Default::default());
+            let view = match (&surface, target) {
+                (Some((_, texture)), _) => texture.create_view(&Default::default()),
+                (None, Some(target)) => target.texture.create_view(&Default::default()),
+                (None, None) => unreachable!("a target is made without a surface"),
+            };
             let mut pass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -610,22 +813,24 @@ impl ClientScreen {
             }
             self.egui_renderer.render(&mut pass, &primitives, &screen);
         }
-        encoder.copy_texture_to_buffer(
-            target.texture.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &target.buffer,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(target.padded_row),
-                    rows_per_image: Some(size.1),
+        if let Some(target) = target {
+            encoder.copy_texture_to_buffer(
+                target.texture.as_image_copy(),
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &target.buffer,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(target.padded_row),
+                        rows_per_image: Some(size.1),
+                    },
                 },
-            },
-            wgpu::Extent3d {
-                width: size.0,
-                height: size.1,
-                depth_or_array_layers: 1,
-            },
-        );
+                wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         buffers.push(encoder.finish());
         queue.submit(buffers);
         for id in &textures.free {
@@ -633,6 +838,15 @@ impl ClientScreen {
         }
         // Applied: epaint checks (in debug builds) that none is dropped unhandled.
         textures.clear();
+        let Some(target) = target else {
+            // The shell gets the surface once the GPU has finished drawing it.
+            let (id, _) = surface.expect("no target without a surface");
+            let done = Arc::new(AtomicBool::new(false));
+            let finished = done.clone();
+            queue.on_submitted_work_done(move || finished.store(true, Ordering::Release));
+            self.readback = Some(Readback::Shared { id, size, done });
+            return;
+        };
         let mapped = Arc::new(AtomicBool::new(false));
         let done = mapped.clone();
         target
@@ -643,7 +857,7 @@ impl ClientScreen {
                     done.store(true, Ordering::Release);
                 }
             });
-        self.readback = Some(Readback {
+        self.readback = Some(Readback::Pixels {
             buffer: target.buffer.clone(),
             size,
             padded_row: target.padded_row,

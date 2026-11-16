@@ -156,8 +156,15 @@ pub struct DesktopUiBackend {
     cursor_visible: bool,
     preferences: GlobalPreferences,
     preferred_cursor: MouseCursor,
-    font_database: Rc<fontdb::Database>,
     file_picker: FilePicker,
+    // Turu: the device fonts, shared with a shell's clients (`ClientUiBackend`).
+    fonts: DeviceFonts,
+}
+
+/// Turu: the device fonts a player is given (`load_device_font`, `sort_device_fonts`), taken
+/// out of `DesktopUiBackend` so a shell's client, which has no window, loads the same ones.
+pub struct DeviceFonts {
+    font_database: Rc<fontdb::Database>,
 
     // It's non-trivial to invalidate all fonts and change the renderer, so
     // do not allow changing it in runtime.
@@ -166,6 +173,91 @@ pub struct DesktopUiBackend {
     // Shared atlas pages that every device font loaded by this backend packs
     // its glyphs into, instead of each font getting its own.
     font_atlases: FontAtlases,
+}
+
+impl DeviceFonts {
+    pub fn new(font_database: Rc<fontdb::Database>, preferences: &GlobalPreferences) -> Self {
+        Self {
+            font_database,
+            device_font_renderer: preferences
+                .device_font_renderer()
+                .unwrap_or(DeviceFontRenderer::Embedded),
+            font_atlases: FontAtlases::new(),
+        }
+    }
+
+    pub fn load(&self, query: &FontQuery, register: &mut dyn FnMut(FontDefinition)) {
+        let name = &query.name;
+
+        // AQW build: Flash on Windows asks Windows (GDI) for device fonts, which also accepts
+        // full face names ("Arial Bold") and substitutes missing fonts (Helvetica -> Arial).
+        // fontdb only knows family names, so "Arial Bold" was "unknown" and Ruffle drew it
+        // with whatever device font it had loaded first: AQW's combat text ("Dodge!", skill
+        // names) looked wrong. Try what Windows would use, in order.
+        for (candidate, (family, is_bold, is_italic)) in
+            device_font_candidates(name, query.is_bold, query.is_italic)
+                .into_iter()
+                .enumerate()
+        {
+            let fontdb_query = fontdb::Query {
+                families: &[Family::Name(&family)],
+                weight: if is_bold {
+                    fontdb::Weight::BOLD
+                } else {
+                    fontdb::Weight::NORMAL
+                },
+                style: if is_italic {
+                    fontdb::Style::Italic
+                } else {
+                    fontdb::Style::Normal
+                },
+                ..Default::default()
+            };
+
+            // It'd be nice if we can get the full list of candidates... Feature request?
+            if let Some(id) = self.font_database.query(&fontdb_query)
+                && let Some(face) = self.font_database.face(id)
+            {
+                tracing::info!(
+                    "Loading device font \"{}\" for \"{name}\" (italic: {is_italic}, bold: {is_bold})",
+                    face.post_script_name
+                );
+
+                // A substitute is registered as exactly the font that was asked for: Ruffle
+                // looks fonts up by name, bold and italic, and AQW asks for e.g. "Helvetica
+                // Neue Bold" without the bold flag. Windows answers that with Arial Bold, which
+                // registered as bold wasn't found, so the text fell back to regular Arial.
+                let flags = (candidate > 0).then_some((query.is_bold, query.is_italic));
+                match load_fontdb_font(
+                    name.to_string(),
+                    face,
+                    flags,
+                    self.device_font_renderer,
+                    &self.font_atlases,
+                ) {
+                    Ok(font_definition) => register(font_definition),
+                    Err(error) => tracing::error!("Error loading font from fontdb: {error}"),
+                }
+                return;
+            }
+        }
+    }
+
+    #[allow(unused_variables)]
+    pub fn sort(
+        &self,
+        query: &FontQuery,
+        register: &mut dyn FnMut(FontDefinition),
+    ) -> Vec<FontQuery> {
+        cfg_select! {
+            all(unix, feature = "fontconfig") => {
+                fontconfig::sort_device_fonts(query, register, self.device_font_renderer, &self.font_atlases)
+                    .inspect_err(|err| tracing::error!("Cannot sort device fonts: {err}"))
+                    .unwrap_or_default()
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl DesktopUiBackend {
@@ -185,13 +277,9 @@ impl DesktopUiBackend {
             cursor_visible: true,
             clipboard,
             preferred_cursor: MouseCursor::Arrow,
-            font_database,
             file_picker,
-            device_font_renderer: preferences
-                .device_font_renderer()
-                .unwrap_or(DeviceFontRenderer::Embedded),
+            fonts: DeviceFonts::new(font_database, &preferences),
             preferences,
-            font_atlases: FontAtlases::new(),
         })
     }
 
@@ -319,76 +407,15 @@ impl UiBackend for DesktopUiBackend {
     }
 
     fn load_device_font(&self, query: &FontQuery, register: &mut dyn FnMut(FontDefinition)) {
-        let name = &query.name;
-
-        // AQW build: Flash on Windows asks Windows (GDI) for device fonts, which also accepts
-        // full face names ("Arial Bold") and substitutes missing fonts (Helvetica -> Arial).
-        // fontdb only knows family names, so "Arial Bold" was "unknown" and Ruffle drew it
-        // with whatever device font it had loaded first: AQW's combat text ("Dodge!", skill
-        // names) looked wrong. Try what Windows would use, in order.
-        for (candidate, (family, is_bold, is_italic)) in
-            device_font_candidates(name, query.is_bold, query.is_italic)
-                .into_iter()
-                .enumerate()
-        {
-            let fontdb_query = fontdb::Query {
-                families: &[Family::Name(&family)],
-                weight: if is_bold {
-                    fontdb::Weight::BOLD
-                } else {
-                    fontdb::Weight::NORMAL
-                },
-                style: if is_italic {
-                    fontdb::Style::Italic
-                } else {
-                    fontdb::Style::Normal
-                },
-                ..Default::default()
-            };
-
-            // It'd be nice if we can get the full list of candidates... Feature request?
-            if let Some(id) = self.font_database.query(&fontdb_query)
-                && let Some(face) = self.font_database.face(id)
-            {
-                tracing::info!(
-                    "Loading device font \"{}\" for \"{name}\" (italic: {is_italic}, bold: {is_bold})",
-                    face.post_script_name
-                );
-
-                // A substitute is registered as exactly the font that was asked for: Ruffle
-                // looks fonts up by name, bold and italic, and AQW asks for e.g. "Helvetica
-                // Neue Bold" without the bold flag. Windows answers that with Arial Bold, which
-                // registered as bold wasn't found, so the text fell back to regular Arial.
-                let flags = (candidate > 0).then_some((query.is_bold, query.is_italic));
-                match load_fontdb_font(
-                    name.to_string(),
-                    face,
-                    flags,
-                    self.device_font_renderer,
-                    &self.font_atlases,
-                ) {
-                    Ok(font_definition) => register(font_definition),
-                    Err(error) => tracing::error!("Error loading font from fontdb: {error}"),
-                }
-                return;
-            }
-        }
+        self.fonts.load(query, register);
     }
 
-    #[allow(unused_variables)]
     fn sort_device_fonts(
         &self,
         query: &FontQuery,
         register: &mut dyn FnMut(FontDefinition),
     ) -> Vec<FontQuery> {
-        cfg_select! {
-            all(unix, feature = "fontconfig") => {
-                fontconfig::sort_device_fonts(query, register, self.device_font_renderer, &self.font_atlases)
-                    .inspect_err(|err| tracing::error!("Cannot sort device fonts: {err}"))
-                    .unwrap_or_default()
-            }
-            _ => Vec::new(),
-        }
+        self.fonts.sort(query, register)
     }
 
     // Unused on desktop
@@ -451,6 +478,110 @@ impl UiBackend for DesktopUiBackend {
                 FileDialogResult::Canceled
             })
         }))
+    }
+
+    fn close_file_dialog(&mut self) {}
+}
+
+/// Turu: a shell's client's UI backend (`client.rs`, docs/TAB_PROCESSES_PROPOSAL.md, M5): the
+/// window's device fonts and the system clipboard, without a window. The shell owns the window
+/// (no cursor or full screen here), and the game asks for no file dialogs.
+pub struct ClientUiBackend {
+    clipboard: Clipboard,
+    fonts: DeviceFonts,
+    preferences: GlobalPreferences,
+}
+
+impl ClientUiBackend {
+    pub fn new(font_database: Rc<fontdb::Database>, preferences: GlobalPreferences) -> Self {
+        Self {
+            // No display handle: arboard's own (enough on macOS, Windows and X11).
+            clipboard: Clipboard::new(None),
+            fonts: DeviceFonts::new(font_database, &preferences),
+            preferences,
+        }
+    }
+}
+
+impl UiBackend for ClientUiBackend {
+    fn mouse_visible(&self) -> bool {
+        true
+    }
+
+    fn set_mouse_visible(&mut self, _visible: bool) {}
+
+    fn set_mouse_cursor(&mut self, _cursor: MouseCursor) {}
+
+    fn clipboard_content(&mut self) -> String {
+        self.clipboard.get().unwrap_or_default()
+    }
+
+    fn set_clipboard_content(&mut self, content: String) {
+        self.clipboard.set_text(content);
+    }
+
+    fn set_fullscreen(&mut self, _is_full: bool) -> Result<(), FullscreenError> {
+        Ok(())
+    }
+
+    fn display_root_movie_download_failed_message(&self, _invalid_swf: bool, fetch_error: String) {
+        tracing::error!("The game didn't load: {fetch_error}");
+    }
+
+    fn message(&self, message: &str) {
+        tracing::info!("The game says: {message}");
+    }
+
+    // Turu: no "Open website?" question here (the window asks it, a client has none to ask in):
+    // a page opens unless Options deny it, through the shell.
+    fn display_unsupported_video(&self, url: Url) {
+        if url.scheme() == "javascript" || self.preferences.open_url_mode() == OpenUrlMode::Deny {
+            tracing::warn!("The game tried to open {url}, which isn't allowed");
+            return;
+        }
+        turu_frontend::platform::platform().open_url(url.as_str());
+    }
+
+    fn load_device_font(&self, query: &FontQuery, register: &mut dyn FnMut(FontDefinition)) {
+        self.fonts.load(query, register);
+    }
+
+    fn sort_device_fonts(
+        &self,
+        query: &FontQuery,
+        register: &mut dyn FnMut(FontDefinition),
+    ) -> Vec<FontQuery> {
+        self.fonts.sort(query, register)
+    }
+
+    fn open_virtual_keyboard(&self) {}
+
+    fn close_virtual_keyboard(&self) {}
+
+    fn language(&self) -> LanguageIdentifier {
+        self.preferences.language()
+    }
+
+    fn display_file_open_dialog(
+        &mut self,
+        _filters: Vec<FileFilter>,
+    ) -> Option<DialogResultFuture> {
+        None
+    }
+
+    fn display_file_open_dialog_multiple(
+        &mut self,
+        _filters: Vec<FileFilter>,
+    ) -> Option<MultiDialogResultFuture> {
+        None
+    }
+
+    fn display_file_save_dialog(
+        &mut self,
+        _file_name: String,
+        _title: String,
+    ) -> Option<DialogResultFuture> {
+        None
     }
 
     fn close_file_dialog(&mut self) {}

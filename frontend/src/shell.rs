@@ -21,6 +21,12 @@ use std::sync::{Arc, Condvar, Mutex};
 
 /// The token's environment variable.
 pub const TOKEN_ENV: &str = "TURU_SHELL_TOKEN";
+/// Set by a shell that takes pictures as shared GPU surfaces instead of pixels: where to hand them
+/// over (macOS: the Mach service the shell checked in, M5). Without it, a client sends pixels.
+pub const SURFACES_ENV: &str = "TURU_SHELL_SURFACES";
+/// How many shared surfaces a client draws into in turn: one the shell shows, one it may still be
+/// reading, one being drawn. The shell keeps the newest this many of a client's.
+pub const SHARED_POOL: usize = 3;
 /// The longest JSON message taken (a frame's pixels aren't counted).
 const MAX_MESSAGE: u32 = 1 << 20;
 /// The largest frame taken: 8K by 8K BGRA.
@@ -69,7 +75,8 @@ pub enum ToClient {
         #[serde(default)]
         you: Option<u32>,
     },
-    /// The answer to a request the client made (a file dialog, say): its `id` and what came back.
+    /// The answer to a request the client made: a [`ToShell::FileDialog`]'s `id` and the path
+    /// chosen (`None`: cancelled, or another dialog was open).
     Answer { id: u32, value: Option<String> },
     /// Debugging: write the next frame drawn to `path` as a PNG.
     Dump { path: String },
@@ -123,6 +130,9 @@ pub enum ToClient {
     /// one, as VibeSkua's tabbed host sends it to every tab. Also to a tab when it connects, once a
     /// tab has changed it.
     HeadlessMode { on: bool },
+    /// The shell is done with shared surface `id` ([`ToShell::Surface`]): the client may draw
+    /// into it again.
+    Release { id: u64 },
     /// A message this client doesn't know.
     #[serde(other)]
     Unknown,
@@ -149,6 +159,27 @@ pub enum ToShell {
         height: u32,
         seq: u64,
         len: u64,
+    },
+    /// A picture of the tab in shared surface `id` (macOS: an IOSurface whose Mach port went to
+    /// the shell before, [`SURFACES_ENV`]), drawn and finished on the client's GPU. The surface is
+    /// the shell's until it sends [`ToClient::Release`]. Sent only to a shell that offered
+    /// surfaces; the others get [`ToShell::Frame`]s.
+    Surface { id: u64, width: u32, height: u32 },
+    /// Desktop: an "open" (or with `save`, "save") file dialog over the shell's window, as
+    /// `Platform::pick_file` describes it; answered with [`ToClient::Answer`] and this `id`.
+    FileDialog {
+        id: u32,
+        #[serde(default)]
+        save: bool,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        directory: Option<String>,
+        #[serde(default)]
+        file_name: Option<String>,
+        /// Name and extensions (without the dot), as `platform::FileDialog`'s.
+        #[serde(default)]
+        filters: Vec<(String, Vec<String>)>,
     },
     /// `Platform::open_url`: the shell opens it (in the browser).
     OpenUrl { url: String },
@@ -647,6 +678,19 @@ mod tests {
             },
             ToShell::SoftKeyboard { show: true },
             ToShell::HeadlessMode { on: true },
+            ToShell::Surface {
+                id: 7,
+                width: 1280,
+                height: 720,
+            },
+            ToShell::FileDialog {
+                id: 3,
+                save: true,
+                title: Some("Save the log".into()),
+                directory: Some("/data/logs".into()),
+                file_name: Some("log.txt".into()),
+                filters: vec![("Text".into(), vec!["txt".into()])],
+            },
         ];
         let mut bytes = Vec::new();
         for message in &to_shell {
@@ -785,6 +829,7 @@ mod tests {
                     letter: Some('a'),
                 },
                 ToClient::HeadlessMode { on: true },
+                ToClient::Release { id: 7 },
                 ToClient::Hide,
             ];
             for message in &messages {

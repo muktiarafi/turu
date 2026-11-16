@@ -8,6 +8,7 @@
 //! (`EngineEvent::Run`); pictures go out on another (`FrameSender`), newest first, so the engine
 //! never waits on the shell. `Dump` (debugging) writes the next picture to a PNG.
 
+use crate::backends::ClientUiBackend;
 use crate::headless::build_player;
 use crate::preferences::GlobalPreferences;
 use crate::turu;
@@ -16,10 +17,13 @@ use ruffle_render::quality::StageQuality;
 use ruffle_render_wgpu::backend::{WgpuRenderBackend, create_wgpu_instance, request_adapter_and_device};
 use ruffle_render_wgpu::descriptors::Descriptors;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
-use turu_frontend::client_screen::ClientScreen;
+use turu_frontend::client_screen::{ClientScreen, Picture};
 use turu_frontend::engine::{self, EngineEvent, STAGE};
 use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::platform::{Answer, FileDialog, Platform};
@@ -38,7 +42,13 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let (reader, writer) =
         shell::connect(address, &token).with_context(|| format!("Couldn't reach the shell at {address}"))?;
     let out = FrameSender::start(writer);
-    if !turu_frontend::platform::set(Arc::new(ClientPlatform { out: out.clone() })) {
+    let answers: Answers = Arc::default();
+    let platform = ClientPlatform {
+        out: out.clone(),
+        answers: answers.clone(),
+        next_id: AtomicU32::new(1),
+    };
+    if !turu_frontend::platform::set(Arc::new(platform)) {
         tracing::warn!("Another platform was installed first: the client's requests won't reach the shell");
     }
 
@@ -47,6 +57,8 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let (descriptors, blit, renderer) = gpu(&preferences)?;
     let (sender, events) = channel();
     let tab = turu::active_tab();
+    let mut fonts = fontdb::Database::default();
+    fonts.load_system_fonts();
     let mut players = Players::new();
     let player = build_player(
         &preferences,
@@ -54,8 +66,12 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         sender.clone(),
         tab,
         renderer,
+        // The window's device fonts, the clipboard and sound, for the game.
+        Some(ClientUiBackend::new(Rc::new(fonts), preferences.clone())),
         StageQuality::High,
     );
+    // Heard only while it's the tab on screen (`ClientScreen`), as the window's tabs are.
+    player.lock().expect("the player was just built").set_volume(0.0);
     players.add(Slot::new(Some(tab), player, ()));
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender.clone(), tab))));
     // Hidden until the shell shows it.
@@ -63,16 +79,34 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let dump: Arc<Mutex<Option<String>>> = Arc::default();
     let sink_dump = dump.clone();
     let sink_out = out.clone();
-    SCREEN.set(Some(ClientScreen::new(
+    let mut screen = ClientScreen::new(
         descriptors,
         blit,
-        Box::new(move |width, height, pixels| {
-            if let Some(path) = sink_dump.lock().unwrap_or_else(|e| e.into_inner()).take() {
-                write_png(Path::new(&path), width, height, &pixels);
+        Box::new(move |picture| match picture {
+            Picture::Pixels { width, height, pixels } => {
+                if let Some(path) = sink_dump.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    write_png(Path::new(&path), width, height, &pixels);
+                }
+                sink_out.frame(width, height, pixels);
             }
-            sink_out.frame(width, height, pixels);
+            Picture::Shared { id, width, height } => sink_out.send(ToShell::Surface { id, width, height }),
         }),
-    )));
+    );
+    // A shell that takes GPU surfaces names where to hand them (macOS); `Dump` needs pixels.
+    #[cfg(target_os = "macos")]
+    if let Ok(name) = std::env::var(shell::SURFACES_ENV)
+        && let Some(sender) = crate::shared_surface::Sender::connect(&name)
+    {
+        tracing::info!("Pictures go to the shell as shared surfaces");
+        screen.share_surfaces(Box::new(sender));
+    }
+    screen.set_volume(if preferences.mute() {
+        0.0
+    } else {
+        preferences.preferred_volume()
+    });
+    screen.set_clipboard(Box::new(SystemClipboard(egui_winit::clipboard::Clipboard::new(None))));
+    SCREEN.set(Some(screen));
     turu::start_updates();
     // The tab strip's tabs are the shell's (M5): requests go to it, its list comes back.
     let link_out = out.clone();
@@ -83,7 +117,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let spawned = std::thread::Builder::new().name("Turu Shell In".into()).spawn({
         let sender = sender.clone();
         move || {
-            let mut forward = Forward { sender, dump };
+            let mut forward = Forward { sender, dump, answers };
             match shell::serve(reader, &mut forward) {
                 Ok(()) => tracing::info!("The shell closed the connection; quitting"),
                 Err(e) => tracing::warn!("Lost the shell ({e}); quitting"),
@@ -104,10 +138,24 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     Ok(())
 }
 
+/// The system clipboard for Turu's text boxes (egui-winit's, without a window).
+struct SystemClipboard(egui_winit::clipboard::Clipboard);
+
+impl turu_frontend::client_screen::Clipboard for SystemClipboard {
+    fn get(&mut self) -> Option<String> {
+        self.0.get()
+    }
+
+    fn set(&mut self, text: String) {
+        self.0.set_text(text);
+    }
+}
+
 /// Hands the shell's messages to the engine thread.
 struct Forward {
     sender: Sender<EngineEvent>,
     dump: Arc<Mutex<Option<String>>>,
+    answers: Answers,
 }
 
 impl ClientEnd for Forward {
@@ -125,8 +173,13 @@ impl ClientEnd for Forward {
                 })));
             }
             ToClient::HeadlessMode { on } => turu_frontend::client_link::set_headless_mode(on),
-            // Defined for file dialogs; nothing uses it yet.
-            ToClient::Answer { .. } => {}
+            // A file dialog the shell showed.
+            ToClient::Answer { id, value } => {
+                let answer = self.answers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                if let Some(answer) = answer {
+                    answer(value.map(Into::into));
+                }
+            }
             message => {
                 let _ = self.sender.send(EngineEvent::Run(Box::new(move |player| {
                     SCREEN.with_borrow_mut(|screen| {
@@ -165,19 +218,45 @@ fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
     Ok((descriptors, blit, renderer))
 }
 
-/// What the client asks of the shell. File dialogs and the rest wait for the shell to answer them
-/// (defined in the messages, not used yet).
+/// File dialogs waiting for the shell's answer, by id.
+type Answers = Arc<Mutex<HashMap<u32, Answer>>>;
+
+/// What the client asks of the shell: file dialogs over its window (answered by id) and links.
 struct ClientPlatform {
     out: FrameSender,
+    answers: Answers,
+    next_id: AtomicU32,
+}
+
+impl ClientPlatform {
+    fn dialog(&self, dialog: FileDialog, save: bool, answer: Answer) -> bool {
+        if self.out.is_closed() {
+            return false;
+        }
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.answers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, answer);
+        self.out.send(ToShell::FileDialog {
+            id,
+            save,
+            title: dialog.title,
+            directory: dialog.directory.map(|d| d.to_string_lossy().into_owned()),
+            file_name: dialog.file_name,
+            filters: dialog.filters,
+        });
+        true
+    }
 }
 
 impl Platform for ClientPlatform {
-    fn pick_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
-        false
+    fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
+        self.dialog(dialog, false, answer)
     }
 
-    fn save_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
-        false
+    fn save_file(&self, dialog: FileDialog, answer: Answer) -> bool {
+        self.dialog(dialog, true, answer)
     }
 
     fn open_url(&self, url: &str) {
@@ -190,10 +269,6 @@ impl Platform for ClientPlatform {
 
     fn open_file(&self, path: &Path) {
         crate::mugetsu::open_folder(path);
-    }
-
-    fn has_file_dialogs(&self) -> bool {
-        false
     }
 }
 

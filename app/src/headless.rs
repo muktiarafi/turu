@@ -3,6 +3,7 @@
 //! the bot's calls. With `--user`/`--password` and `--run-script` the bot logs in and farms on
 //! its own; its log goes to the terminal. Works without a display (a Linux server).
 
+use crate::backends::ClientUiBackend;
 use crate::player::LaunchOptions;
 use crate::preferences::GlobalPreferences;
 use crate::turu;
@@ -10,10 +11,11 @@ use anyhow::Error;
 use ruffle_core::backend::navigator::SocketMode;
 use ruffle_core::backend::ui::NullUiBackend;
 use ruffle_core::{LoadBehavior, Player, PlayerBuilder};
+use ruffle_frontend_utils::backends::audio::CpalAudioBackend;
 use ruffle_frontend_utils::backends::navigator::ExternalNavigatorBackend;
 use ruffle_frontend_utils::content::{ContentDescriptor, PlayingContent};
-use ruffle_render::backend::ViewportDimensions;
 use ruffle_render::backend::RenderBackend;
+use ruffle_render::backend::ViewportDimensions;
 use ruffle_render::backend::null::NullRenderer;
 use ruffle_render::quality::StageQuality;
 use std::rc::Rc;
@@ -37,7 +39,15 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
         height: STAGE.1,
         scale_factor: 1.0,
     });
-    let player = build_player(&preferences, movie_url, sender.clone(), tab, renderer, StageQuality::Low);
+    let player = build_player(
+        &preferences,
+        movie_url,
+        sender.clone(),
+        tab,
+        renderer,
+        None,
+        StageQuality::Low,
+    );
     players.add(Slot::new(Some(tab), player, ()));
     turu::bot().set_host(Some(Arc::new(engine::flash_host(sender, tab))));
     // Turu: nothing is drawn, so in game it runs at a hidden tab's 2 FPS (`api::options`; the
@@ -95,6 +105,16 @@ fn log_memory(player: &mut Player) {
     // Turu: `TURU_RETAIN_URL=<part of a URL>`: every 5th reading, what keeps the `LoaderInfo`s
     // of those movies alive (walks the whole heap: a short pause).
     static READINGS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    // Turu: TEMPORARY (leak investigation, uncommitted): `TURU_HEAP_CENSUS=<n>`: every nth
+    // reading, the GC values reachable from the root by kind (AS3 objects by class).
+    static CENSUS_READINGS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    if let Some(n) = std::env::var("TURU_HEAP_CENSUS")
+        .ok()
+        .and_then(|n| n.parse::<u32>().ok())
+        && CENSUS_READINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % n.max(1) == 0
+    {
+        player.log_heap_census(150);
+    }
     if let Ok(part) = std::env::var("TURU_RETAIN_URL")
         && READINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 5 == 4
     {
@@ -110,6 +130,9 @@ pub(crate) fn build_player(
     sender: Sender<EngineEvent>,
     tab: turu::TabId,
     renderer: impl RenderBackend + 'static,
+    // A shell's client's (`client.rs`): its fonts and clipboard, and sound. `--headless` has
+    // nobody to hear or see it.
+    client: Option<ClientUiBackend>,
     quality: StageQuality,
 ) -> Arc<Mutex<Player>> {
     let opt = LaunchOptions::from(preferences);
@@ -132,10 +155,20 @@ pub(crate) fn build_player(
     )
     .with_http_cache(turu_frontend::game_files::cache());
     let navigator = crate::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));
-    let player = PlayerBuilder::new()
+    let mut builder = PlayerBuilder::new();
+    match client {
+        Some(ui) => {
+            builder = builder.with_ui(ui);
+            match CpalAudioBackend::new(preferences.output_device_name().as_deref()) {
+                Ok(audio) => builder = builder.with_audio(audio),
+                Err(e) => tracing::error!("No sound: couldn't open the audio device: {e}"),
+            }
+        }
+        None => builder = builder.with_ui(NullUiBackend::new()),
+    }
+    let player = builder
         .with_navigator(navigator)
         .with_renderer(renderer)
-        .with_ui(NullUiBackend::new())
         .with_storage(preferences.storage_backend().create_backend(&opt))
         .with_external_interface(Box::new(turu::TuruExternalInterface { bot: turu::bot() }))
         // Turu: the game's packets, from its socket (R5).

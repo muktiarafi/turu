@@ -11,26 +11,36 @@
 //! is running (then it goes on trying every 60 s). When the tab on screen dies, a running one is
 //! shown instead. A client quits when the shell does (its connection and stdin close).
 //!
-//! Pictures are copied into the window for now (sharing the GPU texture is the next step).
+//! Pictures: on macOS a client draws into IOSurfaces it hands to the shell (`shared_surface.rs`),
+//! and says which one has its newest picture (`ToShell::Surface`); the shell draws from it on its
+//! own GPU, and gives each back (`ToClient::Release`) once a newer one came and its own GPU work
+//! with the older one is done. Elsewhere, or if that fails, the client sends its pixels, uploaded
+//! into a texture here. Either way the window is drawn on the GPU, Grid View's tiles included.
 //!
 //! Testing without anyone at the window: `TURU_SHELL_TEST=<file>` runs its lines in order:
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
-//! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would)
-//! and `dump <path>` (the window's picture, as a PNG).
+//! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would),
+//! `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`)
+//! and `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG).
 //!
 //! Grid View (the bar's Grid toggle, `ToShell::Grid`): the tab on screen draws the window with its
 //! game in its tile, the others only their game at their tile's size; the shell puts the tiles
-//! under the tab on screen's picture, and a click on another tile shows that tab.
+//! under the tab on screen's picture. A click on another tile goes to the tab on screen, which
+//! asks for that tab (`SelectTab`) unless one of its windows covers the tile there.
 
 use crate::preferences::GlobalPreferences;
 use crate::turu;
 use anyhow::{Context as _, Error, anyhow};
+use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_bot::monitor::hub::PeerSource;
-use turu_frontend::shell::{self, Button, GridShow, GridTile, Mods, PointerKind, TabInfo, ToClient, ToShell};
+use turu_frontend::movie_texture::Blit;
+use turu_frontend::shell::{
+    self, Button, GridShow, GridTile, Mods, PointerKind, SHARED_POOL, TabInfo, ToClient, ToShell,
+};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -50,6 +60,40 @@ const MAX_DEATHS: usize = 5;
 const DEATH_WINDOW: Duration = Duration::from_secs(600);
 /// How long a client has to connect after it starts.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
+/// How often the GPU is asked whether the work before a surface's release is done.
+const RELEASE_POLL: Duration = Duration::from_millis(4);
+
+/// A client's surface as the shell got it (macOS: an IOSurface; elsewhere there are none).
+#[cfg(target_os = "macos")]
+type SharedSurface = crate::shared_surface::Surface;
+#[cfg(not(target_os = "macos"))]
+enum SharedSurface {}
+
+#[cfg(not(target_os = "macos"))]
+impl SharedSurface {
+    fn size(&self) -> (u32, u32) {
+        match *self {}
+    }
+
+    fn texture(&self, _device: &wgpu::Device) -> Option<wgpu::Texture> {
+        match *self {}
+    }
+}
+
+/// A client's surface, kept by the shell: opened on its GPU once it's drawn.
+struct Kept {
+    id: u64,
+    surface: SharedSurface,
+    opened: Option<(wgpu::Texture, wgpu::BindGroup)>,
+}
+
+/// What the shell draws of a tab: its newest picture as a texture of the shell's GPU.
+struct Shown {
+    bind_group: wgpu::BindGroup,
+    size: (u32, u32),
+    /// The client's shared surface it is, given back when a newer one comes.
+    surface: Option<u64>,
+}
 
 /// The newest picture from a client.
 #[derive(Clone, Default)]
@@ -70,6 +114,12 @@ enum ShellEvent {
     Gone(u32, u64),
     /// A line of `TURU_SHELL_TEST`'s file.
     Test(String),
+    /// A client (its process id) handed over a shared surface.
+    SurfaceArrived { pid: u32, id: u64, surface: SharedSurface },
+    /// A file dialog a tab's client asked for was answered (tab, process id, its id, the path).
+    Answered(u32, u32, u32, Option<String>),
+    /// The shell's GPU is done with these surfaces (tab, process id, surface): back to their clients.
+    Released(Vec<(u32, u32, u64)>),
 }
 
 /// A tab: its client process, and how to start it again.
@@ -95,9 +145,19 @@ struct Tab {
     /// other tabs reach it there.
     api: Option<std::net::SocketAddr>,
     api_token: String,
+    /// Its newest picture, on the shell's GPU.
+    shown: Option<Shown>,
+    /// Where pixel pictures are uploaded.
+    upload: Option<(wgpu::Texture, wgpu::BindGroup)>,
+    /// The newest picture is in this surface, whose port hasn't come yet.
+    waiting: Option<u64>,
 }
 
 impl Tab {
+    fn pid(&self) -> Option<u32> {
+        self.child.as_ref().map(Child::id)
+    }
+
     fn down(&self) -> Option<String> {
         if self.closed {
             Some("closed".into())
@@ -150,9 +210,22 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
     turu::follow_settings_file(true);
     // The clients leave the launch updates (scripts, skill sets) to the shell.
     turu::start_app_updates();
+    // Clients hand their pictures over as GPU surfaces where the shell can take them.
+    let surfaces_proxy = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
+    let surfaces_name = crate::shared_surface::listen(move |pid, id, surface| {
+        let _ = surfaces_proxy.send_event(ShellEvent::SurfaceArrived { pid, id, surface });
+    });
+    #[cfg(not(target_os = "macos"))]
+    let surfaces_name: Option<String> = {
+        drop(surfaces_proxy);
+        None
+    };
     let peers: Arc<Mutex<Vec<PeerSource>>> = Arc::default();
     let listed = peers.clone();
-    turu::monitor_hub().set_peers(Arc::new(move || listed.lock().unwrap_or_else(|e| e.into_inner()).clone()));
+    turu::monitor_hub().set_peers(Arc::new(move || {
+        listed.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }));
     let mut app = ShellApp {
         peers,
         address,
@@ -168,8 +241,12 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
         size: None,
         title: String::new(),
         grid: None,
-        swallow_release: false,
         headless_mode: None,
+        surfaces_name,
+        surfaces: HashMap::new(),
+        retiring: Vec::new(),
+        releases_pending: 0,
+        dialog_open: false,
     };
     // The first tab logs in as `--headless` would: with the shell's own `TURU_PASSWORD`.
     app.open_tab(client_args, std::env::var("TURU_PASSWORD").ok());
@@ -295,6 +372,10 @@ struct Gpu {
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    blit: Blit,
+    /// Draws a picture as it is, and over what's there with its (premultiplied) alpha.
+    replace: wgpu::RenderPipeline,
+    over: wgpu::RenderPipeline,
 }
 
 struct ShellApp {
@@ -316,10 +397,18 @@ struct ShellApp {
     title: String,
     /// Grid View, on from a client's bar: what Turu's UI takes of the window (left, top, in points).
     grid: Option<(f32, f32)>,
-    /// A press went to a tile (selecting its tab): its release goes nowhere.
-    swallow_release: bool,
     /// Headless Mode as a client last turned it on or off (`None`: none has yet): every tab's.
     headless_mode: Option<bool>,
+    /// Where clients hand over their surfaces (`shared_surface::listen`), if they can.
+    surfaces_name: Option<String>,
+    /// The clients' surfaces, by process id: the newest [`SHARED_POOL`] of each.
+    surfaces: HashMap<u32, Vec<Kept>>,
+    /// Surfaces the shell is done with once its GPU has done what's submitted (tab, pid, id).
+    retiring: Vec<(u32, u32, u64)>,
+    /// Releases waiting on the GPU.
+    releases_pending: usize,
+    /// A file dialog is open (one at a time, as the window's own).
+    dialog_open: bool,
 }
 
 impl ShellApp {
@@ -347,6 +436,9 @@ impl ShellApp {
             started: Instant::now(),
             api: None,
             api_token: turu_bot::control_api::new_token().unwrap_or_default(),
+            shown: None,
+            upload: None,
+            waiting: None,
         };
         self.start(&mut tab);
         self.tabs.push(tab);
@@ -372,9 +464,15 @@ impl ShellApp {
             .args(&tab.args)
             .env(shell::TOKEN_ENV, &self.token)
             .env_remove("TURU_PASSWORD")
+            .env_remove(shell::SURFACES_ENV)
             .stdin(Stdio::piped());
+        if let Some(name) = &self.surfaces_name {
+            command.env(shell::SURFACES_ENV, name);
+        }
         if let Some(api) = tab.api {
-            command.arg(format!("--api={api}")).env("TURU_API_TOKEN", &tab.api_token);
+            command
+                .arg(format!("--api={api}"))
+                .env("TURU_API_TOKEN", &tab.api_token);
         }
         if let Some(password) = tab.password.as_deref().filter(|p| !p.is_empty()) {
             command.env("TURU_PASSWORD", password);
@@ -423,11 +521,8 @@ impl ShellApp {
         let old = self.shown;
         self.shown = id;
         // In Grid View the one before stays, as a tile (`show_current`).
-        if old != id
-            && self.grid_tiles().is_none()
-            && let Some(tab) = self.tab(old)
-        {
-            send(tab, &ToClient::Hide);
+        if old != id && self.grid_tiles().is_none() {
+            self.hide(old);
         }
         let reopen = self.tab(id).is_some_and(|tab| tab.closed);
         if reopen && let Some(index) = self.tabs.iter().position(|tab| tab.id == id) {
@@ -473,6 +568,9 @@ impl ShellApp {
             return;
         };
         let mut tab = self.tabs.remove(index);
+        if let Some(pid) = tab.pid() {
+            self.surfaces.remove(&pid);
+        }
         stop(&mut tab);
         tracing::info!("Shell: tab {id} closed");
         if self.shown == id {
@@ -562,9 +660,14 @@ impl ShellApp {
         let on = self.grid_tiles().is_some();
         if was && !on {
             // Back to one tab at a time: the others hide.
-            let shown = self.shown;
-            for tab in self.tabs.iter_mut().filter(|tab| tab.id != shown) {
-                send(tab, &ToClient::Hide);
+            let hidden: Vec<u32> = self
+                .tabs
+                .iter()
+                .map(|tab| tab.id)
+                .filter(|id| *id != self.shown)
+                .collect();
+            for id in hidden {
+                self.hide(id);
             }
         }
         self.show_current();
@@ -659,8 +762,8 @@ impl ShellApp {
         let id = tab.id;
         if id == self.shown || self.grid_tiles().is_some() {
             self.show_current();
-        } else if let Some(tab) = self.tab(id) {
-            send(tab, &ToClient::Hide);
+        } else {
+            self.hide(id);
         }
         self.broadcast_tabs();
     }
@@ -675,6 +778,11 @@ impl ShellApp {
         let mut tab = self.tabs.remove(index);
         let status = tab.child.as_mut().and_then(|child| child.try_wait().ok().flatten());
         tracing::warn!("Shell: tab {id}'s client is gone ({status:?})");
+        if let Some(pid) = tab.pid() {
+            self.surfaces.remove(&pid);
+        }
+        tab.shown = None;
+        tab.waiting = None;
         stop(&mut tab);
         self.schedule_restart(&mut tab);
         self.tabs.insert(index, tab);
@@ -723,6 +831,30 @@ impl ShellApp {
                     }
                 }
             }
+            ToShell::Surface { id: surface, .. } => self.surface_picture(id, surface),
+            ToShell::FileDialog {
+                id: request,
+                save,
+                title,
+                directory,
+                file_name,
+                filters,
+            } => {
+                let mut dialog = rfd::AsyncFileDialog::new();
+                for (name, extensions) in &filters {
+                    dialog = dialog.add_filter(name, extensions);
+                }
+                if let Some(title) = title {
+                    dialog = dialog.set_title(title);
+                }
+                if let Some(directory) = directory {
+                    dialog = dialog.set_directory(directory);
+                }
+                if let Some(file_name) = file_name {
+                    dialog = dialog.set_file_name(file_name);
+                }
+                self.file_dialog(id, request, save, dialog);
+            }
             ToShell::OpenUrl { url } => {
                 if let Err(e) = webbrowser::open(&url) {
                     tracing::warn!("Couldn't open {url}: {e}");
@@ -740,6 +872,46 @@ impl ShellApp {
             | ToShell::Install { .. }
             | ToShell::SoftKeyboard { .. }
             | ToShell::Unknown => {}
+        }
+    }
+
+    /// Shows a tab's file dialog over the window (made here, on the event loop's thread, as macOS
+    /// needs), and answers the tab once it's closed; one at a time.
+    fn file_dialog(&mut self, id: u32, request: u32, save: bool, mut dialog: rfd::AsyncFileDialog) {
+        let Some(pid) = self.tab(id).and_then(|tab| tab.pid()) else {
+            return;
+        };
+        if self.dialog_open {
+            if let Some(tab) = self.tab(id) {
+                send(
+                    tab,
+                    &ToClient::Answer {
+                        id: request,
+                        value: None,
+                    },
+                );
+            }
+            return;
+        }
+        if let Some(window) = &self.window {
+            dialog = dialog.set_parent(&**window);
+        }
+        self.dialog_open = true;
+        let proxy = self.proxy.clone();
+        let spawned = std::thread::Builder::new()
+            .name("Turu Shell Dialog".into())
+            .spawn(move || {
+                let chosen = if save {
+                    futures::executor::block_on(dialog.save_file())
+                } else {
+                    futures::executor::block_on(dialog.pick_file())
+                };
+                let path = chosen.map(|file| file.path().to_string_lossy().into_owned());
+                let _ = proxy.send_event(ShellEvent::Answered(id, pid, request, path));
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("Shell: couldn't wait for a file dialog: {e}");
+            self.dialog_open = false;
         }
     }
 
@@ -822,27 +994,272 @@ impl ShellApp {
         }
     }
 
-    /// Copies the shown tab's newest picture into the window (the part that fits, while a resize
-    /// is under way); in Grid View, the tiles' under it.
+    /// Whether tab `id`'s pictures are drawn: it's on screen, or a tile of Grid View.
+    fn visible(&self, id: u32) -> bool {
+        id == self.shown || self.grid_tiles().is_some()
+    }
+
+    /// Hides tab `id`: no more pictures, and the shell lets go of its surfaces.
+    fn hide(&mut self, id: u32) {
+        let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
+            return;
+        };
+        let tab = &mut self.tabs[index];
+        send(tab, &ToClient::Hide);
+        tab.waiting = None;
+        // A pixel picture stays, to show at once if the tab comes back.
+        if tab.shown.as_ref().is_some_and(|shown| shown.surface.is_some()) {
+            tab.shown = None;
+        }
+        // The client drops its own; the newest of them may still be on its way.
+        if let Some(pid) = tab.pid() {
+            self.surfaces.remove(&pid);
+        }
+    }
+
+    /// Tab `tab`'s client handed over `surface`.
+    fn surface_arrived(&mut self, pid: u32, id: u64, surface: SharedSurface) {
+        let kept = self.surfaces.entry(pid).or_default();
+        kept.push(Kept {
+            id,
+            surface,
+            opened: None,
+        });
+        // A client draws into its newest few in turn: older ones are of another size, or gone.
+        kept.sort_by_key(|kept| kept.id);
+        let extra = kept.len().saturating_sub(SHARED_POOL);
+        kept.drain(..extra);
+        let waiting = self
+            .tabs
+            .iter()
+            .find(|tab| tab.pid() == Some(pid) && tab.waiting == Some(id))
+            .map(|tab| tab.id);
+        if let Some(tab) = waiting {
+            self.surface_picture(tab, id);
+        }
+    }
+
+    /// Tab `id`'s newest picture is in its client's surface `surface`.
+    fn surface_picture(&mut self, id: u32, surface: u64) {
+        let visible = self.visible(id);
+        let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
+            return;
+        };
+        let Some(pid) = self.tabs[index].pid() else {
+            return;
+        };
+        if !visible {
+            self.retiring.push((id, pid, surface));
+            return;
+        }
+        let opened = match (&self.gpu, self.surfaces.get_mut(&pid)) {
+            (Some(gpu), Some(kept)) => kept.iter_mut().find(|kept| kept.id == surface).and_then(|kept| {
+                if kept.opened.is_none() {
+                    kept.opened = kept.surface.texture(&gpu.device).map(|texture| {
+                        let view = texture.create_view(&Default::default());
+                        let bind_group = gpu.blit.bind_group(&gpu.device, &view);
+                        (texture, bind_group)
+                    });
+                }
+                let size = kept.surface.size();
+                kept.opened.as_ref().map(|(_, bind_group)| (bind_group.clone(), size))
+            }),
+            _ => None,
+        };
+        let tab = &mut self.tabs[index];
+        let Some((bind_group, size)) = opened else {
+            // Its port is on its way (another channel): drawn when it comes.
+            if let Some(older) = tab.waiting.replace(surface) {
+                self.retiring.push((id, pid, older));
+            }
+            return;
+        };
+        if let Some(older) = tab.waiting.take().filter(|older| *older != surface) {
+            self.retiring.push((id, pid, older));
+        }
+        let new = Shown {
+            bind_group,
+            size,
+            surface: Some(surface),
+        };
+        if let Some(older) = tab.shown.replace(new).and_then(|shown| shown.surface) {
+            self.retiring.push((id, pid, older));
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Tab `id`'s client sent its pixels: uploaded into its texture.
+    fn pixel_picture(&mut self, id: u32) {
+        let Some(gpu) = &self.gpu else {
+            return;
+        };
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        let picture = std::mem::take(&mut *tab.picture.lock().unwrap_or_else(|e| e.into_inner()));
+        let size = (picture.width, picture.height);
+        if picture.pixels.len() < size.0 as usize * size.1 as usize * 4 || size.0 == 0 || size.1 == 0 {
+            return;
+        }
+        if tab
+            .upload
+            .as_ref()
+            .is_none_or(|(texture, _)| (texture.width(), texture.height()) != size)
+        {
+            let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Turu tab picture"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bgra8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let bind_group = gpu
+                .blit
+                .bind_group(&gpu.device, &texture.create_view(&Default::default()));
+            tab.upload = Some((texture, bind_group));
+        }
+        let (texture, bind_group) = tab.upload.as_ref().expect("made above");
+        gpu.queue.write_texture(
+            texture.as_image_copy(),
+            &picture.pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size.0 * 4),
+                rows_per_image: Some(size.1),
+            },
+            texture.size(),
+        );
+        let new = Shown {
+            bind_group: bind_group.clone(),
+            size,
+            surface: None,
+        };
+        let older = tab.shown.replace(new).and_then(|shown| shown.surface);
+        let pid = tab.pid();
+        if let (Some(older), Some(pid)) = (older, pid) {
+            self.retiring.push((id, pid, older));
+        }
+        if self.visible(id)
+            && let Some(window) = &self.window
+        {
+            window.request_redraw();
+        }
+    }
+
+    /// Asks the GPU to say when what's submitted so far is done, and gives the retiring surfaces
+    /// back then.
+    fn release_retiring(&mut self) {
+        let Some(gpu) = &self.gpu else {
+            return;
+        };
+        if self.retiring.is_empty() {
+            return;
+        }
+        let retired = std::mem::take(&mut self.retiring);
+        let proxy = self.proxy.clone();
+        gpu.queue.submit([]);
+        gpu.queue
+            .on_submitted_work_done(move || drop(proxy.send_event(ShellEvent::Released(retired))));
+        self.releases_pending += 1;
+    }
+
+    /// The surfaces' clients may draw into them again (unless the client has since been
+    /// restarted: its process id differs).
+    fn released(&mut self, retired: Vec<(u32, u32, u64)>) {
+        self.releases_pending = self.releases_pending.saturating_sub(1);
+        for (id, pid, surface) in retired {
+            if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id && tab.pid() == Some(pid)) {
+                send(tab, &ToClient::Release { id: surface });
+            }
+        }
+    }
+
+    /// Draws the window: the shown tab's newest picture, or in Grid View each tile's under the
+    /// active tab's (transparent where its own tile isn't). Nothing until the tab on screen has a
+    /// picture (the window keeps what it showed).
+    fn render(&self, gpu: &Gpu, view: &wgpu::TextureView, size: (u32, u32)) -> Option<wgpu::CommandBuffer> {
+        let active = self.tabs.iter().find(|tab| tab.id == self.shown)?.shown.as_ref()?;
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Turu shell"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    ..Default::default()
+                })
+                .forget_lifetime();
+            let place = |pass: &mut wgpu::RenderPass<'static>, x: u32, y: u32, w: u32, h: u32| {
+                let (x, y) = (x.min(size.0), y.min(size.1));
+                let (w, h) = (w.min(size.0 - x), h.min(size.1 - y));
+                pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                w > 0 && h > 0
+            };
+            match self.grid_tiles() {
+                Some(tiles) => {
+                    // Just after a tile was clicked, its client may still send its tile's picture:
+                    // in its tile until the window's comes.
+                    let whole = active.size == size;
+                    for tile in tiles.iter().filter(|tile| tile.id != self.shown || !whole) {
+                        let Some(picture) = self
+                            .tabs
+                            .iter()
+                            .find(|tab| tab.id == tile.id)
+                            .and_then(|tab| tab.shown.as_ref())
+                        else {
+                            continue;
+                        };
+                        // The window's picture of a tab that was active a moment ago: its tile's
+                        // is on the way.
+                        if picture.size == size {
+                            continue;
+                        }
+                        if place(&mut pass, tile.x, tile.y, tile.width, tile.height) {
+                            gpu.blit.draw(&gpu.replace, &picture.bind_group, &mut pass);
+                        }
+                    }
+                    if whole && place(&mut pass, 0, 0, size.0, size.1) {
+                        gpu.blit.draw(&gpu.over, &active.bind_group, &mut pass);
+                    }
+                }
+                None => {
+                    if place(&mut pass, 0, 0, size.0, size.1) {
+                        gpu.blit.draw(&gpu.replace, &active.bind_group, &mut pass);
+                    }
+                }
+            }
+        }
+        Some(encoder.finish())
+    }
+
     fn draw(&self) {
         let Some(gpu) = &self.gpu else {
             return;
         };
-        let Some(tab) = self.tabs.iter().find(|tab| tab.id == self.shown) else {
-            return;
-        };
-        let shown = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
-        if shown.pixels.is_empty() {
+        if self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == self.shown)
+            .is_none_or(|tab| tab.shown.is_none())
+        {
             return;
         }
-        let composed;
-        let picture = match self.grid_tiles() {
-            Some(tiles) => {
-                composed = self.compose(&shown, &tiles);
-                &composed
-            }
-            None => &*shown,
-        };
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
@@ -851,118 +1268,89 @@ impl ShellApp {
             }
             _ => return,
         };
-        gpu.queue.write_texture(
-            frame.texture.as_image_copy(),
-            &picture.pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(picture.width * 4),
-                rows_per_image: Some(picture.height),
-            },
-            wgpu::Extent3d {
-                width: picture.width.min(gpu.config.width),
-                height: picture.height.min(gpu.config.height),
-                depth_or_array_layers: 1,
-            },
-        );
-        drop(shown);
-        gpu.queue.submit([]);
+        let view = frame.texture.create_view(&Default::default());
+        let size = (gpu.config.width, gpu.config.height);
+        if let Some(commands) = self.render(gpu, &view, size) {
+            gpu.queue.submit([commands]);
+        }
         gpu.queue.present(frame);
     }
 
-    /// Grid View's window: each tile's newest picture in its place, and the active tab's over them
-    /// (transparent where its own tile isn't, its pixels premultiplied). Done on the CPU, as the
-    /// pictures still come as copies (the GPU textures of the proposal's "Desktop" replace both).
-    fn compose(&self, active: &Picture, tiles: &[GridTile]) -> Picture {
-        let (width, height) = self
-            .size
-            .map_or((active.width, active.height), |(size, _)| (size.width, size.height));
-        let mut pixels = vec![0u8; width as usize * height as usize * 4];
-        // Just after a tile was clicked, its client may still send its tile's picture: in its tile
-        // until the window's comes.
-        let whole = active.width == width && active.height == height;
-        for tile in tiles.iter().filter(|tile| tile.id != self.shown || !whole) {
-            // The caller holds the active tab's picture: not locked again.
-            let guard;
-            let picture = if tile.id == self.shown {
-                active
-            } else {
-                let Some(tab) = self.tabs.iter().find(|tab| tab.id == tile.id) else {
-                    continue;
-                };
-                guard = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
-                &*guard
-            };
-            // The window's picture of a tab that was active a moment ago: its tile's is on the way.
-            let window_sized = picture.width == width && picture.height == height;
-            if window_sized || picture.pixels.len() < picture.width as usize * picture.height as usize * 4 {
-                continue;
-            }
-            // A picture from before a resize: the part that fits the tile.
-            let w = picture.width.min(tile.width).min(width.saturating_sub(tile.x)) as usize;
-            let h = picture.height.min(tile.height).min(height.saturating_sub(tile.y)) as usize;
-            for row in 0..h {
-                let from = row * picture.width as usize * 4;
-                let to = ((tile.y as usize + row) * width as usize + tile.x as usize) * 4;
-                pixels[to..to + w * 4].copy_from_slice(&picture.pixels[from..from + w * 4]);
+    /// `TURU_SHELL_TEST`'s `dump`: the window drawn into a texture and read back, as a PNG.
+    fn dump(&self, path: &str) {
+        let (Some(gpu), Some((size, _))) = (&self.gpu, self.size) else {
+            return;
+        };
+        let (width, height) = (size.width, size.height);
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Turu shell dump"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: gpu.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let Some(commands) = self.render(gpu, &texture.create_view(&Default::default()), (width, height)) else {
+            tracing::info!("Shell test: nothing to dump yet");
+            return;
+        };
+        let padded = (width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(padded) * u64::from(height),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(height),
+                },
+            },
+            texture.size(),
+        );
+        gpu.queue.submit([commands, encoder.finish()]);
+        buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        if let Err(e) = gpu.device.poll(wgpu::PollType::wait_indefinitely()) {
+            tracing::warn!("Shell test: dump: {e}");
+            return;
+        }
+        let Ok(data) = buffer.slice(..).get_mapped_range() else {
+            tracing::warn!("Shell test: dump: couldn't read the picture back");
+            return;
+        };
+        let bgra = matches!(
+            gpu.config.format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+        let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+        for row in 0..height as usize {
+            let start = row * padded as usize;
+            rgba.extend_from_slice(&data[start..start + width as usize * 4]);
+        }
+        if bgra {
+            for pixel in rgba.as_chunks_mut::<4>().0 {
+                pixel.swap(0, 2);
             }
         }
-        if !whole {
-            return Picture { width, height, pixels };
-        }
-        let over = active.pixels.as_chunks::<4>().0;
-        for (out, top) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(over) {
-            match top[3] {
-                0 => {}
-                255 => *out = *top,
-                alpha => {
-                    let keep = u16::from(255 - alpha);
-                    for i in 0..4 {
-                        out[i] = top[i].saturating_add(((u16::from(out[i]) * keep + 127) / 255) as u8);
-                    }
-                }
-            }
-        }
-        Picture { width, height, pixels }
+        let saved = image::RgbaImage::from_raw(width, height, rgba).map(|image| image.save(path));
+        tracing::info!("Shell test: dump of tab {} to {path}: {saved:?}", self.shown);
     }
 
-    /// The tab whose tile is under (`x`, `y`), unless the active tab's picture covers it there (its
-    /// bar, its windows, its own tile).
-    fn tile_at(&self, x: f64, y: f64) -> Option<u32> {
-        let tiles = self.grid_tiles()?;
-        let tile = tiles.iter().find(|tile| {
-            let (x0, y0) = (f64::from(tile.x), f64::from(tile.y));
-            x >= x0 && y >= y0 && x < x0 + f64::from(tile.width) && y < y0 + f64::from(tile.height)
-        })?;
-        if tile.id == self.shown {
-            return None;
-        }
-        let shown = self.tabs.iter().find(|tab| tab.id == self.shown)?;
-        let picture = shown.picture.lock().unwrap_or_else(|e| e.into_inner());
-        let (px, py) = (x as usize, y as usize);
-        if px < picture.width as usize && py < picture.height as usize {
-            let alpha = picture.pixels.get((py * picture.width as usize + px) * 4 + 3).copied();
-            if alpha.is_some_and(|alpha| alpha > 0) {
-                return None;
-            }
-        }
-        Some(tile.id)
-    }
-
-    /// A press, release or move of the mouse: to the tab on screen, but in Grid View a press on
-    /// another tab's tile makes that tab the active one (VibeSkua's tabbed host's click).
+    /// A press, release or move of the mouse: to the tab on screen (in Grid View, the active tab
+    /// asks for another tab whose tile was clicked).
     fn pointer_event(&mut self, kind: PointerKind, button: Button, at: PhysicalPosition<f64>) {
-        match kind {
-            PointerKind::Down => {
-                if let Some(id) = self.tile_at(at.x, at.y) {
-                    self.swallow_release = true;
-                    self.select_requested(id);
-                    return;
-                }
-            }
-            PointerKind::Up if std::mem::take(&mut self.swallow_release) => return,
-            _ => {}
-        }
         self.send_shown(&pointer(kind, button, at));
     }
 
@@ -971,6 +1359,32 @@ impl ShellApp {
         tracing::info!("Shell test: {line}");
         let (command, arg) = line.split_once(' ').unwrap_or((line, ""));
         let id = arg.trim().parse::<u32>().ok();
+        // `key cmd+V`: a press and release, with `cmd`, `ctrl`, `shift` or `alt` before the key.
+        if command == "key" {
+            let mut mods = Mods::default();
+            let mut parts: Vec<&str> = arg.trim().split('+').collect();
+            let key = parts.pop().unwrap_or_default().to_owned();
+            for part in parts {
+                match part {
+                    "cmd" => mods.command = true,
+                    "ctrl" => mods.ctrl = true,
+                    "shift" => mods.shift = true,
+                    "alt" => mods.alt = true,
+                    _ => {}
+                }
+            }
+            if mods.command && cfg!(not(target_os = "macos")) {
+                mods.ctrl = true;
+            }
+            for pressed in [true, false] {
+                self.send_shown(&ToClient::Key {
+                    key: key.clone(),
+                    pressed,
+                    mods,
+                });
+            }
+            return;
+        }
         if command == "click" {
             let at: Vec<f64> = arg.split_whitespace().filter_map(|v| v.parse().ok()).collect();
             if let [x, y] = at[..] {
@@ -990,24 +1404,7 @@ impl ShellApp {
                     let _ = child.kill();
                 }
             }
-            ("dump", _) => {
-                let Some(tab) = self.tabs.iter().find(|tab| tab.id == self.shown) else {
-                    return;
-                };
-                let shown = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
-                let picture = match self.grid_tiles() {
-                    Some(tiles) => self.compose(&shown, &tiles),
-                    None => shown.clone(),
-                };
-                drop(shown);
-                let mut rgba = picture.pixels.clone();
-                for pixel in rgba.as_chunks_mut::<4>().0 {
-                    pixel.swap(0, 2);
-                }
-                let saved =
-                    image::RgbaImage::from_raw(picture.width, picture.height, rgba).map(|image| image.save(arg));
-                tracing::info!("Shell test: dump of tab {} to {arg}: {saved:?}", tab.id);
-            }
+            ("dump", _) => self.dump(arg.trim()),
             _ => tracing::warn!("Shell test: what's \"{line}\"?"),
         }
     }
@@ -1072,11 +1469,13 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ShellEvent) {
         match event {
             ShellEvent::Connected { pid, stream } => self.connected(pid, stream),
-            ShellEvent::Picture(id) => {
-                if (id == self.shown || self.grid.is_some())
-                    && let Some(window) = &self.window
-                {
-                    window.request_redraw();
+            ShellEvent::Picture(id) => self.pixel_picture(id),
+            ShellEvent::SurfaceArrived { pid, id, surface } => self.surface_arrived(pid, id, surface),
+            ShellEvent::Released(retired) => self.released(retired),
+            ShellEvent::Answered(id, pid, request, value) => {
+                self.dialog_open = false;
+                if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id && tab.pid() == Some(pid)) {
+                    send(tab, &ToClient::Answer { id: request, value });
                 }
             }
             ShellEvent::Message(id, message) => self.message(id, message),
@@ -1086,7 +1485,17 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        match self.restart_due() {
+        self.release_retiring();
+        let mut wake = self.restart_due();
+        if self.releases_pending > 0
+            && let Some(gpu) = &self.gpu
+        {
+            // Runs the GPU's callbacks: the releases come as events.
+            let _ = gpu.device.poll(wgpu::PollType::Poll);
+            let poll = Instant::now() + RELEASE_POLL;
+            wake = Some(wake.map_or(poll, |at| at.min(poll)));
+        }
+        match wake {
             Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
@@ -1151,7 +1560,7 @@ fn pointer(kind: PointerKind, button: Button, at: PhysicalPosition<f64>) -> ToCl
     }
 }
 
-/// The window's surface on the GPU, with the clients' picture format copied straight in.
+/// The window's surface on the GPU, and what draws the clients' pictures into it.
 fn make_gpu(window: Arc<Window>) -> Result<Gpu, Error> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let surface = instance.create_surface(window.clone())?;
@@ -1159,18 +1568,19 @@ fn make_gpu(window: Arc<Window>) -> Result<Gpu, Error> {
         compatible_surface: Some(&surface),
         ..Default::default()
     }))?;
+    let info = adapter.get_info();
+    tracing::info!("Shell graphics: {} on {}", info.backend.to_str(), info.name);
     let (device, queue) = futures::executor::block_on(adapter.request_device(&Default::default()))?;
     let caps = surface.get_capabilities(&adapter);
-    let format = wgpu::TextureFormat::Bgra8Unorm;
-    if !caps.formats.contains(&format) || !caps.usages.contains(wgpu::TextureUsages::COPY_DST) {
-        return Err(anyhow!(
-            "this window can't take the clients' pictures as they are ({:?})",
-            caps.formats
-        ));
-    }
+    // The pictures are BGRA: drawn as they are into a window that takes BGRA, else converted.
+    let format = [wgpu::TextureFormat::Bgra8Unorm, wgpu::TextureFormat::Rgba8Unorm]
+        .into_iter()
+        .find(|format| caps.formats.contains(format))
+        .or_else(|| caps.formats.first().copied())
+        .ok_or_else(|| anyhow!("the window takes no picture format"))?;
     let size = window.inner_size();
     let config = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::COPY_DST,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,
         color_space: wgpu::SurfaceColorSpace::Auto,
         width: size.width.max(1),
@@ -1181,11 +1591,17 @@ fn make_gpu(window: Arc<Window>) -> Result<Gpu, Error> {
         view_formats: Vec::new(),
     };
     surface.configure(&device, &config);
+    let blit = Blit::new(&device);
+    let replace = blit.pipeline(&device, format);
+    let over = blit.pipeline_blending(&device, format, wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
     Ok(Gpu {
         device,
         queue,
         surface,
         config,
+        blit,
+        replace,
+        over,
     })
 }
 
