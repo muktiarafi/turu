@@ -433,8 +433,15 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   update checks, found it, its Menu offered "Update to 0.3.1", Download & install fetched and
   checked the APK in the slot and sent `Install` to the shell, whose activity installed it with no
   confirmation (Android 12+, an app updating itself); Android stopped every process, and the app
-  opened again came back on 0.3.1 with both slots logged in and no update offered. Not run: the
-  "open" picker, the clipboard.
+  opened again came back on 0.3.1 with both slots logged in and no update offered. The "open"
+  picker: Script Loader's Load Script in slot 1 opened Android's picker through the shell, and the
+  file picked was copied into `scripts/Imported/` and loaded in the slot. The clipboard: Copy of the
+  script log in a slot put it on Android's clipboard (pasted into the field above the keyboard).
+  Not run: the slot reading the clipboard itself (the game's Ctrl+V: a focused game field shows
+  the native field, which pastes on its own), text a keyboard commits without keys (`adb input`
+  sends keys only), and the soft keyboard for an egui box (none needs it). Once, after Ctrl+A and
+  Delete sent as keys to that field, one Back closed it and sent the app to the background too;
+  done again without them, Back only closed the field.
 * **Crash reports from slots**: each slot's service starts Sentry in its process and reads
   Android's exit records, as the app's service does, and its Rust side reaches them (a panic's
   message, the GPU's warnings, Options' Send Crash Reports). The processes that start together
@@ -446,6 +453,15 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   SIGSEGV sent to slot 2 left a tombstone, slot 2 came back in 1.5 s and Sentry had one fatal event
   tagged `c2`; four earlier kills went once each, tagged with the slot that died, though the
   activity sent them; both live slots kept their memory logs; Options showed the switch in a slot.
+* **Headless Mode across tabs** (the game option, every tab's at once as in VibeSkua's tabbed
+  host): `turu::start_headless_mode_sync` reaches only its own process's tabs, so with process tabs
+  it stayed the tab's that changed it (seen on a phone). A tab now sends a change to the shell
+  (`ToShell::HeadlessMode`, from `client_link`'s status thread, each second); the shell keeps it
+  and sends it to the other tabs and to a tab that connects (`ToClient::HeadlessMode`); a value
+  got from the shell isn't sent back, and a tab's own at start isn't sent. The same messages in
+  Android's shell (`slots::SlotShell`) and the desktop's (`app/src/shell.rs`). Checked on the
+  emulator: on from slot 1 reached slot 3 within 3 s, off from slot 3 reached slot 1, and a tab
+  opened afterwards started with it on. The desktop shell's side compiles; not run.
 * **The notifications' summary**: the tabs' notifications (one per slot, IDs 101 to 104) have a
   group summary over them (ID 100), one line per tab and "n tabs". Any slot posts it again after
   its own notification changes, from the app's notifications up (the other slots', whichever

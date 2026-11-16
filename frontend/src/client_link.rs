@@ -3,7 +3,9 @@
 //! The tab strip shows the shell's tabs: its "+", Army > Accounts' "In a tab", selecting and
 //! closing a tab and the bar's Grid toggle become messages to the shell; the shell's tab list
 //! comes back to the strip, Army Control and the monitor hub; the tab's name and whether it's busy
-//! go to the shell when they change.
+//! go to the shell when they change, and so does Headless Mode, which the shell passes on to the
+//! other tabs (each in a process of its own: `turu::start_headless_mode_sync` reaches only this
+//! process's).
 
 use crate::shell::{TabInfo, ToShell};
 use crate::turu;
@@ -65,8 +67,38 @@ pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>) {
     turu::set_shell_tabs(tabs, shown);
 }
 
+/// Headless Mode as this tab last sent it to the shell or got it from the shell (`None`: not
+/// seen yet). A tab's own value at start isn't sent: the shell gives it the others' instead.
+static HEADLESS_MODE: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+
+/// Another tab turned Headless Mode on or off (the shell's `HeadlessMode`): this process's tabs
+/// take it, and it isn't sent back.
+pub fn set_headless_mode(on: bool) {
+    *HEADLESS_MODE.lock().unwrap_or_else(|e| e.into_inner()) = Some(on);
+    for (_, bot) in turu::tabs() {
+        if bot.opts().headless_mode != on {
+            bot.options.write().headless_mode = on;
+        }
+    }
+}
+
+/// Headless Mode to the shell when this tab changed it (Game Options, a HotKey, a script, Army
+/// Control, the control API) since it was last sent or got.
+fn report_headless_mode(send: &Sender, on: bool) {
+    let mut seen = HEADLESS_MODE.lock().unwrap_or_else(|e| e.into_inner());
+    match *seen {
+        Some(last) if last != on => {
+            *seen = Some(on);
+            drop(seen);
+            send(ToShell::HeadlessMode { on });
+        }
+        Some(_) => {}
+        None => *seen = Some(on),
+    }
+}
+
 /// The tab's name and whether its script or Auto runs, to the shell when either changes (checked
-/// every second), and again after [`resend_status`] (a new shell).
+/// every second), and again after [`resend_status`] (a new shell); Headless Mode when it changes.
 fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
     let spawned = std::thread::Builder::new()
         .name("Turu Shell Status".into())
@@ -74,6 +106,7 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
             let mut sent = None;
             while open() {
                 let bot = turu::bot();
+                report_headless_mode(&send, bot.opts().headless_mode);
                 let now = (turu::tab_label(&bot), crate::gui::turu::busy(&bot));
                 let resend = std::mem::take(&mut *RESEND.lock().unwrap_or_else(|e| e.into_inner()));
                 if resend || sent.as_ref() != Some(&now) {

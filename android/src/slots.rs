@@ -329,6 +329,10 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                         });
                     }
                 }
+                // Another tab turned Headless Mode on or off.
+                Ok(ToClient::HeadlessMode { on }) => {
+                    turu_frontend::client_link::set_headless_mode(on);
+                }
                 // What the soft keyboard committed without keys (voice, an emoji).
                 Ok(ToClient::Text { text }) => {
                     let keys: Vec<_> = text.chars().flat_map(crate::input::typed).collect();

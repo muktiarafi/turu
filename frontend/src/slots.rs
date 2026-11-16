@@ -238,6 +238,8 @@ pub struct SlotShell {
     records: BTreeMap<u32, SlotRecord>,
     live: BTreeMap<u32, Live>,
     shown: u32,
+    /// Headless Mode as a slot last turned it on or off (`None`: none has yet): every slot's.
+    headless_mode: Option<bool>,
 }
 
 impl SlotShell {
@@ -288,6 +290,10 @@ impl SlotShell {
             actions.push(Action::Show(slot));
         }
         actions.extend(self.tab_lists());
+        // As the other tabs have it, once one changed it.
+        if let Some(on) = self.headless_mode {
+            actions.push(Action::Send(slot, ToClient::HeadlessMode { on }));
+        }
         actions
     }
 
@@ -320,6 +326,18 @@ impl SlotShell {
                 _ => Vec::new(),
             },
             hello @ ToShell::Hello { .. } => self.connected(slot, &hello),
+            // Every tab's: to the other slots up.
+            ToShell::HeadlessMode { on } => {
+                if self.headless_mode == Some(on) {
+                    return Vec::new();
+                }
+                self.headless_mode = Some(on);
+                self.live
+                    .keys()
+                    .filter(|&&other| other != slot)
+                    .map(|&other| Action::Send(other, ToClient::HeadlessMode { on }))
+                    .collect()
+            }
             // A hidden slot's text box (it lost the screen while it had the focus) shows nothing.
             field @ (ToShell::FieldShow { .. }
             | ToShell::FieldUpdate { .. }
@@ -673,6 +691,34 @@ mod tests {
         assert_eq!(
             shell.message(1, install.clone()),
             [Action::Activity(1, install)]
+        );
+    }
+
+    #[test]
+    fn headless_mode_reaches_the_other_slots() {
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        shell.connected(1, &hello());
+        shell.open(Vec::new(), None);
+        // Nothing to pass on before a slot changes it.
+        assert!(
+            !shell
+                .connected(2, &hello())
+                .iter()
+                .any(|a| matches!(a, Action::Send(_, ToClient::HeadlessMode { .. })))
+        );
+        let on = ToShell::HeadlessMode { on: true };
+        assert_eq!(
+            shell.message(1, on.clone()),
+            [Action::Send(2, ToClient::HeadlessMode { on: true })]
+        );
+        // The same again (another slot's echo) goes nowhere.
+        assert!(shell.message(2, on).is_empty());
+        // A slot coming back gets it as the others have it.
+        shell.disconnected(2);
+        assert!(
+            shell
+                .connected(2, &hello())
+                .contains(&Action::Send(2, ToClient::HeadlessMode { on: true }))
         );
     }
 

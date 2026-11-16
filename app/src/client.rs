@@ -124,6 +124,7 @@ impl ClientEnd for Forward {
                     })
                 })));
             }
+            ToClient::HeadlessMode { on } => turu_frontend::client_link::set_headless_mode(on),
             // Defined for file dialogs; nothing uses it yet.
             ToClient::Answer { .. } => {}
             message => {

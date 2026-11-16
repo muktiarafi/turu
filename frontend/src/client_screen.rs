@@ -222,6 +222,7 @@ impl ClientScreen {
             | ToClient::DocumentCreated { .. }
             | ToClient::Installed { .. }
             | ToClient::AndroidKey { .. }
+            | ToClient::HeadlessMode { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

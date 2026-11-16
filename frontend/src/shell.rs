@@ -119,6 +119,10 @@ pub enum ToClient {
         #[serde(default)]
         letter: Option<char>,
     },
+    /// Headless Mode (the game option), as another tab turned it on or off: every tab has it as
+    /// one, as VibeSkua's tabbed host sends it to every tab. Also to a tab when it connects, once a
+    /// tab has changed it.
+    HeadlessMode { on: bool },
     /// A message this client doesn't know.
     #[serde(other)]
     Unknown,
@@ -222,6 +226,9 @@ pub enum ToShell {
     /// (`show`) or lost it: the shell's activity shows or hides the soft keyboard, whose keys come
     /// back as `AndroidKey` and `Text`.
     SoftKeyboard { show: bool },
+    /// This tab turned Headless Mode (the game option) on or off: the shell passes it on to the
+    /// other tabs (`ToClient::HeadlessMode`).
+    HeadlessMode { on: bool },
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
@@ -639,6 +646,7 @@ mod tests {
                 path: "/data/updates/turu.apk".into(),
             },
             ToShell::SoftKeyboard { show: true },
+            ToShell::HeadlessMode { on: true },
         ];
         let mut bytes = Vec::new();
         for message in &to_shell {
@@ -776,6 +784,7 @@ mod tests {
                     typed: None,
                     letter: Some('a'),
                 },
+                ToClient::HeadlessMode { on: true },
                 ToClient::Hide,
             ];
             for message in &messages {

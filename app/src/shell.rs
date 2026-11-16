@@ -169,6 +169,7 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
         title: String::new(),
         grid: None,
         swallow_release: false,
+        headless_mode: None,
     };
     // The first tab logs in as `--headless` would: with the shell's own `TURU_PASSWORD`.
     app.open_tab(client_args, std::env::var("TURU_PASSWORD").ok());
@@ -317,6 +318,8 @@ struct ShellApp {
     grid: Option<(f32, f32)>,
     /// A press went to a tile (selecting its tab): its release goes nowhere.
     swallow_release: bool,
+    /// Headless Mode as a client last turned it on or off (`None`: none has yet): every tab's.
+    headless_mode: Option<bool>,
 }
 
 impl ShellApp {
@@ -649,6 +652,10 @@ impl ShellApp {
         };
         spawn_reader(tab.id, tab.generation, reader, tab.picture.clone(), proxy);
         tab.out = Some(stream);
+        // As the other tabs have it, once one changed it.
+        if let Some(on) = self.headless_mode {
+            send(tab, &ToClient::HeadlessMode { on });
+        }
         let id = tab.id;
         if id == self.shown || self.grid_tiles().is_some() {
             self.show_current();
@@ -705,6 +712,15 @@ impl ShellApp {
                     tab.label = label;
                     tab.busy = busy;
                     self.broadcast_tabs();
+                }
+            }
+            // Every tab's: to the other clients.
+            ToShell::HeadlessMode { on } => {
+                if self.headless_mode != Some(on) {
+                    self.headless_mode = Some(on);
+                    for tab in self.tabs.iter_mut().filter(|tab| tab.id != id) {
+                        send(tab, &ToClient::HeadlessMode { on });
+                    }
                 }
             }
             ToShell::OpenUrl { url } => {
