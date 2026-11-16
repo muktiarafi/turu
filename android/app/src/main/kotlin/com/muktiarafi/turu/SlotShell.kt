@@ -143,6 +143,7 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
                 Log.i(SlotService.TAG, "Shell: slot $slot bound")
                 // It answers with its hello (a message to the shell).
                 send(slot, SlotService.MSG_HELLO)
+                sendOnScreen(slot)
             }
 
             override fun onServiceDisconnected(name: ComponentName) {
@@ -551,6 +552,19 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
             data?.let { setData(it) }
         }
         runCatching { messengers[slot]?.send(message) }
+    }
+
+    /** Whether the activity is on screen, for the slots' alerts ([onScreen]). */
+    private var onScreen = false
+
+    /** The activity came to the screen or left it: every slot posts its alerts only while it isn't. */
+    fun onScreen(on: Boolean) {
+        onScreen = on
+        for (slot in messengers.keys) sendOnScreen(slot)
+    }
+
+    private fun sendOnScreen(slot: Int) {
+        send(slot, SlotService.MSG_ON_SCREEN, Bundle().apply { putBoolean("on", onScreen) })
     }
 
     private fun sendJson(slot: Int, json: String) {

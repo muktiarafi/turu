@@ -21,6 +21,7 @@ import android.os.PowerManager
 import android.util.Log
 import android.view.Surface
 import androidx.core.os.BundleCompat
+import com.muktiarafi.turu.shared.Alerts
 import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
 import kotlin.concurrent.thread
@@ -44,6 +45,10 @@ abstract class SlotService(private val slot: Int) : Service() {
         // processes ended since (collected once across processes), as the app's service does.
         CrashUploads.start(applicationContext, CRASH_APP)
         CrashReports.collect(applicationContext, CRASH_APP)
+        // Alerts (Notify Drop, a script stopped) from this slot: numbered apart from the other
+        // slots', and posted while the shell says the app isn't on screen (no shell: it isn't).
+        Alerts.init(applicationContext, R.drawable.ic_notification, ALERT_IDS * slot)
+        Alerts.onScreen = { appOnScreen }
         Log.i(TAG, "Slot $slot: service created in process ${android.os.Process.myPid()}")
         instance = this
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -121,6 +126,7 @@ abstract class SlotService(private val slot: Int) : Service() {
     private val shellDied = IBinder.DeathRecipient {
         Log.w(TAG, "Slot $slot: the shell died; letting its surface go")
         shell = null
+        appOnScreen = false
         thread(name = "Turu Detach") { nativeDetach() }
     }
 
@@ -184,6 +190,10 @@ abstract class SlotService(private val slot: Int) : Service() {
                     nativeResize()
                     1
                 }
+                MSG_ON_SCREEN -> {
+                    appOnScreen = msg.data.getBoolean("on")
+                    1
+                }
                 MSG_TOUCH -> {
                     val data = msg.data
                     val kinds = data.getIntArray("kinds") ?: IntArray(0)
@@ -211,6 +221,16 @@ abstract class SlotService(private val slot: Int) : Service() {
         const val MSG_HELLO = 6
         const val MSG_TO_CLIENT = 7
         const val MSG_TO_SHELL = 8
+
+        /** The app's activity came to the screen or left it (`on` in the data): for [Alerts]. */
+        const val MSG_ON_SCREEN = 9
+
+        /** Each slot's alerts are numbered from this times its slot, apart from the others'. */
+        private const val ALERT_IDS = 100_000
+
+        /** Whether the app is on screen, as the shell last said (false without a shell). */
+        @Volatile
+        private var appOnScreen = false
 
         /** This process's slot service (one per process). */
         @Volatile

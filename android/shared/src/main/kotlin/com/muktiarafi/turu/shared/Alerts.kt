@@ -13,8 +13,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * (Notify Drop) and a tab's script stopped (`turu_frontend` decides when: `notify_drop.rs`,
  * `turu::watch_alerts`). Each
  * kind has a channel of its own, which the user can silence or turn off in Android's settings.
- * Posted only while none of the app's activities is on screen ([Foreground]): there, Notify
- * Drop beeps and the windows show the stop.
+ * Posted only while none of the app's activities is on screen ([Foreground], or [onScreen] where
+ * the process has no activity: Turu's process tabs): there, Notify Drop beeps and the windows show
+ * the stop.
  */
 object Alerts {
     /** [post]'s kinds, as the Rust side numbers them (`platform::Alert`). */
@@ -24,8 +25,15 @@ object Alerts {
     private const val DROP_CHANNEL = "turu_drops"
     private const val STOPPED_CHANNEL = "turu_script_stopped"
 
-    /** The foreground service's notification has ID 1: these count up from 1000. */
+    /** The foreground service's notification has ID 1: these count up from 1000 ([init]). */
     private val nextId = AtomicInteger(1000)
+
+    /**
+     * Whether the app is on screen. In a process with the app's activity, [Foreground] knows; a
+     * process tab's slot has none and is told by the activity's process instead.
+     */
+    @Volatile
+    var onScreen: () -> Boolean = { Foreground.activity != null }
 
     @Volatile
     private var context: Context? = null
@@ -34,11 +42,14 @@ object Alerts {
 
     /**
      * Makes the channels and keeps the app's context and the notifications' small `icon`. From
-     * the foreground service's `onCreate` (both apps).
+     * the foreground service's `onCreate` (both apps). `firstId`: the first notification ID, apart
+     * for each of the app's processes that posts alerts (a process tab's slot), so that one's
+     * alerts don't replace another's.
      */
-    fun init(context: Context, icon: Int) {
+    fun init(context: Context, icon: Int, firstId: Int = 1000) {
         val app = context.applicationContext
         this.icon = icon
+        nextId.set(firstId)
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(DROP_CHANNEL, "Drops", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -59,7 +70,7 @@ object Alerts {
      */
     fun post(kind: Int, title: String, text: String): Boolean {
         val context = context ?: return false.also { Log.w("turu", "Alert before Alerts.init: $title") }
-        if (Foreground.activity != null) {
+        if (onScreen()) {
             Log.i("turu", "Alert not posted, the app is on screen: $title")
             return false
         }

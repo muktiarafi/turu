@@ -441,8 +441,12 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   SIGSEGV sent to slot 2 left a tombstone, slot 2 came back in 1.5 s and Sentry had one fatal event
   tagged `c2`; four earlier kills went once each, tagged with the slot that died, though the
   activity sent them; both live slots kept their memory logs; Options showed the switch in a slot.
-  Not in slots yet: alerts (Notify Drop, a stopped script): `Alerts` is per process and a slot
-  can't tell whether the app is on screen.
+* **Alerts from slots** (Notify Drop, a stopped script): each slot sets up `Alerts` in its process,
+  numbering its notifications apart from the other slots' (from 100 000 times its slot), and posts
+  while the app isn't on screen, which the shell tells every slot (`MSG_ON_SCREEN`, from the
+  activity's `onResume` and `onPause`, and to a slot when it binds); without a shell, or once it
+  dies, the app isn't. Checked on the emulator: a stop with the app in the background posted
+  (ID 100000), with it on screen didn't, and after the shell's process was killed did (100001).
 * **While no slot draws** (a tab starting, a slot coming back after a kill, a new surface on its
   way) a plain Android view over the game area says "Starting the tab…" with a spinner, instead of
   black: it shows until a slot whose engine is up (its hello carries its control API) has the
@@ -497,10 +501,17 @@ Checked on the emulator (Android 16, one account on Twig):
   through the native field today).
 
 Not done yet:
-* **Alerts from slots:** Notify Drop and a stopped script's alert post nothing in a slot.
 * **Notifications:** a group summary.
 * **Tab Limit** from the phone's memory (with M4's numbers; the four slots cap it meanwhile).
-* **Runs not done yet:** Accounts' "In a tab" and Army Control.
+Accounts' "In a tab" in a slot, checked on the emulator (host GPU): Start on a saved account opened
+slot 3 in a process of its own and showed it (the slot on screen let go in 6 ms); its record held
+the login and server, no password; it logged in with Accounts' password and was in game 5.6 s
+after Start, a third tab on the strip.
+
+Army Control across slots, checked on the emulator (host GPU): each slot's lists both, the other
+from its process (its script, map and HP); "Show its tab" from slot 1 showed slot 2 (slot 1 let go
+in 5 ms); Start and Stop on slot 1's row in slot 2's Army Control started and stopped slot 1's
+script.
 
 Two accounts in game across slots, checked on the emulator (2026-11-16, Twig; scripts started
 through each slot's control API):
@@ -520,8 +531,10 @@ through each slot's control API):
   a thread dump during the stall), so the game loaded its login screen and the server list late,
   and the bot's calls waited. A slot started shown with no other running did the same (16.5 s);
   hidden, the login screen came 0.08 s after the game loaded, and in process it didn't stall.
-  Possibly the emulator's GPU emulation; for M4: time a shown slot's login on phones, with
-  `--perf-log` (its Acquire line), before looking further.
+  It was the emulator's software renderer: with the emulator on the host GPU (`-gpu host`), the
+  same kill of the shown slot showed the login screen 0.04 s after the game loaded, was in game
+  6 s after the kill and ran its script again at 7.6 s. For M4: time a shown slot's login on
+  phones all the same (`--perf-log`'s Acquire line).
 * Seen meanwhile: the monitor's slot often found the other slot's control API slow to answer
   (over its 3 s for a peer: `PEER_TIMEOUT`) while both farmed on the emulator's CPU renderer, and
   showed it offline for that poll; to read again on phones. The test script's own stalls (a hunt

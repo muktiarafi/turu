@@ -336,6 +336,17 @@ class TuruActivity : GameActivity() {
         if (extras.containsKey("closeTab")) shell.asShown("""{"type":"close_tab","id":${extras.getInt("closeTab")}}""")
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Process tabs: the slots post their alerts only while the app isn't on screen.
+        shell?.onScreen(true)
+    }
+
+    override fun onPause() {
+        shell?.onScreen(false)
+        super.onPause()
+    }
+
     override fun onDestroy() {
         shell?.stop()
         displays().unregisterDisplayListener(displayListener)
