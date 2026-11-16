@@ -24,8 +24,10 @@ Beta builds for Windows, macOS, Linux and Android (arm64, 8+) are on
 - **Android:** tabs, Army and Butler as on the desktop, up to 4 tabs; no Grid View or Army Queue
   ([docs/ANDROID.md](docs/ANDROID.md)).
 - **Turu Mas** (`turumas-*.apk`): Turu for Android with the game in the Adobe® AIR® runtime
-  instead of Ruffle, an app of its own ([docs/TURU_MAS.md](docs/TURU_MAS.md)). It opens with the
-  AIR SDK's splash screen for about 1.6 s.
+  instead of Ruffle, an app of its own ([docs/TURU_MAS.md](docs/TURU_MAS.md)). AIR is much more
+  stable at running Flash than Ruffle on Android, though not as fast: Turu stays the default, and
+  Turu Mas is the alternative for when Ruffle misbehaves. It opens with the AIR SDK's splash
+  screen for about 1.6 s.
 - **Crash reports** (Sentry) are sent only if you say yes at first start; change it in Options >
   Application. [PRIVACY.md](PRIVACY.md) says what Turu sends.
 

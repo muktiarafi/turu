@@ -2,7 +2,10 @@
 
 Turu Mas is Turu's second Android app: the same bot engine, scripts and windows, but AQW's client
 runs in the **Adobe AIR runtime** instead of Ruffle. It's an app of its own, next to Turu, in
-gold. How it was built and measured: `docs/AIR_PROPOSAL.md` (spike A0, phases A1–A3).
+gold. It exists because of Ruffle's quirks on Android: the AIR runtime is much more stable at
+running Flash, though not as fast as Ruffle. Turu, with Ruffle, stays the default Android app;
+Turu Mas is the alternative for when Ruffle misbehaves. How it was built and measured:
+`docs/AIR_PROPOSAL.md` (spike A0, phases A1–A3).
 
 The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence its gold. It isn't
 "Turu AIR" because the AIR SDK's license keeps Adobe's trademark out of an app's title (see
@@ -182,7 +185,7 @@ Read 2026-11-11: the agreement shipped in the SDK (`$AIR_HOME/AIR SDK license.pd
   that requires it be distributed as source, licensed for derivative works, or redistributable at
   no charge. Turu is GPL-3.0-or-later, and the APK carries AIR's runtime: see "Licenses" below.
 * **Development (6.1, 8).** Only documented ways into the runtime (an ANE is one), no reverse
-  engineering of the SDK. Turu patches AQW's and VibeSkua's SWFs, not AIR.
+  engineering of the SDK. Turu patches AQW's SWFs, not AIR.
 * **The build tools phone home (6.4).** ADT sends Wipro the OS, the app ID, packaging settings,
   the SDK version and a machine ID (`airsdk.wxlift.com`): CI's builds too. The runtime in the app
   sends nothing about users.
@@ -232,7 +235,7 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   bot (`clients::bot`); the bot's calls name `n` too (`AirFlashHost { client }`), so they run its
   `turu.swf`'s callbacks.
 * **Opening and closing.** `clients.rs` serves the UI's tab requests: a new tab gets a free client
-  number and a bot, and the host SWF loads a skua for it (status event "tab", `open`); `select`
+  number and a bot, and the host SWF loads a `turu.swf` for it (status event "tab", `open`); `select`
   shows it; `close` disconnects its game and unloads its SWFs (`unloadAndStop`). Client 0, the
   first tab, loads at start.
 * **Fitting the view.** With several tabs the tab strip pushes AIR's view down, and AIR keeps
@@ -252,9 +255,9 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   Hidden games aren't drawn, and AIR slows the whole app off screen.
 * **Only the tab on screen hears and is heard.** The stage and the sound mixer are every client's,
   so `Options::shared_stage` also routes, in every SWF, what would reach them all through
-  `TuruStage`, with the calling code's own `ApplicationDomain.currentDomain`: each client's skua
+  `TuruStage`, with the calling code's own `ApplicationDomain.currentDomain`: each client's `turu.swf`
   has a domain of its own and its game and maps load in or below it, so the `Game` class found
-  from there (skua's main class before the game) names the tab (`TuruStage.clientOfDomain`).
+  from there (`turu.swf`'s main class before the game) names the tab (`TuruStage.clientOfDomain`).
   * *Keys:* the listener of each `addEventListener(KeyboardEvent.KEY_DOWN or KEY_UP, f, ...)`
     (on the stage or anything else; 91 sites in the client) becomes a gate that passes keys only
     while its tab is shown (`keys`, and `keysRemoved` so `removeEventListener` finds it).
@@ -265,13 +268,13 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
   * *Popups:* `addChild`, `removeChild` and `getChildByName` shortly after a `stage` (22, 7 and 10
     sites) go through `stageAddChild` and its kin: a child for the stage goes into its tab's
     layer, a sprite just above its game that's fitted, shown and hidden with it (`rootOf` maps
-    it back to the game). The game and skua themselves stay on the stage.
+    it back to the game). The game and `turu.swf` themselves stay on the stage.
   * The host's Debug log says, when it changes, how many keys were held back, sounds silenced,
     popups put in a layer, and hooks that couldn't tell their tab (none so far).
 * **The client's own domains.** The client loads its assets and the game menu (the treasure
   chest) into a `new ApplicationDomain()`, whose only parent is the system's, where those SWFs,
   patched to call `TuruStage`, wouldn't find it (the menu never opened). `Options::shared_stage`
-  gives each such domain a parent, `TuruStage.assetsParent`: the domain of the client's skua,
+  gives each such domain a parent, `TuruStage.assetsParent`: the domain of the client's `turu.swf`,
   which has `TuruStage` and names the tab, without the game's classes over the assets' own.
 * **Redrawn after the app comes back.** With several tabs, the tab on screen stayed black after
   Home and back or a file dialog's picker (a phone, 2026-11-14), until another tab was picked and

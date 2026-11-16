@@ -37,7 +37,7 @@ pub fn faction_list(bot: &Bot) -> BotResult<Vec<Faction>> {
 
 /// Your rank in a faction, by name or ID; 0 without reputation in it.
 ///
-/// Names compare ignoring case, unlike VibeSkua's `GetRank`: the game calls one faction
+/// Turu: names compare ignoring case, unlike VibeSkua's `GetRank`: the game calls one faction
 /// "EtherStorm" and CoreFarms asks for "Etherstorm", so VibeSkua read rank 0 and farmed it forever.
 pub fn rank(bot: &Bot, faction: NameOrId) -> BotResult<i64> {
     Ok(faction_list(bot)?

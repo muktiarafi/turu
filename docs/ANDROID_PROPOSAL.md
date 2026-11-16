@@ -1,7 +1,10 @@
 # Proposal: Turu on Android
 
-Status: phases 0 and 1 built (see "As built"); phase 1 logged in and farmed on an emulator. Build and run: `docs/ANDROID.md`. Written 2026-11-03 against Turu `db698ca36`, ruffle-aqw on
-Ruffle `fda41800` + Mugetsu 1.6.0, and `ruffle-rs/ruffle-android` `main` of 2026-11-02.
+Status: phases 0 to 4 built (see "As built"); of phase 5, tabs, Army and Butler (steps 1 to 7 of
+"Plan: tabs, Army and Butler") and Cosmetics are built. Phase 1 logged in and farmed on an emulator;
+phones have run it since (docs/ANDROID_HANDOVER.md, "Where it stands"). Build and run:
+`docs/ANDROID.md`. Written 2026-11-03 against Turu `db698ca36`, ruffle-aqw on Ruffle `fda41800` +
+Mugetsu 1.6.0, and `ruffle-rs/ruffle-android` `main` of 2026-11-02.
 
 Read `docs/ARCHITECTURE.md` first: this doc assumes its thread model (one event loop thread
 owns every `Player`; bot threads reach Flash only through `FlashHost`) and the headless mode
@@ -414,13 +417,13 @@ Android's limits are the biggest behavioural difference from a desktop:
 
 Written 2026-11-04 against `script-loader-layout` (`55bce1e5b`). Steps 1-4, 6 and 7 built on
 2026-11-07 (branch `wt/android-tabs`), checked with `cargo ndk check` only; step 5 (Keystore)
-and step 8 (a phone) are open. As built: the tabs after the first are reopened at every engine
-start (not only after a kill: Android doesn't tell them apart for the service), muted tabs keep
-their AAudio streams open (paused streams would replay stale sounds), Army Control's Load
-script uses the loaded script without file dialogs, and HotKeys stay hidden (keys don't reach
-egui outside a text box). `Army::launch` refuses on Android with `cfg!` rather than
-`#[cfg]`, so the process code (and what only it uses) still compiles without dead-code
-warnings.
+was built the same day (`32708fcb4`); step 8 (a phone) is open. As built: the tabs after the
+first are reopened at every engine start (not only after a kill: Android doesn't tell them apart
+for the service), muted tabs keep their AAudio streams open (paused streams would replay stale
+sounds), Army Control's Load script uses the loaded script without file dialogs, and HotKeys
+stay hidden (keys don't reach egui outside a text box). `Army::launch` refuses on Android with
+`cfg!` rather than `#[cfg]`, so the process code (and what only it uses) still compiles without
+dead-code warnings.
 
 ### Why tabs, not processes
 

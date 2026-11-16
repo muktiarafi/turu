@@ -1274,7 +1274,7 @@ fn gear_combo(ui: &mut Ui, id: (usize, usize), current: &mut String, list: &[Str
         .width(width)
         .truncate()
         .show_ui(ui, |ui| {
-            // An empty entry clears the slot (VibeSkua leaves it blank).
+            // Turu: an empty entry clears the slot (VibeSkua leaves it blank).
             if ui.selectable_label(current.is_empty(), "None").clicked() {
                 current.clear();
             }

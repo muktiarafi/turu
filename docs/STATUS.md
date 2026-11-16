@@ -640,7 +640,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   busy tabs slow each other down (VibeSkua's processes use several cores; hidden tabs in game
   run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
   all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
-  login), as VibeSkua's processes do. `--api` steers the first tab only. Army > Army Queue runs squads
+  login), as VibeSkua's processes do. `--api` steers any tab (`/tabs/<id>/...`; routes without it
+  act on the first). Army > Army Queue runs squads
   one after another (`bot/src/army/queue.rs`); not built: VibeSkua's Army Scheduler. Logging
   in and farming in several tabs is unverified with real accounts.
 - **Grid View is new and unchecked with real accounts** (`frontend/src/grid.rs`, nav bar Grid, with
@@ -653,82 +654,18 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   `main thread` line shows what it costs. Not built: VibeSkua's hidden title and nav bars in
   the tiles (Turu's bar stays, for the active tab) and a hover state for tiles.
 
-- **Refusals are logged:** a turn-in the server refuses (`ccqr` without `bSuccess`), with its
-  reply and how far apart the quest's last two `tryQuestComplete` were sent, and the server's
-  `warning`/`server` messages go to the Debug log and to the app's log with the account
-  (`Bot::note`). VibeSkua ignores both; CoreBots' turn-in watchdog ("completable without a
-  turn-in") had no way to say why. A turn-in the server never answers is noted when the same
-  quest is sent again, and turn-ins that went through go to the Debug log; each says how soon
-  after another quest's turn-in it was sent.
-- **Registered quests turn in and accept one at a time:** CoreBots' watcher sends one
-  `tryQuestComplete`, checks it `ActionDelay * 2` later and only then goes on with the next
-  quest, as C#'s `foreach` awaits `CompleteQuest`; the manager accepts one quest per
-  `ActionDelay * 2`, as C# waits after each. Both used to send everything at once. A packet
-  capture of 0MaxBags showed the cost: of two accepts sent together the server dropped the
-  second ("Please slow down"), the client still showed that quest (The Dark Deal) in progress,
-  and its turn-ins went unanswered until the stuck check accepted it again 20 tries later.
-  Unlike C#, the watcher and the manager also keep `ActionDelay` between their quest packets
-  (a turn-in right after an accept, or the reverse, was still dropped now and then); a quest
-  whose turn is too soon waits for the next run.
-- **Quest packets keep `ActionDelay` apart everywhere:** `quests.accept`/`complete` wait until
-  `ActionDelay` has passed since the last `acceptQuest` or `tryQuestComplete` anyone sent, and
-  `quests.load` since the last `getQuests`. The game's `world.lock` cooldowns let CoreBots'
-  `ensureCompleteQuests` (Swordhaven's rep farm) send each turn-in ~500 ms after the last, and
-  the server dropped every one after the first; CoreStory's `preLoad` sent its `getQuests` ~300 ms
-  after `checkCompletion`'s. `complete` also waits up to 1 s more for a late `ccqr` instead of
-  letting `ensureComplete` send the turn-in again. Checked live with KingsEcho (no "Please slow
-  down" in those spots); `bot/tests/ensure_complete.rs` covers the turn-in spacing.
-- **`ensureComplete` recovers a lost accept:** when none of its `questAcceptAndCompleteTries`
-  turn-ins gets a `ccqr` while the quest still shows in progress, it abandons the quest, loads
-  it, accepts it again (`ActionDelay * 2` apart) and tries one more round. A refused turn-in
-  (a `ccqr` without `bSuccess`) is left alone. 0MaxBags stood still for hours in CoreNation's
-  `deal` loop: the accept of The Refreshing Deal (4777) was dropped ("Please slow down", next
-  to the registered quests' packets), and every turn-in after it went unanswered. VibeSkua's
-  `EnsureComplete` has no such recovery. Tested with a fake game (`bot/tests/ensure_complete.rs`),
-  not yet in game.
-- **Combat stalls are logged:** when the skill timer goes 2 minutes without attacking, it notes
-  the same way the player's state (dead or alive), HP, map, cell and pad, the living monsters in
-  the cell and whether attacks are stopped; again every 10 minutes while that lasts, and once
-  it attacks again. VibeSkua logs nothing; a 0MaxBags run stood for 2.5 h without a target
-  and left no trace.
-- **Logins that differ from VibeSkua:** a login that isn't an auto-relogin (`--user` at start,
-  `ensureRelogin` from a script or the control API's `/login`) counts as a relogin under way, so
-  the `connectionLost` that its own retries cause doesn't start a second, competing auto-relogin
-  (seven tabs logging in at once kept logging in and out on two servers). Retries keep the
-  requested server while it's usable (VibeSkua drops it after a failed attempt), and an
-  auto-relogin goes back to the server you were on (or the last one asked for) unless
-  `ReloginServer` or `AutoReloginAny` is set (VibeSkua: the first server of the list). A timed-out
-  attempt logs what the world check saw, and script log lines in the app's log start with the
-  account. Why seven simultaneous first logins missed the 15 s world check (three didn't) is
-  still open: the next such run logs it. A login you start from the server list yourself is
-  left to you until it reaches the world: when it fails (after the pick, the loading screen
-  shows "Server is full. Try another server" and the connection drops) the watchdog logs it and
-  doesn't relog (VibeSkua relogs, on a server of its own choosing), and the message isn't taken
-  for a stuck load (no logout out of the server list after `LoadTimeout`). The bot's own `clickServer` also reports `selectServer`, so only
-  a pick while no relogin runs counts. In the bot's relogins a full server ("full" on the
-  loading screen or in a login dialog) ends the attempt at once and isn't tried again during
-  that login unless every server was full (VibeSkua waits out the world timeout). A server at its player limit only rules itself out for a
-  non-member (VibeSkua: for everyone): members get in, and a login asked for Artix went to
-  another server whenever Artix was full; while the account isn't known yet it counts as a
-  member's. Checked in game with a member on Artix at 1502/1500. When all
-  Relogin Tries attempts fail, Retry Relogin (on by default; VibeSkua reads it nowhere and gives
-  up) starts another round after 1, 2, 5, then every 10 minutes, so an unattended run survives a
-  network drop and restarts its script; a `/login` or `/relogin` during that wait cancels it
-  instead of being refused, and a login from the game's screen meanwhile counts as the relogin.
-  The retries don't need Auto Relogin to stay on (stopping the script turns it off), and the
-  script a relogin restarts runs with Auto Relogin on again (VibeSkua leaves it off until the
-  script turns it on), so a drop right after a relogin (a Mac waking from sleep) relogs again
-  and `--exit-on-script-stop` waits out a relogin that starts within 2 s of the script stopping.
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
   in timings and in how `turu.swf` answers (`getActiveModalMessage`, `clickServer`).
-- **Android (phase 3, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav bar and
-  bot windows (the desktop's, by touch), keys, the soft keyboard and sound (muted in the
+- **Android (phases 4 and 5, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav
+  bar and bot windows (the desktop's, by touch), keys, the soft keyboard and sound (muted in the
   background, as a hidden desktop tab; Notify Drop's beep still sounds); a foreground service
   keeps it online in the background (status and Stop / Pause in its notification, a wake lock
-  while a script runs, back on its own after a kill). Checked on an emulator, not a phone. No file dialogs
-  (scripts come from Search Scripts); OpenGL ES misdraws; the soft keyboard covers the game's
-  own text fields. Tabs (phase 5): several clients in one engine thread, the Army menu and
-  Butler, a Tab Limit (default 4), tabs reopened after a kill; built, not run on a device yet.
+  while a script runs, back on its own after a kill). Checked on an emulator; on phones, a Redmi
+  10 and a Pixel 8 have run it (docs/ANDROID.md). File dialogs are Android's system picker
+  (`android/src/saf.rs`); OpenGL ES misdraws; the game's own text fields are typed in a native
+  field above the keyboard (docs/ANDROID_NATIVE_UI.md). Tabs (phase 5): several clients in one
+  engine thread, the Army menu and Butler, a Tab Limit (default 4), tabs reopened after a kill;
+  built, not run on a device yet.
   Vulkan misdrew on an Infinix Hot 30i (PowerVR): the debug log now names the
   GPU and driver, and Options > Application > Safe Drawing turns Mugetsu's speed-ups off to test
   (docs/ANDROID.md, "Misdrawing"; not yet tried on that phone).
@@ -815,8 +752,9 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   purpose (marked `C#` in the code): `runRep` farms Blacksmithing (gold method) and Fishing
   instead of stopping, `huntMonsterMapID` without an item stops after one kill, `theAssistant`
   runs its return policy, and `getFish` waits for the dynamite to be used.
-- **Auras are unverified in game:** `bot.self` and `bot.target` call skua.swf's `Auras.as`
-  callbacks as VibeSkua does, but only a fake game has answered them. Unlike VibeSkua,
+- **Auras are unverified in game:** `bot.self` and `bot.target` call `turu.swf`'s aura
+  callbacks (`host/as3/turu/host/Auras.as`) as VibeSkua calls skua.swf's, but only a fake game
+  has answered them. Unlike VibeSkua,
   `snapshots` (and so `getAuraStacks` and skill aura rules) drops a timed, non-persistent aura
   with no time left, as Grimlite-Li's `AuraManager` does; check in game that `remaining` is set
   for every timed aura, or live auras would read as gone. The same goes for
@@ -850,7 +788,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   stacks, the drop list) against a fake game. The dailies themselves, the friendship packets and
   `bot.player.webBadges` (a request to account.aq.com's character page, for `Core.hasWebBadge`)
   need real runs.
-- **FarmerJoe is unverified in game:** nothing of the tree has run. It type-checks and its
+- **FarmerJoe is mostly unverified in game:** DoAll has run, a fresh character from level 1 to
+  35 over about 14 hours headless (docs/HEADLESS_MONITORING_HANDOFF.md). It type-checks and its
   runtime test only loads DoAll (all 128 modules), runs `setOptions` and stops. The C# was
   converted by a script and fixed by hand, so expect wrong arguments in calls no test reaches;
   the Core members it added (`killMonster` by monster map ID, `isSeasonalMapActive`,
@@ -865,11 +804,11 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   C# Nation scripts are fixed in the ports (marked `C#`, listed in `scripts/docs/PORTING.md`): voucher
   turn-ins check the Gems not the Diamonds, the member voucher isn't sold before the quests that
   need it, the Dwobo shop map name, and smaller guard and loop fixes. Only type-checked.
-- **The converted scripts are unverified in game:** 1559 of the 1658 files cs2ts made (586 for
-  the merges, 282 for Story, 333 for the core content areas, 235 for Seasonal, 188 for Other, 34 for
-  Army and Tools) are drafts (their first line says so)
-  that type-check and load but weren't read through by hand; expect C#/TS differences the types
-  don't show (integer division, culture-dependent formats, async C# rewritten as handlers).
+- **The converted scripts are unverified in game:** 1,604 of the 1,868 script files (432 in
+  `seasonal/`, 395 in `other/`, 343 in `story/`, the rest in 13 other folders) are drafts cs2ts
+  made (a line under their header says so) that type-check and load but weren't read through by
+  hand; expect C#/TS differences the types don't show (integer division, culture-dependent
+  formats, async C# rewritten as handlers).
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
   packets). Nothing is left to port but what is
   skipped on purpose: the Ultras' `TestZone`, `Templates`, the unused `Prototypes`, the generator, and the
@@ -887,6 +826,82 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.
+
+## Differences from VibeSkua
+
+Where Turu's behaviour differs from VibeSkua's C# on purpose, and why (`CLAUDE.md`: behaviour
+follows the C# by default; a difference needs a reason and is listed here). In the Rust code each
+is marked `Turu:` (`grep -rn 'Turu:' bot/src frontend/src`); in the scripts, fixes to C# bugs are
+marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known gaps" above, as
+they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
+is in "Known gaps" and `docs/PORTING_GAPS.md`.
+
+- **Refusals are logged:** a turn-in the server refuses (`ccqr` without `bSuccess`), with its
+  reply and how far apart the quest's last two `tryQuestComplete` were sent, and the server's
+  `warning`/`server` messages go to the Debug log and to the app's log with the account
+  (`Bot::note`). VibeSkua ignores both; CoreBots' turn-in watchdog ("completable without a
+  turn-in") had no way to say why. A turn-in the server never answers is noted when the same
+  quest is sent again, and turn-ins that went through go to the Debug log; each says how soon
+  after another quest's turn-in it was sent.
+- **Registered quests turn in and accept one at a time:** CoreBots' watcher sends one
+  `tryQuestComplete`, checks it `ActionDelay * 2` later and only then goes on with the next
+  quest, as C#'s `foreach` awaits `CompleteQuest`; the manager accepts one quest per
+  `ActionDelay * 2`, as C# waits after each. Both used to send everything at once. A packet
+  capture of 0MaxBags showed the cost: of two accepts sent together the server dropped the
+  second ("Please slow down"), the client still showed that quest (The Dark Deal) in progress,
+  and its turn-ins went unanswered until the stuck check accepted it again 20 tries later.
+  Unlike C#, the watcher and the manager also keep `ActionDelay` between their quest packets
+  (a turn-in right after an accept, or the reverse, was still dropped now and then); a quest
+  whose turn is too soon waits for the next run.
+- **Quest packets keep `ActionDelay` apart everywhere:** `quests.accept`/`complete` wait until
+  `ActionDelay` has passed since the last `acceptQuest` or `tryQuestComplete` anyone sent, and
+  `quests.load` since the last `getQuests`. The game's `world.lock` cooldowns let CoreBots'
+  `ensureCompleteQuests` (Swordhaven's rep farm) send each turn-in ~500 ms after the last, and
+  the server dropped every one after the first; CoreStory's `preLoad` sent its `getQuests` ~300 ms
+  after `checkCompletion`'s. `complete` also waits up to 1 s more for a late `ccqr` instead of
+  letting `ensureComplete` send the turn-in again. Checked live with KingsEcho (no "Please slow
+  down" in those spots); `bot/tests/ensure_complete.rs` covers the turn-in spacing.
+- **`ensureComplete` recovers a lost accept:** when none of its `questAcceptAndCompleteTries`
+  turn-ins gets a `ccqr` while the quest still shows in progress, it abandons the quest, loads
+  it, accepts it again (`ActionDelay * 2` apart) and tries one more round. A refused turn-in
+  (a `ccqr` without `bSuccess`) is left alone. 0MaxBags stood still for hours in CoreNation's
+  `deal` loop: the accept of The Refreshing Deal (4777) was dropped ("Please slow down", next
+  to the registered quests' packets), and every turn-in after it went unanswered. VibeSkua's
+  `EnsureComplete` has no such recovery. Tested with a fake game (`bot/tests/ensure_complete.rs`),
+  not yet in game.
+- **Combat stalls are logged:** when the skill timer goes 2 minutes without attacking, it notes
+  the same way the player's state (dead or alive), HP, map, cell and pad, the living monsters in
+  the cell and whether attacks are stopped; again every 10 minutes while that lasts, and once
+  it attacks again. VibeSkua logs nothing; a 0MaxBags run stood for 2.5 h without a target
+  and left no trace.
+- **Logins that differ from VibeSkua:** a login that isn't an auto-relogin (`--user` at start,
+  `ensureRelogin` from a script or the control API's `/login`) counts as a relogin under way, so
+  the `connectionLost` that its own retries cause doesn't start a second, competing auto-relogin
+  (seven tabs logging in at once kept logging in and out on two servers). Retries keep the
+  requested server while it's usable (VibeSkua drops it after a failed attempt), and an
+  auto-relogin goes back to the server you were on (or the last one asked for) unless
+  `ReloginServer` or `AutoReloginAny` is set (VibeSkua: the first server of the list). A timed-out
+  attempt logs what the world check saw, and script log lines in the app's log start with the
+  account. Why seven simultaneous first logins missed the 15 s world check (three didn't) is
+  still open: the next such run logs it. A login you start from the server list yourself is
+  left to you until it reaches the world: when it fails (after the pick, the loading screen
+  shows "Server is full. Try another server" and the connection drops) the watchdog logs it and
+  doesn't relog (VibeSkua relogs, on a server of its own choosing), and the message isn't taken
+  for a stuck load (no logout out of the server list after `LoadTimeout`). The bot's own `clickServer` also reports `selectServer`, so only
+  a pick while no relogin runs counts. In the bot's relogins a full server ("full" on the
+  loading screen or in a login dialog) ends the attempt at once and isn't tried again during
+  that login unless every server was full (VibeSkua waits out the world timeout). A server at its player limit only rules itself out for a
+  non-member (VibeSkua: for everyone): members get in, and a login asked for Artix went to
+  another server whenever Artix was full; while the account isn't known yet it counts as a
+  member's. Checked in game with a member on Artix at 1502/1500. When all
+  Relogin Tries attempts fail, Retry Relogin (on by default; VibeSkua reads it nowhere and gives
+  up) starts another round after 1, 2, 5, then every 10 minutes, so an unattended run survives a
+  network drop and restarts its script; a `/login` or `/relogin` during that wait cancels it
+  instead of being refused, and a login from the game's screen meanwhile counts as the relogin.
+  The retries don't need Auto Relogin to stay on (stopping the script turns it off), and the
+  script a relogin restarts runs with Auto Relogin on again (VibeSkua leaves it off until the
+  script turns it on), so a drop right after a relogin (a Mac waking from sleep) relogs again
+  and `--exit-on-script-stop` waits out a relogin that starts within 2 s of the script stopping.
 
 ## Things to know
 
@@ -948,10 +963,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   ran (where TURU-DESKTOP-5 panicked), was skipped, and the next frame stopped drawing; the game
   went on (no panic, the debug log and title said so). Not seen on a real driver reset. Getting
   the picture back without a restart: docs/GPU_RECOVERY_PROPOSAL.md.
-- **Clippy** lints only `bot/`, `frontend/` and `app/` (the `ruffle/` crates are path dependencies
-  outside the workspace). It passes with `--all-targets` and `-A clippy::redundant_clone` (that
-  lint, denied by Ruffle's workspace lints, still flags a few clones in tests and UI windows); CI
-  runs exactly that (`.github/workflows/ci.yml`).
+- **Clippy** lints only `bot/`, `frontend/` and `app/`, and `host/` in CI's Host SWF job (the
+  `ruffle/` crates are path dependencies outside the workspace). It passes with `--all-targets`
+  and `-A clippy::redundant_clone` (that lint, denied by Ruffle's workspace lints, still flags a
+  few clones in tests and UI windows); CI runs exactly that (`.github/workflows/ci.yml`).
 - **HTTPS in `turu_bot`:** the bot crate asks for reqwest's TLS itself, through its default
   `native-tls` feature (`rustls-tls` instead where there's no system TLS: Android); without one a
   `cargo test -p turu_bot` build could only fetch `http://` (the app got TLS from Ruffle's crates).

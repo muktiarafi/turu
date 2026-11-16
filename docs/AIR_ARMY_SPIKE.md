@@ -1,9 +1,9 @@
 # Spike: several game clients in Turu Mas
 
-Can Turu Mas (docs/TURU_MAS.md) run more than one game client, so that Army and Butler (hidden
-there by `AirPlatform::has_army`) can work? AIR on Android runs one app, one root SWF, one stage
-(no `NativeWindow`), so the clients would have to share it. This spike loads two clients on that
-stage. Started 2026-11-12, on the arm64 emulator.
+Can Turu Mas (docs/TURU_MAS.md) run more than one game client, so that Army and Butler (hidden there
+by `AirPlatform::has_army` when this started; shown since, see "Built") can work? AIR on Android
+runs one app, one root SWF, one stage (no `NativeWindow`), so the clients would have to share it.
+This spike loads two clients on that stage. Started 2026-11-12, on the arm64 emulator.
 
 ## The problem: everything finds the game at stage child 0
 
@@ -106,11 +106,12 @@ Rough size: 1-2 weeks, plus a phone run.
 
 ## Known gaps (not in the spike)
 
-* **One engine, one bot.** Client 2 has no `Bot`. Army and Butler need a bot per client:
+* ~~**One engine, one bot.** Client 2 has no `Bot`. Army and Butler need a bot per client:
   `AirFlashHost` and the extension's calls need a client ID, `TuruExternal` its callbacks per client,
-  and the engine one bot per client (as tabs in `turu_frontend`).
+  and the engine one bot per client (as tabs in `turu_frontend`).~~ Done 2026-11-12 (see "Built").
 * ~~**`stage.addChild`**, **stage keyboard listeners**, **sound**~~: done 2026-11-12, by each
   calling code's `ApplicationDomain` (docs/TURU_MAS.md, "Tabs": "Only the tab on screen hears
   and is heard").
-* **Only two clients.** `TuruExternalMute`'s callbacks are static, so more muted clients would
-  share them; with a bot per client they'd go anyway.
+* ~~**Only two clients.** `TuruExternalMute`'s callbacks are static, so more muted clients would
+  share them; with a bot per client they'd go anyway.~~ Done: up to Tab Limit's 4
+  (docs/TURU_MAS.md).

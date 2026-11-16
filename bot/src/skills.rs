@@ -1431,7 +1431,7 @@ impl Default for SkillRunner {
 const SKILL_INTERVAL: u64 = 100;
 /// How long the skill timer waits for a counter attack to fade (VibeSkua: 10 s).
 const COUNTER_ATTACK_WAIT: u64 = 10_000;
-/// How long the timer goes without attacking before it says so in the log (Turu).
+/// How long the timer goes without attacking before it says so in the log (Turu: VibeSkua logs nothing).
 const IDLE_NOTE_AFTER: Duration = Duration::from_secs(120);
 /// How often it says so again while that lasts.
 const IDLE_NOTE_EVERY: Duration = Duration::from_secs(600);

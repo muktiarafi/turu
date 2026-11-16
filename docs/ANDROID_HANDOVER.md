@@ -7,7 +7,7 @@ For whoever continues the Android port (a person or an agent). It says where thi
 
 ## Where it stands
 
-Phases 0 to 4 of the proposal are built and committed, and checked on an emulator only:
+Phases 0 to 4 of the proposal are built and committed, and were checked on an emulator:
 
 | Phase | What works (emulator, Android 16, arm64) | Commit |
 |---|---|---|
@@ -94,7 +94,7 @@ system moving the dialog above the keyboard).
 | `android/src/lib.rs` | `android_main` (forwards window and input events to the engine), `start_engine` (once per process, from the activity or the service), the engine thread, `turu-args.txt`, `--graphics`. |
 | `android/src/screen.rs` | The GPU (`gpu`, set up without a window), `MovieTexture` the player draws into, `Screen` (surface, blit, egui painting `TuruUi`), who gets a touch or a key. |
 | `android/src/notify.rs` | `TuruService`'s native methods (`nativeStart`, `nativeAction`) and the status sent to the notification every 2 s. |
-| `android/src/input.rs`, `audio.rs`, `ui.rs`, `platform.rs` | Touch and keys; AAudio (from ruffle-android); the game's soft keyboard; the bot windows' `Platform` (browser via `Intent`, no file dialogs). |
+| `android/src/input.rs`, `audio.rs`, `ui.rs`, `platform.rs` | Touch and keys; AAudio (from ruffle-android); the game's soft keyboard; the bot windows' `Platform` (browser via `Intent`; file dialogs through `saf.rs`). |
 | `android/app/src/main/kotlin/com/muktiarafi/turu/` | `TuruActivity` (a GameActivity: full screen, Back to background, one-time prompts, starts the service) and `TuruService` (foreground service: starts the engine, notification, wake lock, `START_STICKY`). |
 | `android/rustls-platform-verifier/` + submodule `android/vendor/rustls-platform-verifier` | The Kotlin half of HTTPS certificate checks, pinned to `252e2516`. A Gradle check compares it with `Cargo.lock`. |
 | `android/app/build.gradle.kts` | The `cargoNdk` task (runs `cargo ndk` into `app/src/main/jniLibs/`, sets the bindgen env). |
@@ -266,7 +266,7 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 
 ## Known gaps
 
-* No real phone yet; no 6-hour run (phase 4's "done when").
+* No 6-hour run (phase 4's "done when").
 * Text boxes egui makes itself (none of Turu's) still get keys only and move up above the
   keyboard with their window (`pan.rs`).
 * OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
@@ -283,8 +283,7 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
   files in internal storage). Not tried on a device yet.
 * Tabs, the Army menu and Plugins > Butler (phase 5, steps 1-4, 6, 7) are built but not run on
   a device: see docs/ANDROID.md's status for what is unverified. Accounts start accounts only in
-  tabs (`launches_processes`: the executable is app_process, not a `turu`), with the loaded
-  script (no file dialogs).
+  tabs (`launches_processes`: the executable is app_process, not a `turu`).
 * The data folder is on shared storage (for `adb`); private files (tokens, passwords) belong in
   internal storage.
 * No device fonts from `/system/fonts` (Ruffle's `default_font` covers `_sans`).
@@ -299,9 +298,8 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 3. Log in by hand on the game's screen on a phone, now that typing shows above the keyboard.
 4. Try SAF import/export, the Keystore `SecretStore`, the native text fields and the restart of a
    hand-started script on a phone (done in code, 2026-11-07).
-5. Proposal phase 5: tabs (several clients), Army scripts and Butler (steps and estimate in
-   `ANDROID_PROPOSAL.md`, "Plan: tabs, Army and Butler"), a tablet layout, gamepads (Cosmetics is
-   done, above).
+5. Proposal phase 5: a tablet layout, gamepads (Cosmetics is done, above; tabs, Army scripts and
+   Butler are built: docs/ANDROID.md's status).
 
 A different direction the owner pointed at: `../aqw-python` is a bot with no Flash at all (it
 speaks AQW's socket protocol and keeps its own game state). That would be far lighter on a

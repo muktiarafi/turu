@@ -1,6 +1,6 @@
 # Turu
 
-Cross-platform (macOS, Windows, Linux) AdventureQuest Worlds bot client: a port of
+Cross-platform (macOS, Windows, Linux, Android) AdventureQuest Worlds bot client: a port of
 VibeSkua (C#/Avalonia, Windows only) onto **Ruffle + Mugetsu's AQW patches**, with the
 bot engine in **Rust** and scripts in **TypeScript**. Same UI/UX and flow as VibeSkua.
 
@@ -25,10 +25,10 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 | `bot/js/turu.ts` | **The script API contract** (runtime + types, embedded). Rust implements each `"module.method"` it calls in `bot/src/api/<module>.rs`. Change both sides together. |
 | `host/` | crate `turu_host`: Turu's own host SWF, `turu.swf`, the default (`docs/HOST_SWF_PROPOSAL.md`): its AS3 (`as3/`, package `turu.host`, written from `docs/VIBESKUA_SPEC.md`, not from VibeSkua's source) and its build with Ruffle's `asc.jar`. Rebuild and commit `bot/assets/turu.swf` after changing `as3/`; CI checks they match. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
-| `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (for Android later: `docs/ANDROID_PROPOSAL.md`). The app re-exports its modules (`crate::turu`, ...). |
+| `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (shared with both Android apps: `docs/ANDROID.md`, `docs/TURU_MAS.md`). The app re-exports its modules (`crate::turu`, ...). |
 | `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): `TuruActivity` (AndroidX's GameActivity) and `TuruService` (foreground service: starts the engine, also alone after a kill; notification; wake lock), the engine thread on `turu_frontend::engine` drawing the game and `TuruUi` with wgpu (`screen.rs`), setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). `android/shared`: the Kotlin both Android apps share (crash records and uploads, the text field above the keyboard); Turu Mas's extension includes it by path. |
 | `air/`, `air_patch/` | Turu Mas (`docs/TURU_MAS.md`): crate `turu_air` (`air/ane/rust`, the engine as an AIR native extension, with its Kotlin in `air/ane/android`), the host SWF and `app.xml` (`air/app`), and crate `turu_air_patch` (patches AQW's client and the SWFs it loads for AIR's sandbox at run time). Built with the AIR SDK: `air/app/build.sh`. |
-| `frontend/src/turu.rs` | Flash host (bot -> player via the event loop), ExternalInterface provider (player -> bot). |
+| `frontend/src/turu.rs`, `frontend/src/turu/ruffle_host.rs` | Tabs and `spawn_action`; `ruffle_host.rs` holds the Flash host (`TuruFlashHost`, bot -> player via the event loop) and the ExternalInterface provider (player -> bot). |
 | `frontend/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
 | `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |
 | `ruffle/` | Submodule ruffle-aqw: Ruffle's crates (`core`, `render`, `frontend-utils`, `video`) and Mugetsu's patched crates (`ruffle/patches/`, wired up by `[patch.crates-io]` in the root `Cargo.toml`). Change it when the fix belongs in the player: a missing or wrong Flash API, the player's performance, or AQW-specific behaviour Turu can't reach from outside. Turu's own logic stays in this repo, not in Ruffle. Commit in ruffle-aqw (marked `AQW build:` / `Turu:`), then bump the submodule. |
@@ -87,8 +87,12 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
   `air/ane/rust/src/`): every Kotlin method Rust calls and every `external` it implements is
   bound there (`bind_java_type!`) and checked when the app starts. Change both sides together and
   start the build once (docs/ANDROID_NATIVE_UI.md, "Platform calls").
-* Behaviour follows VibeSkua's C# exactly (timeouts in 100 ms "tries", `ActionDelay` 800 ms,
-  `world.lock` cooldowns, packet formats). When unsure, read the C#.
+* Behaviour follows VibeSkua's C# by default (timeouts in 100 ms "tries", `ActionDelay` 800 ms,
+  `world.lock` cooldowns, packet formats). When unsure, read the C#. Turu differs only where
+  there is a reason you can state (the server refused it, it hung, the platform differs): mark
+  the code `Turu:` with the reason (as `bot/` does: `// Turu: VibeSkua spins here without
+  sleeping.`), and add what a user or script would notice to STATUS.md's "Differences from
+  VibeSkua". Never remove a marked difference to match the C#.
 * Scripts are synchronous TypeScript: no `async`/`await` in the API. Types are stripped by
   oxc at load (no runtime type check); `tsc --noEmit` in `scripts/` is the type check.
 * Keep `bot/js/turu.ts` readable for humans who write scripts: JSDoc on every member,

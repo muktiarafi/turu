@@ -84,7 +84,7 @@ so a new player starts with none.
      start the new player with fresh ones, as a new desktop tab does.
 6. **Create a new device and player.** Android has the pieces: `screen::gpu` (device, blit,
    renderer), `build_player`, `attach_surface` (`android/src/lib.rs`, `screen.rs`). The new player
-   loads skua.swf, which loads the game, as at start-up.
+   loads turu.swf, which loads the game, as at start-up.
 7. **Log back in and restart the script** through auto-relogin (`servers::auto_relogin`: stop,
    log in with `login_info`, rejoin, `script::start_silent`), started once the new game is at the
    login screen. The bot (`Arc<Bot>`) lives outside the player, so its options, logs, scheduler,

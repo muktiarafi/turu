@@ -44,6 +44,7 @@ before merging:
 | Rebased on main | branch contains `main`, no merge commits | `git rebase origin/main` |
 | Format | `bot/` with `cargo fmt`, the UI windows with `max_width = 120` | see below |
 | Clippy | `turu_bot`, `turu_frontend`, `turu`, tests included | see below |
+| Host SWF | `turu_host`: format, clippy, tests, and `bot/assets/turu.swf` built from `host/as3` | `cargo run -p turu_host -- --check` |
 | Test | engine tests, app and frontend tests, scripts type-check | see below |
 
 ```bash
@@ -77,8 +78,10 @@ in the pull request.
 The full list is in [CLAUDE.md](CLAUDE.md) ("Rules that keep it working"). The ones reviews
 check most:
 
-- **Behaviour follows VibeSkua's C#** (timeouts in 100 ms tries, `ActionDelay`, packet formats).
-  When unsure, read the C# and link it in the pull request.
+- **Behaviour follows VibeSkua's C# by default** (timeouts in 100 ms tries, `ActionDelay`, packet
+  formats). When unsure, read the C# and link it in the pull request. Where Turu differs on
+  purpose, say why: mark the code `// Turu:` with the reason and add what a user or script
+  would notice to `docs/STATUS.md`, "Differences from VibeSkua". Don't remove a marked difference to match the C#.
 - **No winit, rfd or window code in `frontend/`**: it's shared with Android.
 - **Never call into Flash from the UI thread**, and never block or call Flash inside
   `Bot::on_flash_call`.

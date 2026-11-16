@@ -1,7 +1,7 @@
 # Turu architecture
 
-Turu is a cross-platform (macOS, Windows, Linux) AdventureQuest Worlds bot client. It aims
-for feature parity with [VibeSkua](../../../VibeSkua) (a Windows-only C#/Avalonia Skua fork)
+Turu is a cross-platform (macOS, Windows, Linux, Android) AdventureQuest Worlds bot client. It
+aims for feature parity with [VibeSkua](../../../VibeSkua) (a Windows-only C#/Avalonia Skua fork)
 and keeps the same UI/UX, but:
 
 | | VibeSkua | Turu |
@@ -11,6 +11,11 @@ and keeps the same UI/UX, but:
 | Bot engine | C# (`Skua.Core`) | Rust (`bot/`, crate `turu_bot`) |
 | Scripts | C# compiled with Roslyn, `//cs_include` | TypeScript, types stripped by `oxc`, run in QuickJS (`rquickjs`), ES `import` |
 | Game host SWF | `skua.swf` (from `Skua.AS3`) | Turu's own `turu.swf` (`host/`, same callbacks and answers), embedded at `bot/assets/turu.swf` |
+
+Android has two apps. Turu (`android/`) runs the game in Ruffle, as the desktop does, and is the
+default. Turu Mas (`air/`, docs/TURU_MAS.md) runs it in the Adobe AIR runtime instead, the
+alternative for when Ruffle misbehaves: it exists because of Ruffle's quirks on Android, and AIR
+is much more stable at running Flash, though not as fast as Ruffle.
 
 ## Repository layout
 
@@ -60,6 +65,7 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     auto.rs              the Auto popup's Auto Attack / Auto Hunt loop (VibeSkua `ScriptAuto`) on its
                          own script-marked thread
     scheduler.rs         Scripts > Scheduler: a playlist of scripts run one after another
+    shared_job.rs        jobs shared by the Turu processes on one data folder (process tabs)
     paths.rs, log.rs     data directory, skill set files; log buffers
     repo.rs              Search Scripts: the script repository's index, downloads, update, reset
     updates.rs           client updates: newer Turu releases on GitHub, the package's SHA-256
@@ -67,15 +73,17 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     api/                 one module per VibeSkua sub-interface: player, map, combat, kill, hunt,
                          monsters, quests, reputation, auras (self and target), drops, boosts,
                          inventory (also bank, tempInv, house, invHelper), shops, skills, wait,
-                         send, servers (and auto-relogin), lite, options, packets
+                         send, servers (and auto-relogin), lite, options, packets, config,
+                         handlers, and army (what CoreArmyLite reads outside the game)
     background.rs        startup calls (`loadClient`, ...) and the 20 ms "ScriptInterface" timer:
                          login tracking, rest packets, option enforcement, the relogin watchdog
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
 frontend/                crate `turu_frontend`: what any Turu frontend shares (no winit, rfd or window)
-  src/turu.rs            Flash integration: tabs, `TuruFlashHost`, ExternalInterface provider,
-                         spawn_action; the app hands in how to reach its loop (`set_tab_requests`,
-                         `TuruFlashHost::new`)
+  src/turu.rs            Flash integration: tabs, spawn_action; the app hands in how to reach its
+                         loop (`set_tab_requests`, `TuruFlashHost::new`)
+  src/turu/ruffle_host.rs  `TuruFlashHost` and the ExternalInterface provider (`TuruExternalInterface`)
+  src/players.rs         several tabs' players on one thread (the window and the windowless loop)
   src/platform.rs        `Platform`: file dialogs, browser, file manager for the bot windows; the
                          app installs its own (`app/src/desktop_platform.rs`, rfd)
   src/capture.rs         wraps Ruffle's navigator so the game socket goes through `bot.capture`
@@ -84,9 +92,19 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
   src/engine.rs          the windowless player loop (`--headless`, Android): executor, no-dialog
                          navigator, tick loop
   src/pacing.rs          frame interpolation's pacing (desktop window and Android's screen)
+  src/shell.rs, client_link.rs, client_screen.rs   process tabs (docs/TAB_PROCESSES_PROPOSAL.md):
+                         what a shell and a client say, a tab's side of the link, a client's screen
+  src/slots.rs           process tabs on Android: each tab a slot, a service in a process of its own
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 android/                 crate `turu_android` (cdylib, empty off Android) and the Gradle app that
                          loads it: `docs/ANDROID.md`
+  shared/                the Kotlin both Android apps share (crash records and uploads, the text
+                         field above the keyboard); Turu Mas's extension includes it by path
+air/                     Turu Mas (docs/TURU_MAS.md): crate `turu_air` (`ane/rust`, the engine as an
+                         AIR native extension, its Kotlin in `ane/android`), the host SWF and
+                         `app.xml` (`app/`); built with the AIR SDK (`air/app/build.sh`)
+air_patch/               crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's
+                         sandbox at run time
 app/                     crate `turu`, the desktop app: started from ruffle-aqw's desktop frontend
                          (Ruffle's, with Mugetsu's changes marked `AQW build:`), plus the window,
                          the headless loop and the dialogs; it re-exports `turu_frontend`'s modules
@@ -120,10 +138,12 @@ TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐          
   `Flash::call` sends to that loop's channel instead of the `EventLoopProxy`.
 * **Ruffle's `Player` is `!Send` in practice** (its futures are `spawn_local` on the event
   loop). Every call into Flash is therefore marshalled to the event loop thread:
-  `Flash::call` sends `RuffleEvent::TuruFlashCall { name, args, reply }` through the winit
-  `EventLoopProxy`; `app.rs` locks the player, runs `Player::call_internal_interface`,
-  converts the returned `ExternalValue` to a `String` and sends it back. This mirrors
-  VibeSkua, where every OCX call is dispatched to the UI thread.
+  `Flash::call` goes through `TuruFlashHost` (`frontend/src/turu/ruffle_host.rs`), which sends
+  `RuffleEvent::TuruFlashCall(call)` (the tab, the callback's name and arguments, a reply
+  channel) through the winit `EventLoopProxy`; `app.rs` hands it to `turu::answer_flash_call`,
+  which runs `Player::call_internal_interface` on that tab's player and sends the `ExternalValue`
+  back, and `TuruFlashHost` turns it into a `String`. This mirrors VibeSkua, where every OCX
+  call is dispatched to the UI thread.
 * Calls must **never** be made from the event loop thread itself (it would deadlock waiting
   for its own reply). The UI only reads cached state or spawns work on other threads.
 * Inbound calls from AS3 (`ExternalInterface.call(...)`) arrive in
@@ -191,8 +211,8 @@ See `docs/SCRIPTING.md` for the script author guide.
 ## UI
 
 The window keeps VibeSkua's layout: a 34 px top nav bar (Scripts, Options, Tools & Helpers,
-Combat, Bank, Diagnostics, Plugins; Auto / Jump / + on the right) above the game, and tool
-windows (Script Loader, Game Options, Skills, Logs, Packet Logger, ...) as egui windows over
+Combat, Bank, Diagnostics, Plugins; Auto / Jump / + on the right) above the game (on a touch
+screen, a rail down the left instead), and tool windows (Script Loader, Game Options, Skills, Logs, Packet Logger, ...) as egui windows over
 the game. Colours, corner radii and fonts come from Mugetsu's menu style
 (`frontend/src/gui/turu/theme.rs`). Details: `docs/UI.md`.
 
@@ -244,8 +264,8 @@ changed (from `git log`), `deps`, every file it imports, and `library`, set for 
 per app, `turu::script_repo()`) reads it, and the Search Scripts window shows its snapshot.
 
 Differences from VibeSkua's `scripts.json`, which its CI commits to the working branch on every
-push: the index stays off `main`; it is ~77 KB for the 139 ports, where VibeSkua's is 1.1 MB for
-1,943 C# files, and a refresh that finds nothing new is an ETag 304; dates come with it (VibeSkua
+push: the index stays off `main` (1.1 MB for 1,868 files, about the size of VibeSkua's for 1,943
+C# files), and a refresh that finds nothing new is an ETag 304; dates come with it (VibeSkua
 asks the GitHub API once per script, at 60 requests an hour); and `deps` lets one download bring
 the Core files a script imports. Files are fetched from the index's commit and checked against
 its sha256, each from raw.githubusercontent.com, or as one zip from codeload.github.com from 25

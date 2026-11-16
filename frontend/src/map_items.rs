@@ -11,7 +11,7 @@
 //!   the constant passed to the nearest `isQuestInProgress` call before it in that function (the
 //!   check that guards it), else the nearest after it.
 //!
-//! An item with no quest gets 0 (VibeSkua leaves those out, or fails on them). An item found
+//! Turu: an item with no quest gets 0 (VibeSkua leaves those out, or fails on them). An item found
 //! twice keeps the first quest found for it.
 
 use swf::avm2::read::Reader;

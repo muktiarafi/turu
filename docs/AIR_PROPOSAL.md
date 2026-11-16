@@ -1,7 +1,11 @@
 # Proposal: Adobe AIR as a second game client on Android
 
-Status: proposal; spike A0 started (the patcher, see "Spike A0" below). Written 2026-11-07 against Turu `5263a0a17` (0.2.0-beta.2 on
-Android) and VibeSkua's `Skua.AS3`.
+Status: built, as two apps rather than one with a switch: Turu Mas, whose release job came with
+`69427391f`. Spike A0 and phases A1 to A3 are built (their sections below), each with a "Left" list;
+the runs on the phones that fail on Ruffle and the 6 hours screen-off haven't happened
+(docs/TURU_MAS.md, "Known gaps"); of A4, `loaded_swf` is done. Turu Mas now runs Turu's own
+`turu.swf`, not VibeSkua's `skua.swf` (docs/HOST_SWF_PROPOSAL.md, R4). Written 2026-11-07 against
+Turu `5263a0a17` (0.2.0-beta.2 on Android) and VibeSkua's `Skua.AS3`.
 
 Read `docs/ARCHITECTURE.md` (the Flash bridge, `FlashHost`) and `docs/ANDROID_HANDOVER.md`
 first.
