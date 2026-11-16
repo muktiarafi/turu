@@ -208,6 +208,8 @@ reports from earlier releases have no `tabs_most`.
   had two or more accounts open (the owner sets how many is enough).
 * **Gate**: if nearly all are single-account kills, the work that helps is lowering one client's
   memory, and this proposal waits. Otherwise go on.
+* **Decided 2026-11-16**: go on. The owner judged process tabs worth doing without waiting for
+  the released reports; they still come in, to compare with M4 (tagged by slot).
 
 ### M1: two slots on phones (spike, gate for M3)
 
@@ -220,6 +222,10 @@ reports from earlier releases have no `tabs_most`.
   `START_STICKY` per slot and file locks between the slots (the unverified points in "Android").
 * **Gate**: the owner decides from the numbers whether the extra memory per account is worth it,
   and the slot count per memory class.
+* **Decided 2026-11-16**: the extra memory per account is acceptable (on the emulator's ~110 MB
+  for two accounts). Still open: the slot count per memory class (from the phone runs, M4's
+  Tab Limit), and whether hidden slots' bindings waive priority (`BIND_WAIVE_PRIORITY`) so that
+  Android kills a hidden slot first.
 
 ### M2: client mode and shell messages (shared, built on the desktop)
 
@@ -350,14 +356,65 @@ older tab list without `busy` and `down`) and clippy pass; Android's and Turu Ma
 and Android's in-process tab strip (refactored here) showed two tabs and switched on a tap on the
 emulator.
 
-Not done yet, of "done when": Grid View; the army poll and web monitor in the shell (both still
-start in every process, and collide when on); settings writes under a lock; the IOSurface route
-in the shell (pictures are still copied); a tab coming back logged in after a kill (no account
-here: the flags and password are kept, so `--user` tabs should log in again); Army Control, Butler
-and an army script across tabs; Windows and Linux. Built but not run: Army > Accounts' "In a tab"
+Then (same branch): the monitor, Army Control, settings and Grid View across processes.
+
+* **Each client has a control API** on a free local port with its own token (`--api`,
+  `TURU_API_TOKEN`), as Army > Accounts' clients do; the shell passes on its flags but `--api`,
+  `--monitor` and `--report-to` (`shell::client_args`). Before, every client got the shell's
+  `--api` and all but the first failed to listen; and the shell's monitor showed one empty tab of
+  its own and none of the clients.
+* **The monitor's hub has peers** (`monitor::hub::PeerSource`): tabs in other processes, polled
+  through `GET /snapshot` every 2 s by a "Turu Monitor Peers" thread and shown as tabs
+  (`tab:<n>`, the shell's number); commands go to them over HTTP (`Control::Peer`). The shell's
+  hub lists every client and has no tab of its own, so its web monitor and Report To cover all
+  tabs, and keeps `monitor.json` (a client's hub keeps none). Each client's hub lists the other
+  tabs while its Army Control is open (the tab list carries each one's API and token, and which
+  tab the client is); otherwise only the shell polls, as every poll reads the client's game and its
+  CPU "since the last poll". Options > Application is in the clients, which leave the monitor to
+  the shell: the shell reads `settings.json` again every 2 s and applies a change to the monitor or
+  Report To.
+* **Army Control** in a client lists the shell's other tabs (`Peer::Shell`): their game from the
+  hub, commands and Logs through their control APIs, Gear from the shared gear files, "Show its tab" through the shell; no
+  Restart or Close (the shell supervises them). The hotkeys' "every client" commands reach them too.
+* **Settings writes merge** (`Paths::merge_settings`): under a lock file, the file is read again
+  and only the settings this process changed since it last read or wrote them are replaced, so
+  two processes changing different settings keep both (`bot/tests/settings_merge.rs`). Changes
+  another process makes are taken up at this one's next save, not at once.
+* **Grid View**: the bar's Grid toggle in a client asks the shell (`ToShell::Grid`, with what
+  Turu's UI takes of the window). The shell lays the tiles out as `grid::layout` does and sends each
+  client its part (`Show` with `grid`): the active tab draws the whole window with its game in its
+  tile and the rest transparent, plus the tiles' labels and outlines; the others draw only their
+  game at their tile's size and run at the tiles' frame rate. The shell puts the tiles under the
+  active tab's picture (on the CPU, as the pictures are still copies), and a press on another tile
+  where the active picture is transparent shows that tab. For a frame or so after such a click, the
+  window shows the tiles without the bar, until the newly active client's picture of the window comes.
+
+Checked on a Mac (debug build, login screen, no account): with `--shell --api --monitor` and two
+tabs, each client listened on its own port and the shell's monitor (`/api/state`) listed `tab:1`
+and `tab:2`, online with their process readings; a log read and a Stop through the monitor reached
+tab 2; after a `kill -9` it came back on a new port and the monitor followed. Army Control in tab 1
+listed both tabs, the other one as "login screen" from its process. Grid View: the toggle tiled
+two tabs side by side and three in 2x2 with labels and the active outline; a click on tab 2's tile
+made it active (strip and outline followed); the toggle went back to one tab. With three tiles: the
+active tab killed, the shell made tab 2 active and tab 1 came back as a tile; a tile clicked became
+active; closing a tile re-tiled the other two; closing down to one tab left one tab without the strip
+or the toggle. Monitor settings written to `settings.json` (as a client's Options would) started the
+web monitor in the shell within 2 s. Tests: the hub
+polling a peer through a real control API, settings merged from two writers, the flags clients
+get, the new messages.
+
+Not done yet, of "done when": the clients Army > Accounts launches "In its own window" from a tab
+stay that tab's client's (its Army Control has them), and the shell's monitor and Report To don't
+list them, and they end when that client restarts; the IOSurface route in the shell (pictures are copied, and Grid
+View composes them on the CPU: fine for a few tiles, slow in debug builds); a tab coming back
+logged in after a kill, and Army Control, Butler and an army script across tabs while in game (no
+account here: Butler and `bot.army` already work across processes through files, as with Army >
+Accounts' clients); Windows and Linux. Not built: Map Travel and Jump to Player in Army Control
+for the shell's tabs (they read in-process tabs and Army clients only); the shell's own `--api`
+(ignored with a warning: each client has one). Built but not run: Army > Accounts' "In a tab"
 through the shell. `OpenTab` doesn't carry a login's playlist or options storage yet. A client's
 Options > Application > Check Now for updates is off (`--exit-with-parent` marks it launched; the
-shell checks).
+shell checks). A down tab keeps its last monitor entry online for up to 15 s.
 
 ### M6: one way of doing tabs
 
@@ -390,9 +447,9 @@ shell checks).
 
 ## Decisions to make
 
-1. **M0's threshold**: what share of multi-account kills justifies going on.
-2. **M1's threshold**: how much extra memory per account is acceptable, and the slot count per
-   phone memory class.
+1. ~~**M0's threshold**~~: decided 2026-11-16, go on.
+2. **M1's threshold**: the extra memory per account is acceptable (decided 2026-11-16); the slot
+   count per phone memory class is still open.
 3. **Desktop pictures**: shared GPU textures on every OS (recommended: one design), or native
    embedding on Windows and X11 plus textures on macOS and Wayland.
 4. **A single account**: always a client process behind the shell (recommended: one model, and

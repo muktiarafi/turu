@@ -529,3 +529,53 @@ fn streams_a_bots_log() {
     bot.logs.script.push("while streaming");
     assert_eq!(next_lines(), ["while streaming"]);
 }
+
+/// A tab in another process of the window (a shell's client, docs/TAB_PROCESSES_PROPOSAL.md, M5):
+/// the hub polls its control API, shows it as a tab, passes commands on, and drops it when it's
+/// no longer listed.
+#[test]
+fn peers_are_polled_through_their_control_api() {
+    use turu_bot::monitor::hub::{Control, Kind, PeerSource};
+    // SAFETY: every test of this crate sets the same value.
+    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    let token = "0123456789abcdef0123456789abcdef".to_owned();
+    let bot = turu_bot::Bot::new();
+    let api =
+        turu_bot::control_api::start(&bot, "127.0.0.1:0".parse().unwrap(), token.clone()).unwrap();
+    let hub = turu_bot::monitor::Hub::new(None);
+    let listed = Arc::new(parking_lot::Mutex::new(vec![PeerSource {
+        id: "tab:2".into(),
+        label: "Tab 2".into(),
+        api,
+        token,
+    }]));
+    let peers = listed.clone();
+    hub.set_peers(Arc::new(move || peers.lock().clone()));
+    let started = std::time::Instant::now();
+    while !hub.online("tab:2") {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "the peer was never polled"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let view = hub.views().into_iter().find(|v| v.id == "tab:2").unwrap();
+    assert_eq!(view.kind, Kind::Tab);
+    assert_eq!(view.label, "Tab 2");
+    assert!(hub.snapshot("tab:2").is_some());
+    // A command reaches it: reading its Script Options (no script loaded).
+    let control = hub.control("tab:2").unwrap();
+    assert!(matches!(control, Control::Peer { .. }));
+    let (status, _) = hub.run(control, false, "/script/options", b"");
+    assert_ne!(status, 403);
+
+    listed.lock().clear();
+    let started = std::time::Instant::now();
+    while hub.views().iter().any(|v| v.id == "tab:2") {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "the peer was kept"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}

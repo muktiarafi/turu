@@ -277,6 +277,19 @@ pub struct ShellTab {
     pub busy: bool,
     /// Its process isn't running: it's starting again, or gave up ("closed").
     pub down: Option<String>,
+    /// Its client's control API and token: this process's monitor hub polls the other tabs there,
+    /// and Army Control sends them commands.
+    pub api: Option<std::net::SocketAddr>,
+    pub token: String,
+    /// It's this client's own tab.
+    pub me: bool,
+}
+
+impl ShellTab {
+    /// Its id in the monitor hub (`tab:<n>`, the shell's number).
+    pub fn hub_id(&self) -> String {
+        format!("tab:{}", self.id)
+    }
 }
 
 /// What a client's tab strip asks of the shell.
@@ -296,6 +309,53 @@ pub type ShellActions = Box<dyn Fn(ShellTabAction) + Send>;
 /// The shell's tabs, from its latest message (a client only).
 pub fn set_shell_tabs(tabs: Vec<ShellTab>, shown: u32) {
     *SHELL_TABS.lock().unwrap_or_else(|e| e.into_inner()) = Some((tabs, shown));
+    // The other tabs, polled from now on (their processes, through their control APIs).
+    // Only while Army Control is open: the shell polls every client already, and each poll reads
+    // the client's game (and its CPU "since the last poll").
+    static PEERS: std::sync::Once = std::sync::Once::new();
+    PEERS.call_once(|| {
+        monitor_hub().set_peers(Arc::new(|| {
+            if army_control_open() {
+                shell_peers()
+            } else {
+                Vec::new()
+            }
+        }))
+    });
+}
+
+/// When Army Control last drew.
+static ARMY_CONTROL_DRAWN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+/// Army Control is open: called each time it draws.
+pub fn army_control_drawn() {
+    *ARMY_CONTROL_DRAWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+}
+
+/// Army Control drew in the last few seconds.
+fn army_control_open() -> bool {
+    ARMY_CONTROL_DRAWN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some_and(|at| at.elapsed() < Duration::from_secs(5))
+}
+
+/// The shell's other tabs, in a client: what its monitor hub polls.
+pub fn shell_peers() -> Vec<turu_bot::monitor::hub::PeerSource> {
+    shell_tabs()
+        .map(|(tabs, _)| tabs)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|tab| !tab.me)
+        .filter_map(|tab| {
+            Some(turu_bot::monitor::hub::PeerSource {
+                id: tab.hub_id(),
+                label: tab.label.clone(),
+                api: tab.api?,
+                token: tab.token,
+            })
+        })
+        .collect()
 }
 
 /// The shell's tabs and the one shown, in a client; `None` elsewhere.
@@ -787,8 +847,13 @@ fn tab_sources() -> turu_bot::monitor::hub::Sources {
 /// is off (Army Control reads the clients from it).
 pub fn monitor_hub() -> &'static Arc<turu_bot::monitor::Hub> {
     MONITOR_HUB.get_or_init(|| {
-        let hub = turu_bot::monitor::Hub::new(Some(bot().paths.monitor_file()));
-        hub.set_tabs(tab_sources());
+        // A shell's client keeps no `monitor.json`: the shell's hub does, for every tab.
+        let file = client_of().is_none().then(|| bot().paths.monitor_file());
+        let hub = turu_bot::monitor::Hub::new(file);
+        // A shell has no game of its own: its tabs are its clients' processes (`set_peers`).
+        if !shell() {
+            hub.set_tabs(tab_sources());
+        }
         hub.start();
         hub
     })
@@ -971,6 +1036,11 @@ pub fn start_api() {
     let Some(addr) = API.lock().ok().and_then(|mut a| a.take()) else {
         return;
     };
+    if shell() {
+        // It has no game of its own; each tab's client has a control API (on a port of its own).
+        tracing::warn!("--api in --shell: each tab's client serves its own; the web monitor reaches them");
+        return;
+    }
     let addr: std::net::SocketAddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {

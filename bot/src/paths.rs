@@ -375,6 +375,46 @@ impl Paths {
         fs::write(self.settings_file(), text)
     }
 
+    /// Saves the settings this process changed since `base` (what it last read or wrote) without
+    /// undoing what another process saved meanwhile: under a lock (`settings.json.lock`), the file
+    /// is read again, each top-level setting that differs from `base` is replaced with `mine`'s,
+    /// and the result written whole. Several processes write it: a tab's client each
+    /// (docs/TAB_PROCESSES_PROPOSAL.md, M5), and Army > Accounts' clients. Returns the settings
+    /// now in the file, which become the next `base`.
+    pub fn merge_settings(
+        &self,
+        base: &Value,
+        mine: &AppSettings,
+    ) -> io::Result<(AppSettings, Value)> {
+        self.ensure()?;
+        let lock = fs::File::create(self.root.join("settings.json.lock"))?;
+        lock.lock()?;
+        let file = self.settings_file();
+        let mut merged = fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .filter(Value::is_object)
+            .unwrap_or_else(|| base.clone());
+        let mine_value = serde_json::to_value(mine).map_err(io::Error::other)?;
+        if let (Some(mine_map), Some(out)) = (mine_value.as_object(), merged.as_object_mut()) {
+            for (key, value) in mine_map {
+                if base.get(key) != Some(value) {
+                    out.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        let text = serde_json::to_string_pretty(&merged).map_err(io::Error::other)?;
+        // Written beside it and renamed over it, so a reader never sees half a file.
+        let temporary = self
+            .root
+            .join(format!("settings.json.{}.tmp", std::process::id()));
+        fs::write(&temporary, text)?;
+        fs::rename(&temporary, &file)?;
+        drop(lock);
+        let settings = serde_json::from_value(merged.clone()).unwrap_or_else(|_| mine.clone());
+        Ok((settings, merged))
+    }
+
     pub fn load_options(&self) -> Option<BotOptions> {
         let text = fs::read_to_string(self.options_file()).ok()?;
         serde_json::from_str(&text).ok()

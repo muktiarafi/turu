@@ -31,8 +31,14 @@ const MAX_FRAME: u64 = 8192 * 8192 * 4;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToClient {
     /// The tab is on screen, `width` by `height` pixels at `scale` pixels per point: draw it
-    /// and send frames.
-    Show { width: u32, height: u32, scale: f32 },
+    /// and send frames. In Grid View, `grid` says how (M5).
+    Show {
+        width: u32,
+        height: u32,
+        scale: f32,
+        #[serde(default)]
+        grid: Option<GridShow>,
+    },
     /// Another tab is on screen: no more frames.
     Hide,
     /// The mouse, in pixels of the tab.
@@ -56,7 +62,13 @@ pub enum ToClient {
     Focus { focused: bool },
     /// The shell's tabs, for the client's tab strip (M2 defines it; the client doesn't draw it
     /// yet).
-    Tabs { tabs: Vec<TabInfo>, shown: u32 },
+    Tabs {
+        tabs: Vec<TabInfo>,
+        shown: u32,
+        /// The tab this client is.
+        #[serde(default)]
+        you: Option<u32>,
+    },
     /// The answer to a request the client made (a file dialog, say): its `id` and what came back.
     Answer { id: u32, value: Option<String> },
     /// Debugging: write the next frame drawn to `path` as a PNG.
@@ -106,6 +118,15 @@ pub enum ToShell {
     /// The tab's name (the character, once in game) and whether its script or Auto runs, for the
     /// tab strips and the window's title; sent when it changes.
     Status { label: String, busy: bool },
+    /// The bar's Grid toggle: Grid View on or off. `left` and `top` are what Turu's UI takes of the
+    /// window, in points (the rail, the bar and the tab strip): the tiles fill the rest.
+    Grid {
+        on: bool,
+        #[serde(default)]
+        left: f32,
+        #[serde(default)]
+        top: f32,
+    },
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
@@ -152,6 +173,41 @@ pub struct TabInfo {
     /// Its process isn't running: why ("restarting", "closed").
     #[serde(default)]
     pub down: Option<String>,
+    /// Its client's control API (`127.0.0.1:<port>`) and token: the other tabs' monitor hubs poll
+    /// it, and Army Control sends it commands (M5).
+    #[serde(default)]
+    pub api: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+/// How a tab shows in Grid View: every tab's game at once, each in a tile of the window. The
+/// active tab's client draws the whole window (the bar, its windows, the tiles' labels) with its
+/// game in its tile and the other tiles left transparent, and has the keyboard; the others draw
+/// only their game, the size of their tile, and the shell puts them under the active one's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GridShow {
+    /// Every tab's tile, in the window's pixels.
+    pub tiles: Vec<GridTile>,
+    /// This tab's id.
+    pub mine: u32,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GridTile {
+    pub id: u32,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl GridShow {
+    /// This tab's tile.
+    pub fn tile(&self) -> Option<GridTile> {
+        self.tiles.iter().copied().find(|tile| tile.id == self.mine)
+    }
 }
 
 /// Writes `message`, then `payload` (a frame's pixels) if any.
@@ -367,6 +423,32 @@ mod tests {
                 width: 1280,
                 height: 720,
                 scale: 2.0,
+                grid: None,
+            },
+            ToClient::Show {
+                width: 640,
+                height: 360,
+                scale: 2.0,
+                grid: Some(GridShow {
+                    tiles: vec![
+                        GridTile {
+                            id: 1,
+                            x: 0,
+                            y: 80,
+                            width: 640,
+                            height: 360,
+                        },
+                        GridTile {
+                            id: 2,
+                            x: 640,
+                            y: 80,
+                            width: 640,
+                            height: 360,
+                        },
+                    ],
+                    mine: 2,
+                    active: false,
+                }),
             },
             ToClient::Pointer {
                 kind: PointerKind::Down,
@@ -388,8 +470,11 @@ mod tests {
                     label: "Tab 1".into(),
                     busy: true,
                     down: Some("restarting".into()),
+                    api: Some("127.0.0.1:50123".into()),
+                    token: Some("a-token".into()),
                 }],
                 shown: 1,
+                you: Some(1),
             },
             ToClient::Hide,
         ];
@@ -423,6 +508,11 @@ mod tests {
                 label: "Player One".into(),
                 busy: true,
             },
+            ToShell::Grid {
+                on: true,
+                left: 0.0,
+                top: 64.0,
+            },
         ];
         let mut bytes = Vec::new();
         for message in &to_shell {
@@ -434,7 +524,7 @@ mod tests {
         }
     }
 
-    /// An older shell's tab list (without `busy` and `down`) still reads.
+    /// An older shell's tab list (without `busy`, `down`, `api`, `token` and `you`) still reads.
     #[test]
     fn a_tab_without_the_newer_fields_reads() {
         let mut bytes = Vec::new();
@@ -449,8 +539,11 @@ mod tests {
                     label: "Tab 1".into(),
                     busy: false,
                     down: None,
+                    api: None,
+                    token: None,
                 }],
                 shown: 1,
+                you: None,
             })
         );
         // And an open-tab request without its optional fields.
@@ -528,6 +621,7 @@ mod tests {
                     width: 800,
                     height: 600,
                     scale: 1.0,
+                    grid: None,
                 },
                 ToClient::Text { text: "é".into() },
                 ToClient::Hide,

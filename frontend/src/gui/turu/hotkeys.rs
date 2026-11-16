@@ -1110,8 +1110,8 @@ fn flip_lite(title: &'static str, key: &'static str, in_options: bool) {
     });
 }
 
-/// Sends `command` to every tab and every account Army started; the outcomes go to the active
-/// tab's log.
+/// Sends `command` to every tab (the shell's others too, in a client) and every account Army
+/// started; the outcomes go to the active tab's log.
 fn broadcast(command: turu_bot::army::Command) {
     let label = command.label();
     let bot = crate::turu::bot();
@@ -1120,6 +1120,17 @@ fn broadcast(command: turu_bot::army::Command) {
         .into_iter()
         .map(|(_, bot)| (crate::turu::tab_label(&bot), bot))
         .collect();
+    // In a shell's client, the shell's other tabs too (each in its own process).
+    for peer in crate::turu::shell_peers() {
+        let (bot, label, command) = (bot.clone(), label.clone(), command.clone());
+        let _ = std::thread::Builder::new()
+            .name("Turu Army Command".into())
+            .spawn(move || {
+                if let Err(e) = turu_bot::army::send_to_api(peer.api, &peer.token, &command) {
+                    bot.log(format!("[HotKeys] {label} failed on {}: {e}", peer.label));
+                }
+            });
+    }
     crate::turu::army().broadcast(command, local, None, move |name, result| {
         if let Err(e) = result {
             bot.log(format!("[HotKeys] {label} failed on {name}: {e}"));

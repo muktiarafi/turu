@@ -91,6 +91,9 @@ pub struct Bot {
     pub options: RwLock<BotOptions>,
     /// Options > Application (`settings.json`).
     pub settings: RwLock<AppSettings>,
+    /// `settings.json` as this bot last read or wrote it: [`Bot::save_settings`] writes only what
+    /// changed since.
+    settings_base: Mutex<serde_json::Value>,
     pub events: EventBus,
     pub logs: Logs,
     pub scripts: script::ScriptManager,
@@ -135,6 +138,7 @@ impl Bot {
         let paths = paths::Paths::new();
         let options = paths.load_options().unwrap_or_default();
         let settings = paths.load_settings().unwrap_or_default();
+        let settings_base = serde_json::to_value(&settings).unwrap_or_default();
         let bot = Arc::new(Self {
             flash: Flash::new(control.clone()),
             socket_buffers: player_packets::SocketBuffers::default(),
@@ -142,6 +146,7 @@ impl Bot {
             state: Mutex::new(GameState::default()),
             options: RwLock::new(options),
             settings: RwLock::new(settings),
+            settings_base: Mutex::new(settings_base),
             events: EventBus::default(),
             logs: Logs::default(),
             scripts: script::ScriptManager::new(paths.clone()),
@@ -244,9 +249,17 @@ impl Bot {
         result
     }
 
+    /// Saves the settings this bot changed, keeping what other processes (and tabs) saved since
+    /// it last read them, which it takes up ([`paths::Paths::merge_settings`]).
     pub fn save_settings(&self) {
-        if let Err(e) = self.paths.save_settings(&self.settings.read()) {
-            tracing::warn!("Couldn't save the application settings: {e}");
+        let mut base = self.settings_base.lock();
+        let mine = self.settings.read().clone();
+        match self.paths.merge_settings(&base, &mine) {
+            Ok((settings, saved)) => {
+                *self.settings.write() = settings;
+                *base = saved;
+            }
+            Err(e) => tracing::warn!("Couldn't save the application settings: {e}"),
         }
     }
 }

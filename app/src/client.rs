@@ -75,17 +75,24 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     )));
     turu::start_updates();
     // The tab strip's tabs are the shell's: its "+" and Army > Accounts' "In a tab" ask it for a
-    // new client; selecting and closing go to it too (M5).
+    // new client; selecting and closing go to it too, and the bar's Grid toggle (M5).
     let tab_out = out.clone();
     turu::set_tab_requests(Box::new(move |request| {
-        if let turu::TabRequest::Open(startup) = request {
-            tab_out.send(ToShell::OpenTab {
+        match request {
+            turu::TabRequest::Open(startup) => tab_out.send(ToShell::OpenTab {
                 username: startup.username,
                 password: startup.password,
                 server: startup.server,
                 script: startup.script.map(|path| path.to_string_lossy().into_owned()),
                 run_script: startup.run_script,
-            });
+            }),
+            // The shell lays the tiles out in what Turu's UI leaves of the window.
+            turu::TabRequest::Grid(on) => tab_out.send(ToShell::Grid {
+                on,
+                left: turu_frontend::gui::left_width() as f32,
+                top: turu_frontend::gui::top_height() as f32,
+            }),
+            _ => {}
         }
         true
     }));
@@ -156,14 +163,17 @@ impl ClientEnd for Forward {
     fn handle(&mut self, message: ToClient) {
         match message {
             ToClient::Dump { path } => *self.dump.lock().unwrap_or_else(|e| e.into_inner()) = Some(path),
-            ToClient::Tabs { tabs, shown } => {
+            ToClient::Tabs { tabs, shown, you } => {
                 let tabs = tabs
                     .into_iter()
                     .map(|tab| turu::ShellTab {
+                        me: you == Some(tab.id),
                         id: tab.id,
                         label: tab.label,
                         busy: tab.busy,
                         down: tab.down,
+                        api: tab.api.and_then(|api| api.parse().ok()),
+                        token: tab.token.unwrap_or_default(),
                     })
                     .collect();
                 turu::set_shell_tabs(tabs, shown);

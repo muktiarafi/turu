@@ -35,6 +35,20 @@ pub fn set_tiles(tiles: Vec<(TabId, Tile)>) {
     }
 }
 
+/// In a shell's client drawing Grid View as the active tab (docs/TAB_PROCESSES_PROPOSAL.md, M5):
+/// every tab's tile by the shell's tab number, for the labels; empty otherwise.
+static SHELL_TILES: Mutex<Vec<(u32, Tile)>> = Mutex::new(Vec::new());
+
+pub fn shell_tiles() -> Vec<(u32, Tile)> {
+    SHELL_TILES.lock().map(|t| t.clone()).unwrap_or_default()
+}
+
+pub fn set_shell_tiles(tiles: Vec<(u32, Tile)>) {
+    if let Ok(mut slot) = SHELL_TILES.lock() {
+        *slot = tiles;
+    }
+}
+
 /// A tile's area, in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tile {

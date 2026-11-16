@@ -524,7 +524,7 @@ fn main() -> Result<(), Error> {
     }
     if turu::shell() {
         // The client gets the shell's own flags (`--user`, `--run-script`, ...).
-        let client_args = env::args().skip(1).filter(|arg| arg != "--shell").collect();
+        let client_args = shell::client_args(env::args().skip(1));
         return shell::run(preferences, client_args);
     }
 

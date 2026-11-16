@@ -40,12 +40,34 @@ const MISC_OPTIONS: [(&str, &str); 7] = [
     ("Streamer Mode", "streamerMode"),
 ];
 
-/// A client a Gear or Logs window acts on: one Army launched (by username), or one of this
-/// window's tabs.
+/// A client a Gear or Logs window acts on: one Army launched (by username), one of this
+/// window's tabs, or one of the shell's other tabs (in a client process, by the shell's number;
+/// docs/TAB_PROCESSES_PROPOSAL.md, M5).
 #[derive(Clone)]
 pub enum Peer {
     Client { username: String, label: String },
     Tab(Arc<Bot>),
+    Shell { id: u32, label: String },
+}
+
+/// The shell's tab `id`, in a client.
+fn shell_tab(id: u32) -> Option<crate::turu::ShellTab> {
+    crate::turu::shell_tabs()?.0.into_iter().find(|tab| tab.id == id)
+}
+
+/// A shell tab's latest snapshot, from the monitor hub (which polls it).
+fn shell_snapshot(id: u32) -> Option<turu_bot::monitor::Snapshot> {
+    crate::turu::monitor_hub().snapshot(&format!("tab:{id}"))
+}
+
+/// A shell tab's control API, while its process runs.
+fn shell_api(id: u32) -> Result<(std::net::SocketAddr, String), String> {
+    let tab = shell_tab(id).ok_or_else(|| "that tab is closed".to_owned())?;
+    match (tab.api, &tab.down) {
+        (Some(api), None) => Ok((api, tab.token)),
+        (_, Some(down)) => Err(format!("{} is {down}", tab.label)),
+        (None, None) => Err(format!("{} has no control API", tab.label)),
+    }
 }
 
 impl Peer {
@@ -53,6 +75,7 @@ impl Peer {
         match self {
             Self::Client { label, .. } => label.clone(),
             Self::Tab(bot) => format!("{} (tab)", crate::turu::tab_label(bot)),
+            Self::Shell { label, .. } => format!("{label} (tab)"),
         }
     }
 
@@ -61,6 +84,10 @@ impl Peer {
         match self {
             Self::Client { username, .. } => username.clone(),
             Self::Tab(bot) => bot.butler.username(),
+            Self::Shell { id, .. } => shell_snapshot(*id)
+                .filter(|s| s.playing())
+                .map(|s| s.name)
+                .unwrap_or_default(),
         }
     }
 
@@ -68,6 +95,7 @@ impl Peer {
         match (self, other) {
             (Self::Client { username: a, .. }, Self::Client { username: b, .. }) => a.eq_ignore_ascii_case(b),
             (Self::Tab(a), Self::Tab(b)) => Arc::ptr_eq(a, b),
+            (Self::Shell { id: a, .. }, Self::Shell { id: b, .. }) => a == b,
             _ => false,
         }
     }
@@ -82,6 +110,10 @@ impl Peer {
                         .is_some_and(|s| s.playing())
             }
             Self::Tab(bot) => bot.gear.logged_in(),
+            Self::Shell { id, .. } => {
+                crate::turu::monitor_hub().online(&format!("tab:{id}"))
+                    && shell_snapshot(*id).is_some_and(|s| s.playing())
+            }
         }
     }
 
@@ -96,6 +128,13 @@ impl Peer {
                 )
             }
             Self::Tab(bot) => (bot.scripts.is_running(), bot.scripts.loaded()),
+            Self::Shell { id, .. } => {
+                let snapshot = shell_snapshot(*id)?;
+                (
+                    snapshot.script.running,
+                    snapshot.script.path.map(std::path::PathBuf::from),
+                )
+            }
         };
         running.then(|| file_name(path.as_deref()))
     }
@@ -111,6 +150,10 @@ impl Peer {
                 army.send(&client, command)
             }
             Self::Tab(bot) => turu_bot::army::send_local(bot, command),
+            Self::Shell { id, .. } => {
+                let (api, token) = shell_api(*id)?;
+                turu_bot::army::send_to_api(api, &token, command)
+            }
         }
     }
 
@@ -127,6 +170,10 @@ impl Peer {
             Self::Tab(bot) => {
                 let (status, reply) = turu_bot::control_api::local(bot, false, path, &[]);
                 turu_bot::army::reply_result(status, reply)
+            }
+            Self::Shell { id, .. } => {
+                let (api, token) = shell_api(*id)?;
+                turu_bot::army::get_from_api(api, &token, path)
             }
         }
     }
@@ -242,10 +289,53 @@ impl Row {
         }
     }
 
+    /// One of the shell's other tabs: its game from the monitor's hub, which polls its process.
+    fn of_shell_tab(tab: &crate::turu::ShellTab) -> Self {
+        let snapshot = shell_snapshot(tab.id).filter(|_| tab.down.is_none());
+        let (color, summary) = match (&tab.down, &snapshot) {
+            (Some(down), _) => (DANGER, down.clone()),
+            (None, Some(snapshot)) if snapshot.playing() => (SUCCESS, summarize(snapshot)),
+            (None, Some(_)) => (MUTED, "login screen".to_owned()),
+            (None, None) => (MUTED, "starting…".to_owned()),
+        };
+        Self {
+            key: tab.hub_id(),
+            peer: Peer::Shell {
+                id: tab.id,
+                label: tab.label.clone(),
+            },
+            tab: None,
+            username: snapshot
+                .as_ref()
+                .filter(|s| s.playing())
+                .map(|s| s.name.clone())
+                .unwrap_or_default(),
+            headless: false,
+            color,
+            summary,
+            error: None,
+            script: snapshot.as_ref().and_then(|s| {
+                let path = s.script.path.as_deref()?;
+                Some((file_name(Some(std::path::Path::new(path))), s.script.running))
+            }),
+            auto: snapshot.as_ref().and_then(|s| s.auto.clone()),
+            logged_in: snapshot
+                .as_ref()
+                .is_some_and(|s| !matches!(s.state, BotState::NotLoaded | BotState::LoggedOut)),
+            ended: tab.down.is_some(),
+        }
+    }
+
+    /// A tab of this window: in this process, or the shell's in another.
+    fn is_tab(&self) -> bool {
+        self.tab.is_some() || matches!(self.peer, Peer::Shell { .. })
+    }
+
     fn label(&self) -> String {
         match &self.peer {
             Peer::Client { label, .. } => label.clone(),
             Peer::Tab(bot) => crate::turu::tab_label(bot),
+            Peer::Shell { label, .. } => label.clone(),
         }
     }
 }
@@ -354,11 +444,15 @@ impl ArmyWindow {
         rows.iter().find(|r| r.tab == Some(active)).map(|r| r.key.clone())
     }
 
-    /// Every tab, then every launched client.
+    /// Every tab (in a shell's client: its own, then the shell's others), then every launched
+    /// client.
     fn rows() -> Vec<Row> {
         let tabs = crate::turu::tabs().into_iter().map(|(tab, bot)| Row::of_tab(tab, &bot));
+        let shell_tabs = crate::turu::shell_tabs().map(|(tabs, _)| tabs).unwrap_or_default();
+        let others = shell_tabs.iter().filter(|tab| !tab.me).map(Row::of_shell_tab);
         let clients = crate::turu::army().clients();
-        tabs.chain(clients.iter().enumerate().map(|(i, c)| Row::of_client(i + 1, c)))
+        tabs.chain(others)
+            .chain(clients.iter().enumerate().map(|(i, c)| Row::of_client(i + 1, c)))
             .collect()
     }
 
@@ -376,6 +470,7 @@ impl ArmyWindow {
         let results = self.results.clone();
         let mut local = Vec::new();
         let mut only = Vec::new();
+        let mut shell = Vec::new();
         // The outcomes name a client by its launch label: "Client 2" instead in Streamer Mode.
         let mut shown = HashMap::new();
         for row in rows {
@@ -387,6 +482,16 @@ impl ArmyWindow {
                         shown.insert(client.label.clone(), label.clone());
                     }
                 }
+                Peer::Shell { .. } => shell.push(row.peer.clone()),
+            }
+        }
+        for peer in shell {
+            let (results, label, command) = (results.clone(), label.clone(), command.clone());
+            let spawned = std::thread::Builder::new()
+                .name("Turu Army Command".into())
+                .spawn(move || push_result(&results, outcome_line(&peer.label(), &label, peer.send(&command))));
+            if let Err(e) = spawned {
+                push_result(&self.results, format!("Army: {e}"));
             }
         }
         crate::turu::army().broadcast(command, local, Some(&only), move |name, result| {
@@ -448,7 +553,7 @@ impl ArmyWindow {
                         "Restart",
                         crate::turu::army().restart(username).map(|_| Value::Null),
                     ),
-                    (None, Peer::Tab(_)) => return,
+                    (None, Peer::Tab(_) | Peer::Shell { .. }) => return,
                 };
                 push_result(&results, line);
             });
@@ -458,6 +563,7 @@ impl ArmyWindow {
     }
 
     fn ui(&mut self, ui: &mut Ui, rows: &[Row]) {
+        crate::turu::army_control_drawn();
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
         self.checked
             .retain(|key| rows.iter().any(|r| &r.key == key && !r.ended));
@@ -510,7 +616,7 @@ impl ArmyWindow {
                             ui.label(RichText::new(format!("{username}: waiting to start")).color(MUTED));
                         });
                     }
-                    if rows.iter().all(|r| r.tab.is_some()) && queued.is_empty() {
+                    if rows.iter().all(Row::is_tab) && queued.is_empty() {
                         ui.add_space(4.0);
                         ui.label(
                             RichText::new("Start more accounts from Army > Accounts.")
@@ -557,7 +663,7 @@ impl ArmyWindow {
             ui.add(Label::new(RichText::new(count).size(12.0).color(color)).truncate());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let army = crate::turu::army();
-                let launched = rows.iter().any(|r| r.tab.is_none());
+                let launched = rows.iter().any(|r| !r.is_tab());
                 ui.add_enabled_ui(launched, |ui| {
                     ui.menu_button("⋯", |ui| {
                         touch_rows(ui);
@@ -993,8 +1099,17 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                     }
                 };
                 if row.ended {
-                    item(ui, RichText::new("Remove"), true, RowAction::Close);
+                    // A shell tab that's down: the shell restarts it (or its strip does).
+                    if !row.is_tab() {
+                        item(ui, RichText::new("Remove"), true, RowAction::Close);
+                    }
                     return;
+                }
+                if let Peer::Shell { id, .. } = &row.peer
+                    && ui.button("Show its tab").clicked()
+                {
+                    crate::turu::shell_tab_action(crate::turu::ShellTabAction::Select(*id));
+                    ui.close();
                 }
                 if let Some(tab) = row.tab {
                     let show = ui
@@ -1022,6 +1137,8 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                 }
                 if row.tab.is_none() {
                     item(ui, RichText::new("Logs…"), true, RowAction::Logs);
+                }
+                if !row.is_tab() {
                     ui.separator();
                     item(ui, RichText::new("Restart"), true, RowAction::Restart);
                     item(ui, RichText::new("Close").color(DANGER), true, RowAction::Close);
@@ -1085,7 +1202,7 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                     let name = row.label();
                     ui.add(Label::new(RichText::new(&name).strong().color(TEXT)).truncate())
                         .on_hover_text(&name);
-                    let kind = if row.tab.is_some() {
+                    let kind = if row.is_tab() {
                         Some("tab")
                     } else if row.headless {
                         Some("no window")
@@ -1132,7 +1249,7 @@ fn travel_peers(rows: &[Row]) -> Vec<army_travel::Peer> {
                     let name = bot.state.lock().username.clone().filter(|n| !n.trim().is_empty());
                     (Some(bot.clone()), name.or_else(|| Some(r.username.clone())))
                 }
-                Peer::Client { .. } => (None, Some(r.username.clone())),
+                Peer::Client { .. } | Peer::Shell { .. } => (None, Some(r.username.clone())),
             };
             army_travel::Peer {
                 key: r.key.clone(),

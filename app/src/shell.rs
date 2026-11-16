@@ -15,16 +15,22 @@
 //!
 //! Testing without anyone at the window: `TURU_SHELL_TEST=<file>` runs its lines in order:
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
-//! (its client, as a crash would), `click <x> <y>` (in the window's pixels, to the tab on screen)
+//! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would)
 //! and `dump <path>` (the window's picture, as a PNG).
+//!
+//! Grid View (the bar's Grid toggle, `ToShell::Grid`): the tab on screen draws the window with its
+//! game in its tile, the others only their game at their tile's size; the shell puts the tiles
+//! under the tab on screen's picture, and a click on another tile shows that tab.
 
 use crate::preferences::GlobalPreferences;
+use crate::turu;
 use anyhow::{Context as _, Error, anyhow};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use turu_frontend::shell::{self, Button, Mods, PointerKind, TabInfo, ToClient, ToShell};
+use turu_bot::monitor::hub::PeerSource;
+use turu_frontend::shell::{self, Button, GridShow, GridTile, Mods, PointerKind, TabInfo, ToClient, ToShell};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -46,7 +52,7 @@ const DEATH_WINDOW: Duration = Duration::from_secs(600);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The newest picture from a client.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Picture {
     width: u32,
     height: u32,
@@ -85,6 +91,10 @@ struct Tab {
     /// Gave up on restarting (until the tab is selected).
     closed: bool,
     started: Instant,
+    /// Its client's control API (a new port each start) and token: the shell's monitor and the
+    /// other tabs reach it there.
+    api: Option<std::net::SocketAddr>,
+    api_token: String,
 }
 
 impl Tab {
@@ -106,6 +116,26 @@ impl Tab {
     }
 }
 
+/// The flags a tab's client gets from the shell's: all but `--shell`, and the control API, web
+/// monitor and Report To ones (the shell runs those; each client gets a control API of its own).
+pub fn client_args(args: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut kept = Vec::new();
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        let name = arg.split_once('=').map_or(arg.as_str(), |(name, _)| name);
+        match name {
+            "--shell" | "--api" | "--monitor" => {}
+            "--report-to" => {
+                if !arg.contains('=') {
+                    args.next();
+                }
+            }
+            _ => kept.push(arg),
+        }
+    }
+    kept
+}
+
 /// Starts the first tab's client and runs the window until it's closed.
 pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(), Error> {
     let listener = TcpListener::bind("127.0.0.1:0").context("Couldn't listen for the clients")?;
@@ -116,7 +146,12 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
     if let Ok(file) = std::env::var("TURU_SHELL_TEST") {
         spawn_test(file, event_loop.create_proxy());
     }
+    watch_settings();
+    let peers: Arc<Mutex<Vec<PeerSource>>> = Arc::default();
+    let listed = peers.clone();
+    turu::monitor_hub().set_peers(Arc::new(move || listed.lock().unwrap_or_else(|e| e.into_inner()).clone()));
     let mut app = ShellApp {
+        peers,
         address,
         token,
         proxy: event_loop.create_proxy(),
@@ -129,6 +164,8 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
         cursor: PhysicalPosition::new(0.0, 0.0),
         size: None,
         title: String::new(),
+        grid: None,
+        swallow_release: false,
     };
     // The first tab logs in as `--headless` would: with the shell's own `TURU_PASSWORD`.
     app.open_tab(client_args, std::env::var("TURU_PASSWORD").ok());
@@ -189,6 +226,31 @@ fn spawn_acceptor(listener: TcpListener, token: String, proxy: EventLoopProxy<Sh
         });
     if let Err(e) = spawned {
         tracing::error!("Shell: couldn't start accepting clients: {e}");
+    }
+}
+
+/// Options > Application lives in the clients, which leave the web monitor and Report To to the
+/// shell: it reads `settings.json` again every 2 s and applies what changed.
+fn watch_settings() {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Shell Settings".into())
+        .spawn(|| {
+            let bot = turu::bot();
+            let mut seen = bot.settings.read().clone();
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let Some(settings) = bot.paths.load_settings() else {
+                    continue;
+                };
+                if settings != seen {
+                    turu::apply_monitor(&settings);
+                    *bot.settings.write() = settings.clone();
+                    seen = settings;
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Shell: couldn't watch the settings: {e}");
     }
 }
 
@@ -256,6 +318,8 @@ struct Gpu {
 }
 
 struct ShellApp {
+    /// The tabs' control APIs, for the monitor hub (`turu::monitor_hub`).
+    peers: Arc<Mutex<Vec<PeerSource>>>,
     address: String,
     token: String,
     proxy: EventLoopProxy<ShellEvent>,
@@ -270,6 +334,10 @@ struct ShellApp {
     /// The window's size and scale.
     size: Option<(PhysicalSize<u32>, f64)>,
     title: String,
+    /// Grid View, on from a client's bar: what Turu's UI takes of the window (left, top, in points).
+    grid: Option<(f32, f32)>,
+    /// A press went to a tile (selecting its tab): its release goes nowhere.
+    swallow_release: bool,
 }
 
 impl ShellApp {
@@ -295,6 +363,8 @@ impl ShellApp {
             restart_at: None,
             closed: false,
             started: Instant::now(),
+            api: None,
+            api_token: turu_bot::control_api::new_token().unwrap_or_default(),
         };
         self.start(&mut tab);
         self.tabs.push(tab);
@@ -310,6 +380,9 @@ impl ShellApp {
                 return;
             }
         };
+        // Its control API on a port nobody listens on (it binds it a moment later), as Army >
+        // Accounts' clients get.
+        tab.api = TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).ok();
         let mut command = Command::new(exe);
         command
             .arg(format!("--client={}", self.address))
@@ -318,6 +391,9 @@ impl ShellApp {
             .env(shell::TOKEN_ENV, &self.token)
             .env_remove("TURU_PASSWORD")
             .stdin(Stdio::piped());
+        if let Some(api) = tab.api {
+            command.arg(format!("--api={api}")).env("TURU_API_TOKEN", &tab.api_token);
+        }
         if let Some(password) = tab.password.as_deref().filter(|p| !p.is_empty()) {
             command.env("TURU_PASSWORD", password);
         }
@@ -364,7 +440,9 @@ impl ShellApp {
         }
         let old = self.shown;
         self.shown = id;
+        // In Grid View the one before stays, as a tile (`show_current`).
         if old != id
+            && self.grid_tiles().is_none()
             && let Some(tab) = self.tab(old)
         {
             send(tab, &ToClient::Hide);
@@ -420,31 +498,101 @@ impl ShellApp {
             self.shown = 0;
             self.select(next);
         } else {
+            self.show_current();
             self.broadcast_tabs();
         }
     }
 
-    /// Tells the tab on screen the window's size.
+    /// Grid View's tiles, when it's on with two tabs or more: the window less Turu's UI, shared out
+    /// in tab order (`turu_frontend::grid::layout`).
+    fn grid_tiles(&self) -> Option<Vec<GridTile>> {
+        let (left, top) = self.grid?;
+        let (size, scale) = self.size?;
+        if self.tabs.len() < 2 {
+            return None;
+        }
+        let left = (f64::from(left) * scale).round() as u32;
+        let top = (f64::from(top) * scale).round() as u32;
+        let area = (size.width.saturating_sub(left), size.height.saturating_sub(top));
+        let tiles = turu_frontend::grid::layout(self.tabs.len(), area.0, area.1);
+        Some(
+            self.tabs
+                .iter()
+                .zip(tiles)
+                .map(|(tab, tile)| GridTile {
+                    id: tab.id,
+                    x: tile.x + left,
+                    y: tile.y + top,
+                    width: tile.width,
+                    height: tile.height,
+                })
+                .collect(),
+        )
+    }
+
+    /// Tells the tab on screen the window's size; in Grid View, every tab its part.
     fn show_current(&mut self) {
         let Some((size, scale)) = self.size else {
             return;
         };
         let id = self.shown;
+        let tiles = self.grid_tiles();
+        for tab in &mut self.tabs {
+            let active = tab.id == id;
+            let grid = tiles.as_ref().map(|tiles| GridShow {
+                tiles: tiles.clone(),
+                mine: tab.id,
+                active,
+            });
+            let tile = grid.as_ref().filter(|_| !active).and_then(GridShow::tile);
+            match (active, tile) {
+                (true, _) => send(
+                    tab,
+                    &ToClient::Show {
+                        width: size.width,
+                        height: size.height,
+                        scale: scale as f32,
+                        grid,
+                    },
+                ),
+                (false, Some(tile)) => send(
+                    tab,
+                    &ToClient::Show {
+                        width: tile.width,
+                        height: tile.height,
+                        scale: scale as f32,
+                        grid,
+                    },
+                ),
+                (false, None) => {}
+            }
+        }
         if let Some(tab) = self.tab(id) {
-            send(
-                tab,
-                &ToClient::Show {
-                    width: size.width,
-                    height: size.height,
-                    scale: scale as f32,
-                },
-            );
             send(tab, &ToClient::Focus { focused: true });
         }
         self.update_title();
     }
 
-    /// Every client gets the list of tabs, for its tab strip.
+    /// The bar's Grid toggle, from a client.
+    fn set_grid(&mut self, grid: Option<(f32, f32)>) {
+        let was = self.grid_tiles().is_some();
+        self.grid = grid;
+        let on = self.grid_tiles().is_some();
+        if was && !on {
+            // Back to one tab at a time: the others hide.
+            let shown = self.shown;
+            for tab in self.tabs.iter_mut().filter(|tab| tab.id != shown) {
+                send(tab, &ToClient::Hide);
+            }
+        }
+        self.show_current();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Every client gets the list of tabs, for its tab strip and its monitor hub; the shell's own
+    /// hub gets their control APIs.
     fn broadcast_tabs(&mut self) {
         let tabs: Vec<TabInfo> = self
             .tabs
@@ -454,13 +602,29 @@ impl ShellApp {
                 label: tab.label.clone(),
                 busy: tab.busy,
                 down: tab.down(),
+                api: tab.api.map(|api| api.to_string()),
+                token: Some(tab.api_token.clone()),
             })
             .collect();
-        let message = ToClient::Tabs {
-            tabs,
-            shown: self.shown,
-        };
+        *self.peers.lock().unwrap_or_else(|e| e.into_inner()) = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                Some(PeerSource {
+                    id: format!("tab:{}", tab.id),
+                    label: tab.label.clone(),
+                    api: tab.api?,
+                    token: tab.api_token.clone(),
+                })
+            })
+            .collect();
+        let shown = self.shown;
         for tab in &mut self.tabs {
+            let message = ToClient::Tabs {
+                tabs: tabs.clone(),
+                shown,
+                you: Some(tab.id),
+            };
             send(tab, &message);
         }
         self.update_title();
@@ -507,7 +671,7 @@ impl ShellApp {
         spawn_reader(tab.id, tab.generation, reader, tab.picture.clone(), proxy);
         tab.out = Some(stream);
         let id = tab.id;
-        if id == self.shown {
+        if id == self.shown || self.grid_tiles().is_some() {
             self.show_current();
         } else if let Some(tab) = self.tab(id) {
             send(tab, &ToClient::Hide);
@@ -543,6 +707,7 @@ impl ShellApp {
     fn message(&mut self, id: u32, message: ToShell) {
         match message {
             ToShell::SelectTab { id: target } => self.select_requested(target),
+            ToShell::Grid { on, left, top } => self.set_grid(on.then_some((left, top))),
             ToShell::CloseTab { id: target } => self.close(target),
             ToShell::OpenTab {
                 username,
@@ -661,7 +826,7 @@ impl ShellApp {
     }
 
     /// Copies the shown tab's newest picture into the window (the part that fits, while a resize
-    /// is under way).
+    /// is under way); in Grid View, the tiles' under it.
     fn draw(&self) {
         let Some(gpu) = &self.gpu else {
             return;
@@ -669,10 +834,18 @@ impl ShellApp {
         let Some(tab) = self.tabs.iter().find(|tab| tab.id == self.shown) else {
             return;
         };
-        let picture = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
-        if picture.pixels.is_empty() {
+        let shown = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
+        if shown.pixels.is_empty() {
             return;
         }
+        let composed;
+        let picture = match self.grid_tiles() {
+            Some(tiles) => {
+                composed = self.compose(&shown, &tiles);
+                &composed
+            }
+            None => &*shown,
+        };
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
@@ -695,9 +868,105 @@ impl ShellApp {
                 depth_or_array_layers: 1,
             },
         );
-        drop(picture);
+        drop(shown);
         gpu.queue.submit([]);
         gpu.queue.present(frame);
+    }
+
+    /// Grid View's window: each tile's newest picture in its place, and the active tab's over them
+    /// (transparent where its own tile isn't, its pixels premultiplied). Done on the CPU, as the
+    /// pictures still come as copies (the GPU textures of the proposal's "Desktop" replace both).
+    fn compose(&self, active: &Picture, tiles: &[GridTile]) -> Picture {
+        let (width, height) = self
+            .size
+            .map_or((active.width, active.height), |(size, _)| (size.width, size.height));
+        let mut pixels = vec![0u8; width as usize * height as usize * 4];
+        // Just after a tile was clicked, its client may still send its tile's picture: in its tile
+        // until the window's comes.
+        let whole = active.width == width && active.height == height;
+        for tile in tiles.iter().filter(|tile| tile.id != self.shown || !whole) {
+            // The caller holds the active tab's picture: not locked again.
+            let guard;
+            let picture = if tile.id == self.shown {
+                active
+            } else {
+                let Some(tab) = self.tabs.iter().find(|tab| tab.id == tile.id) else {
+                    continue;
+                };
+                guard = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
+                &*guard
+            };
+            // The window's picture of a tab that was active a moment ago: its tile's is on the way.
+            let window_sized = picture.width == width && picture.height == height;
+            if window_sized || picture.pixels.len() < picture.width as usize * picture.height as usize * 4 {
+                continue;
+            }
+            // A picture from before a resize: the part that fits the tile.
+            let w = picture.width.min(tile.width).min(width.saturating_sub(tile.x)) as usize;
+            let h = picture.height.min(tile.height).min(height.saturating_sub(tile.y)) as usize;
+            for row in 0..h {
+                let from = row * picture.width as usize * 4;
+                let to = ((tile.y as usize + row) * width as usize + tile.x as usize) * 4;
+                pixels[to..to + w * 4].copy_from_slice(&picture.pixels[from..from + w * 4]);
+            }
+        }
+        if !whole {
+            return Picture { width, height, pixels };
+        }
+        let over = active.pixels.as_chunks::<4>().0;
+        for (out, top) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(over) {
+            match top[3] {
+                0 => {}
+                255 => *out = *top,
+                alpha => {
+                    let keep = u16::from(255 - alpha);
+                    for i in 0..4 {
+                        out[i] = top[i].saturating_add(((u16::from(out[i]) * keep + 127) / 255) as u8);
+                    }
+                }
+            }
+        }
+        Picture { width, height, pixels }
+    }
+
+    /// The tab whose tile is under (`x`, `y`), unless the active tab's picture covers it there (its
+    /// bar, its windows, its own tile).
+    fn tile_at(&self, x: f64, y: f64) -> Option<u32> {
+        let tiles = self.grid_tiles()?;
+        let tile = tiles.iter().find(|tile| {
+            let (x0, y0) = (f64::from(tile.x), f64::from(tile.y));
+            x >= x0 && y >= y0 && x < x0 + f64::from(tile.width) && y < y0 + f64::from(tile.height)
+        })?;
+        if tile.id == self.shown {
+            return None;
+        }
+        let shown = self.tabs.iter().find(|tab| tab.id == self.shown)?;
+        let picture = shown.picture.lock().unwrap_or_else(|e| e.into_inner());
+        let (px, py) = (x as usize, y as usize);
+        if px < picture.width as usize && py < picture.height as usize {
+            let alpha = picture.pixels.get((py * picture.width as usize + px) * 4 + 3).copied();
+            if alpha.is_some_and(|alpha| alpha > 0) {
+                return None;
+            }
+        }
+        Some(tile.id)
+    }
+
+    /// A press, release or move of the mouse: to the tab on screen, but in Grid View a press on
+    /// another tab's tile makes that tab the active one (VibeSkua's tabbed host's click).
+    fn pointer_event(&mut self, kind: PointerKind, button: Button, at: PhysicalPosition<f64>) {
+        match kind {
+            PointerKind::Down => {
+                if let Some(id) = self.tile_at(at.x, at.y) {
+                    self.swallow_release = true;
+                    self.select_requested(id);
+                    return;
+                }
+            }
+            PointerKind::Up if std::mem::take(&mut self.swallow_release) => return,
+            _ => {}
+        }
+        self.send_shown(&pointer(kind, button, at));
     }
 
     /// A line of `TURU_SHELL_TEST`'s file.
@@ -710,7 +979,7 @@ impl ShellApp {
             if let [x, y] = at[..] {
                 let at = PhysicalPosition::new(x, y);
                 for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
-                    self.send_shown(&pointer(kind, Button::Left, at));
+                    self.pointer_event(kind, Button::Left, at);
                 }
             }
             return;
@@ -728,7 +997,12 @@ impl ShellApp {
                 let Some(tab) = self.tabs.iter().find(|tab| tab.id == self.shown) else {
                     return;
                 };
-                let picture = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
+                let shown = tab.picture.lock().unwrap_or_else(|e| e.into_inner());
+                let picture = match self.grid_tiles() {
+                    Some(tiles) => self.compose(&shown, &tiles),
+                    None => shown.clone(),
+                };
+                drop(shown);
                 let mut rgba = picture.pixels.clone();
                 for pixel in rgba.as_chunks_mut::<4>().0 {
                     pixel.swap(0, 2);
@@ -802,7 +1076,7 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
         match event {
             ShellEvent::Connected { pid, stream } => self.connected(pid, stream),
             ShellEvent::Picture(id) => {
-                if id == self.shown
+                if (id == self.shown || self.grid.is_some())
                     && let Some(window) = &self.window
                 {
                     window.request_redraw();
@@ -849,7 +1123,7 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                     PointerKind::Up
                 };
                 let at = self.cursor;
-                self.send_shown(&pointer(kind, button, at));
+                self.pointer_event(kind, button, at);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let (dx, dy) = match delta {
@@ -960,5 +1234,30 @@ fn egui_key_name(key: &Key) -> Option<&'static str> {
             LETTERS.iter().copied().find(|letter| *letter == upper)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::client_args;
+
+    #[test]
+    fn clients_get_the_shells_flags_but_its_servers() {
+        let args = [
+            "--shell",
+            "--user",
+            "Hero",
+            "--api=127.0.0.1:9091",
+            "--monitor",
+            "--report-to",
+            "https://monitor.example",
+            "--run-script",
+            "farm/Gold.ts",
+            "--report-to=https://other.example",
+            "--monitor=0.0.0.0:9021",
+            "--api",
+        ];
+        let kept = client_args(args.iter().map(|arg| (*arg).to_owned()));
+        assert_eq!(kept, ["--user", "Hero", "--run-script", "farm/Gold.ts"]);
     }
 }

@@ -5,6 +5,10 @@
 //!   from its [`Sampler`](super::Sampler) every second. A closed tab's entry goes.
 //! * **Army clients:** the Army poll (`crate::army`) hands over what each client's
 //!   `GET /snapshot` answered. Army > Army Control reads them back from here.
+//! * **Peers:** tabs in other processes of this window (docs/TAB_PROCESSES_PROPOSAL.md, M5):
+//!   the shell's clients, each with a control API of its own. A "Turu Monitor Peers" thread asks
+//!   each for its `GET /snapshot` every [`crate::army::POLL_INTERVAL`]; commands go to it over
+//!   HTTP. They show as tabs. The shell lists them all; each client lists the others.
 //! * **Remote clients:** Turu on other machines reporting here (`POST /api/ingest`,
 //!   [`super::push`]): their tabs and Army clients, as [`Report`]s. Commands for them wait in
 //!   a queue that the next report's reply carries; the results come with the report after.
@@ -30,6 +34,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -41,6 +46,8 @@ pub const HISTORY_KEPT: usize = 360;
 const POINT_EVERY_MS: u64 = 60_000;
 const SAVED_FOR_MS: u64 = 24 * 60 * 60 * 1000;
 const SAVE_EVERY: Duration = Duration::from_secs(60);
+/// A peer's `GET /snapshot`.
+const PEER_TIMEOUT: Duration = Duration::from_secs(3);
 /// Events each entry carries in the state: the page marks the last hour's on its trace.
 const RECENT: usize = 12;
 /// The control API routes a command may name: the page's buttons and its Script Options form.
@@ -82,6 +89,19 @@ pub struct Source {
 /// This window's tabs now; the app answers.
 pub type Sources = Arc<dyn Fn() -> Vec<Source> + Send + Sync>;
 
+/// A tab in another process of this window, reached through its control API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerSource {
+    /// Its id on the page (`tab:<n>`, the shell's number).
+    pub id: String,
+    pub label: String,
+    pub api: SocketAddr,
+    pub token: String,
+}
+
+/// This window's tabs in other processes now; the app answers.
+pub type Peers = Arc<dyn Fn() -> Vec<PeerSource> + Send + Sync>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
@@ -106,6 +126,11 @@ pub struct Point {
 pub enum Control {
     Tab(Arc<Bot>),
     Army(Arc<Army>, Arc<Client>),
+    /// A tab in another process of this window: its control API.
+    Peer {
+        api: SocketAddr,
+        token: String,
+    },
     /// The reporting process's queue, and the bot's id there.
     Remote {
         machine: String,
@@ -117,6 +142,10 @@ pub enum Control {
 enum Target {
     Tab(Weak<Bot>),
     Army(Weak<Army>, Weak<Client>),
+    Peer {
+        api: SocketAddr,
+        token: String,
+    },
     Remote {
         machine: String,
         instance: String,
@@ -170,6 +199,9 @@ impl Entry {
 
     fn online(&self, now: u64) -> bool {
         match (&self.kind, &self.target) {
+            (Kind::Tab, Target::Peer { .. }) => {
+                now.saturating_sub(self.last_seen) < OFFLINE_AFTER_MS
+            }
             (Kind::Tab, _) => true,
             (Kind::Army, Target::Army(_, client)) => {
                 client.upgrade().is_some_and(|c| c.is_running())
@@ -362,6 +394,7 @@ pub struct Hub {
     entries: Mutex<BTreeMap<String, Entry>>,
     queue: Mutex<Queue>,
     tabs: Mutex<Option<Sources>>,
+    peers: Mutex<Option<Peers>>,
     file: Option<PathBuf>,
     started: Instant,
     /// This process's and this machine's CPU and memory.
@@ -419,6 +452,7 @@ impl Hub {
             entries: Mutex::new(entries),
             queue: Mutex::default(),
             tabs: Mutex::new(None),
+            peers: Mutex::new(None),
             file,
             started: Instant::now(),
             resources: Mutex::default(),
@@ -428,6 +462,92 @@ impl Hub {
 
     pub fn set_tabs(&self, sources: Sources) {
         *self.tabs.lock() = Some(sources);
+    }
+
+    /// Lists this window's tabs in other processes, and starts polling them (once).
+    pub fn set_peers(self: &Arc<Self>, peers: Peers) {
+        let first = self.peers.lock().replace(peers).is_none();
+        if !first {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        let spawned = std::thread::Builder::new()
+            .name("Turu Monitor Peers".into())
+            .spawn(move || {
+                let http = reqwest::blocking::Client::new();
+                while let Some(hub) = weak.upgrade() {
+                    hub.poll_peers(&http);
+                    drop(hub);
+                    std::thread::sleep(crate::army::POLL_INTERVAL);
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::error!("Couldn't start polling the other tabs' processes: {e}");
+        }
+    }
+
+    /// Asks each peer for its snapshot and new events; forgets peers no longer listed.
+    fn poll_peers(&self, http: &reqwest::blocking::Client) {
+        let Some(peers) = self.peers.lock().clone() else {
+            return;
+        };
+        let peers = peers();
+        self.entries.lock().retain(|id, entry| {
+            !matches!(entry.target, Target::Peer { .. }) || peers.iter().any(|p| p.id == *id)
+        });
+        let slow = u8::from(super::watched());
+        for peer in peers {
+            let since = self
+                .entries
+                .lock()
+                .get(&peer.id)
+                .map_or(0, |e| e.next_event);
+            let path = format!("/snapshot?since={since}&slow={slow}");
+            let reply = crate::army::api_request(
+                http,
+                peer.api,
+                &peer.token,
+                false,
+                &path,
+                Vec::new(),
+                PEER_TIMEOUT,
+            );
+            let mut entries = self.entries.lock();
+            let target = || Target::Peer {
+                api: peer.api,
+                token: peer.token.clone(),
+            };
+            let entry = entries
+                .entry(peer.id.clone())
+                .or_insert_with(|| Entry::new(peer.label.clone(), Kind::Tab, target()));
+            entry.target = target();
+            entry.kind = Kind::Tab;
+            entry.label = peer.label;
+            // Starting up (its API isn't listening yet), restarting, or busy: it goes offline.
+            let Ok(reply) = reply else { continue };
+            let snapshot = serde_json::from_value(reply["snapshot"].clone()).ok();
+            let events = serde_json::from_value(reply["events"].clone()).unwrap_or_default();
+            let next = reply["next"].as_u64().unwrap_or(since);
+            entry.record(snapshot, events, next);
+            entry.set_process(serde_json::from_value(reply["process"].clone()).ok());
+            let character = entry.character().map(str::to_owned);
+            if let Some(name) = character {
+                entries.remove(&offline_id(&name));
+            }
+        }
+    }
+
+    /// An entry's latest snapshot, by its id (Army Control reads a peer's).
+    pub fn snapshot(&self, id: &str) -> Option<Snapshot> {
+        self.entries.lock().get(id).and_then(|e| e.snapshot.clone())
+    }
+
+    /// Whether an entry is live now.
+    pub fn online(&self, id: &str) -> bool {
+        self.entries
+            .lock()
+            .get(id)
+            .is_some_and(|e| e.online(now_ms()))
     }
 
     pub fn uptime(&self) -> Duration {
@@ -479,7 +599,11 @@ impl Hub {
             })
             .collect();
         let mut entries = self.entries.lock();
-        entries.retain(|id, _| !id.starts_with("tab:") || tabs.iter().any(|t| t.0.id == *id));
+        entries.retain(|id, entry| {
+            !id.starts_with("tab:")
+                || matches!(entry.target, Target::Peer { .. })
+                || tabs.iter().any(|t| t.0.id == *id)
+        });
         for (source, snapshot, events, next) in tabs {
             let fresh = snapshot.as_ref().map(|s| s.sampled_at);
             let entry = entries.entry(source.id.clone()).or_insert_with(|| {
@@ -633,6 +757,22 @@ impl Hub {
             Control::Tab(bot) => crate::control_api::local(&bot, post, route, body),
             Control::Army(army, client) => {
                 match army.forward(&client, post, route, body.to_vec()) {
+                    Ok(value) => (200, value),
+                    Err(e) => (502, json!({ "error": e })),
+                }
+            }
+            Control::Peer { api, token } => {
+                let http = reqwest::blocking::Client::new();
+                let timeout = crate::army::COMMAND_TIMEOUT;
+                match crate::army::api_request(
+                    &http,
+                    api,
+                    &token,
+                    post,
+                    route,
+                    body.to_vec(),
+                    timeout,
+                ) {
                     Ok(value) => (200, value),
                     Err(e) => (502, json!({ "error": e })),
                 }
@@ -927,6 +1067,10 @@ impl Hub {
         let entries = self.entries.lock();
         match &entries.get(id)?.target {
             Target::Tab(bot) => bot.upgrade().map(Control::Tab),
+            Target::Peer { api, token } => entries[id].online(now_ms()).then(|| Control::Peer {
+                api: *api,
+                token: token.clone(),
+            }),
             Target::Army(army, client) => {
                 let client = client.upgrade().filter(|c| c.is_running())?;
                 Some(Control::Army(army.upgrade()?, client))

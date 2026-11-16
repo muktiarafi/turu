@@ -10,7 +10,7 @@
 use crate::engine::Step;
 use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
-use crate::shell::{Button, Mods, PointerKind, ToClient};
+use crate::shell::{Button, GridShow, Mods, PointerKind, ToClient};
 use crate::turu;
 use ruffle_core::ViewportDimensions;
 use ruffle_core::events::{
@@ -63,6 +63,9 @@ pub struct ClientScreen {
     sink: FrameSink,
     /// The picture's size in pixels and its pixels per point, while the shell shows the tab.
     shown: Option<((u32, u32), f32)>,
+    /// How it shows in Grid View: the whole window with its game in its tile (the active tab), or
+    /// only its game (another tab's tile).
+    grid: Option<GridShow>,
     target: Option<Target>,
     readback: Option<Readback>,
     events: Vec<egui::Event>,
@@ -106,6 +109,7 @@ impl ClientScreen {
             ui: TuruUi::new(),
             sink,
             shown: None,
+            grid: None,
             target: None,
             readback: None,
             events: Vec::new(),
@@ -138,6 +142,7 @@ impl ClientScreen {
                 width,
                 height,
                 scale,
+                grid,
             } => {
                 let size = (width.clamp(1, 8192), height.clamp(1, 8192));
                 let scale = if scale.is_finite() && scale > 0.0 {
@@ -155,10 +160,16 @@ impl ClientScreen {
                 }
                 self.picture_due = true;
                 self.ui_due = Some(Instant::now());
-                set_mouse(player, true);
-                turu::bot().state.lock().hidden_tab = false;
+                // Another tab's tile takes no input and runs at the tiles' rate.
+                let tile = grid.as_ref().is_some_and(|grid| !grid.active);
+                set_mouse(player, !tile);
+                turu::bot().state.lock().hidden_tab = tile;
+                set_grid(grid.as_ref());
+                self.grid = grid;
             }
             ToClient::Hide => {
+                set_grid(None);
+                self.grid = None;
                 self.shown = None;
                 self.target = None;
                 self.pressed = None;
@@ -293,13 +304,46 @@ impl ClientScreen {
         (self.sink)(width, height, pixels);
     }
 
-    /// The game's part of the picture's left and top, in pixels.
+    /// The game's part of the picture's left and top, in pixels: its tile's in Grid View.
     fn offsets(&self) -> (f32, f32) {
+        match &self.grid {
+            Some(grid) if !grid.active => return (0.0, 0.0),
+            Some(grid) => {
+                if let Some(tile) = grid.tile() {
+                    return (tile.x as f32, tile.y as f32);
+                }
+            }
+            None => {}
+        }
         let ppp = self.shown.map_or(1.0, |(_, ppp)| ppp);
         (
             crate::gui::left_width() as f32 * ppp,
             crate::gui::top_height() as f32 * ppp,
         )
+    }
+
+    /// The game's size in the picture, in pixels.
+    fn movie_size(&self, size: (u32, u32)) -> (u32, u32) {
+        if let Some(tile) = self
+            .grid
+            .as_ref()
+            .filter(|grid| grid.active)
+            .and_then(GridShow::tile)
+        {
+            return (tile.width.max(1), tile.height.max(1));
+        }
+        let (left, top) = self.offsets();
+        (
+            size.0.saturating_sub(left.round() as u32).max(1),
+            size.1.saturating_sub(top.round() as u32).max(1),
+        )
+    }
+
+    /// Whether (`x`, `y`) is on the game, not the rest of the picture.
+    fn on_game(&self, x: f32, y: f32) -> bool {
+        let (left, top) = self.offsets();
+        let size = self.shown.map_or((0, 0), |(size, _)| self.movie_size(size));
+        x >= left && y >= top && x < left + size.0 as f32 && y < top + size.1 as f32
     }
 
     fn point(&self, x: f32, y: f32) -> egui::Pos2 {
@@ -310,9 +354,7 @@ impl ClientScreen {
     /// Whether (`x`, `y`) is on Turu's UI: the rail, the bar above the game, or a window, menu or
     /// popup (the root covers the picture on egui's background layer, which doesn't count).
     fn on_ui(&self, x: f32, y: f32) -> bool {
-        let (left, top) = self.offsets();
-        x < left
-            || y < top
+        !self.on_game(x, y)
             || self
                 .egui
                 .layer_id_at(self.point(x, y))
@@ -447,10 +489,7 @@ impl ClientScreen {
         }
         self.last_draw = Instant::now();
         let (left, top) = self.offsets();
-        let movie_size = (
-            size.0.saturating_sub(left.round() as u32).max(1),
-            size.1.saturating_sub(top.round() as u32).max(1),
-        );
+        let movie_size = self.movie_size(size);
         if movie_size != self.movie_size {
             self.movie_size = movie_size;
             player.set_viewport_dimensions(ViewportDimensions {
@@ -464,6 +503,8 @@ impl ClientScreen {
             player.render();
         }
 
+        // Another tab's tile: its game alone.
+        let tile = self.grid.as_ref().is_some_and(|grid| !grid.active);
         let mut raw_input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -480,6 +521,9 @@ impl ClientScreen {
         let top_points = top / ppp;
         let ui = &mut self.ui;
         let output = self.egui.run_ui(raw_input, |root| {
+            if tile {
+                return;
+            }
             ui.show_bar(root);
             if turu::headless_mode() {
                 crate::gui::turu::show_headless_screen(root.ctx(), top_points);
@@ -524,7 +568,14 @@ impl ClientScreen {
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            // The active tab in Grid View: the other tiles show through.
+                            load: wgpu::LoadOp::Clear(
+                                if self.grid.as_ref().is_some_and(|grid| grid.active) {
+                                    wgpu::Color::TRANSPARENT
+                                } else {
+                                    wgpu::Color::BLACK
+                                },
+                            ),
                             store: wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
@@ -590,6 +641,34 @@ impl ClientScreen {
             mapped,
         });
     }
+}
+
+/// Grid View for the rest of the client: whether it's on (the bar's toggle), the tiles' labels
+/// (the active tab draws them), and the frame rate of a tile that isn't the active tab's.
+fn set_grid(grid: Option<&GridShow>) {
+    crate::grid::set_on(grid.is_some());
+    let tiles = grid
+        .filter(|grid| grid.active)
+        .map(|grid| {
+            grid.tiles
+                .iter()
+                .map(|tile| {
+                    let area = crate::grid::Tile {
+                        x: tile.x,
+                        y: tile.y,
+                        width: tile.width,
+                        height: tile.height,
+                    };
+                    (tile.id, area)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::grid::set_shell_tiles(tiles);
+    turu_bot::api::options::set_hidden_tab_fps(match grid {
+        Some(_) => crate::grid::TILE_FPS,
+        None => turu::grid_test_fps().unwrap_or(2),
+    });
 }
 
 /// Puts the game's mouse on the stage while the tab is shown, and takes it off while it isn't

@@ -108,10 +108,6 @@ impl Client {
         let _ = child.wait();
     }
 
-    fn url(&self, path_and_query: &str) -> String {
-        format!("http://{}{path_and_query}", self.api)
-    }
-
     /// Notes when the process has ended.
     fn reap(&self) -> bool {
         if self.state.lock().exited.is_some() {
@@ -555,24 +551,15 @@ impl Army {
         body: Vec<u8>,
         timeout: Duration,
     ) -> Result<Value, String> {
-        let url = client.url(path);
-        let request = if post {
-            self.http.post(url).body(body)
-        } else {
-            self.http.get(url)
-        };
-        let response = request
-            .bearer_auth(&client.token)
-            .timeout(timeout)
-            .send()
-            .map_err(|e| e.without_url().to_string())?;
-        let status = response.status().as_u16();
-        let reply = response
-            .text()
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or(Value::Null);
-        reply_result(status, reply)
+        api_request(
+            &self.http,
+            client.api,
+            &client.token,
+            post,
+            path,
+            body,
+            timeout,
+        )
     }
 
     /// The "Turu Army" thread, once: refreshes every client's state until the army is gone.
@@ -659,6 +646,51 @@ pub fn reply_result(status: u16, reply: Value) -> Result<Value, String> {
             .and_then(Value::as_str)
             .map_or_else(|| format!("HTTP {status}"), str::to_owned))
     }
+}
+
+/// Sends a command to another Turu process's control API (a shell's other tab: its address and
+/// token), as [`Army::send`] does to a launched client. Blocks as long as the route does.
+pub fn send_to_api(api: SocketAddr, token: &str, command: &Command) -> Result<Value, String> {
+    let (post, path, body) = command.request();
+    let http = reqwest::blocking::Client::new();
+    api_request(&http, api, token, post, &path, body, COMMAND_TIMEOUT)
+}
+
+/// A GET from another Turu process's control API (`/log?...`).
+pub fn get_from_api(api: SocketAddr, token: &str, path: &str) -> Result<Value, String> {
+    let http = reqwest::blocking::Client::new();
+    api_request(&http, api, token, false, path, Vec::new(), COMMAND_TIMEOUT)
+}
+
+/// A request to another Turu process's control API at `api`: the body when it succeeded, else
+/// why not.
+pub(crate) fn api_request(
+    http: &reqwest::blocking::Client,
+    api: SocketAddr,
+    token: &str,
+    post: bool,
+    path: &str,
+    body: Vec<u8>,
+    timeout: Duration,
+) -> Result<Value, String> {
+    let url = format!("http://{api}{path}");
+    let request = if post {
+        http.post(url).body(body)
+    } else {
+        http.get(url)
+    };
+    let response = request
+        .bearer_auth(token)
+        .timeout(timeout)
+        .send()
+        .map_err(|e| e.without_url().to_string())?;
+    let status = response.status().as_u16();
+    let reply = response
+        .text()
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(Value::Null);
+    reply_result(status, reply)
 }
 
 /// How long to wait between two launches: 500-900 ms (VibeSkua's batch launch).
