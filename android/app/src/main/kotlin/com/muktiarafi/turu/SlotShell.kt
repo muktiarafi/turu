@@ -209,6 +209,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         run(nativeFromSlot(current, json))
     }
 
+    /** Actions the Rust side sent of its own (keys for the slot on screen), on the main thread. */
+    fun actions(actions: String) {
+        if (!stopped) run(actions)
+    }
+
     /** Carries out the Rust side's actions, in order. */
     private fun run(actions: String) {
         val list = JSONArray(actions)

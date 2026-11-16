@@ -57,6 +57,7 @@ jni::bind_java_type! {
         fn prefer_refresh_rate(hz: jfloat),
         fn open_document(mime_types: JString, folder: JString),
         fn create_document(mime_type: JString, file_name: JString),
+        fn shell_actions(actions: JString),
     },
     native_methods {
         static raw fn native_document_picked {

@@ -4,7 +4,8 @@
 //! passwords itself, and answers each call with what the activity is to do next: a JSON list of
 //! `{"kind": "start" | "stop" | "show", "slot": n}`, `{"kind": "send", "slot": n, "json": ...}` and
 //! `{"kind": "activity", "slot": n, "json": ...}` (what only the activity does: the text field above
-//! the keyboard, links, sharing, file pickers, installing updates).
+//! the keyboard, links, sharing, file pickers, installing updates). The soft keyboard it shows and
+//! hides itself, and keys go from here to the slot on screen ([`to_shown`]).
 
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
@@ -14,7 +15,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use turu_bot::accounts::SecretStore;
-use turu_frontend::shell::ToShell;
+use turu_frontend::shell::{ToClient, ToShell};
 use turu_frontend::slots::{Action, SlotRecord, SlotShell};
 
 /// The tab list, and the data folder, while the activity runs.
@@ -51,7 +52,13 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
             }
             Action::Start(slot) => list.push(json!({ "kind": "start", "slot": slot })),
             Action::Stop(slot) => list.push(json!({ "kind": "stop", "slot": slot })),
-            Action::Show(slot) => list.push(json!({ "kind": "show", "slot": slot })),
+            Action::Show(slot) => {
+                // The tab on screen before had it up for a text box of its own.
+                crate::ui::soft_keyboard(false);
+                list.push(json!({ "kind": "show", "slot": slot }));
+            }
+            // GameActivity's text input, whose keys come here (`lib.rs`'s `shell_input`).
+            Action::Activity(_, ToShell::SoftKeyboard { show }) => crate::ui::soft_keyboard(show),
             Action::Activity(slot, message) => match serde_json::to_string(&message) {
                 Ok(text) => list.push(json!({ "kind": "activity", "slot": slot, "json": text })),
                 Err(e) => tracing::warn!("Shell: a message I can't write: {e}"),
@@ -73,6 +80,28 @@ fn with_shell(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> String {
     };
     let actions = work(shell);
     activity_actions(root, actions)
+}
+
+/// Sends the slot on screen `messages` (keys the activity got): `TuruActivity.shellActions` posts
+/// them to the activity's main thread, which sends them on as it sends touches.
+pub(crate) fn to_shown(app: &android_activity::AndroidApp, messages: Vec<ToClient>) {
+    if messages.is_empty() {
+        return;
+    }
+    let actions = with_shell(|shell| {
+        let slot = shell.shown();
+        messages
+            .into_iter()
+            .map(|message| Action::Send(slot, message))
+            .collect()
+    });
+    let sent = crate::platform::with_activity(app, |env, activity| {
+        let actions = env.new_string(&actions)?;
+        activity.shell_actions(env, &actions)
+    });
+    if let Err(e) = sent {
+        tracing::warn!("Shell: couldn't pass keys on to the tab on screen: {e}");
+    }
 }
 
 /// The first tab's flags, from `turu-args.txt` (without the app's own: every slot reads those there),

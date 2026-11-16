@@ -124,8 +124,9 @@ fn android_main(app: AndroidApp) {
     while !destroyed {
         app.poll_events(None, |event| match event {
             PollEvent::Main(MainEvent::Destroy) if shell => destroyed = true,
-            // The shell's activity hands its surface and touches to the slots itself.
-            PollEvent::Main(MainEvent::InputAvailable) if shell => drop_input(&app),
+            // The shell's activity hands its surface and touches to the slots itself; keys go
+            // from here.
+            PollEvent::Main(MainEvent::InputAvailable) if shell => shell_input(&app),
             _ if shell => {}
             PollEvent::Main(MainEvent::InitWindow { .. }) => {
                 *lock_window() = app.native_window();
@@ -169,11 +170,43 @@ pub(crate) fn start_engine(root: PathBuf) {
     });
 }
 
-/// Takes the shell's input events (keys; touches go to the slots from Kotlin) without using them.
-fn drop_input(app: &AndroidApp) {
-    if let Ok(mut inputs) = app.input_events_iter() {
-        while inputs.next(|_| InputStatus::Unhandled) {}
-    }
+/// The shell's input events: keys and what the soft keyboard committed go to the slot on screen,
+/// read here with the device's key map (a slot has no activity to read them with); touches go to
+/// the slots from Kotlin (`SlotShell.touch`). As [`forward_input`] does in process.
+fn shell_input(app: &AndroidApp) {
+    let Ok(mut inputs) = app.input_events_iter() else {
+        return;
+    };
+    let mut messages = Vec::new();
+    while inputs.next(|event| match event {
+        android_activity::input::InputEvent::KeyEvent(event) => {
+            match input::read_key(app, event).filter(|read| read.key().is_some()) {
+                Some(read) => {
+                    messages.push(turu_frontend::shell::ToClient::AndroidKey {
+                        code: read.code,
+                        down: read.down,
+                        meta: read.meta,
+                        typed: read.typed,
+                        letter: read.letter,
+                    });
+                    InputStatus::Handled
+                }
+                // Back, the volume: the system's.
+                None => InputStatus::Unhandled,
+            }
+        }
+        android_activity::input::InputEvent::TextEvent(state) => {
+            if !state.text.is_empty() {
+                app.set_text_input_state(android_activity::input::TextInputState::default());
+                messages.push(turu_frontend::shell::ToClient::Text {
+                    text: state.text.clone(),
+                });
+            }
+            InputStatus::Handled
+        }
+        _ => InputStatus::Unhandled,
+    }) {}
+    slot_shell::to_shown(app, messages);
 }
 
 pub(crate) fn lock_window() -> std::sync::MutexGuard<'static, Option<NativeWindow>> {

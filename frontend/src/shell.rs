@@ -106,6 +106,19 @@ pub enum ToClient {
         status: i32,
         message: Option<String>,
     },
+    /// Android: a key the shell's activity got (a hardware keyboard's, or the soft keyboard's
+    /// outside the field above it), for the slot on screen. Read with the device's key map there,
+    /// which a slot has no activity to ask: Android's key `code`, its meta state, the character it
+    /// types with that state, and with Ctrl the letter it is (`android/src/input.rs`).
+    AndroidKey {
+        code: u32,
+        down: bool,
+        meta: u32,
+        #[serde(default)]
+        typed: Option<char>,
+        #[serde(default)]
+        letter: Option<char>,
+    },
     /// A message this client doesn't know.
     #[serde(other)]
     Unknown,
@@ -205,6 +218,10 @@ pub enum ToShell {
     Share { subject: String, text: String },
     /// Android: an update's APK to the installer; answered with `Installed`.
     Install { path: String },
+    /// Android: one of egui's own text boxes (not typed through `FieldShow`'s field) has the focus
+    /// (`show`) or lost it: the shell's activity shows or hides the soft keyboard, whose keys come
+    /// back as `AndroidKey` and `Text`.
+    SoftKeyboard { show: bool },
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
@@ -621,6 +638,7 @@ mod tests {
             ToShell::Install {
                 path: "/data/updates/turu.apk".into(),
             },
+            ToShell::SoftKeyboard { show: true },
         ];
         let mut bytes = Vec::new();
         for message in &to_shell {
@@ -750,6 +768,13 @@ mod tests {
                 ToClient::Installed {
                     status: 2,
                     message: Some("no space".into()),
+                },
+                ToClient::AndroidKey {
+                    code: 29,
+                    down: true,
+                    meta: 0x1000,
+                    typed: None,
+                    letter: Some('a'),
                 },
                 ToClient::Hide,
             ];

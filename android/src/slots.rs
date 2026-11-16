@@ -3,7 +3,7 @@
 //! `turu-process-tabs.txt` is in the data folder, the activity's process runs no engine: it's the
 //! shell (`SlotShell.kt`, `slot_shell.rs`). These are a slot process's side: the engine's start
 //! from the slot's record (`turu_frontend::slots`), the surface handed over and taken back,
-//! touches, the shell's messages, and the slot's notification.
+//! touches, the shell's messages (keys among them), and the slot's notification.
 
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JClass, JObject, JString};
@@ -307,7 +307,37 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                 Ok(ToClient::Installed { status, message }) => {
                     turu::package_install_finished(status, message);
                 }
-                // The surface, input and size come over Binder (`SlotService`), not as messages.
+                // Keys the shell's activity got, read with its device's key map.
+                Ok(ToClient::AndroidKey {
+                    code,
+                    down,
+                    meta,
+                    typed,
+                    letter,
+                }) => {
+                    let read = crate::input::KeyRead {
+                        code,
+                        down,
+                        meta,
+                        typed,
+                        letter,
+                    };
+                    if let Some(key) = read.key() {
+                        crate::run_on_engine(move |player| {
+                            crate::with_screen(|screen| screen.key(player, &key))
+                        });
+                    }
+                }
+                // What the soft keyboard committed without keys (voice, an emoji).
+                Ok(ToClient::Text { text }) => {
+                    let keys: Vec<_> = text.chars().flat_map(crate::input::typed).collect();
+                    crate::run_on_engine(move |player| {
+                        crate::with_screen(|screen| {
+                            keys.iter().for_each(|key| screen.key(player, key))
+                        })
+                    });
+                }
+                // The surface, touches and size come over Binder (`SlotService`), not as messages.
                 Ok(_) => {}
                 Err(e) => tracing::warn!(
                     "Slot {:?}: a message from the shell I can't read: {e}",

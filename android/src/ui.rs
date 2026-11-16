@@ -52,6 +52,11 @@ static CUTOUT_RIGHT: AtomicU32 = AtomicU32::new(0);
 /// comes back as a `TextEvent` and is typed key by key (`lib.rs`, `forward_input`). These calls go
 /// to the UI thread themselves.
 pub fn soft_keyboard(show: bool) {
+    // A slot has no activity: the shell's shows it, and sends its keys back (`slots.rs`).
+    if crate::slots::slot().is_some() {
+        crate::slots::to_shell(turu_frontend::shell::ToShell::SoftKeyboard { show });
+        return;
+    }
     let Some(app) = crate::app() else {
         return;
     };

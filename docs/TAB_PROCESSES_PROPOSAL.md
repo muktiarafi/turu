@@ -472,9 +472,18 @@ Checked on the emulator (Android 16, one account on Twig):
 * **Sound:** a hidden slot was muted, and its sound came back when it was shown again.
 * **The switch off:** the app ran as before (one process, in-process tabs).
 
+* **Keys outside the native fields**: the activity gets them (a hardware keyboard's, and
+  GameActivity's text input), reads them with the device's key map, which a slot has no activity
+  for, and sends them to the slot on screen (`AndroidKey`, `Text`); Back and the volume stay the
+  system's. A slot's egui text box that isn't typed through the native field asks the shell for
+  the soft keyboard (`SoftKeyboard`, only the slot on screen's is shown; a tab switch hides it).
+  Checked on the emulator, in game: Enter as a hardware key opened the game's chat and its field
+  above the keyboard, and Back then closed it and sent the app to the background, the slot
+  running. Not run: a committed text (voice, an emoji), the soft keyboard for an egui box (every
+  Turu text box goes through the native field today), and the in-process path again after the key
+  reading was split in two.
+
 Not done yet:
-* **Keys outside the native fields:** egui's own text boxes that aren't typed through the native
-  field (GameActivity's text input) and hardware keys don't reach a slot.
 * **Crash reports from slots:** a slot's crash isn't uploaded, and Options doesn't offer Send
   Crash Reports there.
 * **Notifications:** a group summary.

@@ -323,7 +323,8 @@ impl SlotShell {
             // A hidden slot's text box (it lost the screen while it had the focus) shows nothing.
             field @ (ToShell::FieldShow { .. }
             | ToShell::FieldUpdate { .. }
-            | ToShell::FieldHide { .. }) => {
+            | ToShell::FieldHide { .. }
+            | ToShell::SoftKeyboard { .. }) => {
                 if slot == self.shown {
                     vec![Action::Activity(slot, field)]
                 } else {
@@ -658,6 +659,13 @@ mod tests {
             [Action::Activity(2, field.clone())]
         );
         assert!(shell.message(1, field).is_empty());
+        // So does its soft keyboard.
+        let keyboard = ToShell::SoftKeyboard { show: true };
+        assert_eq!(
+            shell.message(2, keyboard.clone()),
+            [Action::Activity(2, keyboard.clone())]
+        );
+        assert!(shell.message(1, keyboard).is_empty());
         // A hidden slot's update goes to the installer all the same.
         let install = ToShell::Install {
             path: "/u.apk".into(),

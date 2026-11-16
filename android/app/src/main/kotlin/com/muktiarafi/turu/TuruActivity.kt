@@ -224,6 +224,14 @@ class TuruActivity : GameActivity() {
         return super.dispatchTouchEvent(event)
     }
 
+    /**
+     * Process tabs: the shell's Rust side's actions from its own thread (keys for the slot on screen,
+     * `slot_shell.rs`'s `to_shown`), carried out on the main thread as the slots' messages are.
+     */
+    fun shellActions(actions: String) {
+        runOnUiThread { shell?.actions(actions) }
+    }
+
     /** Opens `url` in the browser (or the app for the link). Called on the engine thread (`platform.rs`). */
     fun openUrl(url: String) {
         runOnUiThread {

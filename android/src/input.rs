@@ -211,6 +211,24 @@ fn egui_key(key: &LogicalKey) -> Option<egui::Key> {
 
 /// A key event, read: None for keys neither the game nor the UI uses (volume, back).
 pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Key> {
+    read_key(app, event)?.key()
+}
+
+/// A key event as its device's key map reads it, before it's a [`Key`]: what the shell's activity
+/// sends the slot on screen (`ToClient::AndroidKey`), which has no activity to read it with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeyRead {
+    pub code: u32,
+    pub down: bool,
+    pub meta: u32,
+    /// The character it types with `meta`.
+    pub typed: Option<char>,
+    /// With Ctrl, which types nothing, the letter it is all the same.
+    pub letter: Option<char>,
+}
+
+/// Reads a key event: None for an action that's neither a press nor a release.
+pub fn read_key(app: &AndroidApp, event: &KeyEvent) -> Option<KeyRead> {
     let map = app.device_key_character_map(event.device_id()).ok();
     let character = |meta| {
         map.as_ref()
@@ -224,33 +242,47 @@ pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Key> {
     let typed = character(meta);
     // With Ctrl a key types nothing, but it's still its letter (Ctrl+A, Ctrl+V in a text field).
     let letter = typed.or_else(|| meta.ctrl_on().then(|| character(MetaState(0))).flatten());
-    let (logical_key, key_location) = match named(event.key_code()) {
-        Some(named) => named,
-        None => (LogicalKey::Character(letter?), KeyLocation::Standard),
-    };
     let down = match event.action() {
         KeyAction::Down => true,
         KeyAction::Up => false,
         _ => return None,
     };
-    let control = text_control(logical_key, meta.shift_on(), meta.ctrl_on()).filter(|_| down);
-    Some(Key {
+    Some(KeyRead {
+        code: event.key_code().into(),
         down,
-        key: KeyDescriptor {
-            physical_key: PhysicalKey::Unknown,
-            logical_key,
-            key_location,
-        },
-        typed: typed.filter(|c| down && !c.is_control()),
-        control,
-        modifiers: egui::Modifiers {
-            alt: meta.alt_on(),
-            ctrl: meta.ctrl_on(),
-            shift: meta.shift_on(),
-            mac_cmd: false,
-            command: meta.ctrl_on(),
-        },
+        meta: meta.0,
+        typed,
+        letter,
     })
+}
+
+impl KeyRead {
+    /// The key: None for keys neither the game nor the UI uses (volume, back).
+    pub fn key(&self) -> Option<Key> {
+        let (down, meta, typed) = (self.down, MetaState(self.meta), self.typed);
+        let (logical_key, key_location) = match named(Keycode::from(self.code)) {
+            Some(named) => named,
+            None => (LogicalKey::Character(self.letter?), KeyLocation::Standard),
+        };
+        let control = text_control(logical_key, meta.shift_on(), meta.ctrl_on()).filter(|_| down);
+        Some(Key {
+            down,
+            key: KeyDescriptor {
+                physical_key: PhysicalKey::Unknown,
+                logical_key,
+                key_location,
+            },
+            typed: typed.filter(|c| down && !c.is_control()),
+            control,
+            modifiers: egui::Modifiers {
+                alt: meta.alt_on(),
+                ctrl: meta.ctrl_on(),
+                shift: meta.shift_on(),
+                mac_cmd: false,
+                command: meta.ctrl_on(),
+            },
+        })
+    }
 }
 
 /// A character the soft keyboard committed (GameActivity's text input, `ui::soft_keyboard`), as

@@ -722,6 +722,7 @@ impl ShellApp {
             | ToShell::SaveFile { .. }
             | ToShell::Share { .. }
             | ToShell::Install { .. }
+            | ToShell::SoftKeyboard { .. }
             | ToShell::Unknown => {}
         }
     }

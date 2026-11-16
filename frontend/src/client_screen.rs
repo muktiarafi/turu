@@ -221,6 +221,7 @@ impl ClientScreen {
             | ToClient::DocumentPicked { .. }
             | ToClient::DocumentCreated { .. }
             | ToClient::Installed { .. }
+            | ToClient::AndroidKey { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {
