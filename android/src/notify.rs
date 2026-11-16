@@ -203,6 +203,13 @@ fn start_updates() {
 
 /// Runs `work` with `TuruService`'s class on this thread (attached to the JVM); `None` before the
 /// service started the engine or when the call failed.
+/// A process tab's slot (`slots.rs`): its calls into `TuruService`'s class (crash reports, the
+/// panic's message, the GPU's warnings) reach this process's `CrashUploads`. Not the app's
+/// notification (the slot's own is `SlotService`'s) and not alerts (`Alerts` isn't set up there).
+pub(crate) fn set_slot_vm(vm: JavaVM) {
+    let _ = SERVICE.set(vm);
+}
+
 pub(crate) fn with_service<T>(work: impl FnOnce(&mut Env) -> jni::errors::Result<T>) -> Option<T> {
     let vm = SERVICE.get()?;
     crate::attach(vm, work)
@@ -242,6 +249,11 @@ pub(crate) fn gpu_lost(why: &str) {
 /// `TuruService.alert(kind, title, text)`: a notification while the app isn't on screen
 /// (`Platform::alert`). Through the service's class, as the activity may be gone.
 pub(crate) fn alert(kind: turu_frontend::platform::Alert, title: &str, text: &str) {
+    // Not from a process tab's slot yet: its process has no `Alerts` and can't tell whether the
+    // app is on screen (`Foreground` is per process).
+    if crate::slots::slot().is_some() {
+        return;
+    }
     let Some(vm) = SERVICE.get() else {
         return;
     };

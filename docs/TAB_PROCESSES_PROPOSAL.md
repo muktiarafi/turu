@@ -429,7 +429,20 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   Android lets any of the app's processes while the app has the focus). Checked on the emulator:
   the web monitor's Open started the browser, Logs' Share opened the share sheet with the log, and
   Logs' Save wrote the file through the save picker. Not run: the "open" picker, an install, the
-  clipboard. Not offered in a slot: Send Crash Reports (crash uploads are the app service's).
+  clipboard.
+* **Crash reports from slots**: each slot's service starts Sentry in its process and reads
+  Android's exit records, as the app's service does, and its Rust side reaches them (a panic's
+  message, the GPU's warnings, Options' Send Crash Reports). The processes that start together
+  read the exit records one at a time (a file lock in `crash/`, the last exit seen written before
+  it's let go), so each exit is reported once, and a process starting keeps the memory and tabs
+  logs of the app's processes still running. Every report is tagged `process` (`main`, `c1` ...
+  `c4`), an exit's with the process that ended. The crash question is Turu's own dialog in a slot,
+  and an answer reaches the other slots at their next start. Checked on the emulator (host GPU):
+  SIGSEGV sent to slot 2 left a tombstone, slot 2 came back in 1.5 s and Sentry had one fatal event
+  tagged `c2`; four earlier kills went once each, tagged with the slot that died, though the
+  activity sent them; both live slots kept their memory logs; Options showed the switch in a slot.
+  Not in slots yet: alerts (Notify Drop, a stopped script): `Alerts` is per process and a slot
+  can't tell whether the app is on screen.
 * **While no slot draws** (a tab starting, a slot coming back after a kill, a new surface on its
   way) a plain Android view over the game area says "Starting the tab…" with a spinner, instead of
   black: it shows until a slot whose engine is up (its hello carries its control API) has the
@@ -479,17 +492,41 @@ Checked on the emulator (Android 16, one account on Twig):
   the soft keyboard (`SoftKeyboard`, only the slot on screen's is shown; a tab switch hides it).
   Checked on the emulator, in game: Enter as a hardware key opened the game's chat and its field
   above the keyboard, and Back then closed it and sent the app to the background, the slot
-  running. Not run: a committed text (voice, an emoji), the soft keyboard for an egui box (every
-  Turu text box goes through the native field today), and the in-process path again after the key
-  reading was split in two.
+  running; with process tabs off, the same Enter still opened the field in process. Not run: a
+  committed text (voice, an emoji), and the soft keyboard for an egui box (every Turu text box goes
+  through the native field today).
 
 Not done yet:
-* **Crash reports from slots:** a slot's crash isn't uploaded, and Options doesn't offer Send
-  Crash Reports there.
+* **Alerts from slots:** Notify Drop and a stopped script's alert post nothing in a slot.
 * **Notifications:** a group summary.
 * **Tab Limit** from the phone's memory (with M4's numbers; the four slots cap it meanwhile).
-* **Runs not done yet:** Accounts' "In a tab" and Army Control, and two accounts in game with Butler
-  and an army script across slots.
+* **Runs not done yet:** Accounts' "In a tab" and Army Control.
+
+Two accounts in game across slots, checked on the emulator (2026-11-16, Twig; scripts started
+through each slot's control API):
+* **Butler:** slot 2's account followed slot 1's (`/butler/follow`); slot 1 joined Yulgar and slot 2
+  was there within 5 s.
+* **Army barrier:** a script in both slots met at `bot.army.barrier` three times, one account
+  arriving 5 s after the other: the first waited each time and both went on within 0.1-0.3 s of the
+  second's arrival.
+* **A hidden slot killed while both farmed** (`kill -9`, slot 2 on screen): slot 1's new process
+  started within 1 s, was in game at 7 s, started its script again by itself at 9 s and was
+  farming at 14 s; slot 2 kept its process and killed a monster every 2-5 s throughout.
+* **The slot on screen killed while both farmed:** it came back with a new surface, logged in,
+  started its script again and farmed 70 s after the kill (its login took 38 s, against 3.5 s for
+  the hidden slot's; twice); slot 1 kept farming, more slowly alone in the room. The slow login is
+  the shown slot's engine stalling, not the network: twice for 14-16 s, it sat in
+  `vkAcquireNextImageKHR` (in the emulator's `vkAcquireImageANDROID`, waiting on its host GPU pipe:
+  a thread dump during the stall), so the game loaded its login screen and the server list late,
+  and the bot's calls waited. A slot started shown with no other running did the same (16.5 s);
+  hidden, the login screen came 0.08 s after the game loaded, and in process it didn't stall.
+  Possibly the emulator's GPU emulation; for M4: time a shown slot's login on phones, with
+  `--perf-log` (its Acquire line), before looking further.
+* Seen meanwhile: the monitor's slot often found the other slot's control API slow to answer
+  (over its 3 s for a peer: `PEER_TIMEOUT`) while both farmed on the emulator's CPU renderer, and
+  showed it offline for that poll; to read again on phones. The test script's own stalls (a hunt
+  waiting in one cell, a join after a relogin) were the script's: both slots answered, stopped
+  and moved at once.
 
 Checked: on the Mac, the desktop shell ran the launch updates and the monitor (both clients
 listed) and its clients ran neither. On the emulator, slot 1 took the monitor's lock and ran the

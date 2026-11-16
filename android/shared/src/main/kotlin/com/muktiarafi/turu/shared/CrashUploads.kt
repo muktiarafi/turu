@@ -1,7 +1,9 @@
 package com.muktiarafi.turu.shared
 
+import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import android.os.Handler
 import android.os.Looper
@@ -128,14 +130,19 @@ object CrashUploads {
         }
     }
 
-    /** An exit Sentry doesn't catch itself (low memory, a kill), with the app's report attached. */
-    /** `tabs`: the tabs open at the end and the most this run, when the tabs log had them. */
-    fun exit(reason: String, summary: String, report: File, tabs: Pair<Int, Int>? = null) {
+    /**
+     * An exit Sentry doesn't catch itself (low memory, a kill), with the app's report attached.
+     * `tabs`: the tabs open at the end and the most this run, when the tabs log had them;
+     * `process`: the process that ended (Turu's process tabs: `com.muktiarafi.turu:c1` for slot 1).
+     */
+    fun exit(reason: String, summary: String, report: File, tabs: Pair<Int, Int>? = null, process: String? = null) {
         if (!started) {
             return
         }
         Sentry.captureMessage(summary, SentryLevel.WARNING) { scope ->
             scope.setTag("exit_reason", reason)
+            // The process that ended, not the one sending this (the scope's own "process" tag).
+            process?.let { scope.setTag("process", processTag(it)) }
             tabs?.let { (open, most) ->
                 scope.setTag("tabs", open.toString())
                 scope.setTag("tabs_most", most.toString())
@@ -169,9 +176,23 @@ object CrashUploads {
         }
         // Turu's Sentry project takes both apps' reports: this tells them apart.
         app.client?.let { Sentry.setTag("client", it) }
+        // Which process crashed: the app's ("main"), or a process tab's slot ("c1" ... "c4").
+        Sentry.setTag("process", processTag(processName(context)))
         started = true
         Log.i(TAG, "Crash reports: on")
     }
+
+    /** "main" for the app's own process, else the part after its ':' ("c1" for `…turu:c1`). */
+    private fun processTag(name: String): String = name.substringAfter(':', "main")
+
+    /** This process's name (`com.muktiarafi.turu`, `com.muktiarafi.turu:c1`). */
+    private fun processName(context: Context): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Application.getProcessName()
+        } else {
+            runCatching { File("/proc/self/cmdline").readText().trimEnd('\u0000') }
+                .getOrDefault(context.packageName)
+        }
 
     /** `sendCrashReports` in the data folder's settings.json (Turu's `AppSettings`). */
     private fun consented(context: Context): Boolean {

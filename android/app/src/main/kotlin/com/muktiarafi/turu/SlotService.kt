@@ -21,6 +21,8 @@ import android.os.PowerManager
 import android.util.Log
 import android.view.Surface
 import androidx.core.os.BundleCompat
+import com.muktiarafi.turu.shared.CrashReports
+import com.muktiarafi.turu.shared.CrashUploads
 import kotlin.concurrent.thread
 
 /**
@@ -38,6 +40,10 @@ abstract class SlotService(private val slot: Int) : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Each process has its own crash reports: this slot's crashes, and how the app's
+        // processes ended since (collected once across processes), as the app's service does.
+        CrashUploads.start(applicationContext, CRASH_APP)
+        CrashReports.collect(applicationContext, CRASH_APP)
         Log.i(TAG, "Slot $slot: service created in process ${android.os.Process.myPid()}")
         instance = this
         getSystemService(NotificationManager::class.java).createNotificationChannel(

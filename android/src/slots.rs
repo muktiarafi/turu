@@ -226,6 +226,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeStartSlot<'local>(
             crate::init_logging();
             let _ = SLOT.set(slot as u32);
             let _ = VM.set(env.get_java_vm()?);
+            crate::notify::set_slot_vm(env.get_java_vm()?);
             tracing::info!("Slot {slot}: process {}", std::process::id());
             crate::java::check(env, &jni::refs::LoaderContext::FromObject(&context));
             let context = env.new_local_ref(&context)?;

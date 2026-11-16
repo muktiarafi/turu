@@ -9,6 +9,7 @@ import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,7 +25,8 @@ import java.util.Locale
  * processes are then deleted. The Rust side lists the reports (Diagnostics > Logs > Crashes,
  * `turu_frontend::crash_reports`) and shows a notice for new ones. Runs once per process, before
  * the engine starts, after [CrashUploads.start]: exits Sentry doesn't catch itself go to it
- * ([CrashUploads.exit]).
+ * ([CrashUploads.exit]). Turu's process tabs run it in each slot's process too, which can start at
+ * once: a file lock makes one process at a time read and mark the exits, so each is reported once.
  */
 object CrashReports {
     private const val TAG = "turu"
@@ -60,6 +62,16 @@ object CrashReports {
 
     private fun collectNow(context: Context) {
         val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "crash")
+        if (!dir.isDirectory && !dir.mkdirs()) {
+            throw IOException("Couldn't make $dir")
+        }
+        // The app's other processes (process tabs' slots) may be collecting at the same moment.
+        RandomAccessFile(File(dir, "collect.lock"), "rw").use { file ->
+            file.channel.lock().use { collectLocked(context, dir) }
+        }
+    }
+
+    private fun collectLocked(context: Context, dir: File) {
         val prefs = context.getSharedPreferences("crash", Context.MODE_PRIVATE)
         val last = prefs.getLong("lastExit", 0)
         val activities = context.getSystemService(ActivityManager::class.java)
@@ -80,22 +92,25 @@ object CrashReports {
                 Log.w(TAG, "Couldn't write the report of an exit", e)
             }
         }
-        prefs.edit().putLong("lastExit", newest).apply()
-        deleteMemoryLogs(dir)
+        // Written before the lock is let go (not `apply`, which writes later), for the next process.
+        prefs.edit().putLong("lastExit", newest).commit()
+        deleteMemoryLogs(dir, activities)
     }
 
     /**
      * The memory and tabs logs of earlier processes, once their reports have them (or they ended
-     * well).
+     * well). Not those of the app's processes still running (other process tabs).
      */
-    private fun deleteMemoryLogs(dir: File) {
-        val pid = android.os.Process.myPid()
-        val mine = setOf("memory-$pid.log", "tabs-$pid.log")
+    private fun deleteMemoryLogs(dir: File, activities: ActivityManager) {
+        val running = activities.runningAppProcesses.orEmpty().map { it.pid }.toSet() +
+            android.os.Process.myPid()
         dir.listFiles { file ->
-            (file.name.startsWith("memory-") || file.name.startsWith("tabs-")) && file.name.endsWith(".log") &&
-                file.name !in mine
+            val pid = PROCESS_LOG.matchEntire(file.name)?.groupValues?.get(2)?.toIntOrNull()
+            pid != null && pid !in running
         }?.forEach { it.delete() }
     }
+
+    private val PROCESS_LOG = Regex("""(memory|tabs)-(\d+)\.log""")
 
     /**
      * The tabs open at the end and the most this run, from the tabs log's last line
@@ -188,7 +203,7 @@ object CrashReports {
         if (reason != ApplicationExitInfo.REASON_CRASH && reason != ApplicationExitInfo.REASON_CRASH_NATIVE &&
             reason != ApplicationExitInfo.REASON_ANR
         ) {
-            CrashUploads.exit(reasonName(reason), summary(exit), file, tabs)
+            CrashUploads.exit(reasonName(reason), summary(exit), file, tabs, exit.processName)
         }
         Log.w(TAG, "The last run ended: ${summary(exit)} ($file)")
     }
