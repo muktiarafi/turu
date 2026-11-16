@@ -73,6 +73,57 @@ impl SlotRecord {
     }
 }
 
+/// Where a running slot's control API is (`slots/c<N>.api.json`), written when its engine starts:
+/// the slot that runs the web monitor polls the others from these when no shell lists them. The
+/// token is in the data folder as the app's own control API token is (`api-token`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotAddress {
+    pub api: String,
+    pub token: String,
+}
+
+impl SlotAddress {
+    fn file(dir: &Path, slot: u32) -> PathBuf {
+        dir.join(format!("c{slot}.api.json"))
+    }
+
+    pub fn read(dir: &Path, slot: u32) -> Option<Self> {
+        serde_json::from_str(&std::fs::read_to_string(Self::file(dir, slot)).ok()?).ok()
+    }
+
+    pub fn write(&self, dir: &Path, slot: u32) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        let text = serde_json::to_string(self).map_err(std::io::Error::other)?;
+        let temporary = dir.join(format!("c{slot}.api.json.tmp"));
+        std::fs::write(&temporary, text)?;
+        std::fs::rename(&temporary, Self::file(dir, slot))
+    }
+
+    pub fn remove(dir: &Path, slot: u32) {
+        let _ = std::fs::remove_file(Self::file(dir, slot));
+    }
+}
+
+/// The other open tabs' slots with their control APIs, from the files (for the monitor hub,
+/// without a shell): each by its record's login, else "Tab n".
+pub fn peers_from_files(dir: &Path, me: u32) -> Vec<turu_bot::monitor::hub::PeerSource> {
+    SlotRecord::read_all(dir)
+        .into_iter()
+        .filter(|&(slot, _)| slot != me)
+        .filter_map(|(slot, record)| {
+            let address = SlotAddress::read(dir, slot)?;
+            Some(turu_bot::monitor::hub::PeerSource {
+                id: format!("tab:{slot}"),
+                label: record
+                    .username()
+                    .map_or_else(|| format!("Tab {slot}"), str::to_owned),
+                api: address.api.parse().ok()?,
+                token: address.token,
+            })
+        })
+        .collect()
+}
+
 /// The value of `flag` in `args` (`--flag value` or `--flag=value`).
 fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     let mut iter = args.iter();
@@ -442,6 +493,36 @@ mod tests {
         );
         let (_, password, _) = split_args(&["--password".into(), "other".into()]);
         assert_eq!(password.as_deref(), Some("other"));
+    }
+
+    #[test]
+    fn the_other_slots_are_found_from_their_files() {
+        let dir = tempfile::tempdir().unwrap();
+        for slot in [1, 2, 3] {
+            let args = if slot == 2 {
+                open_args(Some("Alt".into()), None, None, false)
+            } else {
+                Vec::new()
+            };
+            SlotRecord { args }.write(dir.path(), slot).unwrap();
+        }
+        let address = |port: u16| SlotAddress {
+            api: format!("127.0.0.1:{port}"),
+            token: "a-token".into(),
+        };
+        address(50001).write(dir.path(), 1).unwrap();
+        address(50002).write(dir.path(), 2).unwrap();
+        // Slot 3 hasn't started (no address); slot 4 has an address but its tab is closed.
+        address(50004).write(dir.path(), 4).unwrap();
+        let peers = peers_from_files(dir.path(), 1);
+        assert_eq!(peers.len(), 1);
+        assert_eq!(
+            (peers[0].id.as_str(), peers[0].label.as_str()),
+            ("tab:2", "Alt")
+        );
+        assert_eq!(peers[0].api.port(), 50002);
+        SlotAddress::remove(dir.path(), 2);
+        assert!(peers_from_files(dir.path(), 1).is_empty());
     }
 
     #[test]

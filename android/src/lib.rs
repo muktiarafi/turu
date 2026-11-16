@@ -569,8 +569,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     );
 
     let in_slot = slots::slot().is_some();
+    // A slot shares the app's once-only jobs with the others (`turu::start_monitor_election`,
+    // `turu_bot::shared_job`); before the startup flags, which start some.
     if in_slot {
-        // Before the startup flags: the app's once-only jobs aren't a slot's.
         turu::mark_shell_tab();
     }
     // A slot starts from its record (`turu_frontend::slots`), the app from `turu-args.txt`.
@@ -617,8 +618,6 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::configure_startup();
     turu::start_api();
     restart::start();
-    // The slots share the data folder: no web monitor or update checks in them yet (who runs the
-    // app's once-only jobs with process tabs is open: docs/TAB_PROCESSES_PROPOSAL.md, M3).
     if !in_slot {
         turu::start_monitor();
         turu::start_client_updates();
@@ -680,7 +679,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     }));
     // A slot's tabs are the shell's: its requests go there instead.
     if in_slot {
-        slots::start_link();
+        slots::start_link(root);
     }
     // A window that came while the engine started up.
     if let Some(mut player) = players.get() {

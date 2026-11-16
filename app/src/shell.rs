@@ -146,7 +146,10 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
     if let Ok(file) = std::env::var("TURU_SHELL_TEST") {
         spawn_test(file, event_loop.create_proxy());
     }
-    watch_settings();
+    // Options > Application lives in the clients, which leave the web monitor and Report To here.
+    turu::follow_settings_file(true);
+    // The clients leave the launch updates (scripts, skill sets) to the shell.
+    turu::start_app_updates();
     let peers: Arc<Mutex<Vec<PeerSource>>> = Arc::default();
     let listed = peers.clone();
     turu::monitor_hub().set_peers(Arc::new(move || listed.lock().unwrap_or_else(|e| e.into_inner()).clone()));
@@ -227,31 +230,6 @@ fn spawn_acceptor(listener: TcpListener, token: String, proxy: EventLoopProxy<Sh
         });
     if let Err(e) = spawned {
         tracing::error!("Shell: couldn't start accepting clients: {e}");
-    }
-}
-
-/// Options > Application lives in the clients, which leave the web monitor and Report To to the
-/// shell: it reads `settings.json` again every 2 s and applies what changed.
-fn watch_settings() {
-    let spawned = std::thread::Builder::new()
-        .name("Turu Shell Settings".into())
-        .spawn(|| {
-            let bot = turu::bot();
-            let mut seen = bot.settings.read().clone();
-            loop {
-                std::thread::sleep(Duration::from_secs(2));
-                let Some(settings) = bot.paths.load_settings() else {
-                    continue;
-                };
-                if settings != seen {
-                    turu::apply_monitor(&settings);
-                    *bot.settings.write() = settings.clone();
-                    seen = settings;
-                }
-            }
-        });
-    if let Err(e) = spawned {
-        tracing::warn!("Shell: couldn't watch the settings: {e}");
     }
 }
 

@@ -33,6 +33,7 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
                 if let Err(e) = SlotRecord::remove(&dir, slot) {
                     tracing::warn!("Shell: couldn't remove slot {slot}'s record: {e}");
                 }
+                turu_frontend::slots::SlotAddress::remove(&dir, slot);
                 // A script it ran isn't brought back in the next tab there.
                 let _ = std::fs::remove_file(root.join(crate::restart::slot_record_file(slot)));
             }

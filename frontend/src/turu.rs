@@ -23,6 +23,7 @@ use std::thread::ThreadId;
 use std::time::Duration;
 use turu_bot::Bot;
 use turu_bot::events::BotEvent;
+use turu_bot::shared_job::Ran;
 use turu_bot::startup::Startup;
 
 #[cfg(feature = "ruffle")]
@@ -312,13 +313,36 @@ pub type ShellActions = Box<dyn Fn(ShellTabAction) + Send>;
 pub fn set_shell_tabs(tabs: Vec<ShellTab>, shown: u32) {
     *SHELL_TABS.lock().unwrap_or_else(|e| e.into_inner()) = Some((tabs, shown));
     // The other tabs, polled from now on (their processes, through their control APIs).
-    // Only while Army Control is open: the shell polls every client already, and each poll reads
-    // the client's game (and its CPU "since the last poll").
+    install_peers();
+}
+
+/// Where this process's other tabs are (`set_peer_source`); the shell's list by default.
+type PeerSource = Box<dyn Fn() -> Vec<turu_bot::monitor::hub::PeerSource> + Send>;
+static PEER_SOURCE: Mutex<Option<PeerSource>> = Mutex::new(None);
+
+/// Where this tab finds the others when there's no shell to list them (Android's slots read each
+/// other's address files).
+pub fn set_peer_source(source: PeerSource) {
+    *PEER_SOURCE.lock().unwrap_or_else(|e| e.into_inner()) = Some(source);
+}
+
+/// The other tabs' processes, for the monitor hub.
+fn peers() -> Vec<turu_bot::monitor::hub::PeerSource> {
+    match PEER_SOURCE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        Some(source) => source(),
+        None => shell_peers(),
+    }
+}
+
+/// The monitor hub polls the other tabs: while Army Control is open, and all along in the tab
+/// that runs the web monitor. Not more: the shell (or that tab) polls every client already, and
+/// each poll reads the client's game (and its CPU "since the last poll").
+fn install_peers() {
     static PEERS: std::sync::Once = std::sync::Once::new();
     PEERS.call_once(|| {
         monitor_hub().set_peers(Arc::new(|| {
-            if army_control_open() {
-                shell_peers()
+            if army_control_open() || runs_monitor() {
+                peers()
             } else {
                 Vec::new()
             }
@@ -448,8 +472,14 @@ pub fn script_repo() -> &'static Arc<turu_bot::repo::ScriptRepo> {
 /// launcher has the same data folder.
 pub fn start_updates() {
     start_headless_mode_sync();
+    start_app_updates();
+}
+
+/// The launch updates alone (skill sets, scripts), for a process without a game of its own too
+/// (the desktop's shell, whose clients leave them to it).
+pub fn start_app_updates() {
     start_skill_set_updates();
-    if headless() || leaves_app_jobs() {
+    if headless() || LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
         return;
     }
     let settings = bot().settings.read().clone();
@@ -457,10 +487,46 @@ pub fn start_updates() {
         return;
     }
     script_repo().spawn("Script update", move |repo| {
-        let message = repo.startup(&settings)?;
+        let mut done = Ok(String::new());
+        let message = match shared_update("script-update", || done = repo.startup(&settings)) {
+            Ran::Here => done?,
+            Ran::Busy => "another tab is updating the scripts".to_owned(),
+            Ran::Recent => "another tab updated the scripts lately".to_owned(),
+        };
         tracing::info!("Scripts: {message}");
         Ok(message)
     });
+}
+
+/// How long a launch update done in one tab's process counts for the others (a shell's clients,
+/// Android's slots, which start together and again after a kill).
+const SHARED_UPDATE_EVERY: Duration = Duration::from_secs(10 * 60);
+
+/// Runs a launch update once across the processes on this data folder
+/// (`turu_bot::shared_job`): not while another runs it, and in a shell's tab not if one did it
+/// lately. A lock that can't be taken (the folder can't be written) doesn't stop the update.
+fn shared_update(name: &str, job: impl FnOnce()) -> Ran {
+    let every = if shell_tab() {
+        SHARED_UPDATE_EVERY
+    } else {
+        Duration::ZERO
+    };
+    let dir = turu_bot::shared_job::dir(&bot().paths.root);
+    let mut job = Some(job);
+    match turu_bot::shared_job::run_once(&dir, name, every, || {
+        if let Some(job) = job.take() {
+            job();
+        }
+    }) {
+        Ok(ran) => ran,
+        Err(e) => {
+            tracing::warn!("{name}: no lock across Turu's processes ({e}); updating anyway");
+            if let Some(job) = job.take() {
+                job();
+            }
+            Ran::Here
+        }
+    }
 }
 
 /// How often [`start_headless_mode_sync`] looks at the tabs' options (the options pass's rate).
@@ -786,7 +852,7 @@ pub fn apply_pending_update() {
 /// AdvanceSkill Sets Updates and Auto Update AdvanceSkill Sets on, adds the community's new skill
 /// sets to the user's (`turu_bot::skills::startup_skill_sets`).
 fn start_skill_set_updates() {
-    if leaves_app_jobs() {
+    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
         return;
     }
     let settings = bot().settings.read().clone();
@@ -799,11 +865,15 @@ fn start_skill_set_updates() {
         .name("turu-skill-sets".into())
         .spawn(move || {
             let paths = &bot().paths;
-            match turu_bot::skills::startup_skill_sets(
-                paths,
-                &settings,
-                turu_bot::skills::download_skill_sets,
-            ) {
+            let mut done = Ok(None);
+            let ran = shared_update("skill-sets", || {
+                done = turu_bot::skills::startup_skill_sets(paths, &settings, turu_bot::skills::download_skill_sets);
+            });
+            if ran != Ran::Here {
+                tracing::info!("Skill sets: another tab updates them");
+                return;
+            }
+            match done {
                 Ok(Some(0)) => tracing::info!("Skill sets: up to date"),
                 Ok(Some(added)) => {
                     tracing::info!("Skill sets: added {added} from the community sets")
@@ -849,9 +919,9 @@ fn tab_sources() -> turu_bot::monitor::hub::Sources {
 /// is off (Army Control reads the clients from it).
 pub fn monitor_hub() -> &'static Arc<turu_bot::monitor::Hub> {
     MONITOR_HUB.get_or_init(|| {
-        // A shell's tab keeps no `monitor.json`: several processes would write it.
-        let file = (!shell_tab()).then(|| bot().paths.monitor_file());
-        let hub = turu_bot::monitor::Hub::new(file);
+        let hub = turu_bot::monitor::Hub::new(Some(bot().paths.monitor_file()));
+        // Only the process that runs the web monitor saves `monitor.json`.
+        hub.set_saving(runs_monitor());
         // A shell has no game of its own: its tabs are its clients' processes (`set_peers`).
         if !shell() {
             hub.set_tabs(tab_sources());
@@ -1259,6 +1329,35 @@ pub fn apply_monitor(settings: &turu_bot::settings::AppSettings) {
         });
 }
 
+/// For the process that runs the app's once-only jobs while Options > Application is in other
+/// processes too (a desktop shell, Android's slot 1): reads `settings.json` again every 2 s and
+/// applies a change to the web monitor or Report To. With `adopt` (a process without Turu's UI)
+/// the settings it holds follow the file too.
+pub fn follow_settings_file(adopt: bool) {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Settings Watch".into())
+        .spawn(move || {
+            let bot = bot();
+            let mut seen = bot.settings.read().clone();
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let Some(settings) = bot.paths.load_settings() else {
+                    continue;
+                };
+                if settings != seen {
+                    apply_monitor(&settings);
+                    if adopt {
+                        *bot.settings.write() = settings.clone();
+                    }
+                    seen = settings;
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Couldn't watch the settings file: {e}");
+    }
+}
+
 /// The settings with `--monitor`, `--report-to` and `TURU_MONITOR_PUSH_KEY` applied.
 fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::settings::AppSettings {
     let mut settings = settings.clone();
@@ -1286,7 +1385,7 @@ fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::set
 fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64) {
     use turu_bot::monitor::push::{ReportTo, Reporter};
     use turu_bot::monitor::server::{Server, load_key, load_push_key};
-    if leaves_app_jobs() {
+    if !runs_monitor() {
         return;
     }
     let settings = monitor_settings(settings);
@@ -1459,9 +1558,55 @@ pub fn shell_tab() -> bool {
 }
 
 /// Leaves the app's once-only jobs to another process: launched by Army > Accounts (its launcher
-/// runs them), or a shell's tab.
+/// runs them), or a shell's tab that doesn't hold the monitor's lock.
 fn leaves_app_jobs() -> bool {
-    LAUNCHED_BY_ARMY.load(Ordering::Relaxed) || shell_tab()
+    !runs_monitor()
+}
+
+/// The lock of the one tab that runs the web monitor among a shell's tabs that have no shell
+/// running it (Android's slots: `start_monitor_election`).
+static MONITOR_LOCK: Mutex<Option<turu_bot::shared_job::Held>> = Mutex::new(None);
+
+/// This process runs the web monitor, Report To and the client update checks: it isn't Army's
+/// launched client, and isn't a shell's tab or holds the monitor's lock.
+fn runs_monitor() -> bool {
+    !LAUNCHED_BY_ARMY.load(Ordering::Relaxed)
+        && (!shell_tab() || MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()).is_some())
+}
+
+/// Among tabs in processes of their own with no shell that stays (Android's slots): the first to
+/// take the monitor's lock runs the web monitor, Report To and the update checks, and keeps them
+/// until its process ends; the system then lets the lock go, and another tab takes it (tried every
+/// 3 s). That tab polls the others all along and follows Options changed in theirs.
+pub fn start_monitor_election() {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Monitor Election".into())
+        .spawn(|| {
+            let dir = turu_bot::shared_job::dir(&bot().paths.root);
+            loop {
+                match turu_bot::shared_job::try_hold(&dir, "monitor") {
+                    Ok(Some(held)) => {
+                        *MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()) = Some(held);
+                        tracing::info!("This tab runs the web monitor and the update checks");
+                        monitor_hub().set_saving(true);
+                        install_peers();
+                        start_monitor();
+                        start_client_updates();
+                        follow_settings_file(false);
+                        return;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!("The monitor's lock: {e}");
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_secs(3));
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Couldn't start the monitor's election: {e}");
+    }
 }
 
 /// `--client=<address>`: the shell to connect to; this process runs one tab without a window and

@@ -396,6 +396,8 @@ pub struct Hub {
     tabs: Mutex<Option<Sources>>,
     peers: Mutex<Option<Peers>>,
     file: Option<PathBuf>,
+    /// Whether this process saves `file` (one of several on a data folder may: M3).
+    saving: std::sync::atomic::AtomicBool,
     started: Instant,
     /// This process's and this machine's CPU and memory.
     resources: Mutex<Recorder>,
@@ -454,6 +456,7 @@ impl Hub {
             tabs: Mutex::new(None),
             peers: Mutex::new(None),
             file,
+            saving: std::sync::atomic::AtomicBool::new(true),
             started: Instant::now(),
             resources: Mutex::default(),
             reporters: Mutex::default(),
@@ -524,7 +527,17 @@ impl Hub {
             entry.kind = Kind::Tab;
             entry.label = peer.label;
             // Starting up (its API isn't listening yet), restarting, or busy: it goes offline.
-            let Ok(reply) = reply else { continue };
+            let reply = match reply {
+                Ok(reply) => reply,
+                Err(e) => {
+                    if entry.online(now_ms()) || entry.last_seen == 0 {
+                        tracing::info!("Monitor: {} ({}) doesn't answer: {e}", peer.id, peer.api);
+                        // Logged once until it answers again.
+                        entry.last_seen = 1;
+                    }
+                    continue;
+                }
+            };
             let snapshot = serde_json::from_value(reply["snapshot"].clone()).ok();
             let events = serde_json::from_value(reply["events"].clone()).unwrap_or_default();
             let next = reply["next"].as_u64().unwrap_or(since);
@@ -1089,8 +1102,16 @@ impl Hub {
     }
 
     /// Writes every entry that has a character to `monitor.json`, newest per character.
+    /// Whether this process saves the entries to the hub's file.
+    pub fn set_saving(&self, on: bool) {
+        self.saving.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
     pub fn save(&self) {
         let Some(file) = &self.file else { return };
+        if !self.saving.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
         let mut saved: BTreeMap<String, Saved> = BTreeMap::new();
         for entry in self.entries.lock().values() {
             let (Some(name), Some(snapshot)) = (entry.character(), &entry.snapshot) else {

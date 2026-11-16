@@ -395,8 +395,21 @@ in-process tabs stay the default; an Options switch for it is still to come).
   on). The shell makes a new surface (its view hidden and shown) when that happens. A hand-over the
   slot on screen doesn't answer in time (one still starting) is tried again three times a second
   apart, then the Rust side is told which slot is still on screen.
-* **The app's once-only jobs** (update checks, script and skill-set updates, the web monitor,
-  `monitor.json`) don't run in a shell's tab (`turu::shell_tab`: an Android slot, a desktop client).
+* **The app's once-only jobs** (decided 2026-11-16, after how VibeSkua does it: its tab host, a
+  process without a game that's always there, downloads scripts; its Manager checks for client
+  updates; skill sets are refreshed in every process, made safe by atomic writes). Android has no
+  such process (the activity can go), so jobs are sorted by kind (`turu_bot::shared_job`):
+  * **Launch updates** (scripts, skill sets): whichever process comes first, under a lock in
+    `jobs/`, with the time they were done beside it; a shell's tab skips them when another did
+    them in the last 10 minutes. On the desktop the shell does them (its clients leave them to it).
+  * **The web monitor, Report To, client update checks and `monitor.json`**: one slot, the first to
+    take `jobs/monitor.lock` (`turu::start_monitor_election`, tried every 3 s); the system lets the
+    lock go when that process ends, and another slot takes it. That slot polls the others all along
+    (their addresses from `slots/c<N>.api.json`, which each slot rewrites when it starts: the
+    shell's list goes stale once the shell is gone) and follows Options changed in theirs
+    (`turu::follow_settings_file`, the desktop shell's too). On the desktop the shell runs them.
+  * A slot says hello again once its engine has set up its control API (a shell that bound earlier
+    got one without it).
 
 Checked on the emulator (Android 16, one account on Twig):
 * **Starting:** the first start wrote slot 1's record without the password, and slot 1 logged in
@@ -431,9 +444,12 @@ Not done yet:
 * **Runs not done yet:** Accounts' "In a tab" and Army Control, and two accounts in game with Butler
   and an army script across slots.
 
-Open: who runs the app's once-only jobs with process tabs (the web monitor, update checks, the
-script repository's updates). The shell can be gone, and every slot is a full engine; while process
-tabs are on no process runs them. Also: the Keystore's key is made the first time a password is
+Checked: on the Mac, the desktop shell ran the launch updates and the monitor (both clients
+listed) and its clients ran neither. On the emulator, slot 1 took the monitor's lock and ran the
+monitor and updates, and slot 2 skipped them ("another tab updated the scripts lately"). With the
+shell killed and then slot 1, slot 2 took the monitor over within seconds and listed slot 1
+(restarted, in game) from its address file. An update found by the monitor's slot is installed
+only from the activity. Also: the Keystore's key is made the first time a password is
 kept; two processes doing that at once could each make one (the shell keeps the first tab's, so
 it's made before the slots start). The hand-over retry wasn't seen on the emulator (the slot let
 go in time); its Rust side is tested.

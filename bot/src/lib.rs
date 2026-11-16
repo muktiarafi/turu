@@ -39,6 +39,7 @@ pub mod repo;
 pub mod scheduler;
 pub mod script;
 pub mod settings;
+pub mod shared_job;
 pub mod skill_editor;
 pub mod skills;
 pub mod spammer;

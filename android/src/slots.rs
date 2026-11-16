@@ -88,6 +88,14 @@ pub(crate) fn args(root: &Path, slot: u32) -> Vec<OsString> {
             args.push(format!("--api={address}").into());
             // SAFETY: before the engine's threads exist (`start_engine`, early).
             unsafe { std::env::set_var("TURU_API_TOKEN", &token) };
+            // For the slot that runs the web monitor, when no shell lists the slots.
+            let file = turu_frontend::slots::SlotAddress {
+                api: address.to_string(),
+                token: token.clone(),
+            };
+            if let Err(e) = file.write(&turu_frontend::slots::dir(root), slot) {
+                tracing::warn!("Slot {slot}: couldn't write where its control API is: {e}");
+            }
             *API.lock().unwrap_or_else(|e| e.into_inner()) = Some((address.to_string(), token));
         }
         (Err(e), _) => tracing::warn!("Slot {slot}: no control API: {e}"),
@@ -98,9 +106,41 @@ pub(crate) fn args(root: &Path, slot: u32) -> Vec<OsString> {
 
 /// Once the engine runs in a slot: its tab requests and status go to the shell, and its
 /// notification follows the tab.
-pub(crate) fn start_link() {
+pub(crate) fn start_link(root: &Path) {
     turu_frontend::client_link::install(std::sync::Arc::new(to_shell), || true);
+    // The other slots, from their files (each rewritten when its slot starts: the shell's last list
+    // goes stale when the shell dies and a slot restarts on a new port), named as the shell's list
+    // names them.
+    let dir = turu_frontend::slots::dir(root);
+    let me = slot().unwrap_or(0);
+    turu::set_peer_source(Box::new(move || {
+        let named = turu::shell_peers();
+        let mut peers = turu_frontend::slots::peers_from_files(&dir, me);
+        for peer in &mut peers {
+            if let Some(listed) = named.iter().find(|listed| listed.id == peer.id) {
+                peer.label.clone_from(&listed.label);
+            }
+        }
+        peers
+    }));
+    // One slot runs the web monitor and the update checks: the first to take its lock.
+    turu::start_monitor_election();
+    // A shell that bound while the engine started up got a hello without the control API.
+    hello();
     start_status();
+}
+
+/// Says hello to the shell (dropped while none is bound), with the control API once the engine
+/// set it up.
+fn hello() {
+    let api = API.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    to_shell(ToShell::Hello {
+        token: String::new(),
+        pid: std::process::id(),
+        version: turu::VERSION.to_owned(),
+        api: api.as_ref().map(|(address, _)| address.clone()),
+        api_token: api.map(|(_, token)| token),
+    });
 }
 
 /// Sends a message to the shell, when one is bound (`SlotService.toShell`).
@@ -184,14 +224,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeShellBound<'local>(
     _unowned_env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    let api = API.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    to_shell(ToShell::Hello {
-        token: String::new(),
-        pid: std::process::id(),
-        version: turu::VERSION.to_owned(),
-        api: api.as_ref().map(|(address, _)| address.clone()),
-        api_token: api.map(|(_, token)| token),
-    });
+    hello();
     turu_frontend::client_link::resend_status();
 }
 
