@@ -507,11 +507,25 @@ pub fn text_box(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respo
     text_box_sized(ui, text, hint, vec2(width, target(0.0, 40.0)))
 }
 
+/// [`text_box`] with a fixed `id`, for a box whose place among its neighbours changes (something
+/// shows before it once it has text): an id from its place would change too, and the box would
+/// lose the focus.
+pub fn text_box_with_id(ui: &mut Ui, id: egui::Id, text: &mut String, hint: &str, width: f32) -> Response {
+    text_box_impl(ui, Some(id), text, hint, vec2(width, target(0.0, 40.0)))
+}
+
 /// [`text_box`] `size.x` wide and at least `size.y` tall, to line up with buttons beside it.
 pub fn text_box_sized(ui: &mut Ui, text: &mut String, hint: &str, size: Vec2) -> Response {
+    text_box_impl(ui, None, text, hint, size)
+}
+
+fn text_box_impl(ui: &mut Ui, id: Option<egui::Id>, text: &mut String, hint: &str, size: Vec2) -> Response {
+    let mut edit = egui::TextEdit::singleline(text);
+    if let Some(id) = id {
+        edit = edit.id(id);
+    }
     let mut response = ui.add(
-        egui::TextEdit::singleline(text)
-            .hint_text(hint)
+        edit.hint_text(hint)
             .desired_width(size.x)
             .min_size(vec2(0.0, size.y))
             .vertical_align(Align::Center)

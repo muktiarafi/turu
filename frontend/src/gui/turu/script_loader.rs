@@ -369,7 +369,9 @@ impl ScriptLoader {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 super::logs::log_buttons(ui, &bot.logs.script, &mut self.save, "script-log.txt");
                 let width = (ui.available_width() - 4.0).max(60.0);
-                let find = widgets::text_box(ui, self.log.filter_mut(), "Find", width);
+                // Its count shows before it once it has text: a fixed id keeps the focus.
+                let id = egui::Id::new("turu_script_log_find");
+                let find = widgets::text_box_with_id(ui, id, self.log.filter_mut(), "Find", width);
                 // egui lets go of the focus on Escape before the window is drawn.
                 if find.lost_focus() && ui.input(|i| i.key_pressed(Key::Escape)) {
                     self.log.filter_mut().clear();
