@@ -76,19 +76,20 @@ class TuruActivity : GameActivity() {
         }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         started = true
-        // M1 spike: with turu-slots.txt the engines run in the slot services' processes, and
-        // this activity is only their shell (SlotShell).
+        // Before the shell: it keeps a new tab's password with the Keystore.
+        Storage.init(this)
+        // Process tabs (M3): with turu-process-tabs.txt the engines run in the slot services'
+        // processes, and this activity is only their shell (SlotShell).
         val files = getExternalFilesDir(null) ?: filesDir
-        if (File(files, "turu-slots.txt").exists()) {
+        if (File(files, "turu-process-tabs.txt").exists()) {
             val view = mSurfaceView
             if (view != null) {
-                shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start() }
+                shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start(files.absolutePath) }
                 handleSlotIntent(intent)
             }
         } else {
             TuruService.start(this)
         }
-        Storage.init(this)
         // Back goes to the background like Home, instead of closing the activity: the game and a
         // script keep running either way, but this keeps the screen as it was. AndroidX's
         // dispatcher: Android 13+'s back callback (and its predictive back) and older Back alike.
@@ -276,7 +277,7 @@ class TuruActivity : GameActivity() {
         }
     }
 
-    /** M1 spike: the slot shell, while turu-slots.txt is in the data folder. */
+    /** The shell over the process tabs, while turu-process-tabs.txt is in the data folder. */
     private var shell: SlotShell? = null
 
     override fun onNewIntent(intent: Intent) {
@@ -285,22 +286,16 @@ class TuruActivity : GameActivity() {
     }
 
     /**
-     * M1 spike's adb controls (`am start -n com.muktiarafi.turu/.TuruActivity ...`): `--ei slot N`
-     * shows slot N; `--ei lock N --ei lockAction A` runs the file-lock probe in slot N (1 take,
-     * 2 let go); `--ei restartSlot N --ei restartDelay S` stops slot N and starts it again after S s.
+     * Process tabs' adb controls (`am start -n com.muktiarafi.turu/.TuruActivity ...`), as the tab
+     * strip's: `--ei slot N` shows slot N's tab, `--ei openTab 1` opens one at the login screen,
+     * `--ei closeTab N` closes slot N's.
      */
     private fun handleSlotIntent(intent: Intent?) {
         val shell = shell ?: return
         val extras = intent?.extras ?: return
-        if (extras.containsKey("slot")) shell.switchTo(extras.getInt("slot"))
-        if (extras.containsKey("lock")) {
-            val slot = extras.getInt("lock")
-            val action = extras.getInt("lockAction", 1)
-            thread(name = "Turu Lock Probe") { shell.lockProbe(slot, action) }
-        }
-        if (extras.containsKey("restartSlot")) {
-            shell.restartLater(extras.getInt("restartSlot"), extras.getInt("restartDelay", 30) * 1000L)
-        }
+        if (extras.containsKey("slot")) shell.asShown("""{"type":"select_tab","id":${extras.getInt("slot")}}""")
+        if (extras.containsKey("openTab")) shell.asShown("""{"type":"open_tab"}""")
+        if (extras.containsKey("closeTab")) shell.asShown("""{"type":"close_tab","id":${extras.getInt("closeTab")}}""")
     }
 
     override fun onDestroy() {

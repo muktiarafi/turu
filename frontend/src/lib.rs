@@ -6,6 +6,7 @@
 
 #[cfg(feature = "ruffle")]
 pub mod capture;
+pub mod client_link;
 #[cfg(feature = "ruffle")]
 pub mod client_screen;
 pub mod crash_reports;
@@ -29,6 +30,7 @@ pub mod players;
 pub mod process_memory;
 pub mod saved_tabs;
 pub mod shell;
+pub mod slots;
 pub mod tabs_log;
 pub mod touch;
 pub mod turu;

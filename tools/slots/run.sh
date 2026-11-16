@@ -2,7 +2,8 @@
 # M1 spike on a phone (docs/TAB_PROCESSES_PROPOSAL.md, "M1 results"): memory of two accounts in
 # one process (tabs) against two slot processes, switching, a slot killed, the shell killed, the
 # backoff of repeated kills and the file-lock probe. Needs the spike's debug APK installed
-# (`cd android && ./gradlew assembleDebug`, branch spike/m1-slots), adb with one phone attached,
+# (`cd android && ./gradlew assembleDebug`, branch spike/m1-slots: M3's slots start from records
+# and lost the spike's lock probe), adb with one phone attached,
 # and two accounts: put each one's flags in the data folder first, one per line, as turu-args.txt:
 #
 #   turu-args-c1.txt   --user <account 1>  --password <...>  --server <a quiet server>

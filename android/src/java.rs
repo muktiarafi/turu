@@ -160,10 +160,22 @@ jni::bind_java_type! {
     rust_type_vis = pub(crate),
     java_type = com.muktiarafi.turu.SlotService,
     native_methods_export = false,
+    methods {
+        static fn to_shell(json: JString),
+        static fn status(title: JString, text: JString, awake: jboolean),
+    },
     native_methods {
         static raw fn native_start_slot {
             sig = (context: android.content.Context, files_dir: JString, slot: jint) -> void,
             fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeStartSlot,
+        },
+        static raw fn native_shell_bound {
+            sig = () -> void,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeShellBound,
+        },
+        static raw fn native_from_shell {
+            sig = (json: JString) -> void,
+            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeFromShell,
         },
         static raw fn native_attach {
             sig = (surface: android.view.Surface, density: jfloat) -> jint,
@@ -181,9 +193,30 @@ jni::bind_java_type! {
             sig = (kind: jint, id: jint, x: jfloat, y: jfloat) -> void,
             fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeTouch,
         },
-        static raw fn native_lock_probe {
-            sig = (action: jint) -> jint,
-            fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeLockProbe,
+    },
+}
+
+jni::bind_java_type! {
+    rust_type = SlotShell,
+    rust_type_vis = pub(crate),
+    java_type = com.muktiarafi.turu.SlotShell,
+    native_methods_export = false,
+    native_methods {
+        static raw fn native_shell_start {
+            sig = (files_dir: JString) -> JString,
+            fn = crate::slot_shell::Java_com_muktiarafi_turu_SlotShell_nativeShellStart,
+        },
+        static raw fn native_from_slot {
+            sig = (slot: jint, json: JString) -> JString,
+            fn = crate::slot_shell::Java_com_muktiarafi_turu_SlotShell_nativeFromSlot,
+        },
+        static raw fn native_slot_gone {
+            sig = (slot: jint) -> JString,
+            fn = crate::slot_shell::Java_com_muktiarafi_turu_SlotShell_nativeSlotGone,
+        },
+        static raw fn native_still_shown {
+            sig = (slot: jint) -> JString,
+            fn = crate::slot_shell::Java_com_muktiarafi_turu_SlotShell_nativeStillShown,
         },
     },
 }
@@ -197,6 +230,7 @@ pub(crate) fn check(env: &mut Env, loader: &LoaderContext) {
         ("TuruService", TuruServiceAPI::get(env, loader).map(drop)),
         ("Storage", StorageAPI::get(env, loader).map(drop)),
         ("SlotService", SlotServiceAPI::get(env, loader).map(drop)),
+        ("SlotShell", SlotShellAPI::get(env, loader).map(drop)),
     ];
     let count = checked.len();
     let failures: Vec<String> = checked

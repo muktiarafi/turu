@@ -44,8 +44,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- M1 spike (docs/TAB_PROCESSES_PROPOSAL.md): an account's engine in a process of its own,
-             while turu-slots.txt is in the data folder. -->
+        <!-- Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): each tab's engine in a process of its
+             own, while turu-process-tabs.txt is in the data folder (SlotService.kt). -->
         <service
             android:name=".Slot1Service"
             android:exported="false"
@@ -60,6 +60,24 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:process=":c2">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
+        <service
+            android:name=".Slot3Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c3">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
+        <service
+            android:name=".Slot4Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c4">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Runs a game client and its bot script while the app is in the background" />

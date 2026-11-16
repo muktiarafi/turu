@@ -97,16 +97,16 @@ fn can_start(bot: &Bot) -> bool {
 
 /// What the notification shows.
 #[derive(Clone, PartialEq)]
-struct Status {
-    title: String,
-    text: String,
+pub(crate) struct Status {
+    pub(crate) title: String,
+    pub(crate) text: String,
     /// The active tab's script runs (Pause and Stop act on it).
     running: bool,
     paused: bool,
     /// The active tab's script is loaded and can start (Start).
     startable: bool,
     /// Some tab's script runs: the wake lock is held.
-    awake: bool,
+    pub(crate) awake: bool,
 }
 
 /// The tab's script's name, while one is loaded.
@@ -135,7 +135,8 @@ fn tab_line(bot: &Bot, named: bool) -> String {
     }
 }
 
-fn status() -> Status {
+/// The notification's title and text, and whether the CPU stays awake (a slot's too).
+pub(crate) fn status() -> Status {
     let bot = turu::bot();
     let tabs = turu::tabs();
     let running = bot.scripts.is_running();

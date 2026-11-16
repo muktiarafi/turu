@@ -49,6 +49,8 @@ static SCRIPT_REPO: OnceLock<Arc<turu_bot::repo::ScriptRepo>> = OnceLock::new();
 static LAUNCHED_BY_ARMY: AtomicBool = AtomicBool::new(false);
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 static HEADLESS: AtomicBool = AtomicBool::new(false);
+/// This process is one of a shell's tabs: a desktop client or an Android slot (M3).
+static SHELL_TAB: AtomicBool = AtomicBool::new(false);
 /// `--client=<address>`: the shell this process is a client of (docs/TAB_PROCESSES_PROPOSAL.md).
 static CLIENT_OF: Mutex<Option<String>> = Mutex::new(None);
 /// `--shell`: this process is a shell over client processes.
@@ -447,7 +449,7 @@ pub fn script_repo() -> &'static Arc<turu_bot::repo::ScriptRepo> {
 pub fn start_updates() {
     start_headless_mode_sync();
     start_skill_set_updates();
-    if headless() || LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+    if headless() || leaves_app_jobs() {
         return;
     }
     let settings = bot().settings.read().clone();
@@ -520,7 +522,7 @@ fn sync_headless_mode(
 /// launched by Army > Accounts skip it (their launcher checks).
 pub fn start_client_updates() {
     static STARTED: std::sync::Once = std::sync::Once::new();
-    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+    if leaves_app_jobs() {
         return;
     }
     STARTED.call_once(|| {
@@ -784,7 +786,7 @@ pub fn apply_pending_update() {
 /// AdvanceSkill Sets Updates and Auto Update AdvanceSkill Sets on, adds the community's new skill
 /// sets to the user's (`turu_bot::skills::startup_skill_sets`).
 fn start_skill_set_updates() {
-    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+    if leaves_app_jobs() {
         return;
     }
     let settings = bot().settings.read().clone();
@@ -847,8 +849,8 @@ fn tab_sources() -> turu_bot::monitor::hub::Sources {
 /// is off (Army Control reads the clients from it).
 pub fn monitor_hub() -> &'static Arc<turu_bot::monitor::Hub> {
     MONITOR_HUB.get_or_init(|| {
-        // A shell's client keeps no `monitor.json`: the shell's hub does, for every tab.
-        let file = client_of().is_none().then(|| bot().paths.monitor_file());
+        // A shell's tab keeps no `monitor.json`: several processes would write it.
+        let file = (!shell_tab()).then(|| bot().paths.monitor_file());
         let hub = turu_bot::monitor::Hub::new(file);
         // A shell has no game of its own: its tabs are its clients' processes (`set_peers`).
         if !shell() {
@@ -1284,7 +1286,7 @@ fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::set
 fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64) {
     use turu_bot::monitor::push::{ReportTo, Reporter};
     use turu_bot::monitor::server::{Server, load_key, load_push_key};
-    if LAUNCHED_BY_ARMY.load(Ordering::Relaxed) {
+    if leaves_app_jobs() {
         return;
     }
     let settings = monitor_settings(settings);
@@ -1442,6 +1444,24 @@ pub fn lan_address() -> Option<std::net::IpAddr> {
 /// `--headless` was given: run without a window.
 pub fn headless() -> bool {
     HEADLESS.load(Ordering::Relaxed)
+}
+
+/// Marks this process as one of a shell's tabs (an Android slot; a desktop client is one by
+/// `--client`).
+pub fn mark_shell_tab() {
+    SHELL_TAB.store(true, Ordering::Relaxed);
+}
+
+/// This process is one of a shell's tabs: a desktop client or an Android slot. The app's
+/// once-only jobs (update checks, the web monitor, `monitor.json`) aren't its.
+pub fn shell_tab() -> bool {
+    SHELL_TAB.load(Ordering::Relaxed) || client_of().is_some()
+}
+
+/// Leaves the app's once-only jobs to another process: launched by Army > Accounts (its launcher
+/// runs them), or a shell's tab.
+fn leaves_app_jobs() -> bool {
+    LAUNCHED_BY_ARMY.load(Ordering::Relaxed) || shell_tab()
 }
 
 /// `--client=<address>`: the shell to connect to; this process runs one tab without a window and

@@ -322,6 +322,11 @@ impl Screen {
         }
     }
 
+    /// Draws the UI again soon (the shell's tab list changed, say).
+    pub fn request_repaint(&mut self) {
+        self.ui_due = Some(Instant::now());
+    }
+
     /// Whether there's a window to draw in.
     pub fn shown(&self) -> bool {
         self.surface.is_some()

@@ -43,6 +43,9 @@ url = { workspace = true }
 ruffle_http_cache = { path = "../ruffle/http-cache" }
 reqwest = { workspace = true, features = ["blocking", "cookies"] }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = ["ruffle"]
 # The game in Ruffle: the player <-> bot bridge, the windowless loop, the tabs' players, the

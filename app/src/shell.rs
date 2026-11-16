@@ -214,6 +214,7 @@ fn spawn_acceptor(listener: TcpListener, token: String, proxy: EventLoopProxy<Sh
                         token: given,
                         pid,
                         version,
+                        ..
                     })) if given == token => {
                         tracing::info!("Shell: client {pid} (Turu {version}) connected");
                         if proxy.send_event(ShellEvent::Connected { pid, stream }).is_err() {
@@ -716,16 +717,7 @@ impl ShellApp {
                 script,
                 run_script,
             } => {
-                let mut args = Vec::new();
-                if let Some(user) = username.filter(|u| !u.trim().is_empty()) {
-                    args.extend(["--user".into(), user]);
-                }
-                if let Some(server) = server.filter(|s| !s.trim().is_empty()) {
-                    args.extend(["--server".into(), server]);
-                }
-                if let Some(script) = script.filter(|s| !s.trim().is_empty()) {
-                    args.extend([if run_script { "--run-script" } else { "--load-script" }.into(), script]);
-                }
+                let args = turu_frontend::slots::open_args(username, server, script, run_script);
                 self.open_tab(args, password);
             }
             ToShell::Status { label, busy } => {

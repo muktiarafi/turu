@@ -364,6 +364,80 @@ file differs between the two until they're merged.
   across slots, an army script with `bot.army.barrier` across two slots, one slot killed and back
   in game with its script while the other kept farming.
 
+#### M3 so far (2026-11-16, branch `m3-android-tabs`, on M5 and the M1 spike)
+
+Built: process tabs behind a switch file, `turu-process-tabs.txt` in the data folder (the
+in-process tabs stay the default; an Options switch for it is still to come).
+
+* **Slot records** (`turu_frontend::slots`): `slots/c<N>.json`, a tab's startup flags, written when
+  it opens and removed when it closes; never a password (`--password` in either form is taken out
+  of `turu-args.txt`'s flags for the first tab), and never the app's own flags (`--graphics`,
+  `--safe-drawing`, the logs'), which every slot reads from `turu-args.txt`. A slot logs in with Accounts' password,
+  else the Keystore's copy the shell kept for that slot (`@slot:<N>`). A slot's script is brought
+  back after a kill as the app's is (`restart.rs`, with its own `android-restart-c<N>.txt`).
+* **The shell's logic** is plain Rust, tested on the desktop (`slots::SlotShell`): the tab list from
+  the records and the slots bound, open (the first free slot of four), select, close (never the
+  last), a dead slot listed as starting. `slot_shell.rs` runs it in the activity's process and
+  answers each call with the activity's actions; `SlotShell.kt` carries them out (start, stop,
+  bind, hand the surface over, pass messages on). The first tab comes from `turu-args.txt`, its
+  `--password` moved to the Keystore.
+* **Shell and slots talk in M2's messages** (`turu_frontend::shell`), carried by the Binder
+  `Messenger` the surface already uses (not a socket: Binder tells each side when the other dies,
+  and a slot needs no address to find a new shell). A slot says hello with its control API (a
+  free port and its own token), so the strip, Army Control and the monitor hub of each slot see
+  the others as on the desktop. The tab's side is `turu_frontend::client_link`, shared with the
+  desktop's clients.
+* **Slots**: four in the manifest (`:c1` ... `:c4`), each with its own notification (grouped) and a
+  wake lock held only while its script runs; a closed tab's process ends with its service. A hidden
+  slot is muted and frees its spare textures, as a backgrounded app does today.
+* **The surface after a death**: a slot that dies while drawing stays the window's producer, and the
+  next one's Vulkan surface on it is refused (`ERROR_NATIVE_WINDOW_IN_USE_KHR`, which wgpu panics
+  on). The shell makes a new surface (its view hidden and shown) when that happens. A hand-over the
+  slot on screen doesn't answer in time (one still starting) is tried again three times a second
+  apart, then the Rust side is told which slot is still on screen.
+* **The app's once-only jobs** (update checks, script and skill-set updates, the web monitor,
+  `monitor.json`) don't run in a shell's tab (`turu::shell_tab`: an Android slot, a desktop client).
+
+Checked on the emulator (Android 16, one account on Twig):
+* **Starting:** the first start wrote slot 1's record without the password, and slot 1 logged in
+  from it.
+* **Opening a second tab** (adb, as the strip's "+") started slot 2 at the login screen, shown.
+  Its strip listed both tabs from the shell's list.
+* **Switching:** a tap on the strip's other tab switched to slot 1 in 65 ms, still in game.
+* **Kills:**
+  * Slot 2 killed while hidden: Android started it again within a second, and the shell bound it
+    again.
+  * Slot 1 killed while on screen and in game: the shell made a new surface, and slot 1 came back,
+    took it and logged in again. The first try, before the new surface, crash-looped on "window in
+    use".
+  * The shell killed, then slot 1: slot 1 came back with no shell and logged in again; the app
+    opened afterwards showed it in game.
+  * The shell's process killed: both slots kept running and let its surface go. Opening the app
+    again rebuilt both tabs from their records, with slot 1 still in game and no relogin.
+* **Closing tab 2** stopped its service, removed its record and ended its process, and slot 1 was
+  shown again.
+* **Sound:** a hidden slot was muted, and its sound came back when it was shown again.
+* **The switch off:** the app ran as before (one process, in-process tabs).
+
+Not done yet:
+* **The keyboard and the text fields:** in a slot, the game's and Turu's text fields need the
+  activity's `SurfaceField`. A slot gets in game only from a saved login.
+* **The other Platform calls through the shell:** the file picker, sharing, links and installing
+  updates do nothing in a slot.
+* **Notifications:** a group summary.
+* **`BIND_WAIVE_PRIORITY`** on hidden slots.
+* **Memory and limits:** Android's memory levels to the slots, and Tab Limit from the phone's memory.
+* **The Options switch** for process tabs.
+* **Runs not done yet:** Accounts' "In a tab" and Army Control, and two accounts in game with Butler
+  and an army script across slots.
+
+Open: who runs the app's once-only jobs with process tabs (the web monitor, update checks, the
+script repository's updates). The shell can be gone, and every slot is a full engine; while process
+tabs are on no process runs them. Also: the Keystore's key is made the first time a password is
+kept; two processes doing that at once could each make one (the shell keeps the first tab's, so
+it's made before the slots start). The hand-over retry wasn't seen on the emulator (the slot let
+go in time); its Rust side is tested.
+
 ### M4: Android on phones
 
 * **Done when** on real phones (a 4 GB one and a vendor with its own manager): two or three slots

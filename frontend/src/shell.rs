@@ -82,11 +82,16 @@ pub enum ToClient {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToShell {
-    /// The first message: the shell's token, and who this is.
+    /// The first message: the shell's token, and who this is. An Android slot gives its control
+    /// API too (a desktop client's is the shell's choice, M3).
     Hello {
         token: String,
         pid: u32,
         version: String,
+        #[serde(default)]
+        api: Option<String>,
+        #[serde(default)]
+        api_token: Option<String>,
     },
     /// A picture of the tab, its `len` bytes of BGRA pixels right after this message.
     Frame {
@@ -278,6 +283,8 @@ pub fn connect(address: &str, token: &str) -> io::Result<(TcpStream, TcpStream)>
             token: token.to_owned(),
             pid: std::process::id(),
             version: crate::turu::VERSION.to_owned(),
+            api: None,
+            api_token: None,
         },
         None,
     )?;

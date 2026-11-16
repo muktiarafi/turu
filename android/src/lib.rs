@@ -27,6 +27,7 @@ mod platform;
 mod restart;
 mod saf;
 mod screen;
+mod slot_shell;
 mod slots;
 mod storage;
 use turu_frontend::saved_tabs as tabs;
@@ -108,11 +109,12 @@ fn android_main(app: AndroidApp) {
         .external_data_path()
         .or_else(|| app.internal_data_path())
         .expect("Android gives every app a files folder");
-    // M1 spike: the slot services' processes run the engines; this one is only the shell.
-    let shell = slots::spike_on(&root);
+    // Process tabs (M3): the slot services' processes run the engines; this one is only the
+    // shell (`SlotShell.kt`, `slot_shell.rs`).
+    let shell = slots::on(&root);
     if shell {
         tracing::info!(
-            "Slots on ({}): no engine in the activity's process",
+            "Process tabs on ({}): no engine in the activity's process",
             slots::SWITCH_FILE
         );
     } else {
@@ -567,8 +569,15 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     );
 
     let in_slot = slots::slot().is_some();
-    let args_file = slots::args_file(root).unwrap_or_else(|| root.join(ARGS_FILE));
-    let mut args = read_args(&args_file);
+    if in_slot {
+        // Before the startup flags: the app's once-only jobs aren't a slot's.
+        turu::mark_shell_tab();
+    }
+    // A slot starts from its record (`turu_frontend::slots`), the app from `turu-args.txt`.
+    let mut args = match slots::slot() {
+        Some(slot) => slots::args(root, slot),
+        None => read_args(&root.join(ARGS_FILE)),
+    };
     let graphics = take_graphics(&mut args);
     let safe_drawing =
         take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
@@ -577,9 +586,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
     let releases_url = take_value(&mut args, "--releases-url");
-    if !in_slot {
-        restart::prepare(&mut args);
-    }
+    restart::prepare(&mut args);
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!(
@@ -609,10 +616,10 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     turu::configure_startup();
     turu::start_api();
-    // A slot shares the data folder with the other: one web monitor and update check, the
-    // restart and saved tabs left to the normal app (M1 spike).
+    restart::start();
+    // The slots share the data folder: no web monitor or update checks in them yet (who runs the
+    // app's once-only jobs with process tabs is open: docs/TAB_PROCESSES_PROPOSAL.md, M3).
     if !in_slot {
-        restart::start();
         turu::start_monitor();
         turu::start_client_updates();
     }
@@ -671,6 +678,10 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             .lock()
             .is_ok_and(|sender| sender.send(EngineEvent::Tab(request)).is_ok())
     }));
+    // A slot's tabs are the shell's: its requests go there instead.
+    if in_slot {
+        slots::start_link();
+    }
     // A window that came while the engine started up.
     if let Some(mut player) = players.get() {
         attach_surface(&mut player);
@@ -850,6 +861,15 @@ pub(crate) fn save_switch(file: &str, on: bool) {
     if let Err(e) = result {
         tracing::warn!("Couldn't save {}: {e}", path.display());
     }
+}
+
+/// `turu-args.txt`'s arguments as text, for the process tabs' records (`slots.rs`,
+/// `slot_shell.rs`).
+pub(crate) fn args_lines(root: &Path) -> Vec<String> {
+    read_args(&root.join(ARGS_FILE))
+        .into_iter()
+        .filter_map(|arg| arg.into_string().ok())
+        .collect()
 }
 
 /// `turu-args.txt`'s arguments: one per line, without blank lines and `#` comments. None when

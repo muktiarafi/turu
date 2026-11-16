@@ -84,8 +84,18 @@ impl Record {
     }
 }
 
+/// The app's record, or a slot's own (`android-restart-c<N>.txt`, process tabs).
 fn record_file() -> PathBuf {
-    turu_bot::paths::Paths::new().root.join(RECORD_FILE)
+    let root = turu_bot::paths::Paths::new().root;
+    match crate::slots::slot() {
+        Some(slot) => root.join(slot_record_file(slot)),
+        None => root.join(RECORD_FILE),
+    }
+}
+
+/// Slot `slot`'s record's name: the shell removes it when it opens a new tab there.
+pub(crate) fn slot_record_file(slot: u32) -> String {
+    format!("android-restart-c{slot}.txt")
 }
 
 fn read_record() -> Option<Record> {
@@ -113,7 +123,8 @@ fn saved_password(username: &str) -> Option<String> {
 /// On a windowless restart, adds the startup flags that bring the remembered script back (a
 /// login, when `args` has none, and `--run-script`), before `turu::take_startup_args`.
 pub(crate) fn prepare(args: &mut Vec<OsString>) {
-    if !RESTARTED.load(Ordering::Relaxed) {
+    // A slot's every start but its tab's first is a restart; its first has no record yet.
+    if !RESTARTED.load(Ordering::Relaxed) && crate::slots::slot().is_none() {
         return;
     }
     let Some(record) = read_record() else {
