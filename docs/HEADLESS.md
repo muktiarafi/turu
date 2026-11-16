@@ -362,7 +362,7 @@ It also writes the samples to `<log>.csv`.
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--client=<address>` | Run one tab without a window and draw it for a shell at `<address>` (needs `TURU_SHELL_TOKEN`; docs/TAB_PROCESSES_PROPOSAL.md, M2). Quits when the shell closes. |
-| `--shell` | A window that runs its tab in a `--client` process and shows it (M2: one tab), passing it the other flags. |
+| `--shell` | A window that runs each tab in a `--client` process and shows the one selected; the first tab gets the other flags. A dead client is started again (docs/TAB_PROCESSES_PROPOSAL.md, M5). `TURU_SHELL_TEST=<file>` scripts it for tests. |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
 | `--api[=<address>]` | The control API, default `127.0.0.1:9091`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |
@@ -371,6 +371,8 @@ It also writes the samples to `<log>.csv`.
 | Variable | What |
 |---|---|
 | `TURU_PASSWORD` | The password for `--user`. |
+| `TURU_SHELL_TOKEN` | Set by `--shell` for its clients: the token a `--client` says hello with. |
+| `TURU_SHELL_TEST` | With `--shell`: a file of test steps (`wait`, `open`, `select`, `close`, `kill`, `click`, `dump`; `app/src/shell.rs`). |
 | `TURU_DATA_DIR` | The data folder. |
 | `TURU_API_TOKEN` | The control API token (32+ characters); else the data folder's `api-token`. |
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |

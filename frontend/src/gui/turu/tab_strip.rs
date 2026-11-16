@@ -2,11 +2,13 @@
 //! one tab per game client, named after its character, with a dot while its script or Auto
 //! Attack runs ("!" when its script or Butler waits for you), "×" to close it, and "+" for a
 //! new one at the login screen. On a touch screen the tabs are taller and only the active one
-//! has its "×" (a finger aimed at a tab would close it otherwise).
+//! has its "×" (a finger aimed at a tab would close it otherwise). In a client process (`--client`)
+//! the tabs are the shell's, each another process (docs/TAB_PROCESSES_PROPOSAL.md, M5): the strip
+//! shows the shell's list and asks the shell to switch or close.
 
 use super::theme::{ACCENT, EDGE, HOVER, MUTED, PANEL, SUCCESS, TEXT, TRACK, WARNING};
 use crate::gui::tab_strip_height;
-use crate::turu::{self, TabRequest};
+use crate::turu::{self, ShellTabAction, TabRequest};
 use egui::{Align2, Color32, CornerRadius, FontId, Frame, Margin, Panel, RichText, ScrollArea, Sense, Ui, pos2, vec2};
 
 /// The widest a tab gets; longer names are cut.
@@ -37,14 +39,26 @@ impl TabStrip {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 2.0;
-                            let active = turu::active_tab();
-                            for (tab, bot) in turu::tabs() {
-                                let busy = super::busy(&bot);
-                                let waits = bot
-                                    .scripts
-                                    .waits_for()
-                                    .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"));
-                                tab_button(ui, tab, &turu::tab_label(&bot), tab == active, busy, waits);
+                            if let Some((tabs, shown)) = turu::shell_tabs() {
+                                for tab in tabs {
+                                    let label = match &tab.down {
+                                        Some(why) => format!("{} ({why})", tab.label),
+                                        None => tab.label.clone(),
+                                    };
+                                    let waits = tab.down.as_deref();
+                                    tab_button(ui, Target::Shell(tab.id), &label, tab.id == shown, tab.busy, waits);
+                                }
+                            } else {
+                                let active = turu::active_tab();
+                                for (tab, bot) in turu::tabs() {
+                                    let busy = super::busy(&bot);
+                                    let waits = bot
+                                        .scripts
+                                        .waits_for()
+                                        .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"));
+                                    let label = turu::tab_label(&bot);
+                                    tab_button(ui, Target::Local(tab), &label, tab == active, busy, waits);
+                                }
                             }
                             let plus_size = super::widgets::target(0.0, tab_strip_height() as f32 - 3.0);
                             let plus = ui
@@ -65,7 +79,14 @@ impl TabStrip {
     }
 }
 
-fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bool, waits: Option<&str>) {
+/// A tab: this window's, or the shell's (in a client).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Target {
+    Local(turu::TabId),
+    Shell(u32),
+}
+
+fn tab_button(ui: &mut Ui, tab: Target, label: &str, active: bool, busy: bool, waits: Option<&str>) {
     let height = tab_strip_height() as f32 - 3.0;
     let galley = ui
         .painter()
@@ -156,15 +177,26 @@ fn tab_button(ui: &mut Ui, tab: turu::TabId, label: &str, active: bool, busy: bo
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     if close.is_some_and(|close| close.on_hover_text("Close this tab (stops its script)").clicked()) {
-        turu::request_tab(TabRequest::Close(tab));
+        match tab {
+            Target::Local(tab) => {
+                turu::request_tab(TabRequest::Close(tab));
+            }
+            Target::Shell(id) => turu::shell_tab_action(ShellTabAction::Close(id)),
+        }
     } else if response
         .on_hover_text(match waits {
             Some(what) => format!("{label}: waits for you ({what})"),
             None => label.to_owned(),
         })
         .clicked()
-        && !active
+        // A shell's tab that's down starts again when clicked, even the one on screen.
+        && (!active || matches!(tab, Target::Shell(_)) && waits.is_some())
     {
-        turu::request_tab(TabRequest::Select(tab));
+        match tab {
+            Target::Local(tab) => {
+                turu::request_tab(TabRequest::Select(tab));
+            }
+            Target::Shell(id) => turu::shell_tab_action(ShellTabAction::Select(id)),
+        }
     }
 }

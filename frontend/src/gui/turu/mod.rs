@@ -285,7 +285,7 @@ impl TuruUi {
     /// the top, or a rail down the left on a touch screen.
     pub fn show_bar(&mut self, ui: &mut egui::Ui) {
         self.ensure_theme(ui.ctx());
-        if crate::turu::tabs().len() > 1 {
+        if crate::turu::tab_strip_count() > 1 {
             self.tab_strip.show(ui);
         }
         let tab = self.active();
@@ -459,7 +459,7 @@ pub fn show_headless_screen(ctx: &Context, top: f32) {
 }
 
 /// Whether the bot runs a script, a Console snippet or Auto Attack/Hunt.
-fn busy(bot: &turu_bot::Bot) -> bool {
+pub fn busy(bot: &turu_bot::Bot) -> bool {
     bot.scripts.status().is_active() || bot.scripts.is_snippet_running() || auto::running(bot)
 }
 

@@ -74,6 +74,29 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         }),
     )));
     turu::start_updates();
+    // The tab strip's tabs are the shell's: its "+" and Army > Accounts' "In a tab" ask it for a
+    // new client; selecting and closing go to it too (M5).
+    let tab_out = out.clone();
+    turu::set_tab_requests(Box::new(move |request| {
+        if let turu::TabRequest::Open(startup) = request {
+            tab_out.send(ToShell::OpenTab {
+                username: startup.username,
+                password: startup.password,
+                server: startup.server,
+                script: startup.script.map(|path| path.to_string_lossy().into_owned()),
+                run_script: startup.run_script,
+            });
+        }
+        true
+    }));
+    let action_out = out.clone();
+    turu::set_shell_actions(Box::new(move |action| {
+        action_out.send(match action {
+            turu::ShellTabAction::Select(id) => ToShell::SelectTab { id },
+            turu::ShellTabAction::Close(id) => ToShell::CloseTab { id },
+        });
+    }));
+    report_status(out.clone());
     let spawned = std::thread::Builder::new().name("Turu Shell In".into()).spawn({
         let sender = sender.clone();
         move || {
@@ -98,6 +121,31 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     Ok(())
 }
 
+/// Tells the shell the tab's name and whether its script or Auto runs, when either changes (checked
+/// every second).
+fn report_status(out: FrameSender) {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Shell Status".into())
+        .spawn(move || {
+            let mut sent = None;
+            while !out.is_closed() {
+                let bot = turu::bot();
+                let now = (turu::tab_label(&bot), turu_frontend::gui::turu::busy(&bot));
+                if sent.as_ref() != Some(&now) {
+                    out.send(ToShell::Status {
+                        label: now.0.clone(),
+                        busy: now.1,
+                    });
+                    sent = Some(now);
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Couldn't start reporting the tab's name to the shell: {e}");
+    }
+}
+
 /// Hands the shell's messages to the engine thread.
 struct Forward {
     sender: Sender<EngineEvent>,
@@ -108,8 +156,27 @@ impl ClientEnd for Forward {
     fn handle(&mut self, message: ToClient) {
         match message {
             ToClient::Dump { path } => *self.dump.lock().unwrap_or_else(|e| e.into_inner()) = Some(path),
-            // Defined for the tab strip and file dialogs; nothing uses them yet (M2).
-            ToClient::Tabs { .. } | ToClient::Answer { .. } => {}
+            ToClient::Tabs { tabs, shown } => {
+                let tabs = tabs
+                    .into_iter()
+                    .map(|tab| turu::ShellTab {
+                        id: tab.id,
+                        label: tab.label,
+                        busy: tab.busy,
+                        down: tab.down,
+                    })
+                    .collect();
+                turu::set_shell_tabs(tabs, shown);
+                let _ = self.sender.send(EngineEvent::Run(Box::new(|_| {
+                    SCREEN.with_borrow_mut(|screen| {
+                        if let Some(screen) = screen {
+                            screen.request_repaint();
+                        }
+                    })
+                })));
+            }
+            // Defined for file dialogs; nothing uses it yet.
+            ToClient::Answer { .. } => {}
             message => {
                 let _ = self.sender.send(EngineEvent::Run(Box::new(move |player| {
                     SCREEN.with_borrow_mut(|screen| {

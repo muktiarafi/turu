@@ -119,6 +119,13 @@ impl ClientScreen {
         }
     }
 
+    /// Draws the UI again soon (the shell's tab list changed, say).
+    pub fn request_repaint(&mut self) {
+        if self.shown.is_some() {
+            self.ui_due = Some(Instant::now());
+        }
+    }
+
     /// Whether the shell shows this tab.
     pub fn shown(&self) -> bool {
         self.shown.is_some()

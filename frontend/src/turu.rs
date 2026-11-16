@@ -267,6 +267,59 @@ pub fn set_active_tab(tab: TabId) -> bool {
     true
 }
 
+/// One of the shell's tabs, as a client's tab strip shows it (docs/TAB_PROCESSES_PROPOSAL.md, M5):
+/// in a client every tab but its own is another process, so the strip shows the shell's list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShellTab {
+    pub id: u32,
+    pub label: String,
+    /// Its script or Auto runs (the strip's dot).
+    pub busy: bool,
+    /// Its process isn't running: it's starting again, or gave up ("closed").
+    pub down: Option<String>,
+}
+
+/// What a client's tab strip asks of the shell.
+pub enum ShellTabAction {
+    Select(u32),
+    Close(u32),
+}
+
+/// The shell's tabs and the one shown, while this process is a client.
+static SHELL_TABS: Mutex<Option<(Vec<ShellTab>, u32)>> = Mutex::new(None);
+/// Where [`shell_tab_action`] sends, in a client.
+static SHELL_ACTIONS: Mutex<Option<ShellActions>> = Mutex::new(None);
+
+/// Where a client's tab strip actions go.
+pub type ShellActions = Box<dyn Fn(ShellTabAction) + Send>;
+
+/// The shell's tabs, from its latest message (a client only).
+pub fn set_shell_tabs(tabs: Vec<ShellTab>, shown: u32) {
+    *SHELL_TABS.lock().unwrap_or_else(|e| e.into_inner()) = Some((tabs, shown));
+}
+
+/// The shell's tabs and the one shown, in a client; `None` elsewhere.
+pub fn shell_tabs() -> Option<(Vec<ShellTab>, u32)> {
+    SHELL_TABS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Where a client's tab strip actions go (`app/src/client.rs`).
+pub fn set_shell_actions(send: ShellActions) {
+    *SHELL_ACTIONS.lock().unwrap_or_else(|e| e.into_inner()) = Some(send);
+}
+
+/// Asks the shell to show or close one of its tabs.
+pub fn shell_tab_action(action: ShellTabAction) {
+    if let Some(send) = SHELL_ACTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        send(action);
+    }
+}
+
+/// How many tabs the tab strip shows: the shell's in a client, else this window's.
+pub fn tab_strip_count() -> usize {
+    shell_tabs().map_or_else(|| tabs().len(), |(tabs, _)| tabs.len())
+}
+
 /// What the UI asks of the event loop, which owns the players.
 pub enum TabRequest {
     /// Open a new tab (at the login screen, or logging in with `Startup`'s login).

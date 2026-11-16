@@ -87,6 +87,25 @@ pub enum ToShell {
     OpenUrl { url: String },
     /// The client's tab strip asked for another tab.
     SelectTab { id: u32 },
+    /// The client's tab strip closed a tab.
+    CloseTab { id: u32 },
+    /// A new tab, logging in with this (Army > Accounts' "In a tab", the strip's "+"). The
+    /// password goes to the new client in `TURU_PASSWORD`, as Army's.
+    OpenTab {
+        #[serde(default)]
+        username: Option<String>,
+        #[serde(default)]
+        password: Option<String>,
+        #[serde(default)]
+        server: Option<String>,
+        #[serde(default)]
+        script: Option<String>,
+        #[serde(default)]
+        run_script: bool,
+    },
+    /// The tab's name (the character, once in game) and whether its script or Auto runs, for the
+    /// tab strips and the window's title; sent when it changes.
+    Status { label: String, busy: bool },
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
@@ -128,6 +147,11 @@ pub struct Mods {
 pub struct TabInfo {
     pub id: u32,
     pub label: String,
+    #[serde(default)]
+    pub busy: bool,
+    /// Its process isn't running: why ("restarting", "closed").
+    #[serde(default)]
+    pub down: Option<String>,
 }
 
 /// Writes `message`, then `payload` (a frame's pixels) if any.
@@ -362,6 +386,8 @@ mod tests {
                 tabs: vec![TabInfo {
                     id: 1,
                     label: "Tab 1".into(),
+                    busy: true,
+                    down: Some("restarting".into()),
                 }],
                 shown: 1,
             },
@@ -379,6 +405,65 @@ mod tests {
             );
         }
         assert_eq!(read::<ToClient>(&mut input).unwrap(), None);
+    }
+
+    #[test]
+    fn tab_messages_round_trip() {
+        let to_shell = [
+            ToShell::OpenTab {
+                username: Some("player_one".into()),
+                password: Some("secret".into()),
+                server: Some("Twig".into()),
+                script: Some("farm/Example.ts".into()),
+                run_script: true,
+            },
+            ToShell::CloseTab { id: 3 },
+            ToShell::SelectTab { id: 2 },
+            ToShell::Status {
+                label: "Player One".into(),
+                busy: true,
+            },
+        ];
+        let mut bytes = Vec::new();
+        for message in &to_shell {
+            write(&mut bytes, message, None).unwrap();
+        }
+        let mut input = bytes.as_slice();
+        for message in &to_shell {
+            assert_eq!(read::<ToShell>(&mut input).unwrap().as_ref(), Some(message));
+        }
+    }
+
+    /// An older shell's tab list (without `busy` and `down`) still reads.
+    #[test]
+    fn a_tab_without_the_newer_fields_reads() {
+        let mut bytes = Vec::new();
+        let older = serde_json::json!({ "type": "tabs", "tabs": [{ "id": 1, "label": "Tab 1" }], "shown": 1 });
+        write(&mut bytes, &older, None).unwrap();
+        let read_back = read::<ToClient>(&mut bytes.as_slice()).unwrap();
+        assert_eq!(
+            read_back,
+            Some(ToClient::Tabs {
+                tabs: vec![TabInfo {
+                    id: 1,
+                    label: "Tab 1".into(),
+                    busy: false,
+                    down: None,
+                }],
+                shown: 1,
+            })
+        );
+        // And an open-tab request without its optional fields.
+        let mut bytes = Vec::new();
+        write(&mut bytes, &serde_json::json!({ "type": "open_tab" }), None).unwrap();
+        assert!(matches!(
+            read::<ToShell>(&mut bytes.as_slice()).unwrap(),
+            Some(ToShell::OpenTab {
+                username: None,
+                run_script: false,
+                ..
+            })
+        ));
     }
 
     #[test]

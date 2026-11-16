@@ -316,6 +316,49 @@ file differs between the two until they're merged.
   three clients; a client killed (`kill -9`) shows as closed and comes back logged in while the
   others play; Army Control, Butler and an army script work across tabs.
 
+#### M5 so far (2026-11-16, branch `m5-desktop-tabs`, on M2)
+
+Built: the shell runs several clients as tabs.
+
+* **The shell** (`app/src/shell.rs`) keeps a client process per tab, matched to its connection by
+  process id: the tab on screen gets `Show` and the window's input, the others `Hide`; every
+  client gets the list (`Tabs`: id, label, busy, why it's down); the title follows the tab on
+  screen. A strip's click, "×" and "+" come back as `SelectTab`, `CloseTab` and `OpenTab` (Army >
+  Accounts' "In a tab" too: its login goes in the message, the password on to the new client in
+  `TURU_PASSWORD`). Each client reports its label and whether it's busy (`Status`).
+* **A client that dies** is started again with its flags after 1, 4, 16, then 60 s; after 5 deaths
+  in 10 minutes its tab stays "closed" while another tab runs (with none running it goes on trying
+  every 60 s). When the tab on screen dies, a running one is shown instead. A click on a closed tab
+  starts it again; a tab without a client isn't switched to (it takes no input) until it connects.
+  A client that never connects is restarted after 60 s. The first tab gets the shell's
+  `TURU_PASSWORD`.
+* **The tab strip** (`gui/turu/tab_strip.rs`) shows the shell's list in a client (`turu::shell_tabs`,
+  a down tab with its reason and the warning badge); the bar's height counts it
+  (`turu::tab_strip_count`).
+* **Testing hook**: `TURU_SHELL_TEST=<file>` runs `wait`, `open`, `select`, `close`, `kill`, `click`
+  and `dump` lines in the shell.
+
+Checked on a Mac (debug build, login screen, no account), through the hook with the window up:
+a second tab opened from the shell and a third from the client strip's "+"; each client's strip
+showed all tabs with the right one active; a click on the strip selected tab 1; `kill -9` of a
+client restarted it after 1 s (4 s and 16 s for the next deaths) while the others ran, its tab
+reading "Login (restarting)" meanwhile; the tab on screen killed: the shell showed tab 1; five
+deaths left tab 2 "closed" while tab 1 ran, and a strip click on it started it again (shown once
+connected); closing a tab removed it and, with one left, the strip; the first client had
+`TURU_PASSWORD`; no client outlived the shell. Tests (with round trips of the new messages, and an
+older tab list without `busy` and `down`) and clippy pass; Android's and Turu Mas's crates check,
+and Android's in-process tab strip (refactored here) showed two tabs and switched on a tap on the
+emulator.
+
+Not done yet, of "done when": Grid View; the army poll and web monitor in the shell (both still
+start in every process, and collide when on); settings writes under a lock; the IOSurface route
+in the shell (pictures are still copied); a tab coming back logged in after a kill (no account
+here: the flags and password are kept, so `--user` tabs should log in again); Army Control, Butler
+and an army script across tabs; Windows and Linux. Built but not run: Army > Accounts' "In a tab"
+through the shell. `OpenTab` doesn't carry a login's playlist or options storage yet. A client's
+Options > Application > Check Now for updates is off (`--exit-with-parent` marks it launched; the
+shell checks).
+
 ### M6: one way of doing tabs
 
 * Remove the in-process tabs (the thread-local swapping in `players.rs` goes with them, as
