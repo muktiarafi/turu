@@ -130,6 +130,10 @@ pub struct ClientScreen {
     ui_due: Option<Instant>,
     /// The game's volume while it's the tab on screen (else muted).
     volume: f32,
+    /// The shell's window is covered or minimized: nothing is drawn.
+    covered: bool,
+    /// The pointer is over the window (moved there, not left since).
+    pointer_in: bool,
     clipboard: Option<Box<dyn Clipboard>>,
     /// A new picture of the game is wanted (a resize, a frame not drawn because a readback was
     /// under way).
@@ -176,6 +180,8 @@ impl ClientScreen {
             ui_due: None,
             picture_due: false,
             volume: 1.0,
+            covered: false,
+            pointer_in: false,
             clipboard: None,
         }
     }
@@ -188,6 +194,18 @@ impl ClientScreen {
     /// Where Turu's text boxes copy to and paste from.
     pub fn set_clipboard(&mut self, clipboard: Box<dyn Clipboard>) {
         self.clipboard = Some(clipboard);
+    }
+
+    /// The game has the mouse on its stage only while the pointer is over the tab on screen (the
+    /// active one in Grid View) and the window is seen, as the window's tabs do
+    /// (`PlayerController::give_mouse`): otherwise every update would hit-test the whole stage for
+    /// a mouse nobody moves (`run_mouse_pick`, most of a covered client's tick).
+    fn follow_mouse(&self, player: &mut Player) {
+        let tile = self.grid.as_ref().is_some_and(|grid| !grid.active);
+        set_mouse(
+            player,
+            self.shown.is_some() && !tile && !self.covered && self.pointer_in,
+        );
     }
 
     /// Draws into surfaces shared with the shell instead of reading pictures back.
@@ -234,24 +252,27 @@ impl ClientScreen {
                 self.ui_due = Some(Instant::now());
                 // Another tab's tile takes no input and runs at the tiles' rate.
                 let tile = grid.as_ref().is_some_and(|grid| !grid.active);
-                set_mouse(player, !tile);
                 // Only the tab on screen is heard (in Grid View, the active one).
                 player.set_volume(if tile { 0.0 } else { self.volume });
                 turu::bot().state.lock().hidden_tab = tile;
                 set_grid(grid.as_ref());
                 self.grid = grid;
+                self.follow_mouse(player);
             }
             ToClient::Hide => {
                 set_grid(None);
                 self.grid = None;
                 self.shown = None;
                 self.target = None;
+                self.ui_due = None;
+                self.picture_due = false;
                 // A hidden tab keeps no surfaces (the shell lets go of its own).
                 self.pool.clear();
                 if matches!(self.readback, Some(Readback::Shared { .. })) {
                     self.readback = None;
                 }
                 self.pressed = None;
+                self.pointer_in = false;
                 set_mouse(player, false);
                 player.set_volume(0.0);
                 turu::bot().state.lock().hidden_tab = true;
@@ -273,6 +294,15 @@ impl ClientScreen {
                 }
             }
             ToClient::Key { key, pressed, mods } => self.key(player, &key, pressed, mods),
+            ToClient::Covered { covered } => {
+                self.covered = covered;
+                self.follow_mouse(player);
+                // Seen again: a picture at once.
+                if !covered && self.shown.is_some() {
+                    self.picture_due = true;
+                    self.ui_due = Some(Instant::now());
+                }
+            }
             ToClient::Release { id } => {
                 if let Some(surface) = self.pool.iter_mut().find(|surface| surface.id == id) {
                     surface.free = true;
@@ -323,9 +353,12 @@ impl ClientScreen {
     /// has a new frame or the UI wants it. When to be called again, if before the next tick.
     pub fn step(&mut self, player: &mut Player, step: Step) -> Option<Instant> {
         self.collect();
-        if self.shown.is_some() {
+        if self.shown.is_some() && !self.covered {
             let game_frame = matches!(step, Step::Ticked { .. }) && player.needs_render();
-            let ui_wanted = self.ui_due.is_some_and(|due| due <= Instant::now());
+            // The UI alone is drawn 30 times a second at most, however often egui asks.
+            let ui_wanted = self
+                .ui_due
+                .is_some_and(|due| due.max(self.last_draw + UI_FRAME) <= Instant::now());
             if game_frame || ui_wanted || self.picture_due {
                 if self.readback.is_none() {
                     let picture = game_frame || self.picture_due;
@@ -340,7 +373,12 @@ impl ClientScreen {
             .readback
             .as_ref()
             .map(|_| Instant::now() + READBACK_POLL);
-        let ui = self.ui_due.map(|due| due.max(self.last_draw + UI_FRAME));
+        // Nothing is drawn while hidden: a repaint due from before must not wake the loop (it was
+        // in the past, and the engine spun on it).
+        let ui = self
+            .ui_due
+            .filter(|_| self.shown.is_some() && !self.covered)
+            .map(|due| due.max(self.last_draw + UI_FRAME));
         [readback, ui].into_iter().flatten().min()
     }
 
@@ -543,6 +581,10 @@ impl ClientScreen {
         };
         match kind {
             PointerKind::Move => {
+                if !self.pointer_in {
+                    self.pointer_in = true;
+                    self.follow_mouse(player);
+                }
                 self.events.push(egui::Event::PointerMoved(pos));
                 let to_game = match self.pressed {
                     Some((_, on_ui)) => !on_ui,
@@ -602,6 +644,8 @@ impl ClientScreen {
             PointerKind::Leave => {
                 self.events.push(egui::Event::PointerGone);
                 player.handle_event(PlayerEvent::MouseLeave);
+                self.pointer_in = false;
+                self.follow_mouse(player);
             }
         }
     }
@@ -672,8 +716,10 @@ impl ClientScreen {
             return;
         }
         let Ok(surface) = self.take_surface(size) else {
-            // The shell has every surface: drawn once it lets one go.
-            self.picture_due |= new_picture;
+            // The shell has every surface: drawn once it lets one go (`Release` wakes it), not
+            // asked again meanwhile.
+            self.picture_due = true;
+            self.ui_due = None;
             return;
         };
         if surface.is_none()

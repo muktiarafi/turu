@@ -762,8 +762,32 @@ With accounts (2026-11-17, a Mac, debug build, two of the data folder's saved ac
   arrival.
 * **Army Control** in tab 2 listed all three tabs, tab 3 from its process, with its script and map.
 * **Switching**: a tab already drawn showed its first picture 125-150 ms after it was selected; an
-  in-game tab shown for the first time took 1.6 s (its scene drawn the first time). A shown in-game
-  tab sent about 10 pictures a second in this debug build: to measure in a release build.
+  in-game tab shown for the first time took 1.6 s (its scene drawn the first time).
+
+Release build, the same two accounts in game, against today's window with them as in-process tabs
+(each process's CPU from its CPU time over 20-30 s; memory resident; `TURU_SHELL_TEST`'s `rate`):
+
+| | Today's window | Process tabs (shell + 3 clients) |
+|---|---|---|
+| Seen: CPU | 167% | 143% (2 + 0 + 1 + 140) |
+| Seen: memory | 1357 MB | 1097 MB (72 + 76 + 198 + 751) |
+| Covered or minimized: CPU | 13% | 13% (0 + 1 + 2 + 10) |
+| Pictures a second, tab on screen | 30 draws | 30 |
+
+Grid View with the three tabs live: the active tab 30 pictures a second, the in-game tile 8 (the
+tiles' rate), the login screen's tile 30 (not throttled at the login screen); 159%, 44% and 5%
+CPU. Measuring found three things, fixed:
+* **Hidden clients spun**: a hidden client's screen still asked to be called when its last UI
+  repaint was due, already past, so its engine loop never slept: ~80% CPU each, at the login
+  screen too. Now 1%. The same spin while a shown tab waits for the shell to give a surface back.
+* **The UI alone drew up to 120 pictures a second** while egui animated (Accounts' spinner): the
+  30-a-second cap was only on the next wake-up, not on drawing.
+* **Covered**: today's window draws nothing while covered or minimized; a client drew on. The shell
+  now tells its clients (`ToClient::Covered`, from winit's `Occluded` and a zero size), and they
+  draw nothing meanwhile (the game, sound and pace go on). And the game had the mouse on its stage
+  whenever its tab was shown, so every update hit-tested the whole stage (`run_mouse_pick`, most of
+  a covered client's 57%): it has it now only while the pointer is over the window and it's seen,
+  as the window's tabs do.
 
 Not done yet, of "done when": the clients Army > Accounts launches "In its own window" from a tab
 stay that tab's client's (its Army Control has them), and the shell's monitor and Report To don't

@@ -22,7 +22,8 @@
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
 //! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would),
 //! `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
-//! `resize <width> <height>` (the window's size in points)
+//! `resize <width> <height>` (the window's size in points), `minimize on|off`, `rate` (each tab's pictures a second
+//! since the last `rate`)
 //! and `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG).
 //!
 //! Grid View (the bar's Grid toggle, `ToShell::Grid`): the tab on screen draws the window with its
@@ -140,6 +141,8 @@ struct Tab {
     deaths: Vec<Instant>,
     /// When to start the client again.
     restart_at: Option<Instant>,
+    /// Pictures received since `TURU_SHELL_TEST`'s last `rate`.
+    pictures: u32,
     /// Gave up on restarting (until the tab is selected).
     closed: bool,
     started: Instant,
@@ -249,6 +252,10 @@ pub fn run(_preferences: GlobalPreferences, client_args: Vec<String>) -> Result<
         retiring: Vec::new(),
         releases_pending: 0,
         dialog_open: false,
+        rate_since: Instant::now(),
+        covered: false,
+        occluded: false,
+        minimized: false,
     };
     // The first tab logs in as `--headless` would: with the shell's own `TURU_PASSWORD`.
     app.open_tab(client_args, std::env::var("TURU_PASSWORD").ok());
@@ -428,6 +435,12 @@ struct ShellApp {
     releases_pending: usize,
     /// A file dialog is open (one at a time, as the window's own).
     dialog_open: bool,
+    /// When `TURU_SHELL_TEST`'s last `rate` was.
+    rate_since: Instant,
+    /// The window is covered or minimized: the clients draw nothing (`ToClient::Covered`).
+    covered: bool,
+    occluded: bool,
+    minimized: bool,
 }
 
 impl ShellApp {
@@ -451,6 +464,7 @@ impl ShellApp {
             busy: false,
             deaths: Vec::new(),
             restart_at: None,
+            pictures: 0,
             closed: false,
             started: Instant::now(),
             api: None,
@@ -778,6 +792,9 @@ impl ShellApp {
         if let Some(on) = self.headless_mode {
             send(tab, &ToClient::HeadlessMode { on });
         }
+        if self.covered {
+            send(tab, &ToClient::Covered { covered: true });
+        }
         let id = tab.id;
         if id == self.shown || self.grid_tiles().is_some() {
             self.show_current();
@@ -972,6 +989,22 @@ impl ShellApp {
             .min()
     }
 
+    /// The window was covered or minimized, or is seen again: the clients stop or start drawing,
+    /// as the window's own tabs do (`app.rs`, `occluded`).
+    fn set_covered(&mut self, covered: bool) {
+        if self.covered == covered {
+            return;
+        }
+        self.covered = covered;
+        tracing::info!(
+            "Shell: the window is {}",
+            if covered { "covered" } else { "seen again" }
+        );
+        for tab in &mut self.tabs {
+            send(tab, &ToClient::Covered { covered });
+        }
+    }
+
     /// The window's size changed: the GPU surface and the tab on screen follow.
     fn resized(&mut self) {
         let Some(window) = &self.window else {
@@ -979,6 +1012,13 @@ impl ShellApp {
         };
         let size = window.inner_size();
         let scale = window.scale_factor();
+        // How minimizing shows on Windows (macOS reports it as occluded).
+        let minimized = size.width == 0 || size.height == 0;
+        if minimized != self.minimized {
+            self.minimized = minimized;
+            let covered = minimized || self.occluded;
+            self.set_covered(covered);
+        }
         if size.width == 0 || size.height == 0 || self.size == Some((size, scale)) {
             return;
         }
@@ -1060,6 +1100,9 @@ impl ShellApp {
 
     /// Tab `id`'s newest picture is in its client's surface `surface`.
     fn surface_picture(&mut self, id: u32, surface: u64) {
+        if let Some(tab) = self.tab(id) {
+            tab.pictures += 1;
+        }
         let visible = self.visible(id);
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
@@ -1117,6 +1160,7 @@ impl ShellApp {
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
             return;
         };
+        tab.pictures += 1;
         let picture = std::mem::take(&mut *tab.picture.lock().unwrap_or_else(|e| e.into_inner()));
         let size = (picture.width, picture.height);
         if picture.pixels.len() < size.0 as usize * size.1 as usize * 4 || size.0 == 0 || size.1 == 0 {
@@ -1405,6 +1449,28 @@ impl ShellApp {
             return;
         }
         // `resize 1600 900`: the window's inner size in points, as dragging its edge would.
+        // `rate`: each tab's pictures a second since the last `rate`.
+        if command == "rate" {
+            let elapsed = self.rate_since.elapsed().as_secs_f64();
+            self.rate_since = Instant::now();
+            for tab in &mut self.tabs {
+                let rate = f64::from(std::mem::take(&mut tab.pictures)) / elapsed.max(0.001);
+                tracing::info!(
+                    "Shell test: tab {} ({}): {rate:.1} pictures a second",
+                    tab.id,
+                    tab.label
+                );
+            }
+            return;
+        }
+        // `minimize on` / `minimize off`: as the window's yellow button would (macOS reports it as
+        // covered).
+        if command == "minimize" {
+            if let Some(window) = &self.window {
+                window.set_minimized(arg.trim() == "on");
+            }
+            return;
+        }
         if command == "resize" {
             let size: Vec<f64> = arg.split_whitespace().filter_map(|v| v.parse().ok()).collect();
             if let (&[width, height], Some(window)) = (size.as_slice(), &self.window) {
@@ -1534,6 +1600,12 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => self.resized(),
             WindowEvent::RedrawRequested => self.draw(),
             WindowEvent::Focused(focused) => self.send_shown(&ToClient::Focus { focused }),
+            // winit reports it on macOS and X11 only.
+            WindowEvent::Occluded(occluded) => {
+                self.occluded = occluded;
+                let covered = occluded || self.minimized;
+                self.set_covered(covered);
+            }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = position;

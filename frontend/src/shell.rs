@@ -130,6 +130,10 @@ pub enum ToClient {
     /// one, as VibeSkua's tabbed host sends it to every tab. Also to a tab when it connects, once a
     /// tab has changed it.
     HeadlessMode { on: bool },
+    /// Desktop: the shell's window is covered or minimized (`covered`), or seen again. Nothing of
+    /// the tab can be seen meanwhile, so it draws nothing; its game, sound and pace go on, as the
+    /// window's own tabs do while it's covered.
+    Covered { covered: bool },
     /// The shell is done with shared surface `id` ([`ToShell::Surface`]): the client may draw
     /// into it again.
     Release { id: u64 },
@@ -830,6 +834,7 @@ mod tests {
                 },
                 ToClient::HeadlessMode { on: true },
                 ToClient::Release { id: 7 },
+                ToClient::Covered { covered: true },
                 ToClient::Hide,
             ];
             for message in &messages {
