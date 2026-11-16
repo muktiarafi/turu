@@ -15,7 +15,8 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use turu_bot::accounts::SecretStore;
-use turu_frontend::shell::{ToClient, ToShell};
+use turu_frontend::gui::turu::native_field::Contents;
+use turu_frontend::shell::{FieldId, ToClient, ToShell};
 use turu_frontend::slots::SlotRecord;
 use turu_frontend::turu;
 
@@ -144,7 +145,7 @@ fn hello() {
 }
 
 /// Sends a message to the shell, when one is bound (`SlotService.toShell`).
-fn to_shell(message: ToShell) {
+pub(crate) fn to_shell(message: ToShell) {
     let Ok(json) = serde_json::to_string(&message) else {
         return;
     };
@@ -241,6 +242,37 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
             match serde_json::from_str::<ToClient>(&json) {
                 Ok(ToClient::Tabs { tabs, shown, you }) => {
                     turu_frontend::client_link::set_tabs(tabs, shown, you);
+                    crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
+                }
+                // The text fields above the keyboard are the shell's activity's.
+                Ok(ToClient::FieldEdited {
+                    field,
+                    text,
+                    start,
+                    end,
+                }) => match field {
+                    FieldId::Game => crate::game_field::edited(text, start as usize, end as usize),
+                    FieldId::Ui => crate::ui_field::edited(Contents {
+                        text,
+                        start: start as usize,
+                        end: end as usize,
+                    }),
+                },
+                Ok(ToClient::FieldEnter { field }) => match field {
+                    FieldId::Game => crate::game_field::entered(),
+                    FieldId::Ui => crate::ui_field::entered(),
+                },
+                Ok(ToClient::FieldClosed { field }) => match field {
+                    FieldId::Game => crate::game_field::closed(),
+                    FieldId::Ui => crate::ui_field::closed(),
+                },
+                Ok(ToClient::Insets {
+                    keyboard,
+                    cutout_left,
+                    cutout_right,
+                }) => {
+                    // Read at each frame, as the activity's own are.
+                    crate::ui::set_insets(keyboard, cutout_left, cutout_right);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
                 // The surface, input and size come over Binder (`SlotService`), not as messages.

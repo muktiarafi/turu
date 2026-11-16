@@ -366,14 +366,18 @@ file differs between the two until they're merged.
 
 #### M3 so far (2026-11-16, branch `m3-android-tabs`, on M5 and the M1 spike)
 
-Built: process tabs behind a switch file, `turu-process-tabs.txt` in the data folder (the
-in-process tabs stay the default; an Options switch for it is still to come).
+Built: process tabs behind Options > Application > Process Tabs (experimental), off by default and
+read at start (saved as `turu-process-tabs.txt` in the data folder, as Safe Drawing is). Turning it
+off stops the slots at the next start (their records stay, so their tabs come back if it's turned
+on again). Checked on the emulator: the switch, found from a slot's Options search, turned off removed
+the file, and after a restart both slots had stopped and the app ran its engine itself.
 
 * **Slot records** (`turu_frontend::slots`): `slots/c<N>.json`, a tab's startup flags, written when
   it opens and removed when it closes; never a password (`--password` in either form is taken out
   of `turu-args.txt`'s flags for the first tab), and never the app's own flags (`--graphics`,
-  `--safe-drawing`, the logs'), which every slot reads from `turu-args.txt`. A slot logs in with Accounts' password,
-  else the Keystore's copy the shell kept for that slot (`@slot:<N>`). A slot's script is brought
+  `--safe-drawing`, the logs'), which every slot reads from `turu-args.txt`. A slot logs in with
+  Accounts' password, else the Keystore's copy the shell kept for that slot (`@slot:<N>`). A
+  slot's script is brought
   back after a kill as the app's is (`restart.rs`, with its own `android-restart-c<N>.txt`).
 * **The shell's logic** is plain Rust, tested on the desktop (`slots::SlotShell`): the tab list from
   the records and the slots bound, open (the first free slot of four), select, close (never the
@@ -400,6 +404,13 @@ in-process tabs stay the default; an Options switch for it is still to come).
   screen, and nothing waits on the activity's main thread (only when the surface is destroyed or
   a slot is stopped, where it must be gone first). A slot that dies before answering counts as
   having let go; one that doesn't let go in 30 s keeps the screen, and the Rust side is told.
+* **Typing in a slot**: the text fields above the keyboard stay the activity's (`SurfaceField`): a
+  slot's game field or Turu text box that takes the focus sends `FieldShow` / `FieldUpdate` /
+  `FieldHide` to the shell (only the slot on screen's are shown), and the field's edits, Send and
+  closing go back as `FieldEdited` / `FieldEnter` / `FieldClosed`; the window's keyboard height and
+  cutout go to every slot (`Insets`). Choosing another tab closes the field and takes the focus off
+  the text box. Checked on the emulator: the game's Username field and Application Options'
+  search box, typed in through the activity's field, closed with Back.
 * **While no slot draws** (a tab starting, a slot coming back after a kill, a new surface on its
   way) a plain Android view over the game area says "Starting the tab…" with a spinner, instead of
   black: it shows until a slot whose engine is up (its hello carries its control API) has the
@@ -443,14 +454,13 @@ Checked on the emulator (Android 16, one account on Twig):
 * **The switch off:** the app ran as before (one process, in-process tabs).
 
 Not done yet:
-* **The keyboard and the text fields:** in a slot, the game's and Turu's text fields need the
-  activity's `SurfaceField`. A slot gets in game only from a saved login.
+* **Keys outside the native fields:** egui's own text boxes that aren't typed through the native
+  field (GameActivity's text input) and hardware keys don't reach a slot.
 * **The other Platform calls through the shell:** the file picker, sharing, links and installing
   updates do nothing in a slot.
 * **Notifications:** a group summary.
 * **`BIND_WAIVE_PRIORITY`** on hidden slots.
 * **Memory and limits:** Android's memory levels to the slots, and Tab Limit from the phone's memory.
-* **The Options switch** for process tabs.
 * **Runs not done yet:** Accounts' "In a tab" and Army Control, and two accounts in game with Butler
   and an army script across slots.
 

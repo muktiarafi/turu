@@ -218,6 +218,8 @@ pub enum Action {
     Show(u32),
     /// Send slot `n` a message.
     Send(u32, ToClient),
+    /// Show, update or hide the text field above the keyboard, for the slot on screen.
+    Field(ToShell),
 }
 
 /// A slot whose process is bound and has said hello.
@@ -317,6 +319,16 @@ impl SlotShell {
                 _ => Vec::new(),
             },
             hello @ ToShell::Hello { .. } => self.connected(slot, &hello),
+            // A hidden slot's text box (it lost the screen while it had the focus) shows nothing.
+            field @ (ToShell::FieldShow { .. }
+            | ToShell::FieldUpdate { .. }
+            | ToShell::FieldHide { .. }) => {
+                if slot == self.shown {
+                    vec![Action::Field(field)]
+                } else {
+                    Vec::new()
+                }
+            }
             _ => Vec::new(),
         }
     }
@@ -623,6 +635,22 @@ mod tests {
         assert_eq!(sent_to(&shell.still_shown(2)), [1, 2]);
         assert_eq!(shell.shown(), 2);
         assert_eq!(shell.select(1)[0], Action::Show(1));
+    }
+
+    #[test]
+    fn only_the_slot_on_screen_shows_a_text_field() {
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        shell.connected(1, &hello());
+        shell.open(Vec::new(), None);
+        shell.connected(2, &hello());
+        let field = ToShell::FieldHide {
+            field: crate::shell::FieldId::Game,
+        };
+        assert_eq!(
+            shell.message(2, field.clone()),
+            [Action::Field(field.clone())]
+        );
+        assert!(shell.message(1, field).is_empty());
     }
 
     #[test]

@@ -187,6 +187,16 @@ pub trait Platform: Send + Sync {
 
     /// Saves Safe Drawing for the next start (the switches are read once, as they're first used).
     fn set_safe_drawing(&self, _on: bool) {}
+
+    /// Whether process tabs (each tab in a process of its own: Android's slots, docs/
+    /// TAB_PROCESSES_PROPOSAL.md, M3) are saved on for the next start, or None where Options >
+    /// Application doesn't offer them.
+    fn process_tabs(&self) -> Option<bool> {
+        None
+    }
+
+    /// Saves process tabs for the next start.
+    fn set_process_tabs(&self, _on: bool) {}
 }
 
 /// Mugetsu's drawing speed-ups' switches (environment variables read when they're first used),

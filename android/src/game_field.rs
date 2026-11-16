@@ -18,6 +18,7 @@ use ruffle_core::events::{
     KeyDescriptor, KeyLocation, LogicalKey, NamedKey, PhysicalKey, TextControlCode,
 };
 use ruffle_core::{Player, PlayerEvent, TextSelection};
+use turu_frontend::shell::{FieldId, ToShell};
 
 /// The most the game takes in a message: the native field stops there.
 pub const MAX_CHARS: usize = 150;
@@ -155,9 +156,21 @@ fn enter(player: &mut Player) {
     player.handle_event(PlayerEvent::KeyUp { key });
 }
 
-/// `TuruActivity.showGameField(text, start, end, password, max)`.
+/// `TuruActivity.showGameField(text, start, end, password, max)`; in a process tab, the shell's.
 fn show(focused: &Focused) {
     let Some(app) = crate::app() else {
+        let Contents { text, start, end } = &focused.contents;
+        crate::slots::to_shell(ToShell::FieldShow {
+            field: FieldId::Game,
+            text: text.clone(),
+            start: *start as u32,
+            end: *end as u32,
+            password: focused.password,
+            max: MAX_CHARS as u32,
+            hint: String::new(),
+            lines: false,
+            number: false,
+        });
         return;
     };
     let Contents { text, start, end } = &focused.contents;
@@ -181,6 +194,12 @@ fn show(focused: &Focused) {
 /// `TuruActivity.updateGameField(text, start, end)`.
 fn update(contents: &Contents) {
     let Some(app) = crate::app() else {
+        crate::slots::to_shell(ToShell::FieldUpdate {
+            field: FieldId::Game,
+            text: contents.text.clone(),
+            start: contents.start as u32,
+            end: contents.end as u32,
+        });
         return;
     };
     let result = with_activity(&app, |env, activity| {
@@ -196,6 +215,9 @@ fn update(contents: &Contents) {
 /// `TuruActivity.hideGameField()`.
 fn hide() {
     let Some(app) = crate::app() else {
+        crate::slots::to_shell(ToShell::FieldHide {
+            field: FieldId::Game,
+        });
         return;
     };
     let result = with_activity(&app, |env, activity| {
@@ -219,9 +241,25 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldEdited<'l
     let text = unowned_env
         .with_env(|env| -> jni::errors::Result<String> { text.try_to_string(env) })
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
-    let (start, end) = (start.max(0) as usize, end.max(0) as usize);
+    edited(text, start.max(0) as usize, end.max(0) as usize);
+}
+
+/// The field above the keyboard was edited (the activity's, or the shell's in a process tab).
+pub(crate) fn edited(text: String, start: usize, end: usize) {
     crate::run_on_engine(move |player| {
         crate::with_screen(|screen| screen.game_field.edited(player, text, start, end));
+    });
+}
+
+/// The field's Send.
+pub(crate) fn entered() {
+    crate::run_on_engine(enter);
+}
+
+/// The field went.
+pub(crate) fn closed() {
+    crate::run_on_engine(|player| {
+        crate::with_screen(|screen| screen.game_field.closed(player));
     });
 }
 
@@ -231,7 +269,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldEnter<'lo
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    crate::run_on_engine(enter);
+    entered();
 }
 
 /// `TuruActivity.nativeGameFieldClosed()`, on the UI thread.
@@ -240,7 +278,5 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldClosed<'l
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    crate::run_on_engine(|player| {
-        crate::with_screen(|screen| screen.game_field.closed(player));
-    });
+    closed();
 }

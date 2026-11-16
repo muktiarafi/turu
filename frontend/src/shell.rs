@@ -73,6 +73,25 @@ pub enum ToClient {
     Answer { id: u32, value: Option<String> },
     /// Debugging: write the next frame drawn to `path` as a PNG.
     Dump { path: String },
+    /// Android: the text field above the keyboard (`FieldShow`) was edited: all its text, the
+    /// selection in UTF-16 units (M3).
+    FieldEdited {
+        field: FieldId,
+        text: String,
+        start: u32,
+        end: u32,
+    },
+    /// Android: the field's Send (Enter).
+    FieldEnter { field: FieldId },
+    /// Android: the field went (Back, a touch outside it): the text box loses the focus.
+    FieldClosed { field: FieldId },
+    /// Android: the soft keyboard's height and the display cutout's left and right insets, in
+    /// window pixels (Turu lays out around them).
+    Insets {
+        keyboard: u32,
+        cutout_left: u32,
+        cutout_right: u32,
+    },
     /// A message this client doesn't know.
     #[serde(other)]
     Unknown,
@@ -132,9 +151,46 @@ pub enum ToShell {
         #[serde(default)]
         top: f32,
     },
+    /// Android: a text box has the focus: the shell shows its native text field above the keyboard
+    /// (`SurfaceField`) with this text and selection (UTF-16 units). A game field has `max`
+    /// characters at most (0: no limit); Turu's say `hint`, `lines` (several) or `number`.
+    FieldShow {
+        field: FieldId,
+        text: String,
+        start: u32,
+        end: u32,
+        #[serde(default)]
+        password: bool,
+        #[serde(default)]
+        max: u32,
+        #[serde(default)]
+        hint: String,
+        #[serde(default)]
+        lines: bool,
+        #[serde(default)]
+        number: bool,
+    },
+    /// Android: the focused text box changed what it holds.
+    FieldUpdate {
+        field: FieldId,
+        text: String,
+        start: u32,
+        end: u32,
+    },
+    /// Android: no text box of this kind has the focus now.
+    FieldHide { field: FieldId },
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
+}
+
+/// Which of Android's two text fields above the keyboard: the game's focused text field, or Turu's
+/// own text box (egui's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldId {
+    Game,
+    Ui,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -520,6 +576,18 @@ mod tests {
                 left: 0.0,
                 top: 64.0,
             },
+            ToShell::FieldShow {
+                field: FieldId::Game,
+                text: "héllo".into(),
+                start: 5,
+                end: 5,
+                password: false,
+                max: 140,
+                hint: String::new(),
+                lines: false,
+                number: false,
+            },
+            ToShell::FieldHide { field: FieldId::Ui },
         ];
         let mut bytes = Vec::new();
         for message in &to_shell {
@@ -631,6 +699,17 @@ mod tests {
                     grid: None,
                 },
                 ToClient::Text { text: "é".into() },
+                ToClient::FieldEdited {
+                    field: FieldId::Ui,
+                    text: "abc".into(),
+                    start: 1,
+                    end: 3,
+                },
+                ToClient::Insets {
+                    keyboard: 800,
+                    cutout_left: 0,
+                    cutout_right: 120,
+                },
                 ToClient::Hide,
             ];
             for message in &messages {

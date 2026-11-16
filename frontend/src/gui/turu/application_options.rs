@@ -81,6 +81,8 @@ enum Field {
     FrameInterpolation,
     /// Safe Drawing, saved by the frontend for the next start (`Platform::safe_drawing`).
     SafeDrawing,
+    /// Process tabs, saved by the frontend for the next start (`Platform::process_tabs`).
+    ProcessTabs,
 }
 
 struct Entry {
@@ -135,6 +137,17 @@ fn entries() -> Vec<Entry> {
                 Field::CrashReports
             ),
         );
+    }
+    if crate::platform::platform().process_tabs().is_some() {
+        entries.push(Entry {
+            restart: true,
+            ..entry!(
+                General,
+                "Process Tabs (experimental)",
+                "Runs each tab in a process of its own, so Android stopping one for memory leaves the others playing, and a tab comes back logged in by itself. Takes a little more memory per tab. Some things don't work in a tab yet: picking files, sharing and installing updates",
+                Field::ProcessTabs
+            )
+        });
     }
     if crate::platform::platform().limits_tabs() {
         entries.push(entry!(
@@ -606,6 +619,13 @@ impl ApplicationOptionsWindow {
                                             platform.set_safe_drawing(on);
                                         }
                                     }
+                                    Field::ProcessTabs => {
+                                        let platform = crate::platform::platform();
+                                        let mut on = platform.process_tabs() == Some(true);
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            platform.set_process_tabs(on);
+                                        }
+                                    }
                                     Field::CrashReports => {
                                         let mut on = settings.send_crash_reports == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
@@ -866,6 +886,7 @@ fn control_width(field: &Field) -> f32 {
         | Field::OptionBool(_)
         | Field::FrameInterpolation
         | Field::SafeDrawing
+        | Field::ProcessTabs
         | Field::CrashReports => 48.0,
         _ => 96.0,
     }

@@ -40,7 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * slots' messages passed on. Debugging: `adb shell am start -n com.muktiarafi.turu/.TuruActivity`
  * with `--ei slot N` (show), `--ei openTab 1` (a new tab at the login screen) or `--ei closeTab N`.
  */
-class SlotShell(private val context: Context, private val view: SurfaceView, private val density: Float) {
+class SlotShell(private val activity: TuruActivity, private val view: SurfaceView, private val density: Float) {
+    private val context: Context = activity
     /** The slot on screen (0 before the first is shown). */
     private var current = 0
 
@@ -66,6 +67,12 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
 
     /** The slots whose engine is up (they said hello with their control API). */
     private val ready = mutableSetOf<Int>()
+
+    /** The text fields above the keyboard shown for the slot on screen ([GAME], [UI]). */
+    private val fields = mutableSetOf<String>()
+
+    /** The window's keyboard height and cutout sides, for the slots' layout (`insets`). */
+    private var insets = Triple(0, 0, 0)
 
     /**
      * What shows where the game goes while no slot draws there: a tab starting, coming back after
@@ -211,6 +218,7 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
                 "stop" -> stopSlot(slot)
                 "show" -> show(slot)
                 "send" -> sendJson(slot, action.getString("json"))
+                "field" -> field(JSONObject(action.getString("json")))
             }
         }
     }
@@ -241,8 +249,77 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
     /** Shows `slot`: the surface moves there once the slot on screen has let go of it ([handOver]). */
     private fun show(slot: Int) {
         if (slot !in 1..SLOTS) return
+        if (slot != target) closeFields()
         target = slot
         handOver()
+    }
+
+    /** The slot on screen's text field above the keyboard: shown, updated or hidden. */
+    private fun field(message: JSONObject) {
+        val game = message.optString("field") == GAME
+        val text = message.optString("text")
+        val (start, end) = message.optInt("start") to message.optInt("end")
+        when (message.optString("type")) {
+            "field_show" -> {
+                fields.add(if (game) GAME else UI)
+                if (game) {
+                    activity.showGameField(text, start, end, message.optBoolean("password"), message.optInt("max"))
+                } else {
+                    val kind = when {
+                        message.optBoolean("password") -> 1
+                        message.optBoolean("lines") -> 2
+                        message.optBoolean("number") -> 3
+                        else -> 0
+                    }
+                    activity.showUiField(text, start, end, kind, message.optString("hint"))
+                }
+            }
+            "field_update" -> if (game) activity.updateGameField(text, start, end) else activity.updateUiField(text, start, end)
+            "field_hide" -> {
+                fields.remove(if (game) GAME else UI)
+                if (game) activity.hideGameField() else activity.hideUiField()
+            }
+        }
+    }
+
+    /** Another tab is chosen: the fields shown for this one go, and its text boxes lose the focus. */
+    private fun closeFields() {
+        for (field in fields.toList()) {
+            if (field == GAME) activity.hideGameField() else activity.hideUiField()
+            fieldClosed(field)
+        }
+        fields.clear()
+    }
+
+    /** The field above the keyboard was edited: to the slot on screen. */
+    fun fieldEdited(field: String, text: String, start: Int, end: Int) {
+        val message = JSONObject().put("type", "field_edited").put("field", field)
+            .put("text", text).put("start", start).put("end", end)
+        sendJson(current, message.toString())
+    }
+
+    /** The field's Send. */
+    fun fieldEnter(field: String) {
+        sendJson(current, JSONObject().put("type", "field_enter").put("field", field).toString())
+    }
+
+    /** The field went (Back, a touch outside it). */
+    fun fieldClosed(field: String) {
+        fields.remove(field)
+        sendJson(current, JSONObject().put("type", "field_closed").put("field", field).toString())
+    }
+
+    /** The window's insets changed: every slot lays Turu's UI out around them. */
+    fun insets(keyboard: Int, cutoutLeft: Int, cutoutRight: Int) {
+        insets = Triple(keyboard, cutoutLeft, cutoutRight)
+        for (slot in messengers.keys) sendInsets(slot)
+    }
+
+    private fun sendInsets(slot: Int) {
+        val (keyboard, left, right) = insets
+        val message = JSONObject().put("type", "insets").put("keyboard", keyboard)
+            .put("cutout_left", left).put("cutout_right", right)
+        sendJson(slot, message.toString())
     }
 
     /**
@@ -307,7 +384,10 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
     /** A slot's hello with its control API: its engine is up, and draws as soon as it has the surface. */
     private fun noteReady(slot: Int, json: String) {
         val message = runCatching { JSONObject(json) }.getOrNull() ?: return
-        if (message.optString("type") == "hello" && !message.isNull("api")) {
+        if (message.optString("type") != "hello") return
+        // A slot that's (back) up learns the window's insets.
+        sendInsets(slot)
+        if (!message.isNull("api")) {
             ready.add(slot)
             updateOverlay()
         }
@@ -413,6 +493,10 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
 
     companion object {
         const val SLOTS = 4
+
+        /** The text fields above the keyboard, as the messages name them. */
+        const val GAME = "game"
+        const val UI = "ui"
         private val CLASSES = listOf(
             Slot1Service::class.java,
             Slot2Service::class.java,
@@ -422,6 +506,14 @@ class SlotShell(private val context: Context, private val view: SurfaceView, pri
 
         init {
             System.loadLibrary("turu_android")
+        }
+
+        /**
+         * Stops every slot's service (each one's process ends with it): process tabs were turned off.
+         * Their records stay, so their tabs come back if they're turned on again.
+         */
+        fun stopAll(context: Context) {
+            for (slot in CLASSES) context.stopService(Intent(context, slot))
         }
 
         @JvmStatic

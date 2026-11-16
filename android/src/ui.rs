@@ -22,6 +22,14 @@ pub fn keyboard_height() -> u32 {
     KEYBOARD_HEIGHT.load(Ordering::Relaxed)
 }
 
+/// The keyboard's height and the cutout's sides, as the shell tells a process tab (M3: its
+/// activity is the shell's).
+pub(crate) fn set_insets(keyboard: u32, cutout_left: u32, cutout_right: u32) {
+    KEYBOARD_HEIGHT.store(keyboard, Ordering::Relaxed);
+    CUTOUT_LEFT.store(cutout_left, Ordering::Relaxed);
+    CUTOUT_RIGHT.store(cutout_right, Ordering::Relaxed);
+}
+
 /// `TuruActivity.nativeKeyboardHeight(pixels)`: the window's insets changed.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeKeyboardHeight<'local>(

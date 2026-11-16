@@ -210,10 +210,14 @@ impl ClientScreen {
                     PlayerEvent::FocusLost
                 });
             }
-            // The client's own (`app/src/client.rs`): not the screen's.
+            // The client's own (`app/src/client.rs`), or Android's (its slots): not the screen's.
             ToClient::Tabs { .. }
             | ToClient::Answer { .. }
             | ToClient::Dump { .. }
+            | ToClient::FieldEdited { .. }
+            | ToClient::FieldEnter { .. }
+            | ToClient::FieldClosed { .. }
+            | ToClient::Insets { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

@@ -88,6 +88,8 @@ class TuruActivity : GameActivity() {
                 handleSlotIntent(intent)
             }
         } else {
+            // Process tabs turned off: slots still running from before would play beside this.
+            SlotShell.stopAll(this)
             TuruService.start(this)
         }
         // Back goes to the background like Home, instead of closing the activity: the game and a
@@ -104,13 +106,19 @@ class TuruActivity : GameActivity() {
         displays().registerDisplayListener(displayListener, null)
         // The keyboard's height, for the strip above it that shows what the game's text field holds.
         window.decorView.setOnApplyWindowInsetsListener { view, insets ->
-            nativeKeyboardHeight(keyboardHeight(insets))
+            val keyboard = keyboardHeight(insets)
+            nativeKeyboardHeight(keyboard)
             // Held sideways, a punch-hole camera sits at the left or right edge, where the strip's
             // text would be under it.
+            var (left, right) = 0 to 0
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 val cutout = insets.displayCutout
-                nativeCutout(cutout?.safeInsetLeft ?: 0, cutout?.safeInsetRight ?: 0)
+                left = cutout?.safeInsetLeft ?: 0
+                right = cutout?.safeInsetRight ?: 0
+                nativeCutout(left, right)
             }
+            // With process tabs, the slots draw Turu's UI: they lay it out around these too.
+            shell?.insets(keyboard, left, right)
             view.onApplyWindowInsets(insets)
         }
         askOnce()
@@ -118,16 +126,32 @@ class TuruActivity : GameActivity() {
 
     /** The game's focused text field, above the keyboard (`game_field.rs`). */
     private val gameField = SurfaceField(this, object : FieldTarget {
-        override fun edited(text: String, start: Int, end: Int) = nativeGameFieldEdited(text, start, end)
-        override fun enter() = nativeGameFieldEnter()
-        override fun closed() = nativeGameFieldClosed()
+        override fun edited(text: String, start: Int, end: Int) {
+            shell?.fieldEdited(SlotShell.GAME, text, start, end) ?: nativeGameFieldEdited(text, start, end)
+        }
+
+        override fun enter() {
+            shell?.fieldEnter(SlotShell.GAME) ?: nativeGameFieldEnter()
+        }
+
+        override fun closed() {
+            shell?.fieldClosed(SlotShell.GAME) ?: nativeGameFieldClosed()
+        }
     })
 
     /** Turu's focused text box (egui's), above the keyboard (`ui_field.rs`). */
     private val uiField = SurfaceField(this, object : FieldTarget {
-        override fun edited(text: String, start: Int, end: Int) = nativeUiFieldEdited(text, start, end)
-        override fun enter() = nativeUiFieldEnter()
-        override fun closed() = nativeUiFieldClosed()
+        override fun edited(text: String, start: Int, end: Int) {
+            shell?.fieldEdited(SlotShell.UI, text, start, end) ?: nativeUiFieldEdited(text, start, end)
+        }
+
+        override fun enter() {
+            shell?.fieldEnter(SlotShell.UI) ?: nativeUiFieldEnter()
+        }
+
+        override fun closed() {
+            shell?.fieldClosed(SlotShell.UI) ?: nativeUiFieldClosed()
+        }
     })
 
     /**
@@ -183,6 +207,12 @@ class TuruActivity : GameActivity() {
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         shell?.let {
+            // As without process tabs: a finger down outside the field above the keyboard closes it.
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                for (field in arrayOf(gameField, uiField)) {
+                    if (field.touchedOutside(event.rawX, event.rawY)) field.close()
+                }
+            }
             it.touch(event)
             return true
         }

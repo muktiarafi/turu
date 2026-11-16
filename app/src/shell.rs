@@ -712,7 +712,13 @@ impl ShellApp {
                     tracing::warn!("Couldn't open {url}: {e}");
                 }
             }
-            ToShell::Frame { .. } | ToShell::Hello { .. } | ToShell::Unknown => {}
+            // The text-field messages are Android's (its slots); a desktop client sends keys.
+            ToShell::Frame { .. }
+            | ToShell::Hello { .. }
+            | ToShell::FieldShow { .. }
+            | ToShell::FieldUpdate { .. }
+            | ToShell::FieldHide { .. }
+            | ToShell::Unknown => {}
         }
     }
 
