@@ -79,6 +79,10 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `/status` showed it, `POST /update` installed it into a copy of `Turu.app` and exited 75; the
   nav bar showed "Update 9.9.9" in the window. Windows and Linux installs are unit-tested
   (unpacking) but haven't run on those systems; Download & restart in the window wasn't clicked.
+  **Latest on GitHub:** `release.yml` publishes a beta tag without GitHub's pre-release flag and
+  marks it Latest (GitHub's Latest can't be a pre-release), as it does a release; alpha and rc
+  tags stay pre-releases. The updater ignores that flag for betas: the `-beta` in the version
+  makes it a pre-release, offered only on that channel.
   **Nightly builds** (`release.yml`: nightly at 03:00 UTC when main has new commits, or by hand
   with "Publish as the nightly release"): built as `<next version>-nightly.<date>`
   (`0.4.0-nightly.20261118`, About shows the `nightly` channel) and published as one rolling
