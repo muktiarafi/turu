@@ -505,7 +505,12 @@ fn main() -> Result<(), Error> {
     // update checks and `TURU_PERF_LOG`, now that their messages can be logged.
     turu::configure_startup();
     crash_uploads::start();
-    turu::start_api();
+    // A process tabs' shell serves `--api` over its tabs' own (`shell::run`); its clients, which
+    // see the same Options switch, serve their own.
+    let runs_shell = turu::client_of().is_none() && (turu::shell() || shell::switched_on_for_this_start());
+    if !runs_shell {
+        turu::start_api();
+    }
     turu::start_monitor();
     turu::start_client_updates();
     turu::start_perf_log((!turu::headless()).then(|| {

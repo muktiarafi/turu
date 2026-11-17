@@ -1001,11 +1001,29 @@ since; none built or run on Windows or Linux yet). The window (`app/src/gui/cont
      alone is type-checked for both targets; a cross-check from a Mac stops at C dependencies:
      `jpegxr`, `rquickjs-sys`, `openssl-sys`).
 
-Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above: fixed but not built or run there). Not built: the shell's own `--api`
-(ignored with a warning: each client has one). A down tab's monitor entry goes offline at the
-hub's next poll of it (within 2 s: a client that doesn't answer is offline at once, not after 15 s;
+Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above: fixed but not built or run there). A down tab's monitor entry goes offline at the hub's next poll
+of it (within 2 s: a client that doesn't answer is offline at once, not after 15 s;
 `peers_are_polled_through_their_control_api`), and a monitor the shell reports to with Report To
 drops it at the shell's next report (`Hub::record_report` keeps only the bots a report lists).
+
+**The shell's own `--api`** (2026-11-17): it was ignored with a warning (each client had one, on
+a port of the shell's choosing). The shell now serves the same API over its tabs
+(`control_api::start_forwarding`, started in `shell::run`): the same token (`TURU_API_TOKEN` or
+`api-token`), `/tabs` (the shell's tab numbers and labels), `/tabs/<id>/<route>` and the plain
+routes for the first tab, each passed on to the tab's client's control API with that tab's
+token, its answer streamed back (`/events` too). A tab whose client doesn't answer (starting
+again) is `503 game_not_running`; the default route never falls back to another tab. A window
+that became the shell through Options > Application used to start the in-process API on its
+address, over a process with no game: `main.rs` now leaves `--api` to `shell::run` on both paths
+(not in the clients, which see the same switch and serve their own). Checked with the switch
+saved on and `--api` without `--shell`: the shell served it and its client its own.
+A client's `/update` used to answer `not_supported` (a client leaves updates to the shell); it now
+asks the shell, as Download & restart does, after its own check that no script runs. Tested in
+`bot/tests/control_api.rs` (two real control APIs with tokens of their own and a dead port behind
+it). Checked on the Mac with `--shell --api`: no token 401, `/tabs` listed both tabs, plain and
+`/tabs/<id>` routes and `/events` answered, and a client killed by the test hook came back on a
+new port with `/tabs/2/status` answering from it (its restart was quicker than the next request,
+so the 503 wasn't seen there). Not run: `POST /update` through it (the client's new installer).
 
 ### M6: one way of doing tabs
 

@@ -5,6 +5,11 @@
 //! The routes act on the first tab (the only one without a window). `/tabs` lists the tabs, and
 //! `/tabs/<id>/<route>` sends any route, `/events` included, to one of them.
 //!
+//! A process tabs' shell (`--shell`) serves the same API over its tabs ([`start_forwarding`]):
+//! each tab's client has a control API of its own, and the shell passes every request on to the
+//! tab's, with that tab's token. A tab whose client isn't running (it starts again after a crash)
+//! answers `game_not_running`.
+//!
 //! | Route | What |
 //! |---|---|
 //! | `GET /tabs` | The tabs: `id`, `label` and `default` (the one the routes without `/tabs/<id>` act on). |
@@ -105,7 +110,7 @@ use crate::api::{map, player, send, servers};
 use crate::auto::{self, AutoMode};
 use crate::host::HostError;
 use crate::log::LogKind;
-use crate::monitor::hub::{Source, Sources};
+use crate::monitor::hub::{PeerSource, Peers, Source, Sources};
 use crate::script::options::ScriptOptions;
 use crate::script::{OptionsSource, ScriptOptionsState};
 use crate::{Bot, BotError, butler, gear};
@@ -113,7 +118,10 @@ use http_body_util::channel::Channel;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
-use hyper::header::{ALLOW, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, HeaderMap};
+use hyper::header::{
+    ALLOW, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, HOST, HeaderMap, HeaderValue,
+    TRANSFER_ENCODING,
+};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response};
@@ -153,12 +161,38 @@ pub fn start(bot: &Arc<Bot>, addr: SocketAddr, token: String) -> Result<SocketAd
 /// Listens on `addr` on its own thread, for the tabs `tabs` gives (the first is the default);
 /// returns the address it listens on.
 pub fn start_tabs(tabs: Sources, addr: SocketAddr, token: String) -> Result<SocketAddr, String> {
+    listen(addr, token, move |token, request| {
+        handle(tabs.clone(), token, request)
+    })
+}
+
+/// A process tabs' shell's control API: listens on `addr` on its own thread and passes each
+/// request on to a tab's own control API (`peers`: the shell's tabs, the first the default), as
+/// `/tabs/<id>/<route>` or the first tab's, with the tab's token instead of `token`. The answer,
+/// `/events`' stream included, comes back as the tab gave it; a tab whose client doesn't answer
+/// is `game_not_running`. Returns the address it listens on.
+pub fn start_forwarding(
+    peers: Peers,
+    addr: SocketAddr,
+    token: String,
+) -> Result<SocketAddr, String> {
+    listen(addr, token, move |token, request| {
+        forward(peers.clone(), token, request)
+    })
+}
+
+/// Binds `addr` (so that a port in use is an error for the caller) and serves each request with
+/// `handler` on a thread of its own, after checking the token's length.
+fn listen<F, Fut>(addr: SocketAddr, token: String, handler: F) -> Result<SocketAddr, String>
+where
+    F: Fn(Arc<str>, Request<Incoming>) -> Fut + Clone + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<Response<Body>, Infallible>> + Send + 'static,
+{
     if token.len() < MIN_TOKEN {
         return Err(format!(
             "the API token must be at least {MIN_TOKEN} characters"
         ));
     }
-    // Bound here, so that a port in use is an error for the caller.
     let listener =
         std::net::TcpListener::bind(addr).map_err(|e| format!("couldn't listen on {addr}: {e}"))?;
     let local = listener.local_addr().map_err(|e| e.to_string())?;
@@ -169,12 +203,16 @@ pub fn start_tabs(tabs: Sources, addr: SocketAddr, token: String) -> Result<Sock
         .map_err(|e| e.to_string())?;
     std::thread::Builder::new()
         .name("Turu API".into())
-        .spawn(move || runtime.block_on(serve(listener, tabs, token.into())))
+        .spawn(move || runtime.block_on(serve(listener, token.into(), handler)))
         .map_err(|e| e.to_string())?;
     Ok(local)
 }
 
-async fn serve(listener: std::net::TcpListener, tabs: Sources, token: Arc<str>) {
+async fn serve<F, Fut>(listener: std::net::TcpListener, token: Arc<str>, handler: F)
+where
+    F: Fn(Arc<str>, Request<Incoming>) -> Fut + Clone + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<Response<Body>, Infallible>> + Send + 'static,
+{
     let listener = match tokio::net::TcpListener::from_std(listener) {
         Ok(listener) => listener,
         Err(e) => {
@@ -192,9 +230,9 @@ async fn serve(listener: std::net::TcpListener, tabs: Sources, token: Arc<str>) 
                 continue;
             }
         };
-        let (tabs, token) = (tabs.clone(), token.clone());
+        let (handler, token) = (handler.clone(), token.clone());
         tokio::spawn(async move {
-            let service = service_fn(move |request| handle(tabs.clone(), token.clone(), request));
+            let service = service_fn(move |request| handler(token.clone(), request));
             let _ = http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service)
                 .await;
@@ -485,14 +523,26 @@ fn pick_tab(
     method: &Method,
     path_and_query: &str,
 ) -> Result<(Arc<Bot>, String), Reply> {
-    let list = tabs();
+    pick(
+        tabs(),
+        |source| (&source.id, &source.label),
+        method,
+        path_and_query,
+    )
+    .map(|(source, route)| (source.bot, route))
+}
+
+/// [`pick_tab`] over any list of tabs, each with its id (`tab:<n>`, `<n>` in the routes) and label.
+fn pick<T>(
+    list: Vec<T>,
+    names: impl Fn(&T) -> (&String, &String),
+    method: &Method,
+    path_and_query: &str,
+) -> Result<(T, String), Reply> {
     let path = path_and_query.split('?').next().unwrap_or_default();
-    let short = |source: &Source| {
-        source
-            .id
-            .strip_prefix("tab:")
-            .unwrap_or(&source.id)
-            .to_owned()
+    let short = |tab: &T| {
+        let id = names(tab).0;
+        id.strip_prefix("tab:").unwrap_or(id).to_owned()
     };
     if path == "/tabs" {
         if method != Method::GET {
@@ -501,7 +551,7 @@ fn pick_tab(
         let tabs: Vec<Value> = list
             .iter()
             .enumerate()
-            .map(|(i, source)| json!({ "id": short(source), "label": source.label, "default": i == 0 }))
+            .map(|(i, tab)| json!({ "id": short(tab), "label": names(tab).1, "default": i == 0 }))
             .collect();
         return Err(ok(json!({ "tabs": tabs })));
     }
@@ -515,16 +565,104 @@ fn pick_tab(
                 ));
             }
         };
+        let route = route.to_owned();
         return list
             .into_iter()
-            .find(|source| short(source) == id)
-            .map(|source| (source.bot, route.to_owned()))
+            .find(|tab| short(tab) == id)
+            .map(|tab| (tab, route))
             .ok_or_else(|| error(Code::UnknownTab, format!("no tab {id}")));
     }
     match list.into_iter().next() {
-        Some(source) => Ok((source.bot, path_and_query.to_owned())),
+        Some(tab) => Ok((tab, path_and_query.to_owned())),
         None => Err(error(Code::NoTabs, "there's no tab")),
     }
+}
+
+/// How long the shell waits for a tab's client to take the connection.
+const FORWARD_CONNECT: Duration = Duration::from_secs(3);
+
+/// [`start_forwarding`]'s requests: checked here, then passed on to the tab's own control API.
+async fn forward(
+    peers: Peers,
+    token: Arc<str>,
+    request: Request<Incoming>,
+) -> Result<Response<Body>, Infallible> {
+    if !authorized(request.headers(), &token) {
+        return Ok(json_response(error(
+            Code::Unauthorized,
+            "missing or wrong API token",
+        )));
+    }
+    let path_and_query = request
+        .uri()
+        .path_and_query()
+        .map_or("/", |p| p.as_str())
+        .to_owned();
+    let (peer, route) = match pick(
+        peers(),
+        |peer: &PeerSource| (&peer.id, &peer.label),
+        request.method(),
+        &path_and_query,
+    ) {
+        Ok(picked) => picked,
+        Err(reply) => return Ok(json_response(reply)),
+    };
+    Ok(match pass_on(&peer, request, &route).await {
+        Ok(response) => response,
+        Err(e) => json_response(error(
+            Code::GameNotRunning,
+            format!(
+                "{}'s client isn't answering ({e}): it may be starting again",
+                peer.label
+            ),
+        )),
+    })
+}
+
+/// Sends `request` to `peer`'s control API as `route`, with its token, and streams its answer
+/// back; dropped (and the tab's connection with it) when the caller goes.
+async fn pass_on(
+    peer: &PeerSource,
+    request: Request<Incoming>,
+    route: &str,
+) -> Result<Response<Body>, String> {
+    let stream = tokio::time::timeout(FORWARD_CONNECT, tokio::net::TcpStream::connect(peer.api))
+        .await
+        .map_err(|_| "it didn't take the connection".to_owned())?
+        .map_err(|e| e.to_string())?;
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    let (mut parts, body) = request.into_parts();
+    parts.uri = route.parse().map_err(|e| format!("{route}: {e}"))?;
+    let bearer =
+        HeaderValue::from_str(&format!("Bearer {}", peer.token)).map_err(|e| e.to_string())?;
+    parts.headers.insert(AUTHORIZATION, bearer);
+    let host = HeaderValue::from_str(&peer.api.to_string()).map_err(|e| e.to_string())?;
+    parts.headers.insert(HOST, host);
+    let response = sender
+        .send_request(Request::from_parts(parts, body))
+        .await
+        .map_err(|e| e.to_string())?;
+    let (mut parts, mut answer) = response.into_parts();
+    // This side frames the body itself.
+    parts.headers.remove(TRANSFER_ENCODING);
+    parts.headers.remove(CONNECTION);
+    let (mut tx, body) = Channel::<Bytes, Infallible>::new(16);
+    tokio::spawn(async move {
+        while let Some(Ok(frame)) = answer.frame().await {
+            // Fails once the caller has gone; the tab's connection ends with `answer`.
+            if let Ok(data) = frame.into_data()
+                && tx.send_data(data).await.is_err()
+            {
+                return;
+            }
+        }
+    });
+    Ok(Response::from_parts(parts, body.boxed()))
 }
 
 /// `Authorization: Bearer <token>` (the scheme in any case, RFC 9110).

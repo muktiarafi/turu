@@ -246,7 +246,7 @@ curl -H "$T" localhost:9091/butler                   # online accounts, who can 
 curl -H "$T" -X POST "localhost:9091/butler/summon?user=MyAlt"   # also release, summon-all,
                                                                  # release-all, follow, unfollow
 curl -N -H "$T" "localhost:9091/events?logs=script,debug"       # follow it, instead of polling
-curl -H "$T" localhost:9091/tabs                     # with a window: the tabs
+curl -H "$T" localhost:9091/tabs                     # with a window (or --shell): the tabs
 curl -H "$T" localhost:9091/tabs/2/status            # any route, for one tab
 ```
 
@@ -362,7 +362,7 @@ It also writes the samples to `<log>.csv`.
 | `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--client=<address>` | Run one tab without a window and draw it for a shell at `<address>` (needs `TURU_SHELL_TOKEN`; docs/TAB_PROCESSES_PROPOSAL.md, M2). Quits when the shell closes. |
-| `--shell` | A window that runs each tab in a `--client` process and shows the one selected (or all, in Grid View); the first tab gets the other flags but `--api`, `--monitor` and `--report-to`. The shell runs the web monitor and Report To over every tab; each client gets a control API of its own on a free local port (the shell's `--api` is ignored). A dead client is started again (docs/TAB_PROCESSES_PROPOSAL.md, M5). `TURU_SHELL_TEST=<file>` scripts it for tests. |
+| `--shell` | A window that runs each tab in a `--client` process and shows the one selected (or all, in Grid View); the first tab gets the other flags but `--api`, `--monitor` and `--report-to`. The shell runs the web monitor and Report To over every tab; each client gets a control API of its own on a free local port, and the shell's `--api` serves the same routes over the tabs, passing each request on to the tab's (`/tabs` lists them; a tab whose client is starting again answers `game_not_running`). A dead client is started again (docs/TAB_PROCESSES_PROPOSAL.md, M5). `TURU_SHELL_TEST=<file>` scripts it for tests. |
 | `--exit-on-script-stop` | Log out and quit when the script, or the playlist, ends (not when auto-relogin stops it). |
 | `--api[=<address>]` | The control API, default `127.0.0.1:9091`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |

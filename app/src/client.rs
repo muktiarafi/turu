@@ -151,6 +151,9 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             turu::UpdateRequest::Install { on_quit } => ToShell::InstallUpdate { on_quit },
         })
     }));
+    // The control API's `/update` (also through the shell's `--api`): asks the shell, as Download &
+    // restart does, after this tab's own check that no script runs.
+    turu_bot::updates::set_installer(Box::new(|| turu::install_update(false)));
     // Army > Accounts' processes of their own are the shell's: launched there, they outlive this
     // client, and its web monitor lists them. Its list comes back (`ToClient::ArmyClients`).
     let army_out = out.clone();

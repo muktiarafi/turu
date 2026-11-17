@@ -301,6 +301,11 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     turu::monitor_hub().set_peers(Arc::new(move || {
         listed.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }));
+    // `--api`: the same routes over the tabs, passed on to each tab's client's control API.
+    let listed = peers.clone();
+    turu::start_shell_api(Arc::new(move || {
+        listed.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }));
     let mut app = ShellApp {
         peers,
         address,

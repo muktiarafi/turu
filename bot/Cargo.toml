@@ -21,8 +21,9 @@ oxc = { version = "0.156", features = ["transformer", "codegen", "semantic"] }
 # The server list (`bot.servers.getServers`); the desktop already builds it. The TLS backend is a
 # feature (below).
 reqwest = { workspace = true, features = ["blocking", "gzip"] }
-# The control API (`control_api.rs`) and its token; reqwest already builds hyper and tokio.
-hyper = { version = "1", features = ["server", "http1"] }
+# The control API (`control_api.rs`) and its token, and a shell's passing requests on to its
+# tabs' (`start_forwarding`); reqwest already builds hyper and tokio.
+hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = { version = "0.1", features = ["channel"] }
 tokio = { workspace = true, features = ["rt", "net", "time"] }

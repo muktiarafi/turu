@@ -1210,20 +1210,32 @@ fn repo_path(scripts: &Path, given: &str) -> Option<String> {
 
 /// Starts the control API if `--api` was given (once logging is up, so its messages show). The
 /// token is `TURU_API_TOKEN`, else the one in the data folder's `api-token` (made the first time).
+/// A process tabs' shell starts its own instead ([`start_shell_api`]).
 pub fn start_api() {
-    let Some(addr) = API.lock().ok().and_then(|mut a| a.take()) else {
-        return;
-    };
-    if shell() {
-        // It has no game of its own; each tab's client has a control API (on a port of its own).
-        tracing::warn!("--api in --shell: each tab's client serves its own; the web monitor reaches them");
-        return;
+    if let Some((addr, token)) = api_settings() {
+        let started = token.and_then(|token| turu_bot::control_api::start_tabs(tab_sources(), addr, token));
+        report_api(started);
     }
+}
+
+/// A process tabs' shell's control API, if `--api` was given: the same routes over its tabs
+/// (`peers`, each a client process with a control API of its own), passed on to each tab's
+/// (`control_api::start_forwarding`), with the token [`start_api`] would use.
+pub fn start_shell_api(peers: turu_bot::monitor::hub::Peers) {
+    if let Some((addr, token)) = api_settings() {
+        let started = token.and_then(|token| turu_bot::control_api::start_forwarding(peers, addr, token));
+        report_api(started);
+    }
+}
+
+/// `--api`'s address and the token, taken once.
+fn api_settings() -> Option<(std::net::SocketAddr, Result<String, String>)> {
+    let addr = API.lock().ok().and_then(|mut a| a.take())?;
     let addr: std::net::SocketAddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
             tracing::error!("--api={addr}: {e} (expected an address like 127.0.0.1:9091)");
-            return;
+            return None;
         }
     };
     let token = match std::env::var("TURU_API_TOKEN")
@@ -1241,7 +1253,12 @@ pub fn start_api() {
             token
         }
     };
-    match token.and_then(|token| turu_bot::control_api::start_tabs(tab_sources(), addr, token)) {
+    Some((addr, token))
+}
+
+/// Logs where the control API listens, or why it doesn't.
+fn report_api(started: Result<std::net::SocketAddr, String>) {
+    match started {
         Ok(local) => {
             tracing::info!("Control API on http://{local}");
             if !local.ip().is_loopback() {

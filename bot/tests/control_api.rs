@@ -658,3 +658,146 @@ fn script_commands_answer_with_the_script() {
     assert_eq!(body["path"], script.display().to_string());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A process tabs' shell's control API (`start_forwarding`): each request goes on to a tab's own
+/// control API, with that tab's token (each tab below has its own, unlike the shell's).
+#[test]
+fn a_shell_passes_requests_on_to_its_tabs() {
+    use std::io::{BufRead, BufReader};
+    use turu_bot::monitor::hub::PeerSource;
+    let (first, first_base) = start();
+    let second = Bot::new();
+    let second_token = "fedcba9876543210fedcba9876543210";
+    let second_api =
+        turu_bot::control_api::start(&second, "127.0.0.1:0".parse().unwrap(), second_token.into())
+            .unwrap();
+    let first_api = first_base.strip_prefix("http://").unwrap().parse().unwrap();
+    // A tab whose client isn't running: nothing listens on its port.
+    let gone = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    let peers = vec![
+        PeerSource {
+            id: "tab:3".into(),
+            label: "Hero".into(),
+            api: first_api,
+            token: TOKEN.into(),
+        },
+        PeerSource {
+            id: "tab:5".into(),
+            label: "Sidekick".into(),
+            api: second_api,
+            token: second_token.into(),
+        },
+        PeerSource {
+            id: "tab:8".into(),
+            label: "Login".into(),
+            api: gone,
+            token: TOKEN.into(),
+        },
+    ];
+    let shell_token = "shell-token-shell-token-shell-token";
+    let addr = turu_bot::control_api::start_forwarding(
+        Arc::new(move || peers.clone()),
+        "127.0.0.1:0".parse().unwrap(),
+        shell_token.into(),
+    )
+    .unwrap();
+    let base = format!("http://{addr}");
+
+    // The shell's token, never a tab's.
+    assert_eq!(call("GET", &format!("{base}/status"), None, None).0, 401);
+    assert_eq!(
+        call("GET", &format!("{base}/status"), Some(TOKEN), None).0,
+        401
+    );
+    let (status, body) = call("GET", &format!("{base}/tabs"), Some(shell_token), None);
+    assert_eq!(status, 200);
+    assert_eq!(
+        body["tabs"],
+        json!([
+            { "id": "3", "label": "Hero", "default": true },
+            { "id": "5", "label": "Sidekick", "default": false },
+            { "id": "8", "label": "Login", "default": false },
+        ])
+    );
+
+    // A tab's route, its query and its body; a plain route is the first tab's.
+    first.logs.script.push("from the first tab");
+    second.logs.script.push("from the second tab");
+    let text = |body: &Value| body["lines"][0]["text"].clone();
+    let (status, body) = call(
+        "GET",
+        &format!("{base}/tabs/5/log?type=script&since=0"),
+        Some(shell_token),
+        None,
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(text(&body), "from the second tab");
+    let (_, body) = call(
+        "GET",
+        &format!("{base}/log?type=script&since=0"),
+        Some(shell_token),
+        None,
+    );
+    assert_eq!(text(&body), "from the first tab");
+    let (status, body) = call(
+        "POST",
+        &format!("{base}/tabs/5/game/options"),
+        Some(shell_token),
+        Some(json!({ "reloginServer": "Yorumi" })),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(second.opts().relogin_server, "Yorumi");
+    assert_ne!(first.opts().relogin_server, "Yorumi");
+    // A tab's own answer comes back as it is.
+    let (status, body) = call(
+        "POST",
+        &format!("{base}/tabs/5/game/options"),
+        Some(shell_token),
+        Some(json!({ "noSuchOption": 1 })),
+    );
+    assert_eq!((status, &body["code"]), (400, &json!("invalid_body")));
+
+    // No such tab; a tab whose client isn't running.
+    let (status, body) = call(
+        "GET",
+        &format!("{base}/tabs/4/status"),
+        Some(shell_token),
+        None,
+    );
+    assert_eq!((status, &body["code"]), (404, &json!("unknown_tab")));
+    let (status, body) = call(
+        "GET",
+        &format!("{base}/tabs/8/status"),
+        Some(shell_token),
+        None,
+    );
+    assert_eq!((status, &body["code"]), (503, &json!("game_not_running")));
+
+    // `/events` streams through.
+    let response = Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap()
+        .get(format!("{base}/tabs/5/events?logs=debug"))
+        .bearer_auth(shell_token)
+        .send()
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    let mut lines = BufReader::new(response).lines();
+    assert_eq!(lines.next().unwrap().unwrap(), "event: script");
+    lines.next();
+    lines.next();
+    second.logs.debug.push("a line while streaming");
+    assert_eq!(lines.next().unwrap().unwrap(), "event: log");
+    assert!(
+        lines
+            .next()
+            .unwrap()
+            .unwrap()
+            .contains("a line while streaming")
+    );
+}
