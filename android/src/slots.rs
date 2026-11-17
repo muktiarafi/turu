@@ -324,6 +324,8 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                         });
                     }
                 }
+                // The display's refresh rate, from the shell's activity.
+                Ok(ToClient::RefreshRate { millihertz }) => crate::ui::set_refresh_millihertz(millihertz),
                 // Another tab turned Headless Mode on or off.
                 Ok(ToClient::HeadlessMode { on }) => {
                     turu_frontend::client_link::set_headless_mode(on);

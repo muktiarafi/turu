@@ -77,6 +77,10 @@ pub fn soft_keyboard(show: bool) {
 /// choice): `TuruActivity.preferRefreshRate(hz)`, which does it on the UI thread.
 pub fn prefer_refresh_rate(hz: u32) {
     let Some(app) = crate::app() else {
+        // A slot has no activity: the shell's asks (if this slot is on screen).
+        if crate::slots::slot().is_some() {
+            crate::slots::to_shell(turu_frontend::shell::ToShell::PreferRefreshRate { hz });
+        }
         return;
     };
     let result = crate::platform::with_activity(&app, |env, activity| {
@@ -114,6 +118,13 @@ static REFRESH_MILLIHERTZ: AtomicU32 = AtomicU32::new(60_000);
 /// The display's refresh rate in millihertz, for frame interpolation's pacing (`screen.rs`).
 pub fn refresh_millihertz() -> u32 {
     REFRESH_MILLIHERTZ.load(Ordering::Relaxed)
+}
+
+/// The display's refresh rate, as the shell's activity reports it to a slot (`ToClient::RefreshRate`).
+pub fn set_refresh_millihertz(millihertz: u32) {
+    if millihertz > 0 {
+        REFRESH_MILLIHERTZ.store(millihertz, Ordering::Relaxed);
+    }
 }
 
 /// `TuruActivity.nativeRefreshRate(hz)`: the activity started, or its display changed mode.

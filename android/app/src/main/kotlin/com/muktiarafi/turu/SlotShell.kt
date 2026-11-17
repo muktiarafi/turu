@@ -287,6 +287,7 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
                 activity.createDocument(message.optString("mime_type"), message.optString("file_name"))
             }
             "install" -> install(slot, message.optString("path"))
+            "prefer_refresh_rate" -> activity.preferRefreshRate(message.optInt("hz").toFloat())
         }
     }
 
@@ -380,6 +381,20 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         for (slot in messengers.keys) sendInsets(slot)
     }
 
+    /** The display's refresh rate (Hz), sent to every slot and to each one when it says hello. */
+    private var refreshHz = 0f
+
+    fun refreshRate(hz: Float) {
+        refreshHz = hz
+        for (slot in messengers.keys) sendRefreshRate(slot)
+    }
+
+    private fun sendRefreshRate(slot: Int) {
+        if (refreshHz <= 0f) return
+        val message = JSONObject().put("type", "refresh_rate").put("millihertz", Math.round(refreshHz * 1000f))
+        sendJson(slot, message.toString())
+    }
+
     private fun sendInsets(slot: Int) {
         val (keyboard, left, right) = insets
         val message = JSONObject().put("type", "insets").put("keyboard", keyboard)
@@ -454,8 +469,9 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     private fun noteReady(slot: Int, json: String) {
         val message = runCatching { JSONObject(json) }.getOrNull() ?: return
         if (message.optString("type") != "hello") return
-        // A slot that's (back) up learns the window's insets.
+        // A slot that's (back) up learns the window's insets and the display's refresh rate.
         sendInsets(slot)
+        sendRefreshRate(slot)
         if (!message.isNull("api")) {
             ready.add(slot)
             updateOverlay()

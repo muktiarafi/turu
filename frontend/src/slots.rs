@@ -375,8 +375,10 @@ impl SlotShell {
                     .map(|&other| Action::Send(other, ToClient::HeadlessMode { on }))
                     .collect()
             }
-            // A hidden slot's text box (it lost the screen while it had the focus) shows nothing.
-            field @ (ToShell::FieldShow { .. }
+            // A hidden slot's text box (it lost the screen while it had the focus) shows nothing,
+            // and only the slot on screen chooses the display's mode.
+            field @ (ToShell::PreferRefreshRate { .. }
+            | ToShell::FieldShow { .. }
             | ToShell::FieldUpdate { .. }
             | ToShell::FieldHide { .. }
             | ToShell::SoftKeyboard { .. }) => {

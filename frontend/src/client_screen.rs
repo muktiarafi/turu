@@ -429,6 +429,7 @@ impl ClientScreen {
             | ToClient::DocumentCreated { .. }
             | ToClient::Installed { .. }
             | ToClient::AndroidKey { .. }
+            | ToClient::RefreshRate { .. }
             | ToClient::HeadlessMode { .. }
             | ToClient::Updates { .. }
             | ToClient::ArmyClients { .. }

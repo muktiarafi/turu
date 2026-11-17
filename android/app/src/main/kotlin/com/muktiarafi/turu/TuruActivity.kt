@@ -360,7 +360,10 @@ class TuruActivity : GameActivity() {
     private fun currentDisplay(): android.view.Display = ContextCompat.getDisplayOrDefault(this)
 
     private fun sendRefreshRate() {
-        nativeRefreshRate(currentDisplay().refreshRate)
+        val hz = currentDisplay().refreshRate
+        nativeRefreshRate(hz)
+        // The slots draw the game: they pace frame interpolation by it.
+        shell?.refreshRate(hz)
     }
 
     /**

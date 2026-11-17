@@ -139,6 +139,9 @@ pub enum ToClient {
     /// the tab can be seen meanwhile, so it draws nothing; its game, sound and pace go on, as the
     /// window's own tabs do while it's covered.
     Covered { covered: bool },
+    /// Android: the display refreshes `millihertz` times a thousand seconds (frame interpolation's
+    /// pacing): to a slot when it says hello, and to every slot when the display changes mode.
+    RefreshRate { millihertz: u32 },
     /// Desktop: the shell's window went full screen or left it (Esc, the system's own button, a
     /// tab's Options): to every tab, and to a tab when it connects.
     FullScreen { on: bool },
@@ -353,6 +356,9 @@ pub enum ToShell {
     Share { subject: String, text: String },
     /// Android: an update's APK to the installer; answered with `Installed`.
     Install { path: String },
+    /// Android: a display mode refreshing at least `hz` times a second (0: the system's choice),
+    /// for frame interpolation; the shell's activity asks for it (only the slot on screen's).
+    PreferRefreshRate { hz: u32 },
     /// Android: one of egui's own text boxes (not typed through `FieldShow`'s field) has the focus
     /// (`show`) or lost it: the shell's activity shows or hides the soft keyboard, whose keys come
     /// back as `AndroidKey` and `Text`.
@@ -778,6 +784,9 @@ mod tests {
                 you: Some(1),
             },
             ToClient::Hide,
+            ToClient::RefreshRate {
+                millihertz: 119_880,
+            },
         ];
         let mut bytes = Vec::new();
         for message in &to_client {

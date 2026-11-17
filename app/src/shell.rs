@@ -1191,6 +1191,7 @@ impl ShellApp {
             | ToShell::Share { .. }
             | ToShell::Install { .. }
             | ToShell::SoftKeyboard { .. }
+            | ToShell::PreferRefreshRate { .. }
             | ToShell::Unknown => {}
         }
     }
