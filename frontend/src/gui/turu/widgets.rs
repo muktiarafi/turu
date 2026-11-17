@@ -1114,9 +1114,17 @@ pub fn fps_badge(ctx: &egui::Context, top: f32, fps: f32) -> usize {
     } else {
         Color32::from_rgb(240, 120, 110)
     };
-    painter.rect_filled(badge, CornerRadius::same(7), Color32::from_rgba_premultiplied(14, 16, 22, 200));
+    painter.rect_filled(
+        badge,
+        CornerRadius::same(7),
+        Color32::from_rgba_premultiplied(14, 16, 22, 200),
+    );
     painter.circle_filled(pos2(badge.left() + 9.0, badge.center().y), 3.0, dot);
-    painter.galley(badge.left_top() + vec2(16.0, 4.0), galley, Color32::from_rgb(232, 234, 242));
+    painter.galley(
+        badge.left_top() + vec2(16.0, 4.0),
+        galley,
+        Color32::from_rgb(232, 234, 242),
+    );
     3
 }
 
