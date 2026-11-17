@@ -62,10 +62,10 @@ cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (
 Run the engine's tests with cargo-nextest (`.config/nextest.toml`): each test in its own process,
 every test binary at once. `cargo nextest run -p turu_bot <name>` runs the tests whose names
 contain `<name>`, `--test <file>` one `bot/tests/` file, `--run-ignored only` the ignored ones.
-Install it with
-`brew install cargo-nextest` or `cargo install cargo-nextest --locked`; without it, use
-`cargo test`. Keep `cargo test` for the app and frontend on macOS: the system checks each newly
-built test program at launch, and nextest launches one per test (over 100 s against seconds).
+Install it with `brew install cargo-nextest` or `cargo install cargo-nextest --locked`; without
+it, use `cargo test`. Keep `cargo test` for the app and frontend on macOS: the system checks each
+newly built test program at launch, and nextest launches one per test (over 100 s against
+seconds).
 CI runs all three crates in one `cargo nextest run --profile ci` (ci.yml).
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
