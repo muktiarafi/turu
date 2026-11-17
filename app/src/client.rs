@@ -251,6 +251,12 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             gpu_check();
             memory_tick(player);
             let next = SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)));
+            // Mugetsu 2.0.0's one-time tips for built-in graphics (`turu_frontend::graphics_tips`).
+            if let Some(drawn_fps) =
+                SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.take_picture_window()))
+            {
+                turu_frontend::graphics_tips::window(drawn_fps, player.frame_rate(), tip_quality(player));
+            }
             perf_tick(player);
             next
         },
@@ -293,6 +299,17 @@ fn gpu_check() {
         client.flush(Some(Duration::from_secs(2)));
     }
     exit_now(EXIT_GPU_LOST);
+}
+
+/// AQW's Quality, as the graphics tips take it.
+fn tip_quality(player: &mut ruffle_core::Player) -> turu_frontend::graphics_tips::Quality {
+    use ruffle_render::quality::StageQuality;
+    use turu_frontend::graphics_tips::Quality;
+    match player.quality() {
+        StageQuality::Low => Quality::Low,
+        StageQuality::Medium => Quality::Medium,
+        _ => Quality::High,
+    }
 }
 
 /// Ends the client with `code`, once a native crash being handled on another thread has its
@@ -498,6 +515,7 @@ fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
     crate::mugetsu::set_adapter_ids(info.vendor, info.device);
     #[cfg(not(windows))]
     crate::mugetsu::set_video_memory_adapter(adapter.clone());
+    crate::mugetsu::note_graphics_chip(&info);
     tracing::info!(
         "Client graphics: {} on {} (type: {:?})",
         info.backend.to_str(),

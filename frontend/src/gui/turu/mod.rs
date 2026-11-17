@@ -21,6 +21,7 @@ mod fast_travel;
 mod files;
 mod game_options;
 mod gear;
+mod graphics_tips;
 mod grabber;
 mod grid_overlay;
 mod hotkeys;
@@ -396,6 +397,7 @@ impl TuruUi {
         }
         // Last, so the script's message box sits over the other windows.
         message_box::show(ctx);
+        graphics_tips::show(ctx);
         butler::show_suspend_notice(ctx);
         if tab_limit::show(ctx) {
             let tab = self.active();

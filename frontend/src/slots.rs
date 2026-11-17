@@ -195,7 +195,7 @@ pub fn playlist_args(
 /// Android's own flags in `turu-args.txt` (graphics, logs, test switches), with a value or without:
 /// the app's, not a tab's, so every slot reads them there and no record keeps them.
 const APP_FLAGS_WITH_VALUE: [&str; 4] = ["--graphics", "--perf-log", "--releases-url", "--env"];
-const APP_FLAGS: [&str; 1] = ["--test-gpu-loss"];
+const APP_FLAGS: [&str; 3] = ["--test-gpu-loss", "--test-low-prompt", "--test-performance-offer"];
 
 /// `turu-args.txt`'s flags split into a tab's (for its record, without `--password`), the
 /// password, and the app's own.

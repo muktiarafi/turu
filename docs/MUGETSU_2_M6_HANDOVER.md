@@ -147,10 +147,16 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    log line written, no client left; the shell kills its clients when it closes, so a client's
    own close path runs only when it loses the shell otherwise.
 5. **Client gaps left from M6**: IME composition, gamepads, drag-and-drop, Flash's own right-click
-   items; Mugetsu's one-time tips in clients (Performance mode offer, Quality Low tip: they need
-   `mugetsu::check_gpu_choice`, which only the window calls).
+   items. ~~Mugetsu's one-time tips in clients~~ done (2026-11-18): the Quality Low tip and the
+   Performance mode offer are in every tab, desktop clients and Android slots
+   (`turu_frontend::graphics_tips`, a modal in Turu's UI: `gui/turu/graphics_tips.rs`), on
+   built-in graphics (always on a phone); once per data folder (markers `graphics-*` there, made
+   by the one tab that shows it), not Mugetsu's config folder. The window's own Quality tip is
+   gone (it plays no AQW); its dedicated-card tip (`check_gpu_choice`) isn't in clients. Checked:
+   macOS client (both tips, "Turn on" → Balanced) and the emulator (both tips, Fast, a game tap
+   at 70 %), with the test switches only, not a real slow PC or phone.
 6. **Android**: a slot that loses its GPU goes on without a picture (the desktop client restarts);
-   Mugetsu's options aren't in Android's Options; TuruActivity's `?: native…` fallbacks for the
+   Mugetsu's options aren't in Android's Options, except Performance Mode (2026-11-18); TuruActivity's `?: native…` fallbacks for the
    text field and documents are unreachable now and can go with their natives (`android/src/java.rs`
    `TuruActivity` binding, `ui_field.rs`, the document natives). (The web monitor and client
    update checks are fine: the slots elect one of them to run both, `turu::start_monitor_election`.)

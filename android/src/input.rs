@@ -26,23 +26,31 @@ pub enum Touch {
 
 /// The game's mouse doing `mouse`, with `left` pixels of Turu's rail beside the game and `top`
 /// pixels of its tab strip above it.
-pub fn player_event(mouse: Mouse, left: f64, top: f64) -> PlayerEvent {
+pub fn player_event(mouse: Mouse, left: f64, top: f64, scale: f64) -> PlayerEvent {
+    // (`scale`: Performance mode's, the game's pixels to the screen's.)
+    let at = |x: f64, y: f64| ((x - left) * scale, (y - top) * scale);
     match mouse {
-        Mouse::Down(x, y) => PlayerEvent::MouseDown {
-            x: x - left,
-            y: y - top,
-            button: MouseButton::Left,
-            index: None,
-        },
-        Mouse::Move(x, y) => PlayerEvent::MouseMove {
-            x: x - left,
-            y: y - top,
-        },
-        Mouse::Up(x, y) => PlayerEvent::MouseUp {
-            x: x - left,
-            y: y - top,
-            button: MouseButton::Left,
-        },
+        Mouse::Down(x, y) => {
+            let (x, y) = at(x, y);
+            PlayerEvent::MouseDown {
+                x,
+                y,
+                button: MouseButton::Left,
+                index: None,
+            }
+        }
+        Mouse::Move(x, y) => {
+            let (x, y) = at(x, y);
+            PlayerEvent::MouseMove { x, y }
+        }
+        Mouse::Up(x, y) => {
+            let (x, y) = at(x, y);
+            PlayerEvent::MouseUp {
+                x,
+                y,
+                button: MouseButton::Left,
+            }
+        }
     }
 }
 

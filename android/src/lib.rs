@@ -552,6 +552,16 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss =
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
+    // The graphics tips' test switches (`turu_frontend::graphics_tips`): their tip about 30 s
+    // after the start on any phone, every time.
+    let test_tips = [
+        ("--test-low-prompt", "RUFFLE_TEST_LOW_PROMPT"),
+        ("--test-performance-offer", "RUFFLE_TEST_PERFORMANCE_OFFER"),
+    ]
+    .into_iter()
+    .filter(|(flag, _)| take_flag(&mut args, flag))
+    .map(|(_, var)| var)
+    .collect::<Vec<_>>();
     let perf_log = take_value(&mut args, "--perf-log");
     // `--env NAME=value` (repeatable): an environment variable, which an app can't be started
     // with (`--env NAME` unsets one): Ruffle's test and A/B switches (`RUFFLE_GL_STATS`, `RUFFLE_GL_LEVERS`,
@@ -582,6 +592,10 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         // process's other threads (Java's) don't read Turu's environment.
         unsafe { std::env::set_var(var, "1") };
     }
+    for var in test_tips {
+        // SAFETY: as the drawing switches'.
+        unsafe { std::env::set_var(var, "1") };
+    }
     for pair in env {
         match pair.split_once('=') {
             // SAFETY: as the drawing switches'.
@@ -598,6 +612,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         unsafe { std::env::set_var("TURU_RELEASES_URL", url) };
     }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
+    load_performance(root);
     turu::configure_startup();
     turu::start_api();
     restart::start();
@@ -683,14 +698,34 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
                     audio.recreate_stream_if_needed();
                 }
             }
-            SCREEN.with_borrow_mut(|screen| {
+            let next = SCREEN.with_borrow_mut(|screen| {
                 screen.as_mut().and_then(|screen| screen.step(player, step))
-            })
+            });
+            // Mugetsu 2.0.0's one-time tips for built-in graphics (`turu_frontend::graphics_tips`):
+            // a phone draws at most one picture a refresh, so a game faster than the display is
+            // measured against the display.
+            if let Some((drawn_fps, refresh)) = SCREEN.with_borrow_mut(|screen| {
+                screen.as_mut().and_then(|screen| screen.take_picture_window())
+            }) {
+                let rate = refresh.map_or(player.frame_rate(), |hz| player.frame_rate().min(hz));
+                turu_frontend::graphics_tips::window(drawn_fps, rate, tip_quality(player));
+            }
+            next
         },
         |_, _| tracing::warn!("A slot has one tab: the request is ignored"),
     );
     for (_, bot) in turu::tabs() {
         bot.set_host(None);
+    }
+}
+
+/// AQW's Quality, as the graphics tips take it.
+fn tip_quality(player: &mut Player) -> turu_frontend::graphics_tips::Quality {
+    use turu_frontend::graphics_tips::Quality;
+    match player.quality() {
+        StageQuality::Low => Quality::Low,
+        StageQuality::Medium => Quality::Medium,
+        _ => Quality::High,
     }
 }
 
@@ -741,6 +776,57 @@ pub(crate) fn save_graphics(graphics: Graphics) {
     };
     if let Err(e) = result {
         tracing::warn!("Couldn't save the graphics API to {}: {e}", path.display());
+    }
+}
+
+/// Mugetsu 2.0.0's Performance mode (Options > Application, or the graphics tips' offer: the game
+/// drawn at 85 % or 70 % of its area's width and height and stretched), saved as on a desktop:
+/// "balanced" or "fast" in this file in the data folder, no file when off. Each slot reads it at
+/// its start; a change applies to the slot that made it at once.
+const PERFORMANCE_FILE: &str = "mugetsu-performance.txt";
+
+/// Performance mode: 0 off, 1 balanced, 2 fast.
+static PERFORMANCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Reads Performance mode's saved level (`root`: the data folder).
+fn load_performance(root: &Path) {
+    let level = match std::fs::read_to_string(root.join(PERFORMANCE_FILE)).as_deref().map(str::trim) {
+        Ok("balanced") => 1,
+        Ok("fast") => 2,
+        _ => 0,
+    };
+    PERFORMANCE.store(level, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Performance mode's level now: 0 off, 1 balanced, 2 fast.
+pub(crate) fn performance() -> u8 {
+    PERFORMANCE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Sets Performance mode (the next picture on) and saves it.
+pub(crate) fn set_performance(level: u8) {
+    let level = level.min(2);
+    PERFORMANCE.store(level, std::sync::atomic::Ordering::Relaxed);
+    let path = turu_bot::paths::Paths::new().root.join(PERFORMANCE_FILE);
+    let result = match level {
+        0 => match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        },
+        1 => std::fs::write(&path, "balanced\n"),
+        _ => std::fs::write(&path, "fast\n"),
+    };
+    if let Err(e) = result {
+        tracing::warn!("Couldn't save {}: {e}", path.display());
+    }
+}
+
+/// The share of the game's area's width and height it is drawn at (Performance mode).
+pub(crate) fn render_scale() -> f64 {
+    match performance() {
+        0 => 1.0,
+        1 => 0.85,
+        _ => 0.7,
     }
 }
 

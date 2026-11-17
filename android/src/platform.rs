@@ -91,6 +91,24 @@ impl Platform for AndroidPlatform {
         );
     }
 
+    // Mugetsu 2.0.0's Performance mode, in Options > Application as on a desktop's tab, and what
+    // the graphics tips offer (`turu_frontend::graphics_tips`).
+    fn performance(&self) -> Option<u8> {
+        Some(crate::performance())
+    }
+
+    fn set_performance(&self, level: u8) {
+        crate::set_performance(level);
+        tracing::info!(
+            "Performance mode: {level} (the game is drawn at {:.0} % of its width and height)",
+            crate::render_scale() * 100.0
+        );
+    }
+
+    fn render_scale(&self) -> f64 {
+        crate::render_scale()
+    }
+
     // The app's executable is Android's app_process, not a `turu` Army could start.
     fn launches_processes(&self) -> bool {
         false

@@ -159,6 +159,8 @@ pub struct ClientScreen {
     /// A new picture of the game is wanted (a resize, a frame not drawn because a readback was
     /// under way).
     picture_due: bool,
+    /// The game's pictures over 5-second windows, for the graphics tips (`crate::graphics_tips`).
+    pictures: crate::graphics_tips::PictureCount,
     /// Pictures of the game drawn since `fps_since`, and the last second's rate, for Show FPS.
     fps_frames: u32,
     fps_since: Instant,
@@ -230,6 +232,7 @@ impl ClientScreen {
             cursor_sink: None,
             cursor: None,
             clipboard: None,
+            pictures: Default::default(),
             fps_frames: 0,
             fps_since: Instant::now(),
             fps: 0.0,
@@ -348,6 +351,12 @@ impl ClientScreen {
     /// Whether the shell shows this tab.
     pub fn shown(&self) -> bool {
         self.shown.is_some()
+    }
+
+    /// A 5-second window of the game's pictures that has ended, for the graphics tips
+    /// (`graphics_tips::PictureCount::take`).
+    pub fn take_picture_window(&mut self) -> Option<Option<f64>> {
+        self.pictures.take()
     }
 
     /// One of the shell's messages.
@@ -521,6 +530,17 @@ impl ClientScreen {
         }
         self.collect();
         let mut next = None;
+        // The graphics tips count only windows in which the game was drawn all along, in full, one
+        // picture per game frame (not with frame interpolation's in-between pictures).
+        let tile = self.grid.as_ref().is_some_and(|grid| !grid.active);
+        if self.shown.is_none()
+            || self.covered
+            || tile
+            || turu::headless_mode()
+            || ruffle_core::frame_interpolation::enabled()
+        {
+            self.pictures.not_shown();
+        }
         if self.shown.is_some() && !self.covered {
             let now = Instant::now();
             let game_frame = matches!(step, Step::Ticked { .. }) && player.needs_render();
@@ -1067,6 +1087,7 @@ impl ClientScreen {
                 draw_ms = draw_ms.max(micros as f64 / 1000.0);
             }
             self.pacing.record_draw(draw_ms);
+            self.pictures.drawn();
             // Pictures of the game a second, for Show FPS (the window counts its frames shown).
             self.fps_frames += 1;
             let elapsed = self.fps_since.elapsed().as_secs_f32();

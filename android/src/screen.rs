@@ -110,8 +110,12 @@ pub struct Screen {
     pub game_field: crate::game_field::GameField,
     /// Turu's focused text box, as a native one above the keyboard.
     ui_field: crate::ui_field::UiField,
-    /// The game's viewport, last set.
+    /// The game's viewport, last set, and Performance mode's share of the game's area's width and
+    /// height it was drawn at (`crate::render_scale`): touches on the game are scaled by it.
     movie_size: (u32, u32),
+    render_scale: f64,
+    /// The game's pictures over 5-second windows, for the graphics tips (`turu_frontend::graphics_tips`).
+    pictures: turu_frontend::graphics_tips::PictureCount,
     /// Frame interpolation's pacing, with the display's refresh rate.
     pacing: Pacing,
     /// The display's refresh rate the pacing has (mHz), 0 before the first.
@@ -166,6 +170,8 @@ pub fn gpu(
                     info.driver,
                     info.driver_info,
                 ));
+                // A phone's graphics are built in: the graphics tips apply.
+                turu_frontend::graphics_tips::set_built_in_chip(&info.name);
                 let descriptors = Descriptors::new(instance, adapter, device, queue);
                 // The API version, flags and limits the renderer depends on.
                 turu::bot().logs.debug.push(descriptors.device_summary());
@@ -267,6 +273,8 @@ impl Screen {
             game_field: Default::default(),
             ui_field: Default::default(),
             movie_size: (0, 0),
+            render_scale: 1.0,
+            pictures: Default::default(),
             pacing: Pacing::new(),
             refresh_millihertz: 0,
             draw_started: Instant::now(),
@@ -413,6 +421,8 @@ impl Screen {
     pub fn touch(&mut self, player: &mut Player, touch: Touch) {
         let top = f64::from(self.top());
         let left = f64::from(self.left());
+        // In the game's own pixels: fewer in Performance mode (see `draw`).
+        let scale = self.render_scale;
         let mouse = match touch {
             Touch::Down(id, x, y) => {
                 let pos = egui::pos2(
@@ -442,7 +452,12 @@ impl Screen {
                     self.ui_fingers.push(id);
                     Vec::new()
                 } else if self.game_touches.holding()
-                    && player.handle_touch(TouchPhase::Begin, id, x - left, y - top)
+                    && player.handle_touch(
+                        TouchPhase::Begin,
+                        id,
+                        (x - left) * scale,
+                        (y - top) * scale,
+                    )
                 {
                     self.touch_points.push((id, (x, y)));
                     Vec::new()
@@ -465,7 +480,12 @@ impl Screen {
                     .find(|(finger, _)| *finger == id)
                 {
                     *at = (x, y);
-                    player.handle_touch(TouchPhase::Move, id, x - left, y - top);
+                    player.handle_touch(
+                        TouchPhase::Move,
+                        id,
+                        (x - left) * scale,
+                        (y - top) * scale,
+                    );
                     Vec::new()
                 } else if self.ui_fingers.contains(&id) {
                     Vec::new()
@@ -484,7 +504,7 @@ impl Screen {
                     .position(|&(finger, _)| finger == id)
                 {
                     self.touch_points.swap_remove(i);
-                    player.handle_touch(TouchPhase::End, id, x - left, y - top);
+                    player.handle_touch(TouchPhase::End, id, (x - left) * scale, (y - top) * scale);
                     Vec::new()
                 } else if let Some(i) = self.ui_fingers.iter().position(|&finger| finger == id) {
                     self.ui_fingers.swap_remove(i);
@@ -499,13 +519,13 @@ impl Screen {
                 }
                 self.ui_fingers.clear();
                 for (id, (x, y)) in std::mem::take(&mut self.touch_points) {
-                    player.handle_touch(TouchPhase::End, id, x - left, y - top);
+                    player.handle_touch(TouchPhase::End, id, (x - left) * scale, (y - top) * scale);
                 }
                 self.game_touches.cancel()
             }
         };
         for mouse in mouse {
-            player.handle_event(input::player_event(mouse, left, top));
+            player.handle_event(input::player_event(mouse, left, top, scale));
         }
     }
 
@@ -543,6 +563,15 @@ impl Screen {
         } = step
         {
             self.pacing.record_frame(frame_ms);
+        }
+        // The graphics tips count only windows in which the game's pictures were drawn all along,
+        // one per game frame: not without a window (another slot on screen), in Headless Mode, or
+        // with frame interpolation (its in-between pictures).
+        if self.surface.is_none()
+            || turu::headless_mode()
+            || ruffle_core::frame_interpolation::enabled()
+        {
+            self.pictures.not_shown();
         }
         if self.surface.is_none() {
             return None;
@@ -603,6 +632,15 @@ impl Screen {
                 Some(self.draw_started + self.pacing.refresh_interval() / 2)
             }
         }
+    }
+
+    /// A 5-second window of the game's pictures that has ended, for the graphics tips
+    /// (`graphics_tips::PictureCount::take`), with the most pictures a second the display shows
+    /// (its refresh rate; `None` before it's known).
+    pub fn take_picture_window(&mut self) -> Option<(Option<f64>, Option<f64>)> {
+        let refresh =
+            (self.refresh_millihertz > 0).then(|| f64::from(self.refresh_millihertz) / 1000.0);
+        self.pictures.take().map(|fps| (fps, refresh))
     }
 
     /// When to draw the UI alone next, if it wants drawing: when egui asked, or now after input,
@@ -675,21 +713,32 @@ impl Screen {
             cutout_right as f32 / self.pixels_per_point,
         );
         let movie_size = self.movie_area();
-        if movie_size != self.movie_size {
+        // Mugetsu 2.0.0's Performance mode: the game drawn with fewer pixels, stretched over its
+        // area by the blit below (as a desktop's tab, `ClientScreen::draw`).
+        let scale = crate::render_scale();
+        if movie_size != self.movie_size || scale != self.render_scale {
             self.movie_size = movie_size;
+            self.render_scale = scale;
+            let drawn = |len: u32| ((f64::from(len) * scale).round() as u32).max(1);
             player.set_viewport_dimensions(ViewportDimensions {
-                width: movie_size.0,
-                height: movie_size.1,
-                scale_factor: f64::from(self.pixels_per_point),
+                width: drawn(movie_size.0),
+                height: drawn(movie_size.1),
+                scale_factor: f64::from(self.pixels_per_point) * scale,
             });
             // The resize made the game's texture anew, empty: drawn without a new picture, it
             // flashed black (or stretched) until the next frame rendered.
             new_picture = true;
-            tracing::info!("game area now {}x{}", movie_size.0, movie_size.1);
+            tracing::info!(
+                "game area now {}x{}, drawn at {:.0} %",
+                movie_size.0,
+                movie_size.1,
+                scale * 100.0
+            );
         }
         // Headless Mode's screen hides the game: it isn't rendered, as on the desktop (`app.rs`).
         if new_picture && !turu::headless_mode() {
             player.render();
+            self.pictures.drawn();
             let took = started.elapsed();
             crate::frame_perf::add(crate::frame_perf::Phase::Render, took);
             self.pacing.record_draw(took.as_secs_f64() * 1000.0);

@@ -105,8 +105,6 @@ struct PerfStats {
     walk_at: Option<u64>,
     /// `ruffle_core::interpolation_replay::stats` at the start of this window.
     replay_at: Option<[u64; 6]>,
-    /// Drawn frames per second of the last logged window.
-    last_drawn_fps: f64,
     /// With frame interpolation on: the draws per second aimed for.
     interpolation_rate: f64,
 }
@@ -350,7 +348,6 @@ impl PerfStats {
             timers_at: Some(timers_now),
             walk_at: Some(ruffle_core::render_walk_micros()),
             replay_at: Some(replay_now),
-            last_drawn_fps: self.renders as f64 / secs,
             interpolation_rate: self.interpolation_rate,
             ..Default::default()
         };
@@ -940,7 +937,6 @@ impl MainWindow {
                     if perf.maybe_log(new_time) {
                         limit_trim = crate::memory::memory_watch(&mut player);
                         perf.log_object_counts(&mut player);
-                        crate::mugetsu::low_quality_tick(&mut player, perf.last_drawn_fps);
                     }
                     new_time + player.time_til_next_frame()
                 });

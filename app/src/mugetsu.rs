@@ -1194,88 +1194,21 @@ pub fn test_video_budget() -> Option<u64> {
     Some(text.trim().parse::<u64>().ok()? << 20)
 }
 
-// --- "Quality Low" tip on built-in graphics -----------------------------------------------
+// --- Built-in graphics ----------------------------------------------------------------------
 //
-// Built-in graphics run AQW several times faster on Quality Low (no edge smoothing): an Intel
-// UHD 620 went from ~8 to a locked 30 FPS in a crowded room, and Iris Xe also drew white boxes
-// at Medium/High. Many players never open AQW's Options. So when the game runs on built-in
-// graphics at Medium/High and stays well below its frame rate for 15 seconds, Mugetsu tells the
-// player once (per PC) how to switch. It never changes the setting itself: AQW keeps its own
-// copy of it and re-applies that on login and in its Options, so only AQW's Options can change
-// it cleanly.
+// Mugetsu's one-time Quality Low tip and Performance mode offer for built-in graphics are in the
+// tabs since M6 (`turu_frontend::graphics_tips`); the window plays no AQW.
 
 /// The built-in graphics chip Mugetsu draws with, if it is one.
 static BUILT_IN_GRAPHICS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-static LOW_TIP_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static SLOW_WINDOWS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-/// Perf windows seen (the test switch waits a while, so there's time to log in first).
-static WINDOWS_SEEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-const LOW_TIP_MARKER: &str = "mugetsu-low-quality-tip-shown";
-
-/// Called on the main thread after each 5-second perf window, with that window's drawn FPS.
-/// `RUFFLE_TEST_LOW_PROMPT=1` shows the tip on any graphics, ~30 s after starting (testing).
-pub fn low_quality_tick(player: &mut ruffle_core::Player, drawn_fps: f64) {
-    use ruffle_render::quality::StageQuality;
-    use std::sync::atomic::Ordering;
-    if LOW_TIP_DONE.load(Ordering::Relaxed) {
-        return;
+/// The game is drawn on `chosen`: noted if it is built-in graphics (`shape_store_mb`), and for
+/// the tabs' graphics tips.
+pub fn note_graphics_chip(chosen: &wgpu::AdapterInfo) {
+    if chosen.device_type == wgpu::DeviceType::IntegratedGpu {
+        let _ = BUILT_IN_GRAPHICS.set(chosen.name.clone());
+        turu_frontend::graphics_tips::set_built_in_chip(&chosen.name);
     }
-    let windows_seen = WINDOWS_SEEN.fetch_add(1, Ordering::Relaxed) + 1;
-    let test = std::env::var_os("RUFFLE_TEST_LOW_PROMPT").is_some();
-    if test && windows_seen < 6 {
-        return;
-    }
-    let Some(chip) = BUILT_IN_GRAPHICS
-        .get()
-        .cloned()
-        .or_else(|| test.then(|| "test".to_string()))
-    else {
-        return;
-    };
-    let quality = player.quality();
-    // Below 1 FPS drawn: minimized or hidden, not slow.
-    let slow = drawn_fps >= 1.0 && drawn_fps < 0.8 * player.frame_rate();
-    if quality == StageQuality::Low || !(slow || test) {
-        SLOW_WINDOWS.store(0, Ordering::Relaxed);
-        return;
-    }
-    if SLOW_WINDOWS.fetch_add(1, Ordering::Relaxed) + 1 < 3 && !test {
-        return;
-    }
-    LOW_TIP_DONE.store(true, Ordering::Relaxed);
-    let Some(dir) = config_dir() else { return };
-    let marker = dir.join(LOW_TIP_MARKER);
-    if marker.exists() && !test {
-        return;
-    }
-    let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(&marker, &chip);
-    let quality_name = match quality {
-        StageQuality::Medium => "Medium",
-        _ => "High",
-    };
-    tracing::info!(
-        "Suggesting Quality Low: {drawn_fps:.1} FPS drawn on {chip} at {quality_name}"
-    );
-    let _ = std::thread::Builder::new()
-        .name("low quality tip".to_string())
-        .spawn(move || {
-            rfd::MessageDialog::new()
-                .set_level(rfd::MessageLevel::Info)
-                .set_title("Mugetsu")
-                .set_description(format!(
-                    "AQW is running on your built-in graphics ({chip}) with Quality set to \
-                    {quality_name}, which is slow on built-in graphics.\n\n\
-                    For much better FPS, set Quality to Low: open AQW's Options and change \
-                    Quality to Low. Edges are a little less smooth, but built-in graphics \
-                    usually run AQW several times faster.\n\n\
-                    Mugetsu won't show this again."
-                ))
-                .set_buttons(rfd::MessageButtons::Ok)
-                .show();
-        });
 }
 
 // --- Built-in graphics tip ----------------------------------------------------------------
@@ -1284,11 +1217,8 @@ pub fn low_quality_tick(player: &mut ruffle_core::Player, drawn_fps: f64) {
 /// per-program setting can still put it on the built-in graphics, which is many times slower.
 /// If that happened and the PC has a dedicated card, says so (once) and how to switch.
 pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power: wgpu::PowerPreference) {
-    if chosen.device_type == wgpu::DeviceType::IntegratedGpu {
-        let _ = BUILT_IN_GRAPHICS.set(chosen.name.clone());
-    }
+    note_graphics_chip(chosen);
     // The tip below is about Windows' per-program graphics setting, which macOS doesn't have.
-    // (The Quality tip for built-in graphics still applies on macOS; it uses the chip above.)
     if cfg!(target_os = "macos") {
         return;
     }

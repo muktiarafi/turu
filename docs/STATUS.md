@@ -40,7 +40,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   window, the shell and the clients let go of the GPU (and the DXGI adapter the video memory
   query keeps) while the driver is alive, and the window and the shell end with
   `process::exit` after the log is flushed. Type-checked for Windows from macOS only (see
-  "Things to know"); nothing of it has run on Windows. In a tab's client (every AQW tab since M6) Performance Mode,
+  "Things to know"); nothing of it has run on Windows. Mugetsu's one-time tips for built-in
+  graphics are in every tab (2026-11-18; `turu_frontend::graphics_tips`, a modal in Turu's UI):
+  slow at Quality Medium/High for 15 s, the Quality Low tip; still slow at Low, Performance mode
+  offered with a "Turn on" button (Fast below 60 % of the frame rate, else Balanced). Windows
+  count only while the tab is drawn in full all along (not hidden, covered, a Grid tile or in
+  Headless Mode; on Android not with frame interpolation, and a phone's refresh rate caps the
+  yardstick); each tip once per data folder. Android has Performance mode too (Options >
+  Application; `mugetsu-performance.txt` in the data folder, read at a slot's start, touches
+  scaled). In a tab's client (every AQW tab since M6) Performance Mode,
   Memory Limit and Free Memory Now are in Options > Application, and since 2026-11-18 Frame
   Pacing (V-sync, Uncapped) and the FPS Limit (Off, Screen, 60, 120, 144).
   **Frame interpolation in a tab's client** (2026-11-18): with Frame Interpolation on, the client

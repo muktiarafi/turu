@@ -248,7 +248,10 @@ The data folder is the app's files folder on shared storage,
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
 `--graphics auto|vulkan|gl` (auto, the default: OpenGL ES, else Vulkan; without the flag,
 Options > Application > Graphics, saved as `graphics.txt`, from each tab's next start), `--test-gpu-loss` (destroys the GPU device
-20 s after the start: "A lost GPU device" below) and `--perf-log <seconds>` ("Watch it" below), and `--env NAME=value`, repeatable, for an environment variable the app can't be
+20 s after the start: "A lost GPU device" below), `--test-low-prompt` and `--test-performance-offer`
+(the graphics tips' Quality Low tip and Performance mode offer about 30 s after the game is drawn,
+every time: `RUFFLE_TEST_LOW_PROMPT`, `RUFFLE_TEST_PERFORMANCE_OFFER`) and `--perf-log <seconds>`
+("Watch it" below), and `--env NAME=value`, repeatable, for an environment variable the app can't be
 started with (Ruffle's switches, such as `RUFFLE_GL_STATS` and `RUFFLE_GL_LEVERS`:
 docs/GL_RENDERER_PROPOSAL.md; `--env NAME` alone unsets one, such as a Mugetsu speed-up:
 `RUFFLE_LEAN_RENDER`). Without the file the game starts at its login
