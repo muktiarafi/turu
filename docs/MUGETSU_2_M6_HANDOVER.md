@@ -25,9 +25,10 @@ Two pieces of work landed together on `main`:
 Local only (in this checkout's `ruffle/`): `aqw-1.6-backup` (the old `aqw`, Mugetsu 1.6.0) and
 `aqw-2.0-before-m6-cleanup` (`aqw-2.0` before the two thread-state commits were dropped).
 
-**CI:** the run for `e8d0213a4` was still going when this was written
-(https://github.com/muktiarafi/turu/actions/runs/44096883886). It is the **first compile on
-Windows and Linux** of everything below: check it before anything else.
+**CI:** green for `e8d0213a4` (https://github.com/muktiarafi/turu/actions/runs/44096883886):
+format, clippy, tests and the host SWF, all on Ubuntu, so the app compiles and its tests pass on
+Linux. **Nothing has compiled on Windows**: CI has no Windows job (release.yml builds Windows
+only from a `v*` tag).
 
 **turu commits** (oldest first): `14724433f` Mugetsu 2.0.0 and its player options · `82398e4f1`
 process tabs on by default (cherry-picked from `m3-android-tabs`) · `74424ce95` clients' memory
@@ -48,8 +49,8 @@ the shell starts it again; the memory limit frees in a client
 limit (120, 90) in the window. Android emulator (`turu_api36`, `-gpu host`): the shell and two
 slots start, `java::check` passes in all three processes.
 
-**Not checked:** anything in game with an account (no login was done), Windows and Linux (no
-build at all), real phones (M4), the slot notification's buttons (they show only with a script
+**Not checked:** anything in game with an account (no login was done), Windows (no build at
+all), Linux beyond CI's build and tests (nothing run), real phones (M4), the slot notification's buttons (they show only with a script
 loaded), the refresh rate reaching a slot, the cursor shapes on screen.
 
 ## What changed, in short
@@ -93,9 +94,10 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
 
 ## Open items, in the order recommended
 
-1. **CI on Windows and Linux** (the run above). Most at risk: `app/src/windows.rs` (merged by hand,
-   never compiled), `app/src/shell.rs`'s `set_cursor`, the Linux shared-surface client paths. Fix
-   on `main`; nothing here was built on those systems.
+1. **A Windows build** (no CI job: a Windows machine, or release.yml's Windows job on a test tag).
+   Most at risk: `app/src/windows.rs` (merged by hand, never compiled), the `#[cfg(windows)]`
+   paths in `app/src/client.rs` and `shell.rs`, the D3D12 shared surfaces. Then run the shell with
+   two tabs on Windows and on Linux (Linux only compiled in CI).
 2. **In game, with an account** (needs the user's login; use a quiet server, not Twilly, Artix
    or Alteon): two tabs with a `lean-verify` file next to the program (`RUFFLE_LEAN_VERIFY`; look
    for "LEAN VERIFY" in the log); a client's Options > Performance Mode, Memory Limit, Free Memory
