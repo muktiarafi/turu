@@ -270,6 +270,60 @@ which of G2's levers the counters point to.
 
 ## G2: Cheaper passes (the GL counterpart of the D3D12 recorder)
 
+**Result (2026-11-18, ruffle-aqw `12e89403c`): G2a and G2b are built and on by default.**
+`gles::aqw::Replay` keeps a shadow of the state it sets during one submit:
+
+- program and the emulated first instance;
+- enables, masks, blend, stencil, depth, viewport and scissor;
+- draw buffers and the draw framebuffer's binding;
+- texture units, samplers and uniform buffer ranges;
+- vertex attributes and buffers.
+
+It skips any call whose value is already in place. Two things keep the shadow from going stale.
+It starts empty at each submit, and the submit holds the context lock, so nothing else uses the
+context meanwhile. It is also forgotten at every command it doesn't model (copies, resolves,
+barriers, the sRGB clear workaround, per-draw-buffer blend). The draw framebuffer's attachments
+and the textures' level parameters survive those commands, because only the replay's own
+commands change them.
+
+G2a: a pass detaches only what an earlier pass of the same submit attached and it doesn't. It
+also skips attaching what's already attached. The first pass of each submit detaches everything,
+as upstream does, so a texture deleted between submits can't come back under a reused name.
+
+`RUFFLE_GL_LEVERS` picks the levers: `fbo` and `state`. Unset turns both on; `none` gives
+upstream's replay.
+
+Battleon on the emulator, A/B in the same session:
+
+| | `none` | `fbo,state` |
+|---|---|---|
+| GL calls per draw | 20.1 | 10.7 |
+| Calls skipped | 0 | 238,000/s (44%) |
+| `submit` per draw | 40 µs | 22 µs |
+| Pictures drawn | 3.4/s | 7.0/s |
+
+The picture count also depends on how loaded the room was, so compare the per-draw rows. The
+screenshot matched G0's.
+
+Not built:
+
+- **G2c (FBO cache).** One attach and a framebuffer check per pass remain (~4 fbo calls per
+  pass). Wait for a Mali or Adreno profile before taking on the lifetime risk.
+- **G2d (merging command buffers).** `reset_state` per command buffer is now mostly skipped
+  calls.
+
+Two GL-only costs from G1, also not built:
+
+- **Keeping the EGL context current.** Each lock makes it current and releases it; G1 counted
+  ~400 locks/s, nearly all on the engine thread. Leaving the context current is only safe if
+  no other thread ever locks it. `wgpu encoder drop` does, about once a second. EGL can't make
+  a context current on thread B while thread A holds it, and A can't be made to release while
+  it's idle (the app in the background) without risking a deadlock. That needs a design of its
+  own: perhaps every GL call on one thread.
+- **Merging uploads.** There are 3,700 `glBufferSubData` per second, each from a write's own
+  staging buffer. Concatenating adjacent writes to the same buffer would cut the calls but add
+  copies. Profile on a phone first.
+
 These levers are candidates, listed by expected value. Each is a change in ruffle-aqw's
 `patches/wgpu-hal/src/gles/` marked `AQW build:`. Each sends the GPU the same draws in the same
 order and only drops calls that change nothing. Each also gets a switch (`RUFFLE_GL_LEVERS`) for
