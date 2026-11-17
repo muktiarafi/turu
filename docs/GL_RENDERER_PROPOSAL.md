@@ -1,6 +1,6 @@
 # Proposal: OpenGL that draws the whole game, then draws it faster
 
-Status: proposed, not built (2026-11-15). Today OpenGL ES on Android draws only parts of the
+Status: G0 built (2026-11-18, below); G1 to G4 proposed, not built. Before G0, OpenGL ES on Android drew only parts of the
 game (docs/ANDROID_HANDOVER.md, "Known gaps"), and on the desktop the app warns that OpenGL "is
 much slower" (`app/src/gui/controller.rs:1018`). This proposal makes OpenGL correct first, then
 cuts what it costs per render pass, as Mugetsu did for D3D12 and Vulkan.
@@ -97,6 +97,27 @@ platform.
   the main dev machine.
 
 ## G0: The whole picture
+
+**Result (2026-11-18): the hypothesis held on the emulator, and the fix is in.** The Android
+emulator's GLES is 3.0 (OpenGL ES Translator over Metal, Apple M5), so it has no `base_vertex`.
+With `--graphics gl` and a restored session in Battleon:
+
+- Without the guard: almost nothing drew, only the dialog and a few black skill-button shapes. No
+  background, characters or UI plates.
+- With the guard: the whole scene drew (town, characters, effects, portrait, chat, skill bar, Game
+  Menu).
+
+The fix is ruffle-aqw `ed14ee86c`: `Descriptors::base_vertex` is set from
+`DownlevelFlags::BASE_VERTEX`, and `render_shape` takes the shared-buffer path only when it's set
+(otherwise the per-slice branch). `RUFFLE_NO_BASE_VERTEX=1` forces the fallback, for testing on a
+3.2 device. Turu bumped the submodule in `388001546`.
+
+Still open for G0: one emulator and one room only. Not yet checked on a real Mali or Adreno phone,
+`-gpu swiftshader_indirect`, a crowded room, or Linux Mesa. In the guarded run some Game Menu
+button plates and a couple of skill slots looked missing or dim (they were fine in an earlier
+guarded run, so possibly still loading; not investigated). The `base_vertex draws: ...` log line
+added with the fix didn't show in logcat; check its target filter. The sections below are the
+original plan.
 
 **Leading hypothesis: draws from the shared shape buffer need `base_vertex`, and GLES 3.0/3.1
 can't do it.** ruffle-aqw binds the shape arena's whole vertex and index buffers once, and starts
