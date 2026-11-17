@@ -19,6 +19,10 @@ patches, with a Rust bot engine and TypeScript scripts.
 Beta builds for Windows, macOS, Linux and Android (arm64, 8+) are on
 [Releases](https://github.com/muktiarafi/turu/releases). Turu updates itself.
 
+The [`nightly`](https://github.com/muktiarafi/turu/releases/tag/nightly) release is a development
+build of `main`, replaced every night there are new commits. It's for testing: download it by
+hand. A nightly build doesn't update itself, and Turu never offers one as an update.
+
 - **macOS:** the app isn't notarized. If it won't open, allow it in System Settings > Privacy &
   Security, or run `xattr -dr com.apple.quarantine Turu.app`.
 - **Android:** tabs, Army and Butler as on the desktop, up to 4 tabs; no Grid View or Army Queue

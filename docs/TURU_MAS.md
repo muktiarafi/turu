@@ -86,6 +86,9 @@ release. The name doesn't start with `turu-`: Turu's updater takes any
 `turu-*-android-arm64.apk` as Turu's own APK, and installed versions already work that way.
 Turu Mas's own updater looks for `turumas-*` (`turu_bot::updates`: the engine calls
 `set_turu_mas`, so `Target::current()` is `TuruMasArm64` and `app_name()` "Turu Mas").
+The nightly build puts its `turumas-<version>-android-arm64.apk` in the rolling `nightly`
+release too, with the same version code as Turu's (`build.sh`: stage 8, between rc and the
+release); it doesn't check for updates.
 
 The job gets the AIR SDK with `joshtynjala/setup-adobe-air-action` (`accept-license: true`
 accepts the SDK's license; free tier), JDK 17 and 21, the NDK, cargo-ndk and libclang.
@@ -94,7 +97,7 @@ accepts the SDK's license; free tier), JDK 17 and 21, the NDK, cargo-ndk and lib
 
 | Name | Kind | What |
 |---|---|---|
-| `MAS_KEYSTORE` | secret | Turu Mas's release key (PKCS#12), base64. A tag build fails without it; a run by hand signs with a development key. |
+| `MAS_KEYSTORE` | secret | Turu Mas's release key (PKCS#12), base64. A tag or nightly build fails without it; a run by hand signs with a development key. |
 | `MAS_KEYSTORE_PASSWORD` | secret | Its password. |
 
 Crash reports and symbols need nothing more: the job uses Turu's Android Sentry project

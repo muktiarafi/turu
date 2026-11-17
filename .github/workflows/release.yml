@@ -4,11 +4,27 @@ name: Release
 # Android) and Turu Mas (Android, on Adobe AIR), and publishes a GitHub release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
 # Running it by hand (Actions > Release > Run workflow) only builds; the packages are kept as
 # workflow artifacts.
+#
+# Nightly: every night (when main has new commits), or by hand with "Publish as the nightly
+# release" ticked, it builds as `<next version>-nightly.<date>` (0.3.0-nightly.20261118) and
+# replaces the one `nightly` release: a pre-release, never "Latest", for testers who download it
+# by hand. Updates never reach or leave it: its tag isn't a version, so no client's updater takes
+# it (shipped ones included), and a nightly build doesn't check (`turu_bot::updates::is_nightly`).
+# One rolling release, not one a night: the updater reads one page of GitHub's release list
+# (30), which a release a night would fill.
 on:
   push:
     tags:
       - "v*"
+  schedule:
+    # 03:00 UTC.
+    - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      nightly:
+        description: Publish as the nightly release (replaces the current one)
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -27,21 +43,60 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      # A nightly build (published as the `nightly` release), and its `CFG_RELEASE_CHANNEL`.
+      nightly: ${{ steps.version.outputs.nightly }}
+      channel: ${{ steps.version.outputs.channel }}
+      # Nothing to build: a scheduled run with no commit since the last nightly, or in a fork.
+      skip: ${{ steps.version.outputs.skip }}
     steps:
+      # The root Cargo.toml: a nightly's version starts with the release it leads to.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+
       - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIGHTLY: ${{ github.event_name == 'schedule' || inputs.nightly == true }}
         run: |
+          nightly=false
+          skip=false
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             version="${GITHUB_REF_NAME#v}"
+          elif [[ "$NIGHTLY" == true ]]; then
+            nightly=true
+            base=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+            # The date as one number: no leading zero (semver), no `+` (GitHub renames assets
+            # with one).
+            version="${base%%-*}-nightly.$(date -u +%Y%m%d)"
+            if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+              last=$(gh api "repos/$GITHUB_REPOSITORY/commits/nightly" --jq .sha 2>/dev/null || true)
+              if [[ "$GITHUB_REPOSITORY" != muktiarafi/turu ]]; then
+                echo "Not muktiarafi/turu: no nightly"
+                skip=true
+              elif [[ "$last" == "$GITHUB_SHA" ]]; then
+                echo "The nightly release is already at $GITHUB_SHA: nothing to build"
+                skip=true
+              fi
+            fi
           else
             version="0.0.0-dev.${GITHUB_SHA::7}"
           fi
           prerelease=false
           [[ "$version" == *-* ]] && prerelease=true
+          channel=stable
+          [[ "$nightly" == true ]] && channel=nightly
           echo "version=$version" | tee -a "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" | tee -a "$GITHUB_OUTPUT"
+          echo "nightly=$nightly" | tee -a "$GITHUB_OUTPUT"
+          echo "channel=$channel" | tee -a "$GITHUB_OUTPUT"
+          echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
 
   test:
     name: Test engine and scripts
+    needs: version
+    if: needs.version.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     steps:
       # scripts/ is the turu-scripts submodule: the engine tests load its scripts, and they are
@@ -71,6 +126,7 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: version
+    if: needs.version.outputs.skip != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +186,7 @@ jobs:
             --no-default-features --features "$FEATURES"
         env:
           TURU_VERSION: ${{ needs.version.outputs.version }}
-          CFG_RELEASE_CHANNEL: stable
+          CFG_RELEASE_CHANNEL: ${{ needs.version.outputs.channel }}
           RUSTFLAGS: ${{ matrix.rustflags }}
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CARGO_PROFILE_DIST_DEBUG: line-tables-only
@@ -276,6 +332,7 @@ jobs:
   android:
     name: Build android-arm64
     needs: version
+    if: needs.version.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -313,15 +370,16 @@ jobs:
           echo "LIBCLANG_PATH=$(dirname "$libclang")" | tee -a "$GITHUB_ENV"
           printf 'sdk.dir=%s\nndkAbis=arm64-v8a\n' "$ANDROID_HOME" > android/local.properties
 
-      # The release keystore, from the repository's secrets (docs/ANDROID.md). A tag needs it, so
-      # every release has the same signature and updates in place; a run by hand without it is
-      # signed with a debug key.
+      # The release keystore, from the repository's secrets (docs/ANDROID.md). A tag or a nightly
+      # needs it, so every published APK has the same signature and installs over the others; a
+      # run by hand without it is signed with a debug key.
       - name: Set up signing
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          NIGHTLY: ${{ needs.version.outputs.nightly }}
         run: |
           if [[ -z "$KEYSTORE" ]]; then
-            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            if [[ "$GITHUB_REF_TYPE" == tag || "$NIGHTLY" == true ]]; then
               echo "::error::The ANDROID_KEYSTORE secret is missing; a release APK must be signed with it"
               exit 1
             fi
@@ -336,7 +394,7 @@ jobs:
         run: ./gradlew --no-daemon assembleRelease "-PturuVersion=$VERSION"
         env:
           TURU_VERSION: ${{ needs.version.outputs.version }}
-          CFG_RELEASE_CHANNEL: stable
+          CFG_RELEASE_CHANNEL: ${{ needs.version.outputs.channel }}
           TURU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           TURU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           TURU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -385,6 +443,7 @@ jobs:
   turu-mas:
     name: Build Turu Mas android-arm64
     needs: version
+    if: needs.version.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -441,14 +500,15 @@ jobs:
           LD_LIBRARY_PATH="$RUNNER_TEMP/libcxx" "$AIR_HOME/lib/android/bin/aapt" version
 
       # Turu Mas's own release key (PKCS#12), from the repository's secrets (docs/TURU_MAS.md). A
-      # tag needs it, so every release updates in place; a run by hand without it is signed with
-      # a development key made on the spot.
+      # tag or a nightly needs it, so every published APK installs over the others; a run by hand
+      # without it is signed with a development key made on the spot.
       - name: Set up signing
         env:
           KEYSTORE: ${{ secrets.MAS_KEYSTORE }}
+          NIGHTLY: ${{ needs.version.outputs.nightly }}
         run: |
           if [[ -z "$KEYSTORE" ]]; then
-            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            if [[ "$GITHUB_REF_TYPE" == tag || "$NIGHTLY" == true ]]; then
               echo "::error::The MAS_KEYSTORE secret is missing; a release APK must be signed with it"
               exit 1
             fi
@@ -464,7 +524,7 @@ jobs:
         run: AIR_JAVA_HOME="$JAVA_HOME_17_X64" air/app/build.sh --no-install
         env:
           TURU_VERSION: ${{ needs.version.outputs.version }}
-          CFG_RELEASE_CHANNEL: stable
+          CFG_RELEASE_CHANNEL: ${{ needs.version.outputs.channel }}
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
           MAS_KEYSTORE_PASSWORD: ${{ secrets.MAS_KEYSTORE_PASSWORD }}
           # Crash reports (the extension's `CrashUploads.kt`, sentry-android: its Gradle build reads
@@ -528,3 +588,46 @@ jobs:
           flags=(--title "Turu ${{ needs.version.outputs.version }}" --generate-notes)
           [[ "${{ needs.version.outputs.prerelease }}" == true ]] && flags+=(--prerelease)
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${flags[@]}" dist/*
+
+  # The nightly build replaces the `nightly` release (and its tag, moved to this commit).
+  # Keep the tag `nightly`: shipped clients skip it only because it doesn't parse as a version
+  # (`updates::tests::nightlies_neither_update_nor_are_offered`); a `v0.3.0-nightly...` tag would be
+  # offered to every beta user.
+  nightly:
+    name: Publish nightly
+    if: needs.version.outputs.nightly == 'true' && needs.version.outputs.skip != 'true'
+    needs: [version, test, build, macos-app, android, turu-mas]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: nightly-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: turu-*
+          merge-multiple: true
+          path: dist
+
+      - name: Replace the nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ls -l dist
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          short="${GITHUB_SHA::7}"
+          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          A development build of \`$GITHUB_REF_NAME\` at $GITHUB_SHA, for testing. It is replaced by the next nightly.
+
+          - Nightly builds don't update themselves, and Turu's updater never offers a nightly: download the next one from this page by hand.
+          - Back up your data folder first. A nightly may have bugs that a release fixes.
+          - Android: the APKs carry the release signature. They install over Turu's earlier releases and ${VERSION%%-*}'s alphas, betas and release candidates; ${VERSION%%-*} and later install over them, but a later ${VERSION%%-*} pre-release doesn't (uninstall the nightly first).
+
+          Changes: https://github.com/$GITHUB_REPOSITORY/commits/$GITHUB_SHA
+          NOTES
+          gh release delete nightly --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          # A deleted tag can linger for a moment; `--target` makes it again at this commit.
+          gh release create nightly --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Turu $VERSION ($short)" --notes-file "$RUNNER_TEMP/notes.md" --prerelease --latest=false dist/*

@@ -79,6 +79,18 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `/status` showed it, `POST /update` installed it into a copy of `Turu.app` and exited 75; the
   nav bar showed "Update 9.9.9" in the window. Windows and Linux installs are unit-tested
   (unpacking) but haven't run on those systems; Download & restart in the window wasn't clicked.
+  **Nightly builds** (`release.yml`: nightly at 03:00 UTC when main has new commits, or by hand
+  with "Publish as the nightly release"): built as `<next version>-nightly.<date>`
+  (`0.3.0-nightly.20261118`, About shows the `nightly` channel) and published as one rolling
+  `nightly` release (a pre-release, never Latest) that the next one replaces, for testers who
+  download it by hand. They don't update and aren't offered: a nightly build never checks or
+  installs (`updates::is_nightly`; Options greys the client update rows and says why, `POST
+  /update` refuses), and `updates::newest` skips nightly releases. Its tag, `nightly`, isn't a
+  version, so clients released before this skip it too. One release rather than one a night:
+  the updater reads one page of GitHub's list (30 releases), which nightlies would fill, pushing
+  real releases off it. Android version code: stage 8, between rc (3) and release (9), so a
+  nightly installs over its version's pre-releases and the release installs over it. Not yet run
+  on Actions.
   **Trust:** `SHA256SUMS.txt` only proves the package arrived intact, not who made it: whoever
   can publish a release on `muktiarafi/turu` (or take over the account) can publish matching
   sums. The next step is to sign `SHA256SUMS.txt` with minisign in `release.yml` and check it

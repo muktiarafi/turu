@@ -324,7 +324,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   thread (`turu::start_updates`; skipped by Army-launched clients, which share their launcher's
   data folder). Check for Client Updates (on: at launch and every 6 hours), Include Pre-releases
   (a pre-release build gets them anyway: every release so far is a pre-release), Check Now, and under
-  the section the last check (when, the newest version, or why it failed). Check for Script
+  the section the last check (when, the newest version, or why it failed). A nightly build greys
+  the three with the reason ("This is a nightly build: it doesn't update. ...") in their tooltips
+  and under the section. Check for Script
   Updates fetches Search Scripts' index, and with Auto Update Scripts downloads what's missing or
   outdated (`ScriptRepo::startup`; VibeSkua stores these two and never reads them, its client
   always loads the script list); `--headless` skips them, since the script it runs is updated

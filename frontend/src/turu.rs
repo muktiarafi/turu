@@ -658,10 +658,15 @@ fn sync_headless_mode(
 /// Client updates (`turu_bot::updates`): checks Turu's GitHub releases at launch and every 6
 /// hours, on a thread of its own, while Options > Application > Check for Client Updates is on.
 /// Started once, by the window (`TuruUi::new`), `--headless` or Android's engine; clients
-/// launched by Army > Accounts skip it (their launcher checks).
+/// launched by Army > Accounts skip it (their launcher checks), and so does a nightly build
+/// (`turu_bot::updates::is_nightly`: testers download the next one by hand).
 pub fn start_client_updates() {
     static STARTED: std::sync::Once = std::sync::Once::new();
     if leaves_app_jobs() {
+        return;
+    }
+    if turu_bot::updates::this_is_nightly() {
+        tracing::info!("Turu {VERSION} is a nightly build: no update checks");
         return;
     }
     STARTED.call_once(|| {
@@ -708,6 +713,9 @@ pub fn updates_from_shell() -> bool {
 
 /// Options > Application's Check Now: one check, on a thread (by the shell, in its client).
 pub fn check_client_updates_now() {
+    if turu_bot::updates::this_is_nightly() {
+        return;
+    }
     if let Some(requests) = UPDATE_REQUESTS.get() {
         requests(UpdateRequest::Check);
         return;
@@ -769,6 +777,9 @@ static PENDING_UPDATE: Mutex<Option<turu_bot::updates::install::Staged>> = Mutex
 /// status 75 instead, for its service manager to restart it), or keeps it for
 /// [`apply_pending_update`]. `turu_bot::updates::state().install` shows the progress.
 pub fn install_update(on_quit: bool) -> Result<String, String> {
+    if turu_bot::updates::this_is_nightly() {
+        return Err(turu_bot::updates::NIGHTLY_NO_UPDATES.into());
+    }
     // A shell's client: the shell installs it and starts every tab again.
     if let Some(requests) = UPDATE_REQUESTS.get() {
         requests(UpdateRequest::Install { on_quit });
