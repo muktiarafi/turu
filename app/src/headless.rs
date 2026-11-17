@@ -92,8 +92,8 @@ fn log_memory(player: &mut Player) {
         crate::HEAP_BYTES.load(std::sync::atomic::Ordering::Relaxed) >> 20,
         player.aqw_memory_report(),
     );
-    // Turu: what AS3 gotos cost (each runs a frame's construction and scripts over the stage).
-    tracing::info!(target: "turu_perf", "gotos: {}", ruffle_core::take_goto_stats());
+    // Turu: uncaught AS3 errors (a repeat is logged once, then only counted).
+    tracing::info!(target: "turu_perf", "{}", ruffle_core::take_error_stats());
     // Turu: what's loaded most, to tell which URL's movies pile up.
     tracing::info!(target: "turu_perf", "memory census: {}", player.aqw_movie_census(8));
     // Turu: what costs the most while loaded (a map, a monster, gear; images with their pixels).
@@ -182,7 +182,8 @@ pub(crate) fn build_player(
         .with_player_version(opt.player.player_version)
         .with_player_runtime(opt.player.player_runtime.unwrap_or_default())
         .with_frame_rate(opt.player.frame_rate)
-        .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled)
+        .with_avm2_early_binding_enabled(opt.avm2_early_binding_enabled)
+        .with_avm2_dse_enabled(opt.avm2_dse_enabled)
         .build();
     {
         let mut locked = player.lock().expect("the player was just built");

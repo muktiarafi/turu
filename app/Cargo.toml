@@ -75,7 +75,7 @@ async-task = "4.7.1"
 fontconfig = { version = "0.11.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-ashpd = { version = "0.13.0", features = ["settings", "game_mode"] }
+ashpd = { version = "0.14.0", features = ["settings", "game_mode"] }
 # Turu: the shell's pictures as Vulkan memory, fds over a Unix socket (`shared_gpu.rs`, M5).
 ash = "0.38"
 libc = "0.2"
@@ -97,7 +97,7 @@ mach2 = "0.4.3"
 windows = { version = "0.62", features = ["Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Direct3D12", "Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
 # Turu: Vulkan memory as Win32 handles (`shared_gpu.rs`, M5).
 ash = "0.38"
-windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Environment", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Environment", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
 vergen = { version = "10.0.3", features = ["build", "cargo"] }
@@ -114,8 +114,8 @@ FileDescription = "Turu bot client for AdventureQuest Worlds (Ruffle with Mugets
 CompanyName = "Turu"
 LegalCopyright = "Turu; based on Mugetsu and Ruffle, Copyright © 2018 Ruffle LLC and Ruffle contributors"
 # Keep equal to `mugetsu::VERSION` (desktop/src/mugetsu.rs).
-ProductVersion = "1.6.0"
-FileVersion = "1.6.0 (Ruffle 0.7.0-nightly.2026.10.2)"
+ProductVersion = "2.0.0"
+FileVersion = "2.0.0 (Ruffle 0.8.0-nightly.2026.11.10)"
 # InternalName should be the same as the module name
 InternalName = "turu"
 OriginalFilename = "turu.exe"
@@ -126,7 +126,7 @@ shell-completions = ["dep:clap_complete"]
 jpegxr = ["ruffle_core/jpegxr"]
 
 # core features
-avm_debug = ["ruffle_core/avm_debug"]
+avm2_debug = ["ruffle_core/avm2_debug"]
 lzma = ["ruffle_core/lzma"]
 software_video = ["ruffle_video_software"]
 external_video = ["ruffle_video_external"]

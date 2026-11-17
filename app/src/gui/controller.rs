@@ -65,6 +65,9 @@ pub struct GuiController {
     /// Turu: acquires in a row that failed with a validation error while the device still
     /// worked.
     acquire_errors: u32,
+    /// AQW build (Mugetsu 2.0.0): how frames go to the screen: v-sync, or not ("uncapped"
+    /// frame pacing, see `set_vsync`).
+    present_mode: wgpu::PresentMode,
     /// Turu: `TURU_TEST_GPU_LOSS=1` destroys the GPU device at this time (20 s after the start),
     /// to test [`Self::gpu_lost`] (Android's `--test-gpu-loss`).
     test_gpu_loss: Option<Instant>,
@@ -123,6 +126,17 @@ impl GuiController {
             &adapter_info,
             preferences.graphics_power_preference().into(),
         );
+        // AQW build (Mugetsu 2.0.0): detailed shapes drawn tiny are tessellated for at least
+        // 32 px, as those tessellations stalled a laptop's CPU; with a dedicated card they keep
+        // the old 8 px (see core's `tessellation_cache::set_min_size`).
+        let shape_min_px = ruffle_core::set_shape_min_px(
+            if adapter_info.device_type == wgpu::DeviceType::DiscreteGpu {
+                8.0
+            } else {
+                32.0
+            },
+        );
+        tracing::info!("Detailed shapes are tessellated for at least {shape_min_px} px");
         #[cfg(windows)]
         if crate::mugetsu::plays_aqw() {
             crate::windows::add_graphics_menu(&window);
@@ -234,6 +248,7 @@ impl GuiController {
             title: crate::window_title(),
             gpu_lost: false,
             acquire_errors: 0,
+            present_mode: wgpu::PresentMode::Fifo,
             test_gpu_loss: (std::env::var_os("TURU_TEST_GPU_LOSS").is_some_and(|v| v == "1"))
                 .then(|| Instant::now() + Duration::from_secs(20)),
             #[cfg(feature = "tracy_images")]
@@ -264,6 +279,31 @@ impl GuiController {
         }
     }
 
+    /// AQW build (Mugetsu 2.0.0): frames wait for the monitor's refresh (v-sync), or don't
+    /// ("uncapped" frame pacing, see `mugetsu::uncapped`): then the first of immediate (tearing
+    /// allowed, what a variable-refresh monitor follows), mailbox (the newest frame at each
+    /// refresh) and v-sync that the system has. Says what it got.
+    pub fn set_vsync(&mut self, vsync: bool) -> &'static str {
+        let (mode, got) = if vsync {
+            (wgpu::PresentMode::Fifo, "in step with the monitor (v-sync)")
+        } else {
+            let has = self.surface.get_capabilities(&self.descriptors.adapter).present_modes;
+            let got = if has.contains(&wgpu::PresentMode::Immediate) {
+                "at once (immediate)"
+            } else if has.contains(&wgpu::PresentMode::Mailbox) {
+                "at once, the newest at each refresh (mailbox)"
+            } else {
+                "in step with the monitor: this system has no other way"
+            };
+            (wgpu::PresentMode::AutoNoVsync, got)
+        };
+        if self.present_mode != mode {
+            self.present_mode = mode;
+            self.reconfigure_surface();
+        }
+        got
+    }
+
     pub fn reconfigure_surface(&self) {
         self.surface.configure(
             &self.descriptors.device,
@@ -273,7 +313,7 @@ impl GuiController {
                 color_space: wgpu::SurfaceColorSpace::Auto,
                 width: self.size.width,
                 height: self.size.height,
-                present_mode: Default::default(),
+                present_mode: self.present_mode,
                 desired_maximum_frame_latency: 2,
                 alpha_mode: Default::default(),
                 view_formats: Default::default(),
@@ -408,8 +448,10 @@ impl GuiController {
     }
 
     pub fn movie_to_window_position(&self, x: f64, y: f64) -> PhysicalPosition<f64> {
-        let y = y + self.height_offset();
-        PhysicalPosition::new(x, y)
+        // AQW build (Mugetsu 2.0.0): (Performance mode's fewer pixels, see `movie_position`.)
+        let scale = crate::mugetsu::render_scale();
+        let y = y / scale + self.height_offset();
+        PhysicalPosition::new(x / scale, y)
     }
 
     /// Turu: the GPU dropped the device. Said once: in the log, every tab's debug log, the window

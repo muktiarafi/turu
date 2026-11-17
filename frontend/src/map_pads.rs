@@ -138,6 +138,8 @@ pub fn scan(swf_data: &[u8]) -> Result<MapCells, String> {
                             entry.1 = Some(name);
                         }
                     }
+                    // (Neither a character nor a move.)
+                    swf::PlaceObjectAction::None => {}
                 }
             }
             swf::Tag::RemoveObject(remove) => {

@@ -179,15 +179,6 @@ pub trait Platform: Send + Sync {
         let _ = on;
     }
 
-    /// Whether Safe Drawing ([`SAFE_DRAWING`]) is saved on for the next start, or None where
-    /// Options > Application doesn't offer it (the desktop: files next to the exe).
-    fn safe_drawing(&self) -> Option<bool> {
-        None
-    }
-
-    /// Saves Safe Drawing for the next start (the switches are read once, as they're first used).
-    fn set_safe_drawing(&self, _on: bool) {}
-
     /// Whether process tabs (each tab in a process of its own: Android's slots, docs/
     /// TAB_PROCESSES_PROPOSAL.md, M3) are saved on for the next start, or None where Options >
     /// Application doesn't offer them.
@@ -209,16 +200,8 @@ pub trait Platform: Send + Sync {
     fn set_graphics(&self, _value: &str) {}
 
     /// The rest of the game's right-click menu in the window (Mugetsu's), for Options > Application
-    /// where there's no such menu (a process tab's client): whether shapes' edges are drawn
-    /// Flash's way (else MSAA), or None where Options doesn't offer it.
-    fn flash_edges(&self) -> Option<bool> {
-        None
-    }
-
-    /// Draws edges Flash's way or with MSAA, from now on and at the next start.
-    fn set_flash_edges(&self, _on: bool) {}
-
-    /// Whether the FPS counter is on, or None where Options doesn't offer it (as `flash_edges`).
+    /// where there's no such menu (a process tab's client): whether the FPS counter is on, or
+    /// None where Options doesn't offer it.
     fn show_fps(&self) -> Option<bool> {
         None
     }
@@ -226,8 +209,7 @@ pub trait Platform: Send + Sync {
     /// Turns the FPS counter on or off, and saves it.
     fn set_show_fps(&self, _on: bool) {}
 
-    /// Whether the window is full screen, or None where Options doesn't offer it (as
-    /// `flash_edges`).
+    /// Whether the window is full screen, or None where Options doesn't offer it (as `show_fps`).
     fn full_screen(&self) -> Option<bool> {
         None
     }
@@ -235,7 +217,7 @@ pub trait Platform: Send + Sync {
     /// Makes the window full screen (Esc leaves it) or not.
     fn set_full_screen(&self, _on: bool) {}
 
-    /// Whether Options offers Open Log Folder (as `flash_edges`).
+    /// Whether Options offers Open Log Folder (as `show_fps`).
     fn opens_log_folder(&self) -> bool {
         false
     }
@@ -244,16 +226,41 @@ pub trait Platform: Send + Sync {
     fn open_log_folder(&self) {}
 }
 
-/// Mugetsu's drawing speed-ups' switches (environment variables read when they're first used),
-/// all set by Safe Drawing: Ruffle's plain ways of drawing, for graphics drivers that misdraw
-/// with the speed-ups (a Snapdragon laptop lost parts of maps; a PowerVR phone drew streaks).
-pub const SAFE_DRAWING: [&str; 5] = [
-    "RUFFLE_NO_SHARED_SHAPES",
-    "RUFFLE_NO_ATLAS",
-    "RUFFLE_NO_CACHE_BATCH",
-    "RUFFLE_NO_PASS_MERGE",
-    "RUFFLE_SLOW_MULTIPLY",
+/// Mugetsu 2.0.0's speed-ups, which its player turns on when AQW is played: the switch, and
+/// the name of a file that turns it off (`no-<name>`, next to the program on a computer).
+///
+/// Turu needs `lean-scripts` and `lean-frames` in particular: they replace Turu's own marks
+/// for clips that stand still (dropped from ruffle-aqw for Mugetsu's).
+pub const DEFAULT_ON: [(&str, &str); 8] = [
+    // The per-frame walks skip the branches with nothing to do: frame construction and frame
+    // scripts, and `enter_frame`.
+    ("RUFFLE_LEAN_SCRIPTS", "lean-scripts"),
+    ("RUFFLE_LEAN_FRAMES", "lean-frames"),
+    // A recorded walk draws the branches that haven't changed from the last recording.
+    ("RUFFLE_LEAN_RENDER", "lean-render"),
+    // Overlay and hard light layers read straight from their atlas pages.
+    ("RUFFLE_PAGE_BLENDS", "page-blends"),
+    // New shapes are uploaded through an encoder of their own.
+    ("RUFFLE_SHAPE_UPLOADS", "shape-uploads"),
+    // The mouse pick skips plain branches the pointer is outside of.
+    ("RUFFLE_PICK_BOUNDS", "pick-bounds"),
+    // Small snapshots the game takes of its own art (darkened skill icons) are kept sharp.
+    ("RUFFLE_SHARP_SNAPSHOTS", "sharp-snapshots"),
+    // Clips put on the stage between two frames run their first frame scripts before the next
+    // picture (colour-custom gear no longer shows in its drawn colours for a moment).
+    ("RUFFLE_EARLY_SCRIPTS", "early-scripts"),
 ];
+
+/// The switches of [`DEFAULT_ON`] to set before Ruffle reads them: less those whose `no-<name>`
+/// file `off` says is there, and those already set from outside (`RUFFLE_LEAN_RENDER=every`,
+/// for tests).
+pub fn drawing_switches(off: impl Fn(&str) -> bool) -> Vec<&'static str> {
+    DEFAULT_ON
+        .iter()
+        .filter(|(var, name)| !off(&format!("no-{name}")) && std::env::var_os(var).is_none())
+        .map(|(var, _)| *var)
+        .collect()
+}
 
 /// The beep's pitch and length: .NET's `Console.Beep()` (800 Hz, 200 ms).
 pub const BEEP_HZ: f32 = 800.0;

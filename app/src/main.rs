@@ -313,9 +313,18 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
     mugetsu::set_plays_aqw();
     ruffle_core::frame_interpolation::set_enabled(mugetsu::saved_interpolation());
     ruffle_core::set_shape_wait(mugetsu::shape_wait());
-    // Flash-style edge smoothing by default (much faster on laptops; MSAA in the menu).
-    ruffle_render::tessellator::set_flash_aa(mugetsu::saved_flash_edges().unwrap_or(true));
+    // Mugetsu 2.0.0: a child removed again from inside its own removal events is let through,
+    // as AQW's skill effects need (see `ruffle_core::set_forgiving_removal`).
+    ruffle_core::set_forgiving_removal(true);
+    // Flash-style edge smoothing (much lighter on laptops). MSAA was a choice in the menu
+    // until Mugetsu 2.0.0 (not needed any more); an `msaa` file next to the exe still draws
+    // with it, as the way back should an item look wrong. What an earlier version saved
+    // (`mugetsu-edges.txt`) is not read any more.
+    ruffle_render::tessellator::set_flash_aa(!mugetsu::exe_flag("msaa"));
     mugetsu::load_show_fps();
+    mugetsu::load_pacing();
+    mugetsu::load_performance();
+    mugetsu::load_memory_limit();
     heap_census::enable_if_flagged();
     let given =|flag: &str| {
         args.iter().skip(1).any(|a| {

@@ -195,7 +195,7 @@ pub fn playlist_args(
 /// Android's own flags in `turu-args.txt` (graphics, logs, test switches), with a value or without:
 /// the app's, not a tab's, so every slot reads them there and no record keeps them.
 const APP_FLAGS_WITH_VALUE: [&str; 3] = ["--graphics", "--perf-log", "--releases-url"];
-const APP_FLAGS: [&str; 2] = ["--safe-drawing", "--test-gpu-loss"];
+const APP_FLAGS: [&str; 1] = ["--test-gpu-loss"];
 
 /// `turu-args.txt`'s flags split into a tab's (for its record, without `--password`), the
 /// password, and the app's own.
@@ -564,7 +564,7 @@ mod tests {
             "vulkan",
             "--server",
             "Yorumi",
-            "--safe-drawing",
+            "--test-gpu-loss",
             "--perf-log=60",
         ]
         .map(String::from)
@@ -574,7 +574,7 @@ mod tests {
         assert_eq!(password.as_deref(), Some("s3cret"));
         assert_eq!(
             app,
-            ["--graphics", "vulkan", "--safe-drawing", "--perf-log=60"]
+            ["--graphics", "vulkan", "--test-gpu-loss", "--perf-log=60"]
         );
         let (_, password, _) = split_args(&["--password".into(), "other".into()]);
         assert_eq!(password.as_deref(), Some("other"));

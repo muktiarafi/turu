@@ -616,8 +616,6 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         None => read_args(&root.join(ARGS_FILE)),
     };
     let graphics = take_graphics(&mut args);
-    let safe_drawing =
-        take_flag(&mut args, "--safe-drawing") || root.join(SAFE_DRAWING_FILE).exists();
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss =
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
@@ -636,18 +634,21 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // Mugetsu's defaults (`main.rs`), per thread, so here, on the player's: how long a frame
     // waits for its new shapes, and Flash-style edge smoothing.
     ruffle_core::set_shape_wait(Some(Duration::from_millis(12)));
+    // Mugetsu 2.0.0: AQW's skill effects remove themselves again from their own removal
+    // events (see `ruffle_core::set_forgiving_removal`). (Detailed shapes keep the default
+    // 32 px at least, as on built-in graphics: `set_shape_min_px`.)
+    ruffle_core::set_forgiving_removal(true);
     ruffle_render::tessellator::set_flash_aa(true);
-    if safe_drawing {
-        for var in turu_frontend::platform::SAFE_DRAWING {
-            // SAFETY: before the engine's threads exist and before Ruffle reads them; the
-            // process's other threads (Java's) don't read Turu's environment.
-            unsafe { std::env::set_var(var, "1") };
-        }
+    // Mugetsu 2.0.0's speed-ups (`DEFAULT_ON`), as on a computer.
+    for var in turu_frontend::platform::drawing_switches(|_| false) {
+        // SAFETY: before the engine's threads exist and before Ruffle reads them; the
+        // process's other threads (Java's) don't read Turu's environment.
+        unsafe { std::env::set_var(var, "1") };
     }
     // `--releases-url <url>`: `TURU_RELEASES_URL`, where client updates are looked for (a test
     // feed, say), which an app can't be started with.
     if let Some(url) = releases_url {
-        // SAFETY: as Safe Drawing's, before the update checks' thread exists.
+        // SAFETY: as the drawing switches', before the update checks' thread exists.
         unsafe { std::env::set_var("TURU_RELEASES_URL", url) };
     }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
@@ -690,12 +691,6 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         tracing::error!("No graphics API worked; the game can't start");
         return;
     };
-    if safe_drawing {
-        turu::bot()
-            .logs
-            .debug
-            .push("Safe Drawing: Mugetsu's drawing speed-ups are off");
-    }
     GPU.set(Some((descriptors, blit)));
     let sender = ENGINE_TX
         .get()
@@ -874,8 +869,6 @@ fn window_shown() -> bool {
 /// Frame interpolation (Options > Application; off by default) is on while this file is in the
 /// data folder, as Mugetsu's on a desktop.
 const INTERPOLATION_FILE: &str = "mugetsu-interpolation.txt";
-/// Options > Application > Safe Drawing, for the next start (as `--safe-drawing` does).
-pub(crate) const SAFE_DRAWING_FILE: &str = "safe-drawing.txt";
 
 /// Saves frame interpolation's switch (`platform.rs`).
 pub(crate) fn save_interpolation(on: bool) {

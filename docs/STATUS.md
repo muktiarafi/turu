@@ -5,10 +5,31 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
 
 ## What works
 
-- **App:** `app/` on ruffle-aqw (`ruffle/`: Ruffle `fda41800` + Mugetsu 1.6.0's patches) starts
+- **App:** `app/` on ruffle-aqw (`ruffle/`: Ruffle `f22d29d9` + Mugetsu 2.0.0's patches) starts
   Turu's host SWF, `turu.swf`, which loads AQW (docs/HOST_SWF_PROPOSAL.md). You log in with the
   game's own screen.
   On the Ruffle builds the bot's packets come from the player's socket (R5).
+- **Mugetsu 2.0.0** (2026-11-17; was 1.6.0 on Ruffle `fda41800`): ruffle-aqw replays Turu's
+  commits on it, less four: the "constructed", "dormant" and button marks for clips that stand
+  still (Mugetsu's lean walks do that now: `lean-scripts`, `lean-frames`, turned on with
+  Mugetsu's other 2.0.0 speed-ups by `platform::DEFAULT_ON`, on a computer and on Android) and a
+  leak diagnostic built on `Arc<SwfMovie>` (upstream made movies GC objects). Not used: Mugetsu's
+  render thread (it records on another thread, against each tab's segment swap) and, on Windows,
+  its present thread (`RUFFLE_SERIAL_PRESENT`: untried with several tabs in one window).
+  Mugetsu 2.0.0's player options are in the window's right-click menu (its 2.0.0 layout, one
+  line per setting with a hint): Performance mode (the game drawn at 85% or 70% of the window's
+  width and height and stretched, in every tab and Grid View tile), the memory limit (Task
+  Manager's figure; over it everything that can be freed is, in every tab, at most every 20 s,
+  backing off to 5 minutes while a freeing doesn't hold) and "Free memory now", uncapped frame
+  pacing and the FPS limit (with frame interpolation: the window's frames stop waiting for
+  v-sync). As in Mugetsu 2.0.0, edge smoothing is no longer a choice, in the menu or Options
+  (Flash-style; an `msaa` file next to the program brings MSAA back), and the log folder left
+  the menu (Diagnostics and Options open it). Not ported: Mugetsu's update reminders (Turu has
+  its own updates), its in-game prompts (Turu asks about a graphics restart itself) and its
+  crash-handler rework on Windows. Process tabs' clients have no right-click menu and don't
+  offer these options yet: their engine loop has no memory watch or window pacer of Turu's.
+  Safe Drawing (Options > Application on Android, a `safe-drawing` file on a computer) is gone:
+  nobody used it since Turu Mas; single `no-<switch>` files next to the program remain.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
   background loops for drops, registered quests, skills and boosts; Stop and Pause.
 - **Servers and auto-relogin:** `bot.servers` (VibeSkua `Bot.Servers`: server list, login,
@@ -541,7 +562,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
     `cacheStatic` (`cacheAsBitmap` on 52 map layers: 4.85 -> 4.81 ms).
   - M5's event watcher costs nothing measurable (`eventsOff`: frame 1.40 vs 1.49 ms).
   - ruffle-aqw now logs an uncaught AS3 error the first time its message and innermost frame
-    are seen and counts the repeats (`gotos:` line; `RUFFLE_ERRORS_EVERY_TIME` logs each). An
+    are seen and counts the repeats (`uncaught AS3 errors` line; `RUFFLE_ERRORS_EVERY_TIME` logs each). An
     armour's frame scripts (`ShadedPlagisteGuise`, driven by the aura HUD) threw ~8 a second in
     one debug run whose player ticks were twice another's; the release runs here didn't get
     that stream, so its cost isn't measured.
@@ -676,8 +697,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   engine thread, the Army menu and Butler, a Tab Limit (default 4), tabs reopened after a kill;
   built, not run on a device yet.
   Vulkan misdrew on an Infinix Hot 30i (PowerVR): the debug log now names the
-  GPU and driver, and Options > Application > Safe Drawing turns Mugetsu's speed-ups off to test
-  (docs/ANDROID.md, "Misdrawing"; not yet tried on that phone).
+  GPU and driver (docs/ANDROID.md, "Misdrawing"; Safe Drawing, which turned Mugetsu's speed-ups
+  off, was removed on 2026-11-17 untried there: nobody used it since Turu Mas).
 - **Windowless mode logs in and farms** (2026-11-03: desktop `--headless` and Android, GoldFarm).
   It needed a fix in ruffle-aqw (`core/src/bitmap/operations.rs`): with AQW's default settings
   (no saved `AQWUserPref`, as on a new server or phone) the game draws the stage into a bitmap
@@ -730,6 +751,10 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   walk went from 1.10 million a minute to 0.36 million, a frame from 1.9 to 1.75 ms, game ticks
   from 68 to 65 ms/s: the walks that were left were cheap ones. `RUFFLE_NO_BUTTON_MARKS=1` turns
   it off. Not tried: a session of hours over many maps and cutscenes, or a phone.
+  Since Mugetsu 2.0.0 (2026-11-17) the "constructed", "dormant" and button marks, the no-op
+  goto and `Loader` changes and the `gotos:` line are gone: Mugetsu's lean walks
+  (`lean-scripts`, `lean-frames`) do the same work, and their numbers against the ones above
+  are still to be measured.
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
@@ -937,7 +962,7 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   drops every tab (Butler's broadcast did this; `butler_state_reads_never_wait_for_a_game_call`
   tests for it). Read the game first, then lock.
 - **Crashes:** a panic is written to `crash-<date>.log` in the log folder (Ruffle's cache folder's
-  `log/`, e.g. `~/Library/Caches/ruffle/log` on macOS; Mugetsu's "Open Log Folder"), at once, as
+  `log/`, e.g. `~/Library/Caches/ruffle/log` on macOS; Options > Application > Open Log Folder), at once, as
   the log itself is written on another thread that an abort may cut off. `ruffle.log` is made anew
   at each start; the previous run's is kept as `ruffle.prev.log`. On Android, panics and the
   system's record of each unexpected exit go to the data folder's `crash/` instead, shown in

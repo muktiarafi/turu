@@ -33,7 +33,7 @@ use turu_frontend::players::{Players, Slot};
 use turu_frontend::shell::{self, ClientEnd, FrameSender, ToClient, ToShell};
 use url::Url;
 
-/// The engine thread's events, for what Options changes in the game (`set_flash_edges`).
+/// The engine thread's events, for what Options changes in the game.
 static ENGINE: std::sync::OnceLock<Sender<EngineEvent>> = std::sync::OnceLock::new();
 
 /// The shell's window is full screen (`ToClient::FullScreen`), for Options.
@@ -396,23 +396,6 @@ impl Platform for ClientPlatform {
     }
 
     // The rest of the window's right-click menu (Mugetsu's): a client has none.
-    fn flash_edges(&self) -> Option<bool> {
-        Some(ruffle_render::tessellator::flash_aa_switch())
-    }
-
-    fn set_flash_edges(&self, on: bool) {
-        ruffle_render::tessellator::set_flash_aa(on);
-        crate::mugetsu::save_flash_edges(on);
-        tracing::info!("Edges drawn {}", if on { "Flash's way" } else { "with MSAA" });
-        // The drawing surface is made again for it (and shapes tessellated again), as the window.
-        if let Some(engine) = ENGINE.get() {
-            let _ = engine.send(EngineEvent::Run(Box::new(|player| {
-                let quality = player.quality();
-                player.renderer_mut().set_quality(quality);
-            })));
-        }
-    }
-
     fn show_fps(&self) -> Option<bool> {
         Some(crate::mugetsu::show_fps())
     }

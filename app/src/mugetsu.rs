@@ -3,14 +3,14 @@
 //! uses DirectX 12) and the "running on the built-in graphics" tip.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
 /// Mugetsu's own version. Keep it equal to `ProductVersion` in desktop/Cargo.toml
 /// ([package.metadata.winresource]) and to the GitHub release tag (`v1.1.1`).
-pub const VERSION: &str = "1.6.0";
+pub const VERSION: &str = "2.0.0";
 
 // --- Window title -------------------------------------------------------------------------
 
@@ -40,7 +40,7 @@ fn config_dir() -> Option<PathBuf> {
     dirs::config_local_dir().map(|dir| dir.join("ruffle"))
 }
 
-/// A file named `name` next to Mugetsu's program exists (`verbose-log`, `safe-drawing`).
+/// A file named `name` next to Mugetsu's program exists (`verbose-log`, `no-atlas`).
 pub fn exe_flag(name: &str) -> bool {
     // Also `name.txt`: Windows hides extensions, so a "new text document" renamed to `name`
     // is really `name.txt`.
@@ -249,57 +249,284 @@ pub fn save_interpolation(on: bool) {
     }
 }
 
-/// Edge smoothing (Mugetsu's settings): "flash" for Flash-style, "msaa" for MSAA; no file means
-/// the default (MSAA, or Flash-style with a `flash-aa` file next to the exe).
-const EDGES_FILE: &str = "mugetsu-edges.txt";
-
-pub fn saved_flash_edges() -> Option<bool> {
-    let text = std::fs::read_to_string(config_dir()?.join(EDGES_FILE)).ok()?;
-    match text.trim() {
-        "flash" => Some(true),
-        "msaa" => Some(false),
-        _ => None,
-    }
-}
-
-pub fn save_flash_edges(on: bool) {
-    let Some(dir) = config_dir() else {
-        return;
-    };
-    let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(dir.join(EDGES_FILE), if on { "flash\n" } else { "msaa\n" });
-}
-
-/// A choice in Mugetsu's settings, in the game's right-click menu.
+/// A choice in Mugetsu's settings, in the game's right-click menu (and Options > Application).
+/// (Turu: Mugetsu 2.0.0's, less its update reminders, its restart questions and the render
+/// thread's restart: Turu has its own updater and asks about a graphics restart itself.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
     Interpolation(bool),
-    FlashEdges(bool),
     Graphics(Option<Graphics>),
     ShowFps(bool),
-    OpenLogFolder,
+    /// Uncapped frame pacing (see `uncapped`).
+    Uncapped(bool),
+    FpsLimit(FpsLimit),
+    /// Performance mode (see `Performance`).
+    Performance(Performance),
+    /// The memory limit in MB, 0 for none (see `memory_limit_mb`).
+    MemoryLimit(u32),
+    /// Everything that can be freed is freed now (see `app::free_memory`).
+    FreeMemory,
 }
 
 /// The settings as they are now, for the menu.
 #[derive(Clone, Copy, Debug)]
 pub struct MenuSettings {
     pub interpolation: bool,
-    pub flash_edges: bool,
     pub graphics: Option<Graphics>,
     /// Whether the graphics choice applies (Windows and Linux, playing AQW).
     pub graphics_choice: bool,
     pub show_fps: bool,
+    pub uncapped: bool,
+    pub fps_limit: FpsLimit,
+    pub performance: Performance,
+    pub memory_limit_mb: u32,
 }
 
 impl MenuSettings {
     pub fn now() -> Self {
         Self {
             interpolation: ruffle_core::frame_interpolation::enabled(),
-            flash_edges: ruffle_render::tessellator::flash_aa_switch(),
             graphics: saved_graphics(),
             graphics_choice: (cfg!(windows) || cfg!(target_os = "linux")) && plays_aqw(),
             show_fps: show_fps(),
+            uncapped: uncapped(),
+            fps_limit: fps_limit(),
+            performance: performance(),
+            memory_limit_mb: memory_limit_mb(),
         }
+    }
+}
+
+// --- Memory limit -------------------------------------------------------------------------
+//
+// Mugetsu keeps things it may need again: the shapes of rooms and players seen in the last
+// minutes, spare textures, and memory its allocator holds for the next request. On a PC with
+// little RAM a player may want less of that than Mugetsu would keep by itself. With a limit
+// set (the menu's "Memory limit"), `app::memory_watch` frees all of it whenever the process's
+// committed memory is over the limit. It is a target, not a cap: what is on screen and the
+// game's own data stay, and what was freed is made again when it is needed, which can show as
+// a short stutter. Off by default.
+
+/// Holds the limit in MB while one is set; no file means none.
+const MEMORY_LIMIT_FILE: &str = "mugetsu-memory-limit.txt";
+
+static MEMORY_LIMIT_MB: AtomicU32 = AtomicU32::new(0);
+
+/// Reads the saved limit. (`RUFFLE_TEST_MEMORY_LIMIT_MB=<n>`, testing: instead of it.)
+pub fn load_memory_limit() {
+    let saved = std::env::var("RUFFLE_TEST_MEMORY_LIMIT_MB").ok().or_else(|| {
+        config_dir().and_then(|dir| std::fs::read_to_string(dir.join(MEMORY_LIMIT_FILE)).ok())
+    });
+    let mb = saved
+        .and_then(|text| text.trim().parse::<u32>().ok())
+        .unwrap_or(0);
+    MEMORY_LIMIT_MB.store(mb, Ordering::Relaxed);
+}
+
+/// The memory limit in MB; 0 when there is none.
+pub fn memory_limit_mb() -> u32 {
+    MEMORY_LIMIT_MB.load(Ordering::Relaxed)
+}
+
+pub fn set_memory_limit_mb(mb: u32) {
+    MEMORY_LIMIT_MB.store(mb, Ordering::Relaxed);
+    let Some(dir) = config_dir() else {
+        return;
+    };
+    let path = dir.join(MEMORY_LIMIT_FILE);
+    if mb == 0 {
+        let _ = std::fs::remove_file(path);
+    } else {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(path, mb.to_string());
+    }
+}
+
+/// The process's memory in MB: its working set (the RAM it holds right now; Task Manager's
+/// "Memory" column is this without the pages shared with other processes) and its committed
+/// memory (everything the system has promised it, which on Windows includes the backing of
+/// its graphics memory: 2,500 MB against a working set of 1,100 in a town on DirectX 12).
+///
+/// The memory limit counted the committed memory at first (freeing moves it by 250-900 MB
+/// and the working set by about 100, measured 2026-11-15). The user's decision of
+/// 2026-11-16: it counts what Task Manager shows (`task_manager_mb`), so that the limit, the
+/// menu's "Now:" line and the number people look at are the same one, with presets of 1, 2
+/// and 3 GB. What brings that figure down in a long session is the freeing of unused movie
+/// libraries (core's `Library::sweep_movie_libraries`), not this limit's own freeing.
+pub fn process_memory_mb() -> (u64, u64) {
+    let mut working_set = 0usize;
+    let mut commit = 0usize;
+    let mut zero = [0usize; 6];
+    // SAFETY: plain out-pointers.
+    unsafe {
+        let [a, b, c, e, f, g] = &mut zero;
+        libmimalloc_sys::mi_process_info(a, b, c, &mut working_set, e, &mut commit, f, g);
+    }
+    ((working_set as u64) >> 20, (commit as u64) >> 20)
+}
+
+/// The figure Task Manager's "Memory" column shows for the process, in MB: on Windows its
+/// private working set (the RAM it holds that no other process shares), from the system; where
+/// that cannot be read (Windows before 10 22H2, other systems) the whole working set, which
+/// is a little more.
+pub fn task_manager_mb() -> u64 {
+    #[cfg(windows)]
+    {
+        // `PROCESS_MEMORY_COUNTERS_EX2` (psapi.h): the last two fields are what EX2 adds.
+        #[repr(C)]
+        #[derive(Default)]
+        struct Counters {
+            cb: u32,
+            page_fault_count: u32,
+            peak_working_set_size: usize,
+            working_set_size: usize,
+            quota_peak_paged_pool_usage: usize,
+            quota_paged_pool_usage: usize,
+            quota_peak_non_paged_pool_usage: usize,
+            quota_non_paged_pool_usage: usize,
+            pagefile_usage: usize,
+            peak_pagefile_usage: usize,
+            private_usage: usize,
+            private_working_set_size: usize,
+            shared_commit_usage: u64,
+        }
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn K32GetProcessMemoryInfo(
+                process: *mut std::ffi::c_void,
+                counters: *mut Counters,
+                cb: u32,
+            ) -> i32;
+            fn GetCurrentProcess() -> *mut std::ffi::c_void;
+        }
+        let mut counters = Counters {
+            cb: size_of::<Counters>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `counters` is a valid, writable structure of the size given; the handle is
+        // the pseudo-handle of this process.
+        let read = unsafe {
+            K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) != 0
+        };
+        if read && counters.private_working_set_size > 0 {
+            return (counters.private_working_set_size as u64) >> 20;
+        }
+    }
+    process_memory_mb().0
+}
+
+/// What the memory limit is compared with right now, in MB, for the menu (which is drawn up
+/// to a thousand times a second: read once a second at the most).
+pub fn memory_now_mb() -> u64 {
+    static LAST: std::sync::Mutex<Option<(std::time::Instant, u64)>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    match *last {
+        Some((at, mb)) if at.elapsed() < std::time::Duration::from_secs(1) => mb,
+        _ => {
+            let mb = task_manager_mb();
+            *last = Some((std::time::Instant::now(), mb));
+            mb
+        }
+    }
+}
+
+// --- Performance mode ---------------------------------------------------------------------
+//
+// A weak graphics chip (a laptop's built-in one) spends its time filling pixels: the game is
+// drawn with hundreds of blended layers over each other. In Performance mode the game is
+// drawn at a share of the window's width and height and that picture is stretched over the
+// window (the movie's picture is a texture drawn onto the window anyway, see `gui::movie`):
+// at 70 % of each side the chip fills half the pixels, which was worth about 40 % more
+// pictures a second on built-in graphics. The picture gets softer, the game's own text
+// included; Mugetsu's menu and FPS counter stay sharp. Off by default: a graphics card that
+// is not the limit gains nothing from it.
+
+/// How much of the window's resolution the game is drawn at.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Performance {
+    #[default]
+    Off,
+    Balanced,
+    Fast,
+}
+
+impl Performance {
+    /// The share of the window's width and height the game is drawn at.
+    pub fn scale(self) -> f64 {
+        match self {
+            Performance::Off => 1.0,
+            Performance::Balanced => 0.85,
+            Performance::Fast => 0.7,
+        }
+    }
+
+    fn from_saved(text: &str) -> Self {
+        match text.trim() {
+            "balanced" => Performance::Balanced,
+            "fast" => Performance::Fast,
+            _ => Performance::Off,
+        }
+    }
+
+    fn from_index(index: u8) -> Self {
+        match index {
+            1 => Performance::Balanced,
+            2 => Performance::Fast,
+            _ => Performance::Off,
+        }
+    }
+}
+
+/// Holds "balanced" or "fast" while Performance mode is on; no file means off.
+const PERFORMANCE_FILE: &str = "mugetsu-performance.txt";
+
+static PERFORMANCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Reads the saved choice. (`RUFFLE_TEST_PERFORMANCE=balanced|fast`, testing: instead of it.)
+pub fn load_performance() {
+    let saved = std::env::var("RUFFLE_TEST_PERFORMANCE").ok().or_else(|| {
+        config_dir().and_then(|dir| std::fs::read_to_string(dir.join(PERFORMANCE_FILE)).ok())
+    });
+    let level = saved.as_deref().map_or(Performance::Off, Performance::from_saved);
+    PERFORMANCE.store(level as u8, Ordering::Relaxed);
+}
+
+pub fn performance() -> Performance {
+    Performance::from_index(PERFORMANCE.load(Ordering::Relaxed))
+}
+
+pub fn set_performance(level: Performance) {
+    PERFORMANCE.store(level as u8, Ordering::Relaxed);
+    let Some(dir) = config_dir() else {
+        return;
+    };
+    let path = dir.join(PERFORMANCE_FILE);
+    let text = match level {
+        Performance::Off => {
+            let _ = std::fs::remove_file(path);
+            return;
+        }
+        Performance::Balanced => "balanced\n",
+        Performance::Fast => "fast\n",
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(path, text);
+}
+
+/// The share of the window's width and height the game is drawn at (1 without Performance
+/// mode).
+pub fn render_scale() -> f64 {
+    performance().scale()
+}
+
+/// A length of the window in the pixels the game is drawn at: the same without Performance
+/// mode; never 0 for a length that is not.
+pub fn drawn_len(len: u32) -> u32 {
+    let scale = render_scale();
+    if scale == 1.0 || len == 0 {
+        len
+    } else {
+        ((f64::from(len) * scale).round() as u32).max(1)
     }
 }
 
@@ -328,10 +555,127 @@ pub fn set_show_fps(on: bool) {
     let path = dir.join(SHOW_FPS_FILE);
     if on {
         let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(path, "on
-");
+        let _ = std::fs::write(path, "on\n");
     } else {
         let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Frame pacing (Mugetsu's settings). Normally pictures are sent in step with the monitor's
+/// refreshes (v-sync): a new one on every refresh, or every second, third, ..., and the last
+/// one again in between. "Uncapped" sends each new picture once, as soon as it is ready,
+/// without waiting for a refresh: for monitors with a variable refresh rate (G-Sync,
+/// FreeSync), which show every picture for as long as it took, at any rate. On a monitor
+/// with a fixed rate that tears. Only with frame interpolation: without it there is one
+/// picture per game frame either way. This file exists while it's on.
+const UNCAPPED_FILE: &str = "mugetsu-uncapped.txt";
+
+/// The most pictures a second while uncapped, if one was picked (the file holds `screen` or
+/// a number).
+const FPS_LIMIT_FILE: &str = "mugetsu-fps-limit.txt";
+
+static UNCAPPED: AtomicBool = AtomicBool::new(false);
+
+/// 0: no limit; 1: the screen's rate; else that many pictures a second.
+static FPS_LIMIT: AtomicU32 = AtomicU32::new(0);
+
+/// See `FPS_LIMIT_FILE`. `Screen`: a little under the monitor's refresh rate, where a
+/// variable-refresh monitor still follows (at its top rate and above it stops, and tears).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FpsLimit {
+    Off,
+    Screen,
+    Fixed(u32),
+}
+
+impl FpsLimit {
+    fn parse(text: &str) -> Self {
+        match text.trim() {
+            "screen" => FpsLimit::Screen,
+            number => number
+                .parse::<u32>()
+                .ok()
+                .filter(|fps| (30..=1000).contains(fps))
+                .map_or(FpsLimit::Off, FpsLimit::Fixed),
+        }
+    }
+
+    fn bits(self) -> u32 {
+        match self {
+            FpsLimit::Off => 0,
+            FpsLimit::Screen => 1,
+            FpsLimit::Fixed(fps) => fps,
+        }
+    }
+}
+
+/// Reads the saved pacing. `RUFFLE_TEST_UNCAPPED=1` and `RUFFLE_TEST_FPS_LIMIT=screen|N`
+/// set it for one run (testing).
+pub fn load_pacing() {
+    let dir = config_dir();
+    let test = std::env::var_os("RUFFLE_TEST_UNCAPPED").is_some();
+    let on = test || dir.as_ref().is_some_and(|dir| dir.join(UNCAPPED_FILE).exists());
+    UNCAPPED.store(on, Ordering::Relaxed);
+    let limit = std::env::var("RUFFLE_TEST_FPS_LIMIT")
+        .ok()
+        .or_else(|| dir.and_then(|dir| std::fs::read_to_string(dir.join(FPS_LIMIT_FILE)).ok()))
+        .map_or(FpsLimit::Off, |text| FpsLimit::parse(&text));
+    FPS_LIMIT.store(limit.bits(), Ordering::Relaxed);
+    if on {
+        tracing::info!("Frame pacing: uncapped (FPS limit: {limit:?})");
+    }
+}
+
+/// Whether "uncapped" is picked in the settings.
+pub fn uncapped() -> bool {
+    UNCAPPED.load(Ordering::Relaxed)
+}
+
+/// Whether pictures are sent uncapped right now: picked, and frame interpolation is on.
+pub fn uncapped_now() -> bool {
+    uncapped() && ruffle_core::frame_interpolation::enabled()
+}
+
+pub fn set_uncapped(on: bool) {
+    UNCAPPED.store(on, Ordering::Relaxed);
+    let Some(dir) = config_dir() else {
+        return;
+    };
+    let path = dir.join(UNCAPPED_FILE);
+    if on {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(path, "on\n");
+    } else {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+pub fn fps_limit() -> FpsLimit {
+    match FPS_LIMIT.load(Ordering::Relaxed) {
+        0 => FpsLimit::Off,
+        1 => FpsLimit::Screen,
+        fps => FpsLimit::Fixed(fps),
+    }
+}
+
+pub fn set_fps_limit(limit: FpsLimit) {
+    FPS_LIMIT.store(limit.bits(), Ordering::Relaxed);
+    let Some(dir) = config_dir() else {
+        return;
+    };
+    let path = dir.join(FPS_LIMIT_FILE);
+    match limit {
+        FpsLimit::Off => {
+            let _ = std::fs::remove_file(path);
+        }
+        FpsLimit::Screen => {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(path, "screen\n");
+        }
+        FpsLimit::Fixed(fps) => {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(path, format!("{fps}\n"));
+        }
     }
 }
 
@@ -446,30 +790,80 @@ fn preferred_adapter(_low_power: bool) -> Option<(u32, String)> {
 // each can be turned off with a file next to the exe, to find out which (not yet confirmed on
 // Adreno, so nothing is turned off automatically).
 
-use crate::platform::SAFE_DRAWING;
-
-/// Called first thing in `main` (before any other thread exists): a `safe-drawing` file next to
-/// the exe turns all the speed-ups off (Ruffle's plain ways of drawing); `no-shared-shapes`,
-/// `no-pass-merge` and `slow-multiply` turn single ones off (`no-atlas`, `no-glow-batch` and
-/// `no-cache-steps` are checked while running).
+/// Called first thing in `main` (before any other thread exists): Mugetsu 2.0.0's speed-ups
+/// (`platform::DEFAULT_ON`) are turned on, as Mugetsu's player does when AQW is played.
+/// `no-lean-scripts`, `no-lean-frames`, `no-lean-render`, `no-page-blends`, `no-shape-uploads`,
+/// `no-pick-bounds`, `no-sharp-snapshots`, `no-early-scripts`, `no-shared-shapes`,
+/// `no-pass-merge` and `slow-multiply` files next to the exe turn single ones off (`no-atlas`,
+/// `no-glow-batch` and `no-cache-steps` are checked while running). (Turu: Mugetsu's
+/// `safe-drawing` file, all of them off at once, is gone with Turu's Safe Drawing.)
 pub fn apply_drawing_switches() {
     let set = |var: &str| {
         // SAFETY: called first thing in `main`, before any other thread exists.
         unsafe { std::env::set_var(var, "1") };
     };
-    if exe_flag("safe-drawing") {
-        SAFE_DRAWING.iter().copied().for_each(set);
-    }
-    for (file, var) in [
-        ("no-shared-shapes", "RUFFLE_NO_SHARED_SHAPES"),
-        ("no-pass-merge", "RUFFLE_NO_PASS_MERGE"),
-        ("slow-multiply", "RUFFLE_SLOW_MULTIPLY"),
-        // Flash-style edge smoothing instead of MSAA (prototype).
-        ("flash-aa", "RUFFLE_FLASH_AA"),
-    ] {
-        if exe_flag(file) {
+    crate::platform::drawing_switches(exe_flag)
+        .into_iter()
+        .for_each(set);
+    for (file, var) in BY_FILE {
+        if exe_flag(file) && std::env::var_os(var).is_none() {
             set(var);
         }
+    }
+    // Turu: frames are submitted from the thread that runs the players, on Windows too, where
+    // Mugetsu submits and shows them from a present thread of its own: Turu draws several tabs
+    // into one window, and that hasn't been tried with the present thread.
+    #[cfg(windows)]
+    if std::env::var_os("RUFFLE_SERIAL_PRESENT").is_none() {
+        set("RUFFLE_SERIAL_PRESENT");
+    }
+}
+
+/// Switches that are only on with their file next to the exe (Mugetsu 2.0.0's).
+const BY_FILE: [(&str, &str); 10] = [
+    // A room-entry picture is not held for its new cached objects' shapes (see core's
+    // `deferred_shapes::entry_hold`): they are drawn blank until done, as from 2026-10-28.
+    ("no-entry-hold", "RUFFLE_NO_ENTRY_HOLD"),
+    // Finished shapes are uploaded within a few milliseconds per frame, the rest in the
+    // next frames (see core's `deferred_shapes`): no hitch when a room's characters load.
+    ("shape-budget", "RUFFLE_SHAPE_BUDGET"),
+    ("no-shared-shapes", "RUFFLE_NO_SHARED_SHAPES"),
+    ("no-pass-merge", "RUFFLE_NO_PASS_MERGE"),
+    ("slow-multiply", "RUFFLE_SLOW_MULTIPLY"),
+    // Flash-style edge smoothing (from the days it was a prototype).
+    ("flash-aa", "RUFFLE_FLASH_AA"),
+    // The lean walks' check: everything is still walked, and what the lean walks would have
+    // skipped wrongly is reported in the log ("LEAN VERIFY", and the "lean walks" line).
+    ("lean-verify", "RUFFLE_LEAN_VERIFY"),
+    // Lean render's check: the unchanged branches are walked as well and compared.
+    ("lean-render-verify", "RUFFLE_LEAN_RENDER_VERIFY"),
+    // (Turu: no `render-thread`: see `player.rs`.)
+    // The pick's check: every skipped branch is picked in full as well, and a difference is
+    // reported in the log ("PICK MISMATCH", "PICK NOTE OUT OF DATE"); and its cost and counts.
+    ("pick-verify", "RUFFLE_PICK_VERIFY"),
+    ("pick-stats", "RUFFLE_PICK_STATS"),
+];
+
+/// Whether shapes not drawn for a while have their GPU geometry freed (see
+/// `app::memory_watch`). A `no-shape-eviction` file next to the exe turns it off.
+/// How much shape geometry (MB) is kept before unused shapes are freed sooner than after
+/// 10 minutes (see `app::memory_watch`): 256 MB, 128 MB on built-in graphics, whose memory
+/// is the system's RAM. `RUFFLE_SHAPE_STORE_MB` sets it (0: always 10 minutes, as it was).
+pub fn shape_store_mb() -> u64 {
+    static OVERRIDE: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    if let Some(mb) = OVERRIDE.get_or_init(|| {
+        std::env::var("RUFFLE_SHAPE_STORE_MB")
+            .ok()
+            .and_then(|mb| mb.trim().parse().ok())
+    }) {
+        return *mb;
+    }
+    // (Known once the graphics chip is: this is asked a minute into the session at the
+    // earliest.)
+    if BUILT_IN_GRAPHICS.get().is_some() {
+        128
+    } else {
+        256
     }
 }
 
@@ -505,10 +899,20 @@ pub fn shape_wait() -> Option<std::time::Duration> {
 
 /// The speed-ups that are switched off, for the log.
 pub fn drawing_switches_off() -> Vec<&'static str> {
-    SAFE_DRAWING
+    let single = [
+        "RUFFLE_NO_SHARED_SHAPES",
+        "RUFFLE_NO_ATLAS",
+        "RUFFLE_NO_CACHE_BATCH",
+        "RUFFLE_NO_PASS_MERGE",
+        "RUFFLE_SLOW_MULTIPLY",
+    ]
+    .into_iter()
+    .filter(|var| std::env::var_os(var).is_some());
+    let new = crate::platform::DEFAULT_ON
         .into_iter()
-        .filter(|var| std::env::var_os(var).is_some())
-        .collect()
+        .filter(|(var, _)| std::env::var_os(var).is_none())
+        .map(|(_, name)| name);
+    single.chain(new).collect()
 }
 
 // --- Graphics memory ------------------------------------------------------------------------
@@ -746,6 +1150,45 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power: 
                 .set_buttons(rfd::MessageButtons::Ok)
                 .show();
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FpsLimit, Performance};
+
+    #[test]
+    fn performance_mode_is_read_back_as_it_was_saved() {
+        assert_eq!(Performance::from_saved("fast\n"), Performance::Fast);
+        assert_eq!(Performance::from_saved("balanced"), Performance::Balanced);
+        // Anything else is off: an empty file, a level a later version might add.
+        assert_eq!(Performance::from_saved(""), Performance::Off);
+        assert_eq!(Performance::from_saved("fastest"), Performance::Off);
+        for level in [Performance::Off, Performance::Balanced, Performance::Fast] {
+            assert_eq!(Performance::from_index(level as u8), level);
+        }
+        // Off draws every pixel; each level draws fewer than the one before.
+        assert_eq!(Performance::Off.scale(), 1.0);
+        assert!(Performance::Balanced.scale() < 1.0);
+        assert!(Performance::Fast.scale() < Performance::Balanced.scale());
+    }
+
+    #[test]
+    fn an_fps_limit_is_read_back_as_it_was_saved() {
+        assert_eq!(FpsLimit::parse("screen\n"), FpsLimit::Screen);
+        assert_eq!(FpsLimit::parse("144"), FpsLimit::Fixed(144));
+        // Out of range or not a number: no limit.
+        assert_eq!(FpsLimit::parse("5"), FpsLimit::Off);
+        assert_eq!(FpsLimit::parse("fast"), FpsLimit::Off);
+        for limit in [FpsLimit::Off, FpsLimit::Screen, FpsLimit::Fixed(240)] {
+            let bits = limit.bits();
+            let back = match bits {
+                0 => FpsLimit::Off,
+                1 => FpsLimit::Screen,
+                fps => FpsLimit::Fixed(fps),
+            };
+            assert_eq!(back, limit);
+        }
+    }
 }
 
 #[cfg(all(test, windows))]

@@ -299,21 +299,18 @@ movies (images with their decoded size), so a file loaded again and again and ne
 stands out. A `memory biggest:` line lists the URLs whose live movies hold the most memory
 (decompressed SWF data, plus decoded pixels for images), with their copies: what a map, a monster
 or a piece of gear costs while it stays loaded, and which stays loaded when it shouldn't.
-A `gotos:` line counts the AS3 gotos, how many went to the frame the clip was on, and how many
-clips their nested frames walked for construction and for frame scripts (`docs/STATUS.md`,
-"Windowless mode logs in and farms"; `RUFFLE_OLD_GOTO_SETTLE=1` compares with the old walks).
-`RUFFLE_NO_DORMANT=1` turns off the "dormant" mark that lets a frame skip clips standing still,
-and `RUFFLE_DORMANT_AB=<frames>` turns it on and off in turns of that many frames (with a window,
-each perf window then says `dormant marks on` or `off`), to compare frame times in one session.
-`RUFFLE_NO_BUTTON_MARKS=1` and `RUFFLE_BUTTON_AB=<frames>` do the same for the marks of buttons
-(the `gotos:` line says `button marks on` or `off`).
+An `uncaught AS3 errors` line counts the game's uncaught AS3 errors and how many were logged (a
+repeat is logged once, then only counted; `RUFFLE_ERRORS_EVERY_TIME=1` logs each).
+Clips that stand still are skipped by Mugetsu 2.0.0's lean walks, which Turu turns on as
+Mugetsu does (`lean-scripts`, `lean-frames`: `platform::DEFAULT_ON`); a `no-lean-scripts` or
+`no-lean-frames` file next to the program turns one off, and `RUFFLE_LEAN_VERIFY=1` checks what
+they skip.
 `RUFFLE_JSON_TREE=1` makes `JSON.stringify` build its tree again for every call (the bot's reads
 of the game go through it), and `RUFFLE_JSON_CHECK=1` builds it too and logs an error when the
 direct text differs.
 `TURU_RETAIN_URL=<part of a URL>` adds, every 5th reading, how many `LoaderInfo`s
 of matching movies are alive and the chain of references that keeps the oldest, middle and
-newest alive (a walk of the whole heap: a short pause); for copies no `LoaderInfo` holds, what
-holds them from outside their own library and which domain exports their AS3 classes. `tools/memrun/run.sh [script]
+newest alive (a walk of the whole heap: a short pause). `tools/memrun/run.sh [script]
 [minutes]` runs a long session this way, logging in from `turu-args.txt`, and
 `tools/memrun/summarize.py` prints the trend per hour. To see what holds the heap, run with `TURU_SYSTEM_ALLOC=1`: the
 system allocator instead of mimalloc (the memory line's commit then reads ~0), which heap

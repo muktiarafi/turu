@@ -32,7 +32,7 @@ enum Request {
     /// A loaded movie whose URL path ends in `path` ([`FlashHost::loaded_swf`]).
     LoadedMovie {
         path: String,
-        reply: SyncSender<Option<Arc<ruffle_core::tag_utils::SwfMovie>>>,
+        reply: SyncSender<Option<Arc<ruffle_core::tag_utils::SwfMovieData>>>,
     },
 }
 

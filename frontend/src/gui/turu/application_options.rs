@@ -2,7 +2,7 @@
 //! Turu's own settings in five sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
 //! just those two fields of `options.json`. Frame Interpolation is Mugetsu's, saved by the
-//! frontend (`Platform::set_frame_interpolation`), as is Safe Drawing where it's offered. Web Monitor replaces VibeSkua's Skua Nexus webhook.
+//! frontend (`Platform::set_frame_interpolation`). Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
 use super::native_field;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
@@ -79,15 +79,10 @@ enum Field {
     CheckClientUpdates,
     /// Mugetsu's frame interpolation, applied and saved by the frontend (`Platform`).
     FrameInterpolation,
-    /// Safe Drawing, saved by the frontend for the next start (`Platform::safe_drawing`).
-    SafeDrawing,
     /// Process tabs, saved by the frontend for the next start (`Platform::process_tabs`).
     ProcessTabs,
     /// The graphics API, chosen by the frontend, which restarts (`Platform::graphics_choices`).
     Graphics,
-    /// The rest of the window's right-click menu, where there's none (`Platform::flash_edges`):
-    /// Flash-style edges or MSAA.
-    FlashEdges,
     /// The FPS counter (`Platform::show_fps`).
     ShowFps,
     /// The window full screen (`Platform::full_screen`).
@@ -120,24 +115,6 @@ macro_rules! entry {
 /// Every setting, in VibeSkua's order, then Turu's own.
 fn entries() -> Vec<Entry> {
     let mut entries = vibeskua_entries();
-    if crate::platform::platform().safe_drawing().is_some() {
-        let at = entries
-            .iter()
-            .position(|e| matches!(e.field, Field::FrameInterpolation))
-            .map_or(entries.len(), |i| i + 1);
-        entries.insert(
-            at,
-            Entry {
-                restart: true,
-                ..entry!(
-                    General,
-                    "Safe Drawing",
-                    "Turns off Turu's drawing speed-ups and draws the game the plain way. Try it if the game shows streaks, stripes or garbled colours, or parts of maps go missing. Slower, so leave it off when the game draws fine",
-                    Field::SafeDrawing
-                )
-            },
-        );
-    }
     if crate::platform::platform().uploads_crash_reports() {
         entries.insert(
             1,
@@ -172,14 +149,6 @@ fn entries() -> Vec<Entry> {
     }
     // The rest of the game's right-click menu in the window, where there's none (a process tab).
     let platform = crate::platform::platform();
-    if platform.flash_edges().is_some() {
-        entries.push(entry!(
-            General,
-            "Edge Smoothing",
-            "How the edges of shapes are smoothed. Flash-style is lighter on laptops; MSAA is a little smoother and costs more GPU time. This tab at once, the others from their next start",
-            Field::FlashEdges
-        ));
-    }
     if platform.show_fps().is_some() {
         entries.push(entry!(
             General,
@@ -668,13 +637,6 @@ impl ApplicationOptionsWindow {
                                             crate::platform::platform().set_frame_interpolation(on);
                                         }
                                     }
-                                    Field::SafeDrawing => {
-                                        let platform = crate::platform::platform();
-                                        let mut on = platform.safe_drawing() == Some(true);
-                                        if widgets::switch(ui, &mut on).changed() {
-                                            platform.set_safe_drawing(on);
-                                        }
-                                    }
                                     Field::ProcessTabs => {
                                         let platform = crate::platform::platform();
                                         let mut on = platform.process_tabs() == Some(true);
@@ -693,18 +655,6 @@ impl ApplicationOptionsWindow {
                                                 }
                                             });
                                         }
-                                    }
-                                    Field::FlashEdges => {
-                                        let platform = crate::platform::platform();
-                                        let flash = platform.flash_edges() == Some(true);
-                                        ui.horizontal(|ui| {
-                                            if widgets::chip(ui, "Flash-style", flash) && !flash {
-                                                platform.set_flash_edges(true);
-                                            }
-                                            if widgets::chip(ui, "MSAA", !flash) && flash {
-                                                platform.set_flash_edges(false);
-                                            }
-                                        });
                                     }
                                     Field::ShowFps => {
                                         let platform = crate::platform::platform();
@@ -986,14 +936,12 @@ fn control_width(field: &Field) -> f32 {
         | Field::Unused(_)
         | Field::OptionBool(_)
         | Field::FrameInterpolation
-        | Field::SafeDrawing
         | Field::ProcessTabs
         | Field::ShowFps
         | Field::FullScreen
         | Field::CrashReports => 48.0,
         // Automatic, Vulkan, DirectX 12 (and OpenGL) / Flash-style, MSAA.
         Field::Graphics => 330.0,
-        Field::FlashEdges => 170.0,
         _ => 96.0,
     }
 }

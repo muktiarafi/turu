@@ -17,7 +17,7 @@ service, monitoring; keep it in step with the startup flags and the control API)
 ## Layout
 
 Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, branch `aqw`): Ruffle
-`fda41800` plus Mugetsu 1.6.0's patches. This repo holds only Turu's own code.
+`f22d29d9` plus Mugetsu 2.0.0's patches. This repo holds only Turu's own code.
 
 | Path | What |
 |---|---|

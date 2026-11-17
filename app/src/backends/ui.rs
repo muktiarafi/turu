@@ -199,6 +199,18 @@ impl DeviceFonts {
                 .into_iter()
                 .enumerate()
         {
+            // (From upstream: fontdb's `query` is case-sensitive, so the family is looked up
+            // case-insensitively first and asked for in its own spelling. The first match, so
+            // the pick doesn't depend on the order when fonts differ only in case.)
+            let lowercase = family.to_lowercase();
+            let Some(family) = self.font_database.faces().find_map(|face| {
+                face.families
+                    .iter()
+                    .find(|(known, _)| known.to_lowercase() == lowercase)
+                    .map(|(known, _)| known.clone())
+            }) else {
+                continue;
+            };
             let fontdb_query = fontdb::Query {
                 families: &[Family::Name(&family)],
                 weight: if is_bold {

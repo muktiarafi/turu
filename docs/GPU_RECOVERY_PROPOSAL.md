@@ -145,6 +145,4 @@ as today (`gpu: lost`) plus whether the rebuild worked.
 
 ## Meanwhile
 
-On a phone that keeps losing its device, try Options > Application > Safe Drawing (Mugetsu's
-drawing speed-ups off). If the losses stop, one of those speed-ups is the trigger, and it can be
-turned off for that GPU alone (docs/ANDROID.md, "Misdrawing").
+(Safe Drawing, suggested here before, was removed on 2026-11-17: docs/ANDROID.md, "Misdrawing".)

@@ -75,23 +75,6 @@ impl Platform for AndroidPlatform {
         );
     }
 
-    fn safe_drawing(&self) -> Option<bool> {
-        Some(
-            turu_bot::paths::Paths::new()
-                .root
-                .join(crate::SAFE_DRAWING_FILE)
-                .exists(),
-        )
-    }
-
-    fn set_safe_drawing(&self, on: bool) {
-        crate::save_switch(crate::SAFE_DRAWING_FILE, on);
-        tracing::info!(
-            "Safe Drawing turned {} for the next start",
-            if on { "on" } else { "off" }
-        );
-    }
-
     fn process_tabs(&self) -> Option<bool> {
         Some(crate::slots::on(&turu_bot::paths::Paths::new().root))
     }

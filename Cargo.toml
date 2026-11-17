@@ -30,7 +30,7 @@ egui = "0.36.1"
 egui-wgpu = "0.36.1"
 egui-winit = "0.36.1"
 egui_extras = { version = "0.36.1", default-features = false }
-fluent-templates = "0.13.3"
+fluent-templates = "0.15.1"
 futures = "0.3.32"
 image = { version = "0.25.10", default-features = false }
 memmap2 = "0.9.10"
@@ -50,7 +50,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
 walkdir = "2.5.0"
 wgpu = "30.0.1"
-zip = { version = "8.6.0", default-features = false }
+zip = { version = "9.0.5", default-features = false }
 
 [workspace.lints.rust]
 renamed_and_removed_lints = "allow"

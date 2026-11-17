@@ -1,4 +1,6 @@
 # Mugetsu ruffle.patch analysis
+
+(Of Mugetsu 1.6.0. ruffle-aqw is on Mugetsu 2.0.0 since 2026-11-17: see `docs/STATUS.md`, "What works"; Mugetsu's own notes are in `../mugetsu/source/notes/`.)
 Source: /Users/aryamuktiaraafi/projects/mugetsu/source/patches/ruffle.patch (22,948 lines, 110 files, vs Ruffle fda41800, Ruffle 0.7.0-nightly.2026.10.2). Mugetsu VERSION = "1.6.0".
 
 KEY FINDING: this is a GAME-PLAYER + PERFORMANCE fork. It contains NO ExternalInterface / fscommand / JS-bridge / socket changes. Most of the patch (core, render) is perf work (shape caching, atlas, batching, GC of library, interpolation replay).

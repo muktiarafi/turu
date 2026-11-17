@@ -22,8 +22,8 @@ is much more stable at running Flash, though not as fast as Ruffle.
 Turu is its own workspace on top of **ruffle-aqw** (Ruffle with Mugetsu's patches):
 
 ```
-ruffle/                  submodule: muktiarafi/ruffle-aqw (branch `aqw`), Ruffle `fda41800` + Mugetsu
-                         1.6.0. The app uses its crates by path; its patched crates (ruffle/patches/:
+ruffle/                  submodule: muktiarafi/ruffle-aqw (branch `aqw`), Ruffle `f22d29d9` + Mugetsu
+                         2.0.0. The app uses its crates by path; its patched crates (ruffle/patches/:
                          wgpu-core, wgpu-hal, gc-arena, lyon_*, and egui-wgpu, whose renderer skips
                          a frame's meshes when the GPU has no staging buffer instead of panicking)
                          are wired up in the root Cargo.toml

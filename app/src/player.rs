@@ -51,7 +51,8 @@ pub struct LaunchOptions {
     pub cache_directory: PathBuf,
     pub filesystem_access_mode: FilesystemAccessMode,
     pub gamepad_button_mapping: HashMap<GamepadButton, KeyCode>,
-    pub avm2_optimizer_enabled: bool,
+    pub avm2_early_binding_enabled: bool,
+    pub avm2_dse_enabled: bool,
 }
 
 impl From<&GlobalPreferences> for LaunchOptions {
@@ -101,7 +102,8 @@ impl From<&GlobalPreferences> for LaunchOptions {
             socket_allowed: HashSet::from_iter(value.cli.socket_allow.iter().cloned()),
             tcp_connections: value.cli.tcp_connections,
             gamepad_button_mapping: HashMap::from_iter(value.cli.gamepad_button.iter().cloned()),
-            avm2_optimizer_enabled: !value.cli.no_avm2_optimizer,
+            avm2_early_binding_enabled: !value.cli.disable_avm2_early_binding,
+            avm2_dse_enabled: !value.cli.disable_avm2_dse,
         }
     }
 }
@@ -206,7 +208,8 @@ impl ActivePlayer {
                     cache_directory: opt.cache_directory.clone(),
                     filesystem_access_mode: opt.filesystem_access_mode,
                     gamepad_button_mapping: opt.gamepad_button_mapping.clone(),
-                    avm2_optimizer_enabled: opt.avm2_optimizer_enabled,
+                    avm2_early_binding_enabled: opt.avm2_early_binding_enabled,
+                    avm2_dse_enabled: opt.avm2_dse_enabled,
                 })
             }
         };
@@ -290,6 +293,10 @@ impl ActivePlayer {
             .map_err(|e| anyhow!(e.to_string()))
             .expect("Couldn't create wgpu rendering backend");
         RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
+        // Turu: Mugetsu's render thread (`ruffle_render_wgpu::render_thread`, off unless
+        // `RUFFLE_RENDER_THREAD` is set) isn't used: it records pictures on another thread,
+        // while each tab's unsubmitted segments are swapped in on this one
+        // (`ruffle_render_wgpu::segments::swap`).
 
         if let Some(bot) = &bot {
             // Turu: turu.swf talks to the tab's bot through ExternalInterface.
@@ -363,7 +370,8 @@ impl ActivePlayer {
             .with_player_version(opt.player.player_version)
             .with_player_runtime(opt.player.player_runtime.unwrap_or_default())
             .with_frame_rate(opt.player.frame_rate)
-            .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled);
+            .with_avm2_early_binding_enabled(opt.avm2_early_binding_enabled)
+            .with_avm2_dse_enabled(opt.avm2_dse_enabled);
         let player = builder.build();
         if let (Some(bot), Some(tab)) = (&bot, tab) {
             // Turu: the tab's bot calls Flash through the event loop.

@@ -235,8 +235,7 @@ The data folder is the app's files folder on shared storage,
 `/sdcard/Android/data/com.muktiarafi.turu/files` (Turu's usual data folder layout: `scripts/`,
 `options/`, `options.json`, ...). The app reads `turu-args.txt` there at start: the desktop's
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
-`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES), `--safe-drawing` (as Options >
-Application > Safe Drawing: "Misdrawing" below), `--test-gpu-loss` (destroys the GPU device
+`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES), `--test-gpu-loss` (destroys the GPU device
 20 s after the start: "A lost GPU device" below) and `--perf-log <seconds>` ("Watch it" below). Without the file the game starts at its login
 screen:
 
@@ -383,12 +382,9 @@ Debug, and its Share) starts with the GPU and its driver, as
 plus a `Graphics: ... failed` line for each API that couldn't start.
 
 MSAA isn't the cause there: Android always draws with Flash-style edge smoothing (no MSAA, at
-any of AQW's Quality settings). What can be turned off is Mugetsu's drawing speed-ups: Options >
-Application > Safe Drawing (or `--safe-drawing` in `turu-args.txt`) sets the desktop's
-`safe-drawing` switches (`turu_frontend::platform::SAFE_DRAWING`: no shared shapes, atlas,
-cacheAsBitmap batching or pass merging, plain multiply) at the next start, saved as
-`safe-drawing.txt` in the data folder; the debug log then says `Safe Drawing: ...`. If it fixes a
-phone, the next step is to find which switch does it and turn it on for that GPU alone.
+any of AQW's Quality settings). Safe Drawing, which turned Mugetsu's drawing speed-ups off, was
+removed on 2026-11-17 (nobody used it since Turu Mas); a phone that misdraws would need the
+switch at fault found and turned off for that GPU alone.
 
 ## GPU memory
 

@@ -1227,13 +1227,15 @@ fn unzip(archive: &[u8], wanted: &HashSet<&str>) -> Result<HashMap<String, Vec<u
     let mut files = HashMap::new();
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).map_err(|e| format!("bad zip: {e}"))?;
-        let Some((_, path)) = file.name().split_once('/') else {
+        let name = file.name().map_err(|e| format!("bad zip: {e}"))?;
+        let Some((_, path)) = name.split_once('/') else {
             continue;
         };
         if !wanted.contains(path) {
             continue;
         }
         let path = path.to_owned();
+        drop(name);
         let mut bytes = Vec::with_capacity(file.size() as usize);
         file.read_to_end(&mut bytes)
             .map_err(|e| format!("bad zip: {e}"))?;

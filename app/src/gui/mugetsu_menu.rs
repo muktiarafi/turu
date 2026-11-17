@@ -4,7 +4,7 @@
 
 use crate::custom_event::RuffleEvent;
 use crate::gui::context_menu::*;
-use crate::mugetsu::{MenuSettings, Setting, VERSION};
+use crate::mugetsu::{MenuSettings, VERSION};
 use egui::*;
 use winit::event_loop::EventLoopProxy;
 
@@ -36,49 +36,22 @@ pub fn contents(ui: &mut Ui, event_loop: &EventLoopProxy<RuffleEvent>) {
     );
     ui.add_space(4.0 * z);
 
-    section(ui, z, "GRAPHICS");
-    row_title(ui, z, "Edge smoothing", "Flash-style is lighter on laptops");
-    if let Some(choice) = segmented(
-        ui,
-        z,
-        "edges_gui",
-        &["Flash-style", "MSAA"],
-        if settings.flash_edges { 0 } else { 1 },
-    ) {
-        send(Setting::FlashEdges(choice == 0));
+    let mut changes = Vec::new();
+    let done = settings_rows(ui, z, &settings, "bar", &mut changes);
+    for setting in changes {
+        send(setting);
     }
-    ui.add_space(6.0 * z);
-    if toggle_row(
-        ui,
-        z,
-        "Frame interpolation",
-        "Smoother motion, best on strong PCs",
-        settings.interpolation,
-    ) {
-        send(Setting::Interpolation(!settings.interpolation));
-    }
-    if settings.graphics_choice {
-        ui.add_space(4.0 * z);
-        row_title(ui, z, "Graphics API", "Changing it restarts Mugetsu");
-        let (options, values) = graphics_options();
-        let current = values.iter().position(|&g| g == settings.graphics).unwrap_or(0);
-        if let Some(choice) = segmented(ui, z, "graphics_gui", options, current) {
-            send(Setting::Graphics(values[choice]));
-        }
-    }
-
-    section(ui, z, "DISPLAY");
-    if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps) {
-        send(Setting::ShowFps(!settings.show_fps));
-    }
-
-    section(ui, z, "HELP");
-    if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
-        send(Setting::OpenLogFolder);
+    if done {
         ui.close();
     }
 }
 
 pub fn menu_button(ui: &mut Ui, event_loop: &EventLoopProxy<RuffleEvent>) {
-    ui.menu_button("Mugetsu", |ui| contents(ui, event_loop));
+    // A click on a setting's line opens its choices: the menu must stay (egui closes a menu
+    // on any click inside it unless told otherwise). `contents` closes it after a change.
+    let config = egui::containers::menu::MenuConfig::new()
+        .close_behavior(egui::containers::PopupCloseBehavior::CloseOnClickOutside);
+    egui::containers::menu::MenuButton::new("Mugetsu")
+        .config(config)
+        .ui(ui, |ui| contents(ui, event_loop));
 }

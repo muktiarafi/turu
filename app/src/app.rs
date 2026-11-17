@@ -65,6 +65,14 @@ struct MainWindow {
     next_draw_time: Option<Instant>,
     /// When the last draw started.
     draw_started: Instant,
+    /// AQW build (Mugetsu 2.0.0): "uncapped" frame pacing (see `mugetsu::uncapped`): whether
+    /// frames now wait for the monitor's refresh (they don't while uncapped), whether the pacer
+    /// is in that mode now, the time between pictures an FPS limit asks for, and when the last
+    /// new picture was due.
+    vsync: bool,
+    uncapped: bool,
+    uncapped_interval: Option<Duration>,
+    picture_due: Instant,
     /// Turu: frame interpolation's pacing (shared with Android: `turu_frontend::pacing`), with
     /// the monitor's refresh interval.
     pacing: crate::pacing::Pacing,
@@ -99,7 +107,7 @@ struct PerfStats {
     /// `ruffle_core::render_walk_micros` at the start of this window.
     walk_at: Option<u64>,
     /// `ruffle_core::interpolation_replay::stats` at the start of this window.
-    replay_at: Option<[u64; 5]>,
+    replay_at: Option<[u64; 6]>,
     /// Drawn frames per second of the last logged window.
     last_drawn_fps: f64,
     /// With frame interpolation on: the draws per second aimed for.
@@ -187,8 +195,8 @@ impl PerfStats {
             commit / (1 << 20),
             crate::HEAP_BYTES.load(std::sync::atomic::Ordering::Relaxed) / (1 << 20),
         );
-        // Turu: what AS3 gotos cost (each runs a frame's construction and scripts over the stage).
-        tracing::info!(target: "ruffle_aqw_perf", "gotos: {}", ruffle_core::take_goto_stats());
+        // Turu: uncaught AS3 errors (a repeat is logged once, then only counted).
+        tracing::info!(target: "ruffle_aqw_perf", "{}", ruffle_core::take_error_stats());
         // Turu: what the disk cache spared the network, since the start.
         if let Some(summary) = turu_frontend::game_files::summary() {
             tracing::info!(target: "ruffle_aqw_perf", "game files: {summary}");
@@ -256,10 +264,6 @@ impl PerfStats {
             avg(self.render_ms_sum, self.renders),
             self.render_ms_max,
         );
-        // Turu: which turn of `RUFFLE_DORMANT_AB` this window was in.
-        if std::env::var_os("RUFFLE_DORMANT_AB").is_some() {
-            tracing::info!(target: "ruffle_aqw_perf", "dormant marks {}", if ruffle_core::dormant_active() { "on" } else { "off" });
-        }
         let counts = ruffle_render_wgpu::perf_counters::take();
         let per_render = ruffle_render_wgpu::perf_counters::NAMES
             .iter()
@@ -364,13 +368,183 @@ impl PerfStats {
 /// graphics memory to system RAM (2-3 FPS on a 4 GB card after a long session), and Vulkan runs
 /// out of memory instead (gear of players arriving not drawn). Checked every 5 s; does nothing
 /// while there's room, so big cards are unaffected.
-fn memory_watch(player: &mut ruffle_core::Player) {
+/// AQW build: what the memory limit is compared with, in MB: the figure Task Manager shows
+/// (see `mugetsu::task_manager_mb`; it was the committed memory until 2026-11-16).
+fn process_commit_mb() -> u64 {
+    crate::mugetsu::task_manager_mb()
+}
+
+/// What one `free_memory` did, for the log.
+struct Freed {
+    /// Shapes not drawn in the last 30 seconds, now gone.
+    shapes: usize,
+    /// (working set, committed) in MB, before and after.
+    before: (u64, u64),
+    after: (u64, u64),
+    /// How long the three steps took on this thread, in ms: the shapes, the spare textures,
+    /// the heap pages.
+    took_ms: [f32; 3],
+    /// Whether the heap's unused pages were returned on this thread (`after` has them) or
+    /// are being returned in the background (a log line of its own says when and how much).
+    heap_waited: bool,
+    /// The thorough way only: (loaded SWFs nothing used any more, now freed; the
+    /// milliseconds that took).
+    libraries: Option<(usize, f64)>,
+}
+
+impl std::fmt::Display for Freed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let [shapes, textures, heap] = self.took_ms;
+        write!(
+            f,
+            "{} -> {} MB committed (working set {} -> {} MB); {} shapes not drawn in the last 30 s, the spare textures and unused heap pages freed in {:.1} ms (shapes {shapes:.1}, textures {textures:.1}, heap pages {heap:.1}){}",
+            self.before.1,
+            self.after.1,
+            self.before.0,
+            self.after.0,
+            self.shapes,
+            shapes + textures + heap,
+            if self.heap_waited { "" } else { "; the heap's pages go back in the background" },
+        )?;
+        if let Some((libraries, ms)) = self.libraries {
+            write!(f, "; before that, {libraries} loaded SWFs nothing used any more freed in {ms:.0} ms")?;
+        }
+        Ok(())
+    }
+}
+
+/// TEST SWITCH: `RUFFLE_HEAP_RETURN=wait`: freeing memory returns the heap's unused pages on
+/// the main thread and waits for every worker, as it did (for comparisons).
+fn heap_return_waits() -> bool {
+    static WAITS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *WAITS.get_or_init(|| std::env::var("RUFFLE_HEAP_RETURN").is_ok_and(|value| value == "wait"))
+}
+
+/// AQW build: frees everything that can be freed without the picture changing: the shapes
+/// not drawn in the last 30 seconds (what is on screen is drawn in every picture), the spare
+/// textures and the layer cache, and the allocator's free pages. For the memory limit and
+/// "Free memory now".
+///
+/// The heap's pages were returned here, with a forced collect on this thread and on every
+/// worker, waited for: 10-16 ms in a test room, but 27-33 ms of a 37-42 ms freeing in a real
+/// session with a 3 GB limit (8 thousand pages, 5 thousand of them abandoned by their
+/// threads): a game frame late every time the limit worked. Returning memory to the system
+/// is the allocator's business for the whole process, not this thread's: now every thread
+/// only hands its own free pages back to the allocator (cheap; the workers when they are next
+/// free), and a thread started for it does the forced collect that gives them to the system.
+///
+/// That returns less: measured in a test room, the working set fell by 30-55 MB instead of
+/// 110-140 (only a forced collect on the main thread takes back the pages other threads
+/// abandoned), while the committed memory, which is mostly shapes and textures, fell as
+/// before. So the memory limit, which works by itself during play, frees this way, and
+/// "Free memory now", a click in the menu where a pause of 40 ms is not seen, frees the
+/// `thorough` way: forced, on this thread and every worker, waited for.
+///
+/// Turu: for every tab's player (each holds its own libraries and renderer); the shapes and the
+/// heap's pages are the process's.
+fn free_memory(players: &crate::player::PlayerController, thorough: bool) -> Freed {
+    let before = crate::mugetsu::process_memory_mb();
+    // (A click only: every loaded SWF nothing uses any more goes now, not within the next
+    // GC cycles: two whole cycles in one go, a pause the limit's own freeing must not make.)
+    let libraries = thorough.then(|| {
+        players
+            .all()
+            .map(|(_, mut player)| player.free_unused_libraries_now())
+            .fold((0, 0.0), |(n, ms), (more, took)| (n + more, ms + took))
+    });
+    let started = Instant::now();
+    let shapes = ruffle_core::evict_unused_shapes(30);
+    let shapes_done = Instant::now();
+    for (_, mut player) in players.all() {
+        trim_renderer(&mut player);
+    }
+    let textures_done = Instant::now();
+    let heap_waited = thorough || heap_return_waits();
+    // SAFETY: plain calls into the allocator, each on a thread that allocates with it.
+    if heap_waited {
+        ruffle_render_wgpu::on_every_worker(|| unsafe {
+            libmimalloc_sys::mi_collect(true);
+        });
+        unsafe { libmimalloc_sys::mi_collect(true) };
+    } else {
+        unsafe { libmimalloc_sys::mi_collect(false) };
+        ruffle_render_wgpu::on_every_worker_later(|| unsafe {
+            libmimalloc_sys::mi_collect(false);
+        });
+        let spawned = std::thread::Builder::new()
+            .name("free memory".to_string())
+            .spawn(|| {
+                // (The workers get to theirs first.)
+                std::thread::sleep(Duration::from_millis(100));
+                let started = Instant::now();
+                unsafe { libmimalloc_sys::mi_collect(true) };
+                let took = started.elapsed().as_secs_f32() * 1000.0;
+                let (working_set, commit) = crate::mugetsu::process_memory_mb();
+                tracing::info!(
+                    target: "ruffle_aqw_perf",
+                    "the heap's unused pages went back to the system in {took:.1} ms in the background: now {commit} MB committed (working set {working_set} MB)"
+                );
+            });
+        if let Err(error) = spawned {
+            tracing::warn!("free memory: no thread for the heap's pages ({error})");
+        }
+    }
+    let heap_done = Instant::now();
+    let ms = |from: Instant, to: Instant| (to - from).as_secs_f32() * 1000.0;
+    Freed {
+        shapes,
+        before,
+        after: crate::mugetsu::process_memory_mb(),
+        took_ms: [
+            ms(started, shapes_done),
+            ms(shapes_done, textures_done),
+            ms(textures_done, heap_done),
+        ],
+        heap_waited,
+        libraries,
+    }
+}
+
+/// AQW build: frees the renderer's spare textures and lets the GPU release the memory.
+fn trim_renderer(player: &mut ruffle_core::Player) {
+    if let Some(renderer) = <dyn std::any::Any>::downcast_mut::<
+        ruffle_render_wgpu::backend::WgpuRenderBackend<crate::gui::MovieView>,
+    >(player.renderer_mut())
+    {
+        renderer.aqw_trim_memory();
+    }
+}
+
+/// AQW build (Mugetsu 2.0.0): the memory limit asks for a freeing (see `memory_watch`): the
+/// limit in MB, whether the last freeing held, and the wait before the next one (s).
+struct LimitTrim {
+    limit_mb: u64,
+    held: bool,
+    next_wait_secs: u64,
+}
+
+/// How long after freeing memory for the player's limit the next freeing may come, at the
+/// least, in seconds.
+const LIMIT_WAIT_SECS: u64 = 20;
+/// And at the most, while the freeing does not hold (see `memory_watch`).
+const LIMIT_WAIT_MAX_SECS: u64 = 300;
+
+///
+/// Turu: of the active tab's player; a freeing for the memory limit is returned, for the
+/// caller to make over every tab (`free_memory`) once this player is let go of.
+fn memory_watch(player: &mut ruffle_core::Player) -> Option<LimitTrim> {
     struct Watch {
         pressure: bool,
         low_since: Option<Instant>,
         last_log: Option<Instant>,
         last_sweep: Option<Instant>,
         last_collect: Option<Instant>,
+        /// When memory was last freed for the player's memory limit.
+        last_limit_trim: Option<Instant>,
+        /// How long to wait after that before freeing again, in seconds.
+        limit_wait_secs: u64,
+        /// The limit those two belong to: another limit starts afresh.
+        limit_seen_mb: u64,
     }
     static WATCH: std::sync::Mutex<Watch> = std::sync::Mutex::new(Watch {
         pressure: false,
@@ -378,6 +552,9 @@ fn memory_watch(player: &mut ruffle_core::Player) {
         last_log: None,
         last_sweep: None,
         last_collect: None,
+        last_limit_trim: None,
+        limit_wait_secs: LIMIT_WAIT_SECS,
+        limit_seen_mb: 0,
     });
     let mut watch = WATCH.lock().unwrap_or_else(|e| e.into_inner());
     // Turu: once a minute, hand the memory mimalloc keeps free back to the system
@@ -390,27 +567,83 @@ fn memory_watch(player: &mut ruffle_core::Player) {
         crate::release_free_memory();
     }
     // AQW build: on every GPU (and every OS), once a minute, free the tessellations of shapes
-    // not drawn for 10 minutes: other maps, the gear of players who left. AQW keeps every SWF
+    // not drawn for a while: other maps, the gear of players who left. AQW keeps every SWF
     // it has loaded, so shape geometry otherwise grows for the whole session (800 MB in four
     // minutes of town hopping on a 32 GB card, where the memory-pressure path below never
     // runs). A shape drawn again later is tessellated again, as on its first draw. A
     // `no-shape-eviction` file next to the exe turns it off (A/B).
+    //
+    // "A while" was always 10 minutes, and ten minutes of going from room to room held 69
+    // thousand shapes, 1 GB of geometry (which is the system's RAM on built-in graphics). So
+    // the fuller the store, the sooner an unused shape goes: 10 minutes while the store is
+    // small, 3 minutes above `mugetsu::shape_store_mb`, 2 minutes above twice that. What is
+    // on screen is drawn every picture and is never among them.
     if crate::mugetsu::shape_eviction_enabled()
         && watch
             .last_sweep
             .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
     {
         watch.last_sweep = Some(Instant::now());
-        let freed = ruffle_core::evict_unused_shapes(600);
+        let store_mb = (ruffle_render_wgpu::perf_counters::live().1.max(0) as u64) >> 20;
+        let soft_mb = crate::mugetsu::shape_store_mb();
+        let unused_secs = if soft_mb == 0 || store_mb <= soft_mb {
+            600
+        } else if store_mb <= soft_mb * 2 {
+            180
+        } else {
+            120
+        };
+        let freed = ruffle_core::evict_unused_shapes(unused_secs);
         if freed > 0 {
+            let now_mb = (ruffle_render_wgpu::perf_counters::live().1.max(0) as u64) >> 20;
             tracing::info!(
                 target: "ruffle_aqw_perf",
-                "freed {freed} shapes not drawn for 10 minutes"
+                "freed {freed} shapes not drawn for {} minutes (shape geometry: {store_mb} -> {now_mb} MB)",
+                unused_secs / 60
             );
         }
     }
+    // AQW build: the player's own memory limit (see `mugetsu::memory_limit_mb`): over it,
+    // everything that can be freed is, at most every 20 seconds (what is freed and needed
+    // again is made again, and freeing in every window would do nothing else).
+    //
+    // A scene can need more than the limit: with 2 GB set, towns and boss rooms on DirectX 12
+    // held 2.2-2.35 GB right after each freeing and 2.5 GB twenty seconds later, so the same
+    // spare textures and heap pages were freed and made again every 20 seconds for as long as
+    // the limit stood, each round a game frame arriving 15 ms late in the boss rooms (the
+    // user's session of 2026-11-15). So when memory is over the limit again at the first
+    // chance after a freeing, that freeing did not hold, and the wait before the next one
+    // doubles, up to 5 minutes; a freeing that held for a while puts it back to 20 seconds.
+    let limit_mb = u64::from(crate::mugetsu::memory_limit_mb());
+    if limit_mb != watch.limit_seen_mb {
+        watch.limit_seen_mb = limit_mb;
+        watch.limit_wait_secs = LIMIT_WAIT_SECS;
+        watch.last_limit_trim = None;
+    }
+    let mut limit_trim = None;
+    if limit_mb != 0
+        && watch
+            .last_limit_trim
+            .is_none_or(|t| t.elapsed() >= Duration::from_secs(watch.limit_wait_secs))
+        && process_commit_mb() > limit_mb
+    {
+        let held = watch
+            .last_limit_trim
+            .is_none_or(|t| t.elapsed() >= Duration::from_secs(watch.limit_wait_secs * 2 + 10));
+        watch.limit_wait_secs = if held {
+            LIMIT_WAIT_SECS
+        } else {
+            (watch.limit_wait_secs * 2).min(LIMIT_WAIT_MAX_SECS)
+        };
+        watch.last_limit_trim = Some(Instant::now());
+        limit_trim = Some(LimitTrim {
+            limit_mb,
+            held,
+            next_wait_secs: watch.limit_wait_secs,
+        });
+    }
     let Some((budget, usage)) = crate::mugetsu::video_memory() else {
-        return;
+        return limit_trim;
     };
     let budget = crate::mugetsu::test_video_budget().map_or(budget, |test| test.min(budget));
     if usage > budget / 100 * 85 {
@@ -455,6 +688,7 @@ fn memory_watch(player: &mut ruffle_core::Player) {
             watch.low_since = None;
         }
     }
+    limit_trim
 }
 
 /// AQW build: the time each `perf_counters::timers` timer added since `before`, in ms
@@ -502,7 +736,23 @@ impl MainWindow {
                     // between show the last one again (see `pace_interpolation`). Timed, not
                     // counted: a long draw (e.g. 11 ms in Yulgar) makes presents miss refreshes.
                     let interpolating = self.next_draw_time.is_some();
-                    let new_picture_due = if interpolating {
+                    let new_picture_due = if interpolating && self.uncapped {
+                        // AQW build (Mugetsu 2.0.0): uncapped, a new picture every time, or as
+                        // often as the FPS limit allows (see `pace_interpolation`).
+                        match self.uncapped_interval {
+                            None => true,
+                            Some(interval) => {
+                                let due = self.picture_due + interval;
+                                if started + Duration::from_micros(300) >= due {
+                                    self.picture_due =
+                                        if started < due + interval { due } else { started };
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                        }
+                    } else if interpolating {
                         self.pacing.new_picture_due(started)
                     } else {
                         self.frame_since_render
@@ -798,16 +1048,6 @@ impl MainWindow {
                 #[cfg(windows)]
                 crate::windows::sync_menu_checks(self.gui.window());
             }
-            Setting::FlashEdges(on) => {
-                ruffle_render::tessellator::set_flash_aa(on);
-                mugetsu::save_flash_edges(on);
-                // The drawing surface is made again for it (and shapes tessellated again).
-                for (_, mut player) in self.player.all() {
-                    let quality = player.quality();
-                    player.renderer_mut().set_quality(quality);
-                }
-                self.gui.window().request_redraw();
-            }
             Setting::Graphics(choice) => {
                 #[cfg(windows)]
                 crate::windows::choose_graphics(self.gui.window(), choice);
@@ -820,7 +1060,42 @@ impl MainWindow {
                 mugetsu::set_show_fps(on);
                 self.gui.window().request_redraw();
             }
-            Setting::OpenLogFolder => mugetsu::open_log_folder(),
+            Setting::MemoryLimit(mb) => {
+                mugetsu::set_memory_limit_mb(mb);
+                if mb == 0 {
+                    tracing::info!("Memory limit: off");
+                } else {
+                    tracing::info!("Memory limit: {mb} MB");
+                }
+            }
+            Setting::FreeMemory => {
+                // (A click in the menu: the pause of the thorough way is not seen.)
+                let freed = free_memory(&self.player, true);
+                tracing::info!(target: "ruffle_aqw_perf", "free memory now: {freed}");
+                self.gui.window().request_redraw();
+            }
+            Setting::Performance(level) => {
+                mugetsu::set_performance(level);
+                tracing::info!(
+                    "Performance mode: {level:?} (the game is drawn at {:.0} % of the window's width and height)",
+                    level.scale() * 100.0
+                );
+                // As after a resize: every tab's movie is drawn at its new size from its next
+                // picture.
+                self.set_viewports(self.gui.window().inner_size());
+                self.frame_since_render = true;
+                self.gui.window().request_redraw();
+            }
+            // (The frames' way to the window changes on the pacer's next turn: see
+            // `pace_interpolation`.)
+            Setting::Uncapped(on) => {
+                mugetsu::set_uncapped(on);
+                tracing::info!("Frame pacing set to {}", if on { "uncapped" } else { "v-sync" });
+            }
+            Setting::FpsLimit(limit) => {
+                mugetsu::set_fps_limit(limit);
+                tracing::info!("FPS limit set to {limit:?}");
+            }
         }
     }
 
@@ -894,11 +1169,13 @@ impl MainWindow {
         let viewport_scale_factor = self.gui.window().scale_factor();
         for (_, mut player) in self.player.all() {
             player.set_viewport_dimensions(ViewportDimensions {
-                width: viewport_size.width,
-                height: viewport_size
-                    .height
-                    .saturating_sub((height_offset * viewport_scale_factor) as u32),
-                scale_factor: viewport_scale_factor,
+                width: crate::mugetsu::drawn_len(viewport_size.width),
+                height: crate::mugetsu::drawn_len(
+                    viewport_size
+                        .height
+                        .saturating_sub((height_offset * viewport_scale_factor) as u32),
+                ),
+                scale_factor: viewport_scale_factor * crate::mugetsu::render_scale(),
             });
         }
     }
@@ -920,10 +1197,12 @@ impl MainWindow {
                 Some(tile) => (tile.width, tile.height),
                 None => (size.width, height),
             };
+            // AQW build (Mugetsu 2.0.0): fewer pixels in Performance mode (see
+            // `mugetsu::Performance`), stretched over the tab's area when drawn.
             player.set_viewport_dimensions(ViewportDimensions {
-                width,
-                height,
-                scale_factor,
+                width: crate::mugetsu::drawn_len(width),
+                height: crate::mugetsu::drawn_len(height),
+                scale_factor: scale_factor * crate::mugetsu::render_scale(),
             });
             if let (Some(tab), Some(tile)) = (tab, self.grid_tiles.get(i)) {
                 shown.push((tab, crate::grid::Tile { y: tile.y + top, ..*tile }));
@@ -936,10 +1215,14 @@ impl MainWindow {
     /// active tile's corner in Grid View.
     fn movie_position(&self) -> (f64, f64) {
         let (x, y) = self.gui.window_to_movie_position(self.mouse_pos);
-        match self.grid_tiles.get(self.player.active_index()) {
+        let (x, y) = match self.grid_tiles.get(self.player.active_index()) {
             Some(tile) => (x - tile.x as f64, y - tile.y as f64),
             None => (x, y),
-        }
+        };
+        // AQW build (Mugetsu 2.0.0): the movie's own pixels are fewer than the window's in
+        // Performance mode (see `mugetsu::Performance`).
+        let scale = crate::mugetsu::render_scale();
+        (x * scale, y * scale)
     }
 
     /// Turu: in Grid View, the tab whose tile is under the cursor, if it isn't the active one.
@@ -1057,6 +1340,7 @@ impl MainWindow {
                     *frame_since_render = true;
                 }
                 let mut tick_took = None; // Turu: counted in the tab's bot's stats.
+                let mut limit_trim = None; // Turu: made over every tab below.
                 self.next_frame_time = self.player.get().map(|mut player| {
                     let frames_before = player.frames_run();
                     let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
@@ -1085,7 +1369,7 @@ impl MainWindow {
                         );
                     }
                     if perf.maybe_log(new_time) {
-                        memory_watch(&mut player);
+                        limit_trim = memory_watch(&mut player);
                         perf.log_object_counts(&mut player);
                         crate::mugetsu::low_quality_tick(&mut player, perf.last_drawn_fps);
                     }
@@ -1093,6 +1377,16 @@ impl MainWindow {
                 });
                 if let Some(took) = tick_took {
                     self.player.record_tick(took);
+                }
+                if let Some(trim) = limit_trim {
+                    let freed = free_memory(&self.player, false);
+                    tracing::info!(
+                        target: "ruffle_aqw_perf",
+                        "memory limit {} MB: {freed}{}; the next freeing in {} s at the soonest",
+                        trim.limit_mb,
+                        if trim.held { "" } else { "; the last freeing did not hold" },
+                        trim.next_wait_secs
+                    );
                 }
                 if let Some(next) = background_next {
                     self.next_frame_time = Some(self.next_frame_time.map_or(next, |t| t.min(next)));
@@ -1111,9 +1405,26 @@ impl MainWindow {
     /// with Android).
     fn pace_interpolation(&mut self) {
         self.next_draw_time = None;
+        self.uncapped = false;
         // Turu: looked up with interpolation off too, for `check_redraw`'s cap on UI repaints.
         self.update_refresh_interval();
-        if !ruffle_core::frame_interpolation::enabled() || self.minimized || self.occluded {
+        if self.minimized || self.occluded {
+            return;
+        }
+        // AQW build (Mugetsu 2.0.0): "uncapped" frame pacing (see `mugetsu::uncapped`): frames
+        // then don't wait for the monitor's refresh. Looked at here, so that it follows the
+        // setting and frame interpolation being turned off or on.
+        let uncapped = crate::mugetsu::uncapped_now();
+        if uncapped == self.vsync {
+            self.vsync = !uncapped;
+            let got = self.gui.set_vsync(self.vsync);
+            tracing::info!(
+                target: "ruffle_aqw_perf",
+                "frame pacing: {}; frames are sent {got}",
+                if self.vsync { "v-sync" } else { "uncapped" }
+            );
+        }
+        if !ruffle_core::frame_interpolation::enabled() {
             return;
         }
         let now = Instant::now();
@@ -1121,6 +1432,36 @@ impl MainWindow {
             Some(player) if player.is_playing() => player.frame_rate(),
             _ => return,
         };
+        if uncapped {
+            // No refreshes to count: each new picture goes out once, as soon as it is ready, as
+            // many as get through, or as many as the FPS limit allows, evenly by the clock. The
+            // monitor shows each for as long as it took (variable refresh) or tears (fixed).
+            use crate::mugetsu::FpsLimit;
+            let refresh_hz = 1.0 / self.pacing.refresh_interval().as_secs_f64();
+            let limit = match crate::mugetsu::fps_limit() {
+                FpsLimit::Off => None,
+                // Three under the monitor's rate: at the rate itself a variable-refresh monitor
+                // stops following.
+                FpsLimit::Screen => Some((refresh_hz - 3.0).max(refresh_hz * 0.9)),
+                FpsLimit::Fixed(fps) => Some(fps as f64),
+            };
+            self.perf.interpolation_rate = limit.unwrap_or(f64::INFINITY);
+            if limit.is_some_and(|fps| fps < frame_rate * 1.5) {
+                // Not even 1.5 pictures per game frame: one per frame, as without interpolation.
+                return;
+            }
+            self.uncapped = true;
+            self.uncapped_interval = limit.map(|fps| Duration::from_secs_f64(1.0 / fps));
+            let due = match self.uncapped_interval {
+                None => now,
+                Some(interval) => self.picture_due + interval,
+            };
+            if now + Duration::from_micros(300) >= due {
+                self.gui.window().request_redraw();
+            }
+            self.next_draw_time = Some(due.max(now));
+            return;
+        }
         let interpolating = self.pacing.plan(now, frame_rate);
         self.perf.interpolation_rate = self.pacing.rate();
         if !interpolating {
@@ -1446,6 +1787,10 @@ impl ApplicationHandler<RuffleEvent> for App {
                 last_redraw: Instant::now(),
                 next_draw_time: None,
                 draw_started: Instant::now(),
+                vsync: true,
+                uncapped: false,
+                uncapped_interval: None,
+                picture_due: Instant::now(),
                 pacing: crate::pacing::Pacing::new(),
                 refresh_checked: None,
                 ui_redraw_at: std::cell::Cell::new(None),
@@ -1629,11 +1974,23 @@ impl ApplicationHandler<RuffleEvent> for App {
             }
             crate::turu::close_butlers();
         }
+        // AQW build (Mugetsu 2.0.0): what this thread's storage holds of the graphics device is
+        // let go of now, while the driver is alive: thread storage is freed last of all at exit,
+        // when Windows has already unloaded the driver (DirectX 12 crashed there). Shapes still
+        // being tessellated keep the device, and so do recorded segments.
+        let shapes = ruffle_core::shutdown_deferred_shapes();
+        let segments = ruffle_render_wgpu::segments::clear();
+        tracing::info!("closing: let go of {shapes} shapes still being drawn and {segments} recorded segments");
         // `MainWindow` needs a tokio context to properly drop.
         {
             enter_runtime!(self);
             let _ = self.main_window.take();
         }
+        // AQW build (Mugetsu 2.0.0): the last finished command buffers are dropped on wgpu's
+        // background thread and can hold the last reference to the graphics device: waited for
+        // (2 s at most), so the device is gone before the rest of the shutdown, not during it
+        // (on DirectX 12 that crashed two closes out of three).
+        wgpu_core::aqw_flush_encoder_drops();
         tracing::info!(
             "closing: player and renderer dropped after {} ms",
             started.elapsed().as_millis()
