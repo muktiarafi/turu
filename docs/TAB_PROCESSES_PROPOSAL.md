@@ -226,8 +226,9 @@ reports from earlier releases have no `tabs_most`.
   and the slot count per memory class.
 * **Decided 2026-11-16**: the extra memory per account is acceptable (on the emulator's ~110 MB
   for two accounts). Still open: the slot count per memory class (from the phone runs, M4's
-  Tab Limit), and whether hidden slots' bindings waive priority (`BIND_WAIVE_PRIORITY`) so that
-  Android kills a hidden slot first.
+  Tab Limit). Hidden slots' bindings waive priority (`BIND_WAIVE_PRIORITY`): done in M3 (see
+  "M3 so far", "Which slot Android stops first"); whether Android then kills a hidden slot first
+  under real memory pressure is M4's.
 
 #### M1 results so far (2026-11-16, emulator; phones open)
 
@@ -279,8 +280,9 @@ Mechanics, all on the emulator:
   other slot's foreground service keeps the app's uid in that state.
 * **Priority**: a hidden slot killed while the activity was in front died as `vis BTOP`: the
   shell's plain binding (`BIND_AUTO_CREATE`) lifts every slot while the app is on screen, not only
-  the shown one. Before the phones' low-memory run, decide whether hidden slots' bindings should
-  waive priority (`Context.BIND_WAIVE_PRIORITY`), so that Android picks a hidden slot first.
+  the shown one. Done in M3: hidden slots' bindings waive priority (`Context.BIND_WAIVE_PRIORITY`)
+  and only the slot on screen is bound important, so Android should pick a hidden slot first
+  (adj 200 against 0 on the emulator; the low-memory run on a phone is M4's).
 * **File locks between processes** on the shared-storage data folder (`File::try_lock`, as the
   army's): slot 1 held, slot 2 refused; slot 1 let go, slot 2 got it; and back. They work.
 * **Notifications**: each slot's foreground service has its own (ids 101, 102), side by side.
@@ -352,7 +354,10 @@ the shell), `SelectTab`. Not done: sound in the client, the shell drawing more t
 IOSurface route inside the shell (M5), Windows and Linux shared textures, the debug-only epaint
 check Android's `Screen` would also hit (it ships release builds only). The shell and its client
 both start the control API, web monitor and update checks, so they collide when one is turned on
-(M5: the shell owns them). M1's results are on `spike/m1-slots`, M2's on `m2-client-mode`: this
+(M5: the shell owns them). Since done in M5: sound in the client, the shell drawing several
+clients, `Tabs` / `SelectTab` / dialogs through the shell, the monitor and updates in the shell
+(each client with a control API of its own), and shared textures on Windows and Linux (built, not run there; see "M5 so
+far"). M1's results are on `spike/m1-slots`, M2's on `m2-client-mode`: this
 file differs between the two until they're merged.
 
 ### M3: Android process tabs
@@ -395,7 +400,8 @@ the file, and after a restart both slots had stopped and the app ran its engine 
   desktop's clients.
 * **Slots**: four in the manifest (`:c1` ... `:c4`), each with its own notification (grouped) and a
   wake lock held only while its script runs; a closed tab's process ends with its service. A hidden
-  slot is muted and frees its spare textures, as a backgrounded app does today. Each slot gets
+  slot is muted (no window shows its game, so `lib.rs` mutes it as a backgrounded app; the slot
+  given the surface is heard) and frees its spare textures, as a backgrounded app does today. Each slot gets
   Android's memory levels itself (`onTrimMemory` in `SlotService`; the activity's say nothing about
   the slots') and frees what it can spare.
 * **Which slot Android stops first**: the shell binds every slot waiving priority
@@ -996,8 +1002,10 @@ since; none built or run on Windows or Linux yet). The window (`app/src/gui/cont
      `jpegxr`, `rquickjs-sys`, `openssl-sys`).
 
 Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above: fixed but not built or run there). Not built: the shell's own `--api`
-(ignored with a warning: each client has one). A down tab keeps its last
-monitor entry online for up to 15 s.
+(ignored with a warning: each client has one). A down tab's monitor entry goes offline at the
+hub's next poll of it (within 2 s: a client that doesn't answer is offline at once, not after 15 s;
+`peers_are_polled_through_their_control_api`), and a monitor the shell reports to with Report To
+drops it at the shell's next report (`Hub::record_report` keeps only the bots a report lists).
 
 ### M6: one way of doing tabs
 

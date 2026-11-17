@@ -531,8 +531,8 @@ fn streams_a_bots_log() {
 }
 
 /// A tab in another process of the window (a shell's client, docs/TAB_PROCESSES_PROPOSAL.md, M5):
-/// the hub polls its control API, shows it as a tab, passes commands on, and drops it when it's
-/// no longer listed.
+/// the hub polls its control API, shows it as a tab, passes commands on, shows it offline as soon
+/// as it stops answering, and drops it when it's no longer listed.
 #[test]
 fn peers_are_polled_through_their_control_api() {
     use turu_bot::monitor::hub::{Control, Kind, PeerSource};
@@ -568,6 +568,26 @@ fn peers_are_polled_through_their_control_api() {
     assert!(matches!(control, Control::Peer { .. }));
     let (status, _) = hub.run(control, false, "/script/options", b"");
     assert_ne!(status, 403);
+
+    // Its client exits (the shell keeps listing the down tab at its old address): offline at the
+    // next poll, not after `OFFLINE_AFTER_MS` (15 s).
+    let dead = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    listed.lock()[0].api = dead;
+    let started = std::time::Instant::now();
+    while hub.online("tab:2") {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "a down peer stayed online"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        hub.views().iter().any(|v| v.id == "tab:2"),
+        "a down tab stays listed"
+    );
 
     listed.lock().clear();
     let started = std::time::Instant::now();
