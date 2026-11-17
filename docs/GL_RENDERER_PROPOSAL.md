@@ -381,6 +381,30 @@ Ruffle's trimming acts on it.
 
 ## G4: OpenGL as a real fallback
 
+**Result (2026-11-18): on Android, OpenGL ES is now the default, by the user's decision.** This
+goes further than the fallback planned below.
+
+- `--graphics auto`, which is also used when no flag is given, tries GL first, then Vulkan.
+- Options > Application > Graphics offers Automatic, OpenGL ES and Vulkan. The choice is saved
+  as `graphics.txt` in the data folder, and each tab takes it at its next start.
+  `--graphics` in `turu-args.txt` overrides it.
+
+Checked on the emulator, with no `--graphics` flag:
+
+- The `Graphics:` line says `gl`.
+- Battleon draws completely at 7.8 pictures/s with the levers on.
+- Home and back, and switching between two tabs (each slot has its own GL context), keep
+  drawing, with no errors in logcat.
+- `graphics.txt` with `vulkan` starts on Vulkan.
+
+Not done:
+
+- The "Vulkan crashed last time" marker is moot while GL is first. The reverse case, GL
+  crashing at startup and falling back to Vulkan, isn't handled. A GL that fails to create
+  falls through to Vulkan, but a GL crash after that point doesn't.
+- The 30-minute farm.
+- A real phone.
+
 Only after G0 to G2:
 
 - **Android:** if Vulkan crashed at startup last time, start on GL the next time (Mugetsu's

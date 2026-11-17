@@ -66,6 +66,22 @@ impl Platform for AndroidPlatform {
         true
     }
 
+    // The graphics API, from each slot's next start (`--graphics` in turu-args.txt wins).
+    fn graphics_choices(&self) -> Option<(Vec<(&'static str, &'static str)>, &'static str)> {
+        let choices = vec![("", "Automatic"), ("gl", "OpenGL ES"), ("vulkan", "Vulkan")];
+        let saved = match crate::saved_graphics() {
+            crate::screen::Graphics::Auto => "",
+            graphics => graphics.arg(),
+        };
+        Some((choices, saved))
+    }
+
+    fn set_graphics(&self, value: &str) {
+        let graphics = crate::screen::Graphics::from_arg(value).unwrap_or(crate::screen::Graphics::Auto);
+        crate::save_graphics(graphics);
+        tracing::info!("Graphics: {} from each tab's next start", graphics.arg());
+    }
+
     fn set_frame_interpolation(&self, on: bool) {
         ruffle_core::frame_interpolation::set_enabled(on);
         crate::save_interpolation(on);

@@ -478,8 +478,8 @@ fn take_values(args: &mut Vec<OsString>, flag: &str) -> Vec<String> {
 }
 
 /// Takes `--graphics <auto|vulkan|gl>` (or `--graphics=...`) out of `args`.
-fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
-    let mut graphics = Graphics::Auto;
+fn take_graphics(args: &mut Vec<OsString>) -> Option<Graphics> {
+    let mut graphics = None;
     let mut rest = Vec::with_capacity(args.len());
     let mut iter = std::mem::take(args).into_iter();
     while let Some(arg) = iter.next() {
@@ -493,15 +493,13 @@ fn take_graphics(args: &mut Vec<OsString>) -> Graphics {
                 continue;
             }
         };
-        graphics = match value.as_deref().map(str::to_ascii_lowercase).as_deref() {
-            Some("vulkan") => Graphics::Vulkan,
-            Some("gl" | "gles" | "opengl") => Graphics::Gl,
-            Some("auto") => Graphics::Auto,
-            other => {
-                tracing::warn!("--graphics {other:?}: expected auto, vulkan or gl");
+        graphics = Some(match value.as_deref().and_then(Graphics::from_arg) {
+            Some(graphics) => graphics,
+            None => {
+                tracing::warn!("--graphics {value:?}: expected auto, vulkan or gl");
                 Graphics::Auto
             }
-        };
+        });
     }
     *args = rest;
     graphics
@@ -547,7 +545,8 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         return;
     };
     let mut args = slots::args(root, slot);
-    let graphics = take_graphics(&mut args);
+    // `--graphics` in turu-args.txt, else Options > Application's choice.
+    let graphics = take_graphics(&mut args).unwrap_or_else(|| load_graphics(root));
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss =
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
@@ -698,6 +697,47 @@ const INTERPOLATION_FILE: &str = "mugetsu-interpolation.txt";
 /// Saves frame interpolation's switch (`platform.rs`).
 pub(crate) fn save_interpolation(on: bool) {
     save_switch(INTERPOLATION_FILE, on);
+}
+
+/// The graphics API Options > Application chose (`--graphics`' values; no file: Automatic). Each
+/// slot reads it at its start.
+const GRAPHICS_FILE: &str = "graphics.txt";
+
+/// Options' choice, as this slot started with it or changed it since.
+static SAVED_GRAPHICS: Mutex<Option<Graphics>> = Mutex::new(None);
+
+/// Reads Options' choice of graphics API (`root`: the data folder).
+fn load_graphics(root: &Path) -> Graphics {
+    let graphics = std::fs::read_to_string(root.join(GRAPHICS_FILE))
+        .ok()
+        .and_then(|text| Graphics::from_arg(text.trim()))
+        .unwrap_or(Graphics::Auto);
+    *SAVED_GRAPHICS.lock().unwrap_or_else(|e| e.into_inner()) = Some(graphics);
+    graphics
+}
+
+/// Options' choice of graphics API now.
+pub(crate) fn saved_graphics() -> Graphics {
+    SAVED_GRAPHICS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or(Graphics::Auto)
+}
+
+/// Saves Options' choice of graphics API, for each slot's next start (`platform.rs`).
+pub(crate) fn save_graphics(graphics: Graphics) {
+    *SAVED_GRAPHICS.lock().unwrap_or_else(|e| e.into_inner()) = Some(graphics);
+    let path = turu_bot::paths::Paths::new().root.join(GRAPHICS_FILE);
+    let result = match graphics {
+        Graphics::Auto => match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        },
+        graphics => std::fs::write(&path, format!("{}\n", graphics.arg())),
+    };
+    if let Err(e) = result {
+        tracing::warn!("Couldn't save the graphics API to {}: {e}", path.display());
+    }
 }
 
 /// Saves a switch read at start: the file in the data folder while it's on.

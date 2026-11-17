@@ -142,7 +142,7 @@ fn entries() -> Vec<Entry> {
             ..entry!(
                 General,
                 "Graphics",
-                "Which graphics API draws the game. Automatic picks the one that works best on this PC; try another if the game crashes or draws wrongly. Turu starts again, every tab with it",
+                "Which graphics API draws the game. Automatic picks the one that works best on this device; try another if the game crashes or draws wrongly. On a computer Turu starts again, every tab with it; on a phone each tab takes it at its next start",
                 Field::Graphics
             )
         });

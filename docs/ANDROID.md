@@ -246,7 +246,8 @@ The data folder is the app's files folder on shared storage,
 `/sdcard/Android/data/com.muktiarafi.turu/files` (Turu's usual data folder layout: `scripts/`,
 `options/`, `options.json`, ...). The app reads `turu-args.txt` there at start: the desktop's
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
-`--graphics auto|vulkan|gl` (auto: Vulkan, else OpenGL ES), `--test-gpu-loss` (destroys the GPU device
+`--graphics auto|vulkan|gl` (auto, the default: OpenGL ES, else Vulkan; without the flag,
+Options > Application > Graphics, saved as `graphics.txt`, from each tab's next start), `--test-gpu-loss` (destroys the GPU device
 20 s after the start: "A lost GPU device" below) and `--perf-log <seconds>` ("Watch it" below), and `--env NAME=value`, repeatable, for an environment variable the app can't be
 started with (Ruffle's switches, such as `RUFFLE_GL_STATS` and `RUFFLE_GL_LEVERS`:
 docs/GL_RENDERER_PROPOSAL.md). Without the file the game starts at its login

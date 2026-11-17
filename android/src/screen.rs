@@ -47,10 +47,32 @@ thread_local! {
 /// The graphics API: `--graphics` in `turu-args.txt`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Graphics {
-    /// Vulkan, else OpenGL ES.
+    /// OpenGL ES, else Vulkan (docs/GL_RENDERER_PROPOSAL.md, G4: phones whose Vulkan driver
+    /// crashes or runs out of memory, the Redmi 10's Mali-G52 among them, had nothing to fall
+    /// back to).
     Auto,
     Vulkan,
     Gl,
+}
+
+impl Graphics {
+    /// `--graphics`' value (and `graphics.txt`'s).
+    pub fn arg(self) -> &'static str {
+        match self {
+            Graphics::Auto => "auto",
+            Graphics::Vulkan => "vulkan",
+            Graphics::Gl => "gl",
+        }
+    }
+
+    pub fn from_arg(arg: &str) -> Option<Self> {
+        match arg.to_ascii_lowercase().as_str() {
+            "auto" | "" => Some(Graphics::Auto),
+            "vulkan" => Some(Graphics::Vulkan),
+            "gl" | "gles" | "opengl" => Some(Graphics::Gl),
+            _ => None,
+        }
+    }
 }
 
 pub struct Screen {
@@ -117,7 +139,7 @@ pub fn gpu(
     size: (u32, u32),
 ) -> Option<(Arc<Descriptors>, Arc<Blit>, WgpuRenderBackend<MovieTexture>)> {
     let tries: &[wgpu::Backends] = match graphics {
-        Graphics::Auto => &[wgpu::Backends::VULKAN, wgpu::Backends::GL],
+        Graphics::Auto => &[wgpu::Backends::GL, wgpu::Backends::VULKAN],
         Graphics::Vulkan => &[wgpu::Backends::VULKAN],
         Graphics::Gl => &[wgpu::Backends::GL],
     };
