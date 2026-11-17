@@ -1,7 +1,11 @@
 name: Release
 
 # Pushing a tag such as `v0.1.0-alpha.1` builds Turu for every platform (Linux, Windows, macOS and
-# Android) and Turu Mas (Android, on Adobe AIR), and publishes a GitHub release with the packages. A tag with a `-` (alpha, beta, rc) makes a pre-release.
+# Android) and Turu Mas (Android, on Adobe AIR), and publishes a GitHub release with the packages.
+# A release or a beta (`v0.4.0-beta.1`) becomes the Latest release: GitHub's Latest can't be a
+# pre-release, and betas are what users run. Another tag with a `-` (alpha, rc) makes a
+# pre-release. Turu's updater goes by the version, not this flag: a beta is a pre-release to it
+# either way (`turu_bot::updates::newest`).
 # Running it by hand (Actions > Release > Run workflow) only builds; the packages are kept as
 # workflow artifacts.
 #
@@ -83,8 +87,9 @@ jobs:
           else
             version="0.0.0-dev.${GITHUB_SHA::7}"
           fi
+          # GitHub's pre-release flag: betas aren't, so they can be Latest (see the top).
           prerelease=false
-          [[ "$version" == *-* ]] && prerelease=true
+          [[ "$version" == *-* && "$version" != *-beta* ]] && prerelease=true
           channel=stable
           [[ "$nightly" == true ]] && channel=nightly
           echo "version=$version" | tee -a "$GITHUB_OUTPUT"
@@ -586,7 +591,11 @@ jobs:
           ls -l dist
           (cd dist && sha256sum * > SHA256SUMS.txt)
           flags=(--title "Turu ${{ needs.version.outputs.version }}" --generate-notes)
-          [[ "${{ needs.version.outputs.prerelease }}" == true ]] && flags+=(--prerelease)
+          if [[ "${{ needs.version.outputs.prerelease }}" == true ]]; then
+            flags+=(--prerelease)
+          else
+            flags+=(--latest)
+          fi
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag "${flags[@]}" dist/*
 
   # The nightly build replaces the `nightly` release (and its tag, moved to this commit).
