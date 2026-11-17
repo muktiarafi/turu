@@ -32,7 +32,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use turu_frontend::players::{Players, Slot, TabPlayer};
 use url::Url;
 use winit::event_loop::EventLoopProxy;
@@ -430,8 +430,6 @@ pub struct PlayerController {
     font_database: Rc<fontdb::Database>,
     preferences: GlobalPreferences,
     file_picker: FilePicker,
-    /// Turu: Grid View is on (see `crate::grid`).
-    grid: bool,
 }
 
 impl PlayerController {
@@ -443,12 +441,6 @@ impl PlayerController {
         preferences: GlobalPreferences,
         file_picker: FilePicker,
     ) -> Self {
-        let requests = std::sync::Mutex::new(event_loop.clone()); // Turu: the bot windows' tab requests
-        crate::turu::set_tab_requests(Box::new(move |request| {
-            requests
-                .lock()
-                .is_ok_and(|e| e.send_event(RuffleEvent::TuruTab(request)).is_ok())
-        }));
         Self {
             players: Players::new(),
             event_loop,
@@ -457,46 +449,7 @@ impl PlayerController {
             font_database: Rc::new(font_database),
             preferences,
             file_picker,
-            grid: false,
         }
-    }
-
-    /// Turu: turns Grid View on or off (shown with two tabs or more).
-    pub fn set_grid(&mut self, on: bool) {
-        self.grid = on;
-    }
-
-    /// Turu: the index of the active tab's player in tab order.
-    pub fn active_index(&self) -> usize {
-        self.players.active_index()
-    }
-
-    /// Turu: the tab of the player at `index` in tab order.
-    pub fn tab_at(&self, index: usize) -> Option<crate::turu::TabId> {
-        self.players.tab_at(index)
-    }
-
-    /// Turu: Grid View shows: on, with two tabs or more.
-    pub fn grid(&self) -> bool {
-        self.grid && self.players.len() > 1
-    }
-
-    /// Turu: every player in tab order (the order of Grid View's tiles), with its tab and whether
-    /// it's the active one. Use one at a time, as [`Self::all`].
-    pub fn in_order(&self) -> impl Iterator<Item = (Option<crate::turu::TabId>, bool, TabPlayer<'_>)> {
-        self.players.in_order()
-    }
-
-    /// Turu: the picture each player last drew (its movie view), in tab order, for Grid View.
-    pub fn views(&self) -> Vec<wgpu::BindGroup> {
-        self.in_order()
-            .filter_map(|(_, _, mut player)| {
-                <dyn std::any::Any>::downcast_ref::<ruffle_render_wgpu::backend::WgpuRenderBackend<MovieView>>(
-                    player.renderer_mut(),
-                )
-                .map(|renderer| renderer.target().bind_group())
-            })
-            .collect()
     }
 
     /// Opens the movie in the active tab (replacing its player, if any).
@@ -511,29 +464,6 @@ impl PlayerController {
         self.players.replace_active(player);
     }
 
-    /// Turu: opens the movie in a new tab's player and makes it the active one.
-    pub fn add_tab(
-        &mut self,
-        opt: &LaunchOptions,
-        content_descriptor: &ContentDescriptor,
-        movie_view: MovieView,
-        tab: crate::turu::TabId,
-    ) {
-        let player = self.new_player(opt, content_descriptor, movie_view, tab);
-        self.players.add(player);
-    }
-
-    /// Turu: makes the tab's player the active one (the others are muted); false when it
-    /// has none.
-    pub fn select_tab(&mut self, tab: crate::turu::TabId) -> bool {
-        self.players.select_tab(tab)
-    }
-
-    /// Turu: closes the tab's player.
-    pub fn remove_tab(&mut self, tab: crate::turu::TabId) {
-        self.players.remove_tab(tab);
-    }
-
     pub fn len(&self) -> usize {
         self.players.len()
     }
@@ -542,46 +472,6 @@ impl PlayerController {
     /// Use one at a time: each other player's state is swapped in while its guard lives.
     pub fn all(&self) -> impl Iterator<Item = (bool, TabPlayer<'_>)> {
         self.players.all()
-    }
-
-    /// Turu: ticks the hidden tabs' players whose next frame or timer is due, or that waited
-    /// `HIDDEN_TICK_MAX`, rather than all of them on every pass of the event loop (thousands
-    /// a second while the mouse moves); returns when the next one is due.
-    ///
-    /// In Grid View (and with `TURU_GRID_TEST`) they also draw each frame they run; the bool says
-    /// whether one did, so the window shows it.
-    pub fn tick_hidden(&self, now: Instant) -> (Option<Instant>, bool) {
-        let draw = self.grid() || crate::turu::grid_test_fps().is_some();
-        self.players.tick_hidden(now, |player| {
-            // Turu: a tile draws each frame it runs, into its own movie view (with
-            // `TURU_GRID_TEST`, never shown).
-            if !draw {
-                return false;
-            }
-            let drawing = Instant::now();
-            player.render();
-            crate::thread_perf::add(crate::thread_perf::Phase::HiddenDraw, drawing.elapsed());
-            true
-        })
-    }
-
-    /// Turu: gives the mouse to the active tab's player (when the cursor is in the window) and
-    /// takes it from the others, which then stop hit-testing it and drop what they hovered.
-    pub fn give_mouse(&self, in_window: bool) {
-        for (active, mut player) in self.all() {
-            let in_stage = active && in_window;
-            if player.mouse_in_stage() != in_stage {
-                player.set_mouse_in_stage(in_stage);
-                if !in_stage {
-                    player.handle_event(PlayerEvent::MouseLeave);
-                }
-            }
-        }
-    }
-
-    /// Turu: the tab's player.
-    pub fn get_tab(&self, tab: crate::turu::TabId) -> Option<TabPlayer<'_>> {
-        self.players.get_tab(tab)
     }
 
     fn new_player(

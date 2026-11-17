@@ -56,8 +56,6 @@ static SHELL_TAB: AtomicBool = AtomicBool::new(false);
 static CLIENT_OF: Mutex<Option<String>> = Mutex::new(None);
 /// `--shell`: this process is a shell over client processes.
 static SHELL: AtomicBool = AtomicBool::new(false);
-/// `--in-process`: Turu's window runs its tabs itself this start, whatever Options says.
-static IN_PROCESS: AtomicBool = AtomicBool::new(false);
 /// `--api`'s address, until `start_api`.
 static API: Mutex<Option<String>> = Mutex::new(None);
 /// The startup flags, until `configure_startup`.
@@ -1094,8 +1092,8 @@ pub fn host_swf_url() -> anyhow::Result<String> {
 /// * `--headless`: no window (see `headless.rs`).
 /// * `--client=<address>` / `--shell`: a tab in a process of its own, drawn for a shell / the
 ///   shell over such clients (docs/TAB_PROCESSES_PROPOSAL.md, M2; `app/src/client.rs`, `shell.rs`).
-/// * `--in-process`: the window runs its tabs itself this start, though Options > Application >
-///   Process Tabs is on (the way back when the shell or its clients don't start).
+/// * `--in-process`: ignored (each tab is a process of its own since M6; it ran the window's tabs
+///   in its own process).
 /// * `--exit-with-parent`: quit when stdin closes (Army > Accounts launches clients with it,
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
 /// * `--api` (or `--api=<address>`, default `127.0.0.1:9091`): the control API (see
@@ -1108,7 +1106,6 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         headless,
         client,
         shell,
-        in_process,
         api,
         monitor,
         report_to,
@@ -1122,7 +1119,6 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
     }
     HEADLESS.store(headless, Ordering::Relaxed);
     SHELL.store(shell, Ordering::Relaxed);
-    IN_PROCESS.store(in_process, Ordering::Relaxed);
     *CLIENT_OF.lock().unwrap_or_else(|e| e.into_inner()) = client;
     if let Ok(mut slot) = API.lock() {
         *slot = api;
@@ -1338,28 +1334,6 @@ pub fn start_perf_log(mut main_thread: Option<ThreadReport>) {
     });
     if let Err(e) = spawned {
         tracing::error!("Couldn't start the perf log: {e}");
-    }
-}
-
-/// `TURU_GRID_TEST=<fps>`: hidden tabs run at `fps` (not 2) and draw every frame they run, to
-/// measure with `TURU_PERF_LOG` what a grid of live tiles would cost (each tile is a tab).
-pub fn grid_test_fps() -> Option<i32> {
-    static FPS: OnceLock<Option<i32>> = OnceLock::new();
-    *FPS.get_or_init(|| {
-        std::env::var("TURU_GRID_TEST")
-            .ok()
-            .and_then(|s| s.trim().parse::<i32>().ok())
-            .filter(|f| *f > 0)
-    })
-}
-
-/// Applies `TURU_GRID_TEST` (see [`grid_test_fps`]).
-pub fn start_grid_test() {
-    if let Some(fps) = grid_test_fps() {
-        turu_bot::api::options::set_hidden_tab_fps(fps);
-        tracing::info!(
-            "Grid test (TURU_GRID_TEST): hidden tabs run at {fps} FPS and draw every frame"
-        );
     }
 }
 
@@ -1750,11 +1724,6 @@ pub fn shell() -> bool {
     SHELL.load(Ordering::Relaxed)
 }
 
-/// `--in-process`: the window runs its tabs itself this start, though Process Tabs is on.
-pub fn in_process() -> bool {
-    IN_PROCESS.load(Ordering::Relaxed)
-}
-
 /// The active tab's game is in Headless Mode (the option, not `--headless`): the window covers
 /// it with VibeSkua's headless overlay and doesn't draw it.
 pub fn headless_mode() -> bool {
@@ -1771,7 +1740,6 @@ struct Flags {
     /// `--client`'s address.
     client: Option<String>,
     shell: bool,
-    in_process: bool,
     /// `--api`'s address.
     api: Option<String>,
     /// `--monitor[=address]`: empty without an address.
@@ -1827,7 +1795,8 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             // The address only inline (`--client=127.0.0.1:port`).
             "--client" => flags.client = inline,
             "--shell" => flags.shell = true,
-            "--in-process" => flags.in_process = true,
+            // (Ignored since M6: an old shortcut with it still starts.)
+            "--in-process" => {}
             // The address only inline (`--api=...`): the next argument may be anything.
             "--api" => flags.api = Some(inline.unwrap_or_else(|| "127.0.0.1:9091".into())),
             // Likewise: `--monitor` alone takes Options > Application's port.
@@ -2013,14 +1982,14 @@ mod tests {
     }
 
     #[test]
-    fn takes_in_process() {
+    fn takes_the_old_in_process_flag_and_ignores_it() {
         let mut args: Vec<OsString> = ["turu", "--in-process", "-g", "metal"]
             .into_iter()
             .map(Into::into)
             .collect();
         let flags = parse_startup_args(&mut args);
         assert_eq!(args, ["turu", "-g", "metal"]);
-        assert!(flags.in_process && !flags.shell);
+        assert!(!flags.shell);
     }
 
     #[test]

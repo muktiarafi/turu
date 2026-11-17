@@ -219,9 +219,4 @@ impl RuffleGui {
 
         player.set_volume(self.dialogs.volume_controls.get_volume());
     }
-
-    /// Turu: the volume the active tab plays at (the others are muted).
-    fn volume(&self) -> f32 {
-        self.dialogs.volume_controls.get_volume()
-    }
 }

@@ -1056,7 +1056,7 @@ fn set_grid(grid: Option<&GridShow>) {
     crate::grid::set_shell_tiles(tiles);
     turu_bot::api::options::set_hidden_tab_fps(match grid {
         Some(_) => crate::grid::TILE_FPS,
-        None => turu::grid_test_fps().unwrap_or(2),
+        None => 2,
     });
 }
 

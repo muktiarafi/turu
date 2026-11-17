@@ -488,15 +488,6 @@ impl ClientPlatform {
 }
 
 impl Platform for ClientPlatform {
-    // Options lives in the clients: turned off here, the next start is the window again.
-    fn process_tabs(&self) -> Option<bool> {
-        Some(crate::shell::switched_on())
-    }
-
-    fn set_process_tabs(&self, on: bool) {
-        crate::shell::save_switch(on);
-    }
-
     // The window has the game's right-click menu for this; a client has none.
     fn graphics_choices(&self) -> Option<(Vec<(&'static str, &'static str)>, &'static str)> {
         use crate::mugetsu::Graphics;

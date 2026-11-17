@@ -1,19 +1,15 @@
 //! Turu: Grid View (VibeSkua's tabbed host's), every tab's game at once, each in a tile of the
-//! window. The tabs stay what they are: the active one has the keyboard, sound and full frame
-//! rate; the others run at [`TILE_FPS`] and, unlike hidden tabs, draw each frame. Clicking a tile
-//! makes its tab the active one.
+//! shell's window (each tab a process of its own). The tabs stay what they are: the active one has
+//! the keyboard, sound and full frame rate; the others run at [`TILE_FPS`] and, unlike hidden
+//! tabs, draw each frame. Clicking a tile makes its tab the active one.
 
-use crate::turu::TabId;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// The frame rate of the tiles other than the active tab's (VibeSkua's tiles run unthrottled,
-/// each in a process of its own; here every tab shares one thread).
+/// The frame rate of the tiles other than the active tab's (VibeSkua's tiles run unthrottled).
 pub const TILE_FPS: i32 = 8;
 
 static ON: AtomicBool = AtomicBool::new(false);
-/// Each tile's tab and area, in physical pixels of the window, for the UI's labels.
-static TILES: Mutex<Vec<(TabId, Tile)>> = Mutex::new(Vec::new());
 
 /// Grid View was turned on (it shows with two tabs or more).
 pub fn on() -> bool {
@@ -22,17 +18,6 @@ pub fn on() -> bool {
 
 pub fn set_on(on: bool) {
     ON.store(on, Ordering::Relaxed);
-}
-
-/// The tiles shown, with their tabs; empty without Grid View.
-pub fn tiles() -> Vec<(TabId, Tile)> {
-    TILES.lock().map(|t| t.clone()).unwrap_or_default()
-}
-
-pub fn set_tiles(tiles: Vec<(TabId, Tile)>) {
-    if let Ok(mut slot) = TILES.lock() {
-        *slot = tiles;
-    }
 }
 
 /// In a shell's client drawing Grid View as the active tab (docs/TAB_PROCESSES_PROPOSAL.md, M5):

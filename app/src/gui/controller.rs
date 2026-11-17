@@ -404,35 +404,6 @@ impl GuiController {
         );
     }
 
-    /// Turu: opens the movie in a new tab (its player becomes the active one).
-    pub fn add_tab(
-        &self,
-        player: &mut PlayerController,
-        opt: LaunchOptions,
-        content_descriptor: ContentDescriptor,
-        tab: crate::turu::TabId,
-    ) {
-        tracing::info!("Opening {} in a new tab", content_descriptor.describe());
-        let movie_view = MovieView::new(
-            self.movie_view_renderer.clone(),
-            &self.descriptors.device,
-            self.size.width,
-            self.size.height,
-            #[cfg(feature = "tracy_images")]
-            self.tracy_frame_captures.clone(),
-        );
-        player.add_tab(&opt, &content_descriptor, movie_view, tab);
-        self.set_tab_volumes(player);
-    }
-
-    /// Turu: the active tab plays at the chosen volume, the others are muted.
-    pub fn set_tab_volumes(&self, player: &PlayerController) {
-        let volume = self.gui.volume();
-        for (active, mut player) in player.all() {
-            player.set_volume(if active { volume } else { 0.0 });
-        }
-    }
-
     pub fn height_offset(&self) -> f64 {
         if self.window.fullscreen().is_some() || self.no_gui {
             0.0
@@ -482,7 +453,6 @@ impl GuiController {
     pub fn render(
         &mut self,
         mut player: Option<MutexGuard<Player>>,
-        tiles: &[(crate::grid::Tile, wgpu::BindGroup)],
     ) {
         use crate::thread_perf::{Phase, add}; // Turu: `TURU_PERF_LOG`.
         // Turu: the GPU dropped the device (a driver reset: TURU-DESKTOP-5, two clients at once).
@@ -686,23 +656,7 @@ impl GuiController {
                 })
                 .forget_lifetime();
 
-            if !tiles.is_empty() {
-                // Turu: Grid View. Each tile is drawn with the viewport set to it; the UI after
-                // them gets the whole window back.
-                let top = self.height_offset() as f32;
-                for (tile, picture) in tiles {
-                    render_pass.set_viewport(
-                        tile.x as f32,
-                        top + tile.y as f32,
-                        tile.width as f32,
-                        tile.height as f32,
-                        0.0,
-                        1.0,
-                    );
-                    self.movie_view_renderer.render_tile(picture, &mut render_pass);
-                }
-                render_pass.set_viewport(0.0, 0.0, self.size.width as f32, self.size.height as f32, 0.0, 1.0);
-            } else if let Some(movie_view) = movie_view {
+            if let Some(movie_view) = movie_view {
                 movie_view.render(&self.movie_view_renderer, &mut render_pass);
             }
 

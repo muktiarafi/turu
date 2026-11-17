@@ -35,7 +35,7 @@ mod tracy;
 mod thread_perf;
 mod util;
 // Turu: the bridge to the bot, the bot windows and what they share, from `turu_frontend`.
-use turu_frontend::{capture, grid, pacing, platform, turu};
+use turu_frontend::{capture, pacing, platform, turu};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]
@@ -517,7 +517,7 @@ fn main() -> Result<(), Error> {
     crash_uploads::start();
     // A process tabs' shell serves `--api` over its tabs' own (`shell::run`); its clients, which
     // see the same Options switch, serve their own.
-    let runs_shell = turu::client_of().is_none() && (turu::shell() || shell::switched_on_for_this_start());
+    let runs_shell = turu::client_of().is_none() && (turu::shell() || shell::runs_as_shell());
     if !runs_shell {
         turu::start_api();
     }
@@ -533,7 +533,6 @@ fn main() -> Result<(), Error> {
             report
         }) as turu::ThreadReport
     }));
-    turu::start_grid_test();
 
     // Turu: `--client=<address>` runs one tab for a shell, `--shell` the window over such clients
     // (docs/TAB_PROCESSES_PROPOSAL.md, M2).
@@ -543,11 +542,8 @@ fn main() -> Result<(), Error> {
         };
         return client::run(preferences, movie_url, &address);
     }
-    // `--shell`, or Options > Application > Process Tabs saved on (M5).
-    if turu::shell() || shell::switched_on_for_this_start() {
-        if !turu::shell() {
-            tracing::info!("Process tabs are on: this window is the shell (Options > Application)");
-        }
+    // Turu's window is the shell over a process for each tab (M6), `--shell` or not.
+    if turu::shell() || shell::runs_as_shell() {
         // The client gets the shell's own flags (`--user`, `--run-script`, ...).
         let client_args = shell::client_args(env::args().skip(1));
         return shell::run(preferences, client_args);

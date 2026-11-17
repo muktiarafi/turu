@@ -35,9 +35,6 @@ struct MainWindow {
     /// Turu: whether the cursor is in the window (`CursorEntered`/`CursorLeft`), for the tab
     /// that becomes the active one (`PlayerController::give_mouse`).
     cursor_in_window: bool,
-    /// Turu: Grid View's tiles in tab order, in the movie area below the top bar (empty without
-    /// it).
-    grid_tiles: Vec<crate::grid::Tile>,
     /// Whether the cursor moved since the last hit-test. `CursorMoved` arrives at the
     /// mouse polling rate (1000+ Hz on gaming mice) and each `MouseMove` hit-tests the
     /// whole display list, which stalls crowded scenes. Moves are coalesced and applied
@@ -392,12 +389,6 @@ impl MainWindow {
                 let started = Instant::now();
                 let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
                 let walk_before = ruffle_core::render_walk_micros();
-                // Turu: Grid View's pictures, taken before the active player is locked below.
-                let tiles: Vec<_> = if self.grid_tiles.is_empty() {
-                    Vec::new()
-                } else {
-                    self.grid_tiles.iter().copied().zip(self.player.views()).collect()
-                };
                 let mut player = self.player.get();
                 let frame_budget_ms = player
                     .as_ref()
@@ -445,7 +436,7 @@ impl MainWindow {
                 let movie_ms = started.elapsed().as_secs_f64() * 1000.0;
                 crate::thread_perf::add(crate::thread_perf::Phase::Movie, started.elapsed());
 
-                self.gui.render(player, &tiles);
+                self.gui.render(player);
                 crate::thread_perf::add(crate::thread_perf::Phase::Draw, started.elapsed());
                 self.perf.presents += 1;
                 self.count_fps();
@@ -554,15 +545,6 @@ impl MainWindow {
             }
             WindowEvent::MouseInput { button, state, .. } => {
                 if self.gui.is_context_menu_visible() {
-                    return;
-                }
-
-                // Turu: in Grid View, a click on another tab's tile makes it the active tab (and
-                // only that).
-                if state == ElementState::Pressed
-                    && let Some(tab) = self.other_tile_under_cursor()
-                {
-                    self.tab_request(crate::turu::TabRequest::Select(tab));
                     return;
                 }
 
@@ -864,120 +846,29 @@ impl MainWindow {
         }
     }
 
-    /// Turu: gives every tab's player the room under the nav bar (and tab strip).
+    /// Turu: gives the player the room under the nav bar.
     fn set_viewports(&mut self, size: PhysicalSize<u32>) {
         let scale_factor = self.gui.window().scale_factor();
         let top = self.gui.height_offset() as u32;
         let height = size.height.saturating_sub(top);
-        // Turu: in Grid View each tab's player is the size of its tile.
-        self.grid_tiles = if self.player.grid() {
-            crate::grid::layout(self.player.len(), size.width, height)
-        } else {
-            Vec::new()
-        };
-        let mut shown = Vec::new();
-        for (i, (tab, _, mut player)) in self.player.in_order().enumerate() {
-            let (width, height) = match self.grid_tiles.get(i) {
-                Some(tile) => (tile.width, tile.height),
-                None => (size.width, height),
-            };
+        if let Some(mut player) = self.player.get() {
             // AQW build (Mugetsu 2.0.0): fewer pixels in Performance mode (see
-            // `mugetsu::Performance`), stretched over the tab's area when drawn.
+            // `mugetsu::Performance`), stretched over the movie's area when drawn.
             player.set_viewport_dimensions(ViewportDimensions {
-                width: crate::mugetsu::drawn_len(width),
+                width: crate::mugetsu::drawn_len(size.width),
                 height: crate::mugetsu::drawn_len(height),
                 scale_factor: scale_factor * crate::mugetsu::render_scale(),
             });
-            if let (Some(tab), Some(tile)) = (tab, self.grid_tiles.get(i)) {
-                shown.push((tab, crate::grid::Tile { y: tile.y + top, ..*tile }));
-            }
         }
-        crate::grid::set_tiles(shown);
     }
 
-    /// Turu: the cursor in the active tab's player's coordinates: the movie area's, less the
-    /// active tile's corner in Grid View.
+    /// Turu: the cursor in the player's coordinates.
     fn movie_position(&self) -> (f64, f64) {
         let (x, y) = self.gui.window_to_movie_position(self.mouse_pos);
-        let (x, y) = match self.grid_tiles.get(self.player.active_index()) {
-            Some(tile) => (x - tile.x as f64, y - tile.y as f64),
-            None => (x, y),
-        };
         // AQW build (Mugetsu 2.0.0): the movie's own pixels are fewer than the window's in
         // Performance mode (see `mugetsu::Performance`).
         let scale = crate::mugetsu::render_scale();
         (x * scale, y * scale)
-    }
-
-    /// Turu: in Grid View, the tab whose tile is under the cursor, if it isn't the active one.
-    fn other_tile_under_cursor(&self) -> Option<crate::turu::TabId> {
-        let (x, y) = self.gui.window_to_movie_position(self.mouse_pos);
-        let i = self.grid_tiles.iter().position(|tile| tile.contains(x, y))?;
-        (i != self.player.active_index()).then(|| self.player.tab_at(i)).flatten()
-    }
-
-    /// Turu: opens, selects or closes a tab.
-    fn tab_request(&mut self, request: crate::turu::TabRequest) {
-        use crate::turu::{self, TabRequest};
-        let shown_before = crate::gui::top_height();
-        match request {
-            TabRequest::Open(startup) => {
-                let Some(movie_url) = self.preferences.cli.movie_url.clone() else {
-                    return;
-                };
-                let (tab, _) = turu::add_tab(*startup);
-                self.gui.add_tab(
-                    &mut self.player,
-                    LaunchOptions::from(&self.preferences),
-                    ContentDescriptor {
-                        url: movie_url,
-                        root_content_path: None,
-                    },
-                    tab,
-                );
-                turu::set_active_tab(tab);
-            }
-            TabRequest::Select(tab) => {
-                if self.player.select_tab(tab) {
-                    turu::set_active_tab(tab);
-                    self.gui.set_tab_volumes(&self.player);
-                }
-            }
-            TabRequest::Grid(on) => {
-                self.player.set_grid(on);
-                crate::grid::set_on(on);
-                // The other tabs run at the tiles' rate, and back at a hidden tab's.
-                let hidden_fps = if on {
-                    crate::grid::TILE_FPS
-                } else {
-                    turu::grid_test_fps().unwrap_or(2)
-                };
-                turu_bot::api::options::set_hidden_tab_fps(hidden_fps);
-            }
-            TabRequest::Close(tab) => {
-                if self.player.len() < 2 {
-                    return;
-                }
-                // The player first: it detaches the tab's bot, which `remove_tab` stops.
-                self.player.remove_tab(tab);
-                turu::remove_tab(tab);
-                let active = turu::active_tab();
-                turu::set_active_tab(active);
-                self.player.select_tab(active);
-                self.gui.set_tab_volumes(&self.player);
-            }
-        }
-        // Only the active tab has the mouse: the others' stale "mouse in stage" kept hit-testing
-        // it on every tick, and a tab shown again ignored clicks if the cursor had left the
-        // window while it was in front.
-        self.player.give_mouse(self.cursor_in_window);
-        if crate::gui::top_height() != shown_before {
-            // The tab strip came or went: the movie moves up or down.
-            self.gui.reconfigure_surface();
-        }
-        self.set_viewports(self.gui.window().inner_size());
-        self.frame_since_render = true;
-        self.gui.window().request_redraw();
     }
 
     fn about_to_wait(&mut self, gilrs: Option<&mut Gilrs>) {
@@ -1017,12 +908,6 @@ impl MainWindow {
                 let perf = &mut self.perf;
                 let frame_since_render = &mut self.frame_since_render;
                 let pacing = &mut self.pacing;
-                // Turu: the other tabs' players run too (not drawn, muted), when due.
-                let (background_next, tile_drew) = self.player.tick_hidden(new_time);
-                if tile_drew {
-                    // Grid View: a tile has a new picture to show.
-                    *frame_since_render = true;
-                }
                 let mut tick_took = None; // Turu: counted in the tab's bot's stats.
                 let mut limit_trim = None; // Turu: made over every tab below.
                 self.next_frame_time = self.player.get().map(|mut player| {
@@ -1078,9 +963,6 @@ impl MainWindow {
                         if trim.held { "" } else { "; the last freeing did not hold" },
                         trim.next_wait_secs
                     );
-                }
-                if let Some(next) = background_next {
-                    self.next_frame_time = Some(self.next_frame_time.map_or(next, |t| t.min(next)));
                 }
                 self.check_redraw();
             }
@@ -1465,7 +1347,6 @@ impl ApplicationHandler<RuffleEvent> for App {
                 occluded: false,
                 mouse_pos: PhysicalPosition::new(0.0, 0.0),
                 cursor_in_window: true,
-                grid_tiles: Vec::new(),
                 mouse_move_pending: false,
                 fps_frames: 0,
                 fps_since: Instant::now(),
@@ -1497,10 +1378,9 @@ impl ApplicationHandler<RuffleEvent> for App {
         match (&mut self.main_window, event) {
             (Some(main_window), RuffleEvent::TaskPoll(task)) => main_window.player.poll(task),
             (Some(main_window), RuffleEvent::TuruFlashCall(call)) => {
-                let mut player = main_window.player.get_tab(call.tab());
+                let mut player = main_window.player.get();
                 crate::turu::answer_flash_call(call, player.as_deref_mut());
             }
-            (Some(main_window), RuffleEvent::TuruTab(request)) => main_window.tab_request(request),
             (None, RuffleEvent::TuruFlashCall(call)) => crate::turu::answer_flash_call(call, None),
 
             (Some(main_window), RuffleEvent::OnMetadata(swf_header)) => {

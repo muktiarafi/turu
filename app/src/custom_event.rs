@@ -54,7 +54,4 @@ pub enum RuffleEvent {
 
     /// Turu: a bot thread calls one of turu.swf's ExternalInterface callbacks.
     TuruFlashCall(crate::turu::TuruFlashCall),
-
-    /// Turu: open, select or close a tab (a game client of its own).
-    TuruTab(crate::turu::TabRequest),
 }
