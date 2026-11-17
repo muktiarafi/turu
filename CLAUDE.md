@@ -48,9 +48,9 @@ it, bump `ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/
 ```bash
 cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ./target/debug/turu                      # starts turu.swf -> AQW; log in with the game's own screen
-cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host); CI: `cargo nextest run --profile ci -p turu_bot` (.config/nextest.toml)
+cargo nextest run -p turu_bot            # engine + script runtime tests (fake Flash host): ~25 s, `cargo test` ~2 min (see below)
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
-cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md)
+cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 air/app/build.sh --no-install           # Turu Mas APK (AIR SDK, JDK 17: docs/TURU_MAS.md)
@@ -58,6 +58,15 @@ docker build -t turu .                  # headless image (Dockerfile, compose.ya
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
 cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (their CI checks it)
 ```
+
+Run the engine's tests with cargo-nextest (`.config/nextest.toml`): each test in its own process,
+every test binary at once. `cargo nextest run -p turu_bot <name>` runs the tests whose names
+contain `<name>`, `--test <file>` one `bot/tests/` file, `--run-ignored only` the ignored ones.
+Install it with
+`brew install cargo-nextest` or `cargo install cargo-nextest --locked`; without it, use
+`cargo test`. Keep `cargo test` for the app and frontend on macOS: the system checks each newly
+built test program at launch, and nextest launches one per test (over 100 s against seconds).
+CI runs all three crates in one `cargo nextest run --profile ci` (ci.yml).
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
 on macOS the feature set above is the one Mugetsu uses (Metal, fontconfig loaded at runtime).
