@@ -144,7 +144,10 @@ pub fn gpu(
                     info.driver,
                     info.driver_info,
                 ));
-                Some(Arc::new(Descriptors::new(instance, adapter, device, queue)))
+                let descriptors = Descriptors::new(instance, adapter, device, queue);
+                // The API version, flags and limits the renderer depends on.
+                turu::bot().logs.debug.push(descriptors.device_summary());
+                Some(Arc::new(descriptors))
             }
             Err(e) => {
                 turu::bot()

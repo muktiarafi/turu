@@ -453,20 +453,28 @@ fn take_flag(args: &mut Vec<OsString>, flag: &str) -> bool {
 
 /// Takes `flag <value>` (or `flag=value`) out of `args`, returning the value.
 fn take_value(args: &mut Vec<OsString>, flag: &str) -> Option<String> {
-    let mut value = None;
+    take_values(args, flag).pop()
+}
+
+/// Every value of a repeatable `flag` (`--flag value` or `--flag=value`), in order, taken out
+/// of `args`.
+fn take_values(args: &mut Vec<OsString>, flag: &str) -> Vec<String> {
+    let mut values = Vec::new();
     let mut rest = Vec::with_capacity(args.len());
     let mut iter = std::mem::take(args).into_iter();
     while let Some(arg) = iter.next() {
         match arg.to_str() {
-            Some(text) if text == flag => value = iter.next().and_then(|v| v.into_string().ok()),
+            Some(text) if text == flag => {
+                values.extend(iter.next().and_then(|v| v.into_string().ok()));
+            }
             Some(text) if text.strip_prefix(flag).is_some_and(|v| v.starts_with('=')) => {
-                value = Some(text[flag.len() + 1..].to_owned());
+                values.push(text[flag.len() + 1..].to_owned());
             }
             _ => rest.push(arg),
         }
     }
     *args = rest;
-    value
+    values
 }
 
 /// Takes `--graphics <auto|vulkan|gl>` (or `--graphics=...`) out of `args`.
@@ -544,6 +552,10 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let mut test_gpu_loss =
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
+    // `--env NAME=value` (repeatable): an environment variable, which an app can't be started
+    // with: Ruffle's test and A/B switches (`RUFFLE_GL_STATS`, `RUFFLE_GL_LEVERS`,
+    // `RUFFLE_NO_BASE_VERTEX`, ...).
+    let env = take_values(&mut args, "--env");
     let releases_url = take_value(&mut args, "--releases-url");
     restart::prepare(&mut args);
     turu::take_startup_args(&mut args);
@@ -568,6 +580,13 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         // SAFETY: before the engine's threads exist and before Ruffle reads them; the
         // process's other threads (Java's) don't read Turu's environment.
         unsafe { std::env::set_var(var, "1") };
+    }
+    for pair in env {
+        match pair.split_once('=') {
+            // SAFETY: as the drawing switches'.
+            Some((name, value)) if !name.is_empty() => unsafe { std::env::set_var(name, value) },
+            _ => tracing::warn!("--env {pair:?}: expected NAME=value"),
+        }
     }
     // `--releases-url <url>`: `TURU_RELEASES_URL`, where client updates are looked for (a test
     // feed, say), which an app can't be started with.

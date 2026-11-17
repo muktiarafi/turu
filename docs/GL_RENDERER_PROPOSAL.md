@@ -142,9 +142,18 @@ The fix is ruffle-aqw `ed14ee86c`: `Descriptors::base_vertex` is set from
 Still open for G0: one emulator and one room only. Not yet checked on a real Mali or Adreno phone,
 `-gpu swiftshader_indirect`, a crowded room, or Linux Mesa. In the guarded run some Game Menu
 button plates and a couple of skill slots looked missing or dim (they were fine in an earlier
-guarded run, so possibly still loading; not investigated). The `base_vertex draws: ...` log line
-added with the fix didn't show in logcat; check its target filter. The sections below are the
-original plan.
+guarded run, so possibly still loading; not investigated). The sections below are the original
+plan.
+
+**Logging (2026-11-18, ruffle-aqw `7e1c4b3ac`).** The `base_vertex draws` line was missing from
+logcat because it was logged on `ruffle_render_wgpu`, which Android's filter holds at warn. It's
+now a `Device:` line on `ruffle_aqw_perf` with the API version, the downlevel flags,
+`base_vertex`, and the limits Ruffle depends on. Android also puts it in Turu's debug log
+(Diagnostics > Logs) beside the `Graphics:` line. On the emulator it says `OpenGL ES 3.0 (4.1
+Metal)`, `base_vertex draws: false`, a 65,536 B uniform binding (200 transforms per draw), 2D
+textures up to 16,384, and 4 color attachments. A second guarded run in Battleon drew the whole
+scene, with the Game Menu and every skill slot. `turu-args.txt` takes `--env NAME=value` for
+Ruffle's switches.
 
 **Leading hypothesis: draws from the shared shape buffer need `base_vertex`, and GLES 3.0/3.1
 can't do it.** ruffle-aqw binds the shape arena's whole vertex and index buffers once, and starts
