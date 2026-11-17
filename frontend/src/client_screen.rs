@@ -15,7 +15,7 @@
 use crate::engine::Step;
 use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
-use crate::shell::{Button, GridShow, Mods, PointerKind, SHARED_POOL, ToClient};
+use crate::shell::{Button, Cursor, GridShow, Mods, PointerKind, SHARED_POOL, ToClient};
 use crate::turu;
 use ruffle_core::ViewportDimensions;
 use ruffle_core::events::{
@@ -28,7 +28,7 @@ use ruffle_render_wgpu::descriptors::Descriptors;
 use ruffle_render_wgpu::wgpu;
 use std::any::Any;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 /// The format of the pictures: what macOS and Windows windows take as they are.
@@ -136,6 +136,12 @@ pub struct ClientScreen {
     covered: bool,
     /// The pointer is over the window (moved there, not left since).
     pointer_in: bool,
+    /// Where the pointer is, in the picture's pixels, while it's in.
+    pointer_at: Option<(f32, f32)>,
+    /// Hands the shell the cursor's shape when it changes (`set_cursor_sink`), and the last one.
+    cursor_sink: Option<Box<dyn Fn(Cursor)>>,
+    /// None until sent since the tab was last shown (the shell may show another's).
+    cursor: Option<Cursor>,
     clipboard: Option<Box<dyn Clipboard>>,
     /// A new picture of the game is wanted (a resize, a frame not drawn because a readback was
     /// under way).
@@ -189,6 +195,9 @@ impl ClientScreen {
             volume: 1.0,
             covered: false,
             pointer_in: false,
+            pointer_at: None,
+            cursor_sink: None,
+            cursor: None,
             clipboard: None,
             fps_frames: 0,
             fps_since: Instant::now(),
@@ -218,6 +227,52 @@ impl ClientScreen {
         );
     }
 
+    /// Where the cursor's shape goes when it changes (the shell, `ToShell::Cursor`).
+    pub fn set_cursor_sink(&mut self, sink: Box<dyn Fn(Cursor)>) {
+        self.cursor_sink = Some(sink);
+    }
+
+    /// The cursor over the game or Turu's UI, sent when it changed: Turu's where the pointer is on
+    /// its UI (or egui asks for one), else the game's (`set_game_cursor`).
+    fn update_cursor(&mut self, ui_cursor: egui::CursorIcon) {
+        let on_ui = self.pointer_at.is_some_and(|(x, y)| self.on_ui(x, y));
+        let cursor = if on_ui || ui_cursor != egui::CursorIcon::Default {
+            match ui_cursor {
+                egui::CursorIcon::PointingHand => Cursor::Hand,
+                egui::CursorIcon::Text | egui::CursorIcon::VerticalText => Cursor::Text,
+                egui::CursorIcon::Grab => Cursor::Grab,
+                egui::CursorIcon::Grabbing => Cursor::Grabbing,
+                egui::CursorIcon::Move | egui::CursorIcon::AllScroll => Cursor::Move,
+                egui::CursorIcon::NotAllowed | egui::CursorIcon::NoDrop => Cursor::NotAllowed,
+                egui::CursorIcon::Wait | egui::CursorIcon::Progress => Cursor::Wait,
+                egui::CursorIcon::ResizeHorizontal
+                | egui::CursorIcon::ResizeColumn
+                | egui::CursorIcon::ResizeEast
+                | egui::CursorIcon::ResizeWest => Cursor::ResizeHorizontal,
+                egui::CursorIcon::ResizeVertical
+                | egui::CursorIcon::ResizeRow
+                | egui::CursorIcon::ResizeNorth
+                | egui::CursorIcon::ResizeSouth => Cursor::ResizeVertical,
+                egui::CursorIcon::ResizeNwSe
+                | egui::CursorIcon::ResizeNorthWest
+                | egui::CursorIcon::ResizeSouthEast => Cursor::ResizeNwSe,
+                egui::CursorIcon::ResizeNeSw
+                | egui::CursorIcon::ResizeNorthEast
+                | egui::CursorIcon::ResizeSouthWest => Cursor::ResizeNeSw,
+                egui::CursorIcon::None => Cursor::None,
+                _ => Cursor::Default,
+            }
+        } else {
+            game_cursor()
+        };
+        if Some(cursor) != self.cursor {
+            self.cursor = Some(cursor);
+            if let Some(sink) = &self.cursor_sink {
+                sink(cursor);
+            }
+        }
+    }
+
     /// Draws into surfaces shared with the shell instead of reading pictures back.
     pub fn share_surfaces(&mut self, shared: Box<dyn SharedSurfaces>) {
         self.shared = Some(shared);
@@ -228,6 +283,11 @@ impl ClientScreen {
         if self.shown.is_some() {
             self.ui_due = Some(Instant::now());
         }
+    }
+
+    /// The game's pictures drawn a second, over the last second (Show FPS's figure).
+    pub fn fps(&self) -> f32 {
+        self.fps
     }
 
     /// Whether the shell shows this tab.
@@ -251,6 +311,8 @@ impl ClientScreen {
                     1.0
                 };
                 self.shown = Some((size, scale));
+                // Its cursor goes to the shell again, as the last tab shown may have left another.
+                self.cursor = None;
                 if self
                     .target
                     .as_ref()
@@ -596,6 +658,7 @@ impl ClientScreen {
 
     fn pointer(&mut self, player: &mut Player, kind: PointerKind, button: Button, x: f32, y: f32) {
         let pos = self.point(x, y);
+        self.pointer_at = (!matches!(kind, PointerKind::Leave)).then_some((x, y));
         let (left, top) = self.offsets();
         // (In the game's own pixels: fewer in Performance mode, see `draw`.)
         let (game_x, game_y) = (
@@ -829,6 +892,7 @@ impl ClientScreen {
             }
             ui.show_windows(root.ctx());
         });
+        self.update_cursor(output.platform_output.cursor_icon);
         self.ui_due = output
             .viewport_output
             .get(&egui::ViewportId::ROOT)
@@ -1121,5 +1185,29 @@ mod tests {
             text_control(LogicalKey::Character('v'), command),
             Some(TextControlCode::Paste)
         );
+    }
+}
+
+/// The game's mouse cursor (Flash's `Mouse.cursor`, buttons' hand), set by the client's UI backend
+/// (`set_game_cursor`) from the player, which runs outside the screen's calls.
+static GAME_CURSOR: AtomicU8 = AtomicU8::new(0);
+
+/// The game asks for `cursor` (its UI backend's `set_mouse_cursor`).
+pub fn set_game_cursor(cursor: Cursor) {
+    let index = match cursor {
+        Cursor::Hand => 1,
+        Cursor::Text => 2,
+        Cursor::Grab => 3,
+        _ => 0,
+    };
+    GAME_CURSOR.store(index, Ordering::Relaxed);
+}
+
+fn game_cursor() -> Cursor {
+    match GAME_CURSOR.load(Ordering::Relaxed) {
+        1 => Cursor::Hand,
+        2 => Cursor::Text,
+        3 => Cursor::Grab,
+        _ => Cursor::Default,
     }
 }

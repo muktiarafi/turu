@@ -522,7 +522,16 @@ impl UiBackend for ClientUiBackend {
 
     fn set_mouse_visible(&mut self, _visible: bool) {}
 
-    fn set_mouse_cursor(&mut self, _cursor: MouseCursor) {}
+    // Turu: shown by the shell (`client_screen::set_game_cursor`, `ToShell::Cursor`).
+    fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
+        use turu_frontend::shell::Cursor;
+        turu_frontend::client_screen::set_game_cursor(match cursor {
+            MouseCursor::Arrow => Cursor::Default,
+            MouseCursor::Hand => Cursor::Hand,
+            MouseCursor::IBeam => Cursor::Text,
+            MouseCursor::Grab => Cursor::Grab,
+        });
+    }
 
     fn clipboard_content(&mut self) -> String {
         self.clipboard.get().unwrap_or_default()

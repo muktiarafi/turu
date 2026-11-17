@@ -1096,6 +1096,14 @@ impl ShellApp {
             },
             ToShell::CheckUpdates => turu::check_client_updates_now(),
             ToShell::FullScreen { on } => self.set_full_screen(on),
+            // The cursor of the tab on screen (another's would be stale by the time it shows).
+            ToShell::Cursor { cursor } => {
+                if id == self.shown
+                    && let Some(window) = &self.window
+                {
+                    set_cursor(window, cursor);
+                }
+            }
             #[cfg(any(windows, target_os = "linux"))]
             ToShell::ChooseGraphics { graphics } => self.choose_graphics(id, graphics),
             #[cfg(not(any(windows, target_os = "linux")))]
@@ -2302,4 +2310,30 @@ mod tests {
         let kept = client_args(args.iter().map(|arg| (*arg).to_owned()));
         assert_eq!(kept, ["--user", "Hero", "--run-script", "farm/Gold.ts"]);
     }
+}
+
+/// Shows `cursor` over the window (`ToShell::Cursor`).
+fn set_cursor(window: &winit::window::Window, cursor: turu_frontend::shell::Cursor) {
+    use turu_frontend::shell::Cursor;
+    use winit::window::CursorIcon;
+    let icon = match cursor {
+        Cursor::None => {
+            window.set_cursor_visible(false);
+            return;
+        }
+        Cursor::Default => CursorIcon::Default,
+        Cursor::Hand => CursorIcon::Pointer,
+        Cursor::Text => CursorIcon::Text,
+        Cursor::Grab => CursorIcon::Grab,
+        Cursor::Grabbing => CursorIcon::Grabbing,
+        Cursor::Move => CursorIcon::Move,
+        Cursor::NotAllowed => CursorIcon::NotAllowed,
+        Cursor::Wait => CursorIcon::Wait,
+        Cursor::ResizeHorizontal => CursorIcon::EwResize,
+        Cursor::ResizeVertical => CursorIcon::NsResize,
+        Cursor::ResizeNwSe => CursorIcon::NwseResize,
+        Cursor::ResizeNeSw => CursorIcon::NeswResize,
+    };
+    window.set_cursor_visible(true);
+    window.set_cursor(icon);
 }

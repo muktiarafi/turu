@@ -402,60 +402,7 @@ impl ActivePlayer {
                 Box::new(on_metadata),
             );
 
-            player_lock.set_default_font(
-                DefaultFont::Serif,
-                vec![
-                    "Times New Roman".into(),
-                    "Tinos".into(),
-                    "Liberation Serif".into(),
-                    "DejaVu Serif".into(),
-                ],
-            );
-            player_lock.set_default_font(
-                DefaultFont::Sans,
-                vec![
-                    "Arial".into(),
-                    "Arimo".into(),
-                    "Liberation Sans".into(),
-                    "DejaVu Sans".into(),
-                ],
-            );
-            player_lock.set_default_font(
-                DefaultFont::Typewriter,
-                vec![
-                    "Courier New".into(),
-                    "Cousine".into(),
-                    "Liberation Mono".into(),
-                    "DejaVu Sans Mono".into(),
-                ],
-            );
-            player_lock.set_default_font(
-                DefaultFont::JapaneseGothic,
-                vec![
-                    "ヒラギノ角ゴ Pro W3".into(), // Mac with Japanese environment
-                    "MS UI Gothic".into(),        // Windows
-                    "Noto Sans CJK JP".into(),    // Linux
-                    "Arial Unicode MS".into(),    // Mac fallback
-                ],
-            );
-            player_lock.set_default_font(
-                DefaultFont::JapaneseGothicMono,
-                vec![
-                    "Osaka－等幅".into(),      // Mac with Japanese environment
-                    "MS Gothic".into(),        // Windows
-                    "Noto Sans CJK JP".into(), // Linux
-                    "Arial Unicode MS".into(), // Mac fallback
-                ],
-            );
-            player_lock.set_default_font(
-                DefaultFont::JapaneseMincho,
-                vec![
-                    "ヒラギノ明朝 Pro W3".into(), // Mac with Japanese environment
-                    "MS PMincho".into(),          // Windows
-                    "Noto Sans CJK JP".into(),    // Linux
-                    "Arial Unicode MS".into(),    // Mac fallback
-                ],
-            );
+            set_default_fonts(&mut player_lock);
         }
 
         Slot::new(
@@ -745,4 +692,64 @@ impl<E: std::error::Error + 'static> FutureSpawner<E> for WinitExecutor {
         // Immediately schedule the future to be polled for the first time.
         runnable.schedule();
     }
+}
+
+/// The system fonts Flash's default device fonts (`_serif`, `_sans`, `_typewriter` and the
+/// Japanese ones) stand for, as Flash Player picks them. Turu: shared with the process tabs'
+/// clients and `--headless` (`headless::build_player`).
+pub(crate) fn set_default_fonts(player: &mut ruffle_core::Player) {
+    player.set_default_font(
+        DefaultFont::Serif,
+        vec![
+            "Times New Roman".into(),
+            "Tinos".into(),
+            "Liberation Serif".into(),
+            "DejaVu Serif".into(),
+        ],
+    );
+    player.set_default_font(
+        DefaultFont::Sans,
+        vec![
+            "Arial".into(),
+            "Arimo".into(),
+            "Liberation Sans".into(),
+            "DejaVu Sans".into(),
+        ],
+    );
+    player.set_default_font(
+        DefaultFont::Typewriter,
+        vec![
+            "Courier New".into(),
+            "Cousine".into(),
+            "Liberation Mono".into(),
+            "DejaVu Sans Mono".into(),
+        ],
+    );
+    player.set_default_font(
+        DefaultFont::JapaneseGothic,
+        vec![
+            "ヒラギノ角ゴ Pro W3".into(), // Mac with Japanese environment
+            "MS UI Gothic".into(),        // Windows
+            "Noto Sans CJK JP".into(),    // Linux
+            "Arial Unicode MS".into(),    // Mac fallback
+        ],
+    );
+    player.set_default_font(
+        DefaultFont::JapaneseGothicMono,
+        vec![
+            "Osaka－等幅".into(),      // Mac with Japanese environment
+            "MS Gothic".into(),        // Windows
+            "Noto Sans CJK JP".into(), // Linux
+            "Arial Unicode MS".into(), // Mac fallback
+        ],
+    );
+    player.set_default_font(
+        DefaultFont::JapaneseMincho,
+        vec![
+            "ヒラギノ明朝 Pro W3".into(), // Mac with Japanese environment
+            "MS PMincho".into(),          // Windows
+            "Noto Sans CJK JP".into(),    // Linux
+            "Arial Unicode MS".into(),    // Mac fallback
+        ],
+    );
 }

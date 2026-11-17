@@ -161,6 +161,28 @@ pub enum ToClient {
     Unknown,
 }
 
+/// A mouse cursor's shape, as the tab on screen wants it (`ToShell::Cursor`): the game's
+/// (Flash's arrow, hand, I-beam, grab) or one of Turu's UI's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Cursor {
+    #[default]
+    Default,
+    Hand,
+    Text,
+    Grab,
+    Grabbing,
+    Move,
+    NotAllowed,
+    Wait,
+    ResizeHorizontal,
+    ResizeVertical,
+    ResizeNwSe,
+    ResizeNeSw,
+    /// Hidden.
+    None,
+}
+
 /// The client to the shell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -231,6 +253,8 @@ pub enum ToShell {
     /// Desktop: Options > Application's Full Screen in a client: the shell's window full screen
     /// or not (answered with [`ToClient::FullScreen`]).
     FullScreen { on: bool },
+    /// Desktop: the mouse cursor over the tab on screen changed (the game's, or Turu's UI's).
+    Cursor { cursor: Cursor },
     /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
     Gpu { adapter: String },
     /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
@@ -772,6 +796,8 @@ mod tests {
     #[test]
     fn tab_messages_round_trip() {
         let to_shell = [
+            ToShell::Cursor { cursor: Cursor::Hand },
+            ToShell::Cursor { cursor: Cursor::ResizeNwSe },
             ToShell::OpenTab {
                 username: Some("player_one".into()),
                 password: Some("secret".into()),

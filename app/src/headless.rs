@@ -10,6 +10,7 @@ use crate::turu;
 use anyhow::Error;
 use ruffle_core::backend::navigator::SocketMode;
 use ruffle_core::backend::ui::NullUiBackend;
+use ruffle_core::config::Letterbox;
 use ruffle_core::{LoadBehavior, Player, PlayerBuilder};
 use ruffle_frontend_utils::backends::audio::CpalAudioBackend;
 use ruffle_frontend_utils::backends::navigator::ExternalNavigatorBackend;
@@ -78,7 +79,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
 /// With `TURU_PERF_LOG`: the windowed build's `memory:` line without its GPU parts, to see where
 /// the process's memory goes (the allocator's resident and committed memory, the Rust heap that's
 /// live, the SWFs the game loaded and the Flash objects it holds).
-fn log_memory(player: &mut Player) {
+pub(crate) fn log_memory(player: &mut Player) {
     let mut info = [0usize; 8];
     // SAFETY: plain out-pointers.
     unsafe {
@@ -174,7 +175,19 @@ pub(crate) fn build_player(
         // Turu: the game's packets, from its socket (R5).
         .with_socket_observer(Box::new(turu::TuruSocketObserver { bot: turu::bot() }))
         .with_autoplay(true)
-        .with_quality(quality)
+        // Turu: as the window's player (`player.rs`): `--quality`, the letterbox, and the game
+        // centred in a taller area unless `--align` says otherwise.
+        .with_quality(opt.player.quality.unwrap_or(quality))
+        .with_letterbox(opt.player.letterbox.unwrap_or(Letterbox::On))
+        .with_align(
+            opt.player.align.unwrap_or_default(),
+            opt.player.align.is_none() || opt.player.force_align.unwrap_or_default(),
+        )
+        .with_scale_mode(
+            opt.player.scale.unwrap_or_default(),
+            opt.player.force_scale.unwrap_or_default(),
+        )
+        .with_gamepad_button_mapping(opt.gamepad_button_mapping.clone())
         .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
         .with_load_behavior(opt.player.load_behavior.unwrap_or(LoadBehavior::Streaming))
         .with_spoofed_url(opt.player.spoof_url.clone().map(|url| url.to_string()))
@@ -191,6 +204,7 @@ pub(crate) fn build_player(
         // hit-tests the whole display list for it (`run_mouse_pick`): 13% of the player's time at
         // 30 FPS, 75% at 2 FPS (updates run for timers and the socket whatever the frame rate).
         locked.set_mouse_in_stage(false);
+        crate::player::set_default_fonts(&mut locked);
         locked.fetch_root_movie(movie_url.to_string(), opt.player.parameters, Box::new(|_| {}));
     }
     player

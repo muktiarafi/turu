@@ -36,6 +36,9 @@ use url::Url;
 /// The engine thread's events, for what Options changes in the game.
 static ENGINE: std::sync::OnceLock<Sender<EngineEvent>> = std::sync::OnceLock::new();
 
+/// The client's GPU device, for `TURU_TEST_GPU_LOSS` (see `gpu_check`).
+static GPU_DEVICE: std::sync::OnceLock<wgpu::Device> = std::sync::OnceLock::new();
+
 /// The shell's window is full screen (`ToClient::FullScreen`), for Options.
 static FULL_SCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -72,6 +75,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         adapter: shell::adapter_key(info.backend.to_str(), info.vendor, info.device, &info.name),
     });
     let device = descriptors.device.clone();
+    let _ = GPU_DEVICE.set(device.clone());
     let (sender, events) = channel();
     let _ = ENGINE.set(sender.clone());
     let tab = turu::active_tab();
@@ -140,6 +144,8 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         preferences.preferred_volume()
     });
     screen.set_clipboard(Box::new(SystemClipboard(egui_winit::clipboard::Clipboard::new(None))));
+    let cursor_out = out.clone();
+    screen.set_cursor_sink(Box::new(move |cursor| cursor_out.send(ToShell::Cursor { cursor })));
     SCREEN.set(Some(screen));
     turu::start_updates();
     // Turu's updates are the shell's: it checks and installs; Check Now and Download & restart go
@@ -184,6 +190,18 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
                 Ok(()) => tracing::info!("The shell closed the connection; quitting"),
                 Err(e) => tracing::warn!("Lost the shell ({e}); quitting"),
             }
+            // AQW build (Mugetsu 2.0.0): what the engine thread's storage holds of the graphics
+            // device is let go of there, while the driver is alive (thread storage is freed last
+            // of all at exit, when Windows has already unloaded the driver: DirectX 12 crashed
+            // there), and wgpu's last command buffers are dropped. 3 s at most.
+            let _ = forward.sender.send(EngineEvent::Run(Box::new(|_| {
+                let shapes = ruffle_core::shutdown_deferred_shapes();
+                let segments = ruffle_render_wgpu::segments::clear();
+                wgpu_core::aqw_flush_encoder_drops();
+                tracing::info!("closing: let go of {shapes} shapes still being drawn and {segments} recorded segments");
+                std::process::exit(0);
+            })));
+            std::thread::sleep(Duration::from_secs(3));
             std::process::exit(0);
         }
     });
@@ -194,14 +212,55 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         &mut players,
         &events,
         |player, step| {
+            gpu_check();
             memory_tick(player);
-            SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)))
+            let next = SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)));
+            perf_tick(player);
+            next
         },
         |_, _| tracing::warn!("A client has one tab: the request is ignored"),
     );
     turu::bot().set_host(None);
     Ok(())
 }
+
+/// The GPU dropped the device (a driver reset, the GPU out of memory): it can't come back, and
+/// the game's shapes and bitmaps lived on it. Said once (the log, the tab's debug log, Sentry),
+/// then this client ends: the shell starts it again, logged in from its record, while the other
+/// tabs play on (docs/GPU_RECOVERY_PROPOSAL.md: "restart that client"). `TURU_TEST_GPU_LOSS=1`
+/// destroys the device 20 s after the start, to test it.
+fn gpu_check() {
+    thread_local! {
+        static STARTED: std::time::Instant = std::time::Instant::now();
+        static TESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if std::env::var_os("TURU_TEST_GPU_LOSS").is_some_and(|v| v == "1")
+        && !TESTED.get()
+        && STARTED.with(|started| started.elapsed() >= Duration::from_secs(20))
+        && let Some(device) = GPU_DEVICE.get()
+    {
+        TESTED.set(true);
+        tracing::warn!("TURU_TEST_GPU_LOSS: destroying the GPU device");
+        device.destroy();
+    }
+    let Some(why) = ruffle_render_wgpu::device_lost() else {
+        return;
+    };
+    tracing::error!("The GPU stopped working ({why}); this tab's client ends, and the shell starts it again");
+    turu::bot()
+        .logs
+        .debug
+        .push(format!("Graphics: the GPU stopped working ({why}); the tab starts again"));
+    crate::crash_uploads::gpu_lost(&why);
+    // (Sent before the process ends, 2 s at most.)
+    if let Some(client) = sentry::Hub::main().client() {
+        client.flush(Some(Duration::from_secs(2)));
+    }
+    std::process::exit(EXIT_GPU_LOST);
+}
+
+/// The client's exit code after losing the GPU device (`gpu_check`).
+const EXIT_GPU_LOST: i32 = 86;
 
 /// Every 5 s: the memory watch (`memory::memory_watch`: shapes not drawn for a while, the
 /// graphics memory nearly full, the memory limit, for this client's one player), and once a
@@ -224,6 +283,34 @@ fn memory_tick(player: &mut ruffle_core::Player) {
             if trim.held { "" } else { "; the last freeing did not hold" },
             trim.next_wait_secs
         );
+    }
+}
+
+/// With `TURU_PERF_LOG`: every period, `--headless`'s memory lines (the process's memory, the
+/// heap, the SWFs loaded, uncaught AS3 errors) and the game's pictures drawn a second.
+fn perf_tick(player: &mut ruffle_core::Player) {
+    thread_local! {
+        static LAST: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    }
+    let Some(every) = turu::perf_log_every() else {
+        return;
+    };
+    let now = std::time::Instant::now();
+    match LAST.get() {
+        None => LAST.set(Some(now)),
+        Some(last) if now.duration_since(last) >= every => {
+            LAST.set(Some(now));
+            crate::headless::log_memory(player);
+            let shown = SCREEN.with_borrow(|screen| screen.as_ref().map(|screen| (screen.shown(), screen.fps())));
+            if let Some((shown, fps)) = shown {
+                tracing::info!(
+                    target: "turu_perf",
+                    "pictures: {}",
+                    if shown { format!("{fps:.1} a second") } else { "none (hidden)".to_string() }
+                );
+            }
+        }
+        Some(_) => {}
     }
 }
 
@@ -342,6 +429,19 @@ fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
         info.name,
         info.device_type
     );
+    // As the window (`gui/controller.rs`): which speed-ups are off, transient textures, and the
+    // size detailed shapes are tessellated for at least (8 px on a dedicated card, else 32).
+    let off = crate::mugetsu::drawing_switches_off();
+    if !off.is_empty() {
+        tracing::info!("Drawing speed-ups switched off: {off:?}");
+    }
+    ruffle_render_wgpu::set_transient_textures_enabled(!crate::mugetsu::exe_flag("no-transient-memory"));
+    let shape_min_px = ruffle_core::set_shape_min_px(if info.device_type == wgpu::DeviceType::DiscreteGpu {
+        8.0
+    } else {
+        32.0
+    });
+    tracing::info!("Detailed shapes are tessellated for at least {shape_min_px} px");
     let descriptors = Arc::new(Descriptors::new(instance, adapter, device, queue));
     let blit = Arc::new(Blit::new(&descriptors.device));
     let target = MovieTexture::new(blit.clone(), &descriptors.device, STAGE.0, STAGE.1);
