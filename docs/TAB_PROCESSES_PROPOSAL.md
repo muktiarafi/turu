@@ -1077,8 +1077,9 @@ so the 503 wasn't seen there). Not run: `POST /update` through it (the client's 
   or Resume, Stop and Start; slots write the tabs log; the Tab Limit counts the shell's tabs; the
   shell sends the display's refresh rate (`ToClient::RefreshRate`) and the slot on screen asks
   it for a display mode (`ToShell::PreferRefreshRate`).
-* **`players.rs`** holds one player, without the thread-state swapping (ruffle-aqw's
-  `PlayerThreadState` and `segments::swap` stay, unused).
+* **`players.rs`** holds one player, without the thread-state swapping; ruffle-aqw dropped its
+  two commits behind it (`PlayerThreadState`, `segments::swap`), so its history is closer to
+  Mugetsu's. Windows' present thread follows Mugetsu's default again (clients never use it).
 * **Not done:** frame interpolation's in-between pictures and uncapped pacing in clients, IME,
   gamepads, drag-and-drop, Flash's right-click items in a client; TuruActivity's in-process
   fallbacks for the text field and documents (unreachable now) are still there. Checked on the

@@ -810,13 +810,6 @@ pub fn apply_drawing_switches() {
             set(var);
         }
     }
-    // Turu: frames are submitted from the thread that runs the players, on Windows too, where
-    // Mugetsu submits and shows them from a present thread of its own: Turu draws several tabs
-    // into one window, and that hasn't been tried with the present thread.
-    #[cfg(windows)]
-    if std::env::var_os("RUFFLE_SERIAL_PRESENT").is_none() {
-        set("RUFFLE_SERIAL_PRESENT");
-    }
 }
 
 /// Switches that are only on with their file next to the exe (Mugetsu 2.0.0's).

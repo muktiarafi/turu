@@ -10,12 +10,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   game's own screen.
   On the Ruffle builds the bot's packets come from the player's socket (R5).
 - **Mugetsu 2.0.0** (2026-11-17; was 1.6.0 on Ruffle `fda41800`): ruffle-aqw replays Turu's
-  commits on it, less four: the "constructed", "dormant" and button marks for clips that stand
+  commits on it, less six: the "constructed", "dormant" and button marks for clips that stand
   still (Mugetsu's lean walks do that now: `lean-scripts`, `lean-frames`, turned on with
-  Mugetsu's other 2.0.0 speed-ups by `platform::DEFAULT_ON`, on a computer and on Android) and a
-  leak diagnostic built on `Arc<SwfMovie>` (upstream made movies GC objects). Not used: Mugetsu's
-  render thread (it records on another thread, against each tab's segment swap) and, on Windows,
-  its present thread (`RUFFLE_SERIAL_PRESENT`: untried with several tabs in one window).
+  Mugetsu's other 2.0.0 speed-ups by `platform::DEFAULT_ON`, on a computer and on Android), a
+  leak diagnostic built on `Arc<SwfMovie>` (upstream made movies GC objects), and since M6 the
+  per-player thread-local state and command segments that let several tabs share a thread (one
+  player per process now). Mugetsu's render thread isn't used in a tab's client (it pays with
+  frame interpolation, which clients don't do yet); its present thread follows Mugetsu's default
+  in the window for a movie given on the command line (a client draws into a texture the shell
+  shows, and never uses it).
   Mugetsu 2.0.0's player options are in the window's right-click menu (its 2.0.0 layout, one
   line per setting with a hint): Performance mode (the game drawn at 85% or 70% of the window's
   width and height and stretched, in every tab and Grid View tile), the memory limit (Task
@@ -197,8 +200,8 @@ client of its own, a Ruffle player and its bot, in one window and one process (V
   shown (`state.hidden_tab`, applied with Headless Mode in `api/options.rs`; tabs at the login
   screen keep full speed, so logins aren't slowed). Unlike VibeSkua they keep their quality: an
   undrawn tab gains nothing from LOW, and going back to HIGH re-tessellated every shape on each
-  switch (only Headless Mode sets LOW). Each player keeps its own copy of Ruffle's thread-local
-  state (`ruffle_core::PlayerThreadState`: pending shape tessellations, replay's change count,
+  switch (only Headless Mode sets LOW). Each player kept its own copy (until M6, which dropped it
+  with ruffle-aqw's two commits) of Ruffle's thread-local state (`ruffle_core::PlayerThreadState`: pending shape tessellations, replay's change count,
   frame interpolation's frame) and its renderer's command segments not submitted yet
   (`ruffle_render_wgpu::segments`), swapped in by `PlayerController` while a hidden tab's code
   runs (ticks, Flash calls, futures), so hidden tabs neither spoil the shown tab's replays and
