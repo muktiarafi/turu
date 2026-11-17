@@ -1037,6 +1037,26 @@ impl AccountsWindow {
                 open_tabs(launches, &status, &states);
                 return;
             }
+            // A shell's tab: the shell launches them, so they outlive this tab's client and its web
+            // monitor lists them; they show up in the list it sends back.
+            if crate::turu::launches_through_shell() {
+                let count = launches.len();
+                {
+                    let mut states = lock(&states);
+                    for launch in &launches {
+                        let state = if needs_login.contains(&launch.username) {
+                            Launched::NeedsLogin
+                        } else {
+                            Launched::Started
+                        };
+                        states.set(&launch.username, state);
+                    }
+                }
+                crate::turu::shell_army(crate::turu::ShellArmyRequest::Launch(launches));
+                let accounts = if count == 1 { "account" } else { "accounts" };
+                set_status(&status, format!("The window starts {count} {accounts}."));
+                return;
+            }
             army.launch_all(launches, move |username, result| {
                 let (text, state) = match result {
                     Ok(()) if needs_login.iter().any(|u| u == username) => (
@@ -1191,7 +1211,11 @@ fn shows(account: &Account, tag_filter: Option<&str>, search: &str) -> bool {
 
 /// The account plays in a tab, or in a client Army launched.
 fn is_running(username: &str) -> bool {
-    crate::turu::army().client(username).is_some() || logged_in_tab(username)
+    crate::turu::army().client(username).is_some()
+        || logged_in_tab(username)
+        || crate::turu::shell_clients()
+            .iter()
+            .any(|client| client.exited.is_none() && client.username.eq_ignore_ascii_case(username))
 }
 
 /// The account is logged in in one of this window's tabs.

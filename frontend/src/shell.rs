@@ -146,6 +146,10 @@ pub enum ToClient {
     /// installs them, its clients don't): the client shows it as its own (Menu, Options). Sent
     /// when it changes, and to a client that connects.
     Updates { updates: Box<UpdateInfo> },
+    /// Desktop: the accounts the shell's Army launched in processes of their own (Army >
+    /// Accounts' "In its own window" and "Headless", asked from any tab: [`ToShell::Launch`]), for
+    /// the tab's Army Control and monitor hub. Sent when they change, and to a tab that connects.
+    ArmyClients { clients: Vec<ArmyClientInfo> },
     /// The shell is done with shared surface `id` ([`ToShell::Surface`]): the client may draw
     /// into it again.
     Release { id: u64 },
@@ -196,6 +200,18 @@ pub enum ToShell {
         /// Name and extensions (without the dot), as `platform::FileDialog`'s.
         #[serde(default)]
         filters: Vec<(String, Vec<String>)>,
+    },
+    /// Desktop: Army > Accounts' launches in processes of their own, from a tab: the shell's Army
+    /// launches them, so they outlive the tab's client and its web monitor lists them.
+    Launch {
+        launches: Vec<turu_bot::army::Launch>,
+    },
+    /// Desktop: Army Control's Close (or with `restart`, Restart) of one of the shell's Army
+    /// clients.
+    ArmyClient {
+        username: String,
+        #[serde(default)]
+        restart: bool,
     },
     /// Desktop: the client's Download & restart (or Update when I quit, `on_quit`): the shell
     /// installs the update and starts again, every tab with it.
@@ -304,6 +320,21 @@ pub enum ToShell {
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
+}
+
+/// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the
+/// monitor hub's polls), and how its process ended, if it has.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArmyClientInfo {
+    pub username: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub headless: bool,
+    pub api: String,
+    pub token: String,
+    #[serde(default)]
+    pub exited: Option<String>,
 }
 
 /// Turu's update state (`turu_bot::updates::State`) as it goes to a client: when the last check
@@ -770,6 +801,22 @@ mod tests {
                 adapter: adapter_key("metal", 0x106b, 0, "Apple M5"),
             },
             ToShell::InstallUpdate { on_quit: true },
+            ToShell::Launch {
+                launches: vec![turu_bot::army::Launch {
+                    username: "Hero".into(),
+                    label: "Hero".into(),
+                    password: Some("secret".into()),
+                    server: Some("Twig".into()),
+                    script: Some("farm/Gold.ts".into()),
+                    run_script: true,
+                    headless: true,
+                    ..Default::default()
+                }],
+            },
+            ToShell::ArmyClient {
+                username: "Hero".into(),
+                restart: true,
+            },
             ToShell::CheckUpdates,
             ToShell::SharedHandle {
                 id: 4,
@@ -928,6 +975,16 @@ mod tests {
                 ToClient::HeadlessMode { on: true },
                 ToClient::Release { id: 7 },
                 ToClient::Covered { covered: true },
+                ToClient::ArmyClients {
+                    clients: vec![ArmyClientInfo {
+                        username: "Hero".into(),
+                        label: "Hero".into(),
+                        headless: true,
+                        api: "127.0.0.1:50200".into(),
+                        token: "a-token".into(),
+                        exited: None,
+                    }],
+                },
                 ToClient::Updates {
                     updates: Box::new(UpdateInfo {
                         available: None,

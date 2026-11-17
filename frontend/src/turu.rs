@@ -366,9 +366,10 @@ fn army_control_open() -> bool {
         .is_some_and(|at| at.elapsed() < Duration::from_secs(5))
 }
 
-/// The shell's other tabs, in a client: what its monitor hub polls.
+/// The shell's other tabs, in a client, and the clients the shell's Army launched (under their
+/// Army ids, `army:<name>`): what its monitor hub polls.
 pub fn shell_peers() -> Vec<turu_bot::monitor::hub::PeerSource> {
-    shell_tabs()
+    let tabs = shell_tabs()
         .map(|(tabs, _)| tabs)
         .unwrap_or_default()
         .into_iter()
@@ -380,8 +381,80 @@ pub fn shell_peers() -> Vec<turu_bot::monitor::hub::PeerSource> {
                 api: tab.api?,
                 token: tab.token,
             })
-        })
-        .collect()
+        });
+    let clients = shell_clients()
+        .into_iter()
+        .filter(|client| client.exited.is_none())
+        .filter_map(|client| {
+            Some(turu_bot::monitor::hub::PeerSource {
+                id: turu_bot::monitor::hub::army_id(&client.username),
+                label: client.label,
+                api: client.api?,
+                token: client.token,
+            })
+        });
+    tabs.chain(clients).collect()
+}
+
+/// One of the clients the shell's Army launched in a process of its own, in a client (its
+/// Army Control lists them; `shell::ArmyClientInfo`).
+#[derive(Debug, Clone)]
+pub struct ShellClient {
+    pub username: String,
+    pub label: String,
+    pub headless: bool,
+    pub api: Option<std::net::SocketAddr>,
+    pub token: String,
+    /// How its process ended, if it has.
+    pub exited: Option<String>,
+}
+
+static SHELL_CLIENTS: Mutex<Vec<ShellClient>> = Mutex::new(Vec::new());
+
+/// The shell's Army clients, from its latest message (a client only).
+pub fn set_shell_clients(clients: Vec<ShellClient>) {
+    *SHELL_CLIENTS.lock().unwrap_or_else(|e| e.into_inner()) = clients;
+    install_peers();
+}
+
+/// The shell's Army clients, in a client; none elsewhere.
+pub fn shell_clients() -> Vec<ShellClient> {
+    SHELL_CLIENTS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// What a client asks of the shell's Army.
+pub enum ShellArmyRequest {
+    /// Launch these accounts in processes of their own (the shell's children: they outlive this
+    /// client).
+    Launch(Vec<turu_bot::army::Launch>),
+    Close(String),
+    Restart(String),
+}
+
+/// Sends a client's Army requests to its shell.
+pub type ShellArmy = Box<dyn Fn(ShellArmyRequest) + Send + Sync>;
+
+static SHELL_ARMY: OnceLock<ShellArmy> = OnceLock::new();
+
+/// A client's processes of their own are launched by its shell (`app/src/client.rs`).
+pub fn set_shell_army(army: ShellArmy) {
+    let _ = SHELL_ARMY.set(army);
+}
+
+/// Asks the shell's Army; false when there's no shell (the request isn't sent).
+pub fn shell_army(request: ShellArmyRequest) -> bool {
+    match SHELL_ARMY.get() {
+        Some(send) => {
+            send(request);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Whether Army > Accounts' processes of their own are launched by a shell.
+pub fn launches_through_shell() -> bool {
+    SHELL_ARMY.get().is_some()
 }
 
 /// The shell's tabs and the one shown, in a client; `None` elsewhere.

@@ -129,6 +129,8 @@ enum ShellEvent {
     SurfaceArrived { pid: u32, id: u64, surface: SharedSurface },
     /// Turu's update state changed (a check, an install's progress): to every tab.
     Updates(turu_bot::updates::State),
+    /// The shell's Army clients changed (launched, ended, closed): to every tab.
+    ArmyClients(Vec<shell::ArmyClientInfo>),
     /// A file dialog a tab's client asked for was answered (tab, process id, its id, the path).
     Answered(u32, u32, u32, Option<String>),
     /// The shell's GPU is done with these surfaces (tab, process id, surface): back to their clients.
@@ -267,6 +269,8 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     // update checks (`main.rs`); what the checks find goes to them to show.
     turu::start_app_updates();
     watch_updates(event_loop.create_proxy());
+    // The tabs' processes of their own (Army > Accounts) are launched here: the list to them.
+    watch_army(event_loop.create_proxy());
     // Clients hand their pictures over as GPU surfaces where the shell can take them, unless
     // `TURU_NO_SHARED_SURFACES` says pixels.
     let surfaces_proxy = event_loop.create_proxy();
@@ -320,6 +324,44 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     // Update when I quit, asked from a tab: put in place now.
     turu::apply_pending_update();
     Ok(())
+}
+
+/// The shell's Army clients, as the tabs get them.
+fn army_clients() -> Vec<shell::ArmyClientInfo> {
+    turu::army()
+        .clients()
+        .iter()
+        .map(|client| shell::ArmyClientInfo {
+            username: client.username.clone(),
+            label: client.label.clone(),
+            headless: client.headless,
+            api: client.api().to_string(),
+            token: client.token().to_owned(),
+            exited: client.state().exited,
+        })
+        .collect()
+}
+
+/// Sends the shell's Army clients to the event loop whenever they change (checked every second).
+fn watch_army(proxy: EventLoopProxy<ShellEvent>) {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Shell Army".into())
+        .spawn(move || {
+            let mut seen = Vec::new();
+            loop {
+                let now = army_clients();
+                if now != seen {
+                    seen = now.clone();
+                    if proxy.send_event(ShellEvent::ArmyClients(now)).is_err() {
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Shell: couldn't watch the Army's clients: {e}");
+    }
 }
 
 /// Sends Turu's update state to the event loop whenever it changes (checked every second).
@@ -910,6 +952,10 @@ impl ShellApp {
         if self.covered {
             send(tab, &ToClient::Covered { covered: true });
         }
+        let clients = army_clients();
+        if !clients.is_empty() {
+            send(tab, &ToClient::ArmyClients { clients });
+        }
         let updates = turu_bot::updates::state();
         if updates != turu_bot::updates::State::default() {
             send(
@@ -1002,6 +1048,29 @@ impl ShellApp {
                 }
             },
             ToShell::CheckUpdates => turu::check_client_updates_now(),
+            // A tab's Army > Accounts launches: the shell's Army starts them, so they outlive
+            // the tab's client, and the shell's web monitor and Report To list them.
+            ToShell::Launch { launches } => {
+                tracing::info!("Shell: tab {id} launches {} account(s)", launches.len());
+                turu::army().launch_all(launches, |username, result| match result {
+                    Ok(()) => tracing::info!("Shell: started {username}"),
+                    Err(e) => tracing::warn!("Shell: couldn't start {username}: {e}"),
+                });
+            }
+            ToShell::ArmyClient { username, restart } => {
+                if restart {
+                    // The keychain may be asked for its password: not on the event loop.
+                    let _ = std::thread::Builder::new()
+                        .name("Turu Shell Restart".into())
+                        .spawn(move || {
+                            if let Err(e) = turu::army().restart(&username) {
+                                tracing::warn!("Shell: couldn't restart {username}: {e}");
+                            }
+                        });
+                } else {
+                    turu::army().close(&username);
+                }
+            }
             ToShell::Gpu { adapter } => {
                 tracing::info!("Shell: tab {id}'s client draws on {adapter}");
                 if let Some(tab) = self.tab(id) {
@@ -1796,6 +1865,12 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
             ShellEvent::Picture(id) => self.pixel_picture(id),
             ShellEvent::SurfaceArrived { pid, id, surface } => self.surface_arrived(pid, id, surface),
             ShellEvent::Released(retired) => self.released(retired),
+            ShellEvent::ArmyClients(clients) => {
+                let message = ToClient::ArmyClients { clients };
+                for tab in &mut self.tabs {
+                    send(tab, &message);
+                }
+            }
             ShellEvent::Updates(state) => {
                 let message = ToClient::Updates {
                     updates: Box::new(shell::UpdateInfo::from_state(&state)),

@@ -50,6 +50,23 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
     report_status(send, open);
 }
 
+/// The shell's Army clients, from its `ArmyClients` message.
+pub fn set_army_clients(clients: Vec<crate::shell::ArmyClientInfo>) {
+    turu::set_shell_clients(
+        clients
+            .into_iter()
+            .map(|client| turu::ShellClient {
+                username: client.username,
+                label: client.label,
+                headless: client.headless,
+                api: client.api.parse().ok(),
+                token: client.token,
+                exited: client.exited,
+            })
+            .collect(),
+    );
+}
+
 /// The shell's tab list, from its `Tabs` message: `you` is this tab.
 pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>) {
     let tabs = tabs

@@ -35,8 +35,9 @@ const LAUNCH_JITTER_MS: u64 = 400;
 const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// What to launch.
-#[derive(Debug, Clone, Default)]
+/// What to launch (and, from a desktop shell's tab, what it asks the shell to launch).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Launch {
     pub username: String,
     /// Shown in the Army window.
@@ -98,6 +99,16 @@ impl Client {
 
     pub fn pid(&self) -> u32 {
         self.child.lock().id()
+    }
+
+    /// Its control API (a desktop shell hands it to its tabs, docs/TAB_PROCESSES_PROPOSAL.md M5).
+    pub fn api(&self) -> SocketAddr {
+        self.api
+    }
+
+    /// Its control API's token.
+    pub fn token(&self) -> &str {
+        &self.token
     }
 
     /// Ends the process.

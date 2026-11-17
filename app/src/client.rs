@@ -135,6 +135,22 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             turu::UpdateRequest::Install { on_quit } => ToShell::InstallUpdate { on_quit },
         })
     }));
+    // Army > Accounts' processes of their own are the shell's: launched there, they outlive this
+    // client, and its web monitor lists them. Its list comes back (`ToClient::ArmyClients`).
+    let army_out = out.clone();
+    turu::set_shell_army(Box::new(move |request| {
+        army_out.send(match request {
+            turu::ShellArmyRequest::Launch(launches) => ToShell::Launch { launches },
+            turu::ShellArmyRequest::Close(username) => ToShell::ArmyClient {
+                username,
+                restart: false,
+            },
+            turu::ShellArmyRequest::Restart(username) => ToShell::ArmyClient {
+                username,
+                restart: true,
+            },
+        })
+    }));
     // The tab strip's tabs are the shell's (M5): requests go to it, its list comes back.
     let link_out = out.clone();
     let open_out = out.clone();
@@ -201,6 +217,7 @@ impl ClientEnd for Forward {
             }
             ToClient::HeadlessMode { on } => turu_frontend::client_link::set_headless_mode(on),
             ToClient::Updates { updates } => (*updates).apply(),
+            ToClient::ArmyClients { clients } => turu_frontend::client_link::set_army_clients(clients),
             // A file dialog the shell showed.
             ToClient::Answer { id, value } => {
                 let answer = self.answers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);

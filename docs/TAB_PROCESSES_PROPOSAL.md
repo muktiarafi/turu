@@ -746,6 +746,22 @@ size, from 900x560 to 1485x852 points, without a stretched or stale one left; a 
 each size, and the shell and clients' memory stayed flat (about 172 and 260 MB). Not run: an Intel
 Mac (its surfaces are made `Managed`, Apple's chips `Shared`), Windows and Linux (below).
 
+**Army > Accounts' processes of their own from a tab** (2026-11-17): "In its own window" and
+"Without a window" used to start the clients from the tab's client, so they were its children:
+only its Army Control had them, the shell's web monitor and Report To didn't list them, and they
+ended when that client restarted. A tab now asks the shell (`ToShell::Launch`, the launches with
+their passwords, as `OpenTab`), whose Army starts them: they outlive any tab's client, and the
+shell's monitor hub (its Army's) lists them. The shell sends their list to every tab when it
+changes and to a tab that connects (`ToClient::ArmyClients`: each one's control API and token, how
+it ended): Army Control lists them (`Peer::ShellClient`; commands, Logs and Gear through their
+control APIs), each tab's monitor hub polls them under their Army ids, and Accounts counts them as
+running; Restart and Close go to the shell (`ToShell::ArmyClient`). Checked on the Mac (scratch
+data folder, a made-up account "Without a window", no password): Start Selected in tab 1 made the
+shell start it (its parent the shell's process, not the tab's client); tab 1's Army Control listed
+it ("no window", login screen); after `kill -9` of tab 1's client it kept its process, and the
+restarted tab's Army Control listed it again; Close there ended it and took its row away. Not
+changed: Army Queue's launches from a tab are still the tab's client's.
+
 **Turu's updates through the shell** (2026-11-17): the shell checks for updates (its clients,
 started with `--exit-with-parent`, don't), but it has no UI, so what it found reached only the web
 monitor and the log. It now sends its update state to every tab when it changes and to a tab that
@@ -856,10 +872,7 @@ CPU. Measuring found three things, fixed:
   a covered client's 57%): it has it now only while the pointer is over the window and it's seen,
   as the window's tabs do.
 
-Not done yet, of "done when": the clients Army > Accounts launches "In its own window" from a tab
-stay that tab's client's (its Army Control has them), and the shell's monitor and Report To don't
-list them, and they end when that client restarts; the clipboard without a display handle on
-Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: Map Travel and Jump to Player in Army Control
+Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: Map Travel and Jump to Player in Army Control
 for the shell's tabs (they read in-process tabs and Army clients only); the shell's own `--api`
 (ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A down tab keeps its last
 monitor entry online for up to 15 s.
