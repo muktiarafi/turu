@@ -554,7 +554,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));
     let perf_log = take_value(&mut args, "--perf-log");
     // `--env NAME=value` (repeatable): an environment variable, which an app can't be started
-    // with: Ruffle's test and A/B switches (`RUFFLE_GL_STATS`, `RUFFLE_GL_LEVERS`,
+    // with (`--env NAME` unsets one): Ruffle's test and A/B switches (`RUFFLE_GL_STATS`, `RUFFLE_GL_LEVERS`,
     // `RUFFLE_NO_BASE_VERTEX`, ...).
     let env = take_values(&mut args, "--env");
     let releases_url = take_value(&mut args, "--releases-url");
@@ -586,7 +586,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         match pair.split_once('=') {
             // SAFETY: as the drawing switches'.
             Some((name, value)) if !name.is_empty() => unsafe { std::env::set_var(name, value) },
-            _ => tracing::warn!("--env {pair:?}: expected NAME=value"),
+            // `--env NAME`: unset (a drawing switch set above, say: `--env RUFFLE_LEAN_RENDER`).
+            None if !pair.is_empty() => unsafe { std::env::remove_var(&pair) },
+            _ => tracing::warn!("--env {pair:?}: expected NAME=value or NAME"),
         }
     }
     // `--releases-url <url>`: `TURU_RELEASES_URL`, where client updates are looked for (a test

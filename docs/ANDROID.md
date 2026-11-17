@@ -250,7 +250,8 @@ startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments,
 Options > Application > Graphics, saved as `graphics.txt`, from each tab's next start), `--test-gpu-loss` (destroys the GPU device
 20 s after the start: "A lost GPU device" below) and `--perf-log <seconds>` ("Watch it" below), and `--env NAME=value`, repeatable, for an environment variable the app can't be
 started with (Ruffle's switches, such as `RUFFLE_GL_STATS` and `RUFFLE_GL_LEVERS`:
-docs/GL_RENDERER_PROPOSAL.md). Without the file the game starts at its login
+docs/GL_RENDERER_PROPOSAL.md; `--env NAME` alone unsets one, such as a Mugetsu speed-up:
+`RUFFLE_LEAN_RENDER`). Without the file the game starts at its login
 screen:
 
 ```
