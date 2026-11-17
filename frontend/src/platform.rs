@@ -179,16 +179,6 @@ pub trait Platform: Send + Sync {
         let _ = on;
     }
 
-    /// Whether process tabs (each tab in a process of its own: Android's slots, docs/
-    /// TAB_PROCESSES_PROPOSAL.md, M3) are saved on for the next start, or None where Options >
-    /// Application doesn't offer them.
-    fn process_tabs(&self) -> Option<bool> {
-        None
-    }
-
-    /// Saves process tabs for the next start.
-    fn set_process_tabs(&self, _on: bool) {}
-
     /// The graphics APIs Options > Application offers, as (value, name), "" for Automatic, and
     /// the saved one's value; None where it doesn't offer them (the window has the game's
     /// right-click menu; a process tab's client has none: docs/TAB_PROCESSES_PROPOSAL.md, M5).

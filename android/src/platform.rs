@@ -75,14 +75,6 @@ impl Platform for AndroidPlatform {
         );
     }
 
-    fn process_tabs(&self) -> Option<bool> {
-        Some(crate::slots::on(&turu_bot::paths::Paths::new().root))
-    }
-
-    fn set_process_tabs(&self, on: bool) {
-        turu_frontend::slots::save_switch(&turu_bot::paths::Paths::new().root, on);
-    }
-
     // The app's executable is Android's app_process, not a `turu` Army could start.
     fn launches_processes(&self) -> bool {
         false

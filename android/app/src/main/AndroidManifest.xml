@@ -3,7 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- TuruService: keeps the game's network while the app is in the background. -->
+    <!-- The slots' services: keep the game's network while the app is in the background. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -44,8 +44,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): each tab's engine in a process of its
-             own, while turu-process-tabs.txt is in the data folder (SlotService.kt). -->
+        <!-- Each tab's engine in a process of its own (docs/TAB_PROCESSES_PROPOSAL.md, M3 and M6:
+             SlotService.kt). -->
         <service
             android:name=".Slot1Service"
             android:exported="false"
@@ -78,14 +78,6 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:process=":c4">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Runs a game client and its bot script while the app is in the background" />
-        </service>
-        <service
-            android:name=".TuruService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Runs a game client and its bot script while the app is in the background" />

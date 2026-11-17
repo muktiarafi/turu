@@ -363,17 +363,6 @@ fn parse_meminfo(text: &str) -> Option<(u64, u64)> {
     Some((field("MemAvailable")?, field("MemTotal")?))
 }
 
-/// `TuruService.nativeTrimMemory(level)`: Android's `onTrimMemory`, at any level (the service gets
-/// it as the activity does, and runs whenever the engine does).
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeTrimMemory(
-    _env: jni::EnvUnowned<'_>,
-    _class: jni::objects::JClass<'_>,
-    level: jni::sys::jint,
-) {
-    trim_asked(level);
-}
-
 /// `SlotService.nativeTrimMemory(level)`: the same for a process tab's slot (each process gets its
 /// own `onTrimMemory`: the activity's says nothing about the slots').
 #[unsafe(no_mangle)]

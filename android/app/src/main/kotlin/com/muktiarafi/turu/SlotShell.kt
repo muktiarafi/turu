@@ -27,7 +27,6 @@ import android.widget.TextView
 import com.muktiarafi.turu.shared.PackageUpdate
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -36,7 +35,7 @@ import kotlin.concurrent.thread
 
 /**
  * Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): the activity as the shell over the slots
- * ([SlotService]), while process tabs are on ([switchedOn]). The tab list and what to do
+ * ([SlotService]). The tab list and what to do
  * are the Rust side's (`slot_shell.rs`): each call answers with actions (start, stop or show a slot,
  * send it a message), carried out here. Here: binding the slots, handing the surface to the slot on
  * screen (taken back first from the one before, once it says it let go), touches to it, and the
@@ -589,24 +588,6 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
 
         init {
             System.loadLibrary("turu_android")
-        }
-
-        /** The switch file in the data folder (Options > Application > Process Tabs). */
-        private const val SWITCH_FILE = "turu-process-tabs.txt"
-
-        /**
-         * Whether process tabs are on: unless the switch file in [files] (the data folder) says
-         * `off`, as `turu_frontend::slots::switched_on` reads it. On by default since 2026-11-17.
-         */
-        fun switchedOn(files: File): Boolean =
-            runCatching { File(files, SWITCH_FILE).readText().trim() != "off" }.getOrDefault(true)
-
-        /**
-         * Stops every slot's service (each one's process ends with it): process tabs were turned off.
-         * Their records stay, so their tabs come back if they're turned on again.
-         */
-        fun stopAll(context: Context) {
-            for (slot in CLASSES) context.stopService(Intent(context, slot))
         }
 
         @JvmStatic

@@ -105,46 +105,16 @@ fn android_main(app: AndroidApp) {
     }) {
         log::error!("Couldn't check the Kotlin bindings: {e}");
     }
-    let root = app
-        .external_data_path()
-        .or_else(|| app.internal_data_path())
-        .expect("Android gives every app a files folder");
-    // Process tabs (M3): the slot services' processes run the engines; this one is only the
-    // shell (`SlotShell.kt`, `slot_shell.rs`).
-    let shell = slots::on(&root);
-    if shell {
-        tracing::info!(
-            "Process tabs on ({} doesn't say off): no engine in the activity's process",
-            slots::SWITCH_FILE
-        );
-    } else {
-        start_engine(root);
-    }
+    // Each tab is a process of its own (M6): the slot services' processes run the engines, and
+    // this one is only their shell (`SlotShell.kt`, `slot_shell.rs`).
+    tracing::info!("The activity's process is the shell: the tabs' engines run in the slots");
     let mut destroyed = false;
     while !destroyed {
         app.poll_events(None, |event| match event {
-            PollEvent::Main(MainEvent::Destroy) if shell => destroyed = true,
+            PollEvent::Main(MainEvent::Destroy) => destroyed = true,
             // The shell's activity hands its surface and touches to the slots itself; keys go
             // from here.
-            PollEvent::Main(MainEvent::InputAvailable) if shell => shell_input(&app),
-            _ if shell => {}
-            PollEvent::Main(MainEvent::InitWindow { .. }) => {
-                *lock_window() = app.native_window();
-                run_on_engine(attach_surface);
-            }
-            PollEvent::Main(MainEvent::TerminateWindow { .. }) => {
-                // Android takes the window back once this returns: no longer.
-                detach_surface(Duration::from_secs(2));
-            }
-            PollEvent::Main(
-                MainEvent::WindowResized { .. }
-                | MainEvent::ConfigChanged { .. }
-                | MainEvent::ContentRectChanged { .. },
-            ) => {
-                run_on_engine(resize);
-            }
-            PollEvent::Main(MainEvent::InputAvailable) => forward_input(&app),
-            PollEvent::Main(MainEvent::Destroy) => destroyed = true,
+            PollEvent::Main(MainEvent::InputAvailable) => shell_input(&app),
             _ => {}
         });
     }
@@ -319,50 +289,6 @@ pub(crate) fn resize(player: &mut Player) {
         return;
     };
     with_screen(|screen| screen.resize(&window, player));
-}
-
-fn forward_input(app: &AndroidApp) {
-    let Ok(mut inputs) = app.input_events_iter() else {
-        return;
-    };
-    while inputs.next(|event| match event {
-        android_activity::input::InputEvent::MotionEvent(motion) => {
-            let touches = input::motion(motion);
-            if touches.is_empty() {
-                return InputStatus::Unhandled;
-            }
-            run_on_engine(move |player| {
-                with_screen(|screen| {
-                    touches
-                        .into_iter()
-                        .for_each(|touch| screen.touch(player, touch))
-                })
-            });
-            InputStatus::Handled
-        }
-        android_activity::input::InputEvent::KeyEvent(key) => match input::key(app, key) {
-            Some(key) => {
-                run_on_engine(move |player| with_screen(|screen| screen.key(player, &key)));
-                InputStatus::Handled
-            }
-            None => InputStatus::Unhandled,
-        },
-        // What the keyboard committed in GameActivity's text input (`ui::soft_keyboard`) without
-        // keys (voice, an emoji; keys come as key events: `TuruActivity` keeps GameTextInput from
-        // taking them in too): typed key by key, and the input emptied again.
-        android_activity::input::InputEvent::TextEvent(state) => {
-            if state.text.is_empty() {
-                return InputStatus::Handled;
-            }
-            app.set_text_input_state(android_activity::input::TextInputState::default());
-            let keys: Vec<_> = state.text.chars().flat_map(input::typed).collect();
-            run_on_engine(move |player| {
-                with_screen(|screen| keys.iter().for_each(|key| screen.key(player, key)))
-            });
-            InputStatus::Handled
-        }
-        _ => InputStatus::Unhandled,
-    }) {}
 }
 
 fn density(app: &AndroidApp) -> f64 {

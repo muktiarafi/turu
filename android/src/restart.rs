@@ -6,12 +6,9 @@
 //! forgets them. On the windowless restart they become startup flags, unless `turu-args.txt`
 //! names a script or a playlist of its own.
 
-use jni::EnvUnowned;
-use jni::objects::JClass;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use turu_bot::Bot;
 use turu_bot::accounts::SecretStore;
@@ -21,21 +18,8 @@ use turu_frontend::turu;
 /// What's kept while a script runs, in the data folder.
 const RECORD_FILE: &str = "android-restart.txt";
 
-/// The service started without an activity: Android restarted it after a kill.
-static RESTARTED: AtomicBool = AtomicBool::new(false);
-
 /// The options storage the restarted script loads with, once the startup flags loaded it.
 static STORAGE: Mutex<Option<String>> = Mutex::new(None);
-
-/// `TuruService.nativeRestarted()`: the service started with no activity in the process, before
-/// it starts the engine.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeRestarted<'local>(
-    _env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-) {
-    RESTARTED.store(true, Ordering::Relaxed);
-}
 
 /// The running script, as `android-restart.txt` keeps it (one `key<TAB>value` per line).
 #[derive(Debug, Default, PartialEq)]
@@ -124,7 +108,7 @@ fn saved_password(username: &str) -> Option<String> {
 /// login, when `args` has none, and `--run-script`), before `turu::take_startup_args`.
 pub(crate) fn prepare(args: &mut Vec<OsString>) {
     // A slot's every start but its tab's first is a restart; its first has no record yet.
-    if !RESTARTED.load(Ordering::Relaxed) && crate::slots::slot().is_none() {
+    if crate::slots::slot().is_none() {
         return;
     }
     let Some(record) = read_record() else {

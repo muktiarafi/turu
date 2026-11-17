@@ -78,19 +78,13 @@ class TuruActivity : GameActivity() {
         started = true
         // Before the shell: it keeps a new tab's password with the Keystore.
         Storage.init(this)
-        // Process tabs (M3, on unless turu-process-tabs.txt says off): the engines run in the slot
-        // services' processes, and this activity is only their shell (SlotShell).
+        // Each tab is a process of its own (M6): the engines run in the slot services' processes,
+        // and this activity is only their shell (SlotShell).
         val files = getExternalFilesDir(null) ?: filesDir
-        if (SlotShell.switchedOn(files)) {
-            val view = mSurfaceView
-            if (view != null) {
-                shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start(files.absolutePath) }
-                handleSlotIntent(intent)
-            }
-        } else {
-            // Process tabs turned off: slots still running from before would play beside this.
-            SlotShell.stopAll(this)
-            TuruService.start(this)
+        val view = mSurfaceView
+        if (view != null) {
+            shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start(files.absolutePath) }
+            handleSlotIntent(intent)
         }
         // Back goes to the background like Home, instead of closing the activity: the game and a
         // script keep running either way, but this keeps the screen as it was. AndroidX's
@@ -315,7 +309,7 @@ class TuruActivity : GameActivity() {
         }
     }
 
-    /** The shell over the process tabs, while they're on ([SlotShell.switchedOn]). */
+    /** The shell over the tabs' processes (the slots). */
     private var shell: SlotShell? = null
 
     override fun onNewIntent(intent: Intent) {
@@ -491,7 +485,6 @@ class TuruActivity : GameActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
-        TuruService.refresh()
         askOnce()
     }
 

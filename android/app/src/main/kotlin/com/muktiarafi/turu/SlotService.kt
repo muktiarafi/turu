@@ -28,7 +28,7 @@ import kotlin.concurrent.thread
 
 /**
  * Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): one tab's engine in a process of its own
- * (`android:process=":c1"` ... `":c4"`), while process tabs are on ([SlotShell.switchedOn]). A
+ * (`android:process=":c1"` ... `":c4"`). A
  * foreground service with a notification of its own, started and bound by the activity (the shell,
  * [SlotShell]), which sends it its surface, touches and messages through a [Messenger]. The engine
  * is the Rust side's (`slots.rs`), set up from the slot's record (`slots/c<N>.json`). Android starts
@@ -38,6 +38,9 @@ abstract class SlotService(private val slot: Int) : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
     private var title = "Turu"
     private var text = "Starting"
+    private var running = false
+    private var paused = false
+    private var startable = false
 
     override fun onCreate() {
         super.onCreate()
@@ -69,7 +72,15 @@ abstract class SlotService(private val slot: Int) : Service() {
         nativeStartSlot(applicationContext, files.absolutePath, slot)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The notification's buttons, for this slot's tab.
+        when (intent?.action) {
+            ACTION_START -> nativeAction("start")
+            ACTION_STOP -> nativeAction("stop")
+            ACTION_PAUSE -> nativeAction("pause")
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         Log.i(TAG, "Slot $slot: service destroyed")
@@ -104,7 +115,7 @@ abstract class SlotService(private val slot: Int) : Service() {
             Intent(this, TuruActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL)
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
@@ -112,7 +123,22 @@ abstract class SlotService(private val slot: Int) : Service() {
             .setContentIntent(open)
             .setGroup(GROUP)
             .setOngoing(true)
-            .build()
+        // Pause/Resume and Stop while the tab's script runs, Start while it can start.
+        if (running) {
+            builder.addAction(
+                Notification.Action.Builder(null, if (paused) "Resume" else "Pause", action(ACTION_PAUSE, 1)).build(),
+            )
+            builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_STOP, 2)).build())
+        } else if (startable) {
+            builder.addAction(Notification.Action.Builder(null, "Start", action(ACTION_START, 3)).build())
+        }
+        return builder.build()
+    }
+
+    /** A button's intent to this slot's service (each slot's codes apart). */
+    private fun action(action: String, code: Int): PendingIntent {
+        val intent = Intent(this, javaClass).setAction(action)
+        return PendingIntent.getService(this, code + 10 * slot, intent, PendingIntent.FLAG_IMMUTABLE)
     }
 
     /**
@@ -171,9 +197,12 @@ abstract class SlotService(private val slot: Int) : Service() {
         manager.notify(NOTIFICATION, summary)
     }
 
-    private fun show(title: String, text: String, awake: Boolean) {
+    private fun show(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
         this.title = title
         this.text = text
+        this.running = running
+        this.paused = paused
+        this.startable = startable
         if (awake && !wakeLock.isHeld) {
             wakeLock.acquire()
         } else if (!awake && wakeLock.isHeld) {
@@ -275,6 +304,9 @@ abstract class SlotService(private val slot: Int) : Service() {
         const val TAG = "turu-slots"
         private const val CHANNEL = "turu-slots"
         private const val GROUP = "turu-tabs"
+        private const val ACTION_START = "com.muktiarafi.turu.slot.START"
+        private const val ACTION_STOP = "com.muktiarafi.turu.slot.STOP"
+        private const val ACTION_PAUSE = "com.muktiarafi.turu.slot.PAUSE"
         /** The group summary's notification ID; each slot's is this plus its slot. */
         private const val NOTIFICATION = 100
 
@@ -347,12 +379,19 @@ abstract class SlotService(private val slot: Int) : Service() {
             return clip.getItemAt(0).coerceToText(service)?.toString()
         }
 
-        /** The tab's notification and whether the CPU stays awake (its script runs). Called from Rust. */
+        /**
+         * The tab's notification: [running] and [paused] are its script's (Pause and Stop act on
+         * it), [startable] says its loaded script can start (Start), [awake] whether the CPU stays
+         * awake (its script runs). Called from Rust.
+         */
         @JvmStatic
-        fun status(title: String, text: String, awake: Boolean) {
+        fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
             val service = instance ?: return
-            Handler(Looper.getMainLooper()).post { service.show(title, text, awake) }
+            Handler(Looper.getMainLooper()).post { service.show(title, text, running, paused, startable, awake) }
         }
+
+        @JvmStatic
+        private external fun nativeAction(action: String)
 
         @JvmStatic
         private external fun nativeStartSlot(context: Context, filesDir: String, slot: Int)

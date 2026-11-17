@@ -127,32 +127,6 @@ jni::bind_java_type! {
         static fn breadcrumb(category: JString, message: JString),
         static fn alert(kind: jint, title: JString, text: JString),
         static fn gpu_lost(why: JString),
-        static fn status(
-            title: JString,
-            text: JString,
-            running: jboolean,
-            paused: jboolean,
-            startable: jboolean,
-            awake: jboolean,
-        ),
-    },
-    native_methods {
-        static raw fn native_start {
-            sig = (context: android.content.Context, files_dir: JString) -> void,
-            fn = crate::notify::Java_com_muktiarafi_turu_TuruService_nativeStart,
-        },
-        static raw fn native_action {
-            sig = (action: JString) -> void,
-            fn = crate::notify::Java_com_muktiarafi_turu_TuruService_nativeAction,
-        },
-        static raw fn native_restarted {
-            sig = () -> void,
-            fn = crate::restart::Java_com_muktiarafi_turu_TuruService_nativeRestarted,
-        },
-        static raw fn native_trim_memory {
-            sig = (level: jint) -> void,
-            fn = crate::memory::Java_com_muktiarafi_turu_TuruService_nativeTrimMemory,
-        },
     },
 }
 
@@ -163,7 +137,14 @@ jni::bind_java_type! {
     native_methods_export = false,
     methods {
         static fn to_shell(json: JString),
-        static fn status(title: JString, text: JString, awake: jboolean),
+        static fn status(
+            title: JString,
+            text: JString,
+            running: jboolean,
+            paused: jboolean,
+            startable: jboolean,
+            awake: jboolean,
+        ),
         static fn copy_text(text: JString),
         static fn clip_text() -> JString,
     },
@@ -199,6 +180,10 @@ jni::bind_java_type! {
         static raw fn native_trim_memory {
             sig = (level: jint) -> void,
             fn = crate::memory::Java_com_muktiarafi_turu_SlotService_nativeTrimMemory,
+        },
+        static raw fn native_action {
+            sig = (action: JString) -> void,
+            fn = crate::notify::Java_com_muktiarafi_turu_SlotService_nativeAction,
         },
     },
 }

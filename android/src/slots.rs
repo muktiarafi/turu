@@ -24,9 +24,6 @@ use turu_frontend::turu;
 use crate::input::Touch;
 use crate::java::SlotService;
 
-/// The switch file in the data folder that turns process tabs off.
-pub(crate) use turu_frontend::slots::SWITCH_FILE;
-
 /// This process's slot (1 to 4), in a slot process.
 static SLOT: OnceLock<u32> = OnceLock::new();
 /// The slot process's JVM, for calls into `SlotService`.
@@ -39,11 +36,6 @@ static API: Mutex<Option<(String, String)>> = Mutex::new(None);
 /// This process's slot, in a slot process.
 pub(crate) fn slot() -> Option<u32> {
     SLOT.get().copied()
-}
-
-/// Whether process tabs are on (the activity's process is then only the shell).
-pub(crate) fn on(root: &Path) -> bool {
-    turu_frontend::slots::switched_on(root)
 }
 
 /// The activity's density, as the slot was told it with the surface.
@@ -184,21 +176,23 @@ fn with_service(work: impl FnOnce(&mut Env) -> jni::errors::Result<()>) {
     }
 }
 
-/// The slot's notification and wake lock, every 2 s when they changed: the CPU stays awake while
-/// the tab's script runs.
+/// The slot's notification (with its Pause, Stop or Start) and wake lock, every 2 s when they
+/// changed: the CPU stays awake while the tab's script runs. And the tabs log for crash reports.
 fn start_status() {
     let spawned = std::thread::Builder::new()
         .name("Turu Slot Status".into())
         .spawn(|| {
             let mut shown = None;
+            let crash_dir = turu_frontend::crash_reports::dir();
             loop {
-                let status = crate::notify::status();
-                let now = (status.title, status.text, status.awake);
+                // The tabs log, for a crash report from this slot (as the app's service wrote it).
+                turu_frontend::tabs_log::record(&crash_dir);
+                let now = crate::notify::status();
                 if shown.as_ref() != Some(&now) {
                     with_service(|env| {
-                        let title = env.new_string(&now.0)?;
-                        let text = env.new_string(&now.1)?;
-                        SlotService::status(env, &title, &text, now.2)
+                        let title = env.new_string(&now.title)?;
+                        let text = env.new_string(&now.text)?;
+                        SlotService::status(env, &title, &text, now.running, now.paused, now.startable, now.awake)
                     });
                     shown = Some(now);
                 }

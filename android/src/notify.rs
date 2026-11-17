@@ -1,54 +1,22 @@
-//! The Java side's foreground service (`TuruService.kt`): its native methods, and the status it
-//! shows. The service starts the engine (also after Android killed the process, when there's no
-//! activity), its notification shows the active tab's script with Pause and Stop while it runs,
-//! Start while one is loaded and stopped (and a line per tab with several), and it holds a wake lock while any tab's script runs. A thread here sends
-//! it the bots' state every 2 s, when it changed, and keeps `android-tabs.json` up to date.
+//! A slot's notification (`SlotService.kt`): what it shows of the slot's tab (its script, with
+//! Pause and Stop while it runs, Start while one is loaded and stopped; `status`) and its buttons
+//! (`nativeAction`). And the calls into `TuruService`'s class, which holds the statics every
+//! process uses (crash reports, alerts, the GPU's warnings).
 
 use crate::java::TuruService;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{JClass, JObject, JString};
+use jni::objects::{JClass, JString};
 use jni::{Env, EnvUnowned, JavaVM};
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
 use turu_bot::Bot;
 use turu_frontend::turu;
 
-/// The JVM, once the service started (`TuruService`'s methods are bound in `java.rs`).
+/// The slot process's JVM (`TuruService`'s methods are bound in `java.rs`).
 static SERVICE: OnceLock<JavaVM> = OnceLock::new();
 
-/// `TuruService.nativeStart(context, filesDir)`: starts the engine, if the activity hasn't.
+/// `SlotService.nativeAction(action)`: the slot's notification's buttons, for its tab.
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeStart<'local>(
-    mut unowned_env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    context: JObject<'local>,
-    files_dir: JString<'local>,
-) {
-    unowned_env
-        .with_env(|env| -> jni::errors::Result<()> {
-            crate::init_logging();
-            // Before the engine calls into Kotlin (the service starts it alone after a kill).
-            crate::java::check(env, &jni::refs::LoaderContext::FromObject(&context));
-            let context = env.new_local_ref(&context)?;
-            if let Err(e) = rustls_platform_verifier::android::init_with_env(env, context) {
-                log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
-            }
-            let root = PathBuf::from(files_dir.try_to_string(env)?);
-            crate::start_engine(root);
-            // After the engine set the data folder: the first status read makes the bot.
-            if SERVICE.get().is_none() {
-                let _ = SERVICE.set(env.get_java_vm()?);
-                start_updates();
-            }
-            Ok(())
-        })
-        .resolve::<ThrowRuntimeExAndDefault>()
-}
-
-/// `TuruService.nativeAction(action)`: the notification's buttons.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruService_nativeAction<'local>(
+pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeAction<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _class: JClass<'local>,
     action: JString<'local>,
@@ -101,10 +69,10 @@ pub(crate) struct Status {
     pub(crate) title: String,
     pub(crate) text: String,
     /// The active tab's script runs (Pause and Stop act on it).
-    running: bool,
-    paused: bool,
+    pub(crate) running: bool,
+    pub(crate) paused: bool,
     /// The active tab's script is loaded and can start (Start).
-    startable: bool,
+    pub(crate) startable: bool,
     /// Some tab's script runs: the wake lock is held.
     pub(crate) awake: bool,
 }
@@ -176,31 +144,6 @@ pub(crate) fn status() -> Status {
     }
 }
 
-/// Sends the bot's state to the service every 2 s, when it changed.
-fn start_updates() {
-    let spawned = std::thread::Builder::new()
-        .name("Turu Notify".into())
-        .spawn(|| {
-            let mut shown: Option<Status> = None;
-            let crash_dir = turu_frontend::crash_reports::dir();
-            loop {
-                turu_frontend::saved_tabs::save();
-                turu_frontend::tabs_log::record(&crash_dir);
-                let now = status();
-                if shown.as_ref() != Some(&now) {
-                    match send(&now) {
-                        Ok(()) => shown = Some(now),
-                        Err(e) => tracing::warn!("Couldn't update the notification: {e}"),
-                    }
-                }
-                std::thread::sleep(Duration::from_secs(2));
-            }
-        });
-    if let Err(e) = spawned {
-        tracing::error!("Couldn't start the notification updates: {e}");
-    }
-}
-
 /// Runs `work` with `TuruService`'s class on this thread (attached to the JVM); `None` before the
 /// service started the engine or when the call failed.
 /// A process tab's slot (`slots.rs`): its calls into `TuruService`'s class (crash reports, the
@@ -264,25 +207,4 @@ pub(crate) fn alert(kind: turu_frontend::platform::Alert, title: &str, text: &st
     if let Err(e) = posted {
         tracing::warn!("Couldn't post the alert: {e}");
     }
-}
-
-/// `TuruService.status(title, text, running, paused, startable, awake)`.
-fn send(status: &Status) -> jni::errors::Result<()> {
-    let Some(vm) = SERVICE.get() else {
-        return Ok(());
-    };
-    crate::attach(vm, |env: &mut Env| {
-        let title = env.new_string(&status.title)?;
-        let text = env.new_string(&status.text)?;
-        TuruService::status(
-            env,
-            &title,
-            &text,
-            status.running,
-            status.paused,
-            status.startable,
-            status.awake,
-        )?;
-        Ok(())
-    })
 }

@@ -7,9 +7,7 @@
 //! type what they show. `screen.rs` decides who gets which.
 
 use android_activity::AndroidApp;
-use android_activity::input::{
-    KeyAction, KeyEvent, KeyMapChar, Keycode, MetaState, MotionAction, MotionEvent,
-};
+use android_activity::input::{KeyAction, KeyEvent, KeyMapChar, Keycode, MetaState};
 use ruffle_core::PlayerEvent;
 use ruffle_core::events::{
     KeyDescriptor, KeyLocation, LogicalKey, MouseButton, NamedKey, PhysicalKey, TextControlCode,
@@ -24,42 +22,6 @@ pub enum Touch {
     Up(i32, f64, f64),
     /// Every finger lifted: Android took the gesture away.
     Cancel,
-}
-
-/// What `event` says each finger did. A move carries every finger that's down; a mouse or stylus
-/// (with its button down or hovering) is a finger too.
-pub fn motion(event: &MotionEvent) -> Vec<Touch> {
-    let changed = || {
-        let pointer = event.pointer_at_index(event.pointer_index());
-        (
-            pointer.pointer_id(),
-            f64::from(pointer.x()),
-            f64::from(pointer.y()),
-        )
-    };
-    match event.action() {
-        MotionAction::Down | MotionAction::PointerDown => {
-            let (id, x, y) = changed();
-            vec![Touch::Down(id, x, y)]
-        }
-        MotionAction::Up | MotionAction::PointerUp => {
-            let (id, x, y) = changed();
-            vec![Touch::Up(id, x, y)]
-        }
-        MotionAction::Cancel => vec![Touch::Cancel],
-        MotionAction::Move | MotionAction::HoverMove => event
-            .pointers()
-            .map(|pointer| {
-                Touch::Move(
-                    pointer.pointer_id(),
-                    f64::from(pointer.x()),
-                    f64::from(pointer.y()),
-                )
-            })
-            .collect(),
-        // A mouse button comes with a Down or an Up too.
-        _ => Vec::new(),
-    }
 }
 
 /// The game's mouse doing `mouse`, with `left` pixels of Turu's rail beside the game and `top`
@@ -207,11 +169,6 @@ fn egui_key(key: &LogicalKey) -> Option<egui::Key> {
         NamedKey::F12 => egui::Key::F12,
         _ => return None,
     })
-}
-
-/// A key event, read: None for keys neither the game nor the UI uses (volume, back).
-pub fn key(app: &AndroidApp, event: &KeyEvent) -> Option<Key> {
-    read_key(app, event)?.key()
 }
 
 /// A key event as its device's key map reads it, before it's a [`Key`]: what the shell's activity

@@ -21,32 +21,6 @@ use std::path::{Path, PathBuf};
 /// The slots the manifest declares (`Slot1Service` ... `Slot4Service`).
 pub const POOL: u32 = 4;
 
-/// Options > Application > Process Tabs, saved in the data folder for the next start, on the
-/// desktop (`app/src/shell.rs`) and on Android (`TuruActivity.kt` reads it too).
-pub const SWITCH_FILE: &str = "turu-process-tabs.txt";
-
-/// Whether process tabs are on: unless the switch file says `off`. On by default since
-/// 2026-11-17, so that the beta's users try them; an `on` file from before stays on, and a user
-/// who had turned them off (the file was removed then) gets them on again.
-pub fn switched_on(root: &Path) -> bool {
-    match std::fs::read_to_string(root.join(SWITCH_FILE)) {
-        Ok(text) => text.trim() != "off",
-        Err(_) => true,
-    }
-}
-
-/// Saves process tabs on or off for the next start (`off` stays in the file: no file is on).
-pub fn save_switch(root: &Path, on: bool) {
-    let path = root.join(SWITCH_FILE);
-    match std::fs::write(&path, if on { "on\n" } else { "off\n" }) {
-        Ok(()) => tracing::info!(
-            "Process tabs turned {} for the next start",
-            if on { "on" } else { "off" }
-        ),
-        Err(e) => tracing::warn!("Couldn't save {}: {e}", path.display()),
-    }
-}
-
 /// The folder of the slots' records, in the data folder.
 pub fn dir(root: &Path) -> PathBuf {
     root.join("slots")
@@ -668,18 +642,6 @@ mod tests {
     }
 
     /// On by default; off only when saved off; an `on` file from before stays on.
-    #[test]
-    fn process_tabs_are_on_unless_saved_off() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(switched_on(dir.path()));
-        save_switch(dir.path(), false);
-        assert!(!switched_on(dir.path()));
-        save_switch(dir.path(), true);
-        assert!(switched_on(dir.path()));
-        std::fs::write(dir.path().join(SWITCH_FILE), " off \r\n").unwrap();
-        assert!(!switched_on(dir.path()));
-    }
-
     /// The first start with process tabs on: the tabs the app had open in its own process come
     /// back in the next slots, as many as there are slots.
     #[test]

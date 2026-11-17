@@ -79,8 +79,6 @@ enum Field {
     CheckClientUpdates,
     /// Mugetsu's frame interpolation, applied and saved by the frontend (`Platform`).
     FrameInterpolation,
-    /// Process tabs, saved by the frontend for the next start (`Platform::process_tabs`).
-    ProcessTabs,
     /// The graphics API, chosen by the frontend, which restarts (`Platform::graphics_choices`).
     Graphics,
     /// The FPS counter (`Platform::show_fps`).
@@ -131,16 +129,6 @@ fn entries() -> Vec<Entry> {
                 Field::CrashReports
             ),
         );
-    }
-    if crate::platform::platform().process_tabs().is_some() {
-        #[cfg(target_os = "android")]
-        let what = "Runs each tab in a process of its own, so Android stopping one for memory leaves the others playing, and a tab comes back logged in by itself. Takes a little more memory per tab. On by default while it's tried out: turn it off if tabs misbehave";
-        #[cfg(not(target_os = "android"))]
-        let what = "Runs each tab in a process of its own, so a crash or a lost graphics device ends one tab, which comes back logged in by itself, while the others play on. Takes effect at the next start. On by default while it's tried out: turn it off if tabs misbehave, or start Turu with --in-process if the window doesn't start";
-        entries.push(Entry {
-            restart: true,
-            ..entry!(General, "Process Tabs (experimental)", what, Field::ProcessTabs)
-        });
     }
     if crate::platform::platform().graphics_choices().is_some() {
         entries.push(Entry {
@@ -665,13 +653,6 @@ impl ApplicationOptionsWindow {
                                             crate::platform::platform().set_frame_interpolation(on);
                                         }
                                     }
-                                    Field::ProcessTabs => {
-                                        let platform = crate::platform::platform();
-                                        let mut on = platform.process_tabs() == Some(true);
-                                        if widgets::switch(ui, &mut on).changed() {
-                                            platform.set_process_tabs(on);
-                                        }
-                                    }
                                     Field::Graphics => {
                                         let platform = crate::platform::platform();
                                         if let Some((choices, saved)) = platform.graphics_choices() {
@@ -996,7 +977,6 @@ fn control_width(field: &Field) -> f32 {
         | Field::Unused(_)
         | Field::OptionBool(_)
         | Field::FrameInterpolation
-        | Field::ProcessTabs
         | Field::ShowFps
         | Field::FullScreen
         | Field::CrashReports => 48.0,
