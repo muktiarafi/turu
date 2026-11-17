@@ -762,6 +762,15 @@ it ("no window", login screen); after `kill -9` of tab 1's client it kept its pr
 restarted tab's Army Control listed it again; Close there ended it and took its row away. Not
 changed: Army Queue's launches from a tab are still the tab's client's.
 
+**Map Travel for the shell's other tabs** (2026-11-17): its jumps already went to every row, as
+Army commands do, but it read a client's location under its Army id only, while a shell's other
+tab is `tab:<n>` in the monitor hub: "Use current" for a checked shell tab found nothing, and the
+other tabs' visits never reached Recent destinations. Each row now carries its hub id, and the
+other tabs are polled while Map Travel or its pickers are open too, not only while Army Control
+is drawn. Checked on the Mac with two accounts in game: with Map Travel open in tab 3 (in battleon),
+tab 2 sent to Yulgar through its control API showed in tab 3's Recent destinations as
+"yulgar-1 - Enter, Spawn".
+
 **Turu's updates through the shell** (2026-11-17): the shell checks for updates (its clients,
 started with `--exit-with-parent`, don't), but it has no UI, so what it found reached only the web
 monitor and the log. It now sends its update state to every tab when it changes and to a tab that
@@ -872,8 +881,7 @@ CPU. Measuring found three things, fixed:
   a covered client's 57%): it has it now only while the pointer is over the window and it's seen,
   as the window's tabs do.
 
-Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: Map Travel and Jump to Player in Army Control
-for the shell's tabs (they read in-process tabs and Army clients only); the shell's own `--api`
+Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: the shell's own `--api`
 (ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A down tab keeps its last
 monitor entry online for up to 15 s.
 

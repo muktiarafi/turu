@@ -43,6 +43,9 @@ pub struct Peer {
     pub bot: Option<Arc<Bot>>,
     /// A launched client's login (its location comes from the monitor hub).
     pub username: String,
+    /// Its id in the monitor hub, where its location is read: a launched client's (`army:<name>`),
+    /// or a shell's other tab's (`tab:<n>`, in a client); `None` for a tab of this process.
+    pub hub_id: Option<String>,
     /// The logged-in player's name, for the player picker.
     pub player: Option<String>,
 }
@@ -135,8 +138,10 @@ impl Travel {
             match &peer.bot {
                 Some(bot) => tabs.push((peer.key.clone(), bot.clone())),
                 None => {
-                    let location = hub
-                        .army_snapshot(&peer.username)
+                    let location = peer
+                        .hub_id
+                        .as_deref()
+                        .and_then(|id| hub.snapshot(id))
                         .filter(|s| now.saturating_sub(s.sampled_at) < FRESH_FOR.as_millis() as u64)
                         .and_then(|s| Location::from_full_name(&s.map, &s.cell, &s.pad, &peer.username));
                     if let Some(location) = location {
@@ -185,6 +190,11 @@ impl Travel {
         let shared = lock(&self.shared);
         let (location, at) = shared.latest.get(key?)?;
         (at.elapsed() < FRESH_FOR && !location.map.is_empty()).then(|| location.clone())
+    }
+
+    /// Map Travel or one of its pickers is open: the clients' locations are wanted.
+    pub fn is_open(&self) -> bool {
+        self.open || self.editor.is_some() || self.player.is_some() || self.server.is_some()
     }
 
     /// VibeSkua `JumpArmyToDestination`.

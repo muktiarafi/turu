@@ -489,6 +489,11 @@ impl ArmyWindow {
         }
         // The clients' visited maps are recorded while Turu runs, as VibeSkua's.
         if crate::platform::platform().has_army() {
+            // The shell's other tabs are polled while Army Control is drawn: and while Map Travel
+            // or its pickers are open, which read where they are.
+            if self.travel.is_open() {
+                crate::turu::army_control_drawn();
+            }
             let rows = Self::rows();
             self.travel.poll(&travel_peers(&rows));
             let targets = self.targets(&rows).len();
@@ -1350,6 +1355,13 @@ fn travel_peers(rows: &[Row]) -> Vec<army_travel::Peer> {
     rows.iter()
         .filter(|r| !r.ended)
         .map(|r| {
+            let hub_id = match &r.peer {
+                Peer::Tab(_) => None,
+                Peer::Shell { id, .. } => Some(format!("tab:{id}")),
+                Peer::Client { username, .. } | Peer::ShellClient { username, .. } => {
+                    Some(turu_bot::monitor::hub::army_id(username))
+                }
+            };
             let (bot, player) = match &r.peer {
                 Peer::Tab(bot) => {
                     let name = bot.state.lock().username.clone().filter(|n| !n.trim().is_empty());
@@ -1361,6 +1373,7 @@ fn travel_peers(rows: &[Row]) -> Vec<army_travel::Peer> {
                 key: r.key.clone(),
                 bot,
                 username: r.username.clone(),
+                hub_id,
                 player: player.filter(|p| r.logged_in && !p.trim().is_empty()),
             }
         })
