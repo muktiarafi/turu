@@ -257,6 +257,15 @@ pub enum ToShell {
         script: Option<String>,
         #[serde(default)]
         run_script: bool,
+        /// A Scheduler playlist to load (or with `run_playlist`, run) in place of the script, with
+        /// the Script Options storage its script runs with (`--load-playlist`, `--run-playlist`,
+        /// `--script-options-storage`).
+        #[serde(default)]
+        playlist: Option<String>,
+        #[serde(default)]
+        run_playlist: bool,
+        #[serde(default)]
+        options_storage: Option<String>,
     },
     /// The tab's name (the character, once in game) and whether its script or Auto runs, for the
     /// tab strips and the window's title; sent when it changes.
@@ -759,6 +768,9 @@ mod tests {
                 server: Some("Twig".into()),
                 script: Some("farm/Example.ts".into()),
                 run_script: true,
+                playlist: Some("daily.json".into()),
+                run_playlist: true,
+                options_storage: Some("Squad A".into()),
             },
             ToShell::CloseTab { id: 3 },
             ToShell::SelectTab { id: 2 },

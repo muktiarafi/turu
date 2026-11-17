@@ -1015,8 +1015,16 @@ impl ShellApp {
                 server,
                 script,
                 run_script,
+                playlist,
+                run_playlist,
+                options_storage,
             } => {
-                let args = turu_frontend::slots::open_args(username, server, script, run_script);
+                let mut args = turu_frontend::slots::open_args(username, server, script, run_script);
+                args.extend(turu_frontend::slots::playlist_args(
+                    playlist,
+                    run_playlist,
+                    options_storage,
+                ));
                 self.open_tab(args, password);
             }
             ToShell::Status { label, busy } => {

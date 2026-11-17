@@ -29,6 +29,11 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                     .script
                     .map(|path| path.to_string_lossy().into_owned()),
                 run_script: startup.run_script,
+                playlist: startup
+                    .playlist
+                    .map(|path| path.to_string_lossy().into_owned()),
+                run_playlist: startup.run_playlist,
+                options_storage: startup.options_storage,
             }),
             // The shell lays the tiles out in what Turu's UI leaves of the window.
             turu::TabRequest::Grid(on) => tabs(ToShell::Grid {

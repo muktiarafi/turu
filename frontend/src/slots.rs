@@ -170,6 +170,28 @@ pub fn open_args(
     args
 }
 
+/// The flags for a tab's playlist and Script Options storage (`OpenTab`'s), after
+/// [`open_args`]'.
+pub fn playlist_args(
+    playlist: Option<String>,
+    run_playlist: bool,
+    options_storage: Option<String>,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(playlist) = playlist.filter(|p| !p.trim().is_empty()) {
+        let flag = if run_playlist {
+            "--run-playlist"
+        } else {
+            "--load-playlist"
+        };
+        args.extend([flag.into(), playlist]);
+    }
+    if let Some(storage) = options_storage.filter(|s| !s.trim().is_empty()) {
+        args.extend(["--script-options-storage".into(), storage]);
+    }
+    args
+}
+
 /// Android's own flags in `turu-args.txt` (graphics, logs, test switches), with a value or without:
 /// the app's, not a tab's, so every slot reads them there and no record keeps them.
 const APP_FLAGS_WITH_VALUE: [&str; 3] = ["--graphics", "--perf-log", "--releases-url"];
@@ -316,7 +338,14 @@ impl SlotShell {
                 server,
                 script,
                 run_script,
-            } => self.open(open_args(username, server, script, run_script), password),
+                playlist,
+                run_playlist,
+                options_storage,
+            } => {
+                let mut args = open_args(username, server, script, run_script);
+                args.extend(playlist_args(playlist, run_playlist, options_storage));
+                self.open(args, password)
+            }
             ToShell::Status { label, busy } => match self.live.get_mut(&slot) {
                 Some(live) if live.label != label || live.busy != busy => {
                     live.label = label;
@@ -480,6 +509,24 @@ mod tests {
     }
 
     #[test]
+    fn a_tabs_playlist_and_storage_become_its_flags() {
+        assert_eq!(
+            playlist_args(Some("daily.json".into()), true, Some("Squad A".into())),
+            [
+                "--run-playlist",
+                "daily.json",
+                "--script-options-storage",
+                "Squad A"
+            ]
+        );
+        assert_eq!(
+            playlist_args(Some("daily.json".into()), false, None),
+            ["--load-playlist", "daily.json"]
+        );
+        assert!(playlist_args(Some(" ".into()), true, Some(String::new())).is_empty());
+    }
+
+    #[test]
     fn records_round_trip_without_passwords() {
         let dir = tempfile::tempdir().unwrap();
         let record = SlotRecord {
@@ -610,6 +657,9 @@ mod tests {
                 server: None,
                 script: None,
                 run_script: false,
+                playlist: None,
+                run_playlist: false,
+                options_storage: None,
             },
         );
         assert!(actions.contains(&Action::Record(

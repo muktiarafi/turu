@@ -762,6 +762,13 @@ it ("no window", login screen); after `kill -9` of tab 1's client it kept its pr
 restarted tab's Army Control listed it again; Close there ended it and took its row away. Not
 changed: Army Queue's launches from a tab are still the tab's client's.
 
+**`OpenTab` carries a playlist and a Script Options storage** (2026-11-17): a tab asked for with
+them (`Startup`'s `playlist`, `run_playlist`, `options_storage`) now starts with
+`--load-playlist`/`--run-playlist` and `--script-options-storage`
+(`slots::playlist_args`), on the desktop and in Android's slots. Nothing asks for a tab with them
+yet (Accounts, the strip's "+" and the saved tabs give the login, server and script; Army Queue,
+which has a storage, launches processes), so it was a gap waiting for its first caller.
+
 **Map Travel for the shell's other tabs** (2026-11-17): its jumps already went to every row, as
 Army commands do, but it read a client's location under its Army id only, while a shell's other
 tab is `tab:<n>` in the monitor hub: "Use current" for a checked shell tab found nothing, and the
@@ -882,7 +889,7 @@ CPU. Measuring found three things, fixed:
   as the window's tabs do.
 
 Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: the shell's own `--api`
-(ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A down tab keeps its last
+(ignored with a warning: each client has one). A down tab keeps its last
 monitor entry online for up to 15 s.
 
 ### M6: one way of doing tabs
