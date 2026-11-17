@@ -1,6 +1,8 @@
 # Proposal: OpenGL that draws the whole game, then draws it faster
 
-Status: G0 built (2026-11-18, below); G1 to G4 proposed, not built. Before G0, OpenGL ES on Android drew only parts of the
+Status (2026-11-18): G0 to G4 built on branch `gl-renderer` (here and in ruffle-aqw) and checked
+on the Android emulator; OpenGL ES is now Android's default. Not yet run on a real phone, on
+desktop GL, or with G3's NVIDIA/AMD extensions. Before G0, OpenGL ES on Android drew only parts of the
 game (docs/ANDROID_HANDOVER.md, "Known gaps"), and on the desktop the app warns that OpenGL "is
 much slower" (`app/src/gui/controller.rs:1018`). This proposal makes OpenGL correct first, then
 cuts what it costs per render pass, as Mugetsu did for D3D12 and Vulkan.
@@ -114,8 +116,8 @@ platform.
 
 ### Where OpenGL is used
 
-- **Android:** `--graphics auto` tries Vulkan, then GL (`android/src/screen.rs:122`), and
-  `--graphics gl` forces it. Phones whose Vulkan driver crashes or runs out of memory (the
+- **Android:** since G4, `--graphics auto` (the default) tries GL, then Vulkan
+  (`android/src/screen.rs`), and `--graphics gl` forces it. Before G4 it tried Vulkan first. Phones whose Vulkan driver crashes or runs out of memory (the
   Redmi 10's Mali-G52 in docs/GPU_RECOVERY_PROPOSAL.md) have nothing to fall back to while GL is
   broken.
 - **Linux** without Vulkan, and **Windows** when neither Vulkan nor D3D12 works
