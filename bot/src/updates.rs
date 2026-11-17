@@ -20,6 +20,10 @@
 //! Android downloads the APK with [`download`] too and hands it to the system's installer, which
 //! asks the user and installs it over the app (`turu_frontend::turu::install_update`,
 //! `PackageUpdate.kt`). Turu Mas ([`set_turu_mas`]) looks for its own APK, not Turu's.
+//!
+//! Nightly builds ([`is_nightly`], `release.yml`'s rolling `nightly` release) are outside all of
+//! this: testers download them by hand. A nightly never checks or installs, and [`newest`] never
+//! offers one (its tag, `nightly`, isn't a version, which also keeps it from older clients).
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -236,6 +240,22 @@ pub fn parse_version(tag: &str) -> Option<semver::Version> {
     semver::Version::parse(tag.strip_prefix(['v', 'V']).unwrap_or(tag)).ok()
 }
 
+/// Whether `version` is a nightly build: its pre-release starts with `nightly`
+/// (`0.3.0-nightly.20261118`, as `release.yml` names them). Nightly builds don't update, and
+/// aren't offered as updates.
+pub fn is_nightly(version: &str) -> bool {
+    parse_version(version).is_some_and(|v| v.pre.split('.').next() == Some("nightly"))
+}
+
+/// Whether this build is a nightly ([`is_nightly`] of [`current_version`]).
+pub fn this_is_nightly() -> bool {
+    is_nightly(current_version())
+}
+
+/// Why a nightly build doesn't update, as the windows and the control API say it.
+pub const NIGHTLY_NO_UPDATES: &str =
+    "This is a nightly build: it doesn't update. Download the next one from GitHub by hand";
+
 /// Whether pre-releases count: Include Pre-releases (VibeSkua's Manager
 /// `CheckClientPrereleases`), or this build is one itself (every Turu release so far is an
 /// alpha: its users are on that channel already).
@@ -243,9 +263,10 @@ pub fn wants_prereleases(setting: bool, current: &str) -> bool {
     setting || parse_version(current).is_some_and(|v| !v.pre.is_empty())
 }
 
-/// The newest release in GitHub's list (`json`) above `current`: no drafts, and no
-/// pre-releases (marked so, or with a `-` in the version) unless `prereleases`. `None` when
-/// `current` is the newest, or isn't a version (a build from a branch).
+/// The newest release in GitHub's list (`json`) above `current`: no drafts, no nightlies
+/// ([`is_nightly`]), and no pre-releases (marked so, or with a `-` in the version) unless
+/// `prereleases`. `None` when `current` is the newest, isn't a version (a build from a branch),
+/// or is a nightly (nightlies don't update).
 pub fn newest(
     json: &[u8],
     current: &str,
@@ -254,12 +275,16 @@ pub fn newest(
 ) -> Result<Option<Release>, String> {
     let list: Vec<GitHubRelease> =
         serde_json::from_slice(json).map_err(|e| format!("couldn't read the release list: {e}"))?;
+    if is_nightly(current) {
+        return Ok(None);
+    }
     let Some(current) = parse_version(current) else {
         return Ok(None);
     };
     let best = list
         .into_iter()
         .filter(|r| !r.draft)
+        .filter(|r| !is_nightly(&r.tag_name))
         .filter_map(|r| parse_version(&r.tag_name).map(|v| (v, r)))
         .filter(|(v, r)| prereleases || !(r.prerelease || !v.pre.is_empty()))
         .filter(|(v, _)| *v > current)
@@ -824,6 +849,75 @@ mod tests {
         assert!(wants_prereleases(false, "0.2.0-alpha.6"));
         assert!(!wants_prereleases(false, "0.2.0"));
         assert!(wants_prereleases(true, "0.2.0"));
+    }
+
+    #[test]
+    fn nightlies_neither_update_nor_are_offered() {
+        assert!(is_nightly("0.3.0-nightly.20261118"));
+        assert!(is_nightly("v0.3.0-nightly"));
+        assert!(!is_nightly("0.3.0"));
+        assert!(!is_nightly("0.3.0-beta.5"));
+        assert!(!is_nightly("0.3.0-alpha.nightly"));
+        assert!(!is_nightly("nightly"));
+        // Semver ranks `nightly` between `beta` and `rc`.
+        assert!(parse_version("0.3.0-nightly.1") > parse_version("0.3.0-beta.9"));
+        assert!(parse_version("0.3.0-nightly.1") < parse_version("0.3.0-rc.1"));
+
+        let json = list(&[
+            // The rolling release (release.yml): its tag isn't a version.
+            release("nightly", true, false),
+            // Were one tagged as a version, it is skipped all the same.
+            release("v0.3.0-nightly.20261118", true, false),
+            release("v0.3.0-beta.5", true, false),
+        ]);
+        let newest = newest(&json, "0.3.0-beta.4", true, None).unwrap().unwrap();
+        assert_eq!(newest.version, "0.3.0-beta.5", "never a nightly");
+        assert!(
+            super::newest(&json, "0.3.0-beta.5", true, None)
+                .unwrap()
+                .is_none()
+        );
+
+        // A beta user is never offered the nightly, whatever its version or assets, even with
+        // Include Pre-releases on and nothing else newer. Shipped clients (0.2.0-beta.1 to
+        // 0.3.0-beta.8) have no `is_nightly`: they skip it only because its tag, `nightly`
+        // (release.yml), doesn't parse as a version. Never tag a nightly with one.
+        assert_eq!(parse_version("nightly"), None, "release.yml's tag");
+        let mut nightly = release("nightly", true, false);
+        for asset in nightly["assets"].as_array_mut().unwrap() {
+            let name = asset["name"]
+                .as_str()
+                .unwrap()
+                .replace("nightly", "0.3.0-nightly.20261118");
+            asset["name"] = name.into();
+        }
+        let only_nightly = list(&[nightly]);
+        for current in ["0.2.0-beta.9", "0.3.0-beta.8"] {
+            for target in [None, Some(Target::LinuxX64), Some(Target::AndroidArm64)] {
+                assert!(
+                    super::newest(&only_nightly, current, true, target)
+                        .unwrap()
+                        .is_none(),
+                    "{current} must not be offered the nightly"
+                );
+            }
+        }
+
+        // A nightly build is offered nothing, not even a release candidate or a release above
+        // it, though it is a pre-release and so on that channel.
+        let above = list(&[
+            release("v0.3.0", false, false),
+            release("v0.3.0-rc.1", true, false),
+            release("v0.4.0", false, false),
+        ]);
+        assert!(wants_prereleases(false, "0.3.0-nightly.20261118"));
+        for prereleases in [false, true] {
+            assert!(
+                super::newest(&above, "0.3.0-nightly.20261118", prereleases, None)
+                    .unwrap()
+                    .is_none()
+            );
+        }
     }
 
     #[test]

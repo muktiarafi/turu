@@ -266,6 +266,8 @@ package, checks it against the release's `SHA256SUMS.txt`, replaces the program 
 status 75, which `Restart=on-failure` restarts on the new binary. The service's user must be
 able to write the program's folder (`/opt/turu` above is root's: `chown` it to that user, or
 update by hand). `SHA256SUMS.txt` proves the download is intact, not who published it.
+A nightly build (the `nightly` release, `0.3.0-nightly.<date>`) never checks: `update` stays
+`null` and `POST /update` refuses (`not_supported`). Replace it by hand.
 
 ```bash
 curl -H "$T" localhost:9091/status | jq .update

@@ -1138,6 +1138,9 @@ fn route(bot: &Arc<Bot>, method: &str, path_and_query: &str, body: &[u8]) -> Rep
 }
 
 fn update(r: &Req) -> Reply {
+    if crate::updates::this_is_nightly() {
+        return error(Code::NotSupported, crate::updates::NIGHTLY_NO_UPDATES);
+    }
     if crate::updates::available().is_none() {
         return error(Code::NoUpdate, "no update available");
     }

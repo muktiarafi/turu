@@ -87,18 +87,21 @@ fun turuVersion(): String =
             .find(rootProject.file("../Cargo.toml").readText())!!.groupValues[1]
 
 /// Android's version code from the version, bigger for every later one: major, minor and patch,
-/// then alpha 1, beta 2, rc 3 or a release 9, then the pre-release's number: 0.2.0-alpha.1 is
-/// 200101, 0.2.0-beta.3 200203, 0.2.0 200900, 1.0.0 10000900.
+/// then alpha 1, beta 2, rc 3, nightly 8 or a release 9, then the pre-release's number:
+/// 0.2.0-alpha.1 is 200101, 0.2.0-beta.3 200203, 0.2.0 200900, 1.0.0 10000900. A nightly
+/// (release.yml: 0.3.0-nightly.20261118) is 300800 whatever its date: above 0.3.0's pre-releases,
+/// so it installs over them, and below 0.3.0, which installs over it.
 fun versionCode(version: String): Int {
-    val match = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-(alpha|beta|rc)\\.?(\\d*))?").find(version) ?: return 1
+    val match = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-(alpha|beta|rc|nightly)\\.?(\\d*))?").find(version) ?: return 1
     val (major, minor, patch, stage, number) = match.destructured
     val stageCode = when (stage) {
         "alpha" -> 1
         "beta" -> 2
         "rc" -> 3
+        "nightly" -> 8
         else -> 9
     }
-    val pre = if (stage.isEmpty()) 0 else number.ifEmpty { "0" }.toInt()
+    val pre = if (stage.isEmpty() || stage == "nightly") 0 else number.ifEmpty { "0" }.toInt()
     return ((major.toInt() * 100 + minor.toInt()) * 100 + patch.toInt()) * 1000 + stageCode * 100 + pre
 }
 

@@ -62,6 +62,8 @@ enum Field {
     Secret(fn(&mut AppSettings) -> &mut String),
     /// Stored, but nothing reads it yet: shown greyed.
     Unused(fn(&mut AppSettings) -> &mut bool),
+    /// A client update switch: greyed on a nightly build, which doesn't update.
+    ClientUpdates(fn(&mut AppSettings) -> &mut bool),
     OptionBool(fn(&mut BotOptions) -> &mut bool),
     OptionInt(fn(&mut BotOptions) -> &mut i32, &'static str),
     Test,
@@ -257,13 +259,13 @@ fn vibeskua_entries() -> Vec<Entry> {
             Updates,
             "Check for Client Updates",
             "Whether to check for new Turu versions when launching Turu, and every 6 hours",
-            Field::Bool(|s| &mut s.check_client_updates)
+            Field::ClientUpdates(|s| &mut s.check_client_updates)
         ),
         entry!(
             Updates,
             "Include Pre-releases",
             "Whether to offer alpha, beta and release-candidate versions too. A pre-release of Turu always offers them",
-            Field::Bool(|s| &mut s.check_client_prereleases)
+            Field::ClientUpdates(|s| &mut s.check_client_prereleases)
         ),
         entry!(Updates, "Check for Client Updates Now", "", Field::CheckClientUpdates),
         entry!(
@@ -555,6 +557,14 @@ impl ApplicationOptionsWindow {
                                             .inner
                                             .on_disabled_hover_text("Coming soon: Turu doesn't update these yet");
                                     }
+                                    Field::ClientUpdates(access) => {
+                                        let nightly = turu_bot::updates::this_is_nightly();
+                                        settings_changed |= ui
+                                            .add_enabled_ui(!nightly, |ui| widgets::switch(ui, access(&mut settings)))
+                                            .inner
+                                            .on_disabled_hover_text(turu_bot::updates::NIGHTLY_NO_UPDATES)
+                                            .changed();
+                                    }
                                     Field::Int(access, suffix, min, max) => {
                                         let suffix = format!(" {suffix}");
                                         let value = access(&mut settings);
@@ -625,12 +635,16 @@ impl ApplicationOptionsWindow {
                                     Field::CheckClientUpdates => {
                                         let checking = turu_bot::updates::state().checking;
                                         let from_shell = crate::turu::updates_from_shell();
-                                        let why = if crate::turu::launched_by_army() && !from_shell {
+                                        let nightly = turu_bot::updates::this_is_nightly();
+                                        let why = if nightly {
+                                            turu_bot::updates::NIGHTLY_NO_UPDATES
+                                        } else if crate::turu::launched_by_army() && !from_shell {
                                             "The client that launched this one checks"
                                         } else {
                                             "Checking…"
                                         };
-                                        let enabled = !checking && (!crate::turu::launched_by_army() || from_shell);
+                                        let enabled =
+                                            !nightly && !checking && (!crate::turu::launched_by_army() || from_shell);
                                         if widgets::button(
                                             ui,
                                             "Check Now",
@@ -977,6 +991,7 @@ fn control_width(field: &Field) -> f32 {
         Field::MonitorLinks | Field::PushKey => 228.0,
         Field::Bool(_)
         | Field::Unused(_)
+        | Field::ClientUpdates(_)
         | Field::OptionBool(_)
         | Field::FrameInterpolation
         | Field::ShowFps
@@ -1039,7 +1054,9 @@ fn report_status(ui: &mut Ui, settings: &AppSettings) {
 /// The last client update check: when, and what it found.
 fn client_update_status(ui: &mut Ui) {
     let state = turu_bot::updates::state();
-    let (text, color) = if state.checking {
+    let (text, color) = if turu_bot::updates::this_is_nightly() {
+        (format!("{}.", turu_bot::updates::NIGHTLY_NO_UPDATES), MUTED)
+    } else if state.checking {
         (format!("Checking for a new {}…", turu_bot::updates::app_name()), MUTED)
     } else if let Some(error) = &state.error {
         (
