@@ -357,6 +357,15 @@ in a crowded room, and GL's frame CPU time within 1.5x of Vulkan's on the same m
 
 ## G3: Memory on OpenGL
 
+**Built (2026-11-18), not verified.** The GLES backend's `Adapter::memory_budget` reads
+`GL_NVX_gpu_memory_info` (total and available) or `GL_ATI_meminfo`. ATI gives free memory only,
+so the budget is what was free when the adapter was made, and the usage is how much less is
+free now. `adapter_memory` asks GL on Linux after Vulkan, and on Android.
+
+Android stays at `None` because GLES has no such extension; open question 2 is still the
+user's to answer. It compiles for Android and Linux. It hasn't run on an NVIDIA or AMD desktop,
+the only place it can return anything.
+
 Ruffle's pools and trimming read the GPU's memory budget through `adapter_memory`
 (`render/wgpu/src/backend.rs:90`). That only asks Vulkan (Linux) and Metal (macOS), so on GL it
 gets `None`. It doesn't ask on Android either, even on Vulkan, because `target_os = "android"`
