@@ -21,6 +21,32 @@ use std::path::{Path, PathBuf};
 /// The slots the manifest declares (`Slot1Service` ... `Slot4Service`).
 pub const POOL: u32 = 4;
 
+/// Options > Application > Process Tabs, saved in the data folder for the next start, on the
+/// desktop (`app/src/shell.rs`) and on Android (`TuruActivity.kt` reads it too).
+pub const SWITCH_FILE: &str = "turu-process-tabs.txt";
+
+/// Whether process tabs are on: unless the switch file says `off`. On by default since
+/// 2026-11-17, so that the beta's users try them; an `on` file from before stays on, and a user
+/// who had turned them off (the file was removed then) gets them on again.
+pub fn switched_on(root: &Path) -> bool {
+    match std::fs::read_to_string(root.join(SWITCH_FILE)) {
+        Ok(text) => text.trim() != "off",
+        Err(_) => true,
+    }
+}
+
+/// Saves process tabs on or off for the next start (`off` stays in the file: no file is on).
+pub fn save_switch(root: &Path, on: bool) {
+    let path = root.join(SWITCH_FILE);
+    match std::fs::write(&path, if on { "on\n" } else { "off\n" }) {
+        Ok(()) => tracing::info!(
+            "Process tabs turned {} for the next start",
+            if on { "on" } else { "off" }
+        ),
+        Err(e) => tracing::warn!("Couldn't save {}: {e}", path.display()),
+    }
+}
+
 /// The folder of the slots' records, in the data folder.
 pub fn dir(root: &Path) -> PathBuf {
     root.join("slots")
@@ -266,17 +292,25 @@ pub struct SlotShell {
 
 impl SlotShell {
     /// A shell (the activity starting) over the open tabs' records: each slot started (or bound
-    /// again, when it runs), the first shown. With none, a first tab with `first` flags.
-    pub fn new(records: BTreeMap<u32, SlotRecord>, first: Vec<String>) -> (Self, Vec<Action>) {
+    /// again, when it runs), the first shown. With none, a first tab with `first` flags, and the
+    /// tabs in `more` in the next slots (those the app had open in its own process, as long as
+    /// the slots go: `saved_tabs::tab_args`).
+    pub fn new(
+        records: BTreeMap<u32, SlotRecord>,
+        first: Vec<String>,
+        more: Vec<Vec<String>>,
+    ) -> (Self, Vec<Action>) {
         let mut shell = Self {
             records,
             ..Self::default()
         };
         let mut actions = Vec::new();
         if shell.records.is_empty() {
-            let record = SlotRecord { args: first };
-            shell.records.insert(1, record.clone());
-            actions.push(Action::Record(1, Some(record)));
+            for (slot, args) in (1..=POOL).zip(std::iter::once(first).chain(more)) {
+                let record = SlotRecord { args };
+                shell.records.insert(slot, record.clone());
+                actions.push(Action::Record(slot, Some(record)));
+            }
         }
         actions.extend(shell.records.keys().map(|&slot| Action::Start(slot)));
         shell.shown = *shell.records.keys().next().expect("one at least");
@@ -612,8 +646,11 @@ mod tests {
 
     #[test]
     fn the_first_shell_opens_a_first_tab() {
-        let (shell, actions) =
-            SlotShell::new(BTreeMap::new(), vec!["--user".into(), "Hero".into()]);
+        let (shell, actions) = SlotShell::new(
+            BTreeMap::new(),
+            vec!["--user".into(), "Hero".into()],
+            Vec::new(),
+        );
         assert_eq!(
             actions,
             [
@@ -630,12 +667,59 @@ mod tests {
         assert_eq!(shell.shown(), 1);
     }
 
+    /// On by default; off only when saved off; an `on` file from before stays on.
+    #[test]
+    fn process_tabs_are_on_unless_saved_off() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(switched_on(dir.path()));
+        save_switch(dir.path(), false);
+        assert!(!switched_on(dir.path()));
+        save_switch(dir.path(), true);
+        assert!(switched_on(dir.path()));
+        std::fs::write(dir.path().join(SWITCH_FILE), " off \r\n").unwrap();
+        assert!(!switched_on(dir.path()));
+    }
+
+    /// The first start with process tabs on: the tabs the app had open in its own process come
+    /// back in the next slots, as many as there are slots.
+    #[test]
+    fn the_first_shell_opens_the_app_s_other_tabs_too() {
+        let more = (1..=4)
+            .map(|n| vec!["--user".to_owned(), format!("Alt{n}")])
+            .collect();
+        let (shell, actions) = SlotShell::new(BTreeMap::new(), Vec::new(), more);
+        assert_eq!(shell.slots(), [1, 2, 3, 4]);
+        assert_eq!(shell.shown(), 1);
+        let records: Vec<_> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::Record(slot, Some(record)) => Some((*slot, record.username())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            records,
+            [
+                (1, None),
+                (2, Some("Alt1")),
+                (3, Some("Alt2")),
+                (4, Some("Alt3"))
+            ]
+        );
+        // With records already (not the first start), `more` isn't read again.
+        let mut open = BTreeMap::new();
+        open.insert(2, SlotRecord::default());
+        let (shell, _) =
+            SlotShell::new(open, Vec::new(), vec![vec!["--user".into(), "Alt".into()]]);
+        assert_eq!(shell.slots(), [2]);
+    }
+
     #[test]
     fn a_new_shell_binds_the_open_tabs_again() {
         let mut records = BTreeMap::new();
         records.insert(2, SlotRecord::default());
         records.insert(3, SlotRecord::default());
-        let (shell, actions) = SlotShell::new(records, Vec::new());
+        let (shell, actions) = SlotShell::new(records, Vec::new(), Vec::new());
         assert_eq!(
             actions,
             [Action::Start(2), Action::Start(3), Action::Show(2)]
@@ -645,7 +729,7 @@ mod tests {
 
     #[test]
     fn opening_selecting_and_closing() {
-        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
         assert_eq!(sent_to(&shell.connected(1, &hello())), [1]);
 
         // "In a tab" from slot 1: slot 2, its password kept apart, shown.
@@ -702,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_refused_hand_over_keeps_the_slot_on_screen() {
-        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
         shell.connected(1, &hello());
         shell.open(Vec::new(), None);
         shell.connected(2, &hello());
@@ -715,7 +799,7 @@ mod tests {
 
     #[test]
     fn only_the_slot_on_screen_shows_a_text_field() {
-        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
         shell.connected(1, &hello());
         shell.open(Vec::new(), None);
         shell.connected(2, &hello());
@@ -746,7 +830,7 @@ mod tests {
 
     #[test]
     fn headless_mode_reaches_the_other_slots() {
-        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
         shell.connected(1, &hello());
         shell.open(Vec::new(), None);
         // Nothing to pass on before a slot changes it.
@@ -774,7 +858,7 @@ mod tests {
 
     #[test]
     fn every_slot_taken_opens_nothing() {
-        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
         for _ in 1..POOL {
             assert!(!shell.open(Vec::new(), None).is_empty());
         }
@@ -784,7 +868,7 @@ mod tests {
 
     #[test]
     fn a_dead_slot_shows_as_starting_and_a_closed_one_is_stopped() {
-        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new());
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
         shell.connected(1, &hello());
         shell.open(Vec::new(), None);
         shell.connected(2, &hello());

@@ -366,18 +366,20 @@ file differs between the two until they're merged.
   the activity as the shell (surface hand-over with the detach answer, input, the text field,
   Platform calls: the file picker, sharing, installing updates); slot records and restart after a
   kill; Accounts, New Tab and Army Control opening and selecting slots; `memory::trim` on hide;
-  Tab Limit from the phone's memory. The in-process tabs stay behind an Options switch until M4.
+  Tab Limit from the phone's memory. The in-process tabs stay behind an Options switch until M4
+  (on by default since 2026-11-17, ahead of M4: "On by default for the beta" below).
 * **Done when** on the emulator: open, switch, close, two accounts in game, Butler following
   across slots, an army script with `bot.army.barrier` across two slots, one slot killed and back
   in game with its script while the other kept farming.
 
 #### M3 so far (2026-11-16, branch `m3-android-tabs`, on M5 and the M1 spike)
 
-Built: process tabs behind Options > Application > Process Tabs (experimental), off by default and
-read at start (saved as `turu-process-tabs.txt` in the data folder, as Safe Drawing is). Turning it
-off stops the slots at the next start (their records stay, so their tabs come back if it's turned
-on again). Checked on the emulator: the switch, found from a slot's Options search, turned off removed
-the file, and after a restart both slots had stopped and the app ran its engine itself.
+Built: process tabs behind Options > Application > Process Tabs (experimental), off by default
+then (on since 2026-11-17: "On by default for the beta" below) and read at start (saved as
+`turu-process-tabs.txt` in the data folder). Turning it off stops the slots at the next start
+(their records stay, so their tabs come back if it's turned on again). Checked on the emulator:
+the switch, found from a slot's Options search, turned off removed the file (it now writes `off`),
+and after a restart both slots had stopped and the app ran its engine itself.
 
 * **Slot records** (`turu_frontend::slots`): `slots/c<N>.json`, a tab's startup flags, written when
   it opens and removed when it closes; never a password (`--password` in either form is taken out
@@ -601,6 +603,31 @@ surface until a new slot has drawn was set aside (it shows a frozen tab rather t
   GPU loss in one slot, the others going on; the native text field and the file picker through
   the shell. Then process tabs become the default and Sentry's A/B/C issues are tagged with the
   slot, to compare with M0.
+
+#### On by default for the beta (2026-11-17)
+
+The owner turned Process Tabs on by default on every platform (Android, macOS, Windows, Linux) so
+that the beta's users try them, ahead of M4's phone runs and of any build or run of desktop
+process tabs on Windows or Linux. The label keeps "(experimental)".
+
+* **The switch** (`turu_frontend::slots::switched_on`, read by the desktop's `shell.rs`, Android's
+  `slots.rs` and `SlotShell.switchedOn` in Kotlin): on unless `turu-process-tabs.txt` says `off`;
+  turning it off writes `off` (before, it removed the file). An `on` file from before stays on; a
+  user who had turned it off (no file) gets it on again: the two can't be told apart.
+* **The way back on the desktop**: `--in-process` starts the window with its tabs in its own
+  process for that start, whatever the switch says, for when the shell or its clients don't
+  start and Options (drawn by a client) can't be reached. Writing `off` into the file does the
+  same for good. `--headless` and clients Army > Accounts launches stay in process, as before.
+  Android has no such flag: Options > Application in a slot, or the file. Not built: turning the
+  switch off by itself when slots keep dying at start.
+* **Arriving from in-process tabs on Android**: the first start with process tabs on (no slot
+  records yet) opens the tabs `android-tabs.json` lists in slots 2 to 4 after `turu-args.txt`'s
+  first tab (`saved_tabs::tab_args`), as the app would have reopened them itself; before, they
+  were left behind. A script the app was running for its first tab when Android last killed it
+  isn't brought back by that start (the app's restart record isn't a slot's).
+* **Options' description** now says it's on while it's tried out and how to go back (`--in-process`
+  on the desktop), instead of the gaps fixed since (Android's file picker, sharing and updates
+  through the shell; Map Travel and Jump to Player for the shell's other tabs).
 
 ### M5: desktop process tabs
 

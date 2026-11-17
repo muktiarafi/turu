@@ -202,40 +202,27 @@ impl Tab {
     }
 }
 
-/// Options > Application > Process Tabs, saved in the data folder for the next start (the same
-/// file as Android's switch, `android/src/slots.rs`).
-const SWITCH_FILE: &str = "turu-process-tabs.txt";
-
-/// Whether process tabs are saved on.
+/// Whether Options > Application > Process Tabs is on (on unless saved off:
+/// `turu_frontend::slots::switched_on`, the same file as Android's).
 pub fn switched_on() -> bool {
-    turu_bot::paths::Paths::new().root.join(SWITCH_FILE).exists()
+    turu_frontend::slots::switched_on(&turu_bot::paths::Paths::new().root)
 }
 
 /// Saves process tabs on or off for the next start.
 pub fn save_switch(on: bool) {
-    let path = turu_bot::paths::Paths::new().root.join(SWITCH_FILE);
-    let result = if on {
-        std::fs::write(&path, "on\n")
-    } else {
-        match std::fs::remove_file(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            result => result,
-        }
-    };
-    match result {
-        Ok(()) => tracing::info!(
-            "Process tabs turned {} for the next start",
-            if on { "on" } else { "off" }
-        ),
-        Err(e) => tracing::warn!("Couldn't save {}: {e}", path.display()),
-    }
+    turu_frontend::slots::save_switch(&turu_bot::paths::Paths::new().root, on);
 }
 
-/// Whether this start runs as the shell because process tabs are saved on: a plain start of
-/// Turu's own window (AQW, not a movie given), not `--headless` nor a client Army > Accounts
-/// launched (`--exit-with-parent`), which stay as they are.
+/// Whether this start runs as the shell because process tabs are on: a plain start of Turu's own
+/// window (AQW, not a movie given), not `--headless`, a client Army > Accounts launched
+/// (`--exit-with-parent`) nor `--in-process` (the way back when the shell doesn't start), which
+/// stay as they are.
 pub fn switched_on_for_this_start() -> bool {
-    crate::mugetsu::plays_aqw() && !turu::headless() && !turu::launched_by_army() && switched_on()
+    crate::mugetsu::plays_aqw()
+        && !turu::headless()
+        && !turu::launched_by_army()
+        && !turu::in_process()
+        && switched_on()
 }
 
 /// The flags a tab's client gets from the shell's: all but `--shell`, and the control API, web

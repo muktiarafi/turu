@@ -78,10 +78,10 @@ class TuruActivity : GameActivity() {
         started = true
         // Before the shell: it keeps a new tab's password with the Keystore.
         Storage.init(this)
-        // Process tabs (M3): with turu-process-tabs.txt the engines run in the slot services'
-        // processes, and this activity is only their shell (SlotShell).
+        // Process tabs (M3, on unless turu-process-tabs.txt says off): the engines run in the slot
+        // services' processes, and this activity is only their shell (SlotShell).
         val files = getExternalFilesDir(null) ?: filesDir
-        if (File(files, "turu-process-tabs.txt").exists()) {
+        if (SlotShell.switchedOn(files)) {
             val view = mSurfaceView
             if (view != null) {
                 shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start(files.absolutePath) }
@@ -315,7 +315,7 @@ class TuruActivity : GameActivity() {
         }
     }
 
-    /** The shell over the process tabs, while turu-process-tabs.txt is in the data folder. */
+    /** The shell over the process tabs, while they're on ([SlotShell.switchedOn]). */
     private var shell: SlotShell? = null
 
     override fun onNewIntent(intent: Intent) {

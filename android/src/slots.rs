@@ -1,6 +1,7 @@
 //! Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): each tab in a slot, a foreground service in a
 //! process of its own (`SlotService.kt`: `Slot1Service` ... `Slot4Service` in `:c1` ... `:c4`). While
-//! `turu-process-tabs.txt` is in the data folder, the activity's process runs no engine: it's the
+//! they're on (unless `turu-process-tabs.txt` in the data folder says `off`:
+//! `turu_frontend::slots::switched_on`), the activity's process runs no engine: it's the
 //! shell (`SlotShell.kt`, `slot_shell.rs`). These are a slot process's side: the engine's start
 //! from the slot's record (`turu_frontend::slots`), the surface handed over and taken back,
 //! touches, the shell's messages (keys among them), and the slot's notification.
@@ -23,8 +24,8 @@ use turu_frontend::turu;
 use crate::input::Touch;
 use crate::java::SlotService;
 
-/// The switch file in the data folder that turns process tabs on.
-pub(crate) const SWITCH_FILE: &str = "turu-process-tabs.txt";
+/// The switch file in the data folder that turns process tabs off.
+pub(crate) use turu_frontend::slots::SWITCH_FILE;
 
 /// This process's slot (1 to 4), in a slot process.
 static SLOT: OnceLock<u32> = OnceLock::new();
@@ -42,7 +43,7 @@ pub(crate) fn slot() -> Option<u32> {
 
 /// Whether process tabs are on (the activity's process is then only the shell).
 pub(crate) fn on(root: &Path) -> bool {
-    root.join(SWITCH_FILE).exists()
+    turu_frontend::slots::switched_on(root)
 }
 
 /// The activity's density, as the slot was told it with the surface.

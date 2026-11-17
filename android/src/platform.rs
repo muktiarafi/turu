@@ -80,11 +80,7 @@ impl Platform for AndroidPlatform {
     }
 
     fn set_process_tabs(&self, on: bool) {
-        crate::save_switch(crate::slots::SWITCH_FILE, on);
-        tracing::info!(
-            "Process tabs turned {} for the next start",
-            if on { "on" } else { "off" }
-        );
+        turu_frontend::slots::save_switch(&turu_bot::paths::Paths::new().root, on);
     }
 
     // The app's executable is Android's app_process, not a `turu` Army could start.

@@ -183,7 +183,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   stops it and leaves it stopped. Army Control's Gear window uses them, for a client without a
   window too. Tested against a fake game (`bot/tests/gear.rs`); unverified in game: the `sES`
   slot codes, the bank opening in a client without a window, and the equip timings.
-- **Tabs** (`frontend/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): each tab is a game
+- **Tabs** (`frontend/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): since 2026-11-17
+  Options > Application > Process Tabs (experimental) is on by default, desktop and Android: each
+  tab then runs in a process of its own behind the window, the shell (docs/TAB_PROCESSES_PROPOSAL.md;
+  `--in-process` or the switch off goes back; `--headless` always runs in process). In process,
+  each tab is a game
   client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
   the players run on the event loop thread and are ticked every loop; only the active one is
@@ -666,7 +670,8 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 ## Known gaps
 
-- **Tabs share one thread and one process:** every tab's game runs on the event loop thread, so
+- **Tabs share one thread and one process** (in process: with Process Tabs off, `--in-process`,
+  or `--headless`): every tab's game runs on the event loop thread, so
   busy tabs slow each other down (VibeSkua's processes use several cores; hidden tabs in game
   run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
   all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved

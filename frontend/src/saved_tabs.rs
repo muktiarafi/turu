@@ -72,6 +72,30 @@ pub fn reopen() {
     }
 }
 
+/// The tabs the file lists, as a process tab's startup flags (`slots::open_args`): Turu's Android
+/// app's first start with process tabs on opens them in slots 2 to 4 (`slot_shell.rs`), as the
+/// app would have reopened them in its own process. No password: a slot takes Accounts'.
+pub fn tab_args(root: &std::path::Path) -> Vec<Vec<String>> {
+    let text = std::fs::read_to_string(root.join(FILE)).unwrap_or_default();
+    let entries = serde_json::from_str::<Vec<Value>>(&text).unwrap_or_default();
+    entries
+        .iter()
+        .map(|entry| {
+            let string = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_owned);
+            let run_script = entry
+                .get("runScript")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            crate::slots::open_args(
+                string("username"),
+                string("server"),
+                string("script"),
+                run_script,
+            )
+        })
+        .collect()
+}
+
 /// A tab's line in the file.
 fn entry(bot: &Bot) -> Value {
     json!({
@@ -100,5 +124,38 @@ pub fn save() {
     match std::fs::write(file(), &text) {
         Ok(()) => *written = Some(text),
         Err(e) => tracing::warn!("Couldn't write {FILE}: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_saved_tabs_become_slot_flags() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(tab_args(dir.path()).is_empty());
+        std::fs::write(
+            dir.path().join(FILE),
+            r#"[
+                {"username": "Alt", "server": "Yorumi", "script": "farm/Gold.ts", "runScript": true},
+                {"username": null, "server": null, "script": null, "runScript": false}
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            tab_args(dir.path()),
+            [
+                vec![
+                    "--user",
+                    "Alt",
+                    "--server",
+                    "Yorumi",
+                    "--run-script",
+                    "farm/Gold.ts"
+                ],
+                Vec::<&str>::new(),
+            ]
+        );
     }
 }

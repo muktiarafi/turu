@@ -114,7 +114,7 @@ fn android_main(app: AndroidApp) {
     let shell = slots::on(&root);
     if shell {
         tracing::info!(
-            "Process tabs on ({}): no engine in the activity's process",
+            "Process tabs on ({} doesn't say off): no engine in the activity's process",
             slots::SWITCH_FILE
         );
     } else {

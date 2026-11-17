@@ -123,8 +123,15 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeShellStart<'local>(
             let root = PathBuf::from(files_dir.try_to_string(env)?);
             let records = SlotRecord::read_all(&turu_frontend::slots::dir(&root));
             let first = records.is_empty().then(|| first_tab(&root));
+            // The first start with process tabs on (no records yet): the tabs the app had open in
+            // its own process come too, as it would have reopened them (`android-tabs.json`).
+            let more = if first.is_some() {
+                turu_frontend::saved_tabs::tab_args(&root)
+            } else {
+                Vec::new()
+            };
             let (args, password) = first.unwrap_or_default();
-            let (shell, mut actions) = SlotShell::new(records, args);
+            let (shell, mut actions) = SlotShell::new(records, args, more);
             if password.is_some() {
                 actions.insert(0, Action::Password(1, password));
             }

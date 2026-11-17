@@ -128,9 +128,9 @@ fn entries() -> Vec<Entry> {
     }
     if crate::platform::platform().process_tabs().is_some() {
         #[cfg(target_os = "android")]
-        let what = "Runs each tab in a process of its own, so Android stopping one for memory leaves the others playing, and a tab comes back logged in by itself. Takes a little more memory per tab. Some things don't work in a tab yet: picking files, sharing and installing updates";
+        let what = "Runs each tab in a process of its own, so Android stopping one for memory leaves the others playing, and a tab comes back logged in by itself. Takes a little more memory per tab. On by default while it's tried out: turn it off if tabs misbehave";
         #[cfg(not(target_os = "android"))]
-        let what = "Runs each tab in a process of its own, so a crash or a lost graphics device ends one tab, which comes back logged in by itself, while the others play on. Turu's window starts this way from the next start. Not yet: Map Travel and Jump to Player for the other tabs in Army Control";
+        let what = "Runs each tab in a process of its own, so a crash or a lost graphics device ends one tab, which comes back logged in by itself, while the others play on. Takes effect at the next start. On by default while it's tried out: turn it off if tabs misbehave, or start Turu with --in-process if the window doesn't start";
         entries.push(Entry {
             restart: true,
             ..entry!(General, "Process Tabs (experimental)", what, Field::ProcessTabs)
