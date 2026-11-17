@@ -1,0 +1,15 @@
+# cargo-nextest, the test runner CI uses for the engine (`cargo nextest run -p turu_bot`). It runs
+# every test in its own process and the tests of every binary at once, instead of one bot/tests/
+# file after another; tests no longer slow down the others of their file (butler's control API
+# test: 8.5 s alone, 28 s beside its file's other tests). `cargo test` still works the same.
+
+[profile.default]
+# A test over 30 s is reported as slow; one still running after 2 minutes has hung and is killed.
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.ci]
+# Report every failing test, not only the first.
+fail-fast = false
+# The engine's tests mostly wait on timers (about 30 s of CPU in a 60 s run with 4 at once), so
+# CI's 4-core runner runs more of them than it has cores.
+test-threads = 12

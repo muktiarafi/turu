@@ -48,7 +48,7 @@ it, bump `ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/
 ```bash
 cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ./target/debug/turu                      # starts turu.swf -> AQW; log in with the game's own screen
-cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host)
+cargo test -p turu_bot                   # engine + script runtime tests (fake Flash host); CI: `cargo nextest run --profile ci -p turu_bot` (.config/nextest.toml)
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md)
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
