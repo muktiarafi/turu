@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Once};
 use turu_bot::log::{LogBuffer, LogLine};
 
-
 /// How long Clear can be undone.
 const UNDO_CLEAR_FOR: f64 = 8.0;
 
@@ -228,7 +227,8 @@ impl Crashes {
         if widgets::button(ui, "Copy", Kind::Normal, has, size, "").clicked()
             && let Some((_, text)) = &self.text
         {
-            ui.ctx().copy_text(crash_reports::shareable(text, crash_reports::SHARE_BYTES));
+            ui.ctx()
+                .copy_text(crash_reports::shareable(text, crash_reports::SHARE_BYTES));
         }
     }
 
