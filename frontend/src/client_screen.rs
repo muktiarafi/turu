@@ -358,6 +358,7 @@ impl ClientScreen {
             | ToClient::Installed { .. }
             | ToClient::AndroidKey { .. }
             | ToClient::HeadlessMode { .. }
+            | ToClient::Updates { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

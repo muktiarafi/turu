@@ -127,6 +127,8 @@ enum ShellEvent {
     Test(String),
     /// A client (its process id) handed over a shared surface.
     SurfaceArrived { pid: u32, id: u64, surface: SharedSurface },
+    /// Turu's update state changed (a check, an install's progress): to every tab.
+    Updates(turu_bot::updates::State),
     /// A file dialog a tab's client asked for was answered (tab, process id, its id, the path).
     Answered(u32, u32, u32, Option<String>),
     /// The shell's GPU is done with these surfaces (tab, process id, surface): back to their clients.
@@ -261,8 +263,10 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     }
     // Options > Application lives in the clients, which leave the web monitor and Report To here.
     turu::follow_settings_file(true);
-    // The clients leave the launch updates (scripts, skill sets) to the shell.
+    // The clients leave the launch updates (scripts, skill sets) to the shell, and Turu's own
+    // update checks (`main.rs`); what the checks find goes to them to show.
     turu::start_app_updates();
+    watch_updates(event_loop.create_proxy());
     // Clients hand their pictures over as GPU surfaces where the shell can take them, unless
     // `TURU_NO_SHARED_SURFACES` says pixels.
     let surfaces_proxy = event_loop.create_proxy();
@@ -313,7 +317,31 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     for tab in &mut app.tabs {
         stop(tab);
     }
+    // Update when I quit, asked from a tab: put in place now.
+    turu::apply_pending_update();
     Ok(())
+}
+
+/// Sends Turu's update state to the event loop whenever it changes (checked every second).
+fn watch_updates(proxy: EventLoopProxy<ShellEvent>) {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Shell Updates".into())
+        .spawn(move || {
+            let mut seen = turu_bot::updates::State::default();
+            loop {
+                let now = turu_bot::updates::state();
+                if now != seen {
+                    seen = now.clone();
+                    if proxy.send_event(ShellEvent::Updates(now)).is_err() {
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Shell: couldn't watch for updates: {e}");
+    }
 }
 
 /// Where the clients hand over their surfaces, set up by platform: a Mach service (macOS), a Unix
@@ -882,6 +910,15 @@ impl ShellApp {
         if self.covered {
             send(tab, &ToClient::Covered { covered: true });
         }
+        let updates = turu_bot::updates::state();
+        if updates != turu_bot::updates::State::default() {
+            send(
+                tab,
+                &ToClient::Updates {
+                    updates: Box::new(shell::UpdateInfo::from_state(&updates)),
+                },
+            );
+        }
         let id = tab.id;
         if id == self.shown || self.grid_tiles().is_some() {
             self.show_current();
@@ -955,6 +992,16 @@ impl ShellApp {
                 }
             }
             ToShell::Surface { id: surface, .. } => self.surface_picture(id, surface),
+            // A tab's Download & restart: installed here; the shell starts again on it, and so
+            // does every tab (`install_update` restarts this process with its arguments).
+            ToShell::InstallUpdate { on_quit } => match turu::install_update(on_quit) {
+                Ok(started) => tracing::info!("Shell: tab {id} asked for the update: {started}"),
+                Err(e) => {
+                    tracing::warn!("Shell: tab {id} asked for the update: {e}");
+                    turu_bot::updates::update_state(|s| s.install = turu_bot::updates::Install::Failed(e));
+                }
+            },
+            ToShell::CheckUpdates => turu::check_client_updates_now(),
             ToShell::Gpu { adapter } => {
                 tracing::info!("Shell: tab {id}'s client draws on {adapter}");
                 if let Some(tab) = self.tab(id) {
@@ -1749,6 +1796,14 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
             ShellEvent::Picture(id) => self.pixel_picture(id),
             ShellEvent::SurfaceArrived { pid, id, surface } => self.surface_arrived(pid, id, surface),
             ShellEvent::Released(retired) => self.released(retired),
+            ShellEvent::Updates(state) => {
+                let message = ToClient::Updates {
+                    updates: Box::new(shell::UpdateInfo::from_state(&state)),
+                };
+                for tab in &mut self.tabs {
+                    send(tab, &message);
+                }
+            }
             ShellEvent::Answered(id, pid, request, value) => {
                 self.dialog_open = false;
                 if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id && tab.pid() == Some(pid)) {

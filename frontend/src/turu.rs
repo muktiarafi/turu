@@ -609,8 +609,36 @@ pub fn start_client_updates() {
     });
 }
 
-/// Options > Application's Check Now: one check, on a thread.
+/// What a client asks of the shell that checks for updates and installs them for it (the
+/// desktop's process tabs, `app/src/client.rs`).
+pub enum UpdateRequest {
+    Check,
+    Install { on_quit: bool },
+}
+
+/// Sends a client's update requests to its shell.
+pub type UpdateRequests = Box<dyn Fn(UpdateRequest) + Send + Sync>;
+
+static UPDATE_REQUESTS: OnceLock<UpdateRequests> = OnceLock::new();
+
+/// A client's updates are its shell's: Check Now and Download & restart go there, and the
+/// state the UI shows comes from it (`shell::UpdateInfo`).
+pub fn set_update_requests(requests: UpdateRequests) {
+    let _ = UPDATE_REQUESTS.set(requests);
+}
+
+/// Whether another process (the shell) checks for and installs this one's updates, and takes
+/// its requests.
+pub fn updates_from_shell() -> bool {
+    UPDATE_REQUESTS.get().is_some()
+}
+
+/// Options > Application's Check Now: one check, on a thread (by the shell, in its client).
 pub fn check_client_updates_now() {
+    if let Some(requests) = UPDATE_REQUESTS.get() {
+        requests(UpdateRequest::Check);
+        return;
+    }
     let _ = std::thread::Builder::new()
         .name("Turu Client Update Check".into())
         .spawn(check_client_updates_now_blocking);
@@ -668,6 +696,11 @@ static PENDING_UPDATE: Mutex<Option<turu_bot::updates::install::Staged>> = Mutex
 /// status 75 instead, for its service manager to restart it), or keeps it for
 /// [`apply_pending_update`]. `turu_bot::updates::state().install` shows the progress.
 pub fn install_update(on_quit: bool) -> Result<String, String> {
+    // A shell's client: the shell installs it and starts every tab again.
+    if let Some(requests) = UPDATE_REQUESTS.get() {
+        requests(UpdateRequest::Install { on_quit });
+        return Ok("the window installs it".into());
+    }
     #[cfg(target_os = "android")]
     {
         let _ = on_quit;

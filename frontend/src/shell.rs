@@ -142,6 +142,10 @@ pub enum ToClient {
     /// The shell can't use this client's shared surfaces (it couldn't open one, or its GPU isn't
     /// the client's): send pixels from now on ([`ToShell::Frame`]).
     NoSurfaces { reason: String },
+    /// Desktop: Turu's update state as the shell has it (the shell checks for updates and
+    /// installs them, its clients don't): the client shows it as its own (Menu, Options). Sent
+    /// when it changes, and to a client that connects.
+    Updates { updates: Box<UpdateInfo> },
     /// The shell is done with shared surface `id` ([`ToShell::Surface`]): the client may draw
     /// into it again.
     Release { id: u64 },
@@ -193,6 +197,14 @@ pub enum ToShell {
         #[serde(default)]
         filters: Vec<(String, Vec<String>)>,
     },
+    /// Desktop: the client's Download & restart (or Update when I quit, `on_quit`): the shell
+    /// installs the update and starts again, every tab with it.
+    InstallUpdate {
+        #[serde(default)]
+        on_quit: bool,
+    },
+    /// Desktop: the client's Check Now: the shell checks for an update.
+    CheckUpdates,
     /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
     Gpu { adapter: String },
     /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
@@ -292,6 +304,48 @@ pub enum ToShell {
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
+}
+
+/// Turu's update state (`turu_bot::updates::State`) as it goes to a client: when the last check
+/// ended as RFC 3339 text.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UpdateInfo {
+    #[serde(default)]
+    pub available: Option<turu_bot::updates::Release>,
+    #[serde(default)]
+    pub checked_at: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub checking: bool,
+    #[serde(default)]
+    pub install: turu_bot::updates::Install,
+}
+
+impl UpdateInfo {
+    pub fn from_state(state: &turu_bot::updates::State) -> Self {
+        Self {
+            available: state.available.clone(),
+            checked_at: state.checked_at.map(|at| at.to_rfc3339()),
+            error: state.error.clone(),
+            checking: state.checking,
+            install: state.install.clone(),
+        }
+    }
+
+    /// This process's update state, as the shell has it.
+    pub fn apply(self) {
+        turu_bot::updates::update_state(|state| {
+            state.available = self.available;
+            state.checked_at = self
+                .checked_at
+                .and_then(|at| chrono::DateTime::parse_from_rfc3339(&at).ok())
+                .map(|at| at.with_timezone(&chrono::Local));
+            state.error = self.error;
+            state.checking = self.checking;
+            state.install = self.install;
+        });
+    }
 }
 
 /// Which of Android's two text fields above the keyboard: the game's focused text field, or Turu's
@@ -715,6 +769,8 @@ mod tests {
             ToShell::Gpu {
                 adapter: adapter_key("metal", 0x106b, 0, "Apple M5"),
             },
+            ToShell::InstallUpdate { on_quit: true },
+            ToShell::CheckUpdates,
             ToShell::SharedHandle {
                 id: 4,
                 route: "vulkan-win32".into(),
@@ -872,6 +928,15 @@ mod tests {
                 ToClient::HeadlessMode { on: true },
                 ToClient::Release { id: 7 },
                 ToClient::Covered { covered: true },
+                ToClient::Updates {
+                    updates: Box::new(UpdateInfo {
+                        available: None,
+                        checked_at: Some("2026-11-17T05:00:00+07:00".into()),
+                        error: None,
+                        checking: false,
+                        install: turu_bot::updates::Install::Busy("Downloading Turu 0.3.1…".into()),
+                    }),
+                },
                 ToClient::NoSurfaces {
                     reason: "another GPU".into(),
                 },

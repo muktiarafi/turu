@@ -583,12 +583,13 @@ impl ApplicationOptionsWindow {
                                     Field::PushKey => self.push_key(ui, &settings),
                                     Field::CheckClientUpdates => {
                                         let checking = turu_bot::updates::state().checking;
-                                        let why = if crate::turu::launched_by_army() {
+                                        let from_shell = crate::turu::updates_from_shell();
+                                        let why = if crate::turu::launched_by_army() && !from_shell {
                                             "The client that launched this one checks"
                                         } else {
                                             "Checking…"
                                         };
-                                        let enabled = !checking && !crate::turu::launched_by_army();
+                                        let enabled = !checking && (!crate::turu::launched_by_army() || from_shell);
                                         if widgets::button(
                                             ui,
                                             "Check Now",

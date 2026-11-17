@@ -133,7 +133,7 @@ impl Target {
 }
 
 /// A file of a release.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub name: String,
@@ -143,7 +143,7 @@ pub struct Asset {
 }
 
 /// A newer release.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Release {
     /// Without the tag's `v`: `0.2.0-alpha.7`.
@@ -368,7 +368,7 @@ fn empty_dir(dir: &Path) -> Result<(), String> {
 // ---------------------------------------------------------------------------------------
 // What this process knows: the UI, the control API and the monitor read it.
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
     /// The newer release, from the last check that worked.
     pub available: Option<Release>,
@@ -381,7 +381,7 @@ pub struct State {
 }
 
 /// Download & restart's progress.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Install {
     #[default]
     Idle,

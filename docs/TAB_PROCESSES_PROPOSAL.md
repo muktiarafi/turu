@@ -746,6 +746,21 @@ size, from 900x560 to 1485x852 points, without a stretched or stale one left; a 
 each size, and the shell and clients' memory stayed flat (about 172 and 260 MB). Not run: an Intel
 Mac (its surfaces are made `Managed`, Apple's chips `Shared`), Windows and Linux (below).
 
+**Turu's updates through the shell** (2026-11-17): the shell checks for updates (its clients,
+started with `--exit-with-parent`, don't), but it has no UI, so what it found reached only the web
+monitor and the log. It now sends its update state to every tab when it changes and to a tab that
+connects (`ToClient::Updates`: the release, the check's time and error, the install's progress),
+which the client shows as its own: the bar's Update button, the Update window, Options' last
+check. A client's Check Now and Download & restart (or Update when I quit) go to the shell
+(`ToShell::CheckUpdates`, `InstallUpdate`), which installs the update and starts again with its
+arguments, its tabs with it; an update kept for when Turu quits is put in place when the shell
+quits. Checked on the Mac against a local release server (`TURU_RELEASES_URL`, a made-up 9.9.9):
+the shell found it, the client's bar showed "Update 9.9.9", its Download & restart made the
+shell download the package and check it against `SHA256SUMS.txt`, and the install stopped where a
+program outside `Turu.app` must ("update it by hand"), the client's Update window showing that.
+Not run: an install that completes (it needs Turu run from `Turu.app`, or a Windows or Linux
+build) and the restart onto the new version, which is the window's own, unchanged.
+
 **Options > Application > Process Tabs (experimental)** on the desktop too (2026-11-17): saved
 as `turu-process-tabs.txt` in the data folder, as on Android, and read at start: on, a plain start
 of Turu's window runs as the shell (`shell::switched_on_for_this_start`); `--headless` and the
@@ -846,9 +861,8 @@ stay that tab's client's (its Army Control has them), and the shell's monitor an
 list them, and they end when that client restarts; the clipboard without a display handle on
 Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: Map Travel and Jump to Player in Army Control
 for the shell's tabs (they read in-process tabs and Army clients only); the shell's own `--api`
-(ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A client's
-Options > Application > Check Now for updates is off (`--exit-with-parent` marks it launched; the
-shell checks). A down tab keeps its last monitor entry online for up to 15 s.
+(ignored with a warning: each client has one). `OpenTab` doesn't carry a login's playlist or options storage yet. A down tab keeps its last
+monitor entry online for up to 15 s.
 
 ### M6: one way of doing tabs
 

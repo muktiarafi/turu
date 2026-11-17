@@ -126,6 +126,15 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     screen.set_clipboard(Box::new(SystemClipboard(egui_winit::clipboard::Clipboard::new(None))));
     SCREEN.set(Some(screen));
     turu::start_updates();
+    // Turu's updates are the shell's: it checks and installs; Check Now and Download & restart go
+    // there, and its state comes back (`ToClient::Updates`).
+    let update_out = out.clone();
+    turu::set_update_requests(Box::new(move |request| {
+        update_out.send(match request {
+            turu::UpdateRequest::Check => ToShell::CheckUpdates,
+            turu::UpdateRequest::Install { on_quit } => ToShell::InstallUpdate { on_quit },
+        })
+    }));
     // The tab strip's tabs are the shell's (M5): requests go to it, its list comes back.
     let link_out = out.clone();
     let open_out = out.clone();
@@ -191,6 +200,7 @@ impl ClientEnd for Forward {
                 })));
             }
             ToClient::HeadlessMode { on } => turu_frontend::client_link::set_headless_mode(on),
+            ToClient::Updates { updates } => (*updates).apply(),
             // A file dialog the shell showed.
             ToClient::Answer { id, value } => {
                 let answer = self.answers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
