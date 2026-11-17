@@ -89,8 +89,8 @@ fun turuVersion(): String =
 /// Android's version code from the version, bigger for every later one: major, minor and patch,
 /// then alpha 1, beta 2, rc 3, nightly 8 or a release 9, then the pre-release's number:
 /// 0.2.0-alpha.1 is 200101, 0.2.0-beta.3 200203, 0.2.0 200900, 1.0.0 10000900. A nightly
-/// (release.yml: 0.3.0-nightly.20261118) is 300800 whatever its date: above 0.3.0's pre-releases,
-/// so it installs over them, and below 0.3.0, which installs over it.
+/// (release.yml: 0.4.0-nightly.20261118) is 400800 whatever its date: above 0.4.0's pre-releases,
+/// so it installs over them, and below 0.4.0, which installs over it.
 fun versionCode(version: String): Int {
     val match = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-(alpha|beta|rc|nightly)\\.?(\\d*))?").find(version) ?: return 1
     val (major, minor, patch, stage, number) = match.destructured

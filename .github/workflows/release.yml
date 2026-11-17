@@ -6,7 +6,7 @@ name: Release
 # workflow artifacts.
 #
 # Nightly: every night (when main has new commits), or by hand with "Publish as the nightly
-# release" ticked, it builds as `<next version>-nightly.<date>` (0.3.0-nightly.20261118) and
+# release" ticked, it builds as `<next version>-nightly.<date>` (0.4.0-nightly.20261118) and
 # replaces the one `nightly` release: a pre-release, never "Latest", for testers who download it
 # by hand. Updates never reach or leave it: its tag isn't a version, so no client's updater takes
 # it (shipped ones included), and a nightly build doesn't check (`turu_bot::updates::is_nightly`).
@@ -591,7 +591,7 @@ jobs:
 
   # The nightly build replaces the `nightly` release (and its tag, moved to this commit).
   # Keep the tag `nightly`: shipped clients skip it only because it doesn't parse as a version
-  # (`updates::tests::nightlies_neither_update_nor_are_offered`); a `v0.3.0-nightly...` tag would be
+  # (`updates::tests::nightlies_neither_update_nor_are_offered`); a `v0.4.0-nightly...` tag would be
   # offered to every beta user.
   nightly:
     name: Publish nightly

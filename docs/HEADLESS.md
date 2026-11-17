@@ -138,7 +138,7 @@ docker compose logs -f main
 
 The first build takes a while (the `dist` profile, as the release packages, with LTO); later
 ones reuse BuildKit's cargo cache. `--build-arg PROFILE=release` builds faster,
-`--build-arg TURU_VERSION=0.3.0` sets the version Turu reports and compares with its releases.
+`--build-arg TURU_VERSION=0.4.0` sets the version Turu reports and compares with its releases.
 
 `docker/entrypoint.sh` turns the env file into flags: `TURU_USER`, `TURU_SERVER`,
 `TURU_RUN_SCRIPT` / `TURU_LOAD_SCRIPT`, `TURU_RUN_PLAYLIST` / `TURU_LOAD_PLAYLIST`,
@@ -266,7 +266,7 @@ package, checks it against the release's `SHA256SUMS.txt`, replaces the program 
 status 75, which `Restart=on-failure` restarts on the new binary. The service's user must be
 able to write the program's folder (`/opt/turu` above is root's: `chown` it to that user, or
 update by hand). `SHA256SUMS.txt` proves the download is intact, not who published it.
-A nightly build (the `nightly` release, `0.3.0-nightly.<date>`) never checks: `update` stays
+A nightly build (the `nightly` release, `0.4.0-nightly.<date>`) never checks: `update` stays
 `null` and `POST /update` refuses (`not_supported`). Replace it by hand.
 
 ```bash
