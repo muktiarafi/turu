@@ -888,6 +888,78 @@ CPU. Measuring found three things, fixed:
   a covered client's 57%): it has it now only while the pointer is over the window and it's seen,
   as the window's tabs do.
 
+**Windows and Linux: gaps to fix** (found reading the code, 2026-11-17; none run yet). The window
+(`app/src/gui/controller.rs`, `app/src/app.rs`, `app/src/mugetsu.rs`) has safeguards the shell
+(`app/src/shell.rs`) and its clients (`app/src/client.rs`) don't use yet. In order of what they
+break:
+
+1. **The GPU choice is cruder than the window's.** The window tries each backend in turn with its
+   own window as the display (`select_wgpu_backend` and `try_wgpu_backend` in `controller.rs`, which
+   pass `Some(Box::new(window))` to `create_wgpu_instance`) and asks for Options' power preference
+   (`preferences.graphics_power_preference()`). The shell's `make_gpu` and the client's `gpu()` call
+   `create_wgpu_instance(backends, Default::default(), None)` and ask for
+   `PowerPreference::HighPerformance` always.
+   * Linux with OpenGL (Mugetsu's choice where Vulkan is broken, `mugetsu::Graphics::Gl`): GL needs
+     the display handle, so the shell likely finds no adapter and quits; a client, which has no
+     window at all, may find none either and crash-loop until its tab is left closed.
+   * Low power (`--power low`, or Mugetsu's Intel/Qualcomm default, `mugetsu::intel_graphics`) is
+     ignored: both ask for the high-performance GPU.
+   * Fix: the shell builds its instance with its window as the display and tries the backends in
+     the window's order (reuse or share `select_wgpu_backend`), with the preference's power. The
+     client has no window: on Linux with GL, try EGL without a display, and if no adapter comes,
+     try the other backends (Vulkan, then any) rather than failing; log which it took. Keep both
+     sides choosing the same way, since shared surfaces need one GPU and backend (`ToShell::Gpu`
+     falls back to pixels otherwise). Call `mugetsu::set_adapter_ids` in both, as `controller.rs`
+     does.
+   * Check: on Linux, `turu --shell --graphics gl` opens and its tabs draw (pixels: there's no GL
+     route); `--power low` on a laptop with two GPUs logs the integrated one in
+     `Shell graphics:` and `Client graphics:`.
+
+2. **Mugetsu's Vulkan-crash safety net isn't armed.** When a driver crashes while Vulkan starts
+   (Intel on Windows, mostly), Mugetsu saves `mugetsu-vulkan-crashed.txt` and starts on DirectX 12
+   from then on (`mugetsu::vulkan_startup_begin`, `vulkan_starting`, `save_vulkan_crash`, read by
+   `main.rs`'s `mugetsu_args`; Windows' native crash handler in `app/src/windows.rs` checks
+   `vulkan_starting()`). Only `controller.rs` calls `vulkan_startup_begin`. A client crashing in
+   the Vulkan driver records nothing: the shell starts it again into the same crash (1, 4, 16 s),
+   and after five deaths its tab stays closed.
+   * Fix: call `mugetsu::vulkan_startup_begin(backends.contains(VULKAN))` before the client's (and
+     the shell's) GPU setup, and call `mugetsu::frame_presented()` after each picture the client
+     finishes (and each the shell presents), which ends the window 10 s after the first.
+     The next client the shell starts then reads the marker in `mugetsu_args` and takes DX12.
+     The shell and the clients may then be on different backends: shared surfaces fall back to
+     pixels by themselves; consider having the shell restart itself on DX12 too, or leave it.
+   * Check: on Windows, `RUFFLE_TEST_NATIVE_CRASH=driver` (`windows::test_native_crash`, called in
+     `controller.rs`; call it in the client's GPU setup too) with Vulkan chosen: the marker is
+     written and the restarted client logs DX12.
+
+3. **The graphics switch can't be reached in shell mode.** Windows has it in the title-bar menu
+   (`windows::add_graphics_menu`, installed by `controller.rs`), Linux in the game's right-click menu
+   (`gui/context_menu.rs`, `linux::choose_graphics`); neither exists for the shell's window or a
+   client. Choosing restarts Turu (`start_again`), which in shell mode must restart the shell (its
+   clients go with it). Fix: install the title-bar menu on the shell's window on Windows; on Linux,
+   offer it from the clients' UI (a client asks the shell, which saves the choice with
+   `mugetsu::save_graphics` and starts again). Until then, the switch is used from the window
+   (Options > Application > Process Tabs off).
+
+4. **The shell's window lacks the window's touches.** No icon (`app.rs` sets one with
+   `with_window_icon`); on Linux no app id (`with_name("rs.ruffle.Ruffle", "main")`) and no
+   startup-notification token (`read_token_from_env`, `with_activation_token`), so on Wayland it may
+   show a generic icon and not group with Turu's launcher; no Mugetsu title note
+   (`mugetsu::add_title_note`, `window_title()`). Fix: build the shell's `WindowAttributes` as
+   `app.rs` does.
+
+5. **Small ones.**
+   * Linux: the shell's Unix socket for shared surfaces (`shared_gpu::listen`,
+     `$XDG_RUNTIME_DIR/turu-shell-<pid>.sock`) isn't removed when the shell quits (only before
+     binding the same name). Remove it at the end of `shell::run`.
+   * Windows and Wayland report no `Occluded`: a covered shell window keeps its clients drawing
+     (a minimized one on Windows is caught by its zero size). The window has the same limit, so it
+     matches today.
+   * The shell's and client's Windows and Linux branches (`ToShell::SharedHandle`'s handling,
+     `listen_for_surfaces`, `shared_gpu::Sender::connect` in `client.rs`) aren't compiled on those
+     systems yet: the first build there is their compile check (`shared_gpu.rs` alone is
+     type-checked for both targets).
+
 Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: the shell's own `--api`
 (ignored with a warning: each client has one). A down tab keeps its last
 monitor entry online for up to 15 s.
