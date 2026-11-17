@@ -40,6 +40,33 @@ Most of Mugetsu's speed work is above the GPU API, so GL already has it:
 | Texture-kind allocators (`aqw_texture_kind`, 32 MB blocks for cacheAsBitmap pictures) | D3D12, Vulkan | GL has no app-side memory allocator. The driver places textures itself. |
 | `vkQueueSubmit` in batches of 512 | Vulkan | AMD's Vulkan driver failed with out-of-memory on 3,000+ command buffers in one submit. GL has no such call. |
 | `memory_budget()` | Metal, Vulkan | GL has no portable equivalent. See G3. |
+| Lean command pools (`RUFFLE_LEAN_POOLS`, new in 2.0.0), with its pool counters and test switches | Vulkan | A pool never gives a command buffer back, and NVIDIA's driver holds ~28 KB per buffer, so a pool over the limit is destroyed and made anew once the fence's timeline semaphore says the GPU is done with it. A GL command buffer is a Rust `Vec`, taken out of the encoder at `end_encoding` and freed when wgpu-core drops it, so nothing piles up. |
+
+### How Mugetsu optimized Vulkan, and what carries over
+
+Mugetsu's Vulkan patch (`mugetsu/source/patches/wgpu-hal.patch`, `src/vulkan/`) has four
+changes, compared here against 2.0.0. The `descriptor.rs` hunk only changes line endings.
+
+1. **Submits in batches of 512 command buffers**, because AMD's driver ran out of memory on a
+   crowded frame's ~3,400.
+2. **Texture-kind allocators**: pooled layers and cacheAsBitmap pictures get gpu-allocator blocks
+   of their own, so freeing the pooled ones empties whole blocks.
+3. **Lean command pools**: see the table above.
+4. **`memory_budget()`** from `VK_EXT_memory_budget`, so Ruffle's trimming knows how much memory
+   it has.
+
+Each of these fixes a driver object or memory the app manages, none of which GL has. So no code
+ports. What does carry over is the method:
+
+- **Count what the hal does and show it in the perf log.** The pools have
+  `AQW_COMMAND_BUFFERS` and `aqw_pool_stats()` in wgpu-core, printed in the memory line. G1 adds
+  GL's counters the same way.
+- **Give every lever an env switch** for A/B runs (`RUFFLE_LEAN_POOLS`, `RUFFLE_POOL_*`). G2
+  uses `RUFFLE_GL_LEVERS`.
+- **Fix the cost where the frame pays it.** On Vulkan that was the driver's memory. On GL it's
+  the replay's calls in `Queue::submit` (below).
+- **A memory budget where the API has one.** G3 does this with `GL_NVX_gpu_memory_info` and
+  `GL_ATI_meminfo`.
 
 ### What OpenGL costs per render pass today
 
