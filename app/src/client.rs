@@ -16,6 +16,7 @@ use anyhow::{Context as _, Error, anyhow};
 use ruffle_render::quality::StageQuality;
 use ruffle_render_wgpu::backend::{WgpuRenderBackend, create_wgpu_instance, request_adapter_and_device};
 use ruffle_render_wgpu::descriptors::Descriptors;
+use ruffle_render_wgpu::utils::{format_list, get_backend_names};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,6 +24,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use turu_frontend::client_screen::{ClientScreen, Picture};
 use turu_frontend::engine::{self, EngineEvent, STAGE};
 use turu_frontend::movie_texture::{Blit, MovieTexture};
@@ -38,6 +40,9 @@ thread_local! {
 
 /// Runs turu.swf as a client of the shell at `address` until the shell goes away.
 pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Result<(), Error> {
+    // A crash shows no message box here: the shell starts the client again.
+    #[cfg(windows)]
+    crate::windows::set_client();
     let token = std::env::var(shell::TOKEN_ENV).with_context(|| format!("--client needs {}", shell::TOKEN_ENV))?;
     let (reader, writer) =
         shell::connect(address, &token).with_context(|| format!("Couldn't reach the shell at {address}"))?;
@@ -88,14 +93,18 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let mut screen = ClientScreen::new(
         descriptors,
         blit,
-        Box::new(move |picture| match picture {
-            Picture::Pixels { width, height, pixels } => {
-                if let Some(path) = sink_dump.lock().unwrap_or_else(|e| e.into_inner()).take() {
-                    write_png(Path::new(&path), width, height, &pixels);
+        Box::new(move |picture| {
+            match picture {
+                Picture::Pixels { width, height, pixels } => {
+                    if let Some(path) = sink_dump.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                        write_png(Path::new(&path), width, height, &pixels);
+                    }
+                    sink_out.frame(width, height, pixels);
                 }
-                sink_out.frame(width, height, pixels);
+                Picture::Shared { id, width, height } => sink_out.send(ToShell::Surface { id, width, height }),
             }
-            Picture::Shared { id, width, height } => sink_out.send(ToShell::Surface { id, width, height }),
+            // Ends the Vulkan startup window 10 s after the first picture (`gpu`).
+            crate::mugetsu::frame_presented();
         }),
     );
     // A shell that takes GPU surfaces names where to hand them; `Dump` needs pixels.
@@ -241,26 +250,71 @@ impl ClientEnd for Forward {
 /// The GPU set up for drawing without a window: its descriptors, the blit and the game's renderer.
 type Gpu = (Arc<Descriptors>, Arc<Blit>, WgpuRenderBackend<MovieTexture>);
 
-/// The GPU without a window (the backends the preferences allow), the blit, and the game's
-/// renderer at turu.swf's stage.
+/// The GPU without a window, chosen as the window and the shell choose theirs (Options'
+/// backends in turn, then the others; Options' power), the blit, and the game's renderer at
+/// turu.swf's stage.
 fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
-    let backends: wgpu::Backends = preferences.graphics_backends().into();
-    let instance = create_wgpu_instance(backends, Default::default(), None);
-    let (adapter, device, queue) = futures::executor::block_on(request_adapter_and_device(
-        backends,
-        &instance,
-        None,
-        wgpu::PowerPreference::HighPerformance,
-    ))
-    .map_err(|e| anyhow!("No GPU for the client: {e}"))?;
+    let wanted: wgpu::Backends = preferences.graphics_backends().into();
+    // A driver crash from here until shortly after the first picture counts as the Vulkan driver
+    // crashing at startup: the crash handler saves it, and the client the shell starts next takes
+    // DirectX 12 (`main.rs`'s `mugetsu_args`), as the window would.
+    crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
+    if wanted.contains(wgpu::Backends::VULKAN) {
+        // A hidden or covered tab draws no pictures (`ClientScreen`), which would leave that window
+        // open as long as it stays hidden: it ends 30 s after this at the latest.
+        let _ = std::thread::Builder::new()
+            .name("vulkan startup".to_string())
+            .spawn(|| {
+                std::thread::sleep(Duration::from_secs(20));
+                crate::mugetsu::frame_presented();
+                std::thread::sleep(Duration::from_secs(11));
+                crate::mugetsu::frame_presented();
+            });
+    }
+    // No window, so no display handle: OpenGL on Linux tries EGL without one, and the other
+    // backends follow if it finds no GPU.
+    let (instance, backend) = crate::gui::select_wgpu_backend(wanted, None)?;
+    #[cfg(windows)]
+    crate::windows::test_native_crash();
+    let power: wgpu::PowerPreference = preferences.graphics_power_preference().into();
+    let (instance, adapter, device, queue) =
+        match futures::executor::block_on(request_adapter_and_device(backend, &instance, None, power)) {
+            Ok((adapter, device, queue)) => (instance, adapter, device, queue),
+            // A backend can list a GPU and still give no device (EGL without a display): the others.
+            Err(e) => {
+                tracing::warn!(
+                    "Client: no GPU on {} ({e}); trying the other backends",
+                    backend_names(backend)
+                );
+                let others = wgpu::Backends::all() - backend;
+                let instance = create_wgpu_instance(others, Default::default(), None);
+                let (adapter, device, queue) =
+                    futures::executor::block_on(request_adapter_and_device(others, &instance, None, power))
+                        .map_err(|e| anyhow!("No GPU for the client: {e}"))?;
+                (instance, adapter, device, queue)
+            }
+        };
     let info = adapter.get_info();
-    tracing::info!("Client graphics: {} on {}", info.backend.to_str(), info.name);
+    crate::mugetsu::set_adapter_ids(info.vendor, info.device);
+    #[cfg(not(windows))]
+    crate::mugetsu::set_video_memory_adapter(adapter.clone());
+    tracing::info!(
+        "Client graphics: {} on {} (type: {:?})",
+        info.backend.to_str(),
+        info.name,
+        info.device_type
+    );
     let descriptors = Arc::new(Descriptors::new(instance, adapter, device, queue));
     let blit = Arc::new(Blit::new(&descriptors.device));
     let target = MovieTexture::new(blit.clone(), &descriptors.device, STAGE.0, STAGE.1);
     let renderer = WgpuRenderBackend::new(descriptors.clone(), target)
         .map_err(|e| anyhow!("Couldn't make the game's renderer: {e}"))?;
     Ok((descriptors, blit, renderer))
+}
+
+/// The backends' names, for the log ("Vulkan and DirectX 12").
+fn backend_names(backends: wgpu::Backends) -> String {
+    format_list(&get_backend_names(backends), "and").into_owned()
 }
 
 /// File dialogs waiting for the shell's answer, by id.

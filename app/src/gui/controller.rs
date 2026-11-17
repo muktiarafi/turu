@@ -85,7 +85,7 @@ impl GuiController {
         // AQW build: a driver crash from here until shortly after the first frame counts as
         // the Vulkan driver crashing at startup (see `mugetsu`).
         crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
-        let (instance, backend) = select_wgpu_backend(wanted, &window)?;
+        let (instance, backend) = select_wgpu_backend(wanted, Some(&window))?;
         #[cfg(windows)]
         crate::windows::test_native_crash();
         let surface = instance.create_surface(window.clone())?;
@@ -772,12 +772,14 @@ impl GuiController {
     }
 }
 
-fn select_wgpu_backend(
+// Turu: also the shell's and its clients' choice (`shell.rs`, `client.rs`), so that all three
+// choose alike; a client has no window (`None`), so its instance has no display handle.
+pub(crate) fn select_wgpu_backend(
     preferred_backends: wgpu::Backends,
-    window: &Arc<Window>,
+    window: Option<&Arc<Window>>,
 ) -> anyhow::Result<(wgpu::Instance, wgpu::Backends)> {
     for backend in preferred_backends.iter() {
-        if let Some(instance) = try_wgpu_backend(backend, window.clone()) {
+        if let Some(instance) = try_wgpu_backend(backend, window.cloned()) {
             tracing::info!(
                 "Using preferred backend {}",
                 format_list(&get_backend_names(backend), "and")
@@ -799,7 +801,7 @@ fn select_wgpu_backend(
         .filter(|b| remaining.contains(*b))
         .chain((remaining - wgpu::Backends::DX12 - wgpu::Backends::METAL - wgpu::Backends::GL).iter());
     for backend in ordered {
-        if let Some(instance) = try_wgpu_backend(backend, window.clone()) {
+        if let Some(instance) = try_wgpu_backend(backend, window.cloned()) {
             tracing::info!(
                 "Using fallback backend {}",
                 format_list(&get_backend_names(backend), "and")
@@ -813,11 +815,14 @@ fn select_wgpu_backend(
     ))
 }
 
-fn try_wgpu_backend(backend: wgpu::Backends, window: Arc<Window>) -> Option<wgpu::Instance> {
+fn try_wgpu_backend(
+    backend: wgpu::Backends,
+    window: Option<Arc<Window>>,
+) -> Option<wgpu::Instance> {
     let instance = create_wgpu_instance(
         backend,
         wgpu::BackendOptions::default(),
-        Some(Box::new(window)),
+        window.map(|window| Box::new(window) as Box<dyn wgpu::wgt::WgpuHasDisplayHandle>),
     );
     if futures::executor::block_on(instance.enumerate_adapters(backend)).is_empty() {
         None

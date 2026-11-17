@@ -11,6 +11,7 @@ use turu_frontend::gui::turu; // Turu: VibeSkua-style nav bar and bot windows.
 mod widgets;
 
 pub use controller::GuiController;
+pub(crate) use controller::select_wgpu_backend;
 pub use dialogs::DialogDescriptor;
 pub use locale::LocalizableText;
 pub use locale::available_languages;

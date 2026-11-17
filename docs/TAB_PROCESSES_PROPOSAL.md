@@ -888,49 +888,53 @@ CPU. Measuring found three things, fixed:
   a covered client's 57%): it has it now only while the pointer is over the window and it's seen,
   as the window's tabs do.
 
-**Windows and Linux: gaps to fix** (found reading the code, 2026-11-17; none run yet). The window
-(`app/src/gui/controller.rs`, `app/src/app.rs`, `app/src/mugetsu.rs`) has safeguards the shell
-(`app/src/shell.rs`) and its clients (`app/src/client.rs`) don't use yet. In order of what they
-break:
+**Windows and Linux: gaps to fix** (found reading the code, 2026-11-17; 1 and 2 fixed since; none
+run on Windows or Linux yet). The window (`app/src/gui/controller.rs`, `app/src/app.rs`,
+`app/src/mugetsu.rs`) has safeguards the shell (`app/src/shell.rs`) and its clients
+(`app/src/client.rs`) didn't use. In order of what they break:
 
-1. **The GPU choice is cruder than the window's.** The window tries each backend in turn with its
-   own window as the display (`select_wgpu_backend` and `try_wgpu_backend` in `controller.rs`, which
-   pass `Some(Box::new(window))` to `create_wgpu_instance`) and asks for Options' power preference
-   (`preferences.graphics_power_preference()`). The shell's `make_gpu` and the client's `gpu()` call
-   `create_wgpu_instance(backends, Default::default(), None)` and ask for
-   `PowerPreference::HighPerformance` always.
-   * Linux with OpenGL (Mugetsu's choice where Vulkan is broken, `mugetsu::Graphics::Gl`): GL needs
-     the display handle, so the shell likely finds no adapter and quits; a client, which has no
-     window at all, may find none either and crash-loop until its tab is left closed.
-   * Low power (`--power low`, or Mugetsu's Intel/Qualcomm default, `mugetsu::intel_graphics`) is
-     ignored: both ask for the high-performance GPU.
-   * Fix: the shell builds its instance with its window as the display and tries the backends in
-     the window's order (reuse or share `select_wgpu_backend`), with the preference's power. The
-     client has no window: on Linux with GL, try EGL without a display, and if no adapter comes,
-     try the other backends (Vulkan, then any) rather than failing; log which it took. Keep both
-     sides choosing the same way, since shared surfaces need one GPU and backend (`ToShell::Gpu`
-     falls back to pixels otherwise). Call `mugetsu::set_adapter_ids` in both, as `controller.rs`
-     does.
-   * Check: on Linux, `turu --shell --graphics gl` opens and its tabs draw (pixels: there's no GL
-     route); `--power low` on a laptop with two GPUs logs the integrated one in
-     `Shell graphics:` and `Client graphics:`.
+1. **The GPU choice was cruder than the window's.** Fixed 2026-11-17 (built and run on the Mac;
+   not built or run on Windows or Linux). The shell and its clients now choose as the window does:
+   `select_wgpu_backend` (`app/src/gui/controller.rs`, now shared) tries Options' backends in
+   turn, then the others (DX12, Metal, GL, the rest), with Options' power
+   (`graphics_power_preference`), and both call `mugetsu::set_adapter_ids` (the client also
+   `set_video_memory_adapter`, off Windows). The shell gives it its window as the display (GL on
+   Linux needs it). A client has none: its instances have no display handle, so on Linux with GL
+   it tries EGL without one and goes on to the other backends if that lists no GPU; if the chosen
+   backend lists one but gives no device, the client asks the other backends for one ("Client: no
+   GPU on …; trying the other backends") instead of failing. Both log the choice with the GPU's
+   type (`Shell graphics:`, `Client graphics:`). Checked on the Mac: with `--shell` and with
+   `--shell --power low`, both took Metal on the same GPU (the Mac has one, so the power choice
+   isn't tested) and the client still sent shared surfaces (IOSurface); with
+   `--shell --graphics gl`, both logged that OpenGL wasn't there, fell back to Metal and shared
+   surfaces. The device fallback hasn't run.
+   * Still to check on Linux: `turu --shell --graphics gl` opens and its tabs draw (pixels:
+     there's no GL route), and which backend the client logs; `--power low` on a laptop with two
+     GPUs logs the integrated one on both lines.
 
-2. **Mugetsu's Vulkan-crash safety net isn't armed.** When a driver crashes while Vulkan starts
-   (Intel on Windows, mostly), Mugetsu saves `mugetsu-vulkan-crashed.txt` and starts on DirectX 12
-   from then on (`mugetsu::vulkan_startup_begin`, `vulkan_starting`, `save_vulkan_crash`, read by
-   `main.rs`'s `mugetsu_args`; Windows' native crash handler in `app/src/windows.rs` checks
-   `vulkan_starting()`). Only `controller.rs` calls `vulkan_startup_begin`. A client crashing in
-   the Vulkan driver records nothing: the shell starts it again into the same crash (1, 4, 16 s),
-   and after five deaths its tab stays closed.
-   * Fix: call `mugetsu::vulkan_startup_begin(backends.contains(VULKAN))` before the client's (and
-     the shell's) GPU setup, and call `mugetsu::frame_presented()` after each picture the client
-     finishes (and each the shell presents), which ends the window 10 s after the first.
-     The next client the shell starts then reads the marker in `mugetsu_args` and takes DX12.
-     The shell and the clients may then be on different backends: shared surfaces fall back to
-     pixels by themselves; consider having the shell restart itself on DX12 too, or leave it.
-   * Check: on Windows, `RUFFLE_TEST_NATIVE_CRASH=driver` (`windows::test_native_crash`, called in
-     `controller.rs`; call it in the client's GPU setup too) with Vulkan chosen: the marker is
-     written and the restarted client logs DX12.
+2. **Mugetsu's Vulkan-crash safety net wasn't armed.** Fixed 2026-11-17 (not built or run on
+   Windows). The shell (`make_gpu`) and the client (`gpu`) call
+   `mugetsu::vulkan_startup_begin(wanted.contains(VULKAN))` before choosing the GPU, and
+   `mugetsu::frame_presented()` after each picture (the shell's present, the client's picture
+   sink), which ends the window 10 s after the first. A hidden or covered client draws no
+   pictures, so a timer ends its window 30 s after its GPU was set up at the latest (otherwise a
+   driver crash hours later in a hidden tab would count as a Vulkan startup crash and move the PC
+   to DX12). A client marks itself
+   (`windows::set_client`): Windows' crash handler then shows no message box and doesn't start
+   Turu again (nobody could answer it, and "start again" would start a stray client); after a
+   Vulkan driver crash while starting it saves the marker and ends, and the client the shell
+   starts next reads it in `mugetsu_args` (its arguments are the shell's, without `--graphics`
+   unless the user gave it) and takes DX12. The shell keeps the window's message box and
+   restart. The shell, already on Vulkan, isn't restarted: with the client on DX12 the adapter
+   keys differ and that tab's pictures go as pixels (`ToShell::Gpu`) until the next start, which
+   takes DX12 for both.
+   * Check on Windows: `RUFFLE_TEST_NATIVE_CRASH=driver` (`windows::test_native_crash`, now also
+     called in the client's `gpu`, not in the shell's) with `RUFFLE_TEST_DRIVER_FILE` naming the
+     DLL and Vulkan chosen: the marker is written, no box shows, and the restarted client logs
+     `Using DirectX 12: the Vulkan driver crashed on this PC before` and
+     `Using preferred backend DirectX 12`, then crashes again before its `Client graphics:` line
+     (the environment variable still asks; that crash isn't Vulkan's, so no box and no new
+     marker), and the shell stops restarting it after five deaths.
 
 3. **The graphics switch can't be reached in shell mode.** Windows has it in the title-bar menu
    (`windows::add_graphics_menu`, installed by `controller.rs`), Linux in the game's right-click menu
@@ -960,7 +964,7 @@ break:
      systems yet: the first build there is their compile check (`shared_gpu.rs` alone is
      type-checked for both targets).
 
-Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above). Not built: the shell's own `--api`
+Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above: 1 and 2 are fixed but not run there, 3 to 5 are open). Not built: the shell's own `--api`
 (ignored with a warning: each client has one). A down tab keeps its last
 monitor entry online for up to 15 s.
 

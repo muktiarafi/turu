@@ -92,6 +92,14 @@ pub(super) fn aqw_tune_process() {
 /// happened instead. If the Vulkan driver crashed while Mugetsu was starting, it remembers that
 /// (see `mugetsu::save_vulkan_crash`) and offers to start Mugetsu again, which then uses
 /// DirectX 12.
+/// Turu: this process is a process tab's client (`client.rs`): its crashes show no message box.
+static CLIENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turu: marks this process as a process tab's client, for `crash_filter`.
+pub(super) fn set_client() {
+    CLIENT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 pub(super) fn install_crash_handler() {
     use windows_sys::Win32::System::Diagnostics::Debug::SetUnhandledExceptionFilter;
     // SAFETY: `crash_filter` has the signature Windows expects and stays valid for the whole
@@ -193,7 +201,16 @@ unsafe extern "system" fn crash_filter(
         ),
     );
 
-    if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
+    // Turu: a process tab's client (`--client`) has no window and nobody to answer a box, and its
+    // "start again" would start a stray client: the shell starts it again by itself, and after a
+    // Vulkan crash saved here the new client takes DirectX 12 (`main.rs`'s `mugetsu_args`).
+    if CLIENT.load(Ordering::Relaxed) {
+        if vulkan_starting
+            && let Some(module) = module.as_ref().filter(|module| module.is_graphics_driver())
+        {
+            crate::mugetsu::save_vulkan_crash(&module.path);
+        }
+    } else if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
         message_box(
             "Turu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
             generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \

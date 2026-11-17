@@ -1624,6 +1624,7 @@ impl ShellApp {
             gpu.queue.submit([commands]);
         }
         gpu.queue.present(frame);
+        crate::mugetsu::frame_presented();
     }
 
     /// `TURU_SHELL_TEST`'s `dump`: the window drawn into a texture and read back, as a PNG.
@@ -1983,19 +1984,23 @@ fn pointer(kind: PointerKind, button: Button, at: PhysicalPosition<f64>) -> ToCl
 
 /// The window's surface on the GPU, and what draws the clients' pictures into it.
 ///
-/// The GPU is chosen as the clients choose theirs (`client.rs`: Options' backends, high
-/// performance), so that both sides are on the same GPU and backend and can share surfaces; with
-/// it, its key (`shell::adapter_key`).
+/// The GPU is chosen as the window and the clients choose theirs (`select_wgpu_backend`: Options'
+/// backends in turn, then the others; Options' power), so that both sides are on the same GPU and
+/// backend and can share surfaces; with it, its key (`shell::adapter_key`).
 fn make_gpu(window: Arc<Window>, preferences: &GlobalPreferences) -> Result<(Gpu, String), Error> {
-    let backends: wgpu::Backends = preferences.graphics_backends().into();
-    let instance = ruffle_render_wgpu::backend::create_wgpu_instance(backends, Default::default(), None);
+    let wanted: wgpu::Backends = preferences.graphics_backends().into();
+    // As the window: a driver crash from here until shortly after the first frame counts as the
+    // Vulkan driver crashing at startup (`mugetsu`), and the next start takes DirectX 12.
+    crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
+    // With the window as the display: OpenGL needs it (Linux).
+    let (instance, backend) = crate::gui::select_wgpu_backend(wanted, Some(&window))?;
     let surface = instance.create_surface(window.clone())?;
     let (adapter, device, queue) =
         match futures::executor::block_on(ruffle_render_wgpu::backend::request_adapter_and_device(
-            backends,
+            backend,
             &instance,
             Some(&surface),
-            wgpu::PowerPreference::HighPerformance,
+            preferences.graphics_power_preference().into(),
         )) {
             Ok(found) => found,
             // Any GPU that can show the window, if the clients' choice can't.
@@ -2010,7 +2015,13 @@ fn make_gpu(window: Arc<Window>, preferences: &GlobalPreferences) -> Result<(Gpu
             }
         };
     let info = adapter.get_info();
-    tracing::info!("Shell graphics: {} on {}", info.backend.to_str(), info.name);
+    crate::mugetsu::set_adapter_ids(info.vendor, info.device);
+    tracing::info!(
+        "Shell graphics: {} on {} (type: {:?})",
+        info.backend.to_str(),
+        info.name,
+        info.device_type
+    );
     let key = shell::adapter_key(info.backend.to_str(), info.vendor, info.device, &info.name);
     let caps = surface.get_capabilities(&adapter);
     // The pictures are BGRA: drawn as they are into a window that takes BGRA, else converted.
