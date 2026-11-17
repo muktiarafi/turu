@@ -91,7 +91,8 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
   src/grid.rs            Grid View's tiles
   src/engine.rs          the windowless player loop (`--headless`, Android): executor, no-dialog
                          navigator, tick loop
-  src/pacing.rs          frame interpolation's pacing (desktop window and Android's screen)
+  src/pacing.rs          frame interpolation's pacing (desktop window, process tabs' clients,
+                         Android's screen)
   src/shell.rs, client_link.rs, client_screen.rs   process tabs (docs/TAB_PROCESSES_PROPOSAL.md):
                          what a shell and a client say, a tab's side of the link, a client's screen
   src/slots.rs           process tabs on Android: each tab a slot, a service in a process of its own

@@ -146,6 +146,9 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     screen.set_clipboard(Box::new(SystemClipboard(egui_winit::clipboard::Clipboard::new(None))));
     let cursor_out = out.clone();
     screen.set_cursor_sink(Box::new(move |cursor| cursor_out.send(ToShell::Cursor { cursor })));
+    // Frame interpolation's pace: the shell presents in step with it.
+    let pace_out = out.clone();
+    screen.set_pace_sink(Box::new(move |pace| pace_out.send(ToShell::Pace { pace })));
     SCREEN.set(Some(screen));
     turu::start_updates();
     // Turu's updates are the shell's: it checks and installs; Check Now and Download & restart go
@@ -314,12 +317,18 @@ fn perf_tick(player: &mut ruffle_core::Player) {
         Some(last) if now.duration_since(last) >= every => {
             LAST.set(Some(now));
             crate::headless::log_memory(player);
-            let shown = SCREEN.with_borrow(|screen| screen.as_ref().map(|screen| (screen.shown(), screen.fps())));
-            if let Some((shown, fps)) = shown {
+            let shown = SCREEN.with_borrow_mut(|screen| {
+                screen
+                    .as_mut()
+                    .map(|screen| (screen.shown(), screen.fps(), screen.take_skipped()))
+            });
+            if let Some((shown, fps, skipped)) = shown {
+                // With frame interpolation: new pictures due on the shell's refreshes but skipped.
                 tracing::info!(
                     target: "turu_perf",
-                    "pictures: {}",
-                    if shown { format!("{fps:.1} a second") } else { "none (hidden)".to_string() }
+                    "pictures: {}{}",
+                    if shown { format!("{fps:.1} a second") } else { "none (hidden)".to_string() },
+                    if skipped > 0 { format!(", {skipped} due skipped") } else { String::new() }
                 );
             }
         }
@@ -585,6 +594,35 @@ impl Platform for ClientPlatform {
 
     fn set_show_fps(&self, on: bool) {
         crate::mugetsu::set_show_fps(on);
+    }
+
+    // Mugetsu 2.0.0's frame pacing and FPS limit (the window's right-click menu has them): a tab
+    // asks the shell to present its pictures uncapped (`ClientScreen`). Applied from the next
+    // game frame; the other tabs take it at their next start, as Frame Interpolation.
+    fn frame_pacing(&self) -> Option<(bool, u32)> {
+        use crate::mugetsu::FpsLimit;
+        let limit = match crate::mugetsu::fps_limit() {
+            FpsLimit::Off => 0,
+            FpsLimit::Screen => 1,
+            FpsLimit::Fixed(fps) => fps,
+        };
+        Some((crate::mugetsu::uncapped(), limit))
+    }
+
+    fn set_uncapped(&self, on: bool) {
+        crate::mugetsu::set_uncapped(on);
+        tracing::info!("Frame pacing set to {}", if on { "uncapped" } else { "v-sync" });
+    }
+
+    fn set_fps_limit(&self, limit: u32) {
+        use crate::mugetsu::FpsLimit;
+        let limit = match limit {
+            0 => FpsLimit::Off,
+            1 => FpsLimit::Screen,
+            fps => FpsLimit::Fixed(fps),
+        };
+        crate::mugetsu::set_fps_limit(limit);
+        tracing::info!("FPS limit: {limit:?}");
     }
 
     fn full_screen(&self) -> Option<bool> {

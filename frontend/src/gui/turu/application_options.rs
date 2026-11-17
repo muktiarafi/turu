@@ -85,6 +85,10 @@ enum Field {
     Graphics,
     /// The FPS counter (`Platform::show_fps`).
     ShowFps,
+    /// Mugetsu 2.0.0's frame pacing, V-sync or Uncapped (`Platform::frame_pacing`).
+    FramePacing,
+    /// Mugetsu 2.0.0's FPS limit while uncapped (`Platform::frame_pacing`).
+    FpsLimit,
     /// Mugetsu 2.0.0's Performance mode (`Platform::performance`).
     Performance,
     /// Mugetsu 2.0.0's memory limit (`Platform::memory_limit_mb`).
@@ -151,6 +155,20 @@ fn entries() -> Vec<Entry> {
             "Show FPS",
             "A small counter in the corner of the game: how many pictures of it are drawn a second. This tab at once, the others from their next start",
             Field::ShowFps
+        ));
+    }
+    if platform.frame_pacing().is_some() {
+        entries.push(entry!(
+            General,
+            "Frame Pacing",
+            "With Frame Interpolation on: V-sync shows the in-between pictures in step with the display. Uncapped sends each one as soon as it's ready, for G-Sync and FreeSync monitors (on others the picture tears). This tab from its next game frame, the others from their next start",
+            Field::FramePacing
+        ));
+        entries.push(entry!(
+            General,
+            "FPS Limit",
+            "With Frame Pacing on Uncapped: the most pictures a second. Screen is just under the monitor's refresh rate, where a G-Sync or FreeSync monitor still follows. This tab from its next game frame, the others from their next start",
+            Field::FpsLimit
         ));
     }
     if platform.performance().is_some() {
@@ -686,6 +704,34 @@ impl ApplicationOptionsWindow {
                                             platform.set_show_fps(on);
                                         }
                                     }
+                                    Field::FramePacing => {
+                                        let platform = crate::platform::platform();
+                                        let uncapped = platform.frame_pacing().is_some_and(|(on, _)| on);
+                                        ui.horizontal(|ui| {
+                                            for (on, label) in [(false, "V-sync"), (true, "Uncapped")] {
+                                                if widgets::chip(ui, label, uncapped == on) && uncapped != on {
+                                                    platform.set_uncapped(on);
+                                                }
+                                            }
+                                        });
+                                    }
+                                    Field::FpsLimit => {
+                                        let platform = crate::platform::platform();
+                                        let limit = platform.frame_pacing().map_or(0, |(_, limit)| limit);
+                                        // A number set elsewhere (the window's Custom) shows as one more choice.
+                                        let mut choices = vec![(0, "Off".to_owned()), (1, "Screen".to_owned())];
+                                        choices.extend([60, 120, 144].map(|fps| (fps, fps.to_string())));
+                                        if !choices.iter().any(|(value, _)| *value == limit) {
+                                            choices.push((limit, limit.to_string()));
+                                        }
+                                        ui.horizontal(|ui| {
+                                            for (value, label) in choices {
+                                                if widgets::chip(ui, &label, limit == value) && limit != value {
+                                                    platform.set_fps_limit(value);
+                                                }
+                                            }
+                                        });
+                                    }
                                     Field::Performance => {
                                         let platform = crate::platform::platform();
                                         let level = platform.performance().unwrap_or(0);
@@ -1000,6 +1046,8 @@ fn control_width(field: &Field) -> f32 {
         // Automatic, Vulkan, DirectX 12 (and OpenGL).
         Field::Graphics => 330.0,
         Field::Performance => 230.0,
+        Field::FramePacing => 190.0,
+        Field::FpsLimit => 330.0,
         Field::MemoryLimit => 330.0,
         _ => 96.0,
     }

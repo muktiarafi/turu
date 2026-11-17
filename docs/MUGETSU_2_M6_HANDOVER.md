@@ -107,13 +107,23 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    Now; a farm of 20+ minutes. Re-measure against the dropped marks' numbers (a frame's game logic:
    Battleon 2.2 → 1.3 ms, Yulgar 3.1 → 2.1, /fotia 4.9 → 1.95 with them; `TURU_PERF_LOG`) and lazy
    shapes (1331 → 5 shapes parsed at the login screen).
-3. **Frame interpolation in clients** (its own task; the biggest gap). Clients draw once per game
-   frame (`client_screen.rs` `step`). Needed: Turu's pacer (`frontend/src/pacing.rs`) in the
-   client, the shell presenting in step (it shows the client's shared surface), then Mugetsu's
-   uncapped pacing and FPS limit in client Options (the window's code: `app/src/app.rs`
-   `pace_interpolation`, `gui/controller.rs` `set_vsync`), then Mugetsu's render thread
+3. **Frame interpolation in clients**: the pacer and uncapped pacing done (2026-11-18, branch
+   `client-interpolation`, cut from `main`; STATUS.md, "Frame interpolation in a tab's client"). The client plans
+   with Turu's pacer (`client_screen.rs` `plan_pace`) and tells the shell (`ToShell::Pace`); the
+   shell presents on every refresh and ticks the client (`ToClient::Refreshed`), which draws only
+   on those ticks; Frame Pacing and FPS Limit are in client Options. Shared surfaces went from 3 to
+   5. Checked on the Mac only (login screen, no account). Left: Mugetsu's render thread
    (`ruffle_render_wgpu::render_thread::ThreadedBackend`; `client_screen.rs`'s
-   `downcast_ref::<WgpuRenderBackend<MovieTexture>>` must go through `render_thread::with_wgpu_backend`).
+   `downcast_ref::<WgpuRenderBackend<MovieTexture>>` must go through
+   `render_thread::with_wgpu_backend`); a run in game (a crowded room, where the pacer steps down);
+   Windows and Linux, where the shell's present mode switch (`apply_pace`) and whether presenting
+   waits for the refresh (the shell's ticks rely on it) are untried; Grid View's active tab
+   interpolating (should, untried); Turu's pacer counts only `player.render()`, not the pictures
+   skipped because one is still under way or no surface is free (the perf log counts those: feed
+   them back into its divisor, as Mugetsu's window does with `PipelineLimit`, if a crowded room
+   shows them). A picture is the shell's for about 4 refreshes, mostly
+   waiting for the shell's release poll while its main thread waits in `get_current_texture`: a
+   release thread could bring the pool back down.
 4. ~~**Mugetsu's Windows changes**~~ ported (2026-11-17, type-checked for Windows only):
    DirectX 12 as Automatic's choice on Windows (`mugetsu::automatic_graphics`, unit-tested), the
    DirectX 12 crash marker, the Vulkan retry when DirectX 12 can't start (`mugetsu::open_gpu`, in

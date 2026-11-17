@@ -10,6 +10,12 @@
 //! [`Pacing::record_draw`]) and the display's refresh interval; [`Pacing::plan`] after each pass
 //! says whether to interpolate, and before each draw [`Pacing::new_picture_due`] whether to draw a
 //! new picture or show the last one again.
+//!
+//! A process tab's client (`crate::client_screen`) presents nothing itself: the shell presents
+//! its pictures on every refresh and tells it after each, and it asks [`Pacing::new_picture_due`]
+//! then; the refreshes without a new picture show the last one again in the shell. Uncapped
+//! (Mugetsu 2.0.0), each new picture goes out as soon as it's ready, at most [`fps_limit`]'s a
+//! second ([`Pacing::new_uncapped_picture_due`]).
 
 use std::time::{Duration, Instant};
 
@@ -150,6 +156,50 @@ impl Pacing {
     }
 }
 
+impl Pacing {
+    /// Uncapped, at most one new picture every `interval` (the FPS limit, else none), evenly by
+    /// the clock: whether a draw that started at `started` draws a new one.
+    pub fn new_uncapped_picture_due(
+        &mut self,
+        started: Instant,
+        interval: Option<Duration>,
+    ) -> bool {
+        let Some(interval) = interval else {
+            return true;
+        };
+        let due = self.picture_due + interval;
+        if started + Duration::from_micros(300) >= due {
+            // Keep the rhythm, unless it fell more than a picture behind.
+            self.picture_due = if started < due + interval {
+                due
+            } else {
+                started
+            };
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Uncapped with an FPS limit of one picture every `interval`: when the next is due.
+    pub fn next_uncapped_picture(&self, interval: Duration) -> Instant {
+        self.picture_due + interval
+    }
+}
+
+/// Uncapped pacing's FPS limit in pictures a second (None: no limit), from Mugetsu's setting (0:
+/// none, 1: the display's rate, else that many) and the display's refresh interval. "The
+/// display's rate" is three under it: at the rate itself a variable-refresh monitor stops
+/// following.
+pub fn fps_limit(setting: u32, refresh_interval: Duration) -> Option<f64> {
+    let refresh_hz = 1.0 / refresh_interval.as_secs_f64();
+    match setting {
+        0 => None,
+        1 => Some((refresh_hz - 3.0).max(refresh_hz * 0.9)),
+        fps => Some(f64::from(fps)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +246,37 @@ mod tests {
         assert!(pacing.new_picture_due(start + refresh));
         assert!(!pacing.new_picture_due(start + refresh + refresh / 4));
         assert!(pacing.new_picture_due(start + refresh * 2));
+    }
+
+    #[test]
+    fn uncapped_pictures_keep_the_limit() {
+        let mut pacing = Pacing::new();
+        let start = pacing.picture_due;
+        assert!(
+            pacing.new_uncapped_picture_due(start, None),
+            "no limit: always"
+        );
+        let interval = Duration::from_millis(10);
+        assert!(!pacing.new_uncapped_picture_due(start + Duration::from_millis(5), Some(interval)));
+        assert!(pacing.new_uncapped_picture_due(start + Duration::from_millis(10), Some(interval)));
+        assert_eq!(
+            pacing.next_uncapped_picture(interval),
+            start + Duration::from_millis(20)
+        );
+        // Far behind: it starts again from now rather than catching up.
+        let late = start + Duration::from_millis(100);
+        assert!(pacing.new_uncapped_picture_due(late, Some(interval)));
+        assert_eq!(pacing.next_uncapped_picture(interval), late + interval);
+    }
+
+    #[test]
+    fn fps_limits() {
+        let refresh = Duration::from_secs_f64(1.0 / 144.0);
+        assert_eq!(fps_limit(0, refresh), None);
+        assert!((fps_limit(1, refresh).unwrap() - 141.0).abs() < 0.01);
+        assert_eq!(fps_limit(90, refresh), Some(90.0));
+        // At 24 Hz, three under would be a big share: 90% of it instead.
+        let slow = Duration::from_secs_f64(1.0 / 24.0);
+        assert!((fps_limit(1, slow).unwrap() - 21.6).abs() < 0.01);
     }
 }

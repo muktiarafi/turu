@@ -32,6 +32,15 @@
 //! `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG) and `quit` (the
 //! window closed, as by its close button).
 //!
+//! Frame interpolation in a tab (`ToShell::Pace`, `client_screen.rs`): while the tab on screen
+//! asks for `Pace::Refresh`, the window is presented on every refresh of the display (presenting
+//! waits for it, as the window's own interpolation does) and the tab is told after each
+//! (`ToClient::Refreshed`); it draws its in-between pictures on those, so they keep in step with
+//! the display, and each shows from the next refresh. `Pace::Uncapped` presents each picture when
+//! it comes without waiting for the refresh. The display's rate goes to every tab
+//! (`ToClient::RefreshRate`). `rate` also says, of the presents since the last, how many showed
+//! no new picture, one, or more (one picture skipped).
+//!
 //! Grid View (the bar's Grid toggle, `ToShell::Grid`): the tab on screen draws the window with its
 //! game in its tile, the others only their game at their tile's size; the shell puts the tiles
 //! under the tab on screen's picture. A click on another tile goes to the tab on screen, which
@@ -49,7 +58,7 @@ use turu_bot::monitor::hub::PeerSource;
 use turu_frontend::engine::STAGE;
 use turu_frontend::movie_texture::Blit;
 use turu_frontend::shell::{
-    self, Button, GridShow, GridTile, Mods, PointerKind, SHARED_POOL, TabInfo, ToClient, ToShell,
+    self, Button, GridShow, GridTile, Mods, Pace, PointerKind, SHARED_POOL, TabInfo, ToClient, ToShell,
 };
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -72,6 +81,9 @@ const DEATH_WINDOW: Duration = Duration::from_secs(600);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often the GPU is asked whether the work before a surface's release is done.
 const RELEASE_POLL: Duration = Duration::from_millis(4);
+const RELEASE_POLL_PACED: Duration = Duration::from_millis(1);
+/// How often the display's refresh rate is looked up (the window may move to another monitor).
+const REFRESH_CHECK: Duration = Duration::from_secs(2);
 
 /// A client's surface as the shell got it: an IOSurface (macOS), Vulkan memory or a D3D12
 /// resource (Windows, Linux: `shared_gpu.rs`); elsewhere there are none.
@@ -159,8 +171,11 @@ struct Tab {
     deaths: Vec<Instant>,
     /// When to start the client again.
     restart_at: Option<Instant>,
-    /// Pictures received since `TURU_SHELL_TEST`'s last `rate`.
+    /// Pictures received since `TURU_SHELL_TEST`'s last `rate`, and since the client started.
     pictures: u32,
+    received: u64,
+    /// How its client wants its pictures presented (frame interpolation), until it starts again.
+    pace: Pace,
     /// Gave up on restarting (until the tab is selected).
     closed: bool,
     started: Instant,
@@ -303,6 +318,14 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
         #[cfg(any(windows, target_os = "linux"))]
         start_again: false,
         rate_since: Instant::now(),
+        pace: Pace::Frames,
+        refresh_millihertz: 0,
+        refresh_checked: None,
+        draw_started: Instant::now(),
+        drawn_received: 0,
+        presents: [0; 3],
+        no_frame: 0,
+        draw_failed: false,
         covered: false,
         occluded: false,
         minimized: false,
@@ -595,6 +618,21 @@ struct ShellApp {
     start_again: bool,
     /// When `TURU_SHELL_TEST`'s last `rate` was.
     rate_since: Instant,
+    /// How the window is presented: the tab on screen's pace while it's seen (`apply_pace`).
+    pace: Pace,
+    /// The display's refresh rate (mHz, 0 before the first look) and when it was looked up.
+    refresh_millihertz: u32,
+    refresh_checked: Option<Instant>,
+    /// When the last draw started (pacing the draws on every refresh), and the tab on screen's
+    /// pictures received by then.
+    draw_started: Instant,
+    drawn_received: u64,
+    /// Presents since `rate` with no new picture of the tab on screen, one, or more; and draws
+    /// that got no picture of the window to draw into (timed out, lost).
+    presents: [u32; 3],
+    no_frame: u32,
+    /// The last draw got no picture of the window (`no_frame`): the next waits longer.
+    draw_failed: bool,
     /// The window is covered or minimized: the clients draw nothing (`ToClient::Covered`).
     covered: bool,
     occluded: bool,
@@ -633,6 +671,8 @@ impl ShellApp {
             deaths: Vec::new(),
             restart_at: None,
             pictures: 0,
+            received: 0,
+            pace: Pace::Frames,
             closed: false,
             started: Instant::now(),
             api: None,
@@ -966,6 +1006,15 @@ impl ShellApp {
         };
         spawn_reader(tab.id, tab.generation, reader, tab.picture.clone(), proxy);
         tab.out = Some(stream);
+        tab.pace = Pace::Frames;
+        if self.refresh_millihertz > 0 {
+            send(
+                tab,
+                &ToClient::RefreshRate {
+                    millihertz: self.refresh_millihertz,
+                },
+            );
+        }
         // As the other tabs have it, once one changed it.
         if let Some(on) = self.headless_mode {
             send(tab, &ToClient::HeadlessMode { on });
@@ -1013,6 +1062,7 @@ impl ShellApp {
         }
         tab.shown = None;
         tab.waiting = None;
+        tab.pace = Pace::Frames;
         stop(&mut tab);
         self.schedule_restart(&mut tab);
         self.tabs.insert(index, tab);
@@ -1082,6 +1132,12 @@ impl ShellApp {
             ToShell::CheckUpdates => turu::check_client_updates_now(),
             ToShell::FullScreen { on } => self.set_full_screen(on),
             // The cursor of the tab on screen (another's would be stale by the time it shows).
+            ToShell::Pace { pace } => {
+                if let Some(tab) = self.tab(id) {
+                    tab.pace = pace;
+                }
+                self.apply_pace();
+            }
             ToShell::Cursor { cursor } => {
                 if id == self.shown
                     && let Some(window) = &self.window
@@ -1455,6 +1511,7 @@ impl ShellApp {
     fn surface_picture(&mut self, id: u32, surface: u64) {
         if let Some(tab) = self.tab(id) {
             tab.pictures += 1;
+            tab.received += 1;
         }
         let visible = self.visible(id);
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
@@ -1519,7 +1576,10 @@ impl ShellApp {
         if let Some(older) = tab.shown.replace(new).and_then(|shown| shown.surface) {
             self.retiring.push((id, pid, older));
         }
-        if let Some(window) = &self.window {
+        // Presented on every refresh anyway: drawn then, which keeps the rhythm.
+        if self.pace != Pace::Refresh
+            && let Some(window) = &self.window
+        {
             window.request_redraw();
         }
     }
@@ -1554,6 +1614,7 @@ impl ShellApp {
             return;
         };
         tab.pictures += 1;
+        tab.received += 1;
         let picture = std::mem::take(&mut *tab.picture.lock().unwrap_or_else(|e| e.into_inner()));
         let size = (picture.width, picture.height);
         if picture.pixels.len() < size.0 as usize * size.1 as usize * 4 || size.0 == 0 || size.1 == 0 {
@@ -1605,6 +1666,7 @@ impl ShellApp {
             self.retiring.push((id, pid, older));
         }
         if self.visible(id)
+            && self.pace != Pace::Refresh
             && let Some(window) = &self.window
         {
             window.request_redraw();
@@ -1704,7 +1766,8 @@ impl ShellApp {
         Some(encoder.finish())
     }
 
-    fn draw(&self) {
+    fn draw(&mut self) {
+        self.draw_started = Instant::now();
         let Some(gpu) = &self.gpu else {
             return;
         };
@@ -1720,10 +1783,17 @@ impl ShellApp {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                 gpu.surface.configure(&gpu.device, &gpu.config);
+                self.no_frame += 1;
+                self.draw_failed = true;
                 return;
             }
-            _ => return,
+            _ => {
+                self.no_frame += 1;
+                self.draw_failed = true;
+                return;
+            }
         };
+        self.draw_failed = false;
         let view = frame.texture.create_view(&Default::default());
         let size = (gpu.config.width, gpu.config.height);
         if let Some(commands) = self.render(gpu, &view, size) {
@@ -1731,6 +1801,82 @@ impl ShellApp {
         }
         gpu.queue.present(frame);
         crate::mugetsu::frame_presented();
+        let pace = self.pace;
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == self.shown) else {
+            return;
+        };
+        let new = tab.received - self.drawn_received.min(tab.received);
+        self.drawn_received = tab.received;
+        self.presents[(new as usize).min(2)] += 1;
+        if pace == Pace::Refresh {
+            send(tab, &ToClient::Refreshed);
+        }
+    }
+
+    /// How the window is presented, from the tab on screen's pace while the window is seen: on
+    /// every refresh (`Refresh`, drawn from `about_to_wait`), or when a picture comes, waiting for
+    /// the refresh or (`Uncapped`) not.
+    fn apply_pace(&mut self) {
+        let pace = match self.tabs.iter().find(|tab| tab.id == self.shown) {
+            Some(tab) if !self.covered && tab.out.is_some() => tab.pace,
+            _ => Pace::Frames,
+        };
+        let pace = if pace == Pace::Unknown { Pace::Frames } else { pace };
+        if pace == self.pace {
+            return;
+        }
+        let uncapped = pace == Pace::Uncapped;
+        if uncapped != (self.pace == Pace::Uncapped)
+            && let Some(gpu) = &mut self.gpu
+        {
+            gpu.config.present_mode = if uncapped {
+                wgpu::PresentMode::AutoNoVsync
+            } else {
+                wgpu::PresentMode::AutoVsync
+            };
+            gpu.surface.configure(&gpu.device, &gpu.config);
+        }
+        tracing::info!(target: "ruffle_aqw_perf", "Shell: presenting {pace:?} (tab {})", self.shown);
+        self.pace = pace;
+        if let Some(tab) = self.tabs.iter().find(|tab| tab.id == self.shown) {
+            self.drawn_received = tab.received;
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// The display's refresh rate, looked up every [`REFRESH_CHECK`]; told to every tab when it
+    /// changes (frame interpolation's pacing).
+    fn check_refresh_rate(&mut self) {
+        let now = Instant::now();
+        if self
+            .refresh_checked
+            .is_some_and(|at| now.duration_since(at) < REFRESH_CHECK)
+        {
+            return;
+        }
+        self.refresh_checked = Some(now);
+        let Some(window) = &self.window else {
+            return;
+        };
+        let millihertz = window
+            .current_monitor()
+            .and_then(|monitor| monitor.refresh_rate_millihertz())
+            .unwrap_or(60_000)
+            .clamp(24_000, 360_000);
+        if millihertz == self.refresh_millihertz {
+            return;
+        }
+        self.refresh_millihertz = millihertz;
+        tracing::info!(
+            target: "ruffle_aqw_perf",
+            "Shell: the display refreshes at {:.1} Hz",
+            f64::from(millihertz) / 1000.0
+        );
+        for tab in &mut self.tabs {
+            send(tab, &ToClient::RefreshRate { millihertz });
+        }
     }
 
     /// `TURU_SHELL_TEST`'s `dump`: the window drawn into a texture and read back, as a PNG.
@@ -1873,6 +2019,13 @@ impl ShellApp {
                     tab.label
                 );
             }
+            let [none, one, more] = std::mem::take(&mut self.presents);
+            tracing::info!(
+                "Shell test: {:.1} presents a second ({:?}): {none} with no new picture, {one} with one, {more} with more; {} draws without a picture of the window",
+                f64::from(none + one + more) / elapsed.max(0.001),
+                self.pace,
+                std::mem::take(&mut self.no_frame)
+            );
             return;
         }
         // `minimize on` / `minimize off`: as the window's yellow button would (macOS reports it as
@@ -2076,13 +2229,37 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.release_retiring();
+        self.check_refresh_rate();
+        self.apply_pace();
         let mut wake = self.restart_due();
+        if self.pace == Pace::Refresh {
+            // Asked for half a refresh after the last draw, as the window's interpolation does:
+            // the next present waits for its refresh, and the draw is ready in time for it.
+            // Without a picture of the window last time (macOS gives none while the window is
+            // hidden from view), every 4th refresh only.
+            let refresh = Duration::from_secs_f64(1000.0 / f64::from(self.refresh_millihertz.max(24_000)));
+            let wait = if self.draw_failed { refresh * 4 } else { refresh / 2 };
+            let mut due = self.draw_started + wait;
+            if Instant::now() >= due {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                due = Instant::now() + wait;
+            }
+            wake = Some(wake.map_or(due, |at| at.min(due)));
+        }
         if self.releases_pending > 0
             && let Some(gpu) = &self.gpu
         {
             // Runs the GPU's callbacks: the releases come as events.
             let _ = gpu.device.poll(wgpu::PollType::Poll);
-            let poll = Instant::now() + RELEASE_POLL;
+            // On every refresh a picture comes and one goes back: sooner, or the client waits.
+            let poll = Instant::now()
+                + if self.pace == Pace::Refresh {
+                    RELEASE_POLL_PACED
+                } else {
+                    RELEASE_POLL
+                };
             wake = Some(wake.map_or(poll, |at| at.min(poll)));
         }
         match wake {

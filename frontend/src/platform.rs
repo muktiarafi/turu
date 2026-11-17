@@ -229,6 +229,20 @@ pub trait Platform: Send + Sync {
     /// Frees now what the game isn't using (Mugetsu's "Free memory now").
     fn free_memory(&self) {}
 
+    /// Mugetsu 2.0.0's frame pacing, with frame interpolation: whether it's uncapped (pictures go
+    /// out without waiting for the display's refresh), and the FPS limit then (0: none, 1: just
+    /// under the display's rate, else that many a second); None where Options doesn't offer it
+    /// (as `show_fps`; the window has the game's right-click menu).
+    fn frame_pacing(&self) -> Option<(bool, u32)> {
+        None
+    }
+
+    /// Picks uncapped pacing or v-sync, and saves it.
+    fn set_uncapped(&self, _on: bool) {}
+
+    /// Sets the FPS limit (as `frame_pacing` gives it), and saves it.
+    fn set_fps_limit(&self, _limit: u32) {}
+
     /// Whether the window is full screen, or None where Options doesn't offer it (as `show_fps`).
     fn full_screen(&self) -> Option<bool> {
         None

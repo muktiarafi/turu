@@ -9,13 +9,22 @@
 //! no copy through the CPU. The shell hands each back ([`ToClient::Release`]) when it has a newer
 //! one.
 //!
+//! With frame interpolation on (Options > Application), the tab asks the shell to present on every
+//! refresh of the display ([`Pace::Refresh`]) and draws a new in-between picture on the refreshes
+//! [`Pacing`] picks, as the window does, when the shell says it presented ([`ToClient::Refreshed`]):
+//! its pictures keep in step with the display, which a timer of the client's own would drift
+//! against. Uncapped ([`Pace::Uncapped`], Mugetsu 2.0.0), each new picture goes out as soon as
+//! the last is done, or at the FPS limit. Only with shared surfaces: pixels read back through the
+//! CPU stay at one picture per game frame.
+//!
 //! Android's screen (`android/src/screen.rs`) draws the same way into a window; the two share
 //! [`crate::movie_texture`]. Everything here runs on the engine thread.
 
 use crate::engine::Step;
 use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
-use crate::shell::{Button, Cursor, GridShow, Mods, PointerKind, SHARED_POOL, ToClient};
+use crate::pacing::Pacing;
+use crate::shell::{Button, Cursor, GridShow, Mods, Pace, PointerKind, SHARED_POOL, ToClient};
 use crate::turu;
 use ruffle_core::ViewportDimensions;
 use ruffle_core::events::{
@@ -35,8 +44,13 @@ use std::time::{Duration, Instant};
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 /// The shortest time between two pictures of the UI alone (30 a second).
 const UI_FRAME: Duration = Duration::from_millis(33);
-/// How often a readback is looked at while one is under way.
+/// How often a readback is looked at while one is under way; while interpolating, every ms (4 ms
+/// is half a refresh at 120 Hz).
 const READBACK_POLL: Duration = Duration::from_millis(4);
+const READBACK_POLL_PACED: Duration = Duration::from_millis(1);
+/// Without the shell's refreshes for this long (another tab shown, the window covered, an older
+/// shell), the tab draws once per game frame again.
+const REFRESHES_LOST: Duration = Duration::from_millis(100);
 
 /// A finished picture, for the shell.
 pub enum Picture {
@@ -150,6 +164,20 @@ pub struct ClientScreen {
     fps_frames: u32,
     fps_since: Instant,
     fps: f32,
+    /// Frame interpolation's pacing, with the display's refresh rate from the shell.
+    pacing: Pacing,
+    /// How the shell presents this tab's pictures, as last asked (`ToShell::Pace`), and where
+    /// that goes (`set_pace_sink`).
+    pace: Pace,
+    pace_sink: Option<Box<dyn Fn(Pace)>>,
+    /// The shell's last refresh not drawn on yet (`ToClient::Refreshed`), and the last one.
+    refreshed: Option<Instant>,
+    last_refreshed: Option<Instant>,
+    /// Uncapped: at most a new picture every this long (the FPS limit), if there is one.
+    uncapped_interval: Option<Duration>,
+    /// New pictures due on the shell's refreshes but skipped (the last still under way, or no
+    /// surface free), for the perf log: the pacer doesn't see them.
+    skipped: u32,
 }
 
 impl ClientScreen {
@@ -202,6 +230,13 @@ impl ClientScreen {
             fps_frames: 0,
             fps_since: Instant::now(),
             fps: 0.0,
+            pacing: Pacing::new(),
+            pace: Pace::Frames,
+            pace_sink: None,
+            refreshed: None,
+            last_refreshed: None,
+            uncapped_interval: None,
+            skipped: 0,
         }
     }
 
@@ -273,6 +308,11 @@ impl ClientScreen {
         }
     }
 
+    /// Tells the shell how to present the tab's pictures when that changes (`ToShell::Pace`).
+    pub fn set_pace_sink(&mut self, sink: Box<dyn Fn(Pace)>) {
+        self.pace_sink = Some(sink);
+    }
+
     /// Draws into surfaces shared with the shell instead of reading pictures back.
     pub fn share_surfaces(&mut self, shared: Box<dyn SharedSurfaces>) {
         self.shared = Some(shared);
@@ -288,6 +328,11 @@ impl ClientScreen {
     /// The game's pictures drawn a second, over the last second (Show FPS's figure).
     pub fn fps(&self) -> f32 {
         self.fps
+    }
+
+    /// New pictures skipped since the last call (see `skipped`).
+    pub fn take_skipped(&mut self) -> u32 {
+        std::mem::take(&mut self.skipped)
     }
 
     /// Whether the shell shows this tab.
@@ -400,6 +445,20 @@ impl ClientScreen {
                     self.ui_due = Some(Instant::now());
                 }
             }
+            ToClient::RefreshRate { millihertz } => {
+                if self.pacing.set_refresh_rate(millihertz) {
+                    tracing::info!(
+                        target: "ruffle_aqw_perf",
+                        "display refreshes at {:.1} Hz",
+                        f64::from(millihertz) / 1000.0
+                    );
+                }
+            }
+            ToClient::Refreshed => {
+                let now = Instant::now();
+                self.refreshed = Some(now);
+                self.last_refreshed = Some(now);
+            }
             ToClient::Text { text } => {
                 if self.egui.egui_wants_keyboard_input() {
                     self.events.push(egui::Event::Text(text));
@@ -429,7 +488,6 @@ impl ClientScreen {
             | ToClient::DocumentCreated { .. }
             | ToClient::Installed { .. }
             | ToClient::AndroidKey { .. }
-            | ToClient::RefreshRate { .. }
             | ToClient::HeadlessMode { .. }
             | ToClient::Updates { .. }
             | ToClient::ArmyClients { .. }
@@ -442,36 +500,152 @@ impl ClientScreen {
     }
 
     /// After a tick or at the time asked: collects a finished readback, and draws when the game
-    /// has a new frame or the UI wants it. When to be called again, if before the next tick.
+    /// has a new frame or the UI wants it, or with frame interpolation when the pace says (see the
+    /// module's comment). When to be called again, if before the next tick.
     pub fn step(&mut self, player: &mut Player, step: Step) -> Option<Instant> {
+        if let Step::Ticked { frame_ms } = step {
+            if let Some(frame_ms) = frame_ms {
+                self.pacing.record_frame(frame_ms);
+            }
+            self.plan_pace(player);
+        }
         self.collect();
+        let mut next = None;
         if self.shown.is_some() && !self.covered {
+            let now = Instant::now();
             let game_frame = matches!(step, Step::Ticked { .. }) && player.needs_render();
             // The UI alone is drawn 30 times a second at most, however often egui asks.
             let ui_wanted = self
                 .ui_due
-                .is_some_and(|due| due.max(self.last_draw + UI_FRAME) <= Instant::now());
-            if game_frame || ui_wanted || self.picture_due {
-                if self.readback.is_none() {
-                    let picture = game_frame || self.picture_due;
-                    self.picture_due = false;
-                    self.draw(player, picture);
-                } else if game_frame {
-                    self.picture_due = true;
+                .is_some_and(|due| due.max(self.last_draw + UI_FRAME) <= now);
+            let in_step = self
+                .last_refreshed
+                .is_some_and(|at| now.duration_since(at) < REFRESHES_LOST);
+            match self.pace {
+                // A picture still under way when a new one is due: that one is skipped, not
+                // caught up on (which would break the rhythm twice).
+                // Drawn only on the shell's refreshes, the UI too, so every picture keeps the
+                // rhythm. A picture still under way, or no surface free, when a new one is due:
+                // that one is skipped, not caught up on (which would break the rhythm twice).
+                Pace::Refresh if in_step => {
+                    if let Some(at) = self.refreshed.take() {
+                        if self.readback.is_none() {
+                            let new_picture = self.pacing.new_picture_due(at);
+                            let wanted = self.picture_due;
+                            if new_picture || wanted || ui_wanted {
+                                self.picture_due = false;
+                                let drawn_before = self.last_draw;
+                                self.draw(player, new_picture || wanted);
+                                if new_picture && self.last_draw == drawn_before {
+                                    self.skipped += 1;
+                                }
+                                self.picture_due &= wanted;
+                            }
+                        } else if self.pacing.new_picture_due(at) {
+                            self.skipped += 1;
+                        }
+                    }
+                }
+                Pace::Uncapped => {
+                    if self.readback.is_none() {
+                        let new_picture = self
+                            .pacing
+                            .new_uncapped_picture_due(now, self.uncapped_interval);
+                        if new_picture || self.picture_due || ui_wanted {
+                            let picture = new_picture || self.picture_due;
+                            self.picture_due = false;
+                            self.draw(player, picture);
+                        }
+                    }
+                    // Without a limit, or while a picture is under way (its time may be past: the
+                    // loop would spin on it), the readback's poll below calls again.
+                    next = self
+                        .uncapped_interval
+                        .filter(|_| self.readback.is_none())
+                        .map(|interval| self.pacing.next_uncapped_picture(interval));
+                }
+                _ => {
+                    if game_frame || ui_wanted || self.picture_due {
+                        if self.readback.is_none() {
+                            let picture = game_frame || self.picture_due;
+                            self.picture_due = false;
+                            self.draw(player, picture);
+                        } else if game_frame {
+                            self.picture_due = true;
+                        }
+                    }
                 }
             }
         }
-        let readback = self
-            .readback
-            .as_ref()
-            .map(|_| Instant::now() + READBACK_POLL);
+        let poll = match self.pace {
+            Pace::Refresh | Pace::Uncapped => READBACK_POLL_PACED,
+            Pace::Frames | Pace::Unknown => READBACK_POLL,
+        };
+        let readback = self.readback.as_ref().map(|_| Instant::now() + poll);
         // Nothing is drawn while hidden: a repaint due from before must not wake the loop (it was
         // in the past, and the engine spun on it).
+        let seen = self.shown.is_some() && !self.covered;
         let ui = self
             .ui_due
-            .filter(|_| self.shown.is_some() && !self.covered)
+            .filter(|_| seen)
             .map(|due| due.max(self.last_draw + UI_FRAME));
-        [readback, ui].into_iter().flatten().min()
+        [readback, ui, next.filter(|_| seen)]
+            .into_iter()
+            .flatten()
+            .min()
+    }
+
+    /// After a tick: how the shell should present this tab's pictures (see the module's comment),
+    /// told to it when that changes. Interpolating needs the tab seen whole (not another tab's
+    /// tile, not Headless Mode's screen), the game playing, and shared surfaces.
+    fn plan_pace(&mut self, player: &Player) {
+        let tile = self.grid.as_ref().is_some_and(|grid| !grid.active);
+        let interpolates = self.shown.is_some()
+            && !self.covered
+            && !tile
+            && self.shared.is_some()
+            && !turu::headless_mode()
+            && ruffle_core::frame_interpolation::enabled()
+            && player.is_playing();
+        let frame_rate = player.frame_rate();
+        let pace = if !interpolates {
+            Pace::Frames
+        } else if let Some((true, setting)) = crate::platform::platform().frame_pacing() {
+            let limit = crate::pacing::fps_limit(setting, self.pacing.refresh_interval());
+            self.uncapped_interval = limit.map(|fps| Duration::from_secs_f64(1.0 / fps));
+            // Not even 1.5 pictures per game frame: one per frame, as without interpolation.
+            if limit.is_some_and(|fps| fps < frame_rate * 1.5) {
+                Pace::Frames
+            } else {
+                Pace::Uncapped
+            }
+        } else if self.pacing.plan(Instant::now(), frame_rate) {
+            Pace::Refresh
+        } else {
+            Pace::Frames
+        };
+        if pace == self.pace {
+            return;
+        }
+        tracing::info!(
+            target: "ruffle_aqw_perf",
+            "frame pacing: {pace:?} (new pictures a second: {})",
+            match pace {
+                Pace::Refresh => format!("{:.0}", self.pacing.rate()),
+                Pace::Uncapped => self
+                    .uncapped_interval
+                    .map_or("as many as get through".into(), |interval| {
+                        format!("{:.0}", 1.0 / interval.as_secs_f64())
+                    }),
+                Pace::Frames | Pace::Unknown => format!("{frame_rate:.0}, one per game frame"),
+            }
+        );
+        self.pace = pace;
+        self.refreshed = None;
+        self.last_refreshed = None;
+        if let Some(sink) = &self.pace_sink {
+            sink(pace);
+        }
     }
 
     fn make_target(&self, size: (u32, u32)) -> Target {
@@ -582,6 +756,13 @@ impl ClientScreen {
             size,
             free: false,
         });
+        tracing::info!(
+            target: "ruffle_aqw_perf",
+            "shared surface {} of at most {SHARED_POOL} made ({}x{})",
+            self.pool.len(),
+            size.0,
+            size.1
+        );
         Ok(Some((id, texture)))
     }
 
@@ -851,7 +1032,10 @@ impl ClientScreen {
             new_picture = true;
         }
         if new_picture && !turu::headless_mode() {
+            let render_started = Instant::now();
             player.render();
+            self.pacing
+                .record_draw(render_started.elapsed().as_secs_f64() * 1000.0);
             // Pictures of the game a second, for Show FPS (the window counts its frames shown).
             self.fps_frames += 1;
             let elapsed = self.fps_since.elapsed().as_secs_f32();

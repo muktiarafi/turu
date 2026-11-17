@@ -15,8 +15,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Mugetsu's other 2.0.0 speed-ups by `platform::DEFAULT_ON`, on a computer and on Android), a
   leak diagnostic built on `Arc<SwfMovie>` (upstream made movies GC objects), and since M6 the
   per-player thread-local state and command segments that let several tabs share a thread (one
-  player per process now). Mugetsu's render thread isn't used in a tab's client (it pays with
-  frame interpolation, which clients don't do yet); its present thread follows Mugetsu's default
+  player per process now). Mugetsu's render thread isn't used in a tab's client yet (it pays with
+  frame interpolation, which clients do since 2026-11-18); its present thread follows Mugetsu's default
   in the window for a movie given on the command line (a client draws into a texture the shell
   shows, and never uses it).
   Mugetsu 2.0.0's player options are in the window's right-click menu (its 2.0.0 layout, one
@@ -41,8 +41,28 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   query keeps) while the driver is alive, and the window and the shell end with
   `process::exit` after the log is flushed. Type-checked for Windows from macOS only (see
   "Things to know"); nothing of it has run on Windows. In a tab's client (every AQW tab since M6) Performance Mode,
-  Memory Limit and Free Memory Now are in Options > Application; frame pacing and the FPS limit
-  aren't, as clients don't interpolate yet.
+  Memory Limit and Free Memory Now are in Options > Application, and since 2026-11-18 Frame
+  Pacing (V-sync, Uncapped) and the FPS Limit (Off, Screen, 60, 120, 144).
+  **Frame interpolation in a tab's client** (2026-11-18): with Frame Interpolation on, the client
+  asks the shell to present on every refresh of the display (`ToShell::Pace`), and the shell tells
+  it after each present (`ToClient::Refreshed`); the client draws a new in-between picture on the
+  refreshes Turu's pacer picks (`frontend/src/pacing.rs`, as the window and Android do), so the
+  pictures keep in step with the display rather than a timer of the client's own. Uncapped, the
+  shell presents each picture as it comes without v-sync, at most the FPS Limit's a second. The
+  shell sends the monitor's refresh rate (`ToClient::RefreshRate`). Only with shared surfaces
+  (pixels stay at one picture per game frame), and only for the tab seen whole (not another
+  tab's Grid View tile, not Headless Mode's screen). A shown client draws into up to 5 shared
+  surfaces (`SHARED_POOL`, was 3): at 120 Hz, 3 left a third of the refreshes without a new
+  picture and 4 a quarter, as each is the shell's for about 4 refreshes; the 4th and 5th are made
+  only while interpolating (3 with it off, as before; `shared surface N of at most 5 made` in the
+  log). Due pictures skipped (one still under way, no surface free) are counted in the perf log's
+  `pictures:` line (`TURU_PERF_LOG`); Turu's pacer doesn't see them yet. Measured on the Mac (Apple M5, 120 Hz, release build, login screen,
+  `TURU_SHELL_TEST`'s `rate`, which now also counts presents with no new picture, one, or more):
+  120 presents a second, each with one new picture (a handful of misses in 3600); at every second
+  refresh (the debug build's costlier draws) 60 new ones, half the presents, none doubled;
+  uncapped 90 with the limit at 90, about 360 without; Options' Frame Pacing, FPS Limit and Frame
+  Interpolation clicked on a running tab took effect at once (`TURU_SHELL_TEST`'s `click`). Not
+  run: in game, Grid View, Windows and Linux.
   Safe Drawing (Options > Application on Android, a `safe-drawing` file on a computer) is gone:
   nobody used it since Turu Mas; single `no-<switch>` files next to the program remain.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
@@ -702,8 +722,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 ## Known gaps
 
 - **Tabs are processes since M6** (2026-11-17): a crash or a lost GPU device ends one tab, which
-  the shell starts again logged in. Not yet in a tab's client: frame interpolation's in-between
-  pictures, uncapped pacing and the FPS limit (Options offers interpolation's switch only), IME
+  the shell starts again logged in. Not yet in a tab's client: Mugetsu's render thread, IME
   composition, gamepads, drag-and-drop and Flash's own right-click items (the window for a movie
   given on the command line still has them). Not run on Windows or Linux, nor on phones (M4).
   The tabs share the data folder and Ruffle's SharedObjects (the game's saved

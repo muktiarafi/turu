@@ -29,9 +29,12 @@ pub const SURFACES_ENV: &str = "TURU_SHELL_SURFACES";
 pub fn adapter_key(backend: &str, vendor: u32, device: u32, name: &str) -> String {
     format!("{backend}:{vendor:x}:{device:x}:{name}")
 }
-/// How many shared surfaces a client draws into in turn: one the shell shows, one it may still be
-/// reading, one being drawn. The shell keeps the newest this many of a client's.
-pub const SHARED_POOL: usize = 3;
+/// How many shared surfaces a client draws into in turn: one the shell shows, one or two it may
+/// still be reading (presents wait in a queue of two), one being drawn, and one to spare while
+/// a release is on its way back: with frame interpolation a picture goes out on every refresh,
+/// and three left a third of the refreshes at 120 Hz without one. The shell keeps the newest this
+/// many of a client's.
+pub const SHARED_POOL: usize = 5;
 /// The longest JSON message taken (a frame's pixels aren't counted).
 const MAX_MESSAGE: u32 = 1 << 20;
 /// The largest frame taken: 8K by 8K BGRA.
@@ -139,9 +142,14 @@ pub enum ToClient {
     /// the tab can be seen meanwhile, so it draws nothing; its game, sound and pace go on, as the
     /// window's own tabs do while it's covered.
     Covered { covered: bool },
-    /// Android: the display refreshes `millihertz` times a thousand seconds (frame interpolation's
-    /// pacing): to a slot when it says hello, and to every slot when the display changes mode.
+    /// The display refreshes `millihertz` times a thousand seconds (frame interpolation's pacing):
+    /// to a client when it says hello, and to every client when it changes (Android: the display's
+    /// mode; desktop: the monitor the shell's window is on).
     RefreshRate { millihertz: u32 },
+    /// Desktop: the shell presented a picture of this tab on a refresh of the display, while the
+    /// tab asks for [`Pace::Refresh`]. A new in-between picture is drawn on these, so its pictures
+    /// keep in step with the display (a client's own timer drifts against it).
+    Refreshed,
     /// Desktop: the shell's window went full screen or left it (Esc, the system's own button, a
     /// tab's Options): to every tab, and to a tab when it connects.
     FullScreen { on: bool },
@@ -184,6 +192,24 @@ pub enum Cursor {
     ResizeNeSw,
     /// Hidden.
     None,
+}
+
+/// How the shell presents a tab's pictures ([`ToShell::Pace`]), as its frame interpolation needs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pace {
+    /// Each picture when it comes, waiting for the display's refresh (one per game frame).
+    #[default]
+    Frames,
+    /// On every refresh of the display, telling the tab after each ([`ToClient::Refreshed`]): its
+    /// in-between pictures are drawn in step with them.
+    Refresh,
+    /// Each picture when it comes, without waiting for the refresh (Mugetsu 2.0.0's uncapped
+    /// pacing): as many as the tab draws, or its FPS limit allows.
+    Uncapped,
+    /// A pace this shell doesn't know: taken as `Frames`.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The client to the shell.
@@ -258,6 +284,8 @@ pub enum ToShell {
     FullScreen { on: bool },
     /// Desktop: the mouse cursor over the tab on screen changed (the game's, or Turu's UI's).
     Cursor { cursor: Cursor },
+    /// Desktop: how the tab's pictures want presenting (frame interpolation), from now on.
+    Pace { pace: Pace },
     /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
     Gpu { adapter: String },
     /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
@@ -787,6 +815,7 @@ mod tests {
             ToClient::RefreshRate {
                 millihertz: 119_880,
             },
+            ToClient::Refreshed,
         ];
         let mut bytes = Vec::new();
         for message in &to_client {
@@ -810,6 +839,12 @@ mod tests {
             },
             ToShell::Cursor {
                 cursor: Cursor::ResizeNwSe,
+            },
+            ToShell::Pace {
+                pace: Pace::Refresh,
+            },
+            ToShell::Pace {
+                pace: Pace::Uncapped,
             },
             ToShell::OpenTab {
                 username: Some("player_one".into()),
@@ -962,6 +997,17 @@ mod tests {
             panic!("not a frame");
         };
         assert_eq!(read_payload(&mut input, len).unwrap(), pixels);
+    }
+
+    #[test]
+    fn an_unknown_pace_is_frames() {
+        let message: ToShell = serde_json::from_str(r#"{"type":"pace","pace":"triple"}"#).unwrap();
+        assert_eq!(
+            message,
+            ToShell::Pace {
+                pace: Pace::Unknown
+            }
+        );
     }
 
     #[test]
