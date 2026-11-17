@@ -209,6 +209,36 @@ pub trait Platform: Send + Sync {
     /// Turns the FPS counter on or off, and saves it.
     fn set_show_fps(&self, _on: bool) {}
 
+    /// Mugetsu 2.0.0's Performance mode (0 off, 1 balanced, 2 fast: the game drawn at 85% or 70%
+    /// of its area's width and height and stretched), or None where Options doesn't offer it.
+    fn performance(&self) -> Option<u8> {
+        None
+    }
+
+    /// Sets Performance mode, from the next picture on, and saves it.
+    fn set_performance(&self, _level: u8) {}
+
+    /// The share of the game's area it is drawn at now (see `performance`): 1.0 for all of it.
+    fn render_scale(&self) -> f64 {
+        1.0
+    }
+
+    /// Mugetsu 2.0.0's memory limit in MB (0: none), or None where Options doesn't offer it.
+    fn memory_limit_mb(&self) -> Option<u32> {
+        None
+    }
+
+    /// Sets the memory limit and saves it.
+    fn set_memory_limit_mb(&self, _mb: u32) {}
+
+    /// The process's memory as the limit counts it (Task Manager's figure), in MB.
+    fn memory_now_mb(&self) -> Option<u64> {
+        None
+    }
+
+    /// Frees now what the game isn't using (Mugetsu's "Free memory now").
+    fn free_memory(&self) {}
+
     /// Whether the window is full screen, or None where Options doesn't offer it (as `show_fps`).
     fn full_screen(&self) -> Option<bool> {
         None

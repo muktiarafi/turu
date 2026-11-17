@@ -468,7 +468,7 @@ impl Performance {
         }
     }
 
-    fn from_index(index: u8) -> Self {
+    pub fn from_index(index: u8) -> Self {
         match index {
             1 => Performance::Balanced,
             2 => Performance::Fast,

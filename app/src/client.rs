@@ -193,11 +193,38 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     engine::run_loop_paced(
         &mut players,
         &events,
-        |player, step| SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step))),
+        |player, step| {
+            memory_tick(player);
+            SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)))
+        },
         |_, _| tracing::warn!("A client has one tab: the request is ignored"),
     );
     turu::bot().set_host(None);
     Ok(())
+}
+
+/// Every 5 s: the memory watch (`memory::memory_watch`: shapes not drawn for a while, the
+/// graphics memory nearly full, the memory limit, for this client's one player), and once a
+/// minute what mimalloc keeps free goes back to the system, as the window and `--headless` do.
+fn memory_tick(player: &mut ruffle_core::Player) {
+    thread_local! {
+        static LAST: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    }
+    let now = std::time::Instant::now();
+    if LAST.get().is_some_and(|last| now.duration_since(last) < Duration::from_secs(5)) {
+        return;
+    }
+    LAST.set(Some(now));
+    if let Some(trim) = crate::memory::memory_watch(player) {
+        let freed = crate::memory::free_memory(&mut |f| f(player), false);
+        tracing::info!(
+            target: "ruffle_aqw_perf",
+            "memory limit {} MB: {freed}{}; the next freeing in {} s at the soonest",
+            trim.limit_mb,
+            if trim.held { "" } else { "; the last freeing did not hold" },
+            trim.next_wait_secs
+        );
+    }
 }
 
 /// The system clipboard for Turu's text boxes (egui-winit's, without a window).
@@ -398,6 +425,47 @@ impl Platform for ClientPlatform {
     // The rest of the window's right-click menu (Mugetsu's): a client has none.
     fn show_fps(&self) -> Option<bool> {
         Some(crate::mugetsu::show_fps())
+    }
+
+    // Mugetsu 2.0.0's options (the window had them in its right-click menu).
+    fn performance(&self) -> Option<u8> {
+        Some(crate::mugetsu::performance() as u8)
+    }
+
+    fn set_performance(&self, level: u8) {
+        let level = crate::mugetsu::Performance::from_index(level);
+        crate::mugetsu::set_performance(level);
+        tracing::info!(
+            "Performance mode: {level:?} (the game is drawn at {:.0} % of its width and height)",
+            level.scale() * 100.0
+        );
+    }
+
+    fn render_scale(&self) -> f64 {
+        crate::mugetsu::render_scale()
+    }
+
+    fn memory_limit_mb(&self) -> Option<u32> {
+        Some(crate::mugetsu::memory_limit_mb())
+    }
+
+    fn set_memory_limit_mb(&self, mb: u32) {
+        crate::mugetsu::set_memory_limit_mb(mb);
+        tracing::info!("Memory limit: {}", if mb == 0 { "off".to_string() } else { format!("{mb} MB") });
+    }
+
+    fn memory_now_mb(&self) -> Option<u64> {
+        Some(crate::mugetsu::memory_now_mb())
+    }
+
+    fn free_memory(&self) {
+        // On the engine thread, which has the player (Options runs there too, inside a draw).
+        if let Some(engine) = ENGINE.get() {
+            let _ = engine.send(EngineEvent::Run(Box::new(|player| {
+                let freed = crate::memory::free_memory(&mut |f| f(player), true);
+                tracing::info!(target: "ruffle_aqw_perf", "free memory now: {freed}");
+            })));
+        }
     }
 
     fn set_show_fps(&self, on: bool) {

@@ -85,6 +85,12 @@ enum Field {
     Graphics,
     /// The FPS counter (`Platform::show_fps`).
     ShowFps,
+    /// Mugetsu 2.0.0's Performance mode (`Platform::performance`).
+    Performance,
+    /// Mugetsu 2.0.0's memory limit (`Platform::memory_limit_mb`).
+    MemoryLimit,
+    /// Free Memory Now (`Platform::free_memory`).
+    FreeMemory,
     /// The window full screen (`Platform::full_screen`).
     FullScreen,
     /// Open, for the log's folder (`Platform::open_log_folder`).
@@ -155,6 +161,28 @@ fn entries() -> Vec<Entry> {
             "Show FPS",
             "A small counter in the corner of the game: how many pictures of it are drawn a second. This tab at once, the others from their next start",
             Field::ShowFps
+        ));
+    }
+    if platform.performance().is_some() {
+        entries.push(entry!(
+            General,
+            "Performance Mode",
+            "Draws the game with fewer pixels (Balanced 85%, Fast 70% of its width and height) and stretches the picture: a little softer, and faster on laptops and built-in graphics. This tab at once, the others from their next start",
+            Field::Performance
+        ));
+    }
+    if platform.memory_limit_mb().is_some() {
+        entries.push(entry!(
+            General,
+            "Memory Limit",
+            "Over it, this tab frees what the game isn't using (shapes not drawn for a while, spare textures, free heap), at most every 20 seconds. It counts what Task Manager shows for the tab's process; a room that needs more than the limit can't be held under it. This tab at once, the others from their next start",
+            Field::MemoryLimit
+        ));
+        entries.push(entry!(
+            General,
+            "Free Memory Now",
+            "Frees at once what this tab's game isn't using, loaded item files no player on screen uses included",
+            Field::FreeMemory
         ));
     }
     if platform.full_screen().is_some() {
@@ -663,6 +691,38 @@ impl ApplicationOptionsWindow {
                                             platform.set_show_fps(on);
                                         }
                                     }
+                                    Field::Performance => {
+                                        let platform = crate::platform::platform();
+                                        let level = platform.performance().unwrap_or(0);
+                                        ui.horizontal(|ui| {
+                                            for (i, label) in ["Off", "Balanced", "Fast"].into_iter().enumerate() {
+                                                if widgets::chip(ui, label, level == i as u8) && level != i as u8 {
+                                                    platform.set_performance(i as u8);
+                                                }
+                                            }
+                                        });
+                                    }
+                                    Field::MemoryLimit => {
+                                        let platform = crate::platform::platform();
+                                        let limit = platform.memory_limit_mb().unwrap_or(0);
+                                        ui.horizontal(|ui| {
+                                            for (mb, label) in [(0, "Off"), (1024, "1 GB"), (2048, "2 GB"), (3072, "3 GB")] {
+                                                if widgets::chip(ui, label, limit == mb) && limit != mb {
+                                                    platform.set_memory_limit_mb(mb);
+                                                }
+                                            }
+                                            if let Some(now) = platform.memory_now_mb() {
+                                                ui.label(format!("Now: {now} MB"));
+                                            }
+                                        });
+                                    }
+                                    Field::FreeMemory => {
+                                        if widgets::button(ui, "Free", Kind::Normal, true, vec2(80.0, 24.0), "")
+                                            .clicked()
+                                        {
+                                            crate::platform::platform().free_memory();
+                                        }
+                                    }
                                     Field::FullScreen => {
                                         let platform = crate::platform::platform();
                                         let mut on = platform.full_screen() == Some(true);
@@ -940,8 +1000,10 @@ fn control_width(field: &Field) -> f32 {
         | Field::ShowFps
         | Field::FullScreen
         | Field::CrashReports => 48.0,
-        // Automatic, Vulkan, DirectX 12 (and OpenGL) / Flash-style, MSAA.
+        // Automatic, Vulkan, DirectX 12 (and OpenGL).
         Field::Graphics => 330.0,
+        Field::Performance => 230.0,
+        Field::MemoryLimit => 330.0,
         _ => 96.0,
     }
 }

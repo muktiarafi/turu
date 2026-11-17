@@ -122,8 +122,10 @@ pub struct ClientScreen {
     modifiers: egui::Modifiers,
     /// The button held, and whether its press went to the UI (else the game).
     pressed: Option<(Button, bool)>,
-    /// The game's viewport, last set.
+    /// The game's viewport, last set, and Performance mode's share of the game's area it was
+    /// drawn at (`Platform::render_scale`).
     movie_size: (u32, u32),
+    render_scale: f64,
     started: Instant,
     last_draw: Instant,
     /// When the UI wants drawing again, if it does.
@@ -179,6 +181,7 @@ impl ClientScreen {
             modifiers: egui::Modifiers::NONE,
             pressed: None,
             movie_size: (0, 0),
+            render_scale: 1.0,
             started: Instant::now(),
             last_draw: Instant::now(),
             ui_due: None,
@@ -594,7 +597,11 @@ impl ClientScreen {
     fn pointer(&mut self, player: &mut Player, kind: PointerKind, button: Button, x: f32, y: f32) {
         let pos = self.point(x, y);
         let (left, top) = self.offsets();
-        let (game_x, game_y) = (f64::from(x - left), f64::from(y - top));
+        // (In the game's own pixels: fewer in Performance mode, see `draw`.)
+        let (game_x, game_y) = (
+            f64::from(x - left) * self.render_scale,
+            f64::from(y - top) * self.render_scale,
+        );
         let egui_button = match button {
             Button::Left => egui::PointerButton::Primary,
             Button::Right => egui::PointerButton::Secondary,
@@ -759,12 +766,23 @@ impl ClientScreen {
         self.last_draw = Instant::now();
         let (left, top) = self.offsets();
         let movie_size = self.movie_size(size);
-        if movie_size != self.movie_size {
+        // Mugetsu 2.0.0's Performance mode: the game drawn with fewer pixels, stretched over its
+        // area by the blit below.
+        let scale = crate::platform::platform().render_scale();
+        if movie_size != self.movie_size || scale != self.render_scale {
             self.movie_size = movie_size;
+            self.render_scale = scale;
+            let drawn = |len: u32| {
+                if scale == 1.0 {
+                    len
+                } else {
+                    ((f64::from(len) * scale).round() as u32).max(1)
+                }
+            };
             player.set_viewport_dimensions(ViewportDimensions {
-                width: movie_size.0,
-                height: movie_size.1,
-                scale_factor: f64::from(ppp),
+                width: drawn(movie_size.0),
+                height: drawn(movie_size.1),
+                scale_factor: f64::from(ppp) * scale,
             });
             new_picture = true;
         }
