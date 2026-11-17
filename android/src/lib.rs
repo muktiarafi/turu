@@ -30,7 +30,6 @@ mod screen;
 mod slot_shell;
 mod slots;
 mod storage;
-use turu_frontend::saved_tabs as tabs;
 mod ui;
 mod ui_field;
 
@@ -62,7 +61,7 @@ use std::time::{Duration, Instant};
 use turu_bot::Bot;
 use turu_frontend::engine::{self, EngineEvent, Executor, NoDialogs};
 use turu_frontend::players::{Players, Slot};
-use turu_frontend::turu::{self, TabId, TabRequest};
+use turu_frontend::turu::{self, TabId};
 use url::Url;
 use wgpu::rwh::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 
@@ -530,17 +529,16 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         root.display()
     );
 
-    let in_slot = slots::slot().is_some();
-    // A slot shares the app's once-only jobs with the others (`turu::start_monitor_election`,
-    // `turu_bot::shared_job`); before the startup flags, which start some.
-    if in_slot {
-        turu::mark_shell_tab();
-    }
-    // A slot starts from its record (`turu_frontend::slots`), the app from `turu-args.txt`.
-    let mut args = match slots::slot() {
-        Some(slot) => slots::args(root, slot),
-        None => read_args(&root.join(ARGS_FILE)),
+    // Every engine is a slot's (M6). It shares the app's once-only jobs with the other slots
+    // (`turu::start_monitor_election`, `turu_bot::shared_job`); before the startup flags, which
+    // start some.
+    turu::mark_shell_tab();
+    // A slot starts from its record (`turu_frontend::slots`).
+    let Some(slot) = slots::slot() else {
+        tracing::error!("An engine outside a slot: not started");
+        return;
     };
+    let mut args = slots::args(root, slot);
     let graphics = take_graphics(&mut args);
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss =
@@ -581,10 +579,6 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::configure_startup();
     turu::start_api();
     restart::start();
-    if !in_slot {
-        turu::start_monitor();
-        turu::start_client_updates();
-    }
     // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with.
     if let Some(seconds) = perf_log {
         // SAFETY: before the engine's threads exist (the perf log's is started just below).
@@ -622,22 +616,14 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         .get()
         .expect("set before the thread started")
         .clone();
-    // The first tab; the UI's "+", Army > Accounts and Army Control open and select more.
+    // The slot's one tab; the UI's "+", Army > Accounts and Army Control ask the shell for more.
     let tab = turu::active_tab();
     let bot = turu::bot();
     let mut players = Players::new();
     let player = build_player(root, &movie_url, renderer, sender.clone(), tab, &bot);
     players.add(Slot::new(Some(tab), player, ()));
-    let requests = Mutex::new(sender.clone());
-    turu::set_tab_requests(Box::new(move |request| {
-        requests
-            .lock()
-            .is_ok_and(|sender| sender.send(EngineEvent::Tab(request)).is_ok())
-    }));
-    // A slot's tabs are the shell's: its requests go there instead.
-    if in_slot {
-        slots::start_link(root);
-    }
+    // The tabs are the shell's: the tab requests go there.
+    slots::start_link(root);
     // A window that came while the engine started up.
     if let Some(mut player) = players.get() {
         attach_surface(&mut player);
@@ -645,13 +631,8 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     bot.set_host(Some(Arc::new(engine::flash_host(sender.clone(), tab))));
     tracing::info!("Engine running");
     memory::init();
-    // Frames the active tab's player had run at its last tick, for `--perf-log`'s frame count;
-    // taken again when a tab request may have made another player the active one.
+    // Frames the player had run at its last tick, for `--perf-log`'s frame count.
     let frames_seen = Cell::new(players.get().map_or(0, |player| player.frames_run()));
-    // The tabs open before Android stopped the app, after this one (`android-tabs.json`).
-    if !in_slot {
-        tabs::reopen();
-    }
     engine::run_loop_paced(
         &mut players,
         events,
@@ -684,112 +665,11 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
                 screen.as_mut().and_then(|screen| screen.step(player, step))
             })
         },
-        |players, request| {
-            tab_request(players, request, root, &movie_url, &sender);
-            frames_seen.set(players.get().map_or(0, |player| player.frames_run()));
-        },
+        |_, _| tracing::warn!("A slot has one tab: the request is ignored"),
     );
     for (_, bot) in turu::tabs() {
         bot.set_host(None);
     }
-}
-
-/// Opens, selects or closes a tab, as the desktop's window does (`app.rs`, `tab_request`): one
-/// player per tab, the active one drawn on the screen and heard, the others muted and ticked at
-/// the hidden tab's rate. A new tab over Options > Application > Tab Limit is refused.
-fn tab_request(
-    players: &mut Players<()>,
-    request: TabRequest,
-    root: &Path,
-    movie_url: &Url,
-    sender: &Sender<EngineEvent>,
-) {
-    match request {
-        TabRequest::Open(startup) => {
-            let limit = turu::bot().settings.read().tab_limit.clamp(1, 4) as usize;
-            if players.len() >= limit {
-                let message = format!(
-                    "Not opening a tab: {limit} are open, the Tab Limit (Options > Application). Each one takes about 400 MB."
-                );
-                tracing::warn!("{message}");
-                turu::bot().log(message);
-                return;
-            }
-            let Some(renderer) = GPU.with_borrow(|gpu| {
-                let (descriptors, blit) = gpu.as_ref()?;
-                let target = MovieTexture::new(
-                    blit.clone(),
-                    &descriptors.device,
-                    engine::STAGE.0,
-                    engine::STAGE.1,
-                );
-                WgpuRenderBackend::new(descriptors.clone(), target)
-                    .inspect_err(|e| tracing::error!("Couldn't make the new tab's renderer: {e}"))
-                    .ok()
-            }) else {
-                return;
-            };
-            leave_active(players);
-            let (tab, bot) = turu::add_tab(*startup);
-            let player = build_player(root, movie_url, renderer, sender.clone(), tab, &bot);
-            players.add(Slot::new(Some(tab), player, ()));
-            bot.set_host(Some(Arc::new(engine::flash_host(sender.clone(), tab))));
-            turu::set_active_tab(tab);
-            tracing::info!("Opened a tab ({} open)", players.len());
-        }
-        TabRequest::Select(tab) => {
-            if players.active().and_then(Slot::tab) == Some(tab) {
-                return;
-            }
-            leave_active(players);
-            if players.select_tab(tab) {
-                turu::set_active_tab(tab);
-            }
-        }
-        TabRequest::Close(tab) => {
-            if players.len() < 2 {
-                return;
-            }
-            if players.active().and_then(Slot::tab) == Some(tab) {
-                leave_active(players);
-            }
-            // The player first: it detaches the tab's bot, which `remove_tab` stops.
-            players.remove_tab(tab);
-            turu::remove_tab(tab);
-            let active = turu::active_tab();
-            turu::set_active_tab(active);
-            players.select_tab(active);
-        }
-        // No Grid View on a phone: the tiles would be too small.
-        TabRequest::Grid(_) => return,
-    }
-    // Only the active tab is heard, and only while a window shows it (`set_heard`: its volume
-    // comes back when one does).
-    let shown = window_shown();
-    for (active, mut player) in players.all() {
-        player.set_volume(if active && shown { 1.0 } else { 0.0 });
-    }
-    if !shown {
-        BACKGROUND_MUTED.set(Some(1.0));
-    }
-    // Without a window the active tab's game slows down too, as the one tab's did.
-    if !window_shown() {
-        turu::bot().state.lock().hidden_tab = true;
-    }
-    tabs::save();
-}
-
-/// The active tab's player stops being the one on screen: its fingers are let go, and the next
-/// one gets the screen's size.
-fn leave_active(players: &Players<()>) {
-    if let Some(mut player) = players.get() {
-        with_screen(|screen| screen.leave(&mut player));
-    }
-}
-
-/// Whether the game is drawn in a window now.
-fn window_shown() -> bool {
-    SCREEN.with_borrow(|screen| screen.as_ref().is_some_and(Screen::shown))
 }
 
 /// Frame interpolation (Options > Application; off by default) is on while this file is in the

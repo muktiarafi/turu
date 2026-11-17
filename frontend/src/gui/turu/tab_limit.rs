@@ -22,9 +22,11 @@ fn limit() -> Option<usize> {
         .then(|| turu::bot().settings.read().tab_limit.clamp(1, MAX) as usize)
 }
 
-/// As many tabs are open as the Tab Limit allows.
+/// As many tabs are open as the Tab Limit allows: the shell's tabs, where this process is one of
+/// them (an Android slot has only its own), else this process's (Turu Mas).
 pub fn reached() -> bool {
-    limit().is_some_and(|limit| turu::tabs().len() >= limit)
+    let open = turu::shell_tabs().map_or_else(|| turu::tabs().len(), |(tabs, _)| tabs.len());
+    limit().is_some_and(|limit| open >= limit)
 }
 
 /// Asks for a new tab, unless the Tab Limit is reached: then the notice shows and it's false.
