@@ -624,8 +624,8 @@ Built: the shell runs several clients as tabs.
 * **The tab strip** (`gui/turu/tab_strip.rs`) shows the shell's list in a client (`turu::shell_tabs`,
   a down tab with its reason and the warning badge); the bar's height counts it
   (`turu::tab_strip_count`).
-* **Testing hook**: `TURU_SHELL_TEST=<file>` runs `wait`, `open`, `select`, `close`, `kill`, `click`, `fullscreen`
-  and `dump` lines in the shell.
+* **Testing hook**: `TURU_SHELL_TEST=<file>` runs `wait`, `open`, `select`, `close`, `kill`, `click`, `fullscreen`,
+  `title` and `dump` lines in the shell.
 
 Checked on a Mac (debug build, login screen, no account), through the hook with the window up:
 a second tab opened from the shell and a third from the client strip's "+"; each client's strip
@@ -967,8 +967,14 @@ since; none built or run on Windows or Linux yet). The window (`app/src/gui/cont
    Linux). The window's attributes are one function (`app::window_attributes`), used by both:
    Turu's icon (and the Dock's on macOS), the title with Mugetsu's notes (`mugetsu::window_title`,
    now also the shell's "<title> – <tab> (<n> tabs)"), and on Linux the app id and the
-   startup-notification token. Checked on the Mac: the shell starts, draws and quits as before
-   (the title itself wasn't read back: macOS refused the accessibility query).
+   startup-notification token. Its size is the window's too (2026-11-17; `app::window_size`,
+   shared): turu.swf's stage under the bar, or `--width` / `--height` (Mugetsu's 958x584 off
+   macOS), at least `app::MIN_WINDOW_SIZE` and no bigger than the screens, shown once sized;
+   `--fullscreen` makes it full screen once shown (macOS ignores it on a hidden window). It used
+   to open at a fixed 1180x640. Checked on the Mac with `TURU_SHELL_TEST`'s new `title` (the
+   window's title and size, for the log): `--shell` gave "Turu 0.3.0 – Login" at 958x584 points,
+   `--shell --width 1600` 800x494 points on a 2x screen, and `--shell --fullscreen` went full
+   screen. Not run on Linux (the app id and token, Wayland's grouping) or Windows.
 
 5. **Small ones.**
    * Linux: the shell's Unix socket for shared surfaces (`shared_gpu::listen`,

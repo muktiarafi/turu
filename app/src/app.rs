@@ -840,32 +840,12 @@ impl MainWindow {
             let movie_width = swf_header.stage_size().width().to_pixels();
             let movie_height = swf_header.stage_size().height().to_pixels();
 
-            let window_size: Size = match (self.preferred_width, self.preferred_height) {
-                (None, None) => LogicalSize::new(movie_width, movie_height + height_offset).into(),
-                (Some(width), None) => {
-                    let scale = width / movie_width;
-                    let height = movie_height * scale;
-                    PhysicalSize::new(
-                        width.max(1.0),
-                        height.max(1.0) + height_offset * self.gui.window().scale_factor(),
-                    )
-                    .into()
-                }
-                (None, Some(height)) => {
-                    let scale = height / movie_height;
-                    let width = movie_width * scale;
-                    PhysicalSize::new(
-                        width.max(1.0),
-                        height.max(1.0) + height_offset * self.gui.window().scale_factor(),
-                    )
-                    .into()
-                }
-                (Some(width), Some(height)) => PhysicalSize::new(
-                    width.max(1.0),
-                    height.max(1.0) + height_offset * self.gui.window().scale_factor(),
-                )
-                .into(),
-            };
+            let window_size = window_size(
+                (movie_width, movie_height),
+                (self.preferred_width, self.preferred_height),
+                height_offset,
+                self.gui.window().scale_factor(),
+            );
 
             let window_size = Size::clamp(
                 window_size,
@@ -1239,6 +1219,37 @@ impl MainWindow {
     }
 }
 
+/// The window's size for a movie `movie` big (its stage, in points) with `height_offset` points of
+/// bar above it, or as `--width` / `--height` ask (`preferred`, physical pixels of the movie: the
+/// other side follows the stage's shape), at `scale` pixels per point. Turu: also the process
+/// tabs' shell's (`shell.rs`), for turu.swf's stage.
+pub(crate) fn window_size(
+    (movie_width, movie_height): (f64, f64),
+    preferred: (Option<f64>, Option<f64>),
+    height_offset: f64,
+    scale: f64,
+) -> Size {
+    match preferred {
+        (None, None) => LogicalSize::new(movie_width, movie_height + height_offset).into(),
+        (Some(width), None) => {
+            let scale_movie = width / movie_width;
+            let height = movie_height * scale_movie;
+            PhysicalSize::new(width.max(1.0), height.max(1.0) + height_offset * scale).into()
+        }
+        (None, Some(height)) => {
+            let scale_movie = height / movie_height;
+            let width = movie_width * scale_movie;
+            PhysicalSize::new(width.max(1.0), height.max(1.0) + height_offset * scale).into()
+        }
+        (Some(width), Some(height)) => {
+            PhysicalSize::new(width.max(1.0), height.max(1.0) + height_offset * scale).into()
+        }
+    }
+}
+
+/// The window's smallest size: room for the bar and a little of the game.
+pub(crate) const MIN_WINDOW_SIZE: (u32, u32) = (350, MENU_HEIGHT + 16);
+
 /// The main window's attributes, also the process tabs' shell's (`shell.rs`): the title with
 /// Mugetsu's notes, Turu's icon and, on Linux, the app id and startup-notification token (so the
 /// window groups with Turu's launcher on Wayland).
@@ -1348,12 +1359,7 @@ impl ApplicationHandler<RuffleEvent> for App {
             let movie_url = self.preferences.cli.movie_url.clone();
 
             let no_gui = self.preferences.cli.no_gui;
-            let min_window_size = if no_gui {
-                (16, 16)
-            } else {
-                (350, MENU_HEIGHT + 16)
-            }
-            .into();
+            let min_window_size = if no_gui { (16, 16) } else { MIN_WINDOW_SIZE }.into();
             let preferred_width = self.preferences.cli.width;
             let preferred_height = self.preferences.cli.height;
             let start_fullscreen = self.preferences.cli.fullscreen;

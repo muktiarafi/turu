@@ -45,6 +45,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_bot::monitor::hub::PeerSource;
+use turu_frontend::engine::STAGE;
 use turu_frontend::movie_texture::Blit;
 use turu_frontend::shell::{
     self, Button, GridShow, GridTile, Mods, PointerKind, SHARED_POOL, TabInfo, ToClient, ToShell,
@@ -1896,6 +1897,19 @@ impl ShellApp {
             }
             return;
         }
+        // `title`: the window's title and size, for the log.
+        if command == "title" {
+            if let Some(window) = &self.window {
+                let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+                tracing::info!(
+                    "Shell test: title \"{}\", {:.0}x{:.0} points",
+                    window.title(),
+                    size.width,
+                    size.height
+                );
+            }
+            return;
+        }
         // `fullscreen on` / `fullscreen off`: as a tab's Options > Application > Full Screen.
         if command == "fullscreen" {
             self.set_full_screen(arg.trim() == "on");
@@ -1970,10 +1984,12 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
         if self.window.is_some() {
             return;
         }
-        // As the window's: icon, title with Mugetsu's notes, Linux's app id and startup token.
+        // As the window's: icon, title with Mugetsu's notes, Linux's app id and startup token,
+        // smallest size; shown once sized.
         let attributes = crate::app::window_attributes(event_loop)
             .with_title(self.title_for(None))
-            .with_inner_size(winit::dpi::LogicalSize::new(1180.0, 640.0));
+            .with_visible(false)
+            .with_min_inner_size(winit::dpi::LogicalSize::<u32>::from(crate::app::MIN_WINDOW_SIZE));
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(e) => {
@@ -1982,6 +1998,25 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                 return;
             }
         };
+        // As the window's: turu.swf's stage under the bar, or `--width` / `--height` (Mugetsu's
+        // 958x584 off macOS), no bigger than the screens; then shown, and `--fullscreen`.
+        let cli = &self.preferences.cli;
+        let max = crate::util::get_screen_size(&window);
+        window.set_max_inner_size(Some(max));
+        let scale = window.scale_factor();
+        let size = crate::app::window_size(
+            (f64::from(STAGE.0), f64::from(STAGE.1)),
+            (cli.width, cli.height),
+            f64::from(crate::gui::top_height()),
+            scale,
+        );
+        let min = winit::dpi::LogicalSize::<u32>::from(crate::app::MIN_WINDOW_SIZE);
+        let _ = window.request_inner_size(winit::dpi::Size::clamp(size, min.into(), max.into(), scale));
+        window.set_visible(true);
+        // Once shown: macOS doesn't take a hidden window full screen.
+        if cli.fullscreen {
+            window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        }
         match make_gpu(window.clone(), &self.preferences) {
             Ok((gpu, adapter)) => {
                 self.gpu = Some(gpu);
