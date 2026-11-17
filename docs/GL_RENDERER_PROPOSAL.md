@@ -197,6 +197,59 @@ If desktop GL draws correctly and GLES doesn't, that's evidence for base vertex.
 
 ## G1: Measure
 
+**Result (2026-11-18, ruffle-aqw `48a682ce8`).** Every state-setting call the replay makes now
+goes through `gles::aqw::Replay`, which counts it by kind. With `RUFFLE_GL_STATS=1` (on
+Android, `--env RUFFLE_GL_STATS=1`), one `GL replay` line every 5 s on `ruffle_aqw_perf`
+gives:
+
+- submits, command buffers, passes and draws per second;
+- GL calls per second by kind;
+- uploads;
+- time in `submit`;
+- context locks per second by thread.
+
+Battleon with 10 players on the emulator (GLES 3.0 over Metal, Apple M5), with `--perf-log 5`:
+
+| | Vulkan | OpenGL ES |
+|---|---|---|
+| Pictures drawn | 24/s | 5.6/s |
+| Render per picture | 32 ms | 160-190 ms |
+| `submit` per picture | 10.7 ms | 100-150 ms (520 ms of every second) |
+
+GL replay, per second: 17.7 submits, 3,235 command buffers, 1,047 passes, 18,247 draws, and
+**360,000 GL calls**:
+
+| Kind | Calls/s | Note |
+|---|---|---|
+| vertex | 148,000 | ~8 per draw. On GLES 3.0 the first instance is emulated, so every draw re-specifies its instance-stepped attributes: bind `ARRAY_BUFFER`, enable, pointer, divisor, for each attribute. Only the pointer's offset changes. |
+| state | 85,000 | Masks and enables reset per command buffer and per pass, then set again by the pipeline. |
+| buffer | 22,600 | |
+| texture | 21,100 | Unit, bind, and the two level parameters for every bind. |
+| uniform | 18,200 | The emulated first instance, one per draw. |
+| fbo | 15,900 | 5 calls to detach per pass, then attach. |
+| copy | 11,000 | |
+| program | 10,000 | |
+| sampler | 9,600 | |
+
+Other numbers from the same run:
+
+- **Uploads:** 2,605 per second (5 MB/s), each a `glBufferSubData` from wgpu's CPU-side staging
+  buffers.
+- **Context locks:** 403 per second, all on the engine thread except 1 on `wgpu encoder drop`.
+- **simpleperf** (`adb root`, `-e cpu-clock`) on the engine thread: 42% in the emulator's GL pipe
+  (`writel`), with `glBufferSubData` at 28% and `eglMakeCurrent` at 20% inclusive. Each lock of
+  the EGL context makes it current and releases it again, and the release flushes.
+
+What the counters point to:
+
+- **G2b first:** about two-thirds of the calls set state that's already set.
+- **Then G2a:** 5 detaches per pass.
+- **Two GL-only costs the plan didn't list:** the context lock's `eglMakeCurrent` pair, and
+  per-write uploads. On the emulator every GL call crosses a pipe to the host, so it
+  exaggerates call counts compared with a phone's driver. The ranking should still hold.
+
+The sections below are the original plan.
+
 Use the same tools the D3D12 and Vulkan work used, plus what GL needs:
 
 - **The perf log on GL**: frame time, `finish_encoding`, and submit time. On GL the GL calls
