@@ -782,8 +782,10 @@ mod windows {
 pub fn listen(got: impl Fn(u32, u64, Surface) + Send + 'static) -> Option<String> {
     use std::os::unix::fs::PermissionsExt;
     let dir = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
-    let path = dir.join(format!("turu-shell-{}.sock", std::process::id()));
+    let path = crate::shell_sockets::path(&dir, std::process::id());
     let _ = std::fs::remove_file(&path);
+    // Turu: a shell that crashed (or was killed) left its socket behind: removed here, by the next.
+    crate::shell_sockets::remove_stale(&dir, std::process::id());
     let listener = std::os::unix::net::UnixListener::bind(&path)
         .inspect_err(|e| {
             tracing::warn!(
@@ -947,3 +949,4 @@ mod unix {
         }
     }
 }
+

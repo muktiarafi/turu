@@ -979,7 +979,12 @@ since; none built or run on Windows or Linux yet). The window (`app/src/gui/cont
 5. **Small ones.**
    * Linux: the shell's Unix socket for shared surfaces (`shared_gpu::listen`,
      `$XDG_RUNTIME_DIR/turu-shell-<pid>.sock`) is now removed when the shell's loop ends
-     (`shell::run`); not after a crash or the Windows-style `exit` (Windows has no socket).
+     (`shell::run`). One left by a shell that crashed or was killed is removed by the next shell
+     when it starts listening (`shell_sockets::remove_stale`, 2026-11-17): every
+     `turu-shell-<pid>.sock` but its own that refuses a connection (a running shell's accepts;
+     the connection ends at once, with no surface on it). Tested on the Mac (the module is built
+     for tests on any Unix: a dead shell's socket, a reused pid's and a running listener's); not
+     run on Linux.
    * Windows and Wayland report no `Occluded`: a covered shell window keeps its clients drawing
      (a minimized one on Windows is caught by its zero size). The window has the same limit, so it
      matches today.
