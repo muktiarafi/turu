@@ -551,11 +551,33 @@ fn every_repo_script_declares_its_options_without_error() {
     let mut files = Vec::new();
     repo_typescript_files(&root, &mut files);
     assert!(files.len() > 5, "found {} scripts", files.len());
-    for file in files {
-        if let Err(e) = turu_bot::script::options::declaration(&file) {
-            panic!("{}: {e}", file.display());
-        }
-    }
+    // One script at a time took 53 s on CI's runner, the engine's longest test. Each read has a
+    // QuickJS runtime of its own, so the cores share the scripts.
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let failures: Vec<String> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut failures = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(file) = files.get(i) else {
+                            return failures;
+                        };
+                        if let Err(e) = turu_bot::script::options::declaration(file) {
+                            failures.push(format!("{}: {e}", file.display()));
+                        }
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap())
+            .collect()
+    });
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
