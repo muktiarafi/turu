@@ -91,13 +91,34 @@ pub(super) fn aqw_tune_process() {
 /// sees Rust panics. This catches it, writes where it happened to the log and says what
 /// happened instead. If the Vulkan driver crashed while Mugetsu was starting, it remembers that
 /// (see `mugetsu::save_vulkan_crash`) and offers to start Mugetsu again, which then uses
-/// DirectX 12.
+/// DirectX 12; the same for DirectX 12, which is then replaced by Vulkan (Mugetsu 2.0.0,
+/// `mugetsu::save_dx12_crash`).
 /// Turu: this process is a process tab's client (`client.rs`): its crashes show no message box.
 static CLIENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Turu: marks this process as a process tab's client, for `crash_filter`.
 pub(super) fn set_client() {
     CLIENT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Mugetsu 2.0.0: set while a native crash is being handled, and once its report is written.
+static CRASH_HANDLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CRASH_REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Mugetsu 2.0.0: called before the process ends normally: if another thread is handling a
+/// native crash right now, waits (up to 3 s) until its report is written. Ending the process
+/// stops every thread, so a report from another thread was cut off after its first line (the
+/// DirectX 12 crash while closing happened on wgpu's drop thread while the main thread finished
+/// closing).
+pub(super) fn wait_for_crash_report() {
+    use std::sync::atomic::Ordering;
+    let started = std::time::Instant::now();
+    while CRASH_HANDLING.load(Ordering::SeqCst)
+        && !CRASH_REPORTED.load(Ordering::SeqCst)
+        && started.elapsed() < std::time::Duration::from_secs(3)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
 }
 
 pub(super) fn install_crash_handler() {
@@ -110,7 +131,7 @@ pub(super) fn install_crash_handler() {
 unsafe extern "system" fn crash_filter(
     info: *const windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
 ) -> i32 {
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering};
     const EXCEPTION_EXECUTE_HANDLER: i32 = 1;
     const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
     const EXCEPTION_NONCONTINUABLE: u32 = 1;
@@ -158,8 +179,7 @@ unsafe extern "system" fn crash_filter(
         return EXCEPTION_EXECUTE_HANDLER;
     }
 
-    static HANDLING: AtomicBool = AtomicBool::new(false);
-    if HANDLING.swap(true, Ordering::SeqCst) {
+    if CRASH_HANDLING.swap(true, Ordering::SeqCst) {
         // Another thread crashed too (or this one crashed again inside the handler): leave the
         // first report on screen; the process ends when it is closed.
         loop {
@@ -181,40 +201,72 @@ unsafe extern "system" fn crash_filter(
         },
     );
     let vulkan_starting = crate::mugetsu::vulkan_starting();
+    let dx12_starting = crate::mugetsu::dx12_starting();
     let module_path = module.as_ref().map_or_else(
         || "an unknown module".to_string(),
         |m| m.path.display().to_string(),
     );
     let offset = module.as_ref().map_or(0, |m| m.offset);
-    let backtrace = std::backtrace::Backtrace::force_capture();
-    tracing::error!(
+    // SAFETY: plain query.
+    let thread = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
+    let record = format!(
         "fatal native crash: exception 0x{code:08X} in {module_path} at offset 0x{offset:X} \
-        (Vulkan starting: {vulkan_starting})\n{backtrace}"
+        (thread {thread}, {}, Vulkan starting: {vulkan_starting}, DirectX 12 starting: \
+        {dx12_starting})",
+        crate::mugetsu::exit_phase()
     );
-    // Turu: and a report in the crash folder, before any message box: the crash notice shows it
-    // at the next start, which also sends it if the user agreed to crash reports.
-    crate::crash_uploads::write_native_report(
+    // AQW build (Mugetsu 2.0.0): the record goes into the report in the crash folder right here,
+    // before anything that could hang: the log is written by another thread, which doesn't get
+    // to it when the process ends right after, or is gone already when the crash is during
+    // shutdown. Then the stack as module and offset (safe at any time), then the log, with the
+    // symbolized stack when not shutting down (looking symbols up while Windows unloads DLLs
+    // can hang). Turu: the report is the crash notice's at the next start, which also sends it
+    // if the user agreed to crash reports.
+    let mut report = crate::crash_uploads::NativeReport::create(
         &format!("Turu crashed: exception 0x{code:08X} in {file_name}"),
-        &format!(
-            "Exception 0x{code:08X} in {module_path} at offset 0x{offset:X}\n\
-            Vulkan starting: {vulkan_starting}\n\n{backtrace}"
-        ),
+        &record,
+    );
+    let stack = raw_stack();
+    report.add(&stack);
+    CRASH_REPORTED.store(true, Ordering::SeqCst);
+    if crate::mugetsu::exiting() {
+        tracing::error!("{record}\n{stack}");
+    } else {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        report.add(&format!("stack:\n{backtrace}"));
+        tracing::error!("{record}\n{backtrace}");
+    }
+    let where_saved = report.path().map_or_else(
+        || "ruffle.log".to_string(),
+        |path| format!("{} and ruffle.log", path.display()),
     );
 
     // Turu: a process tab's client (`--client`) has no window and nobody to answer a box, and its
     // "start again" would start a stray client: the shell starts it again by itself, and after a
-    // Vulkan crash saved here the new client takes DirectX 12 (`main.rs`'s `mugetsu_args`).
+    // crash saved here while its graphics API started, the new client takes the other one
+    // (`mugetsu::automatic_graphics`). The shell stays on its own until it starts again, so that
+    // tab's pictures are copied instead of shared until then.
     if CLIENT.load(Ordering::Relaxed) {
-        if vulkan_starting
-            && let Some(module) = module.as_ref().filter(|module| module.is_graphics_driver())
-        {
-            crate::mugetsu::save_vulkan_crash(&module.path);
+        if let Some(module) = module.as_ref() {
+            if vulkan_starting && module.is_graphics_driver() {
+                crate::mugetsu::save_vulkan_crash(&module.path);
+            } else if dx12_starting
+                && !crate::mugetsu::exiting()
+                && crate::mugetsu::vulkan_crashed_before().is_none()
+                && (module.is_graphics_driver() || module.is_direct3d())
+            {
+                crate::mugetsu::save_dx12_crash(&module.path);
+            }
         }
     } else if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
         message_box(
-            "Turu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
-            generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \
-            laptop processors don't have it.",
+            // (Mugetsu 1.7.0: it said the processor lacked AVX2, true of builds made for it;
+            // Turu is built for any 64-bit processor.)
+            &format!(
+                "Turu has to close: it ran into an instruction this PC's processor doesn't have. \
+                That shouldn't happen on a 64-bit processor, so please report it, with the file \
+                {where_saved}."
+            ),
             false,
         );
     } else if vulkan_starting
@@ -235,6 +287,28 @@ unsafe extern "system" fn crash_filter(
         if restart {
             start_again();
         }
+    } else if dx12_starting
+        && !crate::mugetsu::exiting()
+        // (With both APIs crashing at start there is nothing left to switch to.)
+        && crate::mugetsu::vulkan_crashed_before().is_none()
+        && let Some(module) = module
+            .as_ref()
+            .filter(|module| module.is_graphics_driver() || module.is_direct3d())
+    {
+        crate::mugetsu::save_dx12_crash(&module.path);
+        let restart = message_box(
+            &format!(
+                "The graphics driver crashed while Turu was starting DirectX 12 (in {file_name}).\n\n\
+                Turu will use Vulkan on this PC instead, which runs about as well but needs \
+                more memory. Turu tries DirectX 12 again by itself after you update your \
+                graphics driver or Windows.\n\n\
+                Click OK to start Turu again."
+            ),
+            true,
+        );
+        if restart {
+            start_again();
+        }
     } else {
         let hint = if in_mugetsu {
             String::new()
@@ -248,7 +322,8 @@ unsafe extern "system" fn crash_filter(
         message_box(
             &format!(
                 "Turu crashed (error 0x{code:08X} in {file_name}) and has to close.\n\n{hint}\
-                Details were saved to ruffle.log (it is replaced the next time Turu starts)."
+                Details were saved to {where_saved} (the log is replaced the next time Turu \
+                starts)."
             ),
             false,
         );
@@ -272,6 +347,32 @@ fn dll_shutdown_in_progress() -> bool {
     }
     // SAFETY: takes nothing and only reads the loader's state.
     unsafe { RtlDllShutdownInProgress() != 0 }
+}
+
+/// Mugetsu 2.0.0: the calling thread's stack as module and offset per frame, which needs no
+/// symbols (safe while Windows unloads DLLs, unlike `Backtrace`).
+fn raw_stack() -> String {
+    use windows_sys::Win32::System::Diagnostics::Debug::RtlCaptureStackBackTrace;
+    let mut frames = [std::ptr::null_mut::<std::ffi::c_void>(); 62];
+    // SAFETY: the buffer and its length match; the hash is optional.
+    let count = unsafe {
+        RtlCaptureStackBackTrace(0, frames.len() as u32, frames.as_mut_ptr(), std::ptr::null_mut())
+    };
+    let mut text = String::from("stack (module+offset):\n");
+    for frame in &frames[..count as usize] {
+        let address = *frame as usize;
+        match module_at(address) {
+            Some(module) => {
+                let name = module.path.file_name().map_or_else(
+                    || module.path.display().to_string(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                text.push_str(&format!("  {name}+0x{:X}\n", module.offset));
+            }
+            None => text.push_str(&format!("  0x{address:X}\n")),
+        }
+    }
+    text
 }
 
 /// AQW build: `RUFFLE_TEST_NATIVE_CRASH=driver` crashes inside a Windows DLL (counts as a
@@ -308,6 +409,14 @@ impl CrashModule {
             || ["igvk64.dll", "nvoglv64.dll", "amdvlk64.dll"].contains(&file)
             || std::env::var("RUFFLE_TEST_DRIVER_FILE")
                 .is_ok_and(|test| test.eq_ignore_ascii_case(file))
+    }
+
+    /// Mugetsu 2.0.0: Windows' own Direct3D 12 files: a crash in one of them while DirectX 12
+    /// is starting counts as DirectX 12 not working on this PC (see `mugetsu::save_dx12_crash`).
+    fn is_direct3d(&self) -> bool {
+        let path = self.path.to_string_lossy().to_ascii_lowercase();
+        let file = path.rsplit('\\').next().unwrap_or_default();
+        ["d3d12core.dll", "d3d12.dll"].contains(&file)
     }
 }
 

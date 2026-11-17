@@ -29,7 +29,8 @@
 //! window counts as seen though covered, or not), `nosurfaces` (the
 //! next shared surface fails to open), `rate` (each tab's pictures a second
 //! since the last `rate`)
-//! and `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG).
+//! `dump <path>` (the window's picture as drawn, read back from the GPU, as a PNG) and `quit` (the
+//! window closed, as by its close button).
 //!
 //! Grid View (the bar's Grid toggle, `ToShell::Grid`): the tab on screen draws the window with its
 //! game in its tile, the others only their game at their tile's size; the shell puts the tiles
@@ -2019,6 +2020,8 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
             crate::windows::add_graphics_menu(&window);
         }
         self.window = Some(window);
+        // (With "DirectX 12 not available" in it, if `make_gpu` noted that.)
+        self.update_title();
         self.resized();
     }
 
@@ -2065,6 +2068,8 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                 }
             }
             ShellEvent::Gone(id, generation) => self.gone(id, generation),
+            // `quit`: the window closed, as its close button does.
+            ShellEvent::Test(line) if line.trim() == "quit" => event_loop.exit(),
             ShellEvent::Test(line) => self.test(&line),
         }
     }
@@ -2136,9 +2141,21 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        crate::mugetsu::set_exit_phase(1);
+        // Mugetsu 2.0.0, as the window (`app.rs`): the GPU, and the clients' pictures opened on
+        // it, are let go of now, while the driver is alive, and wgpu's last command buffers are
+        // dropped (2 s at most), so the device is gone before the rest of the shutdown, not
+        // during it: on DirectX 12, Turu's default on Windows, that crashed.
         for tab in &mut self.tabs {
             stop(tab);
+            tab.shown = None;
+            tab.upload = None;
         }
+        self.surfaces.clear();
+        self.gpu = None;
+        wgpu_core::aqw_flush_encoder_drops();
+        crate::mugetsu::set_exit_phase(3);
+        tracing::info!("Shell: closing: done");
     }
 }
 
@@ -2159,31 +2176,46 @@ fn pointer(kind: PointerKind, button: Button, at: PhysicalPosition<f64>) -> ToCl
 fn make_gpu(window: Arc<Window>, preferences: &GlobalPreferences) -> Result<(Gpu, String), Error> {
     let wanted: wgpu::Backends = preferences.graphics_backends().into();
     // As the window: a driver crash from here until shortly after the first frame counts as the
-    // Vulkan driver crashing at startup (`mugetsu`), and the next start takes DirectX 12.
-    crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
+    // graphics API crashing at startup (`mugetsu`), and the next start takes the other one; and
+    // DirectX 12 that can't be started falls back to Vulkan (`mugetsu::open_gpu`), as the
+    // clients' does.
+    let power: wgpu::PowerPreference = preferences.graphics_power_preference().into();
     // With the window as the display: OpenGL needs it (Linux).
-    let (instance, backend) = crate::gui::select_wgpu_backend(wanted, Some(&window))?;
-    let surface = instance.create_surface(window.clone())?;
-    let (adapter, device, queue) =
-        match futures::executor::block_on(ruffle_render_wgpu::backend::request_adapter_and_device(
+    let open = |wanted: wgpu::Backends| -> Result<_, Error> {
+        let (instance, backend) = crate::gui::select_wgpu_backend(wanted, Some(&window))?;
+        crate::mugetsu::graphics_startup_begin(
+            backend.contains(wgpu::Backends::VULKAN),
+            backend.contains(wgpu::Backends::DX12),
+        );
+        let surface = instance.create_surface(window.clone())?;
+        let found = futures::executor::block_on(ruffle_render_wgpu::backend::request_adapter_and_device(
             backend,
             &instance,
             Some(&surface),
-            preferences.graphics_power_preference().into(),
-        )) {
-            Ok(found) => found,
-            // Any GPU that can show the window, if the clients' choice can't.
-            Err(e) => {
-                tracing::warn!("Shell: no GPU as the clients choose theirs ({e}); taking any");
-                let adapter = futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    compatible_surface: Some(&surface),
-                    ..Default::default()
-                }))?;
-                let (device, queue) = futures::executor::block_on(adapter.request_device(&Default::default()))?;
-                (adapter, device, queue)
-            }
-        };
+            power,
+        ));
+        Ok((instance, surface, found))
+    };
+    let (_instance, surface, adapter, device, queue) = match crate::mugetsu::open_gpu(wanted, |wanted| {
+        let (instance, surface, found) = open(wanted)?;
+        let (adapter, device, queue) = found.map_err(|e| anyhow!(e.to_string()))?;
+        Ok((instance, surface, adapter, device, queue))
+    }) {
+        Ok(opened) => opened,
+        // Any GPU that can show the window, if the clients' choice can't.
+        Err(e) => {
+            tracing::warn!("Shell: no GPU as the clients choose theirs ({e}); taking any");
+            let (instance, surface, _) = open(wanted)?;
+            let adapter = futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                ..Default::default()
+            }))?;
+            let (device, queue) = futures::executor::block_on(adapter.request_device(&Default::default()))?;
+            (instance, surface, adapter, device, queue)
+        }
+    };
     let info = adapter.get_info();
+    crate::mugetsu::note_dx12_fallback(wanted, info.backend);
     crate::mugetsu::set_adapter_ids(info.vendor, info.device);
     tracing::info!(
         "Shell graphics: {} on {} (type: {:?})",

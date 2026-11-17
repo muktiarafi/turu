@@ -28,8 +28,19 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   v-sync). As in Mugetsu 2.0.0, edge smoothing is no longer a choice, in the menu or Options
   (Flash-style; an `msaa` file next to the program brings MSAA back), and the log folder left
   the menu (Diagnostics and Options open it). Not ported: Mugetsu's update reminders (Turu has
-  its own updates), its in-game prompts (Turu asks about a graphics restart itself) and its
-  crash-handler rework on Windows. In a tab's client (every AQW tab since M6) Performance Mode,
+  its own updates) and its in-game prompts (Turu asks about a graphics restart itself).
+  Mugetsu 2.0.0's Windows changes (2026-11-17): DirectX 12 is Automatic's choice on Windows
+  (Vulkan on Linux; `mugetsu::automatic_graphics`), Vulkan where DirectX 12 crashed while
+  starting (`mugetsu-dx12-crashed.txt` in Mugetsu's settings folder, until the crashed file
+  changes) or can't be started (`mugetsu::open_gpu`, used by the window, the shell and the
+  clients alike, so they stay on one backend; `RUFFLE_TEST_DX12_FAILS=1` tests it); the crash
+  handler writes the record and a stack as module+offset to the native report before anything
+  that can hang, adds the thread and the closing step (`mugetsu::exit_phase`), and the normal
+  exit waits for a report another thread is writing (`windows::wait_for_crash_report`); the
+  window, the shell and the clients let go of the GPU (and the DXGI adapter the video memory
+  query keeps) while the driver is alive, and the window and the shell end with
+  `process::exit` after the log is flushed. Type-checked for Windows from macOS only (see
+  "Things to know"); nothing of it has run on Windows. In a tab's client (every AQW tab since M6) Performance Mode,
   Memory Limit and Free Memory Now are in Options > Application; frame pacing and the FPS limit
   aren't, as clients don't interpolate yet.
   Safe Drawing (Options > Application on Android, a `safe-drawing` file on a computer) is gone:
@@ -977,6 +988,15 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
 ## Things to know
 
+- **Type-checking the app for Windows from macOS:** `cargo check` (or `clippy`) with
+  `--target x86_64-pc-windows-msvc` stops in C build scripts (rquickjs-sys, the app's icon
+  resource) for want of MSVC's compiler and headers. `cargo check` links nothing, so a stand-in
+  that only creates the files it's asked for gets past them: a script that, for `-o <file>`,
+  `-Fo<file>`, `-out:<file>`, `/fo <file>` and `cq <file>`, writes an empty file, set as
+  `CC_x86_64_pc_windows_msvc`, `CXX_x86_64_pc_windows_msvc` and `AR_x86_64_pc_windows_msvc`, and
+  linked as `llvm-rc` early in `PATH`. Leave out `jpegxr` and `external_video` (bindgen needs real
+  C headers): `--no-default-features --features software_video,lzma`. It checks the Rust only:
+  no link, no run.
 - **`scripts/` is a submodule** (`muktiarafi/turu-scripts`): clone with `--recursive` or run
   `git submodule update --init`; the tests that load scripts read it. Commit script changes in
   the submodule, then the new pointer here. Its `types/turu.ts` is a copy of `bot/js/turu.ts`
@@ -1008,7 +1028,7 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   while Windows unloads the DLLs of a process that is already exiting (`RtlDllShutdownInProgress`):
   Sentry TURU-DESKTOP-4 (beta.7) was DXGI raising 0x87A as non-continuable during shutdown, after
   the window had closed. It ends with the exit's code if Windows has recorded it yet, else 0.
-  Checked only by type-checking that code for Windows from macOS (the app doesn't cross-build).
+  Checked only by type-checking that code for Windows from macOS (see "Things to know").
   No IP address, no computer name, the home folder's path replaced with `~`, no logs. The release
   workflow builds with line tables (`CARGO_PROFILE_DIST_DEBUG`) and uploads the PDB / dSYM /
   Linux binary with `sentry-cli` (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_DESKTOP_PROJECT`),

@@ -8,7 +8,7 @@
 //! * the GPU dropping the device (a driver reset) is sent as a warning ([`gpu_lost`]): Turu goes
 //!   on without a picture;
 //! * a native crash (Windows' `windows::install_crash_handler`, almost always a graphics driver)
-//!   is written to the crash folder ([`write_native_report`]) and sent at the next start
+//!   is written to the crash folder ([`NativeReport`]) and sent at the next start
 //!   ([`send_pending`]): a crashed process is no place for HTTPS.
 //!
 //! Only builds made with a DSN have it (`TURU_SENTRY_DSN` when building; the release workflow
@@ -130,17 +130,48 @@ fn scrub_text(text: &str) -> String {
     }
 }
 
-/// `crash/native-<time>-<pid>.txt`, written now, from the crash handler: the first line says
-/// what crashed (the crash notice shows it), then `details`. [`send_pending`] sends it at the
-/// next start.
+/// `crash/native-<time>-<pid>.txt`, from the crash handler: the first line says what crashed
+/// (the crash notice shows it), then the details, added in parts. [`send_pending`] sends it at
+/// the next start. Mugetsu 2.0.0 (its crash.txt): each part is on disk before the next step, as
+/// the next step can hang (symbols looked up while Windows unloads DLLs) or the process can end
+/// (another thread's normal exit): the record first, then the stack as module and offset, then
+/// the symbolized one.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn write_native_report(summary: &str, details: &str) {
-    write_report_in(
-        &turu_bot::paths::Paths::new().crash_dir(),
-        NATIVE_PREFIX,
-        summary,
-        details,
-    );
+pub struct NativeReport {
+    file: Option<std::fs::File>,
+    path: Option<PathBuf>,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl NativeReport {
+    /// Creates the report with its summary and first details.
+    pub fn create(summary: &str, details: &str) -> Self {
+        let dir = turu_bot::paths::Paths::new().crash_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let path = report_path(&dir, NATIVE_PREFIX);
+        let file = std::fs::File::create(&path).ok();
+        let mut report = Self {
+            path: file.is_some().then_some(path),
+            file,
+        };
+        report.add(&report_head(summary));
+        report.add(details);
+        report
+    }
+
+    /// Adds `text` (a line break after it) and waits until it is on disk.
+    pub fn add(&mut self, text: &str) {
+        use std::io::Write as _;
+        if let Some(file) = &mut self.file {
+            let _ = file.write_all(format!("{text}\n").as_bytes());
+            let _ = file.sync_all();
+        }
+    }
+
+    /// Where the report is, if it could be written.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
 }
 
 /// `crash/panic-<time>-<pid>.txt`, written now, from the panic hook (a release build aborts
@@ -157,19 +188,29 @@ pub fn write_panic_report(summary: &str, details: &str) -> Option<PathBuf> {
 /// A report named after the time and this process (two clients crashing in the same second, as
 /// a driver reset makes them, would otherwise share a name).
 fn write_report_in(dir: &Path, prefix: &str, summary: &str, details: &str) -> Option<PathBuf> {
-    let now = chrono::Local::now();
-    let report = format!(
-        "{summary}\n\nTuru {}\n{}\n{details}\n",
-        turu::VERSION,
-        now.to_rfc3339()
-    );
+    let report = format!("{}\n{details}\n", report_head(summary));
     let _ = std::fs::create_dir_all(dir);
-    let path = dir.join(format!(
+    let path = report_path(dir, prefix);
+    std::fs::write(&path, report).ok().map(|()| path)
+}
+
+/// A report's name in `dir`: `<prefix><time>-<pid>.txt`.
+fn report_path(dir: &Path, prefix: &str) -> PathBuf {
+    let now = chrono::Local::now();
+    dir.join(format!(
         "{prefix}{}-{}.txt",
         now.format("%F_%H-%M-%S"),
         std::process::id()
-    ));
-    std::fs::write(&path, report).ok().map(|()| path)
+    ))
+}
+
+/// A report's first lines: the summary, Turu's version and the time.
+fn report_head(summary: &str) -> String {
+    format!(
+        "{summary}\n\nTuru {}\n{}",
+        turu::VERSION,
+        chrono::Local::now().to_rfc3339()
+    )
 }
 
 /// The GPU dropped the device (a driver reset, or out of memory): Turu keeps running without a

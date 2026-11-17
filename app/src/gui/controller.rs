@@ -86,19 +86,28 @@ impl GuiController {
     ) -> anyhow::Result<Self> {
         let wanted: wgpu::Backends = preferences.graphics_backends().into();
         // AQW build: a driver crash from here until shortly after the first frame counts as
-        // the Vulkan driver crashing at startup (see `mugetsu`).
-        crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
-        let (instance, backend) = select_wgpu_backend(wanted, Some(&window))?;
-        #[cfg(windows)]
-        crate::windows::test_native_crash();
-        let surface = instance.create_surface(window.clone())?;
-        let (adapter, device, queue) = futures::executor::block_on(request_adapter_and_device(
-            backend,
-            &instance,
-            Some(&surface),
-            preferences.graphics_power_preference().into(),
-        ))
-        .map_err(|e| anyhow!(e.to_string()))?;
+        // the graphics API crashing at startup (see `mugetsu`); DirectX 12 that can't be
+        // started falls back to Vulkan (Mugetsu 2.0.0, `mugetsu::open_gpu`).
+        let (instance, surface, adapter, device, queue) =
+            crate::mugetsu::open_gpu(wanted, |wanted| -> anyhow::Result<_> {
+                let (instance, backend) = select_wgpu_backend(wanted, Some(&window))?;
+                crate::mugetsu::graphics_startup_begin(
+                    backend.contains(wgpu::Backends::VULKAN),
+                    backend.contains(wgpu::Backends::DX12),
+                );
+                #[cfg(windows)]
+                crate::windows::test_native_crash();
+                let surface = instance.create_surface(window.clone())?;
+                let (adapter, device, queue) =
+                    futures::executor::block_on(request_adapter_and_device(
+                        backend,
+                        &instance,
+                        Some(&surface),
+                        preferences.graphics_power_preference().into(),
+                    ))
+                    .map_err(|e| anyhow!(e.to_string()))?;
+                Ok((instance, surface, adapter, device, queue))
+            })?;
         let adapter_info = adapter.get_info();
         crate::mugetsu::set_adapter_ids(adapter_info.vendor, adapter_info.device);
         #[cfg(not(windows))]
@@ -120,6 +129,8 @@ impl GuiController {
         if wanted.contains(wgpu::Backends::VULKAN) && adapter_info.backend != wgpu::Backend::Vulkan
         {
             aqw_warn_vulkan_fallback(&preferences, adapter_info.backend, &window);
+        } else if crate::mugetsu::note_dx12_fallback(wanted, adapter_info.backend) {
+            window.set_title(&crate::window_title());
         }
         crate::mugetsu::check_gpu_choice(
             window.clone(),
@@ -790,12 +801,20 @@ pub(crate) fn select_wgpu_backend(
     );
 
     // AQW build: try the native APIs before OpenGL (plain bit order tried GL before DX12,
-    // and wgpu's GL backend is much slower on Windows).
+    // and wgpu's GL backend is much slower on Windows). Vulkan too (Mugetsu 2.0.0): it is what
+    // DirectX 12, the default on Windows, falls back to.
     let remaining = wgpu::Backends::all() - preferred_backends;
-    let ordered = [wgpu::Backends::DX12, wgpu::Backends::METAL, wgpu::Backends::GL]
+    let native = [
+        wgpu::Backends::DX12,
+        wgpu::Backends::VULKAN,
+        wgpu::Backends::METAL,
+        wgpu::Backends::GL,
+    ];
+    let rest = native.iter().fold(remaining, |rest, backend| rest - *backend);
+    let ordered = native
         .into_iter()
         .filter(|b| remaining.contains(*b))
-        .chain((remaining - wgpu::Backends::DX12 - wgpu::Backends::METAL - wgpu::Backends::GL).iter());
+        .chain(rest.iter());
     for backend in ordered {
         if let Some(instance) = try_wgpu_backend(backend, window.cloned()) {
             tracing::info!(

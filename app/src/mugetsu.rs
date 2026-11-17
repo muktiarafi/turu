@@ -83,25 +83,82 @@ const VULKAN_CRASH_MARKER: &str = "mugetsu-vulkan-crashed.txt";
 const VULKAN_STARTUP_WINDOW: Duration = Duration::from_secs(10);
 
 static VULKAN_STARTING: AtomicBool = AtomicBool::new(false);
+/// Mugetsu 2.0.0: the same while DirectX 12 is starting (see `save_dx12_crash`).
+static DX12_STARTING: AtomicBool = AtomicBool::new(false);
 static FIRST_PRESENT: OnceLock<Instant> = OnceLock::new();
 
-/// Called before the graphics API is chosen.
-pub fn vulkan_startup_begin(vulkan_wanted: bool) {
+/// Called before the graphics API is started (again when another one is tried after it).
+pub fn graphics_startup_begin(vulkan_wanted: bool, dx12_wanted: bool) {
     VULKAN_STARTING.store(vulkan_wanted, Ordering::SeqCst);
+    DX12_STARTING.store(dx12_wanted, Ordering::SeqCst);
 }
 
 /// Called after every presented frame.
 pub fn frame_presented() {
-    if VULKAN_STARTING.load(Ordering::Relaxed)
+    if (VULKAN_STARTING.load(Ordering::Relaxed) || DX12_STARTING.load(Ordering::Relaxed))
         && FIRST_PRESENT.get_or_init(Instant::now).elapsed() > VULKAN_STARTUP_WINDOW
     {
         VULKAN_STARTING.store(false, Ordering::Relaxed);
+        DX12_STARTING.store(false, Ordering::Relaxed);
     }
 }
 
 #[cfg(windows)]
 pub fn vulkan_starting() -> bool {
     VULKAN_STARTING.load(Ordering::SeqCst)
+}
+
+#[cfg(windows)]
+pub fn dx12_starting() -> bool {
+    DX12_STARTING.load(Ordering::SeqCst)
+}
+
+/// Mugetsu 2.0.0: opens the GPU with `open`, given the backends to try. DirectX 12 is the
+/// default on Windows; where it is there but cannot be started (an old graphics chip or
+/// driver), Vulkan is tried before giving up. `open` calls `graphics_startup_begin` again with
+/// the backend it really starts (another is used where the wanted one isn't there at all).
+/// The window, the shell and the clients all open theirs this way, so they end up on the same
+/// backend and can share surfaces. (`RUFFLE_TEST_DX12_FAILS`, testing: DirectX 12 is taken as
+/// not startable.)
+pub fn open_gpu<T>(
+    wanted: wgpu::Backends,
+    mut open: impl FnMut(wgpu::Backends) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    graphics_startup_begin(
+        wanted.contains(wgpu::Backends::VULKAN),
+        wanted.contains(wgpu::Backends::DX12),
+    );
+    let first = if wanted == wgpu::Backends::DX12
+        && std::env::var_os("RUFFLE_TEST_DX12_FAILS").is_some()
+    {
+        Err(anyhow::anyhow!("RUFFLE_TEST_DX12_FAILS is set"))
+    } else {
+        open(wanted)
+    };
+    match first {
+        Err(error) if wanted == wgpu::Backends::DX12 => {
+            tracing::warn!("DirectX 12 could not be started ({error}); trying Vulkan");
+            graphics_startup_begin(true, false);
+            open(wgpu::Backends::VULKAN)
+        }
+        opened => opened,
+    }
+}
+
+/// Mugetsu 2.0.0: DirectX 12 was wanted and `backend` draws instead: logged and said in the
+/// title (Vulkan runs as well, so nothing is asked). Whether it was.
+pub fn note_dx12_fallback(wanted: wgpu::Backends, backend: wgpu::Backend) -> bool {
+    if wanted != wgpu::Backends::DX12 || backend == wgpu::Backend::Dx12 {
+        return false;
+    }
+    let name = match backend {
+        wgpu::Backend::Vulkan => "Vulkan",
+        wgpu::Backend::Gl => "OpenGL, slower",
+        other => other.to_str(),
+    };
+    tracing::warn!("DirectX 12 is not available; using {name}");
+    add_title_note(format!("{name}: DirectX 12 not available"));
+    true
 }
 
 /// When the driver file was last changed (installed), as seconds since 1970.
@@ -118,16 +175,98 @@ pub fn save_vulkan_crash(module: &Path) {
     if saved_graphics() == Some(Graphics::Vulkan) {
         save_graphics(None);
     }
+    write_crash_marker(VULKAN_CRASH_MARKER, module);
+}
+
+/// The record of a graphics API that crashed while starting: the crashed file and when it
+/// was installed.
+#[cfg(windows)]
+fn write_crash_marker(marker: &str, module: &Path) {
     if let Some(dir) = config_dir() {
         let _ = std::fs::create_dir_all(&dir);
         let _ = std::fs::write(
-            dir.join(VULKAN_CRASH_MARKER),
+            dir.join(marker),
             format!(
                 "{VERSION}\n{}\n{}\n",
                 module.display(),
                 modified_secs(module).unwrap_or(0)
             ),
         );
+    }
+}
+
+// --- DirectX 12 crashes ---------------------------------------------------------------------
+//
+// Mugetsu 2.0.0: DirectX 12 is the default on Windows (it runs as fast or faster than Vulkan
+// and its drivers hold far less memory). The same safety net as for Vulkan, the other way
+// round: a crash in the graphics driver or in Direct3D's own files while DirectX 12 is starting
+// is remembered, and from then on Turu starts on Vulkan on this PC, until the crashed file
+// changes (a driver or Windows update).
+
+const DX12_CRASH_MARKER: &str = "mugetsu-dx12-crashed.txt";
+
+/// Remembers that DirectX 12 crashed in `module` (full path of the crashed file) while
+/// starting. Only Windows has the crash handler that calls this.
+#[cfg(windows)]
+pub fn save_dx12_crash(module: &Path) {
+    // A chosen "DirectX 12" would bring the crash straight back on the restart.
+    if saved_graphics() == Some(Graphics::Dx12) {
+        save_graphics(None);
+    }
+    write_crash_marker(DX12_CRASH_MARKER, module);
+}
+
+/// The file DirectX 12 crashed in on this PC while starting, if that still applies (see
+/// `vulkan_crashed_before`).
+pub fn dx12_crashed_before() -> Option<PathBuf> {
+    crash_marker(DX12_CRASH_MARKER)
+}
+
+/// Why Automatic graphics chose what it did (`automatic_graphics`), for the log and the title.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AutomaticGraphics {
+    /// DirectX 12: the Vulkan driver crashed while starting before (the crashed file).
+    VulkanCrashed(PathBuf),
+    /// Vulkan: DirectX 12 crashed while starting before (the crashed file).
+    Dx12Crashed(PathBuf),
+    /// DirectX 12 on Intel or Qualcomm graphics (the chip's name).
+    Intel(String),
+    /// The system's default: DirectX 12 on Windows, Vulkan elsewhere.
+    Default,
+}
+
+impl AutomaticGraphics {
+    /// The `--graphics` value.
+    pub fn arg(&self) -> &'static str {
+        match self {
+            Self::VulkanCrashed(_) | Self::Intel(_) => "dx12",
+            Self::Dx12Crashed(_) => "vulkan",
+            Self::Default if cfg!(windows) => "dx12",
+            Self::Default => "vulkan",
+        }
+    }
+}
+
+/// Mugetsu 2.0.0: the graphics API with no choice saved, on Windows and Linux. DirectX 12 is
+/// the default on Windows (as fast or faster than Vulkan in the game, with far less memory held
+/// by the graphics driver); Vulkan on Linux, and on Windows where DirectX 12 crashed while
+/// starting (it can't be started at all: `open_gpu`). A Vulkan crash wins over a DirectX 12
+/// one (with both, DirectX 12 as before), and a DirectX 12 crash over the Intel rule (a DirectX
+/// 12 that crashes at start is no use there either). `intel` (`intel_graphics`) is asked last,
+/// as it queries DXGI; the Intel rule stays for what it logs.
+pub fn automatic_graphics(
+    vulkan_crashed: Option<PathBuf>,
+    dx12_crashed: impl FnOnce() -> Option<PathBuf>,
+    intel: impl FnOnce() -> Option<String>,
+) -> AutomaticGraphics {
+    if let Some(module) = vulkan_crashed {
+        AutomaticGraphics::VulkanCrashed(module)
+    } else if let Some(module) = dx12_crashed() {
+        AutomaticGraphics::Dx12Crashed(module)
+    } else if let Some(name) = intel() {
+        AutomaticGraphics::Intel(name)
+    } else {
+        AutomaticGraphics::Default
     }
 }
 
@@ -714,7 +853,13 @@ pub fn open_folder(folder: &std::path::Path) {
 /// record is deleted. Not retried for a new Mugetsu version: the crashes seen so far (Intel
 /// UHD 620, also with the newest driver and in stock Ruffle) are driver bugs Mugetsu can't fix.
 pub fn vulkan_crashed_before() -> Option<PathBuf> {
-    let marker = config_dir()?.join(VULKAN_CRASH_MARKER);
+    crash_marker(VULKAN_CRASH_MARKER)
+}
+
+/// The crashed file a crash record names, if the record still applies; a stale record is
+/// deleted.
+fn crash_marker(marker: &str) -> Option<PathBuf> {
+    let marker = config_dir()?.join(marker);
     let text = std::fs::read_to_string(&marker).ok()?;
     let mut lines = text.lines();
     let _version = lines.next()?;
@@ -926,6 +1071,55 @@ pub fn set_video_memory_adapter(adapter: wgpu::Adapter) {
     let _ = VIDEO_ADAPTER.set(adapter);
 }
 
+#[cfg(windows)]
+thread_local! {
+    /// The chip `video_memory` asks (every few seconds), found once. Let go of at shutdown
+    /// (`release_video_memory_adapter`): this thread's storage is freed last of all, when the
+    /// graphics driver is already gone.
+    static VIDEO_MEMORY_ADAPTER: std::cell::RefCell<
+        Option<windows::Win32::Graphics::Dxgi::IDXGIAdapter3>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// Mugetsu 2.0.0: lets go of the DXGI adapter `video_memory` holds, while closing, on the
+/// thread that asked (the window's event loop, a client's engine thread).
+pub fn release_video_memory_adapter() {
+    #[cfg(windows)]
+    VIDEO_MEMORY_ADAPTER.with(|cell| drop(cell.borrow_mut().take()));
+}
+
+/// How far a normal exit has got (see `exit_phase`): the crash record says where a crash
+/// during shutdown happened.
+static EXIT_PHASE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+#[cfg(windows)]
+const EXIT_PHASES: [&str; 7] = [
+    "running",
+    "closing: dropping the player and renderer",
+    "closing: player and renderer dropped",
+    "closing: done",
+    "closing: event loop ended",
+    "closing: window and app dropped",
+    "closing: log closed",
+];
+
+/// Mugetsu 2.0.0: the closing step reached (an index into `EXIT_PHASES`).
+pub fn set_exit_phase(phase: u8) {
+    EXIT_PHASE.store(phase, Ordering::Relaxed);
+}
+
+/// What the program was doing, for the crash record: "running", or the last closing step
+/// reached.
+#[cfg(windows)]
+pub fn exit_phase() -> &'static str {
+    EXIT_PHASES[(EXIT_PHASE.load(Ordering::Relaxed) as usize).min(EXIT_PHASES.len() - 1)]
+}
+
+/// Whether a normal exit is under way.
+#[cfg(windows)]
+pub fn exiting() -> bool {
+    EXIT_PHASE.load(Ordering::Relaxed) != 0
+}
+
 /// How much of the graphics chip's own memory Windows lets this process use, and how much it
 /// uses (bytes), whichever graphics API draws. Windows counts every GPU memory block Mugetsu
 /// holds, used or not; past the budget it moves memory to system RAM, which is very slow.
@@ -936,10 +1130,9 @@ pub fn video_memory() -> Option<(u64, u64)> {
         IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory1,
     };
     use windows::core::Interface as _;
-    thread_local! {
-        // The chip, found once (it's asked every few seconds).
-        static ADAPTER: std::cell::RefCell<Option<IDXGIAdapter3>> =
-            const { std::cell::RefCell::new(None) };
+    // (Not found again while closing: `release_video_memory_adapter` has let go of it.)
+    if exiting() {
+        return None;
     }
     let find = || -> Option<IDXGIAdapter3> {
         let (vendor, device) = *ADAPTER_IDS.get()?;
@@ -956,7 +1149,7 @@ pub fn video_memory() -> Option<(u64, u64)> {
             None
         }
     };
-    ADAPTER.with(|cell| {
+    VIDEO_MEMORY_ADAPTER.with(|cell| {
         let mut cell = cell.borrow_mut();
         if cell.is_none() {
             *cell = find();
@@ -1147,7 +1340,55 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power: 
 
 #[cfg(test)]
 mod tests {
-    use super::{FpsLimit, Performance};
+    use super::{AutomaticGraphics, FpsLimit, Performance, automatic_graphics, open_gpu};
+    use std::path::PathBuf;
+
+    #[test]
+    fn directx_12_that_does_not_start_is_replaced_by_vulkan() {
+        // DirectX 12 wanted and failing: Vulkan is tried next.
+        let mut tried = Vec::new();
+        let opened = open_gpu(wgpu::Backends::DX12, |backends| {
+            tried.push(backends);
+            if backends == wgpu::Backends::DX12 {
+                anyhow::bail!("no DirectX 12 device")
+            }
+            Ok(backends)
+        });
+        assert_eq!(opened.ok(), Some(wgpu::Backends::VULKAN));
+        assert_eq!(tried, [wgpu::Backends::DX12, wgpu::Backends::VULKAN]);
+        // Anything else wanted: its error comes back, with nothing else tried.
+        for wanted in [wgpu::Backends::VULKAN, wgpu::Backends::DX12 | wgpu::Backends::VULKAN] {
+            let mut calls = 0;
+            let opened = open_gpu(wanted, |_| -> anyhow::Result<()> {
+                calls += 1;
+                anyhow::bail!("no device")
+            });
+            assert!(opened.is_err());
+            assert_eq!(calls, 1);
+        }
+    }
+
+    #[test]
+    fn automatic_graphics_takes_the_api_that_did_not_crash() {
+        let file = || Some(PathBuf::from(r"C:\Windows\System32\igvk64.dll"));
+        let intel = || Some("Intel(R) UHD Graphics 620".to_owned());
+        // A Vulkan crash: DirectX 12, also when DirectX 12 crashed too (nothing to switch to).
+        let chosen = automatic_graphics(file(), file, intel);
+        assert_eq!(chosen.arg(), "dx12");
+        assert!(matches!(chosen, AutomaticGraphics::VulkanCrashed(_)));
+        // A DirectX 12 crash: Vulkan, before the Intel rule.
+        let chosen = automatic_graphics(None, file, intel);
+        assert_eq!(chosen.arg(), "vulkan");
+        assert!(matches!(chosen, AutomaticGraphics::Dx12Crashed(_)));
+        // Intel: DirectX 12, said so in the log.
+        let chosen = automatic_graphics(None, || None, intel);
+        assert_eq!(chosen, AutomaticGraphics::Intel("Intel(R) UHD Graphics 620".to_owned()));
+        assert_eq!(chosen.arg(), "dx12");
+        // Otherwise the system's default: DirectX 12 on Windows, Vulkan on Linux.
+        let chosen = automatic_graphics(None, || None, || None);
+        assert_eq!(chosen, AutomaticGraphics::Default);
+        assert_eq!(chosen.arg(), if cfg!(windows) { "dx12" } else { "vulkan" });
+    }
 
     #[test]
     fn performance_mode_is_read_back_as_it_was_saved() {

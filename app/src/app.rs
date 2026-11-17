@@ -1537,6 +1537,7 @@ impl ApplicationHandler<RuffleEvent> for App {
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         let started = Instant::now();
+        crate::mugetsu::set_exit_phase(1);
         tracing::info!("closing: dropping the player and renderer");
         // Turu: detach the bot first, or its watchdog takes the closed game for a disconnect.
         if crate::mugetsu::plays_aqw() {
@@ -1548,9 +1549,11 @@ impl ApplicationHandler<RuffleEvent> for App {
         // AQW build (Mugetsu 2.0.0): what this thread's storage holds of the graphics device is
         // let go of now, while the driver is alive: thread storage is freed last of all at exit,
         // when Windows has already unloaded the driver (DirectX 12 crashed there). Shapes still
-        // being tessellated keep the device, and so do recorded segments.
+        // being tessellated keep the device, and so do recorded segments; the video memory
+        // query keeps a DXGI adapter.
         let shapes = ruffle_core::shutdown_deferred_shapes();
         let segments = ruffle_render_wgpu::segments::clear();
+        crate::mugetsu::release_video_memory_adapter();
         tracing::info!("closing: let go of {shapes} shapes still being drawn and {segments} recorded segments");
         // `MainWindow` needs a tokio context to properly drop.
         {
@@ -1562,6 +1565,7 @@ impl ApplicationHandler<RuffleEvent> for App {
         // (2 s at most), so the device is gone before the rest of the shutdown, not during it
         // (on DirectX 12 that crashed two closes out of three).
         wgpu_core::aqw_flush_encoder_drops();
+        crate::mugetsu::set_exit_phase(2);
         tracing::info!(
             "closing: player and renderer dropped after {} ms",
             started.elapsed().as_millis()
@@ -1575,6 +1579,7 @@ impl ApplicationHandler<RuffleEvent> for App {
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_timeout(std::time::Duration::from_secs(1));
         }
+        crate::mugetsu::set_exit_phase(3);
         tracing::info!("closing: done after {} ms", started.elapsed().as_millis());
     }
 }

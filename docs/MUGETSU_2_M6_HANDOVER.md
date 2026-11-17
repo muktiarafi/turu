@@ -27,8 +27,9 @@ Local only (in this checkout's `ruffle/`): `aqw-1.6-backup` (the old `aqw`, Muge
 
 **CI:** green for `e8d0213a4` (https://github.com/muktiarafi/turu/actions/runs/44096883886):
 format, clippy, tests and the host SWF, all on Ubuntu, so the app compiles and its tests pass on
-Linux. **Nothing has compiled on Windows**: CI has no Windows job (release.yml builds Windows
-only from a `v*` tag).
+Linux. **Nothing has been built on Windows**: CI has no Windows job (release.yml builds Windows
+only from a `v*` tag). Since the Windows changes (open item 4) the app type-checks for Windows
+from macOS (STATUS.md, "Things to know"), without linking or running.
 
 **turu commits** (oldest first): `14724433f` Mugetsu 2.0.0 and its player options · `82398e4f1`
 process tabs on by default (cherry-picked from `m3-android-tabs`) · `74424ce95` clients' memory
@@ -95,9 +96,11 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
 ## Open items, in the order recommended
 
 1. **A Windows build** (no CI job: a Windows machine, or release.yml's Windows job on a test tag).
-   Most at risk: `app/src/windows.rs` (merged by hand, never compiled), the `#[cfg(windows)]`
-   paths in `app/src/client.rs` and `shell.rs`, the D3D12 shared surfaces. Then run the shell with
-   two tabs on Windows and on Linux (Linux only compiled in CI).
+   The app now type-checks for Windows from macOS (STATUS.md, "Things to know"; done after item
+   4 below), but nothing has linked or run there. Most at risk: `app/src/windows.rs`, the
+   `#[cfg(windows)]` paths in `app/src/client.rs` and `shell.rs`, and the D3D12 shared surfaces
+   (`shared_gpu.rs`), which every Windows user now takes, DirectX 12 being the default. Then run
+   the shell with two tabs on Windows and on Linux (Linux only compiled in CI).
 2. **In game, with an account** (needs the user's login; use a quiet server, not Twilly, Artix
    or Alteon): two tabs with a `lean-verify` file next to the program (`RUFFLE_LEAN_VERIFY`; look
    for "LEAN VERIFY" in the log); a client's Options > Performance Mode, Memory Limit, Free Memory
@@ -111,10 +114,23 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    `pace_interpolation`, `gui/controller.rs` `set_vsync`), then Mugetsu's render thread
    (`ruffle_render_wgpu::render_thread::ThreadedBackend`; `client_screen.rs`'s
    `downcast_ref::<WgpuRenderBackend<MovieTexture>>` must go through `render_thread::with_wgpu_backend`).
-4. **Mugetsu's Windows changes** (need Windows): DirectX 12 as the default with a Vulkan fallback
-   and a crash marker (`ruffle/desktop/src/main.rs` and `mugetsu.rs` `graphics_startup_begin`,
-   `save_dx12_crash`, `dx12_crashed_before`; Turu still defaults to Vulkan), the crash-handler
-   rework (`crash.txt`, raw stack), releasing the DXGI adapter at close.
+4. ~~**Mugetsu's Windows changes**~~ ported (2026-11-17, type-checked for Windows only):
+   DirectX 12 as Automatic's choice on Windows (`mugetsu::automatic_graphics`, unit-tested), the
+   DirectX 12 crash marker, the Vulkan retry when DirectX 12 can't start (`mugetsu::open_gpu`, in
+   the window, the shell and the clients), the crash-handler rework, exit phases, the DXGI
+   adapter let go of at close, and `process::exit` after the window's or the shell's close.
+   Choices: Mugetsu's `crash.txt` became Turu's per-process native report (`crash_uploads::
+   NativeReport`, written part by part), as the shell and its clients would overwrite one file;
+   Mugetsu's restart flow (`should_start_again`, `start_again_now`) isn't taken, Turu has its own.
+   Left: a client that crashes while DirectX 12 starts saves the marker and comes back on Vulkan
+   while the shell stays on DirectX 12, so that tab's pictures are copied, not shared, until Turu
+   starts again (the same as the Vulkan crash before). To check on Windows:
+   `RUFFLE_TEST_DX12_FAILS=1` (Vulkan taken, "DirectX 12 not available" in the title),
+   `RUFFLE_TEST_NATIVE_CRASH=driver` with `RUFFLE_TEST_DRIVER_FILE=kernelbase.dll` (the Vulkan
+   or DirectX 12 crash dialog, the marker, the report in `crash/`), and a few closes on DirectX 12.
+   On macOS the shell's new close was run (`TURU_SHELL_TEST` line `quit`): exit code 0, its last
+   log line written, no client left; the shell kills its clients when it closes, so a client's
+   own close path runs only when it loses the shell otherwise.
 5. **Client gaps left from M6**: IME composition, gamepads, drag-and-drop, Flash's own right-click
    items; Mugetsu's one-time tips in clients (Performance mode offer, Quality Low tip: they need
    `mugetsu::check_gpu_choice`, which only the window calls).

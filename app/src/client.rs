@@ -193,16 +193,21 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             // AQW build (Mugetsu 2.0.0): what the engine thread's storage holds of the graphics
             // device is let go of there, while the driver is alive (thread storage is freed last
             // of all at exit, when Windows has already unloaded the driver: DirectX 12 crashed
-            // there), and wgpu's last command buffers are dropped. 3 s at most.
+            // there), the video memory query's DXGI adapter too, and wgpu's last command buffers
+            // are dropped. 3 s at most. A crash being handled on another thread meanwhile gets
+            // its report written before the end (`windows::wait_for_crash_report`).
+            crate::mugetsu::set_exit_phase(1);
             let _ = forward.sender.send(EngineEvent::Run(Box::new(|_| {
                 let shapes = ruffle_core::shutdown_deferred_shapes();
                 let segments = ruffle_render_wgpu::segments::clear();
+                crate::mugetsu::release_video_memory_adapter();
                 wgpu_core::aqw_flush_encoder_drops();
+                crate::mugetsu::set_exit_phase(3);
                 tracing::info!("closing: let go of {shapes} shapes still being drawn and {segments} recorded segments");
-                std::process::exit(0);
+                exit_now(0);
             })));
             std::thread::sleep(Duration::from_secs(3));
-            std::process::exit(0);
+            exit_now(0);
         }
     });
     spawned.context("Couldn't start reading the shell's messages")?;
@@ -256,7 +261,15 @@ fn gpu_check() {
     if let Some(client) = sentry::Hub::main().client() {
         client.flush(Some(Duration::from_secs(2)));
     }
-    std::process::exit(EXIT_GPU_LOST);
+    exit_now(EXIT_GPU_LOST);
+}
+
+/// Ends the client with `code`, once a native crash being handled on another thread has its
+/// report written (Windows).
+fn exit_now(code: i32) -> ! {
+    #[cfg(windows)]
+    crate::windows::wait_for_crash_report();
+    std::process::exit(code);
 }
 
 /// The client's exit code after losing the GPU device (`gpu_check`).
@@ -380,15 +393,14 @@ type Gpu = (Arc<Descriptors>, Arc<Blit>, WgpuRenderBackend<MovieTexture>);
 /// turu.swf's stage.
 fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
     let wanted: wgpu::Backends = preferences.graphics_backends().into();
-    // A driver crash from here until shortly after the first picture counts as the Vulkan driver
+    // A driver crash from here until shortly after the first picture counts as the graphics API
     // crashing at startup: the crash handler saves it, and the client the shell starts next takes
-    // DirectX 12 (`main.rs`'s `mugetsu_args`), as the window would.
-    crate::mugetsu::vulkan_startup_begin(wanted.contains(wgpu::Backends::VULKAN));
-    if wanted.contains(wgpu::Backends::VULKAN) {
+    // the other one (`mugetsu::automatic_graphics`), as the window would.
+    if wanted.intersects(wgpu::Backends::VULKAN | wgpu::Backends::DX12) {
         // A hidden or covered tab draws no pictures (`ClientScreen`), which would leave that window
         // open as long as it stays hidden: it ends 30 s after this at the latest.
         let _ = std::thread::Builder::new()
-            .name("vulkan startup".to_string())
+            .name("graphics startup".to_string())
             .spawn(|| {
                 std::thread::sleep(Duration::from_secs(20));
                 crate::mugetsu::frame_presented();
@@ -397,28 +409,40 @@ fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
             });
     }
     // No window, so no display handle: OpenGL on Linux tries EGL without one, and the other
-    // backends follow if it finds no GPU.
-    let (instance, backend) = crate::gui::select_wgpu_backend(wanted, None)?;
-    #[cfg(windows)]
-    crate::windows::test_native_crash();
+    // backends follow if it finds no GPU. DirectX 12 that can't be started falls back to Vulkan
+    // first (`mugetsu::open_gpu`), as the shell's does, so both end up on the same backend.
     let power: wgpu::PowerPreference = preferences.graphics_power_preference().into();
-    let (instance, adapter, device, queue) =
-        match futures::executor::block_on(request_adapter_and_device(backend, &instance, None, power)) {
-            Ok((adapter, device, queue)) => (instance, adapter, device, queue),
-            // A backend can list a GPU and still give no device (EGL without a display): the others.
-            Err(e) => {
-                tracing::warn!(
-                    "Client: no GPU on {} ({e}); trying the other backends",
-                    backend_names(backend)
-                );
-                let others = wgpu::Backends::all() - backend;
-                let instance = create_wgpu_instance(others, Default::default(), None);
-                let (adapter, device, queue) =
-                    futures::executor::block_on(request_adapter_and_device(others, &instance, None, power))
-                        .map_err(|e| anyhow!("No GPU for the client: {e}"))?;
-                (instance, adapter, device, queue)
-            }
-        };
+    let mut tried = wgpu::Backends::empty();
+    let opened = crate::mugetsu::open_gpu(wanted, |wanted| {
+        let (instance, backend) = crate::gui::select_wgpu_backend(wanted, None)?;
+        tried |= backend;
+        crate::mugetsu::graphics_startup_begin(
+            backend.contains(wgpu::Backends::VULKAN),
+            backend.contains(wgpu::Backends::DX12),
+        );
+        #[cfg(windows)]
+        crate::windows::test_native_crash();
+        let (adapter, device, queue) =
+            futures::executor::block_on(request_adapter_and_device(backend, &instance, None, power))
+                .map_err(|e| anyhow!(e.to_string()))?;
+        Ok((instance, adapter, device, queue))
+    });
+    let (instance, adapter, device, queue) = match opened {
+        Ok(opened) => opened,
+        // A backend can list a GPU and still give no device (EGL without a display): the others.
+        Err(e) => {
+            tracing::warn!(
+                "Client: no GPU on {} ({e}); trying the other backends",
+                backend_names(tried)
+            );
+            let others = wgpu::Backends::all() - tried;
+            let instance = create_wgpu_instance(others, Default::default(), None);
+            let (adapter, device, queue) =
+                futures::executor::block_on(request_adapter_and_device(others, &instance, None, power))
+                    .map_err(|e| anyhow!("No GPU for the client: {e}"))?;
+            (instance, adapter, device, queue)
+        }
+    };
     let info = adapter.get_info();
     crate::mugetsu::set_adapter_ids(info.vendor, info.device);
     #[cfg(not(windows))]

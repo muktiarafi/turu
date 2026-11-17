@@ -68,6 +68,10 @@ thread_local! {
     /// AQW build: set by `mugetsu_args` when this start uses DirectX 12 because the graphics
     /// chip is Intel's (its name), to log it once logging is set up.
     static INTEL_DX12: RefCell<Option<String>> = RefCell::default();
+    /// AQW build (Mugetsu 2.0.0): set by `mugetsu_args` when this start uses Vulkan because
+    /// DirectX 12 crashed while starting before (the crashed file), to log it once logging is
+    /// set up.
+    static DX12_CRASHED: RefCell<Option<std::path::PathBuf>> = RefCell::default();
     static CALLSTACK: RefCell<Option<StaticCallstack>> = RefCell::default();
     static RENDER_INFO: RefCell<Option<String>> = RefCell::default();
     static SWF_INFO: RefCell<Option<String>> = RefCell::default();
@@ -333,9 +337,9 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
                 .is_some_and(|a| a == flag || a.starts_with(&format!("{flag}=")))
         })
     };
-    // DirectX 12 is the automatic fallback without Vulkan, and the default on Intel/Qualcomm graphics
-    // (see `mugetsu::intel_graphics`) and on a PC where the Vulkan driver crashed while
-    // Mugetsu was starting (see `mugetsu::vulkan_crashed_before`).
+    // Mugetsu 2.0.0: DirectX 12 is the default on Windows, Vulkan on Linux and where DirectX 12
+    // crashed while starting (see `mugetsu::automatic_graphics`). The shell's clients run this
+    // too, with the shell's flags, and so take the same.
     let low_power = args.windows(2).any(|pair| {
         (is(&pair[0], "--power") || is(&pair[0], "-p")) && is(&pair[1], "low")
     }) || args.iter().any(|a| is(a, "--power=low"));
@@ -353,15 +357,27 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
     } else if cfg!(target_os = "macos") {
         // Metal is the only graphics backend macOS offers (wgpu's Vulkan port needs MoltenVK).
         "metal"
-    } else if let Some(name) = mugetsu::intel_graphics(low_power) {
-        INTEL_DX12.with(|intel| *intel.borrow_mut() = Some(name));
-        "dx12"
-    } else if let Some(module) = mugetsu::vulkan_crashed_before() {
-        mugetsu::add_title_note("DirectX 12: Vulkan driver crashed on this PC");
-        VULKAN_CRASHED.with(|crashed| *crashed.borrow_mut() = Some(module));
-        "dx12"
     } else {
-        "vulkan"
+        let chosen = mugetsu::automatic_graphics(
+            mugetsu::vulkan_crashed_before(),
+            mugetsu::dx12_crashed_before,
+            || mugetsu::intel_graphics(low_power),
+        );
+        match &chosen {
+            mugetsu::AutomaticGraphics::VulkanCrashed(module) => {
+                mugetsu::add_title_note("DirectX 12: Vulkan driver crashed on this PC");
+                VULKAN_CRASHED.with(|crashed| *crashed.borrow_mut() = Some(module.clone()));
+            }
+            mugetsu::AutomaticGraphics::Dx12Crashed(module) => {
+                mugetsu::add_title_note("Vulkan: DirectX 12 crashed on this PC");
+                DX12_CRASHED.with(|crashed| *crashed.borrow_mut() = Some(module.clone()));
+            }
+            mugetsu::AutomaticGraphics::Intel(name) => {
+                INTEL_DX12.with(|intel| *intel.borrow_mut() = Some(name.clone()));
+            }
+            mugetsu::AutomaticGraphics::Default => {}
+        }
+        chosen.arg()
     };
     // (option, short form, value)
     let mut defaults: Vec<(&str, Option<&str>, Option<&str>)> = vec![
@@ -509,6 +525,14 @@ fn main() -> Result<(), Error> {
             );
         }
     });
+    DX12_CRASHED.with(|crashed| {
+        if let Some(module) = &*crashed.borrow() {
+            tracing::warn!(
+                "Using Vulkan: DirectX 12 crashed on this PC while starting before ({})",
+                module.display()
+            );
+        }
+    });
 
     // Turu: the startup flags (downloading the scripts they name), crash reports (after the panic
     // hook above, so Sentry's runs first), the control API (`--api`), the web monitor, the client
@@ -542,28 +566,50 @@ fn main() -> Result<(), Error> {
         };
         return client::run(preferences, movie_url, &address);
     }
-    // Turu's window is the shell over a process for each tab (M6), `--shell` or not.
-    if turu::shell() || shell::runs_as_shell() {
-        // The client gets the shell's own flags (`--user`, `--run-script`, ...).
-        let client_args = shell::client_args(env::args().skip(1));
-        return shell::run(preferences, client_args);
-    }
-
     // Turu: `--headless` runs the game without a window.
-    if turu::headless() {
+    if turu::headless() && !turu::shell() {
         let Some(movie_url) = preferences.cli.movie_url.clone() else {
             return Err(anyhow!("--headless needs the host SWF, turu.swf"));
         };
         return headless::run(preferences, movie_url);
     }
 
-    let result = App::new(preferences).and_then(|(mut app, event_loop)| {
-        event_loop.run_app(&mut app).context("Event loop failure")
-    });
+    // Turu's window is the shell over a process for each tab (M6), `--shell` or not.
+    let result = if turu::shell() || shell::runs_as_shell() {
+        // The client gets the shell's own flags (`--user`, `--run-script`, ...).
+        let client_args = shell::client_args(env::args().skip(1));
+        shell::run(preferences, client_args)
+    } else {
+        App::new(preferences).and_then(|(mut app, event_loop)| {
+            let result = event_loop.run_app(&mut app).context("Event loop failure");
+            // AQW build (Mugetsu 2.0.0): where a crash while closing happened (see
+            // `windows::crash_filter`).
+            mugetsu::set_exit_phase(4);
+            result
+        })
+    };
+    mugetsu::set_exit_phase(5);
 
     #[cfg(windows)]
     if let Err(error) = &result {
         eprintln!("{:?}", error)
+    }
+
+    // AQW build (Mugetsu 2.0.0): returning normally runs every thread-local and static
+    // destructor while Windows is already unloading DLLs; on a laptop (Intel, DirectX 12) that
+    // crashed inside KERNELBASE (0x87A) after everything had shut down and "closing: done" was
+    // logged. Everything is dropped by now: flush the log and end the process here.
+    if result.is_ok() {
+        drop(_file_guard);
+        drop(_stdout_guard);
+        // (Detached as on a return, so cmd redraws its prompt.)
+        #[cfg(windows)]
+        drop(_console);
+        mugetsu::set_exit_phase(6);
+        // A crash on another thread right now gets its report written first.
+        #[cfg(windows)]
+        windows::wait_for_crash_report();
+        std::process::exit(0);
     }
 
     result
