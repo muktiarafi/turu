@@ -26,8 +26,9 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (Flash-style; an `msaa` file next to the program brings MSAA back), and the log folder left
   the menu (Diagnostics and Options open it). Not ported: Mugetsu's update reminders (Turu has
   its own updates), its in-game prompts (Turu asks about a graphics restart itself) and its
-  crash-handler rework on Windows. Process tabs' clients have no right-click menu and don't
-  offer these options yet: their engine loop has no memory watch or window pacer of Turu's.
+  crash-handler rework on Windows. In a tab's client (every AQW tab since M6) Performance Mode,
+  Memory Limit and Free Memory Now are in Options > Application; frame pacing and the FPS limit
+  aren't, as clients don't interpolate yet.
   Safe Drawing (Options > Application on Android, a `safe-drawing` file on a computer) is gone:
   nobody used it since Turu Mas; single `no-<switch>` files next to the program remain.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
@@ -183,12 +184,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   stops it and leaves it stopped. Army Control's Gear window uses them, for a client without a
   window too. Tested against a fake game (`bot/tests/gear.rs`); unverified in game: the `sES`
   slot codes, the bank opening in a client without a window, and the equip timings.
-- **Tabs** (`frontend/src/turu.rs`, `player.rs`, `gui/turu/tab_strip.rs`): since 2026-11-17
-  Options > Application > Process Tabs (experimental) is on by default, desktop and Android: each
-  tab then runs in a process of its own behind the window, the shell (docs/TAB_PROCESSES_PROPOSAL.md;
-  `--in-process` or the switch off goes back; `--headless` always runs in process). In process,
-  each tab is a game
-  client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
+- **Tabs** (`frontend/src/turu.rs`, `gui/turu/tab_strip.rs`): since M6 (2026-11-17) every tab
+  runs in a process of its own behind the window, the shell (docs/TAB_PROCESSES_PROPOSAL.md): on
+  a computer `turu` is the shell over `--client` processes, on Android the activity is the shell
+  over the slots. There is no Process Tabs switch and no `--in-process` any more (it's ignored);
+  `--headless` is one tab in its own process. Before M6, each tab was a game
+client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
   tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
   the players run on the event loop thread and are ticked every loop; only the active one is
   drawn and heard (the others are muted). Hidden tabs that are in game run at 2 FPS, as
@@ -670,11 +671,12 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
 ## Known gaps
 
-- **Tabs share one thread and one process** (in process: with Process Tabs off, `--in-process`,
-  or `--headless`): every tab's game runs on the event loop thread, so
-  busy tabs slow each other down (VibeSkua's processes use several cores; hidden tabs in game
-  run at 2 FPS, which helps), and a crash in one (release builds abort on panic) closes them
-  all; "In its own window" keeps an account apart. The tabs share the data folder and Ruffle's SharedObjects (the game's saved
+- **Tabs are processes since M6** (2026-11-17): a crash or a lost GPU device ends one tab, which
+  the shell starts again logged in. Not yet in a tab's client: frame interpolation's in-between
+  pictures, uncapped pacing and the FPS limit (Options offers interpolation's switch only), IME
+  composition, gamepads, drag-and-drop and Flash's own right-click items (the window for a movie
+  given on the command line still has them). Not run on Windows or Linux, nor on phones (M4).
+  The tabs share the data folder and Ruffle's SharedObjects (the game's saved
   login), as VibeSkua's processes do. `--api` steers any tab (`/tabs/<id>/...`; routes without it
   act on the first). Army > Army Queue runs squads
   one after another (`bot/src/army/queue.rs`); not built: VibeSkua's Army Scheduler. Logging

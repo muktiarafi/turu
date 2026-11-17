@@ -1,11 +1,9 @@
 # Proposal: a process for each tab (desktop and Android)
 
-Status: being built (2026-11-16). M0 is built, M1's spike ran on the emulator, M2 is built, M3
-(Android, behind an Options switch) and M5 (desktop, `turu --shell`) are under way; M4 and M6 are
-not started (as-built sections under each milestone). Without the switch or `--shell`, every tab is
-still a player on one thread of one process (`frontend/src/players.rs`, `frontend/src/engine.rs`;
-docs/STATUS.md, "Tabs share one thread and one process"), on the desktop and on Android. This
-proposal keeps the tabs as the user sees them, but runs each tab's game and bot in a process of its
+Status: being built (2026-11-17). M0 is built, M1's spike ran on the emulator, M2 is built, M3
+(Android) and M5 (desktop) are built, M6 is built (one way of doing tabs: as-built section under
+it); M4 (phones) is not started. Before M6, without the switch or `--shell`, every tab was
+a player on one thread of one process, on the desktop and on Android. This proposal keeps the tabs as the user sees them, but runs each tab's game and bot in a process of its
 own, so that Android killing one for memory, a crash or a lost GPU device ends one account instead
 of all of them. Turu Mas is out of scope (see "Turu Mas").
 
@@ -1061,6 +1059,32 @@ so the 503 wasn't seen there). Not run: `POST /update` through it (the client's 
   docs/HEADLESS.md and docs/GPU_RECOVERY_PROPOSAL.md (a lost device becomes "restart that
   client").
 * **Done when** CI passes without the in-process path and the docs describe one model.
+
+#### M6 as built (2026-11-17, on `main`, before M4's phones and M5's Windows and Linux runs)
+
+* **Desktop:** every start of Turu's window is the shell (`shell::runs_as_shell`), Army >
+  Accounts' "In its own window" clients included; the switch and `--in-process` are gone (the
+  flag is accepted and ignored). The window keeps one player, for a movie given on the command
+  line (plain Ruffle), without tabs or Grid View of its own.
+* **Clients first got what the window had:** the memory watch and Mugetsu 2.0.0's memory limit
+  (`app/src/memory.rs`, every 5 s), Performance mode, Memory Limit and Free Memory Now in
+  Options > Application, the window's player setup (default fonts, letterbox, align, quality),
+  the least tessellation size by GPU, the GPU lost (the client ends and the shell starts it
+  again; `TURU_TEST_GPU_LOSS=1`), the cursor's shape (`ToShell::Cursor`), the perf log and the
+  GPU's release at close.
+* **Android:** the activity is always the shell; the app's process runs no engine, and
+  `TuruService` keeps only the statics every process calls. Each slot's notification has Pause
+  or Resume, Stop and Start; slots write the tabs log; the Tab Limit counts the shell's tabs; the
+  shell sends the display's refresh rate (`ToClient::RefreshRate`) and the slot on screen asks
+  it for a display mode (`ToShell::PreferRefreshRate`).
+* **`players.rs`** holds one player, without the thread-state swapping (ruffle-aqw's
+  `PlayerThreadState` and `segments::swap` stay, unused).
+* **Not done:** frame interpolation's in-between pictures and uncapped pacing in clients, IME,
+  gamepads, drag-and-drop, Flash's right-click items in a client; TuruActivity's in-process
+  fallbacks for the text field and documents (unreachable now) are still there. Checked on the
+  Mac (shell, a client's GPU loss and restart, the memory limit in a client) and the emulator
+  (shell and two slots start, the bindings checked in each process); not on Windows, Linux or
+  phones.
 
 ## Testing
 

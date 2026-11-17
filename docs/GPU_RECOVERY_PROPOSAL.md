@@ -1,8 +1,11 @@
 # Proposal: getting the picture back after a lost GPU device
 
-Status: proposed, not built (2026-11-08). Today a lost device leaves the game running without a
-picture until Turu restarts (docs/ANDROID.md, "A lost GPU device"; docs/STATUS.md, "A lost GPU
-device (desktop)"). This proposal rebuilds the game on a new device and logs back in.
+Status: superseded on the desktop by process tabs (2026-11-17, docs/TAB_PROCESSES_PROPOSAL.md,
+M6): a tab's client that loses its device says so and ends, and the shell starts it again,
+logged in, while the other tabs play on (`app/src/client.rs`, `gpu_check`). An Android slot
+still goes on without a picture until it's started again. Before that, a lost device left the
+game running without a picture until Turu restarted. This proposal rebuilt the game on a new
+device in the same process and logged back in.
 
 ## Summary
 

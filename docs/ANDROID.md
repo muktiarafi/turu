@@ -28,12 +28,12 @@ How to build, run and check the Android app. The design and the plan are in
 > `android-tabs.json` in the data folder (account, server, script, whether it ran; no password)
 > and reopened when the engine starts, after `turu-args.txt`'s.
 >
-> **Process tabs, on by default since 2026-11-17** (Options > Application > Process Tabs
-> (experimental); docs/TAB_PROCESSES_PROPOSAL.md, M3): each tab runs in a slot, a foreground
-> service in a process of its own, and the activity is only the shell. Off when
-> `turu-process-tabs.txt` in the data folder says `off`, which the switch writes; the tabs above
-> are then the app's own again. The first start with them on opens `android-tabs.json`'s tabs in
-> slots.
+> **Each tab is a slot since M6 (2026-11-17)** (docs/TAB_PROCESSES_PROPOSAL.md, M3 and M6): a
+> foreground service in a process of its own, with its own notification (Pause or Resume and
+> Stop while its script runs, Start while one is loaded), and the activity is only the shell.
+> There is no Process Tabs switch any more, and the app's own process runs no engine. The first
+> start opens `android-tabs.json`'s tabs (from before process tabs) in slots. The Tab Limit
+> counts the shell's tabs.
 >
 > **Checked on MuMu (2026-11-07, at the login screen, no account logged in):** a second tab
 > from Army > New Tab, switching between the two, closing one, and the second reopened from
