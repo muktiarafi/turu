@@ -2271,31 +2271,6 @@ fn egui_key_name(key: &Key) -> Option<&'static str> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::client_args;
-
-    #[test]
-    fn clients_get_the_shells_flags_but_its_servers() {
-        let args = [
-            "--shell",
-            "--user",
-            "Hero",
-            "--api=127.0.0.1:9091",
-            "--monitor",
-            "--report-to",
-            "https://monitor.example",
-            "--run-script",
-            "farm/Gold.ts",
-            "--report-to=https://other.example",
-            "--monitor=0.0.0.0:9021",
-            "--api",
-        ];
-        let kept = client_args(args.iter().map(|arg| (*arg).to_owned()));
-        assert_eq!(kept, ["--user", "Hero", "--run-script", "farm/Gold.ts"]);
-    }
-}
-
 /// Shows `cursor` over the window (`ToShell::Cursor`).
 fn set_cursor(window: &winit::window::Window, cursor: turu_frontend::shell::Cursor) {
     use turu_frontend::shell::Cursor;
@@ -2320,4 +2295,29 @@ fn set_cursor(window: &winit::window::Window, cursor: turu_frontend::shell::Curs
     };
     window.set_cursor_visible(true);
     window.set_cursor(icon);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::client_args;
+
+    #[test]
+    fn clients_get_the_shells_flags_but_its_servers() {
+        let args = [
+            "--shell",
+            "--user",
+            "Hero",
+            "--api=127.0.0.1:9091",
+            "--monitor",
+            "--report-to",
+            "https://monitor.example",
+            "--run-script",
+            "farm/Gold.ts",
+            "--report-to=https://other.example",
+            "--monitor=0.0.0.0:9021",
+            "--api",
+        ];
+        let kept = client_args(args.iter().map(|arg| (*arg).to_owned()));
+        assert_eq!(kept, ["--user", "Hero", "--run-script", "farm/Gold.ts"]);
+    }
 }

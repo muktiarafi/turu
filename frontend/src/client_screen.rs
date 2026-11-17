@@ -1154,6 +1154,30 @@ fn text_control(key: LogicalKey, mods: Mods) -> Option<TextControlCode> {
     })
 }
 
+/// The game's mouse cursor (Flash's `Mouse.cursor`, buttons' hand), set by the client's UI backend
+/// (`set_game_cursor`) from the player, which runs outside the screen's calls.
+static GAME_CURSOR: AtomicU8 = AtomicU8::new(0);
+
+/// The game asks for `cursor` (its UI backend's `set_mouse_cursor`).
+pub fn set_game_cursor(cursor: Cursor) {
+    let index = match cursor {
+        Cursor::Hand => 1,
+        Cursor::Text => 2,
+        Cursor::Grab => 3,
+        _ => 0,
+    };
+    GAME_CURSOR.store(index, Ordering::Relaxed);
+}
+
+fn game_cursor() -> Cursor {
+    match GAME_CURSOR.load(Ordering::Relaxed) {
+        1 => Cursor::Hand,
+        2 => Cursor::Text,
+        3 => Cursor::Grab,
+        _ => Cursor::Default,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1185,29 +1209,5 @@ mod tests {
             text_control(LogicalKey::Character('v'), command),
             Some(TextControlCode::Paste)
         );
-    }
-}
-
-/// The game's mouse cursor (Flash's `Mouse.cursor`, buttons' hand), set by the client's UI backend
-/// (`set_game_cursor`) from the player, which runs outside the screen's calls.
-static GAME_CURSOR: AtomicU8 = AtomicU8::new(0);
-
-/// The game asks for `cursor` (its UI backend's `set_mouse_cursor`).
-pub fn set_game_cursor(cursor: Cursor) {
-    let index = match cursor {
-        Cursor::Hand => 1,
-        Cursor::Text => 2,
-        Cursor::Grab => 3,
-        _ => 0,
-    };
-    GAME_CURSOR.store(index, Ordering::Relaxed);
-}
-
-fn game_cursor() -> Cursor {
-    match GAME_CURSOR.load(Ordering::Relaxed) {
-        1 => Cursor::Hand,
-        2 => Cursor::Text,
-        3 => Cursor::Grab,
-        _ => Cursor::Default,
     }
 }

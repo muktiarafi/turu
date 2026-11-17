@@ -4,6 +4,9 @@
 
 use std::time::{Duration, Instant};
 
+/// Hands each of the process's players to the function it's given (`free_memory`).
+pub(crate) type EachPlayer<'a> = dyn FnMut(&mut dyn FnMut(&mut ruffle_core::Player)) + 'a;
+
 /// AQW build: what the memory limit is compared with, in MB: the figure Task Manager shows
 /// (see `mugetsu::task_manager_mb`; it was the committed memory until 2026-11-16).
 fn process_commit_mb() -> u64 {
@@ -79,7 +82,7 @@ fn heap_return_waits() -> bool {
 /// Turu: for every player of the process, which `players` hands to the function it's given
 /// (each holds its own libraries and renderer); the shapes and the heap's pages are the
 /// process's.
-pub(crate) fn free_memory(players: &mut dyn FnMut(&mut dyn FnMut(&mut ruffle_core::Player)), thorough: bool) -> Freed {
+pub(crate) fn free_memory(players: &mut EachPlayer<'_>, thorough: bool) -> Freed {
     let before = crate::mugetsu::process_memory_mb();
     // (A click only: every loaded SWF nothing uses any more goes now, not within the next
     // GC cycles: two whole cycles in one go, a pause the limit's own freeing must not make.)

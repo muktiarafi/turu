@@ -687,7 +687,9 @@ impl ApplicationOptionsWindow {
                                         let platform = crate::platform::platform();
                                         let limit = platform.memory_limit_mb().unwrap_or(0);
                                         ui.horizontal(|ui| {
-                                            for (mb, label) in [(0, "Off"), (1024, "1 GB"), (2048, "2 GB"), (3072, "3 GB")] {
+                                            for (mb, label) in
+                                                [(0, "Off"), (1024, "1 GB"), (2048, "2 GB"), (3072, "3 GB")]
+                                            {
                                                 if widgets::chip(ui, label, limit == mb) && limit != mb {
                                                     platform.set_memory_limit_mb(mb);
                                                 }

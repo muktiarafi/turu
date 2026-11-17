@@ -796,8 +796,12 @@ mod tests {
     #[test]
     fn tab_messages_round_trip() {
         let to_shell = [
-            ToShell::Cursor { cursor: Cursor::Hand },
-            ToShell::Cursor { cursor: Cursor::ResizeNwSe },
+            ToShell::Cursor {
+                cursor: Cursor::Hand,
+            },
+            ToShell::Cursor {
+                cursor: Cursor::ResizeNwSe,
+            },
             ToShell::OpenTab {
                 username: Some("player_one".into()),
                 password: Some("secret".into()),
