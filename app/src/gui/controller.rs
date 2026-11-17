@@ -1068,25 +1068,10 @@ fn aqw_warn_vulkan_fallback(
     });
 }
 
-/// AQW build: draws the FPS counter (a small badge in the top-left corner of the game); returns
-/// how many shapes it added.
+/// AQW build: draws the FPS counter (a small badge in the top-left corner of the game, shared
+/// with a process tab's client: `turu_frontend::gui::turu::fps_badge`); returns how
+/// many shapes it added.
 fn fps_counter(ctx: &egui::Context, top: f64) -> usize {
-    use egui::{Color32, CornerRadius, FontId, Id, LayerId, Order, Rect, pos2, vec2};
     let fps = f32::from_bits(crate::mugetsu::SHOWN_FPS.load(std::sync::atomic::Ordering::Relaxed));
-    let text = format!("{fps:.0} FPS");
-    let origin = pos2(8.0, top as f32 / ctx.pixels_per_point() + 8.0);
-    let painter = ctx.layer_painter(LayerId::new(Order::Background, Id::new("mugetsu_fps")));
-    let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), Color32::from_rgb(232, 234, 242));
-    let badge = Rect::from_min_size(origin, galley.size() + vec2(22.0, 8.0));
-    let dot = if fps >= 50.0 {
-        Color32::from_rgb(124, 220, 140)
-    } else if fps >= 24.0 {
-        Color32::from_rgb(232, 210, 120)
-    } else {
-        Color32::from_rgb(240, 120, 110)
-    };
-    painter.rect_filled(badge, CornerRadius::same(7), Color32::from_rgba_premultiplied(14, 16, 22, 200));
-    painter.circle_filled(pos2(badge.left() + 9.0, badge.center().y), 3.0, dot);
-    painter.galley(badge.left_top() + vec2(16.0, 4.0), galley, Color32::from_rgb(232, 234, 242));
-    3
+    turu_frontend::gui::turu::fps_badge(ctx, top as f32 / ctx.pixels_per_point(), fps)
 }

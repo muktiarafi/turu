@@ -257,8 +257,19 @@ pub fn client_args(args: impl IntoIterator<Item = String>) -> Vec<String> {
     kept
 }
 
+/// This process is the shell (`run` was called).
+static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether this process is the shell, for what the window says otherwise (Windows' title-bar
+/// menu: "right-click the game", which a client lacks).
+#[cfg(windows)]
+pub fn running() -> bool {
+    RUNNING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Starts the first tab's client and runs the window until it's closed.
 pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(), Error> {
+    RUNNING.store(true, std::sync::atomic::Ordering::Relaxed);
     let listener = TcpListener::bind("127.0.0.1:0").context("Couldn't listen for the clients")?;
     let address = listener.local_addr()?.to_string();
     let token = turu_bot::control_api::new_token().map_err(|e| anyhow!(e))?;
@@ -305,6 +316,7 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
         title: String::new(),
         grid: None,
         headless_mode: None,
+        full_screen: false,
         surfaces_name,
         surfaces: HashMap::new(),
         retiring: Vec::new(),
@@ -588,6 +600,8 @@ struct ShellApp {
     grid: Option<(f32, f32)>,
     /// Headless Mode as a client last turned it on or off (`None`: none has yet): every tab's.
     headless_mode: Option<bool>,
+    /// The window is full screen, as the tabs were last told (`ToClient::FullScreen`).
+    full_screen: bool,
     /// Where clients hand over their surfaces (`shared_surface::listen`), if they can.
     surfaces_name: Option<String>,
     /// The clients' surfaces, by process id: the newest [`SHARED_POOL`] of each.
@@ -981,6 +995,9 @@ impl ShellApp {
         if self.covered {
             send(tab, &ToClient::Covered { covered: true });
         }
+        if self.full_screen {
+            send(tab, &ToClient::FullScreen { on: true });
+        }
         let clients = army_clients();
         if !clients.is_empty() {
             send(tab, &ToClient::ArmyClients { clients });
@@ -1085,6 +1102,7 @@ impl ShellApp {
                 }
             },
             ToShell::CheckUpdates => turu::check_client_updates_now(),
+            ToShell::FullScreen { on } => self.set_full_screen(on),
             #[cfg(any(windows, target_os = "linux"))]
             ToShell::ChooseGraphics { graphics } => self.choose_graphics(id, graphics),
             #[cfg(not(any(windows, target_os = "linux")))]
@@ -1331,7 +1349,30 @@ impl ShellApp {
     }
 
     /// The window's size changed: the GPU surface and the tab on screen follow.
+    /// A tab's Options > Application > Full Screen, or Esc: borderless on the window's screen, as
+    /// the window's right-click menu does. The tabs hear of it once the window has changed
+    /// (`resized`).
+    fn set_full_screen(&self, on: bool) {
+        if let Some(window) = &self.window {
+            window.set_fullscreen(on.then_some(winit::window::Fullscreen::Borderless(None)));
+        }
+    }
+
+    /// Tells the tabs when the window went full screen or left it (also by the system's own
+    /// button), for Options.
+    fn full_screen_changed(&mut self) {
+        let on = self.window.as_ref().is_some_and(|window| window.fullscreen().is_some());
+        if on != self.full_screen {
+            tracing::info!("Shell: the window {} full screen", if on { "went" } else { "left" });
+            self.full_screen = on;
+            for tab in &mut self.tabs {
+                send(tab, &ToClient::FullScreen { on });
+            }
+        }
+    }
+
     fn resized(&mut self) {
+        self.full_screen_changed();
         let Some(window) = &self.window else {
             return;
         };
@@ -1855,6 +1896,11 @@ impl ShellApp {
             }
             return;
         }
+        // `fullscreen on` / `fullscreen off`: as a tab's Options > Application > Full Screen.
+        if command == "fullscreen" {
+            self.set_full_screen(arg.trim() == "on");
+            return;
+        }
         if command == "resize" {
             let size: Vec<f64> = arg.split_whitespace().filter_map(|v| v.parse().ok()).collect();
             if let (&[width, height], Some(window)) = (size.as_slice(), &self.window) {
@@ -1888,6 +1934,10 @@ impl ShellApp {
 
     fn key(&mut self, event: &KeyEvent) {
         let pressed = event.state == ElementState::Pressed;
+        // Esc leaves full screen, as in the window (the tab gets it too).
+        if pressed && self.full_screen && event.logical_key == Key::Named(NamedKey::Escape) {
+            self.set_full_screen(false);
+        }
         if let Some(key) = egui_key_name(&event.logical_key) {
             let mods = self.mods();
             self.send_shown(&ToClient::Key {

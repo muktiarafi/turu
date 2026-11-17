@@ -50,6 +50,7 @@ mod tab_strip;
 pub mod theme;
 pub use logs::answer_crash_upload_question;
 mod widgets;
+pub use widgets::fps_badge;
 
 use crate::gui::top_height;
 use crate::turu::TabId;

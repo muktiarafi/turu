@@ -452,7 +452,12 @@ mod graphics_menu {
                 let flags = MF_STRING | if checked { MF_CHECKED } else { 0 };
                 AppendMenuW(menu, flags, id, text.as_ptr());
             }
-            let text = wide("More settings: right-click the game");
+            // Turu: a process tab's client has no right-click menu; Options has its settings.
+            let text = wide(if crate::shell::running() {
+                "More settings: Options > Application"
+            } else {
+                "More settings: right-click the game"
+            });
             AppendMenuW(menu, MF_STRING | MF_GRAYED, MORE, text.as_ptr());
             let previous = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, window_proc as *const () as isize);
             PREVIOUS_PROC.store(previous, Ordering::Relaxed);
@@ -510,7 +515,12 @@ mod graphics_menu {
         let name = choice.map_or("Automatic", Graphics::name);
         let text = wide(&format!(
             "Turu will restart to use {name} graphics.\n\n\
-             You can switch again any time: right-click the game or the title bar."
+             You can switch again any time: {}.",
+            if crate::shell::running() {
+                "the title bar, or Options > Application"
+            } else {
+                "right-click the game or the title bar"
+            }
         ));
         let title = wide("Turu");
         // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call.

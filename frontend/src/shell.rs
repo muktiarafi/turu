@@ -139,6 +139,9 @@ pub enum ToClient {
     /// the tab can be seen meanwhile, so it draws nothing; its game, sound and pace go on, as the
     /// window's own tabs do while it's covered.
     Covered { covered: bool },
+    /// Desktop: the shell's window went full screen or left it (Esc, the system's own button, a
+    /// tab's Options): to every tab, and to a tab when it connects.
+    FullScreen { on: bool },
     /// The shell can't use this client's shared surfaces (it couldn't open one, or its GPU isn't
     /// the client's): send pixels from now on ([`ToShell::Frame`]).
     NoSurfaces { reason: String },
@@ -225,6 +228,9 @@ pub enum ToShell {
     /// choice (`graphics`: "vulkan", "dx12", "gl", or "" for Automatic) and starts again, every
     /// tab with it.
     ChooseGraphics { graphics: String },
+    /// Desktop: Options > Application's Full Screen in a client: the shell's window full screen
+    /// or not (answered with [`ToClient::FullScreen`]).
+    FullScreen { on: bool },
     /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
     Gpu { adapter: String },
     /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
@@ -837,6 +843,7 @@ mod tests {
             ToShell::ChooseGraphics {
                 graphics: "dx12".into(),
             },
+            ToShell::FullScreen { on: true },
             ToShell::SharedHandle {
                 id: 4,
                 route: "vulkan-win32".into(),
@@ -994,6 +1001,7 @@ mod tests {
                 ToClient::HeadlessMode { on: true },
                 ToClient::Release { id: 7 },
                 ToClient::Covered { covered: true },
+                ToClient::FullScreen { on: true },
                 ToClient::ArmyClients {
                     clients: vec![ArmyClientInfo {
                         username: "Hero".into(),

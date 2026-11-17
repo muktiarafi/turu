@@ -1097,6 +1097,29 @@ impl Selection {
     }
 }
 
+/// Mugetsu's FPS counter: a small badge with `fps` in the top-left corner of the game, `top`
+/// points down (under the bar); returns how many shapes it added. The window's and a process
+/// tab's client's (Show FPS).
+pub fn fps_badge(ctx: &egui::Context, top: f32, fps: f32) -> usize {
+    use egui::{Color32, CornerRadius, FontId, Id, LayerId, Order, Rect, pos2, vec2};
+    let text = format!("{fps:.0} FPS");
+    let origin = pos2(8.0, top + 8.0);
+    let painter = ctx.layer_painter(LayerId::new(Order::Background, Id::new("mugetsu_fps")));
+    let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), Color32::from_rgb(232, 234, 242));
+    let badge = Rect::from_min_size(origin, galley.size() + vec2(22.0, 8.0));
+    let dot = if fps >= 50.0 {
+        Color32::from_rgb(124, 220, 140)
+    } else if fps >= 24.0 {
+        Color32::from_rgb(232, 210, 120)
+    } else {
+        Color32::from_rgb(240, 120, 110)
+    };
+    painter.rect_filled(badge, CornerRadius::same(7), Color32::from_rgba_premultiplied(14, 16, 22, 200));
+    painter.circle_filled(pos2(badge.left() + 9.0, badge.center().y), 3.0, dot);
+    painter.galley(badge.left_top() + vec2(16.0, 4.0), galley, Color32::from_rgb(232, 234, 242));
+    3
+}
+
 #[cfg(test)]
 mod tests {
     use super::{LogView, NumberFormat, touch_number, wrap_row};

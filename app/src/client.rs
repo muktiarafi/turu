@@ -33,6 +33,12 @@ use turu_frontend::players::{Players, Slot};
 use turu_frontend::shell::{self, ClientEnd, FrameSender, ToClient, ToShell};
 use url::Url;
 
+/// The engine thread's events, for what Options changes in the game (`set_flash_edges`).
+static ENGINE: std::sync::OnceLock<Sender<EngineEvent>> = std::sync::OnceLock::new();
+
+/// The shell's window is full screen (`ToClient::FullScreen`), for Options.
+static FULL_SCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 thread_local! {
     /// The engine thread's screen.
     static SCREEN: RefCell<Option<ClientScreen>> = const { RefCell::new(None) };
@@ -67,6 +73,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     });
     let device = descriptors.device.clone();
     let (sender, events) = channel();
+    let _ = ENGINE.set(sender.clone());
     let tab = turu::active_tab();
     let mut fonts = fontdb::Database::default();
     fonts.load_system_fonts();
@@ -225,6 +232,7 @@ impl ClientEnd for Forward {
                 })));
             }
             ToClient::HeadlessMode { on } => turu_frontend::client_link::set_headless_mode(on),
+            ToClient::FullScreen { on } => FULL_SCREEN.store(on, Ordering::Relaxed),
             ToClient::Updates { updates } => (*updates).apply(),
             ToClient::ArmyClients { clients } => turu_frontend::client_link::set_army_clients(clients),
             // A file dialog the shell showed.
@@ -374,6 +382,56 @@ impl Platform for ClientPlatform {
         self.out.send(ToShell::ChooseGraphics {
             graphics: value.to_owned(),
         });
+    }
+
+    // Options' Frame Interpolation: applied here and saved, as the window's right-click menu does;
+    // the other tabs take it at their next start.
+    fn set_frame_interpolation(&self, on: bool) {
+        ruffle_core::frame_interpolation::set_enabled(on);
+        crate::mugetsu::save_interpolation(on);
+        tracing::info!("Frame interpolation turned {}", if on { "on" } else { "off" });
+    }
+
+    // The rest of the window's right-click menu (Mugetsu's): a client has none.
+    fn flash_edges(&self) -> Option<bool> {
+        Some(ruffle_render::tessellator::flash_aa_switch())
+    }
+
+    fn set_flash_edges(&self, on: bool) {
+        ruffle_render::tessellator::set_flash_aa(on);
+        crate::mugetsu::save_flash_edges(on);
+        tracing::info!("Edges drawn {}", if on { "Flash's way" } else { "with MSAA" });
+        // The drawing surface is made again for it (and shapes tessellated again), as the window.
+        if let Some(engine) = ENGINE.get() {
+            let _ = engine.send(EngineEvent::Run(Box::new(|player| {
+                let quality = player.quality();
+                player.renderer_mut().set_quality(quality);
+            })));
+        }
+    }
+
+    fn show_fps(&self) -> Option<bool> {
+        Some(crate::mugetsu::show_fps())
+    }
+
+    fn set_show_fps(&self, on: bool) {
+        crate::mugetsu::set_show_fps(on);
+    }
+
+    fn full_screen(&self) -> Option<bool> {
+        Some(FULL_SCREEN.load(Ordering::Relaxed))
+    }
+
+    fn set_full_screen(&self, on: bool) {
+        self.out.send(ToShell::FullScreen { on });
+    }
+
+    fn opens_log_folder(&self) -> bool {
+        true
+    }
+
+    fn open_log_folder(&self) {
+        crate::mugetsu::open_log_folder();
     }
 
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {

@@ -85,6 +85,15 @@ enum Field {
     ProcessTabs,
     /// The graphics API, chosen by the frontend, which restarts (`Platform::graphics_choices`).
     Graphics,
+    /// The rest of the window's right-click menu, where there's none (`Platform::flash_edges`):
+    /// Flash-style edges or MSAA.
+    FlashEdges,
+    /// The FPS counter (`Platform::show_fps`).
+    ShowFps,
+    /// The window full screen (`Platform::full_screen`).
+    FullScreen,
+    /// Open, for the log's folder (`Platform::open_log_folder`).
+    OpenLogFolder,
 }
 
 struct Entry {
@@ -160,6 +169,40 @@ fn entries() -> Vec<Entry> {
                 Field::Graphics
             )
         });
+    }
+    // The rest of the game's right-click menu in the window, where there's none (a process tab).
+    let platform = crate::platform::platform();
+    if platform.flash_edges().is_some() {
+        entries.push(entry!(
+            General,
+            "Edge Smoothing",
+            "How the edges of shapes are smoothed. Flash-style is lighter on laptops; MSAA is a little smoother and costs more GPU time. This tab at once, the others from their next start",
+            Field::FlashEdges
+        ));
+    }
+    if platform.show_fps().is_some() {
+        entries.push(entry!(
+            General,
+            "Show FPS",
+            "A small counter in the corner of the game: how many pictures of it are drawn a second. This tab at once, the others from their next start",
+            Field::ShowFps
+        ));
+    }
+    if platform.full_screen().is_some() {
+        entries.push(entry!(
+            General,
+            "Full Screen",
+            "Turu's window fills the screen. Esc leaves full screen",
+            Field::FullScreen
+        ));
+    }
+    if platform.opens_log_folder() {
+        entries.push(entry!(
+            General,
+            "Log Folder",
+            "Opens the folder with Turu's log (ruffle.log), to send with a bug report",
+            Field::OpenLogFolder
+        ));
     }
     if crate::platform::platform().limits_tabs() {
         entries.push(entry!(
@@ -651,6 +694,39 @@ impl ApplicationOptionsWindow {
                                             });
                                         }
                                     }
+                                    Field::FlashEdges => {
+                                        let platform = crate::platform::platform();
+                                        let flash = platform.flash_edges() == Some(true);
+                                        ui.horizontal(|ui| {
+                                            if widgets::chip(ui, "Flash-style", flash) && !flash {
+                                                platform.set_flash_edges(true);
+                                            }
+                                            if widgets::chip(ui, "MSAA", !flash) && flash {
+                                                platform.set_flash_edges(false);
+                                            }
+                                        });
+                                    }
+                                    Field::ShowFps => {
+                                        let platform = crate::platform::platform();
+                                        let mut on = platform.show_fps() == Some(true);
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            platform.set_show_fps(on);
+                                        }
+                                    }
+                                    Field::FullScreen => {
+                                        let platform = crate::platform::platform();
+                                        let mut on = platform.full_screen() == Some(true);
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            platform.set_full_screen(on);
+                                        }
+                                    }
+                                    Field::OpenLogFolder => {
+                                        if widgets::button(ui, "Open", Kind::Normal, true, vec2(80.0, 24.0), "")
+                                            .clicked()
+                                        {
+                                            crate::platform::platform().open_log_folder();
+                                        }
+                                    }
                                     Field::CrashReports => {
                                         let mut on = settings.send_crash_reports == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
@@ -912,7 +988,12 @@ fn control_width(field: &Field) -> f32 {
         | Field::FrameInterpolation
         | Field::SafeDrawing
         | Field::ProcessTabs
+        | Field::ShowFps
+        | Field::FullScreen
         | Field::CrashReports => 48.0,
+        // Automatic, Vulkan, DirectX 12 (and OpenGL) / Flash-style, MSAA.
+        Field::Graphics => 330.0,
+        Field::FlashEdges => 170.0,
         _ => 96.0,
     }
 }

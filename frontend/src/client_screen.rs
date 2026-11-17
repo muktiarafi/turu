@@ -138,6 +138,10 @@ pub struct ClientScreen {
     /// A new picture of the game is wanted (a resize, a frame not drawn because a readback was
     /// under way).
     picture_due: bool,
+    /// Pictures of the game drawn since `fps_since`, and the last second's rate, for Show FPS.
+    fps_frames: u32,
+    fps_since: Instant,
+    fps: f32,
 }
 
 impl ClientScreen {
@@ -183,6 +187,9 @@ impl ClientScreen {
             covered: false,
             pointer_in: false,
             clipboard: None,
+            fps_frames: 0,
+            fps_since: Instant::now(),
+            fps: 0.0,
         }
     }
 
@@ -360,6 +367,7 @@ impl ClientScreen {
             | ToClient::HeadlessMode { .. }
             | ToClient::Updates { .. }
             | ToClient::ArmyClients { .. }
+            | ToClient::FullScreen { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {
@@ -762,6 +770,14 @@ impl ClientScreen {
         }
         if new_picture && !turu::headless_mode() {
             player.render();
+            // Pictures of the game a second, for Show FPS (the window counts its frames shown).
+            self.fps_frames += 1;
+            let elapsed = self.fps_since.elapsed().as_secs_f32();
+            if elapsed >= 1.0 {
+                self.fps = self.fps_frames as f32 / elapsed;
+                self.fps_frames = 0;
+                self.fps_since = Instant::now();
+            }
         }
 
         // Another tab's tile: its game alone.
@@ -781,11 +797,15 @@ impl ClientScreen {
         }
         let top_points = top / ppp;
         let ui = &mut self.ui;
+        let fps = (crate::platform::platform().show_fps() == Some(true)).then_some(self.fps);
         let output = self.egui.run_ui(raw_input, |root| {
             if tile {
                 return;
             }
             ui.show_bar(root);
+            if let Some(fps) = fps {
+                crate::gui::turu::fps_badge(root.ctx(), top_points, fps);
+            }
             if turu::headless_mode() {
                 crate::gui::turu::show_headless_screen(root.ctx(), top_points);
             }

@@ -207,6 +207,41 @@ pub trait Platform: Send + Sync {
 
     /// Restarts Turu with the graphics API `value` names (from `graphics_choices`), after asking.
     fn set_graphics(&self, _value: &str) {}
+
+    /// The rest of the game's right-click menu in the window (Mugetsu's), for Options > Application
+    /// where there's no such menu (a process tab's client): whether shapes' edges are drawn
+    /// Flash's way (else MSAA), or None where Options doesn't offer it.
+    fn flash_edges(&self) -> Option<bool> {
+        None
+    }
+
+    /// Draws edges Flash's way or with MSAA, from now on and at the next start.
+    fn set_flash_edges(&self, _on: bool) {}
+
+    /// Whether the FPS counter is on, or None where Options doesn't offer it (as `flash_edges`).
+    fn show_fps(&self) -> Option<bool> {
+        None
+    }
+
+    /// Turns the FPS counter on or off, and saves it.
+    fn set_show_fps(&self, _on: bool) {}
+
+    /// Whether the window is full screen, or None where Options doesn't offer it (as
+    /// `flash_edges`).
+    fn full_screen(&self) -> Option<bool> {
+        None
+    }
+
+    /// Makes the window full screen (Esc leaves it) or not.
+    fn set_full_screen(&self, _on: bool) {}
+
+    /// Whether Options offers Open Log Folder (as `flash_edges`).
+    fn opens_log_folder(&self) -> bool {
+        false
+    }
+
+    /// Opens the folder of Turu's log in the file manager.
+    fn open_log_folder(&self) {}
 }
 
 /// Mugetsu's drawing speed-ups' switches (environment variables read when they're first used),

@@ -624,7 +624,7 @@ Built: the shell runs several clients as tabs.
 * **The tab strip** (`gui/turu/tab_strip.rs`) shows the shell's list in a client (`turu::shell_tabs`,
   a down tab with its reason and the warning badge); the bar's height counts it
   (`turu::tab_strip_count`).
-* **Testing hook**: `TURU_SHELL_TEST=<file>` runs `wait`, `open`, `select`, `close`, `kill`, `click`
+* **Testing hook**: `TURU_SHELL_TEST=<file>` runs `wait`, `open`, `select`, `close`, `kill`, `click`, `fullscreen`
   and `dump` lines in the shell.
 
 Checked on a Mac (debug build, login screen, no account), through the hook with the window up:
@@ -945,9 +945,20 @@ since; none built or run on Windows or Linux yet). The window (`app/src/gui/cont
    menu). A choice goes to the shell (`ToShell::ChooseGraphics`), which asks over its window as
    it does file dialogs (without blocking its loop), saves it (`mugetsu::save_graphics`), leaves
    its loop, stops its tabs and starts again (`run`), every tab with it.
-   * Still missing in a client: the rest of the game's right-click Mugetsu menu (Flash-style
-     edges, Show FPS, Open Log Folder; frame interpolation is in Options), and the title-bar
-     menu's "More settings: right-click the game" is wrong in shell mode.
+   * The rest of the game's right-click Mugetsu menu, which a client lacks, is in a client's
+     Options > Application too (2026-11-17; `Platform::flash_edges`, `show_fps`, `full_screen`,
+     `open_log_folder`, offered only by a client): **Edge Smoothing** (Flash-style or MSAA,
+     applied to the tab at once and saved), **Show FPS** (the window's badge, now shared:
+     `widgets::fps_badge`, counting the client's pictures of the game a second), **Full Screen**
+     (`ToShell::FullScreen`: the shell's window borderless; Esc leaves it and still reaches the
+     tab, as in the window; the tabs hear of each change, the system's own button included, by
+     `ToClient::FullScreen`), and **Log Folder**. Frame Interpolation, already there, is now
+     saved by a client too. Edges, Show FPS and interpolation reach the other tabs at their next
+     start (each process reads them once). Windows' title-bar menu says "More settings:
+     Options > Application" in shell mode. Checked on the Mac: with Show FPS saved on, a client
+     drew the counter over its game; `fullscreen on` / `off` (`TURU_SHELL_TEST`) took the shell's
+     window full screen and back, and the shell logged telling the tabs. The new Options rows
+     weren't looked at on screen.
    * Check on Windows: the title-bar menu's DirectX 12 restarts the shell, which logs
      `Shell graphics: dx12`, and its first tab's `Client graphics: dx12`; the same from a tab's
      Options. On Linux: OpenGL from a tab's Options restarts both on GL (pixels).
