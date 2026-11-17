@@ -283,8 +283,15 @@ fn refused_turn_ins_and_server_warnings_are_logged() {
         log.contains("Quest 599: the server refused the turn-in; its last two attempts were sent "),
         "{log}"
     );
-    assert!(
-        log.contains(r#"Reply: {"QuestID":599,"bSuccess":0,"cmd":"ccqr"}"#),
+    // The reply without its rewards. Its keys' order depends on serde_json's preserve_order,
+    // which the app's dependencies turn on, so the fields are compared, not the text.
+    let reply = log
+        .lines()
+        .find_map(|line| line.split_once("Reply: "))
+        .map(|(_, reply)| serde_json::from_str::<Value>(reply).unwrap());
+    assert_eq!(
+        reply,
+        Some(json!({ "cmd": "ccqr", "bSuccess": 0, "QuestID": 599 })),
         "{log}"
     );
     assert!(
