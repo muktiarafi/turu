@@ -54,7 +54,8 @@ rustfmt --edition 2024 --config max_width=120 frontend/src/gui/turu/<file>.rs
 # Clippy
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone
 
-# Tests
+# Tests (CI runs the engine's with cargo-nextest, much faster:
+# `cargo nextest run --profile ci -p turu_bot`; .config/nextest.toml)
 cargo test -p turu_bot
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .
