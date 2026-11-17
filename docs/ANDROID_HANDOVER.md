@@ -276,8 +276,9 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * No 6-hour run (phase 4's "done when").
 * Text boxes egui makes itself (none of Turu's) still get keys only and move up above the
   keyboard with their window (`pan.rs`).
-* OpenGL ES draws only parts of the game, with no error logged. Mugetsu's renderer changes were
-  made on Metal, Vulkan and DX12. Vulkan is the default.
+* OpenGL ES drew only parts of the game until 2026-11-18 (shapes need `base_vertex`, which GLES
+  3.0 and 3.1 lack). Since then it draws the whole game and is the default, with Vulkan as the
+  fallback (docs/GL_RENDERER_PROPOSAL.md; STATUS.md, "GL renderer"). Not yet run on a real phone.
 * File dialogs are the system picker (`saf.rs`, `TuruActivity.openDocument` /
   `createDocument`; what's shared with Turu Mas is `turu_frontend::documents`): a picked file is
   copied in and its path is the answer; a save answers a cache file and copies it into the

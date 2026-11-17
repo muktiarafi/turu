@@ -546,7 +546,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     };
     let mut args = slots::args(root, slot);
     // `--graphics` in turu-args.txt, else Options > Application's choice.
-    let graphics = take_graphics(&mut args).unwrap_or_else(|| load_graphics(root));
+    // (Options' choice is read either way, for its chip.)
+    let saved_graphics = load_graphics(root);
+    let graphics = take_graphics(&mut args).unwrap_or(saved_graphics);
     // Destroys the GPU device 20 s after the start, to test what a lost device does.
     let mut test_gpu_loss =
         take_flag(&mut args, "--test-gpu-loss").then(|| Instant::now() + Duration::from_secs(20));

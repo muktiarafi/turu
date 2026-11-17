@@ -328,7 +328,8 @@ Android's limits are the biggest behavioural difference from a desktop:
 ## As built: phase 2
 
 * **Surface:** the engine thread waits for the first window and builds the player with wgpu on
-  it (`--graphics auto|vulkan|gl`; auto tries Vulkan, then OpenGL ES). `android_main` forwards
+  it (`--graphics auto|vulkan|gl`; auto tried Vulkan, then OpenGL ES; since
+  docs/GL_RENDERER_PROPOSAL.md's G4, OpenGL ES first). `android_main` forwards
   the activity's events as `EngineEvent::Run` closures (new in `turu_frontend::engine`, with
   `run_loop_with`'s after-tick hook that draws). A new window gets a new surface
   (`recreate_surface_unsafe`); the window going away stops drawing first (acknowledged before

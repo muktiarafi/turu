@@ -210,15 +210,21 @@ gives:
 - time in `submit`;
 - context locks per second by thread.
 
-Battleon with 10 players on the emulator (GLES 3.0 over Metal, Apple M5), with `--perf-log 5`:
+Battleon with 10 players on the emulator (GLES 3.0 over Metal, Apple M5), with `--perf-log 5`,
+once the room had settled (14 perf-log periods after the start):
 
-| | Vulkan | OpenGL ES |
-|---|---|---|
-| Pictures drawn | 24/s | 5.6/s |
-| Render per picture | 32 ms | 160-190 ms |
-| `submit` per picture | 10.7 ms | 100-150 ms (520 ms of every second) |
+| | Vulkan | OpenGL ES, levers off | OpenGL ES, levers on (G2) |
+|---|---|---|---|
+| Pictures drawn | 29.0/s | 25.6/s | 27.4/s |
+| Render per picture | 18.9 ms | 28.3 ms | 27.5 ms |
+| `submit` per picture | 8.5 ms | 22.3 ms | 21.2 ms |
 
-GL replay, per second: 17.7 submits, 3,235 command buffers, 1,047 passes, 18,247 draws, and
+A first run measured while the room was still loading (shapes tessellating, 5-10 MB/s of
+uploads) gave GL 5.6 pictures/s and a 100-150 ms submit. Don't compare numbers taken before a
+room settles.
+
+The counts below are from that first, loading run. Per draw they match the settled run (20 calls
+per draw). GL replay, per second: 17.7 submits, 3,235 command buffers, 1,047 passes, 18,247 draws, and
 **360,000 GL calls**:
 
 | Kind | Calls/s | Note |
@@ -295,17 +301,33 @@ as upstream does, so a texture deleted between submits can't come back under a r
 `RUFFLE_GL_LEVERS` picks the levers: `fbo` and `state`. Unset turns both on; `none` gives
 upstream's replay.
 
-Battleon on the emulator, A/B in the same session:
+Battleon on the emulator, A/B once the room had settled (about 81,500 draws/s in both runs):
 
 | | `none` | `fbo,state` |
 |---|---|---|
-| GL calls per draw | 20.1 | 10.7 |
-| Calls skipped | 0 | 238,000/s (44%) |
-| `submit` per draw | 40 µs | 22 µs |
-| Pictures drawn | 3.4/s | 7.0/s |
+| GL calls | 1,692,000/s (20.7 per draw) | 917,000/s (11.2 per draw) |
+| Calls skipped | 0 | 714,000/s |
+| Time in `submit` | 605 ms/s | 569 ms/s (-6%) |
+| Pictures drawn | 25.6/s | 27.4/s |
 
-The picture count also depends on how loaded the room was, so compare the per-draw rows. The
-screenshot matched G0's.
+Calls halve, but time barely moves. The emulator's GLES encoder buffers calls and sends them in
+batches, so a call it never sends saves little. The cost there is in uploads, flushes and the
+context lock. A phone's driver validates each call itself, so the levers should be worth more
+there. That needs a phone to show. An earlier A/B that reported 40 -> 22 µs per draw caught the
+two runs at different load and is withdrawn.
+
+G2's exit target, GL's frame CPU time within 1.5x of Vulkan's, holds on the emulator once
+settled: 27.5 ms against 18.9 ms of render per picture, 1.45x. With the levers off it's 1.49x.
+Calls per frame halved, which was the other target.
+
+**GLES 3.1 (`-gpu swiftshader_indirect`: ANGLE on SwiftShader).** Phones take this path, and
+the 3.0 emulator doesn't: vertex attributes go through `glVertexAttribFormat`/`glBindVertexBuffer`.
+The levers cut calls per draw from 16.5 to 11.9. Once settled, the picture matched the levers-off
+one; the first frames show AQW's white fade-in on joining. A fix that came out of reviewing this
+path is in ruffle-aqw `1c83f96ce`: on 3.1+, `glVertexAttribPointer`/`Format`/`Divisor` also
+change vertex buffer bindings, so the shadow drops what it knew of those bindings. SwiftShader
+draws on the CPU, so it gives no timing. `base_vertex` (GLES 3.2, most phones) has still never
+run on GL here.
 
 Not built:
 

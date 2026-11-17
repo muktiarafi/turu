@@ -742,6 +742,24 @@ client of its own, a Ruffle player and its bot, in one window and one process (V
 The automated tests (`cargo test -p turu_bot`, the desktop layout test) run against a fake game.
 In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 
+### GL renderer
+
+OpenGL (docs/GL_RENDERER_PROPOSAL.md, G0 to G4, 2026-11-18, branch `gl-renderer`) draws the
+whole game on OpenGL ES 3.0, and since then it's Android's default (Automatic: OpenGL ES, else
+Vulkan; Options > Application > Graphics, or `--graphics` in `turu-args.txt`). Battleon on the
+emulator once settled: Vulkan 29 pictures/s at 18.9 ms of render each, GL 27.4/s at 27.5 ms
+(1.45x). The GL replay skips calls that set what's already set (11 GL calls per draw, from 21).
+Switches (on Android `--env NAME=value` in `turu-args.txt`):
+
+- `RUFFLE_GL_STATS=1`: a `GL replay` line every 5 s (calls by kind, skipped calls, uploads,
+  submit time, context locks by thread).
+- `RUFFLE_GL_LEVERS=none` (or `fbo`, `state`): the replay's skipping off, for A/B runs and when
+  GL misdraws.
+- `RUFFLE_NO_BASE_VERTEX=1`: shapes drawn without `base_vertex` (as on GLES 3.0 and 3.1).
+
+Not yet run on a real phone (GLES 3.2: the `base_vertex` path), on desktop GL, or with the GL
+memory budget (NVIDIA, AMD).
+
 ## Known gaps
 
 - **Tabs are processes since M6** (2026-11-17): a crash or a lost GPU device ends one tab, which
@@ -771,7 +789,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
   keeps it online in the background (status and Stop / Pause in its notification, a wake lock
   while a script runs, back on its own after a kill). Checked on an emulator; on phones, a Redmi
   10 and a Pixel 8 have run it (docs/ANDROID.md). File dialogs are Android's system picker
-  (`android/src/saf.rs`); OpenGL ES misdraws; the game's own text fields are typed in a native
+  (`android/src/saf.rs`); OpenGL ES is the default since 2026-11-18 (see "GL renderer" below); the game's own text fields are typed in a native
   field above the keyboard (docs/ANDROID_NATIVE_UI.md). Tabs (phase 5): several clients in one
   engine thread, the Army menu and Butler, a Tab Limit (default 4), tabs reopened after a kill;
   built, not run on a device yet.
