@@ -66,7 +66,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (`TURU_RELEASES_URL` overrides the URL), skips drafts and, unless Include Pre-releases is on or
   this build is itself a pre-release, pre-releases, and compares versions with semver against
   `TURU_VERSION` (the tag the release workflow builds from; local builds: the crate's, the
-  release the current pre-releases lead to (0.3.0, above every 0.3.0 beta), so they're offered
+  release the current pre-releases lead to (0.4.0, above every 0.4.0 beta), so they're offered
   nothing; raise it when a release ships). A newer one is logged once and
   shown in the nav bar ("Update <version>"), the control API's `/status` and the web monitor's
   summary. Download & restart (desktops) downloads this platform's package, checks its SHA-256
@@ -81,7 +81,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (unpacking) but haven't run on those systems; Download & restart in the window wasn't clicked.
   **Nightly builds** (`release.yml`: nightly at 03:00 UTC when main has new commits, or by hand
   with "Publish as the nightly release"): built as `<next version>-nightly.<date>`
-  (`0.3.0-nightly.20261118`, About shows the `nightly` channel) and published as one rolling
+  (`0.4.0-nightly.20261118`, About shows the `nightly` channel) and published as one rolling
   `nightly` release (a pre-release, never Latest) that the next one replaces, for testers who
   download it by hand. They don't update and aren't offered: a nightly build never checks or
   installs (`updates::is_nightly`; Options greys the client update rows and says why, `POST

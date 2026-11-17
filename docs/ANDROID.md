@@ -183,10 +183,10 @@ The release workflow (`.github/workflows/release.yml`, on a `v*` tag) builds
 `turu-<version>-android-arm64.apk` with `./gradlew assembleRelease -PturuVersion=<version>`.
 `turuVersion` sets the APK's version name, and its version code comes from it (0.2.0-alpha.1 is
 200101: see `versionCode` in `app/build.gradle.kts`), so each release updates the one before.
-The nightly build (`0.3.0-nightly.20261118`, the rolling `nightly` release: docs/STATUS.md,
-"Client updates") is signed with the same key and gets stage 8 (300800 whatever its date): it
-installs over 0.3.0's alphas, betas and release candidates, and 0.3.0 installs over it, but a
-later 0.3.0 pre-release doesn't (uninstall the nightly first). It doesn't check for updates.
+The nightly build (`0.4.0-nightly.20261118`, the rolling `nightly` release: docs/STATUS.md,
+"Client updates") is signed with the same key and gets stage 8 (400800 whatever its date): it
+installs over 0.4.0's alphas, betas and release candidates, and 0.4.0 installs over it, but a
+later 0.4.0 pre-release doesn't (uninstall the nightly first). It doesn't check for updates.
 
 Every release must be signed with the same key, or a phone refuses the update. The key lives in
 the repository's Actions secrets: `ANDROID_KEYSTORE` (the keystore, base64),

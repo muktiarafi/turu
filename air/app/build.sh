@@ -20,7 +20,7 @@ mkdir -p "$out"
 
 # The version, and AIR's versionNumber for it. Android's version code is the one Turu's Gradle
 # build gives the same version (android/app/build.gradle.kts, `versionCode`): 0.2.0-beta.3 is
-# 200203, 0.2.0 200900, a nightly (0.3.0-nightly.20261118) 300800. AIR makes the code
+# 200203, 0.2.0 200900, a nightly (0.4.0-nightly.20261118) 400800. AIR makes the code
 # major * 1,000,000 + minor * 1,000 + patch, so that code is written as three parts of up to 999.
 version=${TURU_VERSION:-$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)}
 if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-(alpha|beta|rc|nightly)\.?([0-9]*))? ]]; then
