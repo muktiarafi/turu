@@ -149,6 +149,23 @@ pub enum Graphics {
 }
 
 impl Graphics {
+    /// Every choice this system offers.
+    pub const ALL: &[Graphics] = &[
+        #[cfg(not(target_os = "macos"))]
+        Graphics::Vulkan,
+        #[cfg(not(target_os = "macos"))]
+        Graphics::Dx12,
+        #[cfg(target_os = "linux")]
+        Graphics::Gl,
+        #[cfg(target_os = "macos")]
+        Graphics::Metal,
+    ];
+
+    /// The choice `arg` names (`Graphics::arg`).
+    pub fn from_arg(arg: &str) -> Option<Graphics> {
+        Graphics::ALL.iter().copied().find(|graphics| graphics.arg() == arg)
+    }
+
     pub fn arg(self) -> &'static str {
         match self {
             #[cfg(not(target_os = "macos"))]
@@ -190,17 +207,7 @@ pub fn plays_aqw() -> bool {
 
 pub fn saved_graphics() -> Option<Graphics> {
     let text = std::fs::read_to_string(config_dir()?.join(GRAPHICS_CHOICE_FILE)).ok()?;
-    match text.trim() {
-        #[cfg(not(target_os = "macos"))]
-        "vulkan" => Some(Graphics::Vulkan),
-        #[cfg(not(target_os = "macos"))]
-        "dx12" => Some(Graphics::Dx12),
-        #[cfg(target_os = "linux")]
-        "gl" => Some(Graphics::Gl),
-        #[cfg(target_os = "macos")]
-        "metal" => Some(Graphics::Metal),
-        _ => None,
-    }
+    Graphics::from_arg(text.trim())
 }
 
 /// Only Windows and Linux have a graphics choice in the title-bar menu; macOS always uses Metal.

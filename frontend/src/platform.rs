@@ -197,6 +197,16 @@ pub trait Platform: Send + Sync {
 
     /// Saves process tabs for the next start.
     fn set_process_tabs(&self, _on: bool) {}
+
+    /// The graphics APIs Options > Application offers, as (value, name), "" for Automatic, and
+    /// the saved one's value; None where it doesn't offer them (the window has the game's
+    /// right-click menu; a process tab's client has none: docs/TAB_PROCESSES_PROPOSAL.md, M5).
+    fn graphics_choices(&self) -> Option<(Vec<(&'static str, &'static str)>, &'static str)> {
+        None
+    }
+
+    /// Restarts Turu with the graphics API `value` names (from `graphics_choices`), after asking.
+    fn set_graphics(&self, _value: &str) {}
 }
 
 /// Mugetsu's drawing speed-ups' switches (environment variables read when they're first used),

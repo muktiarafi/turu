@@ -888,8 +888,8 @@ CPU. Measuring found three things, fixed:
   a covered client's 57%): it has it now only while the pointer is over the window and it's seen,
   as the window's tabs do.
 
-**Windows and Linux: gaps to fix** (found reading the code, 2026-11-17; 1 and 2 fixed since; none
-run on Windows or Linux yet). The window (`app/src/gui/controller.rs`, `app/src/app.rs`,
+**Windows and Linux: gaps to fix** (found reading the code, 2026-11-17; 1 to 4 and the socket fixed
+since; none built or run on Windows or Linux yet). The window (`app/src/gui/controller.rs`, `app/src/app.rs`,
 `app/src/mugetsu.rs`) has safeguards the shell (`app/src/shell.rs`) and its clients
 (`app/src/client.rs`) didn't use. In order of what they break:
 
@@ -936,35 +936,44 @@ run on Windows or Linux yet). The window (`app/src/gui/controller.rs`, `app/src/
      (the environment variable still asks; that crash isn't Vulkan's, so no box and no new
      marker), and the shell stops restarting it after five deaths.
 
-3. **The graphics switch can't be reached in shell mode.** Windows has it in the title-bar menu
-   (`windows::add_graphics_menu`, installed by `controller.rs`), Linux in the game's right-click menu
-   (`gui/context_menu.rs`, `linux::choose_graphics`); neither exists for the shell's window or a
-   client. Choosing restarts Turu (`start_again`), which in shell mode must restart the shell (its
-   clients go with it). Fix: install the title-bar menu on the shell's window on Windows; on Linux,
-   offer it from the clients' UI (a client asks the shell, which saves the choice with
-   `mugetsu::save_graphics` and starts again). Until then, the switch is used from the window
-   (Options > Application > Process Tabs off).
+3. **The graphics switch couldn't be reached in shell mode.** Fixed 2026-11-17 (not built or run
+   on Windows or Linux). On Windows the shell's window gets the window's title-bar menu
+   (`windows::add_graphics_menu`); choosing there restarts the shell as it restarts the window
+   (`start_again`, then `exit`), and its clients quit when it goes. On both, a client's Options >
+   Application has **Graphics** (Automatic, Vulkan, DirectX 12, and OpenGL on Linux;
+   `Platform::graphics_choices`, offered only by a client: the window keeps the game's right-click
+   menu). A choice goes to the shell (`ToShell::ChooseGraphics`), which asks over its window as
+   it does file dialogs (without blocking its loop), saves it (`mugetsu::save_graphics`), leaves
+   its loop, stops its tabs and starts again (`run`), every tab with it.
+   * Still missing in a client: the rest of the game's right-click Mugetsu menu (Flash-style
+     edges, Show FPS, Open Log Folder; frame interpolation is in Options), and the title-bar
+     menu's "More settings: right-click the game" is wrong in shell mode.
+   * Check on Windows: the title-bar menu's DirectX 12 restarts the shell, which logs
+     `Shell graphics: dx12`, and its first tab's `Client graphics: dx12`; the same from a tab's
+     Options. On Linux: OpenGL from a tab's Options restarts both on GL (pixels).
 
-4. **The shell's window lacks the window's touches.** No icon (`app.rs` sets one with
-   `with_window_icon`); on Linux no app id (`with_name("rs.ruffle.Ruffle", "main")`) and no
-   startup-notification token (`read_token_from_env`, `with_activation_token`), so on Wayland it may
-   show a generic icon and not group with Turu's launcher; no Mugetsu title note
-   (`mugetsu::add_title_note`, `window_title()`). Fix: build the shell's `WindowAttributes` as
-   `app.rs` does.
+4. **The shell's window lacked the window's touches.** Fixed 2026-11-17 (run on the Mac; not on
+   Linux). The window's attributes are one function (`app::window_attributes`), used by both:
+   Turu's icon (and the Dock's on macOS), the title with Mugetsu's notes (`mugetsu::window_title`,
+   now also the shell's "<title> – <tab> (<n> tabs)"), and on Linux the app id and the
+   startup-notification token. Checked on the Mac: the shell starts, draws and quits as before
+   (the title itself wasn't read back: macOS refused the accessibility query).
 
 5. **Small ones.**
    * Linux: the shell's Unix socket for shared surfaces (`shared_gpu::listen`,
-     `$XDG_RUNTIME_DIR/turu-shell-<pid>.sock`) isn't removed when the shell quits (only before
-     binding the same name). Remove it at the end of `shell::run`.
+     `$XDG_RUNTIME_DIR/turu-shell-<pid>.sock`) is now removed when the shell's loop ends
+     (`shell::run`); not after a crash or the Windows-style `exit` (Windows has no socket).
    * Windows and Wayland report no `Occluded`: a covered shell window keeps its clients drawing
      (a minimized one on Windows is caught by its zero size). The window has the same limit, so it
      matches today.
    * The shell's and client's Windows and Linux branches (`ToShell::SharedHandle`'s handling,
-     `listen_for_surfaces`, `shared_gpu::Sender::connect` in `client.rs`) aren't compiled on those
-     systems yet: the first build there is their compile check (`shared_gpu.rs` alone is
-     type-checked for both targets).
+     `listen_for_surfaces`, `shared_gpu::Sender::connect` in `client.rs`), and the fixes above
+     (the client's crash handling in `windows.rs`, `choose_graphics`, the title-bar menu), aren't
+     compiled on those systems yet: the first build there is their compile check (`shared_gpu.rs`
+     alone is type-checked for both targets; a cross-check from a Mac stops at C dependencies:
+     `jpegxr`, `rquickjs-sys`, `openssl-sys`).
 
-Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above: 1 and 2 are fixed but not run there, 3 to 5 are open). Not built: the shell's own `--api`
+Not done yet, of "done when": the clipboard without a display handle on Wayland (not tried); Windows and Linux, shared surfaces included (above: fixed but not built or run there). Not built: the shell's own `--api`
 (ignored with a warning: each client has one). A down tab keeps its last
 monitor entry online for up to 15 s.
 

@@ -135,6 +135,10 @@ enum ShellEvent {
     Answered(u32, u32, u32, Option<String>),
     /// The shell's GPU is done with these surfaces (tab, process id, surface): back to their clients.
     Released(Vec<(u32, u32, u64)>),
+    /// The answer to a tab's graphics choice (`choose_graphics`): the choice ("" for Automatic),
+    /// or None when cancelled.
+    #[cfg(any(windows, target_os = "linux"))]
+    GraphicsChosen(Option<String>),
 }
 
 /// A tab: its client process, and how to start it again.
@@ -306,6 +310,8 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
         retiring: Vec::new(),
         releases_pending: 0,
         dialog_open: false,
+        #[cfg(any(windows, target_os = "linux"))]
+        start_again: false,
         rate_since: Instant::now(),
         covered: false,
         occluded: false,
@@ -320,6 +326,20 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     event_loop.run_app(&mut app)?;
     for tab in &mut app.tabs {
         stop(tab);
+    }
+    // A tab's graphics choice: the shell starts again with it, and its tabs with it.
+    #[cfg(any(windows, target_os = "linux"))]
+    if app.start_again {
+        turu::close_butlers();
+        #[cfg(windows)]
+        crate::windows::start_again();
+        #[cfg(target_os = "linux")]
+        crate::linux::start_again();
+    }
+    // The Unix socket for shared surfaces (Linux): removed, as nothing else would.
+    #[cfg(target_os = "linux")]
+    if let Some(path) = &app.surfaces_name {
+        let _ = std::fs::remove_file(path);
     }
     // Update when I quit, asked from a tab: put in place now.
     turu::apply_pending_update();
@@ -578,6 +598,9 @@ struct ShellApp {
     releases_pending: usize,
     /// A file dialog is open (one at a time, as the window's own).
     dialog_open: bool,
+    /// A graphics choice was saved: the shell starts again once its loop ends (`run`).
+    #[cfg(any(windows, target_os = "linux"))]
+    start_again: bool,
     /// When `TURU_SHELL_TEST`'s last `rate` was.
     rate_since: Instant,
     /// The window is covered or minimized: the clients draw nothing (`ToClient::Covered`).
@@ -905,17 +928,23 @@ impl ShellApp {
         self.update_title();
     }
 
+    /// "Turu 0.3.1 – <Mugetsu's notes> – <the shown tab> (<n> tabs)".
+    fn title_for(&self, label: Option<String>) -> String {
+        let name = crate::mugetsu::window_title();
+        match label {
+            Some(label) if self.tabs.len() > 1 => format!("{name} – {label} ({} tabs)", self.tabs.len()),
+            Some(label) => format!("{name} – {label}"),
+            None => name,
+        }
+    }
+
     fn update_title(&mut self) {
         let label = self
             .tabs
             .iter()
             .find(|tab| tab.id == self.shown)
             .map(|tab| tab.label.clone());
-        let title = match label {
-            Some(label) if self.tabs.len() > 1 => format!("Turu – {label} ({} tabs)", self.tabs.len()),
-            Some(label) => format!("Turu – {label}"),
-            None => "Turu".into(),
-        };
+        let title = self.title_for(label);
         if title != self.title
             && let Some(window) = &self.window
         {
@@ -1056,6 +1085,12 @@ impl ShellApp {
                 }
             },
             ToShell::CheckUpdates => turu::check_client_updates_now(),
+            #[cfg(any(windows, target_os = "linux"))]
+            ToShell::ChooseGraphics { graphics } => self.choose_graphics(id, graphics),
+            #[cfg(not(any(windows, target_os = "linux")))]
+            ToShell::ChooseGraphics { graphics } => {
+                tracing::warn!("Shell: tab {id} asked for graphics {graphics:?}, which this system doesn't choose");
+            }
             // A tab's Army > Accounts launches: the shell's Army starts them, so they outlive
             // the tab's client, and the shell's web monitor and Report To list them.
             ToShell::Launch { launches } => {
@@ -1193,6 +1228,49 @@ impl ShellApp {
             });
         if let Err(e) = spawned {
             tracing::warn!("Shell: couldn't wait for a file dialog: {e}");
+            self.dialog_open = false;
+        }
+    }
+
+    /// A tab's Options > Application > Graphics (the window has it in the game's right-click menu,
+    /// which a client lacks): asked over the window as a file dialog is (one at a time), then
+    /// saved, and the shell starts again (`GraphicsChosen`).
+    #[cfg(any(windows, target_os = "linux"))]
+    fn choose_graphics(&mut self, id: u32, value: String) {
+        use crate::mugetsu::{self, Graphics};
+        let choice = if value.is_empty() {
+            None
+        } else if let Some(graphics) = Graphics::from_arg(&value) {
+            Some(graphics)
+        } else {
+            tracing::warn!("Shell: tab {id} asked for unknown graphics {value:?}");
+            return;
+        };
+        if choice == mugetsu::saved_graphics() || self.dialog_open {
+            return;
+        }
+        let name = choice.map_or("Automatic", Graphics::name);
+        let mut dialog = rfd::AsyncMessageDialog::new()
+            .set_level(rfd::MessageLevel::Info)
+            .set_title("Turu")
+            .set_description(format!(
+                "Turu will restart to use {name} graphics, every tab with it.\n\n\
+                 You can switch again any time: Options > Application > Graphics."
+            ))
+            .set_buttons(rfd::MessageButtons::OkCancel);
+        if let Some(window) = &self.window {
+            dialog = dialog.set_parent(&**window);
+        }
+        self.dialog_open = true;
+        let proxy = self.proxy.clone();
+        let spawned = std::thread::Builder::new()
+            .name("Turu Shell Dialog".into())
+            .spawn(move || {
+                let ok = futures::executor::block_on(dialog.show()) == rfd::MessageDialogResult::Ok;
+                let _ = proxy.send_event(ShellEvent::GraphicsChosen(ok.then_some(value)));
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("Shell: couldn't ask about the graphics: {e}");
             self.dialog_open = false;
         }
     }
@@ -1842,8 +1920,9 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
         if self.window.is_some() {
             return;
         }
-        let attributes = Window::default_attributes()
-            .with_title("Turu")
+        // As the window's: icon, title with Mugetsu's notes, Linux's app id and startup token.
+        let attributes = crate::app::window_attributes(event_loop)
+            .with_title(self.title_for(None))
             .with_inner_size(winit::dpi::LogicalSize::new(1180.0, 640.0));
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
@@ -1864,11 +1943,17 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                 return;
             }
         }
+        // As the window's: Windows' title-bar menu chooses the graphics (and starts Turu again).
+        #[cfg(windows)]
+        if crate::mugetsu::plays_aqw() {
+            crate::windows::add_graphics_menu(&window);
+        }
         self.window = Some(window);
         self.resized();
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ShellEvent) {
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(unused_variables))]
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: ShellEvent) {
         match event {
             ShellEvent::Connected { pid, stream } => self.connected(pid, stream),
             ShellEvent::Picture(id) => self.pixel_picture(id),
@@ -1895,6 +1980,20 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                 }
             }
             ShellEvent::Message(id, message) => self.message(id, message),
+            #[cfg(any(windows, target_os = "linux"))]
+            ShellEvent::GraphicsChosen(value) => {
+                self.dialog_open = false;
+                if let Some(value) = value {
+                    let choice = crate::mugetsu::Graphics::from_arg(&value);
+                    crate::mugetsu::save_graphics(choice);
+                    tracing::info!(
+                        "Shell: graphics changed to {}; starting again",
+                        choice.map_or("Automatic", crate::mugetsu::Graphics::name)
+                    );
+                    self.start_again = true;
+                    event_loop.exit();
+                }
+            }
             ShellEvent::Gone(id, generation) => self.gone(id, generation),
             ShellEvent::Test(line) => self.test(&line),
         }

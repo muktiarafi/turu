@@ -1239,6 +1239,39 @@ impl MainWindow {
     }
 }
 
+/// The main window's attributes, also the process tabs' shell's (`shell.rs`): the title with
+/// Mugetsu's notes, Turu's icon and, on Linux, the app id and startup-notification token (so the
+/// window groups with Turu's launcher on Wayland).
+pub(crate) fn window_attributes(event_loop: &ActiveEventLoop) -> WindowAttributes {
+    // Turu: Turu's icon (64 px so the taskbar copy stays sharp; source in docs/turu/logo).
+    let icon_bytes = include_bytes!("../assets/turu-icon-64.rgba");
+    let icon = Icon::from_rgba(icon_bytes.to_vec(), 64, 64).expect("App icon should be correct");
+    // Turu: macOS ignores the window icon; the Dock takes the app's.
+    #[cfg(target_os = "macos")]
+    set_dock_icon();
+
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
+    let mut window_attributes = WindowAttributes::default()
+        .with_title(crate::window_title()) // AQW build
+        .with_window_icon(Some(icon));
+
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::startup_notify::{
+            self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
+        };
+        use winit::platform::wayland::WindowAttributesExtWayland;
+        window_attributes = window_attributes.with_name("rs.ruffle.Ruffle", "main");
+        if let Some(token) = event_loop.read_token_from_env() {
+            startup_notify::reset_activation_token_env();
+            window_attributes = window_attributes.with_activation_token(token);
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = event_loop;
+    window_attributes
+}
+
 /// Turu: shows Turu's icon in the Dock. A bundled `.app` gets it from its `Info.plist`, but a
 /// bare binary (`cargo run`) would show the generic executable icon.
 #[cfg(target_os = "macos")]
@@ -1313,13 +1346,6 @@ impl ApplicationHandler<RuffleEvent> for App {
 
         if cause == StartCause::Init {
             let movie_url = self.preferences.cli.movie_url.clone();
-            // Turu: Turu's icon (64 px so the taskbar copy stays sharp; source in docs/turu/logo).
-            let icon_bytes = include_bytes!("../assets/turu-icon-64.rgba");
-            let icon =
-                Icon::from_rgba(icon_bytes.to_vec(), 64, 64).expect("App icon should be correct");
-            // Turu: macOS ignores the window icon; the Dock takes the app's.
-            #[cfg(target_os = "macos")]
-            set_dock_icon();
 
             let no_gui = self.preferences.cli.no_gui;
             let min_window_size = if no_gui {
@@ -1332,25 +1358,9 @@ impl ApplicationHandler<RuffleEvent> for App {
             let preferred_height = self.preferences.cli.height;
             let start_fullscreen = self.preferences.cli.fullscreen;
 
-            #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
-            let mut window_attributes = WindowAttributes::default()
+            let window_attributes = window_attributes(event_loop)
                 .with_visible(false)
-                .with_title(crate::window_title()) // AQW build
-                .with_window_icon(Some(icon))
                 .with_min_inner_size(min_window_size);
-
-            #[cfg(target_os = "linux")]
-            {
-                use winit::platform::startup_notify::{
-                    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
-                };
-                use winit::platform::wayland::WindowAttributesExtWayland;
-                window_attributes = window_attributes.with_name("rs.ruffle.Ruffle", "main");
-                if let Some(token) = event_loop.read_token_from_env() {
-                    startup_notify::reset_activation_token_env();
-                    window_attributes = window_attributes.with_activation_token(token);
-                }
-            }
 
             let event_loop_proxy = self.event_loop_proxy.clone();
             let preferences = self.preferences.clone();

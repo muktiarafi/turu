@@ -83,6 +83,8 @@ enum Field {
     SafeDrawing,
     /// Process tabs, saved by the frontend for the next start (`Platform::process_tabs`).
     ProcessTabs,
+    /// The graphics API, chosen by the frontend, which restarts (`Platform::graphics_choices`).
+    Graphics,
 }
 
 struct Entry {
@@ -146,6 +148,17 @@ fn entries() -> Vec<Entry> {
         entries.push(Entry {
             restart: true,
             ..entry!(General, "Process Tabs (experimental)", what, Field::ProcessTabs)
+        });
+    }
+    if crate::platform::platform().graphics_choices().is_some() {
+        entries.push(Entry {
+            restart: true,
+            ..entry!(
+                General,
+                "Graphics",
+                "Which graphics API draws the game. Automatic picks the one that works best on this PC; try another if the game crashes or draws wrongly. Turu starts again, every tab with it",
+                Field::Graphics
+            )
         });
     }
     if crate::platform::platform().limits_tabs() {
@@ -624,6 +637,18 @@ impl ApplicationOptionsWindow {
                                         let mut on = platform.process_tabs() == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
                                             platform.set_process_tabs(on);
+                                        }
+                                    }
+                                    Field::Graphics => {
+                                        let platform = crate::platform::platform();
+                                        if let Some((choices, saved)) = platform.graphics_choices() {
+                                            ui.horizontal_wrapped(|ui| {
+                                                for (value, name) in choices {
+                                                    if widgets::chip(ui, name, value == saved) && value != saved {
+                                                        platform.set_graphics(value);
+                                                    }
+                                                }
+                                            });
                                         }
                                     }
                                     Field::CrashReports => {

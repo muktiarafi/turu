@@ -221,6 +221,10 @@ pub enum ToShell {
     },
     /// Desktop: the client's Check Now: the shell checks for an update.
     CheckUpdates,
+    /// Windows and Linux: Options > Application's Graphics in a client: the shell asks, saves the
+    /// choice (`graphics`: "vulkan", "dx12", "gl", or "" for Automatic) and starts again, every
+    /// tab with it.
+    ChooseGraphics { graphics: String },
     /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
     Gpu { adapter: String },
     /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
@@ -830,6 +834,9 @@ mod tests {
                 restart: true,
             },
             ToShell::CheckUpdates,
+            ToShell::ChooseGraphics {
+                graphics: "dx12".into(),
+            },
             ToShell::SharedHandle {
                 id: 4,
                 route: "vulkan-win32".into(),

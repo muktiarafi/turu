@@ -359,6 +359,23 @@ impl Platform for ClientPlatform {
         crate::shell::save_switch(on);
     }
 
+    // The window has the game's right-click menu for this; a client has none.
+    fn graphics_choices(&self) -> Option<(Vec<(&'static str, &'static str)>, &'static str)> {
+        use crate::mugetsu::Graphics;
+        if !(cfg!(windows) || cfg!(target_os = "linux")) || !crate::mugetsu::plays_aqw() {
+            return None;
+        }
+        let mut choices = vec![("", "Automatic")];
+        choices.extend(Graphics::ALL.iter().map(|graphics| (graphics.arg(), graphics.name())));
+        Some((choices, crate::mugetsu::saved_graphics().map_or("", Graphics::arg)))
+    }
+
+    fn set_graphics(&self, value: &str) {
+        self.out.send(ToShell::ChooseGraphics {
+            graphics: value.to_owned(),
+        });
+    }
+
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
         self.dialog(dialog, false, answer)
     }
