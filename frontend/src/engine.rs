@@ -73,11 +73,10 @@ pub enum Step {
     Event,
 }
 
-/// Runs the tabs' players until every sender is gone. The active tab's player ticks at its frame
-/// rate, and `step` is called with it after each tick and at the time it returns (if that comes
-/// before the next frame): the screen's in-between pictures with frame interpolation
-/// (`crate::pacing`). The other tabs' players tick when their next frame or timer is due
-/// ([`Players::tick_hidden`]). `on_tab` handles the UI's tab requests ([`EngineEvent::Tab`]).
+/// Runs the process's player until every sender is gone. It ticks at its frame rate, and `step`
+/// is called with it after each tick and at the time it returns (if that comes before the next
+/// frame): the screen's in-between pictures with frame interpolation (`crate::pacing`). `on_tab`
+/// handles the UI's tab requests ([`EngineEvent::Tab`]; a shell's tab sends them to the shell).
 pub fn run_loop_paced<E>(
     players: &mut Players<E>,
     events: &Receiver<EngineEvent>,
@@ -104,9 +103,8 @@ pub fn run_loop_paced<E>(
             None => (now + crate::players::HIDDEN_TICK_MAX, None),
         };
         time = now;
-        let mut next_hidden = players.tick_hidden(Instant::now(), |_| false).0;
         loop {
-            let wake = [Some(next_frame), next_step, next_hidden]
+            let wake = [Some(next_frame), next_step]
                 .into_iter()
                 .flatten()
                 .min()
@@ -116,12 +114,8 @@ pub fn run_loop_paced<E>(
                 Ok(EngineEvent::TaskPoll(task)) => {
                     // A closed tab's futures are dropped (which cancels them).
                     let tab = *task.metadata();
-                    if let Some(i) = players
-                        .slots()
-                        .iter()
-                        .position(|slot| slot.tab() == Some(tab))
-                    {
-                        players.run_for(i, || task.run());
+                    if players.slots().iter().any(|slot| slot.tab() == Some(tab)) {
+                        task.run();
                     }
                 }
                 Ok(EngineEvent::TuruFlashCall(call)) => {
@@ -143,9 +137,6 @@ pub fn run_loop_paced<E>(
                     let now = Instant::now();
                     if now >= next_frame {
                         break;
-                    }
-                    if next_hidden.is_some_and(|at| at <= now) {
-                        next_hidden = players.tick_hidden(now, |_| false).0;
                     }
                     if next_step.is_some_and(|at| at <= now) {
                         next_step = match players.get() {

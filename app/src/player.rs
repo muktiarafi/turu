@@ -294,9 +294,8 @@ impl ActivePlayer {
             .expect("Couldn't create wgpu rendering backend");
         RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
         // Turu: Mugetsu's render thread (`ruffle_render_wgpu::render_thread`, off unless
-        // `RUFFLE_RENDER_THREAD` is set) isn't used: it records pictures on another thread,
-        // while each tab's unsubmitted segments are swapped in on this one
-        // (`ruffle_render_wgpu::segments::swap`).
+        // `RUFFLE_RENDER_THREAD` is set) isn't used here: this window is plain Ruffle's (a
+        // movie given on the command line). AQW's tabs are clients (`client.rs`).
 
         if let Some(bot) = &bot {
             // Turu: turu.swf talks to the tab's bot through ExternalInterface.
@@ -524,9 +523,8 @@ impl PlayerController {
         // otherwise it is stale, and should be cancelled (which
         // happens implicitly on drop).
         let id = *task.0.metadata();
-        if let Some(i) = self.players.slots().iter().position(|slot| id == slot.extra.id) {
-            // Turu: another tab's future runs with that player's thread-local state.
-            self.players.run_for(i, || task.0.run());
+        if self.players.slots().iter().any(|slot| id == slot.extra.id) {
+            task.0.run();
         }
     }
 }
