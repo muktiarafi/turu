@@ -156,9 +156,59 @@ static STATE: Mutex<State> = Mutex::new(State {
     pending: Vec::new(),
 });
 
-/// The game is drawn on built-in graphics, the chip `name`: the tips can apply.
+/// The game is drawn on built-in graphics, the chip `name` (the adapter's): the tips can apply.
 pub fn set_built_in_chip(name: &str) {
-    STATE.lock().unwrap_or_else(|e| e.into_inner()).chip = Some(name.to_owned());
+    STATE.lock().unwrap_or_else(|e| e.into_inner()).chip = Some(chip_name(name));
+}
+
+/// The chip in an adapter's `name`. On OpenGL ES that's the driver's renderer string, and a phone
+/// whose OpenGL ES is Google's ANGLE (Samsung's Xclipse, an S24 FE's say) names the API ANGLE
+/// runs on: `ANGLE (Samsung Xclipse 940) on Vulkan 1.3.279`, which made a tip say the game was
+/// on Vulkan while it was drawn with OpenGL ES. ANGLE's other forms put the chip second:
+/// `ANGLE (Vendor, Renderer, Driver)`, and SwiftShader's renderer is `Vulkan 1.3.0 (<device>)`.
+fn chip_name(name: &str) -> String {
+    let name = name.trim();
+    let Some(rest) = name.strip_prefix("ANGLE (") else {
+        return name.to_owned();
+    };
+    // The parenthesis that closes "ANGLE (", and the top-level commas inside.
+    let (mut depth, mut close, mut commas) = (1, None, Vec::new());
+    for (i, c) in rest.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(i);
+                    break;
+                }
+            }
+            ',' if depth == 1 => commas.push(i),
+            _ => {}
+        }
+    }
+    let Some(close) = close else {
+        return name.to_owned();
+    };
+    let inside = &rest[..close];
+    let chip = match commas.as_slice() {
+        [first, second, ..] => &inside[first + 1..*second],
+        _ => inside,
+    }
+    .trim();
+    // SwiftShader (and other renderers on Vulkan) inside ANGLE: `Vulkan 1.3.0 (<device>)`.
+    let chip = match chip.strip_prefix("Vulkan ") {
+        Some(rest) => match (rest.find('('), rest.rfind(')')) {
+            (Some(open), Some(close)) if open < close => rest[open + 1..close].trim(),
+            _ => chip,
+        },
+        None => chip,
+    };
+    if chip.is_empty() {
+        name.to_owned()
+    } else {
+        chip.to_owned()
+    }
 }
 
 /// A window of the game's pictures has ended: `drawn_fps` of them a second, or `None` if the tab
@@ -299,7 +349,37 @@ impl PictureCount {
 
 #[cfg(test)]
 mod tests {
-    use super::{Due, Measured, Watch};
+    use super::{Due, Measured, Watch, chip_name};
+
+    #[test]
+    fn chip_names_leave_angle_out() {
+        // Samsung's Xclipse (an S24 FE): OpenGL ES is ANGLE on Vulkan.
+        assert_eq!(
+            chip_name("ANGLE (Samsung Xclipse 940) on Vulkan 1.3.279"),
+            "Samsung Xclipse 940"
+        );
+        // Vendor, renderer, driver.
+        assert_eq!(
+            chip_name("ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+            "Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0"
+        );
+        // The emulator's SwiftShader.
+        assert_eq!(
+            chip_name(
+                "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver-5.0.0)"
+            ),
+            "SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)"
+        );
+        // Not ANGLE: as it is.
+        assert_eq!(chip_name("Mali-G52"), "Mali-G52");
+        assert_eq!(chip_name("Adreno (TM) 740"), "Adreno (TM) 740");
+        assert_eq!(
+            chip_name("Android Emulator OpenGL ES Translator (Apple M5)"),
+            "Android Emulator OpenGL ES Translator (Apple M5)"
+        );
+        // Malformed: as it is.
+        assert_eq!(chip_name("ANGLE (broken"), "ANGLE (broken");
+    }
 
     fn measured(drawn_fps: f64, quality_low: bool) -> Option<Measured> {
         Some(Measured {
