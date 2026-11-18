@@ -10,10 +10,6 @@
 //! is (the replaced part as a `textInput`, as a keyboard types it), so the game sees ordinary
 //! typing. Positions are UTF-16 units on both sides (Java's strings, Flash's text).
 
-use crate::platform::with_activity;
-use jni::EnvUnowned;
-use jni::objects::{JClass, JString};
-use jni::sys::jint;
 use ruffle_core::events::{
     KeyDescriptor, KeyLocation, LogicalKey, NamedKey, PhysicalKey, TextControlCode,
 };
@@ -156,95 +152,41 @@ fn enter(player: &mut Player) {
     player.handle_event(PlayerEvent::KeyUp { key });
 }
 
-/// `TuruActivity.showGameField(text, start, end, password, max)`; in a process tab, the shell's.
+/// Shows the shell's field for the game's focused text field (`ToShell::FieldShow`: only slots run
+/// the engine).
 fn show(focused: &Focused) {
-    let Some(app) = crate::app() else {
-        let Contents { text, start, end } = &focused.contents;
-        crate::slots::to_shell(ToShell::FieldShow {
-            field: FieldId::Game,
-            text: text.clone(),
-            start: *start as u32,
-            end: *end as u32,
-            password: focused.password,
-            max: MAX_CHARS as u32,
-            hint: String::new(),
-            lines: false,
-            number: false,
-        });
-        return;
-    };
     let Contents { text, start, end } = &focused.contents;
-    let result = with_activity(&app, |env, activity| {
-        let text = env.new_string(text)?;
-        activity.show_game_field(
-            env,
-            &text,
-            *start as jint,
-            *end as jint,
-            focused.password,
-            MAX_CHARS as jint,
-        )?;
-        Ok(())
+    crate::slots::to_shell(ToShell::FieldShow {
+        field: FieldId::Game,
+        text: text.clone(),
+        start: *start as u32,
+        end: *end as u32,
+        password: focused.password,
+        max: MAX_CHARS as u32,
+        hint: String::new(),
+        lines: false,
+        number: false,
     });
-    if let Err(e) = result {
-        tracing::warn!("Couldn't show the game's text field: {e}");
-    }
 }
 
-/// `TuruActivity.updateGameField(text, start, end)`.
+/// The shell's field takes the game field's text and selection.
 fn update(contents: &Contents) {
-    let Some(app) = crate::app() else {
-        crate::slots::to_shell(ToShell::FieldUpdate {
-            field: FieldId::Game,
-            text: contents.text.clone(),
-            start: contents.start as u32,
-            end: contents.end as u32,
-        });
-        return;
-    };
-    let result = with_activity(&app, |env, activity| {
-        let text = env.new_string(&contents.text)?;
-        activity.update_game_field(env, &text, contents.start as jint, contents.end as jint)?;
-        Ok(())
+    crate::slots::to_shell(ToShell::FieldUpdate {
+        field: FieldId::Game,
+        text: contents.text.clone(),
+        start: contents.start as u32,
+        end: contents.end as u32,
     });
-    if let Err(e) = result {
-        tracing::warn!("Couldn't update the game's text field: {e}");
-    }
 }
 
-/// `TuruActivity.hideGameField()`.
+/// Hides the shell's field.
 fn hide() {
-    let Some(app) = crate::app() else {
-        crate::slots::to_shell(ToShell::FieldHide {
-            field: FieldId::Game,
-        });
-        return;
-    };
-    let result = with_activity(&app, |env, activity| {
-        activity.hide_game_field(env)?;
-        Ok(())
+    crate::slots::to_shell(ToShell::FieldHide {
+        field: FieldId::Game,
     });
-    if let Err(e) = result {
-        tracing::warn!("Couldn't hide the game's text field: {e}");
-    }
 }
 
-/// `TuruActivity.nativeGameFieldEdited(text, start, end)`, on the UI thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldEdited<'local>(
-    mut unowned_env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    text: JString<'local>,
-    start: jint,
-    end: jint,
-) {
-    let text = unowned_env
-        .with_env(|env| -> jni::errors::Result<String> { text.try_to_string(env) })
-        .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
-    edited(text, start.max(0) as usize, end.max(0) as usize);
-}
-
-/// The field above the keyboard was edited (the activity's, or the shell's in a process tab).
+/// The shell's field above the keyboard was edited (`ToClient::FieldEdited`).
 pub(crate) fn edited(text: String, start: usize, end: usize) {
     crate::run_on_engine(move |player| {
         crate::with_screen(|screen| screen.game_field.edited(player, text, start, end));
@@ -263,20 +205,3 @@ pub(crate) fn closed() {
     });
 }
 
-/// `TuruActivity.nativeGameFieldEnter()`, on the UI thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldEnter<'local>(
-    _env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-) {
-    entered();
-}
-
-/// `TuruActivity.nativeGameFieldClosed()`, on the UI thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldClosed<'local>(
-    _env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-) {
-    closed();
-}

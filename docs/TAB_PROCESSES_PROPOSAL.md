@@ -1083,7 +1083,8 @@ so the 503 wasn't seen there). Not run: `POST /update` through it (the client's 
 * **Not done:** frame interpolation's in-between pictures and uncapped pacing in clients (done
   since, 2026-11-18: STATUS.md, "Frame interpolation in a tab's client"), IME,
   gamepads, drag-and-drop, Flash's right-click items in a client; TuruActivity's in-process
-  fallbacks for the text field and documents (unreachable now) are still there. Checked on the
+  fallbacks for the text field and documents (unreachable now) are still there (removed since,
+  2026-11-18, with the natives and the Rust activity paths behind them). Checked on the
   Mac (shell, a client's GPU loss and restart, the memory limit in a client) and the emulator
   (shell and two slots start, the bindings checked in each process); not on Windows, Linux or
   phones.

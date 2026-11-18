@@ -34,12 +34,6 @@ jni::bind_java_type! {
     java_type = com.muktiarafi.turu.TuruActivity,
     native_methods_export = false,
     methods {
-        fn show_game_field(text: JString, start: jint, end: jint, password: jboolean, max: jint),
-        fn update_game_field(text: JString, start: jint, end: jint),
-        fn hide_game_field(),
-        fn show_ui_field(text: JString, start: jint, end: jint, kind: jint, hint: JString),
-        fn update_ui_field(text: JString, start: jint, end: jint),
-        fn hide_ui_field(),
         fn open_url(url: JString),
         fn share_text(subject: JString, text: JString),
         fn copy_text(text: JString),
@@ -55,19 +49,9 @@ jni::bind_java_type! {
             yes: JString,
         ),
         fn prefer_refresh_rate(hz: jfloat),
-        fn open_document(mime_types: JString, folder: JString),
-        fn create_document(mime_type: JString, file_name: JString),
         fn shell_actions(actions: JString),
     },
     native_methods {
-        static raw fn native_document_picked {
-            sig = (path: JString) -> void,
-            fn = crate::saf::Java_com_muktiarafi_turu_TuruActivity_nativeDocumentPicked,
-        },
-        static raw fn native_document_created {
-            sig = (uri: JString, path: JString) -> void,
-            fn = crate::saf::Java_com_muktiarafi_turu_TuruActivity_nativeDocumentCreated,
-        },
         static raw fn native_keyboard_height {
             sig = (pixels: jint) -> void,
             fn = crate::ui::Java_com_muktiarafi_turu_TuruActivity_nativeKeyboardHeight,
@@ -87,30 +71,6 @@ jni::bind_java_type! {
         static raw fn native_crash_uploads_answer {
             sig = (answer: jint) -> void,
             fn = crate::platform::Java_com_muktiarafi_turu_TuruActivity_nativeCrashUploadsAnswer,
-        },
-        static raw fn native_game_field_edited {
-            sig = (text: JString, start: jint, end: jint) -> void,
-            fn = crate::game_field::Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldEdited,
-        },
-        static raw fn native_game_field_enter {
-            sig = () -> void,
-            fn = crate::game_field::Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldEnter,
-        },
-        static raw fn native_game_field_closed {
-            sig = () -> void,
-            fn = crate::game_field::Java_com_muktiarafi_turu_TuruActivity_nativeGameFieldClosed,
-        },
-        static raw fn native_ui_field_edited {
-            sig = (text: JString, start: jint, end: jint) -> void,
-            fn = crate::ui_field::Java_com_muktiarafi_turu_TuruActivity_nativeUiFieldEdited,
-        },
-        static raw fn native_ui_field_enter {
-            sig = () -> void,
-            fn = crate::ui_field::Java_com_muktiarafi_turu_TuruActivity_nativeUiFieldEnter,
-        },
-        static raw fn native_ui_field_closed {
-            sig = () -> void,
-            fn = crate::ui_field::Java_com_muktiarafi_turu_TuruActivity_nativeUiFieldClosed,
         },
     },
 }

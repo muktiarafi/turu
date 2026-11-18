@@ -121,30 +121,30 @@ class TuruActivity : GameActivity() {
     /** The game's focused text field, above the keyboard (`game_field.rs`). */
     private val gameField = SurfaceField(this, object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) {
-            shell?.fieldEdited(SlotShell.GAME, text, start, end) ?: nativeGameFieldEdited(text, start, end)
+            shell?.fieldEdited(SlotShell.GAME, text, start, end)
         }
 
         override fun enter() {
-            shell?.fieldEnter(SlotShell.GAME) ?: nativeGameFieldEnter()
+            shell?.fieldEnter(SlotShell.GAME)
         }
 
         override fun closed() {
-            shell?.fieldClosed(SlotShell.GAME) ?: nativeGameFieldClosed()
+            shell?.fieldClosed(SlotShell.GAME)
         }
     })
 
     /** Turu's focused text box (egui's), above the keyboard (`ui_field.rs`). */
     private val uiField = SurfaceField(this, object : FieldTarget {
         override fun edited(text: String, start: Int, end: Int) {
-            shell?.fieldEdited(SlotShell.UI, text, start, end) ?: nativeUiFieldEdited(text, start, end)
+            shell?.fieldEdited(SlotShell.UI, text, start, end)
         }
 
         override fun enter() {
-            shell?.fieldEnter(SlotShell.UI) ?: nativeUiFieldEnter()
+            shell?.fieldEnter(SlotShell.UI)
         }
 
         override fun closed() {
-            shell?.fieldClosed(SlotShell.UI) ?: nativeUiFieldClosed()
+            shell?.fieldClosed(SlotShell.UI)
         }
     })
 
@@ -397,9 +397,9 @@ class TuruActivity : GameActivity() {
     }
 
     /**
-     * The bot windows' "open file" dialog (`saf.rs`): the system picker for `mimeTypes` (one per
-     * line). The chosen document is copied into `folder` (the cache when empty) and its copy's
-     * path goes back through [nativeDocumentPicked]. Called on the engine thread.
+     * A slot's "open file" dialog (`saf.rs`, through [SlotShell]): the system picker for `mimeTypes`
+     * (one per line). The chosen document is copied into `folder` (the cache when empty) and its
+     * copy's path goes back to the slot ([documentPicked]).
      */
     fun openDocument(mimeTypes: String, folder: String) {
         val types = mimeTypes.lines().filter { it.isNotBlank() }
@@ -414,8 +414,9 @@ class TuruActivity : GameActivity() {
     }
 
     /**
-     * The bot windows' "save file" dialog (`saf.rs`): the system picker making a document named
-     * `fileName`; [nativeDocumentCreated] gets it and a file for the window to write.
+     * A slot's "save file" dialog (`saf.rs`, through [SlotShell]): the system picker making a
+     * document named `fileName`; the slot gets it and a file for the window to write
+     * ([documentCreated]).
      */
     fun createDocument(mimeType: String, fileName: String) {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
@@ -475,14 +476,14 @@ class TuruActivity : GameActivity() {
         }
     }
 
-    /** The "open" picker's answer: to the engine, or with process tabs to the slot that asked. */
+    /** The "open" picker's answer, to the slot that asked. */
     private fun documentPicked(path: String?) {
-        shell?.documentPicked(path) ?: nativeDocumentPicked(path)
+        shell?.documentPicked(path)
     }
 
     /** The "save" picker's answer, as [documentPicked]. */
     private fun documentCreated(uri: String?, path: String?) {
-        shell?.documentCreated(uri, path) ?: nativeDocumentCreated(uri, path)
+        shell?.documentCreated(uri, path)
     }
 
 
@@ -519,13 +520,7 @@ class TuruActivity : GameActivity() {
         var started = false
             private set
 
-        /** The "open" picker's answer: the copy's path, null when cancelled (`saf.rs`). */
-        @JvmStatic
-        private external fun nativeDocumentPicked(path: String?)
 
-        /** The "save" picker's answer: the document and the file to write, nulls when cancelled. */
-        @JvmStatic
-        private external fun nativeDocumentCreated(uri: String?, path: String?)
 
         /** The soft keyboard's height in window pixels, 0 when it's down (`ui.rs`). */
         @JvmStatic
@@ -542,29 +537,11 @@ class TuruActivity : GameActivity() {
         @JvmStatic
         external fun nativePackageInstalled(status: Int, message: String?)
 
-        /** The game's [SurfaceField] changed its text or selection: the game's field takes it (`game_field.rs`). */
-        @JvmStatic
-        external fun nativeGameFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in the game's [SurfaceField]: Enter in the game. */
-        @JvmStatic
-        external fun nativeGameFieldEnter()
 
-        /** The game's [SurfaceField] was closed (Back): the game's field loses the focus. */
-        @JvmStatic
-        external fun nativeGameFieldClosed()
 
-        /** The UI's [SurfaceField] changed its text or selection: Turu's text box takes it (`ui_field.rs`). */
-        @JvmStatic
-        external fun nativeUiFieldEdited(text: String, start: Int, end: Int)
 
-        /** The keyboard's Send (or Enter) in the UI's [SurfaceField]: Enter in Turu's text box. */
-        @JvmStatic
-        external fun nativeUiFieldEnter()
 
-        /** The UI's [SurfaceField] was closed (Back): Turu's text box loses the focus. */
-        @JvmStatic
-        external fun nativeUiFieldClosed()
 
         /** The answer to "Send crash reports?": 1 yes, 0 no, -1 closed without one (`platform.rs`). */
         @JvmStatic

@@ -8,10 +8,6 @@
 //! back here as the whole text and selection and reach the box in the next frame; its Send is
 //! Enter in the box, and Back takes the focus off it.
 
-use crate::platform::with_activity;
-use jni::EnvUnowned;
-use jni::objects::{JClass, JString};
-use jni::sys::jint;
 use turu_frontend::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
 use turu_frontend::shell::{FieldId, ToShell};
 
@@ -40,106 +36,37 @@ impl UiField {
     }
 }
 
-/// `TuruActivity.showUiField(text, start, end, kind, hint)`.
+/// Shows the shell's field for Turu's text box (`ToShell::FieldShow`: only slots run the engine).
 fn show(contents: &Contents, kind: Kind, hint: &str) {
-    if crate::app().is_none() {
-        crate::slots::to_shell(ToShell::FieldShow {
-            field: FieldId::Ui,
-            text: contents.text.clone(),
-            start: contents.start as u32,
-            end: contents.end as u32,
-            password: kind == Kind::Password,
-            max: 0,
-            hint: hint.to_owned(),
-            lines: kind == Kind::Lines,
-            number: kind == Kind::Number,
-        });
-        return;
-    }
-    let kind = match kind {
-        Kind::Line => 0,
-        Kind::Password => 1,
-        Kind::Lines => 2,
-        Kind::Number => 3,
-    };
-    call("showUiField", |env, activity| {
-        let text = env.new_string(&contents.text)?;
-        let hint = env.new_string(hint)?;
-        activity.show_ui_field(
-            env,
-            &text,
-            contents.start as jint,
-            contents.end as jint,
-            kind,
-            &hint,
-        )?;
-        Ok(())
+    crate::slots::to_shell(ToShell::FieldShow {
+        field: FieldId::Ui,
+        text: contents.text.clone(),
+        start: contents.start as u32,
+        end: contents.end as u32,
+        password: kind == Kind::Password,
+        max: 0,
+        hint: hint.to_owned(),
+        lines: kind == Kind::Lines,
+        number: kind == Kind::Number,
     });
 }
 
-/// `TuruActivity.updateUiField(text, start, end)`.
+/// The shell's field takes the text box's text and selection.
 fn update(contents: &Contents) {
-    if crate::app().is_none() {
-        crate::slots::to_shell(ToShell::FieldUpdate {
-            field: FieldId::Ui,
-            text: contents.text.clone(),
-            start: contents.start as u32,
-            end: contents.end as u32,
-        });
-        return;
-    }
-    call("updateUiField", |env, activity| {
-        let text = env.new_string(&contents.text)?;
-        activity.update_ui_field(env, &text, contents.start as jint, contents.end as jint)?;
-        Ok(())
+    crate::slots::to_shell(ToShell::FieldUpdate {
+        field: FieldId::Ui,
+        text: contents.text.clone(),
+        start: contents.start as u32,
+        end: contents.end as u32,
     });
 }
 
-/// `TuruActivity.hideUiField()`.
+/// Hides the shell's field.
 fn hide() {
-    if crate::app().is_none() {
-        crate::slots::to_shell(ToShell::FieldHide { field: FieldId::Ui });
-        return;
-    }
-    call("hideUiField", |env, activity| {
-        activity.hide_ui_field(env)?;
-        Ok(())
-    });
+    crate::slots::to_shell(ToShell::FieldHide { field: FieldId::Ui });
 }
 
-/// Runs `work` with the activity, logging a failure of `what`.
-fn call(
-    what: &str,
-    work: impl FnOnce(&mut jni::Env, &crate::java::TuruActivity) -> jni::errors::Result<()>,
-) {
-    let Some(app) = crate::app() else {
-        return;
-    };
-    if let Err(e) = with_activity(&app, work) {
-        tracing::warn!("{what} failed: {e}");
-    }
-}
-
-/// `TuruActivity.nativeUiFieldEdited(text, start, end)`, on the UI thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeUiFieldEdited<'local>(
-    mut unowned_env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-    text: JString<'local>,
-    start: jint,
-    end: jint,
-) {
-    let text = unowned_env
-        .with_env(|env| -> jni::errors::Result<String> { text.try_to_string(env) })
-        .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
-    edited(Contents {
-        text,
-        start: start.max(0) as usize,
-        end: end.max(0) as usize,
-    });
-}
-
-/// The field above the keyboard was edited (the activity's, or the shell's in a process tab).
+/// The shell's field above the keyboard was edited (`ToClient::FieldEdited`).
 pub(crate) fn edited(contents: Contents) {
     crate::run_on_engine(move |_| {
         crate::with_screen(|screen| {
@@ -149,29 +76,11 @@ pub(crate) fn edited(contents: Contents) {
     });
 }
 
-/// `TuruActivity.nativeUiFieldEnter()`, on the UI thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeUiFieldEnter<'local>(
-    _env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-) {
-    entered();
-}
-
 /// The field's Send.
 pub(crate) fn entered() {
     crate::run_on_engine(|_| {
         crate::with_screen(|screen| native_field::enter(screen.ui_field().1));
     });
-}
-
-/// `TuruActivity.nativeUiFieldClosed()`, on the UI thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeUiFieldClosed<'local>(
-    _env: EnvUnowned<'local>,
-    _class: JClass<'local>,
-) {
-    closed();
 }
 
 /// The field went.
