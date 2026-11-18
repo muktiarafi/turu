@@ -94,7 +94,6 @@ public class Main extends MovieClip {
 
         expose("loadClient", loadClient);
         expose("setBackgroundValues", background.setValues);
-        expose("setLoginImage", background.setImage);
         expose("hostInfo", hostInfo);
         expose("setPacketCapture", packets.setCapture);
         expose("catchPackets", catchPackets);

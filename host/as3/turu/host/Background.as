@@ -3,11 +3,9 @@ import flash.display.Bitmap;
 import flash.display.DisplayObject;
 import flash.display.DisplayObjectContainer;
 import flash.display.Loader;
-import flash.events.Event;
-import flash.events.IOErrorEvent;
+import flash.display.Sprite;
 import flash.events.TimerEvent;
 import flash.geom.Point;
-import flash.utils.ByteArray;
 import flash.utils.Timer;
 
 /**
@@ -15,9 +13,10 @@ import flash.utils.Timer;
  * background file, goes into the client's `params`; a custom SWF, if given, is loaded into the
  * login screen's title (`mcLogin.mcTitle`) once it appears, or given up on after 10 s.
  *
- * Turu's own login picture (`setLoginImage`, a JPEG or PNG the bot sends) goes over the game's
- * background in the title, sized to the game's area, each time a login screen is there (it's made
- * anew after a logout), and back on top of the title once the game's background loads in after it.
+ * Turu's own login picture ([LoginPicture], compiled into this SWF, so it's there from the first
+ * login screen on) goes over the game's background in the title, sized to the game's area, each
+ * time a login screen is there (it's made anew after a logout), and back on top of the title once
+ * the game's background loads in after it.
  */
 public class Background {
     private static const TRIES:int = 40;
@@ -40,10 +39,8 @@ public class Background {
     private var waiting:Timer;
     private var shown:Loader;
 
-    /** The login picture, once loaded ([setImage]). */
-    private var picture:Loader;
-    private var pictureReady:Boolean = false;
-    private var pictureFailed:Boolean = false;
+    /** The login picture, made the first time a login screen is there. */
+    private var picture:Sprite;
     /** Whether the first login screen's `sBG` was reported. */
     private var titleSeen:Boolean = false;
 
@@ -73,38 +70,6 @@ public class Background {
         }
     }
 
-    /** `setLoginImage(base64)`: the login picture's bytes (JPEG or PNG), base64. */
-    public function setImage(base64:*):void {
-        var bytes:ByteArray = decode(String(base64));
-        if (bytes.length == 0) {
-            pictureFailed = true;
-            return;
-        }
-        if (picture != null && picture.parent != null) {
-            picture.parent.removeChild(picture);
-        }
-        pictureReady = false;
-        var loader:Loader = new Loader();
-        // It's a picture: taps go through to the login form.
-        loader.mouseEnabled = false;
-        loader.mouseChildren = false;
-        loader.contentLoaderInfo.addEventListener(Event.COMPLETE, function(event:Event):void {
-            var bitmap:Bitmap = loader.content as Bitmap;
-            if (bitmap != null) {
-                // Turu Mas draws the games smaller with several tabs.
-                bitmap.smoothing = true;
-            }
-            pictureReady = true;
-            host.call("debug", ["Login picture: " + loader.content.width + "x" + loader.content.height]);
-        });
-        loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(event:IOErrorEvent):void {
-            pictureFailed = true;
-            host.call("debug", ["The login picture couldn't be read: " + event.text]);
-        });
-        picture = loader;
-        loader.loadBytes(bytes);
-    }
-
     /**
      * Each game frame: the login picture into the login screen's title when there is one and it
      * isn't there yet, over the game's background and fitted to the game's area.
@@ -123,15 +88,14 @@ public class Background {
             titleSeen = true;
             host.call("debug", ["Login screen: sBG " + (game.params != null ? game.params.sBG : "?")]);
         }
-        if (!pictureReady) {
-            // The game's own background would show until the picture is loaded: keep the title
-            // hidden meanwhile, unless the picture couldn't be read.
-            if (!pictureFailed) {
-                title.visible = false;
-            }
-            return;
+        if (picture == null) {
+            picture = new Sprite();
+            // Turu Mas draws the games smaller with several tabs: smoothed.
+            picture.addChild(new Bitmap(new LoginPicture(), "auto", true));
+            // It's a picture: taps go through to the login form.
+            picture.mouseEnabled = false;
+            picture.mouseChildren = false;
         }
-        title.visible = true;
         if (picture.parent == title) {
             // The game loads its own background into the title after: the picture stays over it.
             if (title.getChildIndex(picture) != title.numChildren - 1) {
@@ -170,29 +134,6 @@ public class Background {
     private function onGiveUp(event:TimerEvent):void {
         waiting = null;
         host.call("debug", ["No login screen for the custom background " + custom]);
-    }
-
-    private static const ALPHABET:String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    /** Base64 to bytes (Flash has no decoder of its own); what isn't base64 is skipped. */
-    private static function decode(text:String):ByteArray {
-        var out:ByteArray = new ByteArray();
-        var buffer:int = 0;
-        var bits:int = 0;
-        for (var i:int = 0; i < text.length; i++) {
-            var value:int = ALPHABET.indexOf(text.charAt(i));
-            if (value < 0) {
-                continue;
-            }
-            buffer = (buffer << 6) | value;
-            bits += 6;
-            if (bits >= 8) {
-                bits -= 8;
-                out.writeByte((buffer >> bits) & 0xFF);
-            }
-        }
-        out.position = 0;
-        return out;
     }
 }
 }

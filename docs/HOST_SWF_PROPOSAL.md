@@ -228,10 +228,12 @@ Each is a branch `host-rN` from the `host` feature branch, fast-forwarded into i
   handler. The Bank hotkey (`litePreference.data.keys.Bank`).
 - Callbacks: `loadClient(frameRate?)`, `setBackgroundValues`, `hostInfo`, `setStrictErrors`,
   `setPacketEcho`, `catchPackets`, and `throwForTest` (unlisted: debug builds of Turu only).
-  Since 2026-11-14 also `setLoginImage(base64)`: Turu's login picture (`Background.as`, a JPEG
-  the bot sends from `bot/assets/login-background.jpg`, 960x550), loaded with `loadBytes` (Ruffle
-  and AIR both read a JPEG that way) and put in the login screen's title (`mcLogin.mcTitle`) each
-  frame one is there without it, sized to the game's area and kept on top of the game's own
+  Since 2026-11-14 Turu's login picture (`Background.as`, `host/assets/login-background.jpg`,
+  960x550): since 2026-11-18 a bitmap symbol of `turu.swf` (`DefineBitsJPEG2` linked to
+  `LoginPicture`, a `BitmapData` subclass, as Flash Pro does; asc has no `[Embed]`), so it's there
+  from the first login screen on (sent by the bot as `setLoginImage(base64)` and loaded with
+  `loadBytes` before, the game's own background showed until it loaded), put in the login
+  screen's title (`mcLogin.mcTitle`) each frame one is there without it, sized to the game's area and kept on top of the game's own
   background, which loads into the title after it; it takes no taps. `params.sBG` starts as
   `Generic2.swf`, the file the bot names a second later, not VibeSkua's `hideme.swf` (none): a
   client that built its login screen before then showed it black.

@@ -58,29 +58,6 @@ fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
     bot.flash.call("loadClient", args).map(|_| ())
 }
 
-/// The login screen's picture (`setLoginImage`): 960x550, the game's size, over its background.
-const LOGIN_IMAGE: &[u8] = include_bytes!("../assets/login-background.jpg");
-
-/// Standard base64, padded: how bytes cross ExternalInterface as a string.
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = chunk
-            .iter()
-            .enumerate()
-            .fold(0u32, |n, (i, &b)| n | (u32::from(b) << (16 - 8 * i)));
-        for i in 0..4 {
-            if i <= chunk.len() {
-                out.push(ALPHABET[(n >> (18 - 6 * i)) as usize & 63] as char);
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
-
 fn do_work(bot: &Arc<Bot>, work: Work) {
     let result = match &work {
         Work::LoadClient => load_client(bot),
@@ -94,15 +71,6 @@ fn do_work(bot: &Arc<Bot>, work: Work) {
                 .map_err(|e| crate::BotError::Other(e.to_string()))
         }
         Work::SetBackground => {
-            // Turu: the login picture goes first, without the second's wait below: until it is
-            // loaded the host SWF hides the login screen's title, and the game's own background
-            // showed meanwhile (older host SWFs don't have it).
-            if let Err(e) = bot
-                .flash
-                .call("setLoginImage", vec![base64(LOGIN_IMAGE).into()])
-            {
-                tracing::debug!("No login picture: {e}");
-            }
             std::thread::sleep(Duration::from_secs(1));
             bot.flash
                 .call(
@@ -583,19 +551,4 @@ fn recover_stuck_loading(bot: &Arc<Bot>, loading_map: bool) {
                     .push(format!("Logout after a stuck load failed: {e}"));
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::base64;
-
-    #[test]
-    fn base64_matches_the_standard() {
-        assert_eq!(base64(b""), "");
-        assert_eq!(base64(b"f"), "Zg==");
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foo"), "Zm9v");
-        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
-        assert_eq!(base64(&[0xff, 0xfe, 0xfd]), "//79");
-    }
 }

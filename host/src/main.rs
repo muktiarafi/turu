@@ -14,6 +14,9 @@
 //! - asc's `-swf` writes no End tag and a `DoABC`, so only its ABC is used, and the SWF around it
 //!   is written here: version 43, zlib, 958x550 at 30 fps (as VibeSkua's skua.swf), with the tags a
 //!   Flex build has (less its `Metadata` and `ProductInfo`).
+//! - asc has no `[Embed]`, so Turu's login picture goes in as Flash Pro puts a library bitmap: a
+//!   `DefineBitsJPEG2` tag linked by `SymbolClass` to a `BitmapData` subclass
+//!   (`turu.host.LoginPicture`).
 //! - Where Flex emits `callpropvoid`, asc emits `callproperty` then `pop`, and `findpropstrict x;
 //!   getproperty x` for `getlex x`: bytecode rules written against Flex's output miss them.
 
@@ -28,6 +31,9 @@ use swf::{
 
 /// The document class.
 const MAIN_CLASS: &str = "turu.host.Main";
+/// The login picture's class, and its character ID.
+const LOGIN_PICTURE_CLASS: &str = "turu.host.LoginPicture";
+const LOGIN_PICTURE_ID: u16 = 1;
 /// Flash Player 28's, as a Flex build for `target-player` 28 has it.
 const SWF_VERSION: u8 = 43;
 const WIDTH: f64 = 958.0;
@@ -101,7 +107,9 @@ fn build(root: &Path) -> anyhow::Result<Vec<u8>> {
     let abc = std::fs::read(&abc_path).context("asc.jar wrote no ABC (errors above)")?;
     check_abc(&abc)?;
 
-    swf_around(&abc)
+    let picture = std::fs::read(root.join("assets/login-background.jpg"))
+        .context("couldn't read the login picture")?;
+    swf_around(&abc, &picture)
 }
 
 /// A class in `as3/`.
@@ -258,8 +266,8 @@ fn check_abc(abc: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The SWF around `abc`.
-fn swf_around(abc: &[u8]) -> anyhow::Result<Vec<u8>> {
+/// The SWF around `abc`, with `picture` (a JPEG) as the login picture's symbol.
+fn swf_around(abc: &[u8], picture: &[u8]) -> anyhow::Result<Vec<u8>> {
     let header = Header {
         compression: Compression::Zlib,
         version: SWF_VERSION,
@@ -286,15 +294,25 @@ fn swf_around(abc: &[u8]) -> anyhow::Result<Vec<u8>> {
             label: SwfStr::from_utf8_str(&label),
             is_anchor: false,
         }),
+        Tag::DefineBitsJpeg2 {
+            id: LOGIN_PICTURE_ID,
+            jpeg_data: picture,
+        },
         Tag::DoAbc2(DoAbc2 {
             flags: DoAbc2Flag::LAZY_INITIALIZE,
             name: SwfStr::from_utf8_str(""),
             data: abc,
         }),
-        Tag::SymbolClass(vec![SymbolClassLink {
-            id: 0,
-            class_name: SwfStr::from_utf8_str(MAIN_CLASS),
-        }]),
+        Tag::SymbolClass(vec![
+            SymbolClassLink {
+                id: 0,
+                class_name: SwfStr::from_utf8_str(MAIN_CLASS),
+            },
+            SymbolClassLink {
+                id: LOGIN_PICTURE_ID,
+                class_name: SwfStr::from_utf8_str(LOGIN_PICTURE_CLASS),
+            },
+        ]),
         Tag::ShowFrame,
     ];
     let mut out = Vec::new();
