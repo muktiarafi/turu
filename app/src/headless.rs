@@ -90,9 +90,11 @@ pub(crate) fn log_memory(player: &mut Player) {
     let [_, _, _, rss, peak_rss, commit, peak_commit, _] = info.map(|bytes| bytes >> 20);
     tracing::info!(
         target: "turu_perf",
-        "memory: process resident {rss} MB (peak {peak_rss}), commit {commit} MB (peak {peak_commit}), rust heap {} MB; {}",
+        "memory: process resident {rss} MB (peak {peak_rss}), commit {commit} MB (peak {peak_commit}), rust heap {} MB; {}; {}",
         crate::HEAP_BYTES.load(std::sync::atomic::Ordering::Relaxed) >> 20,
         player.aqw_memory_report(),
+        // At the end: `tools/memrun` and `tools/farmrun` read the line up to the GC objects.
+        crate::memory_split::report(),
     );
     // Turu: uncaught AS3 errors (a repeat is logged once, then only counted).
     tracing::info!(target: "turu_perf", "{}", ruffle_core::take_error_stats());

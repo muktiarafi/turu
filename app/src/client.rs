@@ -730,6 +730,7 @@ impl Platform for ClientPlatform {
             let _ = engine.send(EngineEvent::Run(Box::new(|player| {
                 let freed = crate::memory::free_memory(&mut |f| f(player), true);
                 tracing::info!(target: "ruffle_aqw_perf", "free memory now: {freed}");
+                crate::memory_split::log_after_free();
             })));
         }
     }

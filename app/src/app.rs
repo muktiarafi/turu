@@ -185,10 +185,11 @@ impl PerfStats {
             .unwrap_or_default();
         tracing::info!(
             target: "ruffle_aqw_perf",
-            "memory: {video_memory}{}; {renderer_report}; process commit {} MB, rust heap {} MB, wgpu: {encoder_backlog} encoders waiting to drop, {in_flight} submissions in flight",
+            "memory: {video_memory}{}; {renderer_report}; process commit {} MB, rust heap {} MB, {}; wgpu: {encoder_backlog} encoders waiting to drop, {in_flight} submissions in flight",
             player.aqw_memory_report(),
             commit / (1 << 20),
             crate::HEAP_BYTES.load(std::sync::atomic::Ordering::Relaxed) / (1 << 20),
+            crate::memory_split::report(),
         );
         // Turu: uncaught AS3 errors (a repeat is logged once, then only counted).
         tracing::info!(target: "ruffle_aqw_perf", "{}", ruffle_core::take_error_stats());
@@ -735,6 +736,7 @@ impl MainWindow {
                     true,
                 );
                 tracing::info!(target: "ruffle_aqw_perf", "free memory now: {freed}");
+                crate::memory_split::log_after_free();
                 self.gui.window().request_redraw();
             }
             Setting::Performance(level) => {

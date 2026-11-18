@@ -89,7 +89,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   without the render thread: the client draws the next only then; recorded once per game frame
   too, so a tab it took down to that comes back; the perf log's `pictures:` line shows it). Mugetsu turns it on with frame interpolation on Windows; Turu leaves it off until it has
   run there and in a crowded room. The perf log (`TURU_PERF_LOG`) says the thread's last picture
-  and what waited for it. Checked on the Mac (login screen): 120 even pictures a second in the
+  and what waited for it, and its `memory:` lines split the process's memory (Mugetsu 2.0.0's
+  `memory_split`, `app/src/memory_split.rs`: the allocator's committed memory and pages, on
+  Windows the system heaps), for the 7.5 GB Mugetsu saw with the render thread and uncapped
+  pacing on Windows. Its `heap-collect` test switch isn't ported: Turu already hands mimalloc's
+  free memory back once a minute (`release_free_memory`).
+  Checked on the Mac (login screen): 120 even pictures a second in the
   release build, with it and without; in the debug build 120 with it (the floor never engaged:
   about 3 ms from draw to finished), against 60 without; two tabs, switching, minimizing,
   uncapped with and without a limit, Options open, a resize, the fallback to pixels and the memory

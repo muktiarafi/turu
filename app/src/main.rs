@@ -27,6 +27,7 @@ mod shell_sockets; // Turu: the shell's Linux sockets for shared surfaces (M5)
 mod heap_census;
 mod log;
 mod memory; // Turu: the memory watch, shared with the clients
+mod memory_split;
 mod mugetsu;
 mod player;
 mod preferences;

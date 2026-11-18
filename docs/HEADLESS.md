@@ -294,9 +294,15 @@ ticks. `TURU_PERF_LOG=<seconds>` logs the same for each tab every `seconds`, ove
 (`turu_perf` lines: the player thread's milliseconds per second, a `waits:` line with each
 `bot.wait.forX` that ended in the window, how many timed out and their average time, then the
 busiest calls, 12 unless `TURU_PERF_LOG_ROWS` says how many). Without a window it also logs a `memory:` line:
-the process's resident and committed memory (with peaks), the Rust heap that's live, the SWFs
-the game loaded (their data in MB) and the Flash objects it holds, to tell a leak from the
-allocator keeping freed memory. A `memory census:` line follows: the URLs with the most live
+the process's resident and committed memory (with peaks), the Rust heap that's live, what the
+allocator (mimalloc) has committed, in how many pages (how many abandoned by threads that ended)
+and reserved, on Windows the system heaps' committed memory (the graphics driver's and the
+system libraries' share; Mugetsu's `memory_split`, at the end of the line), the SWFs the game
+loaded (their data in MB) and the Flash objects it holds, to tell a leak from the allocator
+keeping freed memory. Off Windows mimalloc estimates the process's commit from its own, so the
+two read the same there; its pages and reserved memory are what's new. With `TURU_PERF_LOG`,
+Free Memory Now also logs the allocator's full statistics right after (`allocator statistics
+after it:`). A `memory census:` line follows: the URLs with the most live
 movies (images with their decoded size), so a file loaded again and again and never freed
 stands out. A `memory biggest:` line lists the URLs whose live movies hold the most memory
 (decompressed SWF data, plus decoded pixels for images), with their copies: what a map, a monster
