@@ -68,7 +68,18 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
 
     let runtime = tokio::runtime::Runtime::new()?;
     let _guard = runtime.enter();
-    let (descriptors, blit, renderer) = gpu(&preferences)?;
+    let (descriptors, blit, mut renderer) = gpu(&preferences)?;
+    // Mugetsu 2.0.0's present thread (Windows; `RUFFLE_SERIAL_PRESENT` keeps it off): the game's
+    // pictures are finished and submitted there, so the thread that records them (the render
+    // thread, or this one) goes on to the next. Turu: a client without it did both on one
+    // thread, ~5 ms a picture in battleon where Mugetsu's window spends ~3 on the render thread
+    // and ~2 on the present thread, and got every 2nd refresh at 165 Hz where Mugetsu got each.
+    let present = ruffle_render_wgpu::present::PresentThread::enabled()
+        .then(|| ruffle_render_wgpu::present::PresentThread::new("present"));
+    if let Some(present) = &present {
+        renderer.set_present_thread(present.clone());
+        tracing::info!(target: "ruffle_aqw_perf", "pictures are submitted from a present thread");
+    }
     // The shell checks it's on the same GPU before using shared surfaces.
     let info = descriptors.adapter.get_info();
     out.send(ToShell::Gpu {
@@ -137,6 +148,9 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             crate::mugetsu::frame_presented();
         }),
     );
+    if let Some(present) = &present {
+        screen.set_present_thread(present.clone());
+    }
     // A shell that takes GPU surfaces names where to hand them; `Dump` needs pixels.
     #[cfg(target_os = "macos")]
     if let Ok(name) = std::env::var(shell::SURFACES_ENV)
@@ -219,6 +233,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     });
     let spawned = std::thread::Builder::new().name("Turu Shell In".into()).spawn({
         let sender = sender.clone();
+        let present = present.clone();
         move || {
             let mut forward = Forward { sender, dump, answers };
             match shell::serve(reader, &mut forward) {
@@ -232,7 +247,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             // are dropped. 3 s at most. A crash being handled on another thread meanwhile gets
             // its report written before the end (`windows::wait_for_crash_report`).
             crate::mugetsu::set_exit_phase(1);
-            let _ = forward.sender.send(EngineEvent::Run(Box::new(|player| {
+            let _ = forward.sender.send(EngineEvent::Run(Box::new(move |player| {
                 // Turu: the game's saved data (Flash's shared objects: AQW's saved login and
                 // preferences) is written first, as the window writes it when its player drops:
                 // `exit_now` below skips the player's drop, which would.
@@ -249,6 +264,11 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
                     }),
                 );
                 ruffle_render_wgpu::render_thread::settle::<MovieTexture>(renderer);
+                // And the present thread's pictures still being submitted, before the device's
+                // adapter and encoders go (as Mugetsu's window waits for it at close).
+                if let Some(present) = &present {
+                    present.wait_for(present.run(Box::new(|| {})));
+                }
                 let shapes = ruffle_core::shutdown_deferred_shapes();
                 let segments = ruffle_render_wgpu::segments::clear();
                 crate::mugetsu::release_video_memory_adapter();
@@ -391,18 +411,54 @@ fn perf_tick(player: &mut ruffle_core::Player) {
             let shown = SCREEN.with_borrow_mut(|screen| {
                 screen
                     .as_mut()
-                    .map(|screen| (screen.shown(), screen.fps(), screen.take_skipped(), screen.pipeline_ms()))
+                    .map(|screen| (screen.shown(), screen.fps(), screen.take_skipped(), screen.pacing_report()))
             });
-            if let Some((shown, fps, skipped, pipeline_ms)) = shown {
+            let fps_now = shown.as_ref().map_or(0.0, |(_, fps, ..)| *fps);
+            if let Some((shown, fps, skipped, pacing)) = shown {
                 // With frame interpolation: new pictures due on the shell's refreshes but skipped,
-                // and a picture's way from its draw to finished (the pacer's floor).
+                // and what the pacer reckons with: a picture's way from its draw to finished, the
+                // GPU's time on a frame's picture and on an in-between, and the rate aimed for.
                 tracing::info!(
                     target: "turu_perf",
                     "pictures: {}{}{}",
                     if shown { format!("{fps:.1} a second") } else { "none (hidden)".to_string() },
                     if skipped > 0 { format!(", {skipped} due skipped") } else { String::new() },
-                    if pipeline_ms > 0.0 { format!(", {pipeline_ms:.1} ms from draw to finished") } else { String::new() }
+                    pacing.map(|report| format!(", {report}")).unwrap_or_default()
                 );
+            }
+            // As the window logs them: in-between pictures drawn from the last recorded one (see
+            // `ruffle_core::interpolation_replay`), and the renderer's counts per picture drawn.
+            {
+                use ruffle_core::interpolation_replay as replay;
+                thread_local! {
+                    static REPLAY_AT: std::cell::Cell<Option<[u64; replay::STAT_NAMES.len()]>> =
+                        const { std::cell::Cell::new(None) };
+                }
+                let now = replay::stats();
+                let at = REPLAY_AT.replace(Some(now)).unwrap_or_default();
+                if now != at {
+                    let counts = replay::STAT_NAMES
+                        .iter()
+                        .zip(now.iter().zip(at))
+                        .filter(|(_, (a, b))| **a > *b)
+                        .map(|(name, (a, b))| format!("{name} {}", a - b))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let reason = replay::take_reason()
+                        .map(|why| format!("; last reason: {why}"))
+                        .unwrap_or_default();
+                    tracing::info!(target: "turu_perf", "interpolation replay: {counts}{reason}");
+                }
+                let pictures = (f64::from(fps_now) * every.as_secs_f64()).max(1.0);
+                let counts = ruffle_render_wgpu::perf_counters::take();
+                let per_picture = ruffle_render_wgpu::perf_counters::NAMES
+                    .iter()
+                    .zip(counts)
+                    .filter(|(_, n)| *n > 0)
+                    .map(|(name, n)| format!("{name} {:.1}", f64::from(n) / pictures))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                tracing::info!(target: "turu_perf", "per picture drawn: {per_picture}");
             }
             // With the render thread: its last picture's time, and what waited for a picture it
             // was making (a wait on every picture would mean the two threads take turns).

@@ -95,7 +95,53 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   uncapped with and without a limit, Options open, a resize, the fallback to pixels and the memory
   limit. Not confirmed: the client's own close with it (a killed shell's clients end by
   `--exit-with-parent`'s stdin watcher first). It can't show here that the thread pays: that needs
-  a crowded room.
+  a crowded room. (The pacer's budgets changed since: next paragraph.)
+  **Pictures under way together** (2026-11-18, Windows, Radeon 780M, 165 Hz, release builds, in
+  game): a client drew a picture only once the GPU had finished the last, and the pacer took that
+  whole way (~30 ms in battleon: the draw, the GPU, the shell's turn) as the time between two, so
+  frame interpolation gave up in every crowded room: 24 pictures a second where Mugetsu drew
+  115-160. Now:
+  * Up to 3 shared pictures are under way at once (`SHARED_IN_FLIGHT`; pixels still one), and with
+    more than one the pacer has no floor drawn from a picture's way (`Pacing::set_in_flight`), as
+    Mugetsu has none: pictures wait for a free slot and as many get through as the GPU allows,
+    unevenly. With the floor, a busy GPU took a client to one picture per frame (24 in Yulgar
+    beside Mugetsu, which kept interpolating at 30-35).
+  * The shell gives a surface back from a thread that waits for the GPU (`turu_frontend::gpu_waiter`),
+    writing the release straight to the client under the tab's write lock: polled from the main
+    thread, which spends most of a refresh waiting for the next, a surface came back ~4 refreshes
+    late. With this and the pictures under way together, the login screen went from 65-83 of 165
+    to 165 (not measured apart).
+  * With a render thread, its picture has a budget of its own (850 ms a second, Mugetsu's
+    `RENDER_THREAD_BUDGET_MS`), and what the engine thread waited for it isn't charged to it.
+  * Mugetsu's present thread in clients (Windows, as in Mugetsu; `RUFFLE_SERIAL_PRESENT` off):
+    the game's picture is finished and submitted there (`MovieTexture::submit_later`), and the
+    client's own picture is sent after it through the same thread (`ClientScreen::set_present_thread`),
+    and the client's close waits for it before letting go of the device. Mugetsu's window spends
+    ~3 ms a picture on its render thread and ~2 on its present thread in battleon, where a client
+    without one spent 5-6.7 on its render thread; side by side with Mugetsu after the port (both
+    GPU-bound, one GPU): 0.018 ms a pass on Turu's render thread (release build), 0.013 on
+    Mugetsu's (dist + PGO).
+  * Tried and dropped: a budget of the GPU's time drawn from when pictures finished. A picture's
+    cost depends on the rate itself (battleon: 10 ms interpolating, 14 ms at one per frame), so it
+    stepped down and never came back up (80, 55, then 30 for good); Mugetsu has none either.
+  The perf log now has the client's `interpolation replay:` and `per picture drawn:` lines (as the
+  window's) and the pacer's inputs on `pictures:`, and the shell logs each tab's new pictures and
+  its presents a second (Mugetsu's "drawn, presented"). Measured: whitemap 165; battleon 24 → ~82
+  (every 2nd refresh, render thread 4.5-6 ms a picture; Mugetsu's 2.7-3.4 ms gets every refresh);
+  side by side with Mugetsu in one room (~450 passes a picture, one GPU for both), Turu 25-37 new
+  pictures a second, Mugetsu 31-39 ("presented 52-64"). Yulgar alone (~20 players): 30 (one per
+  frame) before, 55 after, 61-75 while aiming for 83 (the GPU's limit: due pictures skipped with
+  all 3 slots busy); the step follows the engine thread's draw (4.3-7 ms there, against 650 ms a
+  second for frames and pictures). Mugetsu's FPS counter counts presents
+  (repeats too), Turu's badge new pictures: the two read differently for the same picture rate.
+  Mugetsu's PGO profile (`pgo/aqw.profdata`) applied to a Turu `dist` build changed the render
+  thread little. Known: near a step's edge (55 against one per frame) the pace can flip between
+  `Refresh` and `Frames` within a second, a visible change of rhythm each time; Mugetsu's pacer
+  puts a step on trial and undoes it (`PipelineLimit`, `LIMIT_TRIAL`), Turu's doesn't yet.
+  `RUFFLE_GPU_TIMING` reads a frame's timestamps one frame later now (ruffle-aqw's `gpu_timing`,
+  not committed there yet): a present thread submits later, and mapping the buffer at once failed
+  that submit (`BufferStillMapped`, seen in Mugetsu's window). Not checked with the present
+  thread: macOS and Linux (off there), the client's close with pictures still on it.
   Found on the way: the memory limit's freeing, Free Memory Now and a nearly full graphics memory
   freed the renderer's spare textures in the window only; a tab's client never did (since M6,
   every AQW tab). They do now (`memory::trim_renderer`).

@@ -60,6 +60,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_bot::monitor::hub::PeerSource;
 use turu_frontend::engine::STAGE;
+use turu_frontend::gpu_waiter::GpuWaiter;
 use turu_frontend::movie_texture::Blit;
 use turu_frontend::shell::{
     self, Button, GridShow, GridTile, Mods, Pace, PointerKind, SHARED_POOL, TabInfo, ToClient, ToShell,
@@ -170,6 +171,10 @@ struct Tab {
     password: Option<String>,
     child: Option<Child>,
     out: Option<TcpStream>,
+    /// The same connection, for the GPU waiter's thread (surfaces given back), and the lock every
+    /// message to the client is written under (from either thread).
+    release_out: Option<Arc<TcpStream>>,
+    write_lock: Arc<Mutex<()>>,
     generation: u64,
     picture: Arc<Mutex<Picture>>,
     label: String,
@@ -661,6 +666,7 @@ fn end_clients(mut children: Vec<Child>) {
 /// Stops a tab's client at once (gone, hung, never connected): its connection, stdin
 /// (`--exit-with-parent`) and process. One that's working closes with `close_clients`.
 fn stop(tab: &mut Tab) {
+    tab.release_out = None;
     if let Some(out) = tab.out.take() {
         let _ = out.shutdown(std::net::Shutdown::Both);
     }
@@ -674,6 +680,8 @@ fn stop(tab: &mut Tab) {
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// Gives the clients' surfaces back once the GPU is done with them (`release_retiring`).
+    waiter: Option<GpuWaiter>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     blit: Blit,
@@ -769,6 +777,8 @@ impl ShellApp {
             password,
             child: None,
             out: None,
+            release_out: None,
+            write_lock: Arc::default(),
             generation: 0,
             picture: Arc::default(),
             label: "Login".into(),
@@ -1148,6 +1158,7 @@ impl ShellApp {
             }
         };
         spawn_reader(tab.id, tab.generation, reader, tab.picture.clone(), proxy);
+        tab.release_out = stream.try_clone().ok().map(Arc::new);
         tab.out = Some(stream);
         tab.pace = Pace::Frames;
         if self.refresh_millihertz > 0 {
@@ -1837,6 +1848,30 @@ impl ShellApp {
             return;
         }
         let retired = std::mem::take(&mut self.retiring);
+        // Turu: from the GPU waiter's thread, written straight to the clients: the main thread
+        // spends most of a refresh waiting for the display's next picture, and a surface it
+        // polled for and sent back from there came back about 4 refreshes after it went, so the
+        // clients ran out of surfaces at 120 Hz and more.
+        if let Some(waiter) = &gpu.waiter {
+            let releases: Vec<_> = retired
+                .into_iter()
+                .filter_map(|(id, pid, surface)| {
+                    let tab = self.tabs.iter().find(|tab| tab.id == id && tab.pid() == Some(pid))?;
+                    Some((tab.release_out.clone()?, tab.write_lock.clone(), surface))
+                })
+                .collect();
+            if releases.is_empty() {
+                return;
+            }
+            let index = gpu.queue.submit([]);
+            waiter.after(index, move || {
+                for (out, lock, surface) in releases {
+                    let _writing = lock.lock().unwrap_or_else(|e| e.into_inner());
+                    let _ = shell::write(&mut &*out, &ToClient::Release { id: surface }, None);
+                }
+            });
+            return;
+        }
         let proxy = self.proxy.clone();
         gpu.queue.submit([]);
         gpu.queue
@@ -1853,6 +1888,25 @@ impl ShellApp {
                 send(tab, &ToClient::Release { id: surface });
             }
         }
+    }
+
+    /// Each tab's new pictures a second since the last call, and the window's presents a second
+    /// (with no new picture, one, or more: a picture skipped): `TURU_SHELL_TEST`'s `rate`, and
+    /// with `TURU_PERF_LOG` every period (as the window's "drawn, presented").
+    fn log_rates(&mut self, prefix: &str) {
+        let elapsed = self.rate_since.elapsed().as_secs_f64().max(0.001);
+        self.rate_since = Instant::now();
+        for tab in &mut self.tabs {
+            let rate = f64::from(std::mem::take(&mut tab.pictures)) / elapsed;
+            tracing::info!("{prefix}: tab {} ({}): {rate:.1} pictures a second", tab.id, tab.label);
+        }
+        let [none, one, more] = std::mem::take(&mut self.presents);
+        tracing::info!(
+            "{prefix}: {:.1} presents a second ({:?}): {none} with no new picture, {one} with one, {more} with more; {} draws without a picture of the window",
+            f64::from(none + one + more) / elapsed,
+            self.pace,
+            std::mem::take(&mut self.no_frame)
+        );
     }
 
     /// Draws the window: the shown tab's newest picture, or in Grid View each tile's under the
@@ -2171,23 +2225,7 @@ impl ShellApp {
         }
         // `rate`: each tab's pictures a second since the last `rate`.
         if command == "rate" {
-            let elapsed = self.rate_since.elapsed().as_secs_f64();
-            self.rate_since = Instant::now();
-            for tab in &mut self.tabs {
-                let rate = f64::from(std::mem::take(&mut tab.pictures)) / elapsed.max(0.001);
-                tracing::info!(
-                    "Shell test: tab {} ({}): {rate:.1} pictures a second",
-                    tab.id,
-                    tab.label
-                );
-            }
-            let [none, one, more] = std::mem::take(&mut self.presents);
-            tracing::info!(
-                "Shell test: {:.1} presents a second ({:?}): {none} with no new picture, {one} with one, {more} with more; {} draws without a picture of the window",
-                f64::from(none + one + more) / elapsed.max(0.001),
-                self.pace,
-                std::mem::take(&mut self.no_frame)
-            );
+            self.log_rates("Shell test");
             return;
         }
         // `minimize on` / `minimize off`: as the window's yellow button would (macOS reports it as
@@ -2331,6 +2369,7 @@ impl ShellApp {
 
 /// Sends to a tab's client, if it's connected.
 fn send(tab: &mut Tab, message: &ToClient) {
+    let _writing = tab.write_lock.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(out) = tab.out.as_mut()
         && let Err(e) = shell::write(out, message, None)
     {
@@ -2453,6 +2492,11 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.release_retiring();
+        if let Some(every) = turu::perf_log_every()
+            && self.rate_since.elapsed() >= every
+        {
+            self.log_rates("Shell");
+        }
         self.check_refresh_rate();
         self.apply_pace();
         let mut wake = self.restart_due();
@@ -2667,9 +2711,13 @@ fn make_gpu(window: Arc<Window>, preferences: &GlobalPreferences) -> Result<(Gpu
     let blit = Blit::new(&device);
     let replace = blit.pipeline(&device, format);
     let over = blit.pipeline_blending(&device, format, wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+    let waiter = GpuWaiter::new(device.clone(), "Turu shell GPU waiter")
+        .inspect_err(|e| tracing::warn!("Shell: couldn't start the GPU waiter ({e}): surfaces go back when polled"))
+        .ok();
     let gpu = Gpu {
         device,
         queue,
+        waiter,
         surface,
         config,
         blit,

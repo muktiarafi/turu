@@ -37,6 +37,7 @@ use ruffle_core::{Player, PlayerEvent};
 use ruffle_render_wgpu::descriptors::Descriptors;
 use ruffle_render_wgpu::render_thread;
 use ruffle_render_wgpu::wgpu;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -49,6 +50,12 @@ const UI_FRAME: Duration = Duration::from_millis(33);
 /// is half a refresh at 120 Hz).
 const READBACK_POLL: Duration = Duration::from_millis(4);
 const READBACK_POLL_PACED: Duration = Duration::from_millis(1);
+/// Turu: shared pictures under way at once. One at a time, a picture's whole way (its draw, the
+/// GPU's work, the shell's turn: ~30 ms in a crowded room on built-in graphics) was the time
+/// between two, and frame interpolation gave up there; three keep the CPU and the GPU busy at
+/// once, as the window's render and present threads do, and leave the shell two of the
+/// [`SHARED_POOL`].
+const SHARED_IN_FLIGHT: usize = 3;
 /// Without the shell's refreshes for this long (another tab shown, the window covered, an older
 /// shell), the tab draws once per game frame again.
 const REFRESHES_LOST: Duration = Duration::from_millis(100);
@@ -116,6 +123,8 @@ enum Readback {
         id: u64,
         size: (u32, u32),
         done: Arc<AtomicBool>,
+        /// When it was drawn (for the pacer: its way to finished).
+        drawn: Instant,
     },
 }
 
@@ -133,7 +142,9 @@ pub struct ClientScreen {
     /// only its game (another tab's tile).
     grid: Option<GridShow>,
     target: Option<Target>,
-    readback: Option<Readback>,
+    /// Pictures under way, oldest first: one readback of pixels at a time, or up to
+    /// [`SHARED_IN_FLIGHT`] shared surfaces (the GPU finishes them in order).
+    readbacks: VecDeque<Readback>,
     /// Draws into surfaces shared with the shell, when it offered them.
     shared: Option<Box<dyn SharedSurfaces>>,
     pool: Vec<SharedSurface>,
@@ -205,6 +216,9 @@ pub struct ClientScreen {
     game_focused: bool,
     /// Flash's right-click menu, while it's open (see `open_menu`).
     menu: Option<Menu>,
+    /// Mugetsu's present thread, when the game's pictures are finished and submitted there (see
+    /// `set_present_thread`): this screen's own picture goes after each, through it.
+    present: Option<Arc<ruffle_render_wgpu::present::PresentThread>>,
 }
 
 /// Flash's right-click menu (`Player::prepare_context_menu`), drawn by Turu's UI as the window's
@@ -249,7 +263,7 @@ impl ClientScreen {
             shown: None,
             grid: None,
             target: None,
-            readback: None,
+            readbacks: VecDeque::new(),
             shared: None,
             pool: Vec::new(),
             events: Vec::new(),
@@ -272,7 +286,11 @@ impl ClientScreen {
             fps_frames: 0,
             fps_since: Instant::now(),
             fps: 0.0,
-            pacing: Pacing::new(),
+            pacing: {
+                let mut pacing = Pacing::new();
+                pacing.set_in_flight(SHARED_IN_FLIGHT as u32);
+                pacing
+            },
             pace: Pace::Frames,
             pace_sink: None,
             refreshed: None,
@@ -289,6 +307,7 @@ impl ClientScreen {
             held_keys: Vec::new(),
             game_focused: false,
             menu: None,
+            present: None,
         }
     }
 
@@ -550,6 +569,14 @@ impl ClientScreen {
         self.pace_sink = Some(sink);
     }
 
+    /// The present thread the game's renderer submits its pictures from (Mugetsu 2.0.0's
+    /// `ruffle_render_wgpu::present`; Windows): the screen's own picture of each (the blit, Turu's
+    /// UI, the readback or the shared surface's "done") is sent there after it, as the window's
+    /// frame is in Mugetsu, or it would be drawn from the picture before.
+    pub fn set_present_thread(&mut self, present: Arc<ruffle_render_wgpu::present::PresentThread>) {
+        self.present = Some(present);
+    }
+
     /// Draws into surfaces shared with the shell instead of reading pictures back.
     pub fn share_surfaces(&mut self, shared: Box<dyn SharedSurfaces>) {
         self.shared = Some(shared);
@@ -567,10 +594,22 @@ impl ClientScreen {
         self.fps
     }
 
-    /// The pacer's recent average of a picture's way from its draw to finished (ms), for the
-    /// perf log.
-    pub fn pipeline_ms(&self) -> f64 {
-        self.pacing.pipeline_ms()
+    /// For the perf log, once a picture's way has been measured (with frame interpolation): what
+    /// the pacer reckons with.
+    pub fn pacing_report(&self) -> Option<String> {
+        let pipeline_ms = self.pacing.pipeline_ms();
+        if pipeline_ms <= 0.0 {
+            return None;
+        }
+        Some(format!(
+            "{pipeline_ms:.1} ms from draw to finished ({SHARED_IN_FLIGHT} under way at most); draw {:.1} ms, render thread {:.1} ms; {}",
+            self.pacing.draw_cost_ms(),
+            self.pacing.thread_cost_ms(),
+            match self.pace {
+                Pace::Refresh => format!("aiming for {:.0} a second", self.pacing.rate()),
+                pace => format!("{pace:?}"),
+            }
+        ))
     }
 
     /// New pictures skipped since the last call (see `skipped`).
@@ -638,9 +677,7 @@ impl ClientScreen {
                 self.picture_due = false;
                 // A hidden tab keeps no surfaces (the shell lets go of its own).
                 self.pool.clear();
-                if matches!(self.readback, Some(Readback::Shared { .. })) {
-                    self.readback = None;
-                }
+                self.drop_shared_readbacks();
                 self.pressed = None;
                 self.pointer_in = false;
                 set_mouse(player, false);
@@ -689,9 +726,7 @@ impl ClientScreen {
                 }
                 self.shared = None;
                 self.pool.clear();
-                if matches!(self.readback, Some(Readback::Shared { .. })) {
-                    self.readback = None;
-                }
+                self.drop_shared_readbacks();
                 if self.shown.is_some() {
                     self.picture_due = true;
                     self.ui_due = Some(Instant::now());
@@ -841,7 +876,7 @@ impl ClientScreen {
                 // that one is skipped, not caught up on (which would break the rhythm twice).
                 Pace::Refresh if in_step => {
                     if let Some(at) = self.refreshed.take() {
-                        if self.readback.is_none() {
+                        if self.can_draw() {
                             let new_picture = self.pacing.new_picture_due(at);
                             let wanted = self.picture_due;
                             if new_picture || wanted || ui_wanted {
@@ -859,7 +894,7 @@ impl ClientScreen {
                     }
                 }
                 Pace::Uncapped => {
-                    if self.readback.is_none() {
+                    if self.can_draw() {
                         let new_picture = self
                             .pacing
                             .new_uncapped_picture_due(now, self.uncapped_interval);
@@ -869,16 +904,16 @@ impl ClientScreen {
                             self.draw(player, picture);
                         }
                     }
-                    // Without a limit, or while a picture is under way (its time may be past: the
-                    // loop would spin on it), the readback's poll below calls again.
+                    // Without a limit, or while no more pictures can be under way (its time may be
+                    // past: the loop would spin on it), the readback's poll below calls again.
                     next = self
                         .uncapped_interval
-                        .filter(|_| self.readback.is_none())
+                        .filter(|_| self.can_draw())
                         .map(|interval| self.pacing.next_uncapped_picture(interval));
                 }
                 _ => {
                     if game_frame || ui_wanted || self.picture_due {
-                        if self.readback.is_none() {
+                        if self.can_draw() {
                             let picture = game_frame || self.picture_due;
                             self.picture_due = false;
                             self.draw(player, picture);
@@ -897,7 +932,7 @@ impl ClientScreen {
             }
             Pace::Frames | Pace::Unknown => READBACK_POLL,
         };
-        let readback = self.readback.as_ref().map(|_| Instant::now() + poll);
+        let readback = (!self.readbacks.is_empty()).then(|| Instant::now() + poll);
         // Nothing is drawn while hidden: a repaint due from before must not wake the loop (it was
         // in the past, and the engine spun on it).
         let seen = self.shown.is_some() && !self.covered;
@@ -996,59 +1031,78 @@ impl ClientScreen {
         }
     }
 
-    /// Hands a finished picture to the sink.
+    /// Hands the finished pictures to the sink, oldest first.
     fn collect(&mut self) {
-        let Some(readback) = &self.readback else {
+        if self.readbacks.is_empty() {
             return;
-        };
+        }
         let _ = self.descriptors.device.poll(wgpu::PollType::Poll);
-        let done = match readback {
-            Readback::Pixels { mapped, .. } => mapped,
-            Readback::Shared { done, .. } => done,
-        };
-        if !done.load(Ordering::Acquire) {
-            return;
-        }
-        // A picture's whole way, for the pacer: of shared surfaces (pixels never interpolate),
-        // while interpolation is wanted, once per game frame too, or a tab its floor took down
-        // to that would never come back.
-        if matches!(self.readback, Some(Readback::Shared { .. }))
-            && ruffle_core::frame_interpolation::enabled()
-        {
-            self.pacing
-                .record_pipeline(self.last_draw.elapsed().as_secs_f64() * 1000.0);
-        }
-        match self.readback.take().expect("checked above") {
-            Readback::Pixels {
-                buffer,
-                size: (width, height),
-                padded_row,
-                ..
-            } => {
-                let row = width as usize * 4;
-                let mut pixels = Vec::with_capacity(row * height as usize);
-                match buffer.slice(..).get_mapped_range() {
-                    Ok(data) => {
-                        for y in 0..height as usize {
-                            let start = y * padded_row as usize;
-                            pixels.extend_from_slice(&data[start..start + row]);
-                        }
-                    }
-                    Err(e) => tracing::warn!("Couldn't read the picture back: {e}"),
-                }
-                buffer.unmap();
-                (self.sink)(Picture::Pixels {
-                    width,
-                    height,
-                    pixels,
-                });
+        while let Some(readback) = self.readbacks.front() {
+            let done = match readback {
+                Readback::Pixels { mapped, .. } => mapped,
+                Readback::Shared { done, .. } => done,
+            };
+            if !done.load(Ordering::Acquire) {
+                return;
             }
-            Readback::Shared {
-                id,
-                size: (width, height),
-                ..
-            } => (self.sink)(Picture::Shared { id, width, height }),
+            match self.readbacks.pop_front().expect("looked at above") {
+                Readback::Pixels {
+                    buffer,
+                    size: (width, height),
+                    padded_row,
+                    ..
+                } => {
+                    let row = width as usize * 4;
+                    let mut pixels = Vec::with_capacity(row * height as usize);
+                    match buffer.slice(..).get_mapped_range() {
+                        Ok(data) => {
+                            for y in 0..height as usize {
+                                let start = y * padded_row as usize;
+                                pixels.extend_from_slice(&data[start..start + row]);
+                            }
+                        }
+                        Err(e) => tracing::warn!("Couldn't read the picture back: {e}"),
+                    }
+                    buffer.unmap();
+                    (self.sink)(Picture::Pixels {
+                        width,
+                        height,
+                        pixels,
+                    });
+                }
+                Readback::Shared {
+                    id,
+                    size: (width, height),
+                    drawn,
+                    ..
+                } => {
+                    // A picture's whole way, for the pacer: of shared surfaces (pixels never
+                    // interpolate), while interpolation is wanted, once per game frame too, or a
+                    // tab its floor took down to that would never come back.
+                    if ruffle_core::frame_interpolation::enabled() {
+                        self.pacing
+                            .record_pipeline(drawn.elapsed().as_secs_f64() * 1000.0);
+                    }
+                    (self.sink)(Picture::Shared { id, width, height });
+                }
+            }
         }
+    }
+
+    /// Whether another picture may be drawn now: none under way, or fewer shared ones than
+    /// [`SHARED_IN_FLIGHT`] (a readback of pixels goes alone).
+    fn can_draw(&self) -> bool {
+        match self.readbacks.back() {
+            None => true,
+            Some(Readback::Pixels { .. }) => false,
+            Some(Readback::Shared { .. }) => self.readbacks.len() < SHARED_IN_FLIGHT,
+        }
+    }
+
+    /// Forgets the shared pictures under way (the tab hidden, or no shared surfaces any more).
+    fn drop_shared_readbacks(&mut self) {
+        self.readbacks
+            .retain(|readback| matches!(readback, Readback::Pixels { .. }));
     }
 
     /// A shared surface of `size` to draw into, taken from the shell's: `Ok(None)` without shared
@@ -1447,13 +1501,18 @@ impl ClientScreen {
         // texture is read without waiting.
         let movie = self.movie_bind_group(player);
         if new_picture && !turu::headless_mode() {
+            use ruffle_render_wgpu::perf_counters::timers;
             let render_started = Instant::now();
+            let waited_before = timers::snapshot()[timers::RENDER_WAIT];
             player.render();
             let mut draw_ms = render_started.elapsed().as_secs_f64() * 1000.0;
             // Behind a render thread, `render` only walks the stage: the thread makes the GPU
-            // commands meanwhile, and the slower of the two sets the pace (its last picture's).
+            // commands meanwhile, on a budget of its own (its last picture's time). What this
+            // thread waited for it isn't this thread's cost (as in Mugetsu's window).
             if let Some(micros) = render_thread::picture_micros::<MovieTexture>(player.renderer()) {
-                draw_ms = draw_ms.max(micros as f64 / 1000.0);
+                let waited = timers::snapshot()[timers::RENDER_WAIT].saturating_sub(waited_before);
+                draw_ms = (draw_ms - waited as f64 / 1000.0).max(0.0);
+                self.pacing.record_thread(micros as f64 / 1000.0);
             }
             self.pacing.record_draw(draw_ms);
             self.pictures.drawn();
@@ -1640,7 +1699,12 @@ impl ClientScreen {
                 let done = Arc::new(AtomicBool::new(false));
                 let finished = done.clone();
                 (
-                    Readback::Shared { id, size, done },
+                    Readback::Shared {
+                        id,
+                        size,
+                        done,
+                        drawn: self.last_draw,
+                    },
                     Box::new(move || {
                         queue.submit(buffers);
                         queue.on_submitted_work_done(move || {
@@ -1673,8 +1737,19 @@ impl ClientScreen {
                 )
             }
         };
+        // With a present thread, the game's submit reaches it from the render thread (or this
+        // one): this picture is sent after it, through the same thread.
+        let finish = match &self.present {
+            Some(present) => {
+                let present = present.clone();
+                Box::new(move || {
+                    present.run(finish);
+                }) as ruffle_render_wgpu::present::Job
+            }
+            None => finish,
+        };
         render_thread::run_after_picture::<MovieTexture>(player.renderer_mut(), finish);
-        self.readback = Some(readback);
+        self.readbacks.push_back(readback);
     }
 
     /// The game's texture's bind group for the blit (see `movie`).

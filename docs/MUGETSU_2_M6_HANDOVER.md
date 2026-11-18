@@ -128,7 +128,9 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    finished, `Pacing::record_pipeline`), which the render thread made necessary; the pictures
    still skipped are in the perf log. A picture is the shell's for about 4 refreshes, mostly
    waiting for the shell's release poll while its main thread waits in `get_current_texture`: a
-   release thread could bring the pool back down.
+   release thread could bring the pool back down. Done (2026-11-18, with 3 pictures under way at
+   once, the render thread's own budget and Mugetsu's present thread in clients; run on Windows in
+   game: STATUS.md, "Pictures under way together"). The pool stays at 5.
 4. ~~**Mugetsu's Windows changes**~~ ported (2026-11-17, type-checked for Windows only):
    DirectX 12 as Automatic's choice on Windows (`mugetsu::automatic_graphics`, unit-tested), the
    DirectX 12 crash marker, the Vulkan retry when DirectX 12 can't start (`mugetsu::open_gpu`, in

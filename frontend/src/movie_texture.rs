@@ -232,6 +232,18 @@ impl RenderTarget for MovieTexture {
     ) -> wgpu::SubmissionIndex {
         queue.submit(command_buffers)
     }
+
+    /// Turu (Mugetsu 2.0.0's `MovieView`): with a present thread (a tab's client), the picture is
+    /// finished and submitted there, and the screen's own picture of it is sent after it, through
+    /// the same thread (`ClientScreen::set_present_thread`). Without one this isn't asked.
+    fn submit_later(
+        &self,
+        _frame: Self::Frame,
+    ) -> Result<ruffle_render_wgpu::target::LaterSubmit, Self::Frame> {
+        Ok(Box::new(|queue, command_buffers| {
+            queue.submit(command_buffers)
+        }))
+    }
 }
 
 #[derive(Debug)]

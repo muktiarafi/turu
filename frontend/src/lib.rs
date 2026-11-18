@@ -14,6 +14,8 @@ pub mod documents;
 #[cfg(feature = "ruffle")]
 pub mod engine;
 pub mod game_files;
+#[cfg(feature = "ruffle")]
+pub mod gpu_waiter;
 pub mod graphics_tips;
 pub mod grid;
 pub mod gui;

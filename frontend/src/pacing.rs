@@ -19,14 +19,22 @@
 
 use std::time::{Duration, Instant};
 
+/// With a render thread (Mugetsu 2.0.0's `ruffle_render_wgpu::render_thread`): the milliseconds
+/// a second that thread may spend recording pictures, budgeted apart from the player's thread,
+/// whose share it isn't (Mugetsu's `RENDER_THREAD_BUDGET_MS`).
+const RENDER_THREAD_BUDGET_MS: f64 = 850.0;
+
 pub struct Pacing {
     /// Recent averages of a draw's and a SWF frame's time on the player's thread (ms).
     draw_cost_ms: f64,
     frame_cost_ms: f64,
+    /// With a render thread: the recent average of a picture's time on it (ms; 0 without one).
+    thread_cost_ms: f64,
     /// A process tab's client: the recent average of a picture's whole way, from its draw to the
-    /// GPU having finished it (ms; 0 elsewhere). It draws the next only then, so new pictures
-    /// can't come faster, whatever each step costs (the render thread splits the draw in two).
+    /// GPU having finished it (ms; 0 elsewhere): with one picture under way at a time
+    /// (`in_flight`), new ones can't come faster; with more it's only logged (see `plan`).
     pipeline_ms: f64,
+    in_flight: u32,
     /// Draw a new picture on every n-th refresh of the display.
     draw_divisor: u32,
     /// While interpolating: when the last new picture was due.
@@ -51,7 +59,9 @@ impl Pacing {
         Self {
             draw_cost_ms: 2.0,
             frame_cost_ms: 3.0,
+            thread_cost_ms: 0.0,
             pipeline_ms: 0.0,
+            in_flight: 1,
             draw_divisor: 1,
             picture_due: Instant::now(),
             divisor_up_since: None,
@@ -94,6 +104,27 @@ impl Pacing {
         self.draw_cost_ms = self.draw_cost_ms * 0.9 + cost * 0.1;
     }
 
+    /// The recent average of a draw's time on the player's thread (ms; see `record_draw`).
+    pub fn draw_cost_ms(&self) -> f64 {
+        self.draw_cost_ms
+    }
+
+    /// With a render thread, a picture took `ms` on it (its own budget, see
+    /// `RENDER_THREAD_BUDGET_MS`); one-off slow ones count at most 3x the average.
+    pub fn record_thread(&mut self, ms: f64) {
+        let ms = if self.thread_cost_ms > 0.0 {
+            ms.min(self.thread_cost_ms * 3.0)
+        } else {
+            ms
+        };
+        self.thread_cost_ms = self.thread_cost_ms * 0.9 + ms * 0.1;
+    }
+
+    /// See `thread_cost_ms` (0 without a render thread).
+    pub fn thread_cost_ms(&self) -> f64 {
+        self.thread_cost_ms
+    }
+
     /// See `pipeline_ms` (0 where nothing records it).
     pub fn pipeline_ms(&self) -> f64 {
         self.pipeline_ms
@@ -108,6 +139,11 @@ impl Pacing {
             ms
         };
         self.pipeline_ms = self.pipeline_ms * 0.9 + ms * 0.1;
+    }
+
+    /// A process tab's client: how many pictures may be under way at once (see `pipeline_ms`).
+    pub fn set_in_flight(&mut self, pictures: u32) {
+        self.in_flight = pictures.max(1);
     }
 
     /// While interpolating, for a draw that started at `started`: whether it draws a new
@@ -142,16 +178,36 @@ impl Pacing {
         // of drawing once per frame), as after a room has loaded.
         let refresh_hz = 1.0 / self.refresh_interval.as_secs_f64();
         let spare_ms = (650.0 - self.frame_cost_ms * frame_rate).max(100.0);
-        let divisor_for = |cost_ms: f64| {
-            (refresh_hz * cost_ms.max(0.5) / spare_ms)
-                .ceil()
-                .clamp(1.0, 16.0) as u32
+        // With a render thread, its share of a picture is budgeted apart, as in Mugetsu: charged
+        // to the player's thread as well, battleon's 6 ms pictures got every 3rd refresh at
+        // 165 Hz, where the two threads could afford every 2nd.
+        let thread_cost_ms = self.thread_cost_ms;
+        let divisor_for = |cost_ms: f64, thread_margin: f64| {
+            let player = refresh_hz * cost_ms.max(0.5) / spare_ms;
+            let thread = if thread_cost_ms > 0.0 {
+                refresh_hz * (thread_cost_ms * thread_margin).max(0.5) / RENDER_THREAD_BUDGET_MS
+            } else {
+                0.0
+            };
+            player.max(thread).ceil().clamp(1.0, 16.0) as u32
         };
-        // A picture's whole way has to fit between two new ones, with room for a late refresh.
+        // With one picture under way at a time, its whole way has to fit between two new ones,
+        // with room for a late refresh. With more, there's no such floor, as in Mugetsu: pictures
+        // wait for a free slot and as many get through as the GPU allows, unevenly (Yulgar beside
+        // Mugetsu on one GPU: the floor took a client to one picture per frame, 24, where ~33
+        // got through and Mugetsu kept interpolating at 30-35).
         let refresh_ms = self.refresh_interval.as_secs_f64() * 1000.0;
-        let pipeline_divisor =
-            |margin: f64| ((self.pipeline_ms * margin / refresh_ms).ceil() as u32).clamp(1, 16);
-        let needed = divisor_for(self.draw_cost_ms).max(pipeline_divisor(1.15));
+        let pipeline_divisor = |margin: f64| {
+            if self.in_flight > 1 {
+                return 1;
+            }
+            ((self.pipeline_ms * margin / refresh_ms).ceil() as u32).clamp(1, 16)
+        };
+        // (No budget of the GPU's time, as in Mugetsu: what a picture takes the GPU depends on the
+        // rate itself, a built-in GPU's clock falling with the load, so a budget drawn from it
+        // stepped down and never came back: 10 ms a picture interpolating in battleon, 14 ms in
+        // the same room at one picture per frame.)
+        let needed = divisor_for(self.draw_cost_ms, 1.0).max(pipeline_divisor(1.15));
         let lasted = |since: &mut Option<Instant>, wanted: bool, secs: f64| {
             if !wanted {
                 *since = None;
@@ -159,7 +215,7 @@ impl Pacing {
             }
             now.duration_since(*since.get_or_insert(now)).as_secs_f64() >= secs
         };
-        let affordable = divisor_for(self.draw_cost_ms * 1.3).max(pipeline_divisor(1.4));
+        let affordable = divisor_for(self.draw_cost_ms * 1.3, 1.3).max(pipeline_divisor(1.4));
         let once_per_frame =
             (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
         let big_step = once_per_frame || affordable * 2 <= self.draw_divisor;
@@ -326,6 +382,70 @@ mod tests {
         pacing.plan(start + Duration::from_millis(700), 30.0);
         assert!(pacing.plan(start + Duration::from_millis(5000), 30.0));
         assert_eq!(pacing.draw_divisor, 1);
+    }
+
+    #[test]
+    fn pictures_under_way_together_share_the_way() {
+        // 165 Hz, 30 ms from a draw to its finished picture (battleon-2 on a Radeon 780M): one
+        // at a time is not even 1.5 pictures per frame; with three at a time the way sets no floor
+        // (as many get through as the GPU allows), so cheap draws aim for every refresh.
+        let start = Instant::now();
+        let run = |in_flight: u32| {
+            let mut pacing = Pacing::new();
+            pacing.set_refresh_rate(165_000);
+            pacing.set_in_flight(in_flight);
+            for _ in 0..100 {
+                pacing.record_draw(1.0);
+                pacing.record_pipeline(30.0);
+            }
+            pacing.plan(start, 24.0);
+            let interpolates = pacing.plan(start + Duration::from_millis(600), 24.0);
+            (interpolates, pacing.draw_divisor)
+        };
+        assert!(!run(1).0);
+        assert_eq!(run(3), (true, 1));
+    }
+
+    #[test]
+    fn a_crowded_room_left_for_a_lighter_one_interpolates_again() {
+        // Yulgar with 20 players: 12 ms draws, once per frame; back in battleon, 5 ms draws
+        // (drawn once per frame meanwhile, as they are while not interpolating): it comes back.
+        let mut pacing = Pacing::new();
+        pacing.set_refresh_rate(165_000);
+        pacing.set_in_flight(3);
+        for _ in 0..100 {
+            pacing.record_frame(1.5);
+            pacing.record_draw(12.0);
+            pacing.record_pipeline(30.0);
+        }
+        let start = Instant::now();
+        pacing.plan(start, 30.0);
+        assert!(!pacing.plan(start + Duration::from_millis(600), 30.0));
+        for _ in 0..100 {
+            pacing.record_draw(5.0);
+            pacing.record_pipeline(15.0);
+        }
+        pacing.plan(start + Duration::from_millis(700), 30.0);
+        assert!(pacing.plan(start + Duration::from_millis(1800), 30.0));
+        assert_eq!(pacing.draw_divisor, 2, "82.5 a second, as in battleon");
+    }
+
+    #[test]
+    fn a_render_thread_has_a_budget_of_its_own() {
+        // battleon at 165 Hz: the player's thread walks the stage in 2 ms, the render thread
+        // records the picture in 6 ms. Charged to the player's thread, 6 ms with 30 frames a
+        // second of 3 ms is every 3rd refresh; on its own budget, every 2nd.
+        let mut pacing = Pacing::new();
+        pacing.set_refresh_rate(165_000);
+        for _ in 0..100 {
+            pacing.record_frame(3.0);
+            pacing.record_draw(2.0);
+            pacing.record_thread(6.0);
+        }
+        let start = Instant::now();
+        pacing.plan(start, 30.0);
+        assert!(pacing.plan(start + Duration::from_millis(600), 30.0));
+        assert_eq!(pacing.draw_divisor, 2);
     }
 
     #[test]
