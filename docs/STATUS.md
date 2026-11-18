@@ -973,6 +973,23 @@ memory budget (NVIDIA, AMD).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.
 
+- **Tabs' saved game data** (fixed 2026-11-18): Flash's shared objects (AQW's `AQLite_Data`,
+  with its key bindings and options; `AQWUserPref`; `ignoreList`), which the window writes when
+  its player drops at close, were never written by a tab's client: the shell killed it at once,
+  and its own quit path ends with `exit_now`, which skips the drop. Data the game didn't write
+  itself was lost each time a tab or the shell closed. Now the client writes it first when its
+  connection closes, and the shell closes the connections and waits up to 3 s (`CLOSE_GRACE`)
+  before killing a client that hasn't ended (closing one tab waits on a thread; closing the shell
+  waits for all at once, about 20 ms in a run). Turu also writes each shared object whole (a file
+  of its own, then renamed: `preferences/storage.rs` `WholeWrites`; in place if Windows refuses
+  the rename), as clients share the folder and now write it together at close; Ruffle's emptied
+  the file and wrote it. A client whose shell crashed still ends at once (`--exit-with-parent`)
+  without writing.
+  Looked into and left: the game's messages and a failed load of the root movie only go to a
+  client's log (Ruffle never calls `UiBackend::message`; the root movie is `turu.swf`, and AQW's
+  own load failure is reported by it to the bot), no file dialogs or `fscommand` in a client
+  (AQW's client never browses for files: `FileReference` is only named in its SmartFoxServer
+  library; and it has no `fscommand`).
 - **Tabs' input** (2026-11-18, the gaps M6 left in a tab's client; the shell passes the window's
   on to the tab on screen):
   * **Input methods** (IME): the client asks for one (`ToShell::Ime`: allowed, a password's, where

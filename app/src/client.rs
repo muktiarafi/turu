@@ -233,6 +233,11 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             // its report written before the end (`windows::wait_for_crash_report`).
             crate::mugetsu::set_exit_phase(1);
             let _ = forward.sender.send(EngineEvent::Run(Box::new(|player| {
+                // Turu: the game's saved data (Flash's shared objects: AQW's saved login and
+                // preferences) is written first, as the window writes it when its player drops:
+                // `exit_now` below skips the player's drop, which would.
+                player.flush_shared_objects();
+                tracing::info!("closing: the game's saved data written");
                 // The render thread's storage holds its own of the device: let go of there too,
                 // once its last picture is done (at once without one).
                 let renderer = player.renderer_mut();

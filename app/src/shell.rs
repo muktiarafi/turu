@@ -622,7 +622,44 @@ fn spawn_reader(
     }
 }
 
-/// Stops a tab's client: its connection, stdin (`--exit-with-parent`) and process.
+/// How long a closing client has to write the game's saved data and end (`close_clients`).
+const CLOSE_GRACE: Duration = Duration::from_secs(3);
+
+/// Closes tabs' clients as they close themselves: their connections first, at which a client
+/// writes the game's saved data (AQW's saved login and preferences) and ends; whoever hasn't
+/// ended after [`CLOSE_GRACE`] is stopped (`stop`). Turu: `stop` alone killed them at once, and
+/// the game's unsaved data went with them (the window writes it when it closes).
+fn close_clients<'a>(tabs: impl IntoIterator<Item = &'a mut Tab>) -> Vec<Child> {
+    let mut children = Vec::new();
+    for tab in tabs {
+        if let Some(out) = tab.out.take() {
+            let _ = out.shutdown(std::net::Shutdown::Both);
+        }
+        children.extend(tab.child.take());
+    }
+    children
+}
+
+/// Waits up to [`CLOSE_GRACE`] for closing clients (`close_clients`) to end, and kills the rest.
+fn end_clients(mut children: Vec<Child>) {
+    let deadline = Instant::now() + CLOSE_GRACE;
+    loop {
+        children.retain_mut(|child| !matches!(child.try_wait(), Ok(Some(_))));
+        if children.is_empty() || Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    for mut child in children {
+        tracing::warn!("Shell: client {} didn't close in time; stopped", child.id());
+        drop(child.stdin.take());
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Stops a tab's client at once (gone, hung, never connected): its connection, stdin
+/// (`--exit-with-parent`) and process. One that's working closes with `close_clients`.
 fn stop(tab: &mut Tab) {
     if let Some(out) = tab.out.take() {
         let _ = out.shutdown(std::net::Shutdown::Both);
@@ -885,7 +922,15 @@ impl ShellApp {
         if let Some(pid) = tab.pid() {
             self.surfaces.remove(&pid);
         }
-        stop(&mut tab);
+        // Its client writes the game's saved data and ends on a thread of its own: the window
+        // doesn't wait.
+        let children = close_clients([&mut tab]);
+        let spawned = std::thread::Builder::new()
+            .name("Turu Tab Close".into())
+            .spawn(move || end_clients(children));
+        if let Err(e) = spawned {
+            tracing::warn!("Shell: couldn't wait for tab {id}'s client: {e}");
+        }
         tracing::info!("Shell: tab {id} closed");
         if self.shown == id {
             let next = self.tabs[index.min(self.tabs.len() - 1)].id;
@@ -2520,8 +2565,9 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
         // it, are let go of now, while the driver is alive, and wgpu's last command buffers are
         // dropped (2 s at most), so the device is gone before the rest of the shutdown, not
         // during it: on DirectX 12, Turu's default on Windows, that crashed.
+        // The clients write the game's saved data and end together (`CLOSE_GRACE` at most).
+        end_clients(close_clients(self.tabs.iter_mut()));
         for tab in &mut self.tabs {
-            stop(tab);
             tab.shown = None;
             tab.upload = None;
         }
