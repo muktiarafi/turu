@@ -147,11 +147,19 @@ pub(crate) fn free_memory(players: &mut EachPlayer<'_>, thorough: bool) -> Freed
 
 /// AQW build: frees the renderer's spare textures and lets the GPU release the memory.
 pub(crate) fn trim_renderer(player: &mut ruffle_core::Player) {
-    if let Some(renderer) = <dyn std::any::Any>::downcast_mut::<
-        ruffle_render_wgpu::backend::WgpuRenderBackend<crate::gui::MovieView>,
-    >(player.renderer_mut())
-    {
-        renderer.aqw_trim_memory();
+    let renderer = player.renderer_mut();
+    // Turu: the window's renderer draws into a `MovieView`, a tab's client's into a
+    // `MovieTexture` (behind a render thread or not): asked for the window's only, a client
+    // never trimmed.
+    let trimmed =
+        ruffle_render_wgpu::render_thread::with_wgpu_backend::<crate::gui::MovieView, _>(renderer, |renderer| {
+            renderer.aqw_trim_memory()
+        });
+    if trimmed.is_none() {
+        ruffle_render_wgpu::render_thread::with_wgpu_backend::<turu_frontend::movie_texture::MovieTexture, _>(
+            renderer,
+            |renderer| renderer.aqw_trim_memory(),
+        );
     }
 }
 
@@ -290,12 +298,7 @@ pub(crate) fn memory_watch(player: &mut ruffle_core::Player) -> Option<LimitTrim
         // Shapes not drawn for 2 minutes (gear of players who left, other maps) are
         // tessellated again if they come back.
         let shapes = ruffle_core::evict_unused_shapes(120);
-        if let Some(renderer) = <dyn std::any::Any>::downcast_mut::<
-            ruffle_render_wgpu::backend::WgpuRenderBackend<crate::gui::MovieView>,
-        >(player.renderer_mut())
-        {
-            renderer.aqw_trim_memory();
-        }
+        trim_renderer(player);
         ruffle_render_wgpu::set_memory_pressure(true);
         let was = std::mem::replace(&mut watch.pressure, true);
         watch.low_since = None;
