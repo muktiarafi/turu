@@ -1082,7 +1082,8 @@ so the 503 wasn't seen there). Not run: `POST /update` through it (the client's 
   Mugetsu's. Windows' present thread follows Mugetsu's default again (clients never use it).
 * **Not done:** frame interpolation's in-between pictures and uncapped pacing in clients (done
   since, 2026-11-18: STATUS.md, "Frame interpolation in a tab's client"), IME,
-  gamepads, drag-and-drop, Flash's right-click items in a client; TuruActivity's in-process
+  gamepads, drag-and-drop, Flash's right-click items in a client (done since, 2026-11-18:
+  STATUS.md, "Tabs' input"); TuruActivity's in-process
   fallbacks for the text field and documents (unreachable now) are still there (removed since,
   2026-11-18, with the natives and the Rust activity paths behind them). Checked on the
   Mac (shell, a client's GPU loss and restart, the memory limit in a client) and the emulator

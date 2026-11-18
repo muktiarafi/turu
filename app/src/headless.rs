@@ -131,9 +131,13 @@ pub(crate) fn build_player(
     sender: Sender<EngineEvent>,
     tab: turu::TabId,
     renderer: impl RenderBackend + 'static,
-    // A shell's client's (`client.rs`): its fonts and clipboard, and sound. `--headless` has
-    // nobody to hear or see it.
-    client: Option<ClientUiBackend>,
+    // A shell's client's (`client.rs`): its fonts and clipboard, sound, and where the player's
+    // notifications go (a text field wanting an input method). `--headless` has nobody to hear
+    // or see it.
+    client: Option<(
+        ClientUiBackend,
+        async_channel::Sender<ruffle_core::events::PlayerNotification>,
+    )>,
     quality: StageQuality,
 ) -> Arc<Mutex<Player>> {
     let opt = LaunchOptions::from(preferences);
@@ -158,8 +162,8 @@ pub(crate) fn build_player(
     let navigator = crate::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));
     let mut builder = PlayerBuilder::new();
     match client {
-        Some(ui) => {
-            builder = builder.with_ui(ui);
+        Some((ui, notifications)) => {
+            builder = builder.with_ui(ui).with_notification_sender(notifications);
             match CpalAudioBackend::new(preferences.output_device_name().as_deref()) {
                 Ok(audio) => builder = builder.with_audio(audio),
                 Err(e) => tracing::error!("No sound: couldn't open the audio device: {e}"),

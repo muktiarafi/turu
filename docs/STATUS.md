@@ -776,9 +776,11 @@ memory budget (NVIDIA, AMD).
 ## Known gaps
 
 - **Tabs are processes since M6** (2026-11-17): a crash or a lost GPU device ends one tab, which
-  the shell starts again logged in. Not yet in a tab's client: IME
-  composition, gamepads, drag-and-drop and Flash's own right-click items (the window for a movie
-  given on the command line still has them). Not run on Windows or Linux, nor on phones (M4).
+  the shell starts again logged in. Since 2026-11-18 a tab's client has the window's input
+  methods, gamepads, dropped files and Flash's right-click menu too (see "Tabs' input" below).
+  Turu's own UI fonts have no Chinese, Japanese or Korean glyphs (composed text shows as boxes in
+  its text boxes, in the window too); AQW takes few special characters and none of those, so it
+  isn't worth fonts of its own. Not run on Windows or Linux, nor on phones (M4).
   The tabs share the data folder and Ruffle's SharedObjects (the game's saved
   login), as VibeSkua's processes do. `--api` steers any tab (`/tabs/<id>/...`; routes without it
   act on the first). Army > Army Queue runs squads
@@ -971,6 +973,39 @@ memory budget (NVIDIA, AMD).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.
 
+- **Tabs' input** (2026-11-18, the gaps M6 left in a tab's client; the shell passes the window's
+  on to the tab on screen):
+  * **Input methods** (IME): the client asks for one (`ToShell::Ime`: allowed, a password's, where
+    its candidates go) while one of Turu's text boxes has the focus (as egui-winit allows it in a
+    window), or the game's focused text field does with Ruffle's IME preference on (`[ime]
+    enabled = true` in Ruffle's `preferences.toml`, off by default, as in the window); the shell
+    applies the tab on screen's while the window has the focus, and passes the composition on
+    (`ToClient::Ime`): to the text box as egui-winit does, else to the game as the window's
+    `app.rs` does. Keys go nowhere while a composition is under way (Enter mustn't send the game's
+    chat). The game field's area is converted from the stage's pixels to the picture's (the
+    window takes them as its viewport's, which puts the candidates off when the game is scaled).
+  * **Gamepads**: the shell reads them on a thread of its own (gilrs; the event loop sleeps) and
+    passes each button on (`ToClient::Gamepad`); they act only through `--gamepad-button`'s
+    mappings to keys, as in the window (the clients get the shell's flags).
+  * **Dropped files**: a script (`.ts`, `.js`) dropped on the window is loaded in the tab on
+    screen, as Load Script loads it (not started; not while a script runs); anything else is
+    refused in the log. The window opens a dropped file as a new movie, which would replace AQW.
+  * **Flash's right-click menu**: a right press the game doesn't take opens Flash's items
+    (`Player::prepare_context_menu`) in Turu's UI, holding the release back until it closes, as
+    the window's menu does. AQW turns Flash's own items off and adds none at its login screen
+    (the list was empty), so it shows only if the game adds items; in game it wasn't seen. A
+    press outside closes it from its second frame on (egui lays a new area out unseen first, and
+    the opening press counted as one elsewhere), and Esc; a checked item shows selected.
+  Checked on the Mac with `TURU_SHELL_TEST`'s new lines (`ime`, `drop`, `gamepad`, `rclick`): a
+  committed text in the game's Username field and in Options' search box; the window's IME
+  allowed for the box, and for the game's field only with the preference, with the field's area
+  on the field; a dropped script loaded, a picture refused; a right click at the login screen
+  opened nothing, and with two items faked for one run the menu showed and a press elsewhere and
+  Esc closed it; Backspace during a composition was held back and reached the box after it. Not run: a real input method and its candidate window, plain typing with the
+  IME allowed (macOS didn't let this session send keys: on most systems winit doesn't send an
+  input method's keys, which egui-winit counts on too), a real gamepad and mapping, a real drag,
+  Flash's menu with items, Windows and Linux.
+
 ## Differences from VibeSkua
 
 Where Turu's behaviour differs from VibeSkua's C# on purpose, and why (`CLAUDE.md`: behaviour
@@ -979,6 +1014,9 @@ is marked `Turu:` (`grep -rn 'Turu:' bot/src frontend/src`); in the scripts, fix
 marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known gaps" above, as
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
+
+- **A script dropped on the window is loaded** (a process tab's, 2026-11-18): VibeSkua takes no
+  dropped files; Turu loads a dropped `.ts` or `.js` in the tab on screen, as Load Script does.
 
 - **Refusals are logged:** a turn-in the server refuses (`ccqr` without `bSuccess`), with its
   reply and how far apart the quest's last two `tryQuestComplete` were sent, and the server's

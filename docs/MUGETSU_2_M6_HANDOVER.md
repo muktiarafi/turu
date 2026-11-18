@@ -146,8 +146,13 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    On macOS the shell's new close was run (`TURU_SHELL_TEST` line `quit`): exit code 0, its last
    log line written, no client left; the shell kills its clients when it closes, so a client's
    own close path runs only when it loses the shell otherwise.
-5. **Client gaps left from M6**: IME composition, gamepads, drag-and-drop, Flash's own right-click
-   items. ~~Mugetsu's one-time tips in clients~~ done (2026-11-18): the Quality Low tip and the
+5. ~~**Client gaps left from M6**~~: IME composition, gamepads, drag-and-drop and Flash's own
+   right-click items done (2026-11-18, branch `tab-gaps`; STATUS.md, "Tabs' input"), checked
+   through the shell's test lines only (Flash's menu drawn once with faked items): a real input
+   method, plain typing with it allowed, a real gamepad and drag, and the menu with a game's own
+   items (AQW's was empty at the login screen), are still to try. The game's IME needs Ruffle's
+   `[ime] enabled` preference, which nothing in Turu sets: AQW takes few special characters and
+   no Chinese, Japanese or Korean, so it isn't worth a row of its own. ~~Mugetsu's one-time tips in clients~~ done (2026-11-18): the Quality Low tip and the
    Performance mode offer are in every tab, desktop clients and Android slots
    (`turu_frontend::graphics_tips`, a modal in Turu's UI: `gui/turu/graphics_tips.rs`), on
    built-in graphics (always on a phone); once per data folder (markers `graphics-*` there, made

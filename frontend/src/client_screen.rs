@@ -24,12 +24,14 @@ use crate::engine::Step;
 use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
 use crate::pacing::Pacing;
-use crate::shell::{Button, Cursor, GridShow, Mods, Pace, PointerKind, SHARED_POOL, ToClient};
+use crate::shell::{
+    Button, Cursor, GridShow, ImeInput, Mods, Pace, PointerKind, SHARED_POOL, ToClient,
+};
 use crate::turu;
 use ruffle_core::ViewportDimensions;
 use ruffle_core::events::{
-    KeyDescriptor, KeyLocation, LogicalKey, MouseButton, MouseWheelDelta, NamedKey, PhysicalKey,
-    TextControlCode,
+    GamepadButton, ImeCursorArea, ImeEvent, ImeNotification, ImePurpose, KeyDescriptor,
+    KeyLocation, LogicalKey, MouseButton, MouseWheelDelta, NamedKey, PhysicalKey, TextControlCode,
 };
 use ruffle_core::{Player, PlayerEvent};
 use ruffle_render_wgpu::descriptors::Descriptors;
@@ -65,6 +67,10 @@ pub enum Picture {
 
 /// Where each picture goes.
 pub type FrameSink = Box<dyn FnMut(Picture)>;
+
+/// Tells the shell what input method the tab wants: allowed, a password's, the text's area in the
+/// picture's pixels (`ToShell::Ime`).
+pub type ImeSink = Box<dyn Fn(bool, bool, Option<[f32; 4]>)>;
 
 /// Makes GPU surfaces the shell can open too (the client's, by platform: `app/src/client.rs`).
 pub trait SharedSurfaces {
@@ -183,6 +189,32 @@ pub struct ClientScreen {
     /// (`render_thread::target_state`; None without a render thread, read each time then):
     /// reading it behind a render thread waits for the picture being recorded.
     movie: Option<(Option<u64>, wgpu::BindGroup)>,
+    /// An input method over the shell's window (`set_ime_sink`): whether the game's text fields
+    /// may have one (Ruffle's IME preference), the game's focused field's (a password's or not,
+    /// its area in the picture's pixels), Turu's focused text box's area, what the shell was told
+    /// last, and whether a composition is under way (its keys are the input method's).
+    ime_sink: Option<ImeSink>,
+    game_ime_allowed: bool,
+    game_ime: Option<(bool, ImeCursorArea)>,
+    ui_ime: Option<([f32; 4], bool)>,
+    ime_sent: Option<(bool, bool, Option<[f32; 4]>)>,
+    composing: bool,
+    /// Flash's right-click menu, while it's open (see `open_menu`).
+    menu: Option<Menu>,
+}
+
+/// Flash's right-click menu (`Player::prepare_context_menu`), drawn by Turu's UI as the window's
+/// right-click menu draws it: AQW turns Flash's own items off and, at its login screen, adds none,
+/// so it shows only for items a game adds.
+struct Menu {
+    items: Vec<ruffle_core::ContextMenuItem>,
+    /// Where it opens, in points, and the right button's release it holds back for the game,
+    /// sent when it closes (in the game's pixels), as the window does.
+    at: egui::Pos2,
+    release: (f64, f64),
+    /// Drawn once already: a new egui area is laid out unseen first, and the press that opened
+    /// the menu must not close it.
+    shown: bool,
 }
 
 impl ClientScreen {
@@ -244,6 +276,13 @@ impl ClientScreen {
             uncapped_interval: None,
             skipped: 0,
             movie: None,
+            ime_sink: None,
+            game_ime_allowed: false,
+            game_ime: None,
+            ui_ime: None,
+            ime_sent: None,
+            composing: false,
+            menu: None,
         }
     }
 
@@ -312,6 +351,191 @@ impl ClientScreen {
             if let Some(sink) = &self.cursor_sink {
                 sink(cursor);
             }
+        }
+    }
+
+    /// Tells the shell whether its window takes an input method now (`ToShell::Ime`: allowed, a
+    /// password's, the text's area), when that changes; `game` says whether the game's text fields
+    /// may have one (Ruffle's IME preference, as the window has it). Turu's text boxes always may,
+    /// as egui-winit lets them in a window.
+    pub fn set_ime_sink(&mut self, game: bool, sink: ImeSink) {
+        self.game_ime_allowed = game;
+        self.ime_sink = Some(sink);
+    }
+
+    /// The game's focused text field wants an input method, or no longer does (the player's
+    /// notification).
+    pub fn game_ime(&mut self, player: &mut Player, notification: ImeNotification) {
+        // Ruffle gives the field's area in the stage's pixels (AQW's 958x550); the game is drawn
+        // scaled to its viewport, whose pixels the rest goes by. (The window's `app.rs` takes them
+        // as the viewport's.)
+        let view = player.mutate_with_update_context(|context| context.stage.view_matrix());
+        let to_view = |area: ImeCursorArea| ImeCursorArea {
+            x: f64::from(view.a) * area.x + view.tx.to_pixels(),
+            y: f64::from(view.d) * area.y + view.ty.to_pixels(),
+            width: f64::from(view.a) * area.width,
+            height: f64::from(view.d) * area.height,
+        };
+        match notification {
+            ImeNotification::ImeReady {
+                purpose,
+                cursor_area,
+            } => {
+                self.game_ime = Some((
+                    matches!(purpose, ImePurpose::Password),
+                    to_view(cursor_area),
+                ))
+            }
+            ImeNotification::ImePurposeUpdated(purpose) => {
+                if let Some((password, _)) = &mut self.game_ime {
+                    *password = matches!(purpose, ImePurpose::Password);
+                }
+            }
+            ImeNotification::ImeCursorAreaUpdated(area) => {
+                if let Some((_, cursor_area)) = &mut self.game_ime {
+                    *cursor_area = to_view(area);
+                }
+            }
+            ImeNotification::ImeNotReady => self.game_ime = None,
+        }
+        self.sync_ime();
+    }
+
+    /// Tells the shell what input method the tab wants now, if that changed: Turu's focused text
+    /// box's, else the game's focused field's (with the preference), and none while the tab
+    /// isn't seen whole.
+    fn sync_ime(&mut self) {
+        let tile = self.grid.as_ref().is_some_and(|grid| !grid.active);
+        let seen = self.shown.is_some() && !self.covered && !tile;
+        let wanted = if !seen {
+            (false, false, None)
+        } else if let Some((area, password)) = self.ui_ime {
+            (true, password, Some(area))
+        } else if let Some((password, area)) =
+            self.game_ime.as_ref().filter(|_| self.game_ime_allowed)
+        {
+            // The field's area is in the game's pixels: fewer in Performance mode, and offset by
+            // where the game is in the picture.
+            let (left, top) = self.offsets();
+            let scale = self.render_scale as f32;
+            (
+                true,
+                *password,
+                Some([
+                    left + area.x as f32 / scale,
+                    top + area.y as f32 / scale,
+                    area.width as f32 / scale,
+                    area.height as f32 / scale,
+                ]),
+            )
+        } else {
+            (false, false, None)
+        };
+        if !wanted.0 {
+            self.composing = false;
+        }
+        if self.ime_sent == Some(wanted) {
+            return;
+        }
+        self.ime_sent = Some(wanted);
+        if let Some(sink) = &self.ime_sink {
+            sink(wanted.0, wanted.1, wanted.2);
+        }
+    }
+
+    /// An input method's composition from the shell: Turu's focused text box's, as egui-winit
+    /// hands it over in a window, else the game's, as the window's `app.rs` does.
+    fn ime(&mut self, player: &mut Player, ime: ImeInput) {
+        let to_ui = self.ui_ime.is_some() || self.egui.egui_wants_keyboard_input();
+        match ime {
+            ImeInput::Preedit { text, cursor } => {
+                self.composing = !text.is_empty();
+                if to_ui {
+                    // egui wants the cursor's range in characters, winit gives it in bytes.
+                    let active_range_chars = cursor.and_then(|(start, end)| {
+                        let start_chars = text.get(..start)?.chars().count();
+                        let middle_chars = text.get(start..end)?.chars().count();
+                        Some(start_chars..start_chars + middle_chars)
+                    });
+                    self.events.push(egui::Event::Ime(egui::ImeEvent::Preedit {
+                        text,
+                        active_range_chars,
+                    }));
+                } else {
+                    player.handle_event(PlayerEvent::Ime(ImeEvent::Preedit(text, cursor)));
+                }
+            }
+            ImeInput::Commit { text } => {
+                self.composing = false;
+                if to_ui {
+                    self.events
+                        .push(egui::Event::Ime(egui::ImeEvent::Commit(text)));
+                } else {
+                    player.handle_event(PlayerEvent::Ime(ImeEvent::Commit(text)));
+                }
+            }
+            // (As egui-winit, otherwise ignored: they mean different things on X11 and Wayland.)
+            // A composition that ends without a commit (the window lost the focus) leaves the
+            // keys to the tab again.
+            ImeInput::Enabled | ImeInput::Disabled => self.composing = false,
+            ImeInput::Unknown => {}
+        }
+    }
+
+    /// A file dropped on the shell's window: a script (`.ts`, `.js`) is loaded, as Script Loader's
+    /// Load Script loads it (not started), unless a script runs.
+    fn dropped(&mut self, path: String) {
+        let path = std::path::PathBuf::from(path);
+        let bot = turu::bot();
+        let script = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("ts") || ext.eq_ignore_ascii_case("js"));
+        if !script {
+            bot.log(format!(
+                "Dropped {}: only scripts (.ts, .js) are taken",
+                path.display()
+            ));
+        } else if bot.scripts.status().is_active() {
+            bot.log(format!("Dropped {}: stop the script first", path.display()));
+        } else {
+            // Turu: VibeSkua takes no dropped files; a script dropped on a tab is loaded.
+            bot.scripts.load(&path);
+            bot.log(format!("Loaded script {}", path.display()));
+        }
+        self.request_repaint();
+    }
+
+    /// A right press the game didn't take (on the game, not Turu's UI): Flash's menu opens there,
+    /// if it has any items. The press's release is held back until it closes.
+    fn open_menu(&mut self, player: &mut Player, at: egui::Pos2, release: (f64, f64)) -> bool {
+        let items = player.prepare_context_menu();
+        if items.is_empty() {
+            return false;
+        }
+        self.menu = Some(Menu {
+            items,
+            at,
+            release,
+            shown: false,
+        });
+        self.ui_due = Some(Instant::now());
+        true
+    }
+
+    /// Closes Flash's menu, if it's open: the right button's release goes to the game (once), and
+    /// the item picked, if one was, runs.
+    fn close_menu(&mut self, player: &mut Player, picked: Option<usize>) {
+        let Some(menu) = self.menu.take() else {
+            return;
+        };
+        player.handle_event(PlayerEvent::MouseUp {
+            x: menu.release.0,
+            y: menu.release.1,
+            button: MouseButton::Right,
+        });
+        if let Some(index) = picked {
+            player.run_context_menu_callback(index);
         }
     }
 
@@ -478,6 +702,18 @@ impl ClientScreen {
                 self.refreshed = Some(now);
                 self.last_refreshed = Some(now);
             }
+            ToClient::Ime { ime } => self.ime(player, ime),
+            ToClient::Gamepad { button, pressed } => match button.parse::<GamepadButton>() {
+                Ok(button) => {
+                    player.handle_event(if pressed {
+                        PlayerEvent::GamepadButtonDown { button }
+                    } else {
+                        PlayerEvent::GamepadButtonUp { button }
+                    });
+                }
+                Err(_) => tracing::info!("A gamepad button I don't know: {button}"),
+            },
+            ToClient::Dropped { path } => self.dropped(path),
             ToClient::Text { text } => {
                 if self.egui.egui_wants_keyboard_input() {
                     self.events.push(egui::Event::Text(text));
@@ -488,6 +724,10 @@ impl ClientScreen {
                 }
             }
             ToClient::Focus { focused } => {
+                // The window's input method went with the focus (the shell turns it off).
+                if !focused {
+                    self.composing = false;
+                }
                 self.events.push(egui::Event::WindowFocused(focused));
                 player.handle_event(if focused {
                     PlayerEvent::FocusGained
@@ -516,6 +756,12 @@ impl ClientScreen {
         if self.shown.is_some() && !self.events.is_empty() {
             self.ui_due = Some(Instant::now());
         }
+        // Flash's menu goes with the tab's being seen whole (hidden, covered, another tab's tile).
+        let tile = self.grid.as_ref().is_some_and(|grid| !grid.active);
+        if self.shown.is_none() || self.covered || tile {
+            self.close_menu(player, None);
+        }
+        self.sync_ime();
     }
 
     /// After a tick or at the time asked: collects a finished readback, and draws when the game
@@ -927,8 +1173,10 @@ impl ClientScreen {
                     turu::shell_tab_action(turu::ShellTabAction::Select(id));
                     return;
                 }
-                // egui sees every press: one on the game closes an open menu, as on the desktop.
-                let on_ui = self.on_ui(x, y) || self.egui.egui_wants_pointer_input();
+                // egui sees every press: one on the game closes an open menu, as on the desktop
+                // (Flash's too, which takes every press while it's open).
+                let on_ui =
+                    self.menu.is_some() || self.on_ui(x, y) || self.egui.egui_wants_pointer_input();
                 self.pressed = Some((button, on_ui));
                 self.events.push(egui::Event::PointerMoved(pos));
                 self.events.push(egui::Event::PointerButton {
@@ -938,12 +1186,20 @@ impl ClientScreen {
                     modifiers: self.modifiers,
                 });
                 if !on_ui {
-                    player.handle_event(PlayerEvent::MouseDown {
+                    let handled = player.handle_event(PlayerEvent::MouseDown {
                         x: game_x,
                         y: game_y,
                         button: game_button,
                         index: None,
                     });
+                    // A right press the game didn't take opens Flash's menu (when it has items),
+                    // which then takes the release, as the window's does.
+                    if !handled
+                        && matches!(button, Button::Right)
+                        && self.open_menu(player, pos, (game_x, game_y))
+                    {
+                        self.pressed = Some((button, true));
+                    }
                 }
             }
             PointerKind::Up => {
@@ -981,6 +1237,16 @@ impl ClientScreen {
             mac_cmd: cfg!(target_os = "macos") && mods.command,
             command: mods.command,
         };
+        // While an input method composes, its keys are its own (winit doesn't send them on most
+        // systems; Enter there must not send the game's chat).
+        if self.composing {
+            return;
+        }
+        // Esc closes Flash's menu, as a click elsewhere does.
+        if pressed && name == "Escape" && self.menu.is_some() {
+            self.close_menu(player, None);
+            return;
+        }
         // Cut, copy and paste in Turu's text boxes, as egui-winit makes them in a window.
         if pressed && mods.command && self.egui.egui_wants_keyboard_input() {
             let event = match name {
@@ -1116,6 +1382,8 @@ impl ClientScreen {
         let top_points = top / ppp;
         let ui = &mut self.ui;
         let fps = (crate::platform::platform().show_fps() == Some(true)).then_some(self.fps);
+        let mut menu = self.menu.as_mut();
+        let mut menu_done = None;
         let output = self.egui.run_ui(raw_input, |root| {
             if tile {
                 return;
@@ -1128,7 +1396,29 @@ impl ClientScreen {
                 crate::gui::turu::show_headless_screen(root.ctx(), top_points);
             }
             ui.show_windows(root.ctx());
+            if let Some(menu) = menu.as_deref_mut() {
+                menu_done = show_menu(root.ctx(), menu);
+            }
         });
+        // Flash's menu: an item picked, or closed by a press elsewhere (after the UI's frame,
+        // which has the player's turn now).
+        if let Some(picked) = menu_done {
+            self.close_menu(player, picked);
+        }
+        // An input method for Turu's focused text box, as egui-winit allows one in a window.
+        self.ui_ime = output.platform_output.ime.as_ref().map(|ime| {
+            let rect = ime.rect;
+            (
+                [
+                    rect.min.x * ppp,
+                    rect.min.y * ppp,
+                    rect.width() * ppp,
+                    rect.height() * ppp,
+                ],
+                ime.purpose == egui::IMEPurpose::Password,
+            )
+        });
+        self.sync_ime();
         self.update_cursor(output.platform_output.cursor_icon);
         self.ui_due = output
             .viewport_output
@@ -1303,6 +1593,46 @@ impl ClientScreen {
             bind_group.clone(),
         ));
         Some(bind_group)
+    }
+}
+
+/// Draws Flash's right-click menu (see [`Menu`]) at its place, as the window's draws Flash's items:
+/// `Some(Some(i))` when item `i` was picked, `Some(None)` when it was closed by a press elsewhere
+/// (as a system's menu closes).
+fn show_menu(ctx: &egui::Context, menu: &mut Menu) -> Option<Option<usize>> {
+    let mut picked = None;
+    let response = egui::Area::new(egui::Id::new("turu_flash_menu"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(menu.at)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(160.0);
+                for (index, item) in menu.items.iter().enumerate() {
+                    if item.separator_before && index > 0 {
+                        ui.separator();
+                    }
+                    // A checked item shows selected (Turu's fonts have no check mark).
+                    let button = egui::Button::new(item.caption.as_str())
+                        .frame(false)
+                        .selected(item.checked);
+                    if ui.add_enabled(item.enabled, button).clicked() {
+                        picked = Some(index);
+                    }
+                }
+            });
+        })
+        .response;
+    let first = !std::mem::replace(&mut menu.shown, true);
+    let pressed_elsewhere = ctx.input(|input| {
+        input.pointer.any_pressed()
+            && input
+                .pointer
+                .interact_pos()
+                .is_some_and(|at| !response.rect.contains(at))
+    });
+    match picked {
+        Some(index) => Some(Some(index)),
+        None => (!first && pressed_elsewhere).then_some(None),
     }
 }
 

@@ -72,6 +72,14 @@ pub enum ToClient {
     },
     /// Text typed (a character, or what an input method committed).
     Text { text: String },
+    /// Desktop: an input method's composition over the window ([`ToShell::Ime`] allowed it): for
+    /// Turu's focused text box, else the game's.
+    Ime { ime: ImeInput },
+    /// Desktop: a gamepad's button, by Ruffle's name for it (`--gamepad-button`'s: "south",
+    /// "dpad-up", ...), pressed or released.
+    Gamepad { button: String, pressed: bool },
+    /// Desktop: a file dropped on the window.
+    Dropped { path: String },
     /// The window gained or lost the keyboard focus.
     Focus { focused: bool },
     /// The shell's tabs, for the client's tab strip (M2 defines it; the client doesn't draw it
@@ -194,6 +202,26 @@ pub enum Cursor {
     None,
 }
 
+/// An input method's composition, as winit gives it (`ToClient::Ime`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImeInput {
+    Enabled,
+    /// The text being composed, and the cursor in it (byte offsets), if shown.
+    Preedit {
+        text: String,
+        #[serde(default)]
+        cursor: Option<(usize, usize)>,
+    },
+    /// The composition is done: `text` is typed.
+    Commit {
+        text: String,
+    },
+    Disabled,
+    #[serde(other)]
+    Unknown,
+}
+
 /// How the shell presents a tab's pictures ([`ToShell::Pace`]), as its frame interpolation needs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -286,6 +314,16 @@ pub enum ToShell {
     Cursor { cursor: Cursor },
     /// Desktop: how the tab's pictures want presenting (frame interpolation), from now on.
     Pace { pace: Pace },
+    /// Desktop: whether the window takes an input method's composition now (a text box of Turu's,
+    /// or the game's with Ruffle's IME preference, has the focus), a password's or not, and where
+    /// its candidates go: the text's area in the picture's pixels (left, top, width, height).
+    Ime {
+        allowed: bool,
+        #[serde(default)]
+        password: bool,
+        #[serde(default)]
+        area: Option<[f32; 4]>,
+    },
     /// The GPU the client draws on (`adapter_key`): shared surfaces need the shell's.
     Gpu { adapter: String },
     /// Windows: shared surface `id`'s handle in the client's process (`handle`), which the shell
@@ -816,6 +854,27 @@ mod tests {
                 millihertz: 119_880,
             },
             ToClient::Refreshed,
+            ToClient::Ime {
+                ime: ImeInput::Preedit {
+                    text: "にほ".into(),
+                    cursor: Some((6, 6)),
+                },
+            },
+            ToClient::Ime {
+                ime: ImeInput::Commit {
+                    text: "日本".into(),
+                },
+            },
+            ToClient::Ime {
+                ime: ImeInput::Disabled,
+            },
+            ToClient::Gamepad {
+                button: "dpad-up".into(),
+                pressed: true,
+            },
+            ToClient::Dropped {
+                path: "/scripts/farm/Example.ts".into(),
+            },
         ];
         let mut bytes = Vec::new();
         for message in &to_client {
@@ -845,6 +904,16 @@ mod tests {
             },
             ToShell::Pace {
                 pace: Pace::Uncapped,
+            },
+            ToShell::Ime {
+                allowed: true,
+                password: false,
+                area: Some([10.0, 20.0, 1.0, 18.0]),
+            },
+            ToShell::Ime {
+                allowed: false,
+                password: false,
+                area: None,
             },
             ToShell::OpenTab {
                 username: Some("player_one".into()),

@@ -23,7 +23,10 @@
 //! Testing without anyone at the window: `TURU_SHELL_TEST=<file>` runs its lines in order (and,
 //! with `TURU_SHELL_TEST_FOLLOW=1`, lines appended to it later):
 //! `wait <seconds>`, `open` (a tab at the login screen), `select <id>`, `close <id>`, `kill <id>`
-//! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would),
+//! (its client, as a crash would), `click <x> <y>` (in the window's pixels, as the mouse would;
+//! `rclick` with the right button), `drop <path>` (a file dropped on the window), `gamepad <button>`
+//! (Ruffle's name, pressed and released), `ime preedit <text>` / `ime commit <text>` (an input
+//! method's, as winit gives it), `ime disabled` and `ime state` (the window's input method as applied, logged),
 //! `text <string>` (typed), `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
 //! `resize <width> <height>` (the window's size in points), `minimize on|off`, `cover off|on` (the
 //! window counts as seen though covered, or not), `nosurfaces` (the
@@ -143,6 +146,8 @@ enum ShellEvent {
     SurfaceArrived { pid: u32, id: u64, surface: SharedSurface },
     /// Turu's update state changed (a check, an install's progress): to every tab.
     Updates(turu_bot::updates::State),
+    /// A gamepad's button (Ruffle's name for it) was pressed or released: to the tab on screen.
+    Gamepad { button: &'static str, pressed: bool },
     /// The shell's Army clients changed (launched, ended, closed): to every tab.
     ArmyClients(Vec<shell::ArmyClientInfo>),
     /// A file dialog a tab's client asked for was answered (tab, process id, its id, the path).
@@ -193,6 +198,9 @@ struct Tab {
     adapter: Option<String>,
     /// Its client was told to send pixels (`ToClient::NoSurfaces`), until it's started again.
     pixels_only: bool,
+    /// The input method its client last asked for (`ToShell::Ime`: allowed, a password's, the
+    /// text's area), applied to the window while it's the tab on screen.
+    ime: (bool, bool, Option<[f32; 4]>),
 }
 
 impl Tab {
@@ -274,6 +282,8 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
     watch_updates(event_loop.create_proxy());
     // The tabs' processes of their own (Army > Accounts) are launched here: the list to them.
     watch_army(event_loop.create_proxy());
+    // Gamepads, for the tab on screen (`--gamepad-button` maps their buttons to keys).
+    watch_gamepads(event_loop.create_proxy());
     // Clients hand their pictures over as GPU surfaces where the shell can take them, unless
     // `TURU_NO_SHARED_SURFACES` says pixels.
     let surfaces_proxy = event_loop.create_proxy();
@@ -333,6 +343,8 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
         adapter: String::new(),
         fail_surfaces: false,
         never_covered: false,
+        ime_applied: None,
+        focused: true,
     };
     // The first tab logs in as `--headless` would: with the shell's own `TURU_PASSWORD`.
     app.open_tab(client_args, std::env::var("TURU_PASSWORD").ok());
@@ -398,6 +410,58 @@ fn watch_army(proxy: EventLoopProxy<ShellEvent>) {
 }
 
 /// Sends Turu's update state to the event loop whenever it changes (checked every second).
+/// Reads the gamepads on a thread of its own (gilrs waits there for their events: the event loop
+/// sleeps until something comes) and hands each button to the loop for the tab on screen. Ends
+/// when the loop has gone (the shell starts again after a graphics choice).
+fn watch_gamepads(proxy: EventLoopProxy<ShellEvent>) {
+    let spawned = std::thread::Builder::new().name("Turu Gamepads".into()).spawn(move || {
+        let mut gilrs = match gilrs::Gilrs::new() {
+            Ok(gilrs) => gilrs,
+            Err(e) => {
+                tracing::warn!("Shell: no gamepads ({e})");
+                return;
+            }
+        };
+        while let Some(event) = gilrs.next_event_blocking(None) {
+            let (button, pressed) = match event.event {
+                gilrs::EventType::ButtonPressed(button, _) => (button, true),
+                gilrs::EventType::ButtonReleased(button, _) => (button, false),
+                _ => continue,
+            };
+            let Some(button) = crate::util::gilrs_button_to_gamepad_button(button).map(gamepad_button_name) else {
+                continue;
+            };
+            if proxy.send_event(ShellEvent::Gamepad { button, pressed }).is_err() {
+                return;
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        tracing::warn!("Shell: no gamepads ({e})");
+    }
+}
+
+/// Ruffle's name for a gamepad's button, as `GamepadButton::from_str` reads it (`ToClient::Gamepad`).
+fn gamepad_button_name(button: ruffle_core::events::GamepadButton) -> &'static str {
+    use ruffle_core::events::GamepadButton;
+    match button {
+        GamepadButton::South => "south",
+        GamepadButton::East => "east",
+        GamepadButton::North => "north",
+        GamepadButton::West => "west",
+        GamepadButton::LeftTrigger => "left-trigger",
+        GamepadButton::LeftTrigger2 => "left-trigger-2",
+        GamepadButton::RightTrigger => "right-trigger",
+        GamepadButton::RightTrigger2 => "right-trigger-2",
+        GamepadButton::Select => "select",
+        GamepadButton::Start => "start",
+        GamepadButton::DPadUp => "dpad-up",
+        GamepadButton::DPadDown => "dpad-down",
+        GamepadButton::DPadLeft => "dpad-left",
+        GamepadButton::DPadRight => "dpad-right",
+    }
+}
+
 fn watch_updates(proxy: EventLoopProxy<ShellEvent>) {
     let spawned = std::thread::Builder::new()
         .name("Turu Shell Updates".into())
@@ -647,6 +711,9 @@ struct ShellApp {
     /// `TURU_SHELL_TEST`'s `cover off`: the window counts as seen even when it's covered (a test
     /// behind other windows).
     never_covered: bool,
+    /// The input method last applied to the window (`apply_ime`), and whether it has the focus.
+    ime_applied: Option<(bool, bool, Option<[f32; 4]>)>,
+    focused: bool,
 }
 
 impl ShellApp {
@@ -682,6 +749,7 @@ impl ShellApp {
             waiting: None,
             adapter: None,
             pixels_only: false,
+            ime: (false, false, None),
         };
         self.start(&mut tab);
         self.tabs.push(tab);
@@ -896,6 +964,35 @@ impl ShellApp {
             send(tab, &ToClient::Focus { focused: true });
         }
         self.update_title();
+        self.apply_ime();
+    }
+
+    /// The window takes an input method as the tab on screen last asked (`ToShell::Ime`), while it
+    /// has the focus: allowed or not, a password's or not, and where the candidates go.
+    fn apply_ime(&mut self) {
+        let wanted = match self.tabs.iter().find(|tab| tab.id == self.shown) {
+            Some(tab) if self.focused && tab.out.is_some() => tab.ime,
+            _ => (false, false, None),
+        };
+        if self.ime_applied == Some(wanted) {
+            return;
+        }
+        let Some(window) = &self.window else {
+            return;
+        };
+        self.ime_applied = Some(wanted);
+        let (allowed, password, area) = wanted;
+        window.set_ime_allowed(allowed);
+        if allowed {
+            window.set_ime_purpose(if password {
+                winit::window::ImePurpose::Password
+            } else {
+                winit::window::ImePurpose::Normal
+            });
+            if let Some([x, y, width, height]) = area {
+                window.set_ime_cursor_area(PhysicalPosition::new(x, y), PhysicalSize::new(width, height));
+            }
+        }
     }
 
     /// The bar's Grid toggle, from a client.
@@ -1063,6 +1160,7 @@ impl ShellApp {
         tab.shown = None;
         tab.waiting = None;
         tab.pace = Pace::Frames;
+        tab.ime = (false, false, None);
         stop(&mut tab);
         self.schedule_restart(&mut tab);
         self.tabs.insert(index, tab);
@@ -1132,6 +1230,16 @@ impl ShellApp {
             ToShell::CheckUpdates => turu::check_client_updates_now(),
             ToShell::FullScreen { on } => self.set_full_screen(on),
             // The cursor of the tab on screen (another's would be stale by the time it shows).
+            ToShell::Ime {
+                allowed,
+                password,
+                area,
+            } => {
+                if let Some(tab) = self.tab(id) {
+                    tab.ime = (allowed, password, area);
+                }
+                self.apply_ime();
+            }
             ToShell::Pace { pace } => {
                 if let Some(tab) = self.tab(id) {
                     tab.pace = pace;
@@ -2061,14 +2169,54 @@ impl ShellApp {
             }
             return;
         }
-        if command == "click" {
+        // `click` and `rclick` (the right button).
+        if command == "click" || command == "rclick" {
             let at: Vec<f64> = arg.split_whitespace().filter_map(|v| v.parse().ok()).collect();
+            let button = if command == "rclick" {
+                Button::Right
+            } else {
+                Button::Left
+            };
             if let [x, y] = at[..] {
                 let at = PhysicalPosition::new(x, y);
                 for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
-                    self.pointer_event(kind, Button::Left, at);
+                    self.pointer_event(kind, button, at);
                 }
             }
+            return;
+        }
+        // `drop <path>`: a file dropped on the window.
+        if command == "drop" {
+            self.send_shown(&ToClient::Dropped { path: arg.to_owned() });
+            return;
+        }
+        // `gamepad <button>` (Ruffle's name: south, dpad-up, ...): pressed and released.
+        if command == "gamepad" {
+            for pressed in [true, false] {
+                self.send_shown(&ToClient::Gamepad {
+                    button: arg.to_owned(),
+                    pressed,
+                });
+            }
+            return;
+        }
+        // `ime preedit <text>`, `ime commit <text>`, `ime state` (the window's IME as applied): an
+        // input method, as winit gives it.
+        if command == "ime" {
+            let (kind, text) = arg.split_once(' ').unwrap_or((arg, ""));
+            let ime = match kind {
+                "preedit" => shell::ImeInput::Preedit {
+                    text: text.to_owned(),
+                    cursor: Some((text.len(), text.len())),
+                },
+                "commit" => shell::ImeInput::Commit { text: text.to_owned() },
+                "disabled" => shell::ImeInput::Disabled,
+                _ => {
+                    tracing::info!("Shell test: IME applied: {:?}", self.ime_applied);
+                    return;
+                }
+            };
+            self.send_shown(&ToClient::Ime { ime });
             return;
         }
         match (command, id) {
@@ -2086,6 +2234,11 @@ impl ShellApp {
     }
 
     fn key(&mut self, event: &KeyEvent) {
+        // Windows: winit still sends the keys an input method processed (egui-winit drops them
+        // too); they're the input method's.
+        if event.logical_key == Key::Named(NamedKey::Process) {
+            return;
+        }
         let pressed = event.state == ElementState::Pressed;
         // Esc leaves full screen, as in the window (the tab gets it too).
         if pressed && self.full_screen && event.logical_key == Key::Named(NamedKey::Escape) {
@@ -2185,6 +2338,10 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
             ShellEvent::Picture(id) => self.pixel_picture(id),
             ShellEvent::SurfaceArrived { pid, id, surface } => self.surface_arrived(pid, id, surface),
             ShellEvent::Released(retired) => self.released(retired),
+            ShellEvent::Gamepad { button, pressed } => self.send_shown(&ToClient::Gamepad {
+                button: button.to_owned(),
+                pressed,
+            }),
             ShellEvent::ArmyClients(clients) => {
                 let message = ToClient::ArmyClients { clients };
                 for tab in &mut self.tabs {
@@ -2273,7 +2430,24 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => self.resized(),
             WindowEvent::RedrawRequested => self.draw(),
-            WindowEvent::Focused(focused) => self.send_shown(&ToClient::Focus { focused }),
+            WindowEvent::Focused(focused) => {
+                self.focused = focused;
+                self.apply_ime();
+                self.send_shown(&ToClient::Focus { focused });
+            }
+            // An input method's composition, for the tab on screen (which allowed it).
+            WindowEvent::Ime(ime) => {
+                let ime = match ime {
+                    winit::event::Ime::Enabled => shell::ImeInput::Enabled,
+                    winit::event::Ime::Preedit(text, cursor) => shell::ImeInput::Preedit { text, cursor },
+                    winit::event::Ime::Commit(text) => shell::ImeInput::Commit { text },
+                    winit::event::Ime::Disabled => shell::ImeInput::Disabled,
+                };
+                self.send_shown(&ToClient::Ime { ime });
+            }
+            WindowEvent::DroppedFile(path) => self.send_shown(&ToClient::Dropped {
+                path: path.to_string_lossy().into_owned(),
+            }),
             // winit reports it on macOS and X11 only.
             WindowEvent::Occluded(occluded) => {
                 self.occluded = occluded;
@@ -2512,6 +2686,32 @@ mod tests {
     use super::client_args;
 
     #[test]
+    fn gamepad_buttons_are_named_as_ruffle_reads_them() {
+        use ruffle_core::events::GamepadButton::*;
+        let all = [
+            South,
+            East,
+            North,
+            West,
+            LeftTrigger,
+            LeftTrigger2,
+            RightTrigger,
+            RightTrigger2,
+            Select,
+            Start,
+            DPadUp,
+            DPadDown,
+            DPadLeft,
+            DPadRight,
+        ];
+        for button in all {
+            let name = super::gamepad_button_name(button);
+            let parsed: Result<ruffle_core::events::GamepadButton, _> = name.parse();
+            assert!(parsed.is_ok_and(|parsed| parsed == button), "{name}");
+        }
+    }
+
+    #[test]
     fn clients_get_the_shells_flags_but_its_servers() {
         let args = [
             "--shell",
@@ -2526,8 +2726,23 @@ mod tests {
             "--report-to=https://other.example",
             "--monitor=0.0.0.0:9021",
             "--api",
+            // Gamepads act through these mappings in the clients (the shell reads the pads).
+            "-B",
+            "south=space",
+            "--gamepad-button=north=up",
         ];
         let kept = client_args(args.iter().map(|arg| (*arg).to_owned()));
-        assert_eq!(kept, ["--user", "Hero", "--run-script", "farm/Gold.ts"]);
+        assert_eq!(
+            kept,
+            [
+                "--user",
+                "Hero",
+                "--run-script",
+                "farm/Gold.ts",
+                "-B",
+                "south=space",
+                "--gamepad-button=north=up"
+            ]
+        );
     }
 }

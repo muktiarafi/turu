@@ -82,8 +82,10 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let mut fonts = fontdb::Database::default();
     fonts.load_system_fonts();
     let mut players = Players::new();
-    // The window's device fonts, the clipboard and sound, for the game.
-    let ui = Some(ClientUiBackend::new(Rc::new(fonts), preferences.clone()));
+    // The window's device fonts, the clipboard and sound, for the game; and its notifications (a
+    // text field wanting an input method), for the screen.
+    let (notify, notifications) = async_channel::unbounded();
+    let ui = Some((ClientUiBackend::new(Rc::new(fonts), preferences.clone()), notify));
     // Mugetsu's render thread (`render-thread` next to the program; see
     // `mugetsu::apply_drawing_switches`): the picture's GPU commands are made there while this
     // thread goes on (`ClientScreen` hands the shell its picture after them).
@@ -166,6 +168,19 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     // Frame interpolation's pace: the shell presents in step with it.
     let pace_out = out.clone();
     screen.set_pace_sink(Box::new(move |pace| pace_out.send(ToShell::Pace { pace })));
+    // An input method over the shell's window, for Turu's text boxes and (with Ruffle's IME
+    // preference, as the window has it) the game's.
+    let ime_out = out.clone();
+    screen.set_ime_sink(
+        preferences.ime_enabled().unwrap_or(false),
+        Box::new(move |allowed, password, area| {
+            ime_out.send(ToShell::Ime {
+                allowed,
+                password,
+                area,
+            })
+        }),
+    );
     SCREEN.set(Some(screen));
     turu::start_updates();
     // Turu's updates are the shell's: it checks and installs; Check Now and Download & restart go
@@ -250,7 +265,13 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         |player, step| {
             gpu_check();
             memory_tick(player);
-            let next = SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.step(player, step)));
+            let next = SCREEN.with_borrow_mut(|screen| {
+                let screen = screen.as_mut()?;
+                while let Ok(ruffle_core::events::PlayerNotification::ImeNotification(ime)) = notifications.try_recv() {
+                    screen.game_ime(player, ime);
+                }
+                screen.step(player, step)
+            });
             // Mugetsu 2.0.0's one-time tips for built-in graphics (`turu_frontend::graphics_tips`).
             if let Some(drawn_fps) =
                 SCREEN.with_borrow_mut(|screen| screen.as_mut().and_then(|screen| screen.take_picture_window()))
