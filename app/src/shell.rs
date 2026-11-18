@@ -27,7 +27,8 @@
 //! `rclick` with the right button), `drop <path>` (a file dropped on the window), `gamepad <button>`
 //! (Ruffle's name, pressed and released), `ime preedit <text>` / `ime commit <text>` (an input
 //! method's, as winit gives it), `ime disabled` and `ime state` (the window's input method as applied, logged),
-//! `text <string>` (typed), `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`),
+//! `text <string>` (typed), `key <key>` (a press and release, egui's key name after `cmd+`, `ctrl+`, `shift+`, `alt+`;
+//! `keydown` / `keyup` the press or the release alone),
 //! `resize <width> <height>` (the window's size in points), `minimize on|off`, `cover off|on` (the
 //! window counts as seen though covered, or not), `nosurfaces` (the
 //! next shared surface fails to open), `rate` (each tab's pictures a second
@@ -2076,7 +2077,8 @@ impl ShellApp {
             return;
         }
         // `key cmd+V`: a press and release, with `cmd`, `ctrl`, `shift` or `alt` before the key.
-        if command == "key" {
+        // `key`, and `keydown` / `keyup` (held between lines).
+        if command == "key" || command == "keydown" || command == "keyup" {
             let mut mods = Mods::default();
             let mut parts: Vec<&str> = arg.trim().split('+').collect();
             let key = parts.pop().unwrap_or_default().to_owned();
@@ -2092,13 +2094,18 @@ impl ShellApp {
             if mods.command && cfg!(not(target_os = "macos")) {
                 mods.ctrl = true;
             }
-            for pressed in [true, false] {
+            let presses: &[bool] = match command {
+                "keydown" => &[true],
+                "keyup" => &[false],
+                _ => &[true, false],
+            };
+            for &pressed in presses {
                 self.send_shown(&ToClient::Key {
                     key: key.clone(),
                     pressed,
                     mods,
                     // The client finds it from the name, as for a US keyboard.
-                    physical: None,
+                    game: None,
                 });
             }
             return;
@@ -2246,25 +2253,30 @@ impl ShellApp {
         if pressed && self.full_screen && event.logical_key == Key::Named(NamedKey::Escape) {
             self.set_full_screen(false);
         }
-        // The key by egui's name and by its place on the keyboard (Ruffle's, as the window's
-        // `app.rs` gives it): with either known, as a key egui has no name for (on another
-        // layout, the key WASD's W is on) is still the game's.
+        // The key by egui's name, for Turu's UI, and whole for the game, as the window's
+        // `app.rs` hands it to Ruffle (with what it does in a text field); with either known.
         let name = egui_key_name(&event.logical_key);
-        let physical = turu_frontend::shell::physical_key_name(
-            crate::util::winit_input_to_ruffle_key_descriptor(event).physical_key,
-        );
-        if name.is_some() || physical.is_some() {
+        let key = crate::util::winit_input_to_ruffle_key_descriptor(event);
+        let control = if pressed {
+            crate::util::winit_to_ruffle_text_control(event, self.modifiers.into())
+        } else {
+            None
+        };
+        let known = key.physical_key != ruffle_core::events::PhysicalKey::Unknown
+            || key.logical_key != ruffle_core::events::LogicalKey::Unknown;
+        if name.is_some() || known {
             let mods = self.mods();
             self.send_shown(&ToClient::Key {
                 key: name.unwrap_or_default().to_owned(),
                 pressed,
                 mods,
-                physical: physical.map(str::to_owned),
+                game: known.then(|| turu_frontend::shell::GameKey::new(key, control)),
             });
         }
-        let command = self.modifiers.control_key() || self.modifiers.super_key();
+        // Typed text, unless the key does something in a text field instead (as in the window);
+        // the client leaves out what Ctrl or Cmd shortcuts give.
         if pressed
-            && !command
+            && control.is_none()
             && let Some(text) = event.text.as_ref().filter(|text| text.chars().all(|c| !c.is_control()))
         {
             self.send_shown(&ToClient::Text { text: text.to_string() });
@@ -2489,12 +2501,13 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                 self.pointer_event(kind, button, at);
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (dx, dy) = match delta {
-                    MouseScrollDelta::LineDelta(x, y) => (-x, -y),
-                    MouseScrollDelta::PixelDelta(p) => (-(p.x / 40.0) as f32, -(p.y / 40.0) as f32),
+                let per_line = f64::from(shell::WHEEL_PIXELS_PER_LINE);
+                let (dx, dy, pixels) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (-x, -y, false),
+                    MouseScrollDelta::PixelDelta(p) => (-(p.x / per_line) as f32, -(p.y / per_line) as f32, true),
                 };
                 let (x, y) = (self.cursor.x as f32, self.cursor.y as f32);
-                self.send_shown(&ToClient::Wheel { dx, dy, x, y });
+                self.send_shown(&ToClient::Wheel { dx, dy, x, y, pixels });
             }
             WindowEvent::KeyboardInput { event, .. } => self.key(&event),
             _ => {}

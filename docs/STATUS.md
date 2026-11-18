@@ -984,13 +984,31 @@ memory budget (NVIDIA, AMD).
     `app.rs` does. Keys go nowhere while a composition is under way (Enter mustn't send the game's
     chat). The game field's area is converted from the stage's pixels to the picture's (the
     window takes them as its viewport's, which puts the candidates off when the game is scaled).
-  * **Keys on the keyboard** (fixed 2026-11-18): a tab's client sent every key as Ruffle's
-    `PhysicalKey::Unknown`. Ruffle takes the game's `keyCode` from the physical key on macOS and
-    Linux (0 for `Unknown`: WASD didn't walk, Enter didn't log in or send chat), and tells held keys
-    apart by it everywhere (one held key for all: on Windows, W then D held and let go left D down,
-    and the character walked on). `ToClient::Key` now carries the physical key as the window maps
-    it (`physical`, by `shell::physical_key_name`), and a key egui has no name for goes over by it
-    alone; without it (a test's `key` line) the client takes the key's place on a US keyboard.
+  * **Keys** (fixed 2026-11-18): the client rebuilt the game's keys from egui's name for them,
+    which lost the physical key (every key `PhysicalKey::Unknown`). Ruffle takes the game's
+    `keyCode` from it on macOS and Linux (0: WASD didn't walk, Enter didn't log in or send chat)
+    and tells held keys apart by it everywhere (on Windows, W then D held and let go left D down:
+    the character walked on). Keys egui has no name for (Shift, Ctrl, punctuation, the numpad)
+    didn't reach the game at all. The shell now sends the game's key whole, as the window's
+    `app.rs` makes it (`util::winit_input_to_ruffle_key_descriptor`), with what it does in a text
+    field (`winit_to_ruffle_text_control`: Ctrl+Home/End, Ctrl or Cmd+Backspace and arrows as in
+    the window), by Ruffle's names (`ToClient::Key`'s `game`, `shell::GameKey`). Without it (a
+    test's `key` line) the client finds the key from egui's name, as on a US keyboard.
+  * **Typed text with Ctrl** goes to the game when Alt is down too (AltGr on Windows: `@` on a
+    German keyboard; the shell had dropped all text with Ctrl, as egui-winit does), not with Ctrl
+    alone or Cmd (Turu: the window types the letter a Ctrl shortcut gives on Linux). Turu's text
+    boxes take none with Ctrl or Cmd, as egui-winit.
+  * **A tab that stops taking input** (hidden, or another tab's tile in Grid View) lets go in the
+    game of the keys and mouse button it had down and loses the focus (Flash's `deactivate`):
+    their release would go to the next tab, and a tab left with W held walked on hidden. A key
+    the game has down is let go there even if the focus went to Turu's UI meanwhile.
+  * **The game's links** (upgrade, buying AC, account pages) open in the browser through the
+    shell, unless Options deny websites; they were only logged (`engine::NoDialogs`, now with
+    `open_links`). Turu: the window asks first with Options' "Ask"; a client has nobody to ask in.
+  * **A trackpad's scrolling** reaches the game in pixels, as in the window (it went as lines of
+    40 pixels, 2.5 times as fast as the window's 100). The game's full screen (`stage.
+    displayState`) and `Mouse.hide` reach the shell's window too (from any tab's game, a hidden
+    one's too; Esc leaving full screen isn't told to the game, which AQW doesn't mind).
   * **Gamepads**: the shell reads them on a thread of its own (gilrs; the event loop sleeps) and
     passes each button on (`ToClient::Gamepad`); they act only through `--gamepad-button`'s
     mappings to keys, as in the window (the clients get the shell's flags).

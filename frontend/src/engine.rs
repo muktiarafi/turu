@@ -187,13 +187,24 @@ impl<E: std::error::Error + 'static> FutureSpawner<E> for Executor {
     }
 }
 
-/// No dialogs: websites aren't opened, files and sockets are allowed.
-#[derive(Clone)]
-pub struct NoDialogs;
+/// No dialogs: files and sockets are allowed; websites (the game's links: upgrade, buying AC,
+/// account pages) open through the platform when `open_links` says so (a desktop tab's client,
+/// whose shell opens them, unless Options deny it), else aren't opened.
+#[derive(Clone, Default)]
+pub struct NoDialogs {
+    pub open_links: bool,
+}
 
 impl NavigatorInterface for NoDialogs {
     fn navigate_to_website(&self, url: Url) {
-        tracing::info!("The game wants to open {url} (not opened without a window)");
+        // Turu: the window asks first (Options' "Ask"); a client has nobody to ask in, so a page
+        // opens, as a client's `display_unsupported_video` opens it. Web pages only.
+        if self.open_links && matches!(url.scheme(), "http" | "https") {
+            tracing::info!("The game opens {url}");
+            crate::platform::platform().open_url(url.as_str());
+        } else {
+            tracing::info!("The game wants to open {url} (not opened)");
+        }
     }
 
     async fn open_file(&self, path: &Path) -> std::io::Result<File> {

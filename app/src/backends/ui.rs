@@ -516,11 +516,14 @@ impl ClientUiBackend {
 }
 
 impl UiBackend for ClientUiBackend {
+    // Turu: hidden over the game by the shell, as the window hides it (`client_screen`).
     fn mouse_visible(&self) -> bool {
-        true
+        turu_frontend::client_screen::game_mouse_visible()
     }
 
-    fn set_mouse_visible(&mut self, _visible: bool) {}
+    fn set_mouse_visible(&mut self, visible: bool) {
+        turu_frontend::client_screen::set_game_mouse_visible(visible);
+    }
 
     // Turu: shown by the shell (`client_screen::set_game_cursor`, `ToShell::Cursor`).
     fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
@@ -541,7 +544,9 @@ impl UiBackend for ClientUiBackend {
         self.clipboard.set_text(content);
     }
 
-    fn set_fullscreen(&mut self, _is_full: bool) -> Result<(), FullscreenError> {
+    // Turu: the shell's window goes full screen, as Options' Full Screen makes it.
+    fn set_fullscreen(&mut self, is_full: bool) -> Result<(), FullscreenError> {
+        turu_frontend::platform::platform().set_full_screen(is_full);
         Ok(())
     }
 

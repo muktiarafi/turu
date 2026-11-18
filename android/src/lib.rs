@@ -954,7 +954,7 @@ fn build_player(
         // The game server is a TCP socket; there's nobody to ask.
         SocketMode::Allow,
         Rc::new(content),
-        NoDialogs,
+        NoDialogs::default(),
     )
     .with_http_cache(turu_frontend::game_files::cache());
     let navigator =

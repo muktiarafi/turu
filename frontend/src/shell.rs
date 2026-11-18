@@ -62,18 +62,25 @@ pub enum ToClient {
         x: f32,
         y: f32,
     },
-    /// The wheel or a trackpad, in lines (`dx`, `dy`, positive down and right), at (`x`, `y`).
-    Wheel { dx: f32, dy: f32, x: f32, y: f32 },
+    /// The wheel or a trackpad, in lines (`dx`, `dy`, positive down and right), at (`x`, `y`);
+    /// `pixels` when it came in pixels (a trackpad's), [`WHEEL_PIXELS_PER_LINE`] to a line.
+    Wheel {
+        dx: f32,
+        dy: f32,
+        x: f32,
+        y: f32,
+        #[serde(default)]
+        pixels: bool,
+    },
     /// A key, by egui's name for it (`egui::Key::name`: "Enter", "A", "ArrowLeft", ...; empty for
-    /// one egui has no name for), and the key it is on the keyboard by Ruffle's name for it
-    /// ([`physical_key_name`]: "KeyW", "Enter", ...), when the window knows it. Ruffle tells keys
-    /// held apart by it, and on macOS and Linux takes the game's `keyCode` from it.
+    /// one egui has no name for), for Turu's UI; and the game's key as the window's `app.rs` gives
+    /// it to Ruffle ([`GameKey`]), when the window knows it.
     Key {
         key: String,
         pressed: bool,
         mods: Mods,
         #[serde(default)]
-        physical: Option<String>,
+        game: Option<GameKey>,
     },
     /// Text typed (a character, or what an input method committed).
     Text { text: String },
@@ -527,48 +534,211 @@ pub enum Button {
     Middle,
 }
 
-/// Ruffle's keys on the keyboard, by the names [`ToClient::Key`] carries them with (the W3C's
-/// `code` values, as Ruffle names its variants).
+/// A trackpad's pixels to a line of [`ToClient::Wheel`] (for Turu's UI; the game takes the
+/// pixels, as in the window).
+pub const WHEEL_PIXELS_PER_LINE: f32 = 40.0;
+
+/// A key for the game, as the window's `app.rs` hands it to Ruffle (`util::
+/// winit_input_to_ruffle_key_descriptor`, `winit_to_ruffle_text_control`), by Ruffle's names
+/// ([`keys`]): rebuilding it in the client from egui's name lost what egui has no name for (the
+/// physical key Ruffle takes `keyCode` from on macOS and Linux and tells held keys apart by;
+/// Shift, punctuation, the numpad).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GameKey {
+    /// Where it is on the keyboard ("KeyW", "ShiftLeft", ...; None for a key Ruffle doesn't know).
+    #[serde(default)]
+    pub physical: Option<String>,
+    /// What it means: a character, else a named key ("Enter", "Shift", ...), else neither.
+    #[serde(default)]
+    pub character: Option<char>,
+    #[serde(default)]
+    pub named: Option<String>,
+    /// Ruffle's `KeyLocation`: 0 standard, 1 left, 2 right, 3 numpad.
+    #[serde(default)]
+    pub location: u8,
+    /// What it does in a text field instead of typing ("Enter", "SelectLeftWord", ...).
+    #[serde(default)]
+    pub control: Option<String>,
+}
+
+/// Ruffle's key types by the names [`GameKey`] carries them with (their variants' names).
 #[cfg(feature = "ruffle")]
-macro_rules! physical_keys {
-    ($($key:ident),* $(,)?) => {
-        const PHYSICAL_KEYS: &[(ruffle_core::events::PhysicalKey, &str)] =
-            &[$((ruffle_core::events::PhysicalKey::$key, stringify!($key))),*];
+pub mod keys {
+    use super::GameKey;
+    use ruffle_core::events::{
+        KeyDescriptor, KeyLocation, LogicalKey, NamedKey, PhysicalKey, TextControlCode,
     };
-}
-#[cfg(feature = "ruffle")]
-#[rustfmt::skip]
-physical_keys!(
-    Backquote, Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
-    Minus, Equal, IntlYen, KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL,
-    KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
-    BracketLeft, BracketRight, Backslash, Semicolon, Quote, IntlBackslash, Comma, Period, Slash,
-    IntlRo, Backspace, Tab, CapsLock, Enter, ShiftLeft, ShiftRight, ControlLeft, SuperLeft,
-    AltLeft, Space, AltRight, SuperRight, ContextMenu, ControlRight, Insert, Delete, Home, End,
-    PageUp, PageDown, ArrowUp, ArrowLeft, ArrowDown, ArrowRight, NumLock, NumpadDivide,
-    NumpadMultiply, NumpadSubtract, Numpad7, Numpad8, Numpad9, Numpad4, Numpad5, Numpad6, Numpad1,
-    Numpad2, Numpad3, Numpad0, NumpadAdd, NumpadComma, NumpadEnter, NumpadDecimal, Escape, F1, F2,
-    F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22,
-    F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35, Fn, FnLock, PrintScreen,
-    ScrollLock, Pause,
-);
 
-/// The name [`ToClient::Key`] carries a key on the keyboard by (None for `Unknown`).
-#[cfg(feature = "ruffle")]
-pub fn physical_key_name(key: ruffle_core::events::PhysicalKey) -> Option<&'static str> {
-    PHYSICAL_KEYS
-        .iter()
-        .find(|(k, _)| *k == key)
-        .map(|(_, name)| *name)
-}
+    macro_rules! table {
+        ($table:ident, $ty:ident, $($v:ident),* $(,)?) => {
+            const $table: &[($ty, &str)] = &[$(($ty::$v, stringify!($v))),*];
+        };
+    }
+    #[rustfmt::skip]
+    table!(PHYSICAL, PhysicalKey,
+        Backquote, Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
+        Minus, Equal, IntlYen, KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK,
+        KeyL, KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
+        BracketLeft, BracketRight, Backslash, Semicolon, Quote, IntlBackslash, Comma, Period, Slash,
+        IntlRo, Backspace, Tab, CapsLock, Enter, ShiftLeft, ShiftRight, ControlLeft, SuperLeft,
+        AltLeft, Space, AltRight, SuperRight, ContextMenu, ControlRight, Insert, Delete, Home, End,
+        PageUp, PageDown, ArrowUp, ArrowLeft, ArrowDown, ArrowRight, NumLock, NumpadDivide,
+        NumpadMultiply, NumpadSubtract, Numpad7, Numpad8, Numpad9, Numpad4, Numpad5, Numpad6,
+        Numpad1, Numpad2, Numpad3, Numpad0, NumpadAdd, NumpadComma, NumpadEnter, NumpadDecimal,
+        Escape, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18,
+        F19, F20, F21, F22, F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35, Fn,
+        FnLock, PrintScreen, ScrollLock, Pause,
+    );
+    #[rustfmt::skip]
+    table!(NAMED, NamedKey,
+        Alt, AltGraph, CapsLock, Control, Fn, FnLock, Super, NumLock, ScrollLock, Shift, Symbol,
+        SymbolLock, Enter, Tab, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, End, Home, PageDown,
+        PageUp, Backspace, Clear, Copy, CrSel, Cut, Delete, EraseEof, ExSel, Insert, Paste, Redo,
+        Undo, ContextMenu, Escape, Pause, Play, Select, ZoomIn, ZoomOut, PrintScreen, F1, F2, F3,
+        F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22,
+        F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35,
+    );
+    #[rustfmt::skip]
+    table!(CONTROL, TextControlCode,
+        MoveLeft, MoveLeftWord, MoveLeftLine, MoveLeftDocument, MoveRight, MoveRightWord,
+        MoveRightLine, MoveRightDocument, SelectLeft, SelectLeftWord, SelectLeftLine,
+        SelectLeftDocument, SelectRight, SelectRightWord, SelectRightLine, SelectRightDocument,
+        SelectAll, Copy, Paste, Cut, Backspace, BackspaceWord, Enter, Delete, DeleteWord,
+    );
 
-/// The key on the keyboard [`physical_key_name`] named.
-#[cfg(feature = "ruffle")]
-pub fn physical_key(name: &str) -> Option<ruffle_core::events::PhysicalKey> {
-    PHYSICAL_KEYS
-        .iter()
-        .find(|(_, n)| *n == name)
-        .map(|(key, _)| *key)
+    fn name<T: PartialEq + Copy>(table: &[(T, &'static str)], value: T) -> Option<&'static str> {
+        table
+            .iter()
+            .find(|(v, _)| *v == value)
+            .map(|(_, name)| *name)
+    }
+
+    fn by_name<T: Copy>(table: &[(T, &str)], name: &str) -> Option<T> {
+        table.iter().find(|(_, n)| *n == name).map(|(v, _)| *v)
+    }
+
+    /// The key on the keyboard by its name (`PhysicalKey`'s variant: "KeyW", "Enter", ...).
+    pub fn physical_key(name: &str) -> Option<PhysicalKey> {
+        by_name(PHYSICAL, name)
+    }
+
+    impl GameKey {
+        /// The window's key for the game, and what it does in a text field.
+        pub fn new(key: KeyDescriptor, control: Option<TextControlCode>) -> Self {
+            let (character, named) = match key.logical_key {
+                LogicalKey::Character(c) => (Some(c), None),
+                LogicalKey::Named(named) => (None, name(NAMED, named).map(str::to_owned)),
+                LogicalKey::Unknown => (None, None),
+            };
+            Self {
+                physical: name(PHYSICAL, key.physical_key).map(str::to_owned),
+                character,
+                named,
+                location: key.key_location as u8,
+                control: control
+                    .and_then(|code| name(CONTROL, code))
+                    .map(str::to_owned),
+            }
+        }
+
+        /// Ruffle's key, as the window made it.
+        pub fn descriptor(&self) -> KeyDescriptor {
+            let logical_key = match (self.character, self.named.as_deref()) {
+                (Some(c), _) => LogicalKey::Character(c),
+                (None, Some(named)) => {
+                    by_name(NAMED, named).map_or(LogicalKey::Unknown, LogicalKey::Named)
+                }
+                (None, None) => LogicalKey::Unknown,
+            };
+            KeyDescriptor {
+                physical_key: self
+                    .physical
+                    .as_deref()
+                    .and_then(physical_key)
+                    .unwrap_or(PhysicalKey::Unknown),
+                logical_key,
+                key_location: match self.location {
+                    1 => KeyLocation::Left,
+                    2 => KeyLocation::Right,
+                    3 => KeyLocation::Numpad,
+                    _ => KeyLocation::Standard,
+                },
+            }
+        }
+
+        /// What it does in a text field, as the window found.
+        pub fn control(&self) -> Option<TextControlCode> {
+            by_name(CONTROL, self.control.as_deref()?)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// Every name goes over and comes back, and no two are alike.
+        #[test]
+        fn names_round_trip() {
+            fn check<T: PartialEq + Copy + std::fmt::Debug>(table: &[(T, &'static str)]) {
+                let mut names = std::collections::HashSet::new();
+                for (value, n) in table {
+                    assert!(names.insert(*n), "{n} twice");
+                    assert_eq!(name(table, *value), Some(*n));
+                    assert_eq!(by_name(table, n), Some(*value));
+                    assert_eq!(format!("{value:?}"), *n);
+                }
+            }
+            check(PHYSICAL);
+            check(NAMED);
+            check(CONTROL);
+        }
+
+        /// A key comes out of the wire as the window made it.
+        #[test]
+        fn game_keys_round_trip() {
+            let keys = [
+                (
+                    KeyDescriptor {
+                        physical_key: PhysicalKey::KeyW,
+                        logical_key: LogicalKey::Character('w'),
+                        key_location: KeyLocation::Standard,
+                    },
+                    None,
+                ),
+                (
+                    KeyDescriptor {
+                        physical_key: PhysicalKey::ShiftRight,
+                        logical_key: LogicalKey::Named(NamedKey::Shift),
+                        key_location: KeyLocation::Right,
+                    },
+                    None,
+                ),
+                (
+                    KeyDescriptor {
+                        physical_key: PhysicalKey::NumpadEnter,
+                        logical_key: LogicalKey::Named(NamedKey::Enter),
+                        key_location: KeyLocation::Numpad,
+                    },
+                    Some(TextControlCode::Enter),
+                ),
+                (
+                    KeyDescriptor {
+                        physical_key: PhysicalKey::Unknown,
+                        logical_key: LogicalKey::Unknown,
+                        key_location: KeyLocation::Standard,
+                    },
+                    None,
+                ),
+            ];
+            for (key, control) in keys {
+                let game = GameKey::new(key, control);
+                let json = serde_json::to_string(&game).unwrap();
+                let back: GameKey = serde_json::from_str(&json).unwrap();
+                assert_eq!(back.descriptor(), key);
+                assert_eq!(back.control(), control);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -836,21 +1006,6 @@ impl FrameSender {
 mod tests {
     use super::*;
 
-    /// Every key on the keyboard Ruffle knows goes over by a name of its own and comes back.
-    #[cfg(feature = "ruffle")]
-    #[test]
-    fn physical_keys_round_trip() {
-        use ruffle_core::events::PhysicalKey;
-        assert_eq!(physical_key_name(PhysicalKey::Unknown), None);
-        let mut names = std::collections::HashSet::new();
-        for (key, name) in PHYSICAL_KEYS {
-            assert!(names.insert(*name), "{name} twice");
-            assert_eq!(physical_key_name(*key), Some(*name));
-            assert_eq!(physical_key(name), Some(*key));
-        }
-        assert_eq!(physical_key("KeyW"), Some(PhysicalKey::KeyW));
-    }
-
     use std::net::TcpListener;
     use std::time::Duration;
 
@@ -901,7 +1056,12 @@ mod tests {
                     shift: true,
                     ..Mods::default()
                 },
-                physical: Some("Enter".into()),
+                game: Some(GameKey {
+                    physical: Some("Enter".into()),
+                    named: Some("Enter".into()),
+                    control: Some("Enter".into()),
+                    ..GameKey::default()
+                }),
             },
             ToClient::Tabs {
                 tabs: vec![TabInfo {

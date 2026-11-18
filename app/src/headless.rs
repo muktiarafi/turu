@@ -4,6 +4,7 @@
 //! its own; its log goes to the terminal. Works without a display (a Linux server).
 
 use crate::backends::ClientUiBackend;
+use crate::cli::OpenUrlMode;
 use crate::player::LaunchOptions;
 use crate::preferences::GlobalPreferences;
 use crate::turu;
@@ -156,7 +157,10 @@ pub(crate) fn build_player(
         // The game server is a TCP socket; there's nobody to ask.
         SocketMode::Allow,
         Rc::new(content),
-        NoDialogs,
+        // A tab's client opens the game's links through the shell, unless Options deny it.
+        NoDialogs {
+            open_links: client.is_some() && preferences.open_url_mode() != OpenUrlMode::Deny,
+        },
     )
     .with_http_cache(turu_frontend::game_files::cache());
     let navigator = crate::capture::CaptureNavigator::new(navigator, Some(turu::bot().capture.clone()));

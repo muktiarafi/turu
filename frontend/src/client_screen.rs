@@ -25,7 +25,7 @@ use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
 use crate::pacing::Pacing;
 use crate::shell::{
-    Button, Cursor, GridShow, ImeInput, Mods, Pace, PointerKind, SHARED_POOL, ToClient,
+    Button, Cursor, GameKey, GridShow, ImeInput, Mods, Pace, PointerKind, SHARED_POOL, ToClient,
 };
 use crate::turu;
 use ruffle_core::ViewportDimensions;
@@ -199,6 +199,10 @@ pub struct ClientScreen {
     ui_ime: Option<([f32; 4], bool)>,
     ime_sent: Option<(bool, bool, Option<[f32; 4]>)>,
     composing: bool,
+    /// The keys the game has down (pressed here, not yet let go), and whether it has the focus (as
+    /// the shell last said): let go of and lost when the tab stops taking input (`stop_input`).
+    held_keys: Vec<KeyDescriptor>,
+    game_focused: bool,
     /// Flash's right-click menu, while it's open (see `open_menu`).
     menu: Option<Menu>,
 }
@@ -282,6 +286,8 @@ impl ClientScreen {
             ui_ime: None,
             ime_sent: None,
             composing: false,
+            held_keys: Vec::new(),
+            game_focused: false,
             menu: None,
         }
     }
@@ -612,6 +618,9 @@ impl ClientScreen {
                 self.ui_due = Some(Instant::now());
                 // Another tab's tile takes no input and runs at the tiles' rate.
                 let tile = grid.as_ref().is_some_and(|grid| !grid.active);
+                if tile {
+                    self.stop_input(player);
+                }
                 // Only the tab on screen is heard (in Grid View, the active one).
                 player.set_volume(if tile { 0.0 } else { self.volume });
                 turu::bot().state.lock().hidden_tab = tile;
@@ -620,6 +629,7 @@ impl ClientScreen {
                 self.follow_mouse(player);
             }
             ToClient::Hide => {
+                self.stop_input(player);
                 set_grid(None);
                 self.grid = None;
                 self.shown = None;
@@ -638,7 +648,13 @@ impl ClientScreen {
                 turu::bot().state.lock().hidden_tab = true;
             }
             ToClient::Pointer { kind, button, x, y } => self.pointer(player, kind, button, x, y),
-            ToClient::Wheel { dx, dy, x, y } => {
+            ToClient::Wheel {
+                dx,
+                dy,
+                x,
+                y,
+                pixels,
+            } => {
                 let pos = self.point(x, y);
                 self.events.push(egui::Event::PointerMoved(pos));
                 self.events.push(egui::Event::MouseWheel {
@@ -648,17 +664,23 @@ impl ClientScreen {
                     phase: egui::TouchPhase::Move,
                 });
                 if !self.on_ui(x, y) {
-                    player.handle_event(PlayerEvent::MouseWheel {
-                        delta: MouseWheelDelta::Lines(-f64::from(dy)),
-                    });
+                    // A trackpad's in pixels, as the window gives them (Ruffle makes 100 a line).
+                    let delta = if pixels {
+                        MouseWheelDelta::Pixels(-f64::from(
+                            dy * crate::shell::WHEEL_PIXELS_PER_LINE,
+                        ))
+                    } else {
+                        MouseWheelDelta::Lines(-f64::from(dy))
+                    };
+                    player.handle_event(PlayerEvent::MouseWheel { delta });
                 }
             }
             ToClient::Key {
                 key,
                 pressed,
                 mods,
-                physical,
-            } => self.key(player, &key, physical.as_deref(), pressed, mods),
+                game,
+            } => self.key(player, &key, game.as_ref(), pressed, mods),
             ToClient::NoSurfaces { reason } => {
                 if self.shared.is_some() {
                     tracing::warn!(
@@ -720,8 +742,16 @@ impl ClientScreen {
             },
             ToClient::Dropped { path } => self.dropped(path),
             ToClient::Text { text } => {
+                let mods = self.modifiers;
                 if self.egui.egui_wants_keyboard_input() {
-                    self.events.push(egui::Event::Text(text));
+                    // As egui-winit: no text with Ctrl or Cmd (its shortcuts').
+                    if !(mods.ctrl || mods.command || mods.mac_cmd) {
+                        self.events.push(egui::Event::Text(text));
+                    }
+                } else if (mods.ctrl && !mods.alt) || mods.mac_cmd {
+                    // Turu: the window types the text a Ctrl shortcut gives (none on Windows,
+                    // the letter on Linux); not here. With Alt too it's AltGr on Windows
+                    // (`@` on a German keyboard), typed as the window types it.
                 } else {
                     for codepoint in text.chars().filter(|c| !c.is_control()) {
                         player.handle_event(PlayerEvent::TextInput { codepoint });
@@ -733,6 +763,7 @@ impl ClientScreen {
                 if !focused {
                     self.composing = false;
                 }
+                self.game_focused = focused;
                 self.events.push(egui::Event::WindowFocused(focused));
                 player.handle_event(if focused {
                     PlayerEvent::FocusGained
@@ -1233,14 +1264,14 @@ impl ClientScreen {
     }
 
     /// A key: Turu's UI's while one of its text boxes has the focus, else the game's (and
-    /// HotKeys', which see the press too). Typed text comes as [`ToClient::Text`].
-    /// `physical` is the key on the keyboard, by [`crate::shell::physical_key_name`], when the
-    /// shell knows it.
+    /// HotKeys', which see the press too). Typed text comes as [`ToClient::Text`]. `game` is the
+    /// key for the game as the window makes it, when the shell sent it (a test's `key` line
+    /// doesn't: the key is then found from egui's name, as on a US keyboard).
     fn key(
         &mut self,
         player: &mut Player,
         name: &str,
-        physical: Option<&str>,
+        game: Option<&GameKey>,
         pressed: bool,
         mods: Mods,
     ) {
@@ -1251,6 +1282,25 @@ impl ClientScreen {
             mac_cmd: cfg!(target_os = "macos") && mods.command,
             command: mods.command,
         };
+        let (key, control) = match game {
+            Some(game) => (game.descriptor(), game.control()),
+            None => {
+                let (logical_key, key_location) =
+                    logical_key(name).unwrap_or((LogicalKey::Unknown, KeyLocation::Standard));
+                let key = KeyDescriptor {
+                    physical_key: physical_key_for(name).unwrap_or(PhysicalKey::Unknown),
+                    logical_key,
+                    key_location,
+                };
+                (key, text_control(logical_key, mods))
+            }
+        };
+        // A key the game has down is let go there, wherever the focus went meanwhile (one of
+        // Turu's text boxes, an input method): Ruffle would keep it down (WASD walking on). egui
+        // hears the release too (below).
+        if !pressed {
+            self.release_key(player, key);
+        }
         // While an input method composes, its keys are its own (winit doesn't send them on most
         // systems; Enter there must not send the game's chat).
         if self.composing {
@@ -1287,34 +1337,63 @@ impl ClientScreen {
                 modifiers: self.modifiers,
             });
         }
-        if self.egui.egui_wants_keyboard_input() {
+        if !pressed
+            || self.egui.egui_wants_keyboard_input()
+            || (key.physical_key == PhysicalKey::Unknown && key.logical_key == LogicalKey::Unknown)
+        {
             return;
         }
-        // Ruffle tells keys held apart by the key on the keyboard (with every key `Unknown`, a key
-        // let go after another was let go stays down: WASD walked on), and on macOS and Linux
-        // takes the game's `keyCode` from it (0 for `Unknown`: no WASD, no Enter).
-        let physical_key = physical
-            .and_then(crate::shell::physical_key)
-            .or_else(|| physical_key_for(name))
-            .unwrap_or(PhysicalKey::Unknown);
-        let Some((logical_key, key_location)) = logical_key(name)
-            .or((physical_key != PhysicalKey::Unknown)
-                .then_some((LogicalKey::Unknown, KeyLocation::Standard)))
-        else {
-            return;
-        };
-        let key = KeyDescriptor {
-            physical_key,
-            logical_key,
-            key_location,
-        };
-        if !pressed {
-            player.handle_event(PlayerEvent::KeyUp { key });
-            return;
+        // Ruffle tells keys held apart by the key on the keyboard, and on macOS and Linux takes
+        // the game's `keyCode` from it: the window's key, whole.
+        if !self.held_keys.iter().any(|held| same_key(held, &key)) {
+            self.held_keys.push(key);
         }
         player.handle_event(PlayerEvent::KeyDown { key });
-        if let Some(code) = text_control(logical_key, mods) {
+        if let Some(code) = control {
             player.handle_event(PlayerEvent::TextControl { code });
+        }
+    }
+
+    /// Lets go of `key` in the game if it has it down.
+    fn release_key(&mut self, player: &mut Player, key: KeyDescriptor) {
+        if let Some(index) = self.held_keys.iter().position(|held| same_key(held, &key)) {
+            self.held_keys.swap_remove(index);
+            player.handle_event(PlayerEvent::KeyUp { key });
+        }
+    }
+
+    /// The tab stops taking input (hidden, or another tab's tile in Grid View): what the game has
+    /// down is let go, as the release would go to the next tab (the character walked on in a
+    /// tab left with W held), and the game loses the focus, as when the window does.
+    fn stop_input(&mut self, player: &mut Player) {
+        let held = std::mem::take(&mut self.held_keys);
+        if !held.is_empty() {
+            tracing::info!(
+                "Stopped taking input: let go of {} key(s) in the game",
+                held.len()
+            );
+        }
+        for key in held {
+            player.handle_event(PlayerEvent::KeyUp { key });
+        }
+        if let Some((button, false)) = self.pressed.take()
+            && let Some((x, y)) = self.pointer_at
+        {
+            let (left, top) = self.offsets();
+            player.handle_event(PlayerEvent::MouseUp {
+                x: f64::from(x - left) * self.render_scale,
+                y: f64::from(y - top) * self.render_scale,
+                button: match button {
+                    Button::Left => MouseButton::Left,
+                    Button::Right => MouseButton::Right,
+                    Button::Middle => MouseButton::Middle,
+                },
+            });
+        }
+        self.close_menu(player, None);
+        self.composing = false;
+        if std::mem::take(&mut self.game_focused) {
+            player.handle_event(PlayerEvent::FocusLost);
         }
     }
 
@@ -1743,25 +1822,37 @@ fn logical_key(name: &str) -> Option<(LogicalKey, KeyLocation)> {
     Some((LogicalKey::Named(named), KeyLocation::Standard))
 }
 
+/// The same key for Ruffle (it tells keys held apart by their place on the keyboard and location).
+fn same_key(a: &KeyDescriptor, b: &KeyDescriptor) -> bool {
+    a.physical_key == b.physical_key && a.key_location == b.key_location
+}
+
 /// The key on a US keyboard egui's name is on, for a key that came without the shell's (a test's
 /// `key` line).
 fn physical_key_for(name: &str) -> Option<PhysicalKey> {
     let mut chars = name.chars();
     match (chars.next(), chars.next()) {
         (Some(c), None) if c.is_ascii_alphabetic() => {
-            crate::shell::physical_key(&format!("Key{}", c.to_ascii_uppercase()))
+            crate::shell::keys::physical_key(&format!("Key{}", c.to_ascii_uppercase()))
         }
-        (Some(c), None) if c.is_ascii_digit() => crate::shell::physical_key(&format!("Digit{c}")),
+        (Some(c), None) if c.is_ascii_digit() => {
+            crate::shell::keys::physical_key(&format!("Digit{c}"))
+        }
         // The named keys egui and Ruffle name alike: Enter, Space, ArrowLeft, F1, ...
-        _ => crate::shell::physical_key(name),
+        _ => crate::shell::keys::physical_key(name),
     }
 }
 
-/// What a key does in a game text field instead of typing (Backspace, arrows, Ctrl+V).
+/// What a key does in a game text field instead of typing (Backspace, arrows, Ctrl+V), as the
+/// window's `util::winit_to_ruffle_text_control` finds it, for a key that came without the
+/// shell's.
 fn text_control(key: LogicalKey, mods: Mods) -> Option<TextControlCode> {
     use TextControlCode as C;
+    // (`command` is Ctrl off macOS.)
+    let ctrl_cmd = mods.ctrl || mods.command;
+    let shift = mods.shift;
     let named = match key {
-        LogicalKey::Character(c) if mods.command => {
+        LogicalKey::Character(c) if ctrl_cmd => {
             return match c {
                 'a' => Some(C::SelectAll),
                 'c' => Some(C::Copy),
@@ -1773,25 +1864,28 @@ fn text_control(key: LogicalKey, mods: Mods) -> Option<TextControlCode> {
         LogicalKey::Named(named) => named,
         _ => return None,
     };
-    let word = mods.alt || (mods.ctrl && !cfg!(target_os = "macos"));
-    Some(match (named, mods.shift, word) {
+    Some(match (named, ctrl_cmd, shift) {
         (NamedKey::Enter, ..) => C::Enter,
-        (NamedKey::Backspace, _, false) => C::Backspace,
-        (NamedKey::Backspace, _, true) => C::BackspaceWord,
-        (NamedKey::Delete, _, false) => C::Delete,
-        (NamedKey::Delete, _, true) => C::DeleteWord,
-        (NamedKey::ArrowLeft, false, false) => C::MoveLeft,
-        (NamedKey::ArrowLeft, true, false) => C::SelectLeft,
-        (NamedKey::ArrowLeft, false, true) => C::MoveLeftWord,
+        (NamedKey::Backspace, true, _) => C::BackspaceWord,
+        (NamedKey::Backspace, false, _) => C::Backspace,
+        (NamedKey::Delete, true, _) => C::DeleteWord,
+        (NamedKey::Delete, false, _) => C::Delete,
         (NamedKey::ArrowLeft, true, true) => C::SelectLeftWord,
-        (NamedKey::ArrowRight, false, false) => C::MoveRight,
-        (NamedKey::ArrowRight, true, false) => C::SelectRight,
-        (NamedKey::ArrowRight, false, true) => C::MoveRightWord,
+        (NamedKey::ArrowLeft, true, false) => C::MoveLeftWord,
+        (NamedKey::ArrowLeft, false, true) => C::SelectLeft,
+        (NamedKey::ArrowLeft, false, false) => C::MoveLeft,
         (NamedKey::ArrowRight, true, true) => C::SelectRightWord,
-        (NamedKey::Home, false, _) => C::MoveLeftLine,
-        (NamedKey::Home, true, _) => C::SelectLeftLine,
-        (NamedKey::End, false, _) => C::MoveRightLine,
-        (NamedKey::End, true, _) => C::SelectRightLine,
+        (NamedKey::ArrowRight, true, false) => C::MoveRightWord,
+        (NamedKey::ArrowRight, false, true) => C::SelectRight,
+        (NamedKey::ArrowRight, false, false) => C::MoveRight,
+        (NamedKey::Home, true, true) => C::SelectLeftDocument,
+        (NamedKey::Home, true, false) => C::MoveLeftDocument,
+        (NamedKey::Home, false, true) => C::SelectLeftLine,
+        (NamedKey::Home, false, false) => C::MoveLeftLine,
+        (NamedKey::End, true, true) => C::SelectRightDocument,
+        (NamedKey::End, true, false) => C::MoveRightDocument,
+        (NamedKey::End, false, true) => C::SelectRightLine,
+        (NamedKey::End, false, false) => C::MoveRightLine,
         _ => return None,
     })
 }
@@ -1811,7 +1905,23 @@ pub fn set_game_cursor(cursor: Cursor) {
     GAME_CURSOR.store(index, Ordering::Relaxed);
 }
 
+/// Whether the game hid the mouse (Flash's `Mouse.hide`, its UI backend's `set_mouse_visible`).
+static GAME_MOUSE_HIDDEN: AtomicBool = AtomicBool::new(false);
+
+/// The game shows or hides the mouse over itself.
+pub fn set_game_mouse_visible(visible: bool) {
+    GAME_MOUSE_HIDDEN.store(!visible, Ordering::Relaxed);
+}
+
+/// Whether the game's mouse shows (Flash's `Mouse.hide` hasn't hidden it).
+pub fn game_mouse_visible() -> bool {
+    !GAME_MOUSE_HIDDEN.load(Ordering::Relaxed)
+}
+
 fn game_cursor() -> Cursor {
+    if !game_mouse_visible() {
+        return Cursor::None;
+    }
     match GAME_CURSOR.load(Ordering::Relaxed) {
         1 => Cursor::Hand,
         2 => Cursor::Text,
