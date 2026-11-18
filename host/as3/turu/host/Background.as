@@ -43,6 +43,7 @@ public class Background {
     /** The login picture, once loaded ([setImage]). */
     private var picture:Loader;
     private var pictureReady:Boolean = false;
+    private var pictureFailed:Boolean = false;
     /** Whether the first login screen's `sBG` was reported. */
     private var titleSeen:Boolean = false;
 
@@ -76,6 +77,7 @@ public class Background {
     public function setImage(base64:*):void {
         var bytes:ByteArray = decode(String(base64));
         if (bytes.length == 0) {
+            pictureFailed = true;
             return;
         }
         if (picture != null && picture.parent != null) {
@@ -96,6 +98,7 @@ public class Background {
             host.call("debug", ["Login picture: " + loader.content.width + "x" + loader.content.height]);
         });
         loader.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, function(event:IOErrorEvent):void {
+            pictureFailed = true;
             host.call("debug", ["The login picture couldn't be read: " + event.text]);
         });
         picture = loader;
@@ -121,8 +124,14 @@ public class Background {
             host.call("debug", ["Login screen: sBG " + (game.params != null ? game.params.sBG : "?")]);
         }
         if (!pictureReady) {
+            // The game's own background would show until the picture is loaded: keep the title
+            // hidden meanwhile, unless the picture couldn't be read.
+            if (!pictureFailed) {
+                title.visible = false;
+            }
             return;
         }
+        title.visible = true;
         if (picture.parent == title) {
             // The game loads its own background into the title after: the picture stays over it.
             if (title.getChildIndex(picture) != title.numChildren - 1) {

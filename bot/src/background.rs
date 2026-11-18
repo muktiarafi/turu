@@ -94,22 +94,22 @@ fn do_work(bot: &Arc<Bot>, work: Work) {
                 .map_err(|e| crate::BotError::Other(e.to_string()))
         }
         Work::SetBackground => {
-            std::thread::sleep(Duration::from_secs(1));
-            let set = bot
-                .flash
-                .call(
-                    "setBackgroundValues",
-                    vec!["Generic2.swf".into(), "".into()],
-                )
-                .map(|_| ());
-            // Turu's login picture over the game's background (older host SWFs don't have it).
+            // Turu: the login picture goes first, without the second's wait below: until it is
+            // loaded the host SWF hides the login screen's title, and the game's own background
+            // showed meanwhile (older host SWFs don't have it).
             if let Err(e) = bot
                 .flash
                 .call("setLoginImage", vec![base64(LOGIN_IMAGE).into()])
             {
                 tracing::debug!("No login picture: {e}");
             }
-            set
+            std::thread::sleep(Duration::from_secs(1));
+            bot.flash
+                .call(
+                    "setBackgroundValues",
+                    vec!["Generic2.swf".into(), "".into()],
+                )
+                .map(|_| ())
         }
         Work::ItemAdded {
             item_id,
