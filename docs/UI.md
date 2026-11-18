@@ -59,7 +59,7 @@ Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; n
 Turu builds its plugins in), **Army** (Accounts, Army Control, Army Queue, New Tab; Turu's: VibeSkua has them
 in its Manager app and its tabbed host). Android has them too (its tabs run in one engine
 thread; Butler and Army Control are full-screen sheets with finger-sized buttons there, and the
-tab strip's tabs are taller, with "×" on the active one only), and HotKeys for a hardware keyboard. Everything in the bar is one height (26, 40 on a touch screen), so the labels share
+tab strip's tabs are taller, with "×" on the active one only), but not HotKeys (`Platform::has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
 Right: **Update** (only while a newer Turu is out: below), the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
@@ -853,6 +853,7 @@ Turu's window has focus (VibeSkua's Windows-only global keyboard hook isn't port
 modifiers must match exactly; a key that types is ignored while a Turu text box has focus;
 the press is taken from egui, and the game gets it too, as it does Ruffle's own shortcuts.
 What an action did, or why it did nothing, goes to the script log as `[HotKeys] ...`.
+Android (both apps) has no HotKeys: neither the menu item nor the bindings.
 Start Script follows Start Script's rules (a second press while stopping is Force Stop); Load
 Script opens the Script Loader and its dialog; Open Bank is the bar's Bank (its note under
 the bar); Auto Attack/Hunt use the Auto popup's class and mode, or stop the running one, and

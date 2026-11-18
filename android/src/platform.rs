@@ -153,6 +153,11 @@ impl Platform for AndroidPlatform {
         false
     }
 
+    // No Options > HotKeys: a phone has no keyboard to bind, and the window only took room.
+    fn has_hotkeys(&self) -> bool {
+        false
+    }
+
     fn shares_text(&self) -> bool {
         true
     }

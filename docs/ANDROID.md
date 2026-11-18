@@ -43,7 +43,7 @@ How to build, run and check the Android app. The design and the plan are in
 > each server's ping; Advanced Stats, Notification Center ("Script started/stopped: name"),
 > Junk Items and Game Options at phone width; Load Script through the SAF picker (the script
 > copied to `scripts/Imported/`); HotKeys from MuMu's keyboard (F9 opened Load Script, F10
-> started the loaded script, Escape closed a dialog). Army Queue is hidden on Android: its
+> started the loaded script, Escape closed a dialog; HotKeys have since been hidden on Android). Army Queue is hidden on Android: its
 > squads run as processes of their own, which Android can't start.
 >
 > **Checked on MuMu, logged in (2026-11-07):** typing the username and password into the
