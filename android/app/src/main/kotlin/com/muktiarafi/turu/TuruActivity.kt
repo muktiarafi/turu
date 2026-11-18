@@ -197,16 +197,28 @@ class TuruActivity : GameActivity() {
 
     /**
      * A finger down outside a [SurfaceField] that's up closes it, as Back does; the touch still
-     * goes on to what it landed on (the game, or Turu's windows).
+     * goes on to what it landed on (the game, or Turu's windows). With process tabs, a gesture that
+     * starts on the field is the field's (the views'); every other goes to the tab on screen.
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         shell?.let {
-            // As without process tabs: a finger down outside the field above the keyboard closes it.
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                // As without process tabs: a finger down outside the field above the keyboard closes it.
                 for (field in arrayOf(gameField, uiField)) {
                     if (field.touchedOutside(event.rawX, event.rawY)) field.close()
                 }
+                // A tap on the field moves its cursor, a long press selects: the EditText's, not the
+                // game's, which would take the focus off the game's field (or Turu's box) and close
+                // the strip.
+                touchOnField = arrayOf(gameField, uiField).any { field ->
+                    field.touchedInside(event.rawX, event.rawY)
+                }
             }
+            val onField = touchOnField
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                touchOnField = false
+            }
+            if (onField) return super.dispatchTouchEvent(event)
             it.touch(event)
             return true
         }
@@ -311,6 +323,9 @@ class TuruActivity : GameActivity() {
 
     /** The shell over the tabs' processes (the slots). */
     private var shell: SlotShell? = null
+
+    /** Process tabs: whether the gesture under way started on a [SurfaceField] ([dispatchTouchEvent]). */
+    private var touchOnField = false
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

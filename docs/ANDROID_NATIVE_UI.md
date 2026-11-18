@@ -64,8 +64,11 @@ Kotlin side, characters in egui.
 * **A tap outside the strip and the keyboard closes both**, as Back does, and still reaches what it
   landed on. Turu: `TuruActivity.dispatchTouchEvent` sees every touch on its window first and
   closes a strip a finger lands outside of (`SurfaceField.touchedOutside`); a tap on the keyboard
-  isn't one, its window is above. Turu Mas: `TuruOverlay` sees every touch first and calls
-  `Bridge.touchedOutsideFields`.
+  isn't one, its window is above. With process tabs it hands every other touch to the tab on
+  screen (`SlotShell.touch`), but a gesture that starts on the strip (`SurfaceField.touchedInside`)
+  goes to the views, so a tap moves the cursor and a long press selects (cut, copy, paste): sent to
+  the tab, it took the focus off the field and closed the strip. Turu Mas: `TuruOverlay` sees every
+  touch first and calls `Bridge.touchedOutsideFields`.
 
 How the strip is placed differs:
 

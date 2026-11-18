@@ -63,8 +63,19 @@ internal class SurfaceField(private val turu: TuruActivity, target: FieldTarget)
     fun touchedOutside(x: Float, y: Float): Boolean {
         val bar = bar ?: return false
         if (!bar.isLaidOut) return false
-        val area = Rect()
-        bar.getGlobalVisibleRect(area)
-        return !area.contains(x.toInt(), y.toInt())
+        return !area(bar).contains(x.toInt(), y.toInt())
     }
+
+    /**
+     * Whether a finger down at `x`, `y` (on the screen) landed on the field while it's up: then the
+     * touch is the field's (moving the cursor, selecting, the text toolbar), not the game's
+     * ([TuruActivity.dispatchTouchEvent]).
+     */
+    fun touchedInside(x: Float, y: Float): Boolean {
+        val bar = bar ?: return false
+        if (!bar.isLaidOut) return false
+        return area(bar).contains(x.toInt(), y.toInt())
+    }
+
+    private fun area(bar: LinearLayout): Rect = Rect().also { bar.getGlobalVisibleRect(it) }
 }

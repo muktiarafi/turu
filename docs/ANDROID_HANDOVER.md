@@ -218,6 +218,10 @@ can be made `const`" on thread-locals that already are (`screen.rs`, `lib.rs`,
 * **Text fields need `TextControl`:** Ruffle edits a field from `PlayerEvent::TextControl`
   (Backspace, arrows, Ctrl+V), not from `KeyDown`. With Ctrl, Android's key character map types
   nothing, so `input.rs` takes the key's unmodified letter for Ctrl+A/C/V/X.
+* **A tap on the field above the keyboard closed it:** with process tabs,
+  `TuruActivity.dispatchTouchEvent` sent every touch to the tab on screen and none to the views,
+  so the `EditText` never saw one and the game took the focus off its field. A gesture that starts
+  on the strip now goes to the views (`SurfaceField.touchedInside`).
 * **A tap on the keyboard's delete did nothing until delete was held:** without a text view,
   Android gives the keyboard a stand-in connection that turns typed text into keys but drops
   "delete before the cursor", which a keyboard sends while it thinks there's text. `KeyInput.kt`
