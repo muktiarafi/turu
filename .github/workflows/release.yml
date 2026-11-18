@@ -175,9 +175,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y $(cat .github/linux-dependencies.txt)
+        uses: ./.github/actions/linux-deps
 
       # Line tables only (file and line, for Sentry to read crash reports' frames), kept out of
       # the shipped binary: a PDB on Windows, a dSYM on macOS, stripped on Linux after the upload.

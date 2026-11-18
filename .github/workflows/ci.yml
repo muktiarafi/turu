@@ -97,9 +97,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y $(cat .github/linux-dependencies.txt)
+        uses: ./.github/actions/linux-deps
 
       # redundant_clone is allowed as in CLAUDE.md: it flags clones that are needed.
       - name: Clippy
@@ -167,9 +165,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y $(cat .github/linux-dependencies.txt)
+        uses: ./.github/actions/linux-deps
 
       # cargo-nextest runs each test in its own process and every binary's tests at once, instead
       # of one bot/tests/ file after another (.config/nextest.toml). There are no doctests for it

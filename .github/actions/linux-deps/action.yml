@@ -1,0 +1,42 @@
+name: Install Linux dependencies
+description: >
+  Installs the packages in .github/linux-dependencies.txt, keeping their .deb files in the
+  Actions cache. Ubuntu's mirrors are sometimes slow from GitHub's runners (30 MB took almost
+  7 minutes at 74 kB/s), so a job that finds the cache installs them without downloading anything.
+
+runs:
+  using: composite
+  steps:
+    # The runner image's version is in the key: the .deb files were chosen against that image's
+    # installed packages, and a new image (about once a week) may already have newer ones.
+    # ImageOS and ImageVersion are the runner's environment, not the `env` context.
+    - name: Cache key
+      id: key
+      shell: bash
+      run: echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v6
+      id: cache
+      with:
+        path: ~/apt-debs
+        key: linux-deps-${{ steps.key.outputs.image }}-${{ hashFiles('.github/linux-dependencies.txt') }}
+
+    - name: Install from the cache
+      id: cached
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      continue-on-error: true
+      run: sudo apt-get install -y --no-download ~/apt-debs/*.deb
+
+    # No cache, or the cached files no longer install alone: download them (and keep them for the
+    # cache, which is saved at the end of the job only when there was none).
+    - name: Download and install
+      if: steps.cache.outputs.cache-hit != 'true' || steps.cached.outcome == 'failure'
+      shell: bash
+      run: |
+        packages=$(cat .github/linux-dependencies.txt)
+        sudo apt-get update
+        sudo apt-get install -y --download-only $packages
+        mkdir -p ~/apt-debs
+        cp /var/cache/apt/archives/*.deb ~/apt-debs/ 2>/dev/null || true
+        sudo apt-get install -y $packages
