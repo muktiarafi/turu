@@ -2097,6 +2097,8 @@ impl ShellApp {
                     key: key.clone(),
                     pressed,
                     mods,
+                    // The client finds it from the name, as for a US keyboard.
+                    physical: None,
                 });
             }
             return;
@@ -2244,12 +2246,20 @@ impl ShellApp {
         if pressed && self.full_screen && event.logical_key == Key::Named(NamedKey::Escape) {
             self.set_full_screen(false);
         }
-        if let Some(key) = egui_key_name(&event.logical_key) {
+        // The key by egui's name and by its place on the keyboard (Ruffle's, as the window's
+        // `app.rs` gives it): with either known, as a key egui has no name for (on another
+        // layout, the key WASD's W is on) is still the game's.
+        let name = egui_key_name(&event.logical_key);
+        let physical = turu_frontend::shell::physical_key_name(
+            crate::util::winit_input_to_ruffle_key_descriptor(event).physical_key,
+        );
+        if name.is_some() || physical.is_some() {
             let mods = self.mods();
             self.send_shown(&ToClient::Key {
-                key: key.to_owned(),
+                key: name.unwrap_or_default().to_owned(),
                 pressed,
                 mods,
+                physical: physical.map(str::to_owned),
             });
         }
         let command = self.modifiers.control_key() || self.modifiers.super_key();

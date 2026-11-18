@@ -984,6 +984,13 @@ memory budget (NVIDIA, AMD).
     `app.rs` does. Keys go nowhere while a composition is under way (Enter mustn't send the game's
     chat). The game field's area is converted from the stage's pixels to the picture's (the
     window takes them as its viewport's, which puts the candidates off when the game is scaled).
+  * **Keys on the keyboard** (fixed 2026-11-18): a tab's client sent every key as Ruffle's
+    `PhysicalKey::Unknown`. Ruffle takes the game's `keyCode` from the physical key on macOS and
+    Linux (0 for `Unknown`: WASD didn't walk, Enter didn't log in or send chat), and tells held keys
+    apart by it everywhere (one held key for all: on Windows, W then D held and let go left D down,
+    and the character walked on). `ToClient::Key` now carries the physical key as the window maps
+    it (`physical`, by `shell::physical_key_name`), and a key egui has no name for goes over by it
+    alone; without it (a test's `key` line) the client takes the key's place on a US keyboard.
   * **Gamepads**: the shell reads them on a thread of its own (gilrs; the event loop sleeps) and
     passes each button on (`ToClient::Gamepad`); they act only through `--gamepad-button`'s
     mappings to keys, as in the window (the clients get the shell's flags).

@@ -64,11 +64,16 @@ pub enum ToClient {
     },
     /// The wheel or a trackpad, in lines (`dx`, `dy`, positive down and right), at (`x`, `y`).
     Wheel { dx: f32, dy: f32, x: f32, y: f32 },
-    /// A key, by egui's name for it (`egui::Key::name`: "Enter", "A", "ArrowLeft", ...).
+    /// A key, by egui's name for it (`egui::Key::name`: "Enter", "A", "ArrowLeft", ...; empty for
+    /// one egui has no name for), and the key it is on the keyboard by Ruffle's name for it
+    /// ([`physical_key_name`]: "KeyW", "Enter", ...), when the window knows it. Ruffle tells keys
+    /// held apart by it, and on macOS and Linux takes the game's `keyCode` from it.
     Key {
         key: String,
         pressed: bool,
         mods: Mods,
+        #[serde(default)]
+        physical: Option<String>,
     },
     /// Text typed (a character, or what an input method committed).
     Text { text: String },
@@ -522,6 +527,50 @@ pub enum Button {
     Middle,
 }
 
+/// Ruffle's keys on the keyboard, by the names [`ToClient::Key`] carries them with (the W3C's
+/// `code` values, as Ruffle names its variants).
+#[cfg(feature = "ruffle")]
+macro_rules! physical_keys {
+    ($($key:ident),* $(,)?) => {
+        const PHYSICAL_KEYS: &[(ruffle_core::events::PhysicalKey, &str)] =
+            &[$((ruffle_core::events::PhysicalKey::$key, stringify!($key))),*];
+    };
+}
+#[cfg(feature = "ruffle")]
+#[rustfmt::skip]
+physical_keys!(
+    Backquote, Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
+    Minus, Equal, IntlYen, KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL,
+    KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
+    BracketLeft, BracketRight, Backslash, Semicolon, Quote, IntlBackslash, Comma, Period, Slash,
+    IntlRo, Backspace, Tab, CapsLock, Enter, ShiftLeft, ShiftRight, ControlLeft, SuperLeft,
+    AltLeft, Space, AltRight, SuperRight, ContextMenu, ControlRight, Insert, Delete, Home, End,
+    PageUp, PageDown, ArrowUp, ArrowLeft, ArrowDown, ArrowRight, NumLock, NumpadDivide,
+    NumpadMultiply, NumpadSubtract, Numpad7, Numpad8, Numpad9, Numpad4, Numpad5, Numpad6, Numpad1,
+    Numpad2, Numpad3, Numpad0, NumpadAdd, NumpadComma, NumpadEnter, NumpadDecimal, Escape, F1, F2,
+    F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22,
+    F23, F24, F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35, Fn, FnLock, PrintScreen,
+    ScrollLock, Pause,
+);
+
+/// The name [`ToClient::Key`] carries a key on the keyboard by (None for `Unknown`).
+#[cfg(feature = "ruffle")]
+pub fn physical_key_name(key: ruffle_core::events::PhysicalKey) -> Option<&'static str> {
+    PHYSICAL_KEYS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, name)| *name)
+}
+
+/// The key on the keyboard [`physical_key_name`] named.
+#[cfg(feature = "ruffle")]
+pub fn physical_key(name: &str) -> Option<ruffle_core::events::PhysicalKey> {
+    PHYSICAL_KEYS
+        .iter()
+        .find(|(_, n)| *n == name)
+        .map(|(key, _)| *key)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Mods {
     #[serde(default)]
@@ -786,6 +835,22 @@ impl FrameSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every key on the keyboard Ruffle knows goes over by a name of its own and comes back.
+    #[cfg(feature = "ruffle")]
+    #[test]
+    fn physical_keys_round_trip() {
+        use ruffle_core::events::PhysicalKey;
+        assert_eq!(physical_key_name(PhysicalKey::Unknown), None);
+        let mut names = std::collections::HashSet::new();
+        for (key, name) in PHYSICAL_KEYS {
+            assert!(names.insert(*name), "{name} twice");
+            assert_eq!(physical_key_name(*key), Some(*name));
+            assert_eq!(physical_key(name), Some(*key));
+        }
+        assert_eq!(physical_key("KeyW"), Some(PhysicalKey::KeyW));
+    }
+
     use std::net::TcpListener;
     use std::time::Duration;
 
@@ -836,6 +901,7 @@ mod tests {
                     shift: true,
                     ..Mods::default()
                 },
+                physical: Some("Enter".into()),
             },
             ToClient::Tabs {
                 tabs: vec![TabInfo {

@@ -653,7 +653,12 @@ impl ClientScreen {
                     });
                 }
             }
-            ToClient::Key { key, pressed, mods } => self.key(player, &key, pressed, mods),
+            ToClient::Key {
+                key,
+                pressed,
+                mods,
+                physical,
+            } => self.key(player, &key, physical.as_deref(), pressed, mods),
             ToClient::NoSurfaces { reason } => {
                 if self.shared.is_some() {
                     tracing::warn!(
@@ -1229,7 +1234,16 @@ impl ClientScreen {
 
     /// A key: Turu's UI's while one of its text boxes has the focus, else the game's (and
     /// HotKeys', which see the press too). Typed text comes as [`ToClient::Text`].
-    fn key(&mut self, player: &mut Player, name: &str, pressed: bool, mods: Mods) {
+    /// `physical` is the key on the keyboard, by [`crate::shell::physical_key_name`], when the
+    /// shell knows it.
+    fn key(
+        &mut self,
+        player: &mut Player,
+        name: &str,
+        physical: Option<&str>,
+        pressed: bool,
+        mods: Mods,
+    ) {
         self.modifiers = egui::Modifiers {
             alt: mods.alt,
             ctrl: mods.ctrl,
@@ -1276,11 +1290,21 @@ impl ClientScreen {
         if self.egui.egui_wants_keyboard_input() {
             return;
         }
-        let Some((logical_key, key_location)) = logical_key(name) else {
+        // Ruffle tells keys held apart by the key on the keyboard (with every key `Unknown`, a key
+        // let go after another was let go stays down: WASD walked on), and on macOS and Linux
+        // takes the game's `keyCode` from it (0 for `Unknown`: no WASD, no Enter).
+        let physical_key = physical
+            .and_then(crate::shell::physical_key)
+            .or_else(|| physical_key_for(name))
+            .unwrap_or(PhysicalKey::Unknown);
+        let Some((logical_key, key_location)) = logical_key(name)
+            .or((physical_key != PhysicalKey::Unknown)
+                .then_some((LogicalKey::Unknown, KeyLocation::Standard)))
+        else {
             return;
         };
         let key = KeyDescriptor {
-            physical_key: PhysicalKey::Unknown,
+            physical_key,
             logical_key,
             key_location,
         };
@@ -1719,6 +1743,20 @@ fn logical_key(name: &str) -> Option<(LogicalKey, KeyLocation)> {
     Some((LogicalKey::Named(named), KeyLocation::Standard))
 }
 
+/// The key on a US keyboard egui's name is on, for a key that came without the shell's (a test's
+/// `key` line).
+fn physical_key_for(name: &str) -> Option<PhysicalKey> {
+    let mut chars = name.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if c.is_ascii_alphabetic() => {
+            crate::shell::physical_key(&format!("Key{}", c.to_ascii_uppercase()))
+        }
+        (Some(c), None) if c.is_ascii_digit() => crate::shell::physical_key(&format!("Digit{c}")),
+        // The named keys egui and Ruffle name alike: Enter, Space, ArrowLeft, F1, ...
+        _ => crate::shell::physical_key(name),
+    }
+}
+
 /// What a key does in a game text field instead of typing (Backspace, arrows, Ctrl+V).
 fn text_control(key: LogicalKey, mods: Mods) -> Option<TextControlCode> {
     use TextControlCode as C;
@@ -1813,5 +1851,26 @@ mod tests {
             text_control(LogicalKey::Character('v'), command),
             Some(TextControlCode::Paste)
         );
+    }
+
+    /// Ruffle takes `keyCode` from the key on the keyboard on macOS and Linux, and tells held keys
+    /// apart by it everywhere: never `Unknown` for the keys the game reads.
+    #[test]
+    fn keys_have_their_place_on_the_keyboard() {
+        for (name, physical) in [
+            ("W", PhysicalKey::KeyW),
+            ("A", PhysicalKey::KeyA),
+            ("S", PhysicalKey::KeyS),
+            ("D", PhysicalKey::KeyD),
+            ("1", PhysicalKey::Digit1),
+            ("Enter", PhysicalKey::Enter),
+            ("Space", PhysicalKey::Space),
+            ("ArrowLeft", PhysicalKey::ArrowLeft),
+            ("F5", PhysicalKey::F5),
+        ] {
+            assert_eq!(physical_key_for(name), Some(physical), "{name}");
+        }
+        assert_eq!(physical_key_for("Minus"), Some(PhysicalKey::Minus));
+        assert_eq!(physical_key_for("Nothing"), None);
     }
 }
