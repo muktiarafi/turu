@@ -15,8 +15,8 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Mugetsu's other 2.0.0 speed-ups by `platform::DEFAULT_ON`, on a computer and on Android), a
   leak diagnostic built on `Arc<SwfMovie>` (upstream made movies GC objects), and since M6 the
   per-player thread-local state and command segments that let several tabs share a thread (one
-  player per process now). Mugetsu's render thread isn't used in a tab's client yet (it pays with
-  frame interpolation, which clients do since 2026-11-18); its present thread follows Mugetsu's default
+  player per process now). Mugetsu's render thread can be used in a tab's client since
+  2026-11-18, with a `render-thread` file next to the program (below); its present thread follows Mugetsu's default
   in the window for a movie given on the command line (a client draws into a texture the shell
   shows, and never uses it).
   Mugetsu 2.0.0's player options are in the window's right-click menu (its 2.0.0 layout, one
@@ -60,9 +60,32 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   `TURU_SHELL_TEST`'s `rate`, which now also counts presents with no new picture, one, or more):
   120 presents a second, each with one new picture (a handful of misses in 3600); at every second
   refresh (the debug build's costlier draws) 60 new ones, half the presents, none doubled;
-  uncapped 90 with the limit at 90, about 360 without; Options' Frame Pacing, FPS Limit and Frame
+  uncapped 90 with the limit at 90, about 360 without (in later runs macOS held it to the
+  refresh rate, 120, with the render thread or without); Options' Frame Pacing, FPS Limit and Frame
   Interpolation clicked on a running tab took effect at once (`TURU_SHELL_TEST`'s `click`). Not
   run: in game, Grid View, Windows and Linux.
+  **Mugetsu's render thread in a tab's client** (2026-11-18, opt-in): with a `render-thread` file
+  next to the program (not with `no-render-thread`, nor without the shape uploads it counts on,
+  as in Mugetsu), a client's renderer is Mugetsu's `ThreadedBackend`: the game's picture is walked
+  on the engine thread and its GPU commands are made on the render thread meanwhile. The client
+  submits its own picture (the blit and Turu's UI) after the game's, from the render thread
+  (`render_thread::run_after_picture`), and asks for "done" only then; it reads the game's
+  texture by the renderer's target state (`render_thread::target_state`), so drawing doesn't wait
+  for the picture being made. The pacer budgets by the slower of the two threads, and by a
+  picture's whole way from its draw to the GPU having finished it (`Pacing::record_pipeline`, also
+  without the render thread: the client draws the next only then; recorded once per game frame
+  too, so a tab it took down to that comes back; the perf log's `pictures:` line shows it). Mugetsu turns it on with frame interpolation on Windows; Turu leaves it off until it has
+  run there and in a crowded room. The perf log (`TURU_PERF_LOG`) says the thread's last picture
+  and what waited for it. Checked on the Mac (login screen): 120 even pictures a second in the
+  release build, with it and without; in the debug build 120 with it (the floor never engaged:
+  about 3 ms from draw to finished), against 60 without; two tabs, switching, minimizing,
+  uncapped with and without a limit, Options open, a resize, the fallback to pixels and the memory
+  limit. Not confirmed: the client's own close with it (a killed shell's clients end by
+  `--exit-with-parent`'s stdin watcher first). It can't show here that the thread pays: that needs
+  a crowded room.
+  Found on the way: the memory limit's freeing, Free Memory Now and a nearly full graphics memory
+  freed the renderer's spare textures in the window only; a tab's client never did (since M6,
+  every AQW tab). They do now (`memory::trim_renderer`).
   Safe Drawing (Options > Application on Android, a `safe-drawing` file on a computer) is gone:
   nobody used it since Turu Mas; single `no-<switch>` files next to the program remain.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
@@ -722,7 +745,7 @@ In-game behaviour is checked by hand, so expect fixes in game paths and timings.
 ## Known gaps
 
 - **Tabs are processes since M6** (2026-11-17): a crash or a lost GPU device ends one tab, which
-  the shell starts again logged in. Not yet in a tab's client: Mugetsu's render thread, IME
+  the shell starts again logged in. Not yet in a tab's client: IME
   composition, gamepads, drag-and-drop and Flash's own right-click items (the window for a movie
   given on the command line still has them). Not run on Windows or Linux, nor on phones (M4).
   The tabs share the data folder and Ruffle's SharedObjects (the game's saved

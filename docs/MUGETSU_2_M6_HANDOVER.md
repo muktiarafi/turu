@@ -112,16 +112,21 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    with Turu's pacer (`client_screen.rs` `plan_pace`) and tells the shell (`ToShell::Pace`); the
    shell presents on every refresh and ticks the client (`ToClient::Refreshed`), which draws only
    on those ticks; Frame Pacing and FPS Limit are in client Options. Shared surfaces went from 3 to
-   5. Checked on the Mac only (login screen, no account). Left: Mugetsu's render thread
-   (`ruffle_render_wgpu::render_thread::ThreadedBackend`; `client_screen.rs`'s
-   `downcast_ref::<WgpuRenderBackend<MovieTexture>>` must go through
-   `render_thread::with_wgpu_backend`); a run in game (a crowded room, where the pacer steps down);
+   5. Mugetsu's render thread in clients: done, opt-in with a `render-thread` file (branch
+   `client-render-thread`; STATUS.md, "Mugetsu's render thread in a tab's client"). Whether it
+   should be on by default, as Mugetsu has it with interpolation on Windows, waits for a run there
+   and in a crowded room (compare the perf log's `render thread:` and `pictures:` lines with it and
+   without). The client's close settles the render thread and clears its segments there; that
+   close hasn't been seen to run: a client whose shell goes ends by `--exit-with-parent`'s stdin
+   watcher (`turu_bot::army::exit_with_parent`, `process::exit` at once), which races the
+   connection's close path, the one with Mugetsu's release of the GPU before the driver unloads
+   (the reason for it on Windows). Worth a look on Windows. Checked on the Mac only (login screen, no
+   account). Left: a run in game (a crowded room, where the pacer steps down);
    Windows and Linux, where the shell's present mode switch (`apply_pace`) and whether presenting
    waits for the refresh (the shell's ticks rely on it) are untried; Grid View's active tab
-   interpolating (should, untried); Turu's pacer counts only `player.render()`, not the pictures
-   skipped because one is still under way or no surface is free (the perf log counts those: feed
-   them back into its divisor, as Mugetsu's window does with `PipelineLimit`, if a crowded room
-   shows them). A picture is the shell's for about 4 refreshes, mostly
+   interpolating (should, untried). The pacer now also counts a picture's whole way (draw to
+   finished, `Pacing::record_pipeline`), which the render thread made necessary; the pictures
+   still skipped are in the perf log. A picture is the shell's for about 4 refreshes, mostly
    waiting for the shell's release poll while its main thread waits in `get_current_texture`: a
    release thread could bring the pool back down.
 4. ~~**Mugetsu's Windows changes**~~ ported (2026-11-17, type-checked for Windows only):
@@ -165,7 +170,8 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
   non-AQW movies; close the clients' core gaps first and defer interpolation, IME, gamepads,
   drag-and-drop.
 - After M6, follow Mugetsu where Turu's reasons are gone: the thread-state commits dropped, the
-  present thread no longer forced off. The render thread waits for interpolation in clients.
+  present thread no longer forced off. The render thread in clients is opt-in (a `render-thread`
+  file) until it has run on Windows and in a crowded room.
 
 ## Traps
 

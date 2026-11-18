@@ -82,16 +82,33 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let mut fonts = fontdb::Database::default();
     fonts.load_system_fonts();
     let mut players = Players::new();
-    let player = build_player(
-        &preferences,
-        movie_url,
-        sender.clone(),
-        tab,
-        renderer,
-        // The window's device fonts, the clipboard and sound, for the game.
-        Some(ClientUiBackend::new(Rc::new(fonts), preferences.clone())),
-        StageQuality::High,
-    );
+    // The window's device fonts, the clipboard and sound, for the game.
+    let ui = Some(ClientUiBackend::new(Rc::new(fonts), preferences.clone()));
+    // Mugetsu's render thread (`render-thread` next to the program; see
+    // `mugetsu::apply_drawing_switches`): the picture's GPU commands are made there while this
+    // thread goes on (`ClientScreen` hands the shell its picture after them).
+    let player = if ruffle_render_wgpu::render_thread::enabled() {
+        let renderer = ruffle_render_wgpu::render_thread::ThreadedBackend::new(renderer);
+        build_player(
+            &preferences,
+            movie_url,
+            sender.clone(),
+            tab,
+            renderer,
+            ui,
+            StageQuality::High,
+        )
+    } else {
+        build_player(
+            &preferences,
+            movie_url,
+            sender.clone(),
+            tab,
+            renderer,
+            ui,
+            StageQuality::High,
+        )
+    };
     // Heard only while it's the tab on screen (`ClientScreen`), as the window's tabs are.
     player.lock().expect("the player was just built").set_volume(0.0);
     players.add(Slot::new(Some(tab), player, ()));
@@ -200,7 +217,18 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
             // are dropped. 3 s at most. A crash being handled on another thread meanwhile gets
             // its report written before the end (`windows::wait_for_crash_report`).
             crate::mugetsu::set_exit_phase(1);
-            let _ = forward.sender.send(EngineEvent::Run(Box::new(|_| {
+            let _ = forward.sender.send(EngineEvent::Run(Box::new(|player| {
+                // The render thread's storage holds its own of the device: let go of there too,
+                // once its last picture is done (at once without one).
+                let renderer = player.renderer_mut();
+                ruffle_render_wgpu::render_thread::settle::<MovieTexture>(renderer);
+                ruffle_render_wgpu::render_thread::run_after_picture::<MovieTexture>(
+                    renderer,
+                    Box::new(|| {
+                        ruffle_render_wgpu::segments::clear();
+                    }),
+                );
+                ruffle_render_wgpu::render_thread::settle::<MovieTexture>(renderer);
                 let shapes = ruffle_core::shutdown_deferred_shapes();
                 let segments = ruffle_render_wgpu::segments::clear();
                 crate::mugetsu::release_video_memory_adapter();
@@ -320,15 +348,29 @@ fn perf_tick(player: &mut ruffle_core::Player) {
             let shown = SCREEN.with_borrow_mut(|screen| {
                 screen
                     .as_mut()
-                    .map(|screen| (screen.shown(), screen.fps(), screen.take_skipped()))
+                    .map(|screen| (screen.shown(), screen.fps(), screen.take_skipped(), screen.pipeline_ms()))
             });
-            if let Some((shown, fps, skipped)) = shown {
-                // With frame interpolation: new pictures due on the shell's refreshes but skipped.
+            if let Some((shown, fps, skipped, pipeline_ms)) = shown {
+                // With frame interpolation: new pictures due on the shell's refreshes but skipped,
+                // and a picture's way from its draw to finished (the pacer's floor).
                 tracing::info!(
                     target: "turu_perf",
-                    "pictures: {}{}",
+                    "pictures: {}{}{}",
                     if shown { format!("{fps:.1} a second") } else { "none (hidden)".to_string() },
-                    if skipped > 0 { format!(", {skipped} due skipped") } else { String::new() }
+                    if skipped > 0 { format!(", {skipped} due skipped") } else { String::new() },
+                    if pipeline_ms > 0.0 { format!(", {pipeline_ms:.1} ms from draw to finished") } else { String::new() }
+                );
+            }
+            // With the render thread: its last picture's time, and what waited for a picture it
+            // was making (a wait on every picture would mean the two threads take turns).
+            let renderer = player.renderer_mut();
+            if let Some(micros) = ruffle_render_wgpu::render_thread::picture_micros::<MovieTexture>(renderer) {
+                tracing::info!(
+                    target: "turu_perf",
+                    "render thread: last picture {:.1} ms; waited for its pictures: {}",
+                    micros as f64 / 1000.0,
+                    ruffle_render_wgpu::render_thread::waits_report::<MovieTexture>(renderer)
+                        .unwrap_or_else(|| "nothing".into())
                 );
             }
         }

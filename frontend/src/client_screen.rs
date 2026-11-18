@@ -32,10 +32,9 @@ use ruffle_core::events::{
     TextControlCode,
 };
 use ruffle_core::{Player, PlayerEvent};
-use ruffle_render_wgpu::backend::WgpuRenderBackend;
 use ruffle_render_wgpu::descriptors::Descriptors;
+use ruffle_render_wgpu::render_thread;
 use ruffle_render_wgpu::wgpu;
-use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -178,6 +177,10 @@ pub struct ClientScreen {
     /// New pictures due on the shell's refreshes but skipped (the last still under way, or no
     /// surface free), for the perf log: the pacer doesn't see them.
     skipped: u32,
+    /// The game's texture as the blit draws it, and the renderer's target state it was read at
+    /// (`render_thread::target_state`; None without a render thread, read each time then):
+    /// reading it behind a render thread waits for the picture being recorded.
+    movie: Option<(Option<u64>, wgpu::BindGroup)>,
 }
 
 impl ClientScreen {
@@ -237,6 +240,7 @@ impl ClientScreen {
             last_refreshed: None,
             uncapped_interval: None,
             skipped: 0,
+            movie: None,
         }
     }
 
@@ -328,6 +332,12 @@ impl ClientScreen {
     /// The game's pictures drawn a second, over the last second (Show FPS's figure).
     pub fn fps(&self) -> f32 {
         self.fps
+    }
+
+    /// The pacer's recent average of a picture's way from its draw to finished (ms), for the
+    /// perf log.
+    pub fn pipeline_ms(&self) -> f64 {
+        self.pacing.pipeline_ms()
     }
 
     /// New pictures skipped since the last call (see `skipped`).
@@ -577,8 +587,12 @@ impl ClientScreen {
                 }
             }
         }
+        // (Every ms also while interpolation is wanted: the pacer times the pictures' way.)
         let poll = match self.pace {
             Pace::Refresh | Pace::Uncapped => READBACK_POLL_PACED,
+            _ if self.shared.is_some() && ruffle_core::frame_interpolation::enabled() => {
+                READBACK_POLL_PACED
+            }
             Pace::Frames | Pace::Unknown => READBACK_POLL,
         };
         let readback = self.readback.as_ref().map(|_| Instant::now() + poll);
@@ -692,6 +706,15 @@ impl ClientScreen {
         };
         if !done.load(Ordering::Acquire) {
             return;
+        }
+        // A picture's whole way, for the pacer: of shared surfaces (pixels never interpolate),
+        // while interpolation is wanted, once per game frame too, or a tab its floor took down
+        // to that would never come back.
+        if matches!(self.readback, Some(Readback::Shared { .. }))
+            && ruffle_core::frame_interpolation::enabled()
+        {
+            self.pacing
+                .record_pipeline(self.last_draw.elapsed().as_secs_f64() * 1000.0);
         }
         match self.readback.take().expect("checked above") {
             Readback::Pixels {
@@ -1031,11 +1054,19 @@ impl ClientScreen {
             });
             new_picture = true;
         }
+        // Before the picture: behind a render thread nothing is under way now, so a resize's new
+        // texture is read without waiting.
+        let movie = self.movie_bind_group(player);
         if new_picture && !turu::headless_mode() {
             let render_started = Instant::now();
             player.render();
-            self.pacing
-                .record_draw(render_started.elapsed().as_secs_f64() * 1000.0);
+            let mut draw_ms = render_started.elapsed().as_secs_f64() * 1000.0;
+            // Behind a render thread, `render` only walks the stage: the thread makes the GPU
+            // commands meanwhile, and the slower of the two sets the pace (its last picture's).
+            if let Some(micros) = render_thread::picture_micros::<MovieTexture>(player.renderer()) {
+                draw_ms = draw_ms.max(micros as f64 / 1000.0);
+            }
+            self.pacing.record_draw(draw_ms);
             // Pictures of the game a second, for Show FPS (the window counts its frames shown).
             self.fps_frames += 1;
             let elapsed = self.fps_since.elapsed().as_secs_f32();
@@ -1147,10 +1178,7 @@ impl ClientScreen {
                     ..Default::default()
                 })
                 .forget_lifetime();
-            if let Some(movie) =
-                <dyn Any>::downcast_ref::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
-                    .map(|r| r.target())
-            {
+            if let Some(movie) = &movie {
                 pass.set_viewport(
                     left.round(),
                     top,
@@ -1159,7 +1187,7 @@ impl ClientScreen {
                     0.0,
                     1.0,
                 );
-                self.blit.draw(&self.pipeline, &movie.bind_group, &mut pass);
+                self.blit.draw(&self.pipeline, movie, &mut pass);
                 pass.set_viewport(0.0, 0.0, size.0 as f32, size.1 as f32, 0.0, 1.0);
             }
             self.egui_renderer.render(&mut pass, &primitives, &screen);
@@ -1183,37 +1211,77 @@ impl ClientScreen {
             );
         }
         buffers.push(encoder.finish());
-        queue.submit(buffers);
         for id in &textures.free {
             self.egui_renderer.free_texture(id);
         }
         // Applied: epaint checks (in debug builds) that none is dropped unhandled.
         textures.clear();
-        let Some(target) = target else {
-            // The shell gets the surface once the GPU has finished drawing it.
-            let (id, _) = surface.expect("no target without a surface");
-            let done = Arc::new(AtomicBool::new(false));
-            let finished = done.clone();
-            queue.on_submitted_work_done(move || finished.store(true, Ordering::Release));
-            self.readback = Some(Readback::Shared { id, size, done });
-            return;
+        // Submitted after the game's picture, which a render thread submits (at once without
+        // one), and only then asked to say when it's done: asked here, it would say so for the
+        // work before it, and the shell would get a surface not drawn yet.
+        let queue = queue.clone();
+        let (readback, finish): (Readback, ruffle_render_wgpu::present::Job) = match target {
+            None => {
+                let (id, _) = surface.expect("no target without a surface");
+                let done = Arc::new(AtomicBool::new(false));
+                let finished = done.clone();
+                (
+                    Readback::Shared { id, size, done },
+                    Box::new(move || {
+                        queue.submit(buffers);
+                        queue.on_submitted_work_done(move || {
+                            finished.store(true, Ordering::Release)
+                        });
+                    }),
+                )
+            }
+            Some(target) => {
+                let mapped = Arc::new(AtomicBool::new(false));
+                let done = mapped.clone();
+                let buffer = target.buffer.clone();
+                (
+                    Readback::Pixels {
+                        buffer: target.buffer.clone(),
+                        size,
+                        padded_row: target.padded_row,
+                        mapped,
+                    },
+                    Box::new(move || {
+                        queue.submit(buffers);
+                        buffer
+                            .slice(..)
+                            .map_async(wgpu::MapMode::Read, move |result| {
+                                if result.is_ok() {
+                                    done.store(true, Ordering::Release);
+                                }
+                            });
+                    }),
+                )
+            }
         };
-        let mapped = Arc::new(AtomicBool::new(false));
-        let done = mapped.clone();
-        target
-            .buffer
-            .slice(..)
-            .map_async(wgpu::MapMode::Read, move |result| {
-                if result.is_ok() {
-                    done.store(true, Ordering::Release);
-                }
-            });
-        self.readback = Some(Readback::Pixels {
-            buffer: target.buffer.clone(),
-            size,
-            padded_row: target.padded_row,
-            mapped,
-        });
+        render_thread::run_after_picture::<MovieTexture>(player.renderer_mut(), finish);
+        self.readback = Some(readback);
+    }
+
+    /// The game's texture's bind group for the blit (see `movie`).
+    fn movie_bind_group(&mut self, player: &mut Player) -> Option<wgpu::BindGroup> {
+        let renderer = player.renderer_mut();
+        let state = render_thread::target_state::<MovieTexture>(renderer);
+        if let (Some(state), Some((Some(cached), bind_group))) = (state, &self.movie)
+            && state == *cached
+        {
+            return Some(bind_group.clone());
+        }
+        let bind_group =
+            render_thread::with_wgpu_backend::<MovieTexture, _>(renderer, |renderer| {
+                renderer.target().bind_group.clone()
+            })?;
+        // (Reading it counts as a change of the target: the state after it is the one to keep.)
+        self.movie = Some((
+            render_thread::target_state::<MovieTexture>(renderer),
+            bind_group.clone(),
+        ));
+        Some(bind_group)
     }
 }
 

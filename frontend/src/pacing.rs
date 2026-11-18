@@ -23,6 +23,10 @@ pub struct Pacing {
     /// Recent averages of a draw's and a SWF frame's time on the player's thread (ms).
     draw_cost_ms: f64,
     frame_cost_ms: f64,
+    /// A process tab's client: the recent average of a picture's whole way, from its draw to the
+    /// GPU having finished it (ms; 0 elsewhere). It draws the next only then, so new pictures
+    /// can't come faster, whatever each step costs (the render thread splits the draw in two).
+    pipeline_ms: f64,
     /// Draw a new picture on every n-th refresh of the display.
     draw_divisor: u32,
     /// While interpolating: when the last new picture was due.
@@ -47,6 +51,7 @@ impl Pacing {
         Self {
             draw_cost_ms: 2.0,
             frame_cost_ms: 3.0,
+            pipeline_ms: 0.0,
             draw_divisor: 1,
             picture_due: Instant::now(),
             divisor_up_since: None,
@@ -89,6 +94,22 @@ impl Pacing {
         self.draw_cost_ms = self.draw_cost_ms * 0.9 + cost * 0.1;
     }
 
+    /// See `pipeline_ms` (0 where nothing records it).
+    pub fn pipeline_ms(&self) -> f64 {
+        self.pipeline_ms
+    }
+
+    /// A process tab's client: a picture took `ms` from its draw until the GPU had finished it
+    /// (see `pipeline_ms`); one-off slow ones count at most 3x the average.
+    pub fn record_pipeline(&mut self, ms: f64) {
+        let ms = if self.pipeline_ms > 0.0 {
+            ms.min(self.pipeline_ms * 3.0)
+        } else {
+            ms
+        };
+        self.pipeline_ms = self.pipeline_ms * 0.9 + ms * 0.1;
+    }
+
     /// While interpolating, for a draw that started at `started`: whether it draws a new
     /// in-between picture. One goes out on the first refresh after it's due, every n refreshes'
     /// time; the refreshes in between show the last one again. Timed, not counted: a long draw
@@ -126,7 +147,11 @@ impl Pacing {
                 .ceil()
                 .clamp(1.0, 16.0) as u32
         };
-        let needed = divisor_for(self.draw_cost_ms);
+        // A picture's whole way has to fit between two new ones, with room for a late refresh.
+        let refresh_ms = self.refresh_interval.as_secs_f64() * 1000.0;
+        let pipeline_divisor =
+            |margin: f64| ((self.pipeline_ms * margin / refresh_ms).ceil() as u32).clamp(1, 16);
+        let needed = divisor_for(self.draw_cost_ms).max(pipeline_divisor(1.15));
         let lasted = |since: &mut Option<Instant>, wanted: bool, secs: f64| {
             if !wanted {
                 *since = None;
@@ -134,7 +159,7 @@ impl Pacing {
             }
             now.duration_since(*since.get_or_insert(now)).as_secs_f64() >= secs
         };
-        let affordable = divisor_for(self.draw_cost_ms * 1.3);
+        let affordable = divisor_for(self.draw_cost_ms * 1.3).max(pipeline_divisor(1.4));
         let once_per_frame =
             (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
         let big_step = once_per_frame || affordable * 2 <= self.draw_divisor;
@@ -278,5 +303,49 @@ mod tests {
         // At 24 Hz, three under would be a big share: 90% of it instead.
         let slow = Duration::from_secs_f64(1.0 / 24.0);
         assert!((fps_limit(1, slow).unwrap() - 21.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_long_way_to_a_finished_picture_steps_down() {
+        let mut pacing = Pacing::new();
+        pacing.set_refresh_rate(120_000);
+        // Cheap draws, but 8 ms from a draw to its finished picture: every refresh's 8.3 ms
+        // leaves no room for a late one.
+        for _ in 0..100 {
+            pacing.record_draw(1.0);
+            pacing.record_pipeline(8.0);
+        }
+        let start = Instant::now();
+        pacing.plan(start, 30.0);
+        assert!(pacing.plan(start + Duration::from_millis(600), 30.0));
+        assert_eq!(pacing.draw_divisor, 2);
+        // 2.5 ms fits: back to every refresh once it has lasted.
+        for _ in 0..100 {
+            pacing.record_pipeline(2.5);
+        }
+        pacing.plan(start + Duration::from_millis(700), 30.0);
+        assert!(pacing.plan(start + Duration::from_millis(5000), 30.0));
+        assert_eq!(pacing.draw_divisor, 1);
+    }
+
+    #[test]
+    fn a_way_too_long_for_interpolating_comes_back() {
+        // At 60 Hz the step under every refresh is once per game frame.
+        let mut pacing = Pacing::new();
+        pacing.set_refresh_rate(60_000);
+        for _ in 0..100 {
+            pacing.record_draw(1.0);
+            pacing.record_pipeline(20.0);
+        }
+        let start = Instant::now();
+        pacing.plan(start, 30.0);
+        assert!(!pacing.plan(start + Duration::from_millis(600), 30.0));
+        // Still recorded once per frame meanwhile: short ways bring it back.
+        for _ in 0..100 {
+            pacing.record_pipeline(3.0);
+        }
+        pacing.plan(start + Duration::from_millis(700), 30.0);
+        assert!(pacing.plan(start + Duration::from_millis(1800), 30.0));
+        assert_eq!(pacing.draw_divisor, 1);
     }
 }

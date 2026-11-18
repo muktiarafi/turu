@@ -955,6 +955,22 @@ pub fn apply_drawing_switches() {
             set(var);
         }
     }
+    // Turu: a tab's client only (`client.rs`; the window here is plain Ruffle's).
+    if render_thread_wanted(exe_flag, std::env::var_os("RUFFLE_SHAPE_UPLOADS").is_some())
+        && std::env::var_os(RENDER_THREAD).is_none()
+    {
+        set(RENDER_THREAD);
+    }
+}
+
+/// Mugetsu 2.0.0's render thread (`ruffle_render_wgpu::render_thread`). Turu: on only with a
+/// `render-thread` file next to the program (Mugetsu turns it on with frame interpolation on
+/// Windows, where Turu hasn't been run yet), and never with `no-render-thread` or without the
+/// shape uploads it counts on, as in Mugetsu.
+const RENDER_THREAD: &str = "RUFFLE_RENDER_THREAD";
+
+fn render_thread_wanted(flag: impl Fn(&str) -> bool, shape_uploads: bool) -> bool {
+    flag("render-thread") && !flag("no-render-thread") && shape_uploads
 }
 
 /// Switches that are only on with their file next to the exe (Mugetsu 2.0.0's).
@@ -975,7 +991,7 @@ const BY_FILE: [(&str, &str); 10] = [
     ("lean-verify", "RUFFLE_LEAN_VERIFY"),
     // Lean render's check: the unchanged branches are walked as well and compared.
     ("lean-render-verify", "RUFFLE_LEAN_RENDER_VERIFY"),
-    // (Turu: no `render-thread`: see `player.rs`.)
+    // (Turu: `render-thread` below: `render_thread_wanted`.)
     // The pick's check: every skipped branch is picked in full as well, and a difference is
     // reported in the log ("PICK MISMATCH", "PICK NOTE OUT OF DATE"); and its cost and counts.
     ("pick-verify", "RUFFLE_PICK_VERIFY"),
@@ -1340,8 +1356,20 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power: 
 
 #[cfg(test)]
 mod tests {
-    use super::{AutomaticGraphics, FpsLimit, Performance, automatic_graphics, open_gpu};
+    use super::{AutomaticGraphics, FpsLimit, Performance, automatic_graphics, open_gpu, render_thread_wanted};
     use std::path::PathBuf;
+
+    #[test]
+    fn the_render_thread_needs_its_file_and_the_shape_uploads() {
+        let files = |names: &'static [&'static str]| move |name: &str| names.contains(&name);
+        assert!(!render_thread_wanted(files(&[]), true));
+        assert!(render_thread_wanted(files(&["render-thread"]), true));
+        assert!(!render_thread_wanted(files(&["render-thread"]), false));
+        assert!(!render_thread_wanted(
+            files(&["render-thread", "no-render-thread"]),
+            true
+        ));
+    }
 
     #[test]
     fn directx_12_that_does_not_start_is_replaced_by_vulkan() {
