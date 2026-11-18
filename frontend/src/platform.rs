@@ -257,6 +257,15 @@ pub trait Platform: Send + Sync {
 
     /// Opens the folder of Turu's log in the file manager.
     fn open_log_folder(&self) {}
+
+    /// Whether Safe Drawing ([`SAFE_DRAWING`]) is saved on for the next start, or None where
+    /// Options doesn't offer it (a computer has a `safe-drawing` file next to the program).
+    fn safe_drawing(&self) -> Option<bool> {
+        None
+    }
+
+    /// Saves Safe Drawing for the next start (the switches are read once, as they're first used).
+    fn set_safe_drawing(&self, _on: bool) {}
 }
 
 /// Mugetsu 2.0.0's speed-ups, which its player turns on when AQW is played: the switch, and
@@ -284,15 +293,56 @@ pub const DEFAULT_ON: [(&str, &str); 8] = [
     ("RUFFLE_EARLY_SCRIPTS", "early-scripts"),
 ];
 
-/// The switches of [`DEFAULT_ON`] to set before Ruffle reads them: less those whose `no-<name>`
-/// file `off` says is there, and those already set from outside (`RUFFLE_LEAN_RENDER=every`,
+/// Safe Drawing: the switches (and their values) for Ruffle's plain ways of drawing, for
+/// graphics drivers that misdraw (streaks, garbled colours, parts of maps missing). With them
+/// [`drawing_switches`] leaves [`DEFAULT_ON`] off too, as Mugetsu 2.0.0's `safe-drawing` does.
+/// It only tells whether a speed-up is at fault; single `no-<name>` files (a computer) or
+/// `--env` lines (`turu-args.txt` on Android) find which.
+pub const SAFE_DRAWING: [(&str, &str); 6] = [
+    ("RUFFLE_NO_SHARED_SHAPES", "1"),
+    ("RUFFLE_NO_ATLAS", "1"),
+    ("RUFFLE_NO_CACHE_BATCH", "1"),
+    ("RUFFLE_NO_PASS_MERGE", "1"),
+    ("RUFFLE_SLOW_MULTIPLY", "1"),
+    // Turu: ruffle-aqw's OpenGL replay skips calls that set what is already set (both levers on
+    // unless `RUFFLE_GL_LEVERS` lists them): a suspect on phones drawing with OpenGL, which
+    // Mugetsu doesn't have. An empty list turns both off.
+    ("RUFFLE_GL_LEVERS", ""),
+];
+
+/// The switches to set (with their values) before Ruffle reads them. Without Safe Drawing
+/// (`safe`): [`DEFAULT_ON`], less those whose `no-<name>` file `flag` says is there. With it:
+/// [`SAFE_DRAWING`], and of [`DEFAULT_ON`] only those whose own `<name>` file brings one back
+/// (to find the one at fault). Never one already set from outside (`RUFFLE_LEAN_RENDER=every`,
 /// for tests).
-pub fn drawing_switches(off: impl Fn(&str) -> bool) -> Vec<&'static str> {
-    DEFAULT_ON
+pub fn drawing_switches(
+    flag: impl Fn(&str) -> bool,
+    safe: bool,
+) -> Vec<(&'static str, &'static str)> {
+    let safe_ones = SAFE_DRAWING.iter().copied().filter(|_| safe);
+    let default_on = DEFAULT_ON
         .iter()
-        .filter(|(var, name)| !off(&format!("no-{name}")) && std::env::var_os(var).is_none())
-        .map(|(var, _)| *var)
+        .filter(|(_, name)| !flag(&format!("no-{name}")) && (!safe || flag(name)))
+        .map(|(var, _)| (*var, "1"));
+    safe_ones
+        .chain(default_on)
+        .filter(|(var, _)| std::env::var_os(var).is_none())
         .collect()
+}
+
+/// The speed-ups switched off in this process, for the log: Safe Drawing's switches that are
+/// set as it sets them, and the names of [`DEFAULT_ON`]'s that aren't set.
+pub fn drawing_switches_off() -> Vec<&'static str> {
+    let safe = SAFE_DRAWING
+        .into_iter()
+        // (Set at all, or for the GL levers to the empty list.)
+        .filter(|(var, value)| std::env::var_os(var).is_some_and(|v| *value == "1" || v == *value))
+        .map(|(var, _)| var);
+    let default_on = DEFAULT_ON
+        .into_iter()
+        .filter(|(var, _)| std::env::var_os(var).is_none())
+        .map(|(_, name)| name);
+    safe.chain(default_on).collect()
 }
 
 /// The beep's pitch and length: .NET's `Console.Beep()` (800 Hz, 200 ms).
@@ -370,5 +420,46 @@ impl Platform for NoPlatform {
 
     fn open_file(&self, path: &Path) {
         tracing::info!("Not opened without a window: {}", path.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_ON, SAFE_DRAWING, drawing_switches};
+
+    fn vars(files: &'static [&'static str], safe: bool) -> Vec<&'static str> {
+        drawing_switches(|name| files.contains(&name), safe)
+            .into_iter()
+            .map(|(var, _)| var)
+            .collect()
+    }
+
+    #[test]
+    fn the_speed_ups_are_on_without_safe_drawing() {
+        let all: Vec<_> = DEFAULT_ON.iter().map(|(var, _)| *var).collect();
+        assert_eq!(vars(&[], false), all);
+        assert!(!vars(&["no-lean-render"], false).contains(&"RUFFLE_LEAN_RENDER"));
+        // A speed-up's own file changes nothing without Safe Drawing.
+        assert_eq!(vars(&["lean-render"], false), all);
+    }
+
+    #[test]
+    fn safe_drawing_turns_them_all_off() {
+        let switches = drawing_switches(|_| false, true);
+        assert_eq!(switches, SAFE_DRAWING);
+        // The GL levers' empty list turns both off (`gles::aqw::levers`).
+        assert!(switches.contains(&("RUFFLE_GL_LEVERS", "")));
+    }
+
+    #[test]
+    fn a_speed_ups_own_file_brings_it_back_under_safe_drawing() {
+        let vars = vars(&["lean-render"], true);
+        assert!(vars.contains(&"RUFFLE_LEAN_RENDER"));
+        assert!(!vars.contains(&"RUFFLE_LEAN_SCRIPTS"));
+        assert!(
+            !super::drawing_switches(|n| ["lean-render", "no-lean-render"].contains(&n), true)
+                .iter()
+                .any(|(var, _)| *var == "RUFFLE_LEAN_RENDER")
+        );
     }
 }

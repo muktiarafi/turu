@@ -195,7 +195,12 @@ pub fn playlist_args(
 /// Android's own flags in `turu-args.txt` (graphics, logs, test switches), with a value or without:
 /// the app's, not a tab's, so every slot reads them there and no record keeps them.
 const APP_FLAGS_WITH_VALUE: [&str; 4] = ["--graphics", "--perf-log", "--releases-url", "--env"];
-const APP_FLAGS: [&str; 3] = ["--test-gpu-loss", "--test-low-prompt", "--test-performance-offer"];
+const APP_FLAGS: [&str; 4] = [
+    "--safe-drawing",
+    "--test-gpu-loss",
+    "--test-low-prompt",
+    "--test-performance-offer",
+];
 
 /// `turu-args.txt`'s flags split into a tab's (for its record, without `--password`), the
 /// password, and the app's own.
@@ -575,6 +580,7 @@ mod tests {
             "--server",
             "Yorumi",
             "--test-gpu-loss",
+            "--safe-drawing",
             "--perf-log=60",
         ]
         .map(String::from)
@@ -584,7 +590,13 @@ mod tests {
         assert_eq!(password.as_deref(), Some("s3cret"));
         assert_eq!(
             app,
-            ["--graphics", "vulkan", "--test-gpu-loss", "--perf-log=60"]
+            [
+                "--graphics",
+                "vulkan",
+                "--test-gpu-loss",
+                "--safe-drawing",
+                "--perf-log=60"
+            ]
         );
         let (_, password, _) = split_args(&["--password".into(), "other".into()]);
         assert_eq!(password.as_deref(), Some("other"));

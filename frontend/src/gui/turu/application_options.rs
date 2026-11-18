@@ -2,7 +2,7 @@
 //! Turu's own settings in five sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
 //! just those two fields of `options.json`. Frame Interpolation is Mugetsu's, saved by the
-//! frontend (`Platform::set_frame_interpolation`). Web Monitor replaces VibeSkua's Skua Nexus webhook.
+//! frontend (`Platform::set_frame_interpolation`), as is Safe Drawing where it's offered. Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
 use super::native_field;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
@@ -83,6 +83,8 @@ enum Field {
     FrameInterpolation,
     /// The graphics API, chosen by the frontend, which restarts (`Platform::graphics_choices`).
     Graphics,
+    /// Safe Drawing, saved by the frontend for the next start (`Platform::safe_drawing`).
+    SafeDrawing,
     /// The FPS counter (`Platform::show_fps`).
     ShowFps,
     /// Mugetsu 2.0.0's frame pacing, V-sync or Uncapped (`Platform::frame_pacing`).
@@ -144,6 +146,17 @@ fn entries() -> Vec<Entry> {
                 "Graphics",
                 "Which graphics API draws the game. Automatic picks the one that works best on this device; try another if the game crashes or draws wrongly. On a computer Turu starts again, every tab with it; on a phone each tab takes it at its next start",
                 Field::Graphics
+            )
+        });
+    }
+    if crate::platform::platform().safe_drawing().is_some() {
+        entries.push(Entry {
+            restart: true,
+            ..entry!(
+                General,
+                "Safe Drawing",
+                "Turns off Turu's drawing speed-ups and draws the game the plain way. Try it if the game shows streaks, stripes or garbled colours, or parts of maps go missing. Slower, above all in crowded rooms, so leave it off when the game draws fine. Each tab takes it at its next start",
+                Field::SafeDrawing
             )
         });
     }
@@ -685,6 +698,13 @@ impl ApplicationOptionsWindow {
                                             crate::platform::platform().set_frame_interpolation(on);
                                         }
                                     }
+                                    Field::SafeDrawing => {
+                                        let platform = crate::platform::platform();
+                                        let mut on = platform.safe_drawing() == Some(true);
+                                        if widgets::switch(ui, &mut on).changed() {
+                                            platform.set_safe_drawing(on);
+                                        }
+                                    }
                                     Field::Graphics => {
                                         let platform = crate::platform::platform();
                                         if let Some((choices, saved)) = platform.graphics_choices() {
@@ -1040,6 +1060,7 @@ fn control_width(field: &Field) -> f32 {
         | Field::ClientUpdates(_)
         | Field::OptionBool(_)
         | Field::FrameInterpolation
+        | Field::SafeDrawing
         | Field::ShowFps
         | Field::FullScreen
         | Field::CrashReports => 48.0,

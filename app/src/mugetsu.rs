@@ -940,16 +940,18 @@ fn preferred_adapter(_low_power: bool) -> Option<(u32, String)> {
 /// `no-lean-scripts`, `no-lean-frames`, `no-lean-render`, `no-page-blends`, `no-shape-uploads`,
 /// `no-pick-bounds`, `no-sharp-snapshots`, `no-early-scripts`, `no-shared-shapes`,
 /// `no-pass-merge` and `slow-multiply` files next to the exe turn single ones off (`no-atlas`,
-/// `no-glow-batch` and `no-cache-steps` are checked while running). (Turu: Mugetsu's
-/// `safe-drawing` file, all of them off at once, is gone with Turu's Safe Drawing.)
+/// `no-glow-batch` and `no-cache-steps` are checked while running). A `safe-drawing` file turns
+/// them all off (`platform::SAFE_DRAWING`), as in Mugetsu; a speed-up's own file (`lean-render`)
+/// brings that one back. Every process reads the files, the shell's clients too.
 pub fn apply_drawing_switches() {
-    let set = |var: &str| {
+    let set_to = |var: &str, value: &str| {
         // SAFETY: called first thing in `main`, before any other thread exists.
-        unsafe { std::env::set_var(var, "1") };
+        unsafe { std::env::set_var(var, value) };
     };
-    crate::platform::drawing_switches(exe_flag)
+    let set = |var: &str| set_to(var, "1");
+    crate::platform::drawing_switches(exe_flag, safe_drawing())
         .into_iter()
-        .for_each(set);
+        .for_each(|(var, value)| set_to(var, value));
     for (file, var) in BY_FILE {
         if exe_flag(file) && std::env::var_os(var).is_none() {
             set(var);
@@ -961,6 +963,11 @@ pub fn apply_drawing_switches() {
     {
         set(RENDER_THREAD);
     }
+}
+
+/// Safe Drawing: a `safe-drawing` file next to the program (Mugetsu 2.0.0's).
+pub fn safe_drawing() -> bool {
+    exe_flag("safe-drawing")
 }
 
 /// Mugetsu 2.0.0's render thread (`ruffle_render_wgpu::render_thread`). Turu: on only with a
@@ -1049,24 +1056,6 @@ pub fn shape_wait() -> Option<std::time::Duration> {
         .and_then(|ms| ms.parse().ok())
         .unwrap_or(12);
     Some(std::time::Duration::from_millis(ms))
-}
-
-/// The speed-ups that are switched off, for the log.
-pub fn drawing_switches_off() -> Vec<&'static str> {
-    let single = [
-        "RUFFLE_NO_SHARED_SHAPES",
-        "RUFFLE_NO_ATLAS",
-        "RUFFLE_NO_CACHE_BATCH",
-        "RUFFLE_NO_PASS_MERGE",
-        "RUFFLE_SLOW_MULTIPLY",
-    ]
-    .into_iter()
-    .filter(|var| std::env::var_os(var).is_some());
-    let new = crate::platform::DEFAULT_ON
-        .into_iter()
-        .filter(|(var, _)| std::env::var_os(var).is_none())
-        .map(|(_, name)| name);
-    single.chain(new).collect()
 }
 
 // --- Graphics memory ------------------------------------------------------------------------

@@ -82,6 +82,20 @@ impl Platform for AndroidPlatform {
         tracing::info!("Graphics: {} from each tab's next start", graphics.arg());
     }
 
+    // Safe Drawing, from each slot's next start (`--safe-drawing` in turu-args.txt too).
+    fn safe_drawing(&self) -> Option<bool> {
+        let root = turu_bot::paths::Paths::new().root;
+        Some(crate::saved_safe_drawing(&root))
+    }
+
+    fn set_safe_drawing(&self, on: bool) {
+        crate::save_safe_drawing(on);
+        tracing::info!(
+            "Safe Drawing turned {} from each tab's next start",
+            if on { "on" } else { "off" }
+        );
+    }
+
     fn set_frame_interpolation(&self, on: bool) {
         ruffle_core::frame_interpolation::set_enabled(on);
         crate::save_interpolation(on);

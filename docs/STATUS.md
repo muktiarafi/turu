@@ -150,8 +150,15 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Found on the way: the memory limit's freeing, Free Memory Now and a nearly full graphics memory
   freed the renderer's spare textures in the window only; a tab's client never did (since M6,
   every AQW tab). They do now (`memory::trim_renderer`).
-  Safe Drawing (Options > Application on Android, a `safe-drawing` file on a computer) is gone:
-  nobody used it since Turu Mas; single `no-<switch>` files next to the program remain.
+  Safe Drawing is back (2026-11-19; removed 2026-11-17): Options > Application on Android (or
+  `--safe-drawing` in `turu-args.txt`), a `safe-drawing` file next to the program on a computer
+  (every process reads it, the shell's clients too), from each tab's next start. It turns
+  Mugetsu's drawing speed-ups off (`platform::SAFE_DRAWING`: the five old switches and all eight
+  of 2.0.0's, as Mugetsu's `safe-drawing` does) and, Turu's own, ruffle-aqw's skipped OpenGL calls
+  (`RUFFLE_GL_LEVERS`, a suspect on phones drawing with OpenGL). A speed-up's own file
+  (`lean-render`) brings it back under Safe Drawing; single `no-<switch>` files and `--env` lines
+  still turn one off. It only says whether a speed-up is at fault, and costs game time in crowds
+  (the lean walks are off). Unit-tested; the log lines checked on the Mac; not run on a phone.
 - **Engine (`bot/`):** every `call("x.y")` in `bot/js/turu.ts` has a Rust implementation;
   background loops for drops, registered quests, skills and boosts; Stop and Pause.
 - **Servers and auto-relogin:** `bot.servers` (VibeSkua `Bot.Servers`: server list, login,
@@ -860,8 +867,8 @@ memory budget (NVIDIA, AMD).
   engine thread, the Army menu and Butler, a Tab Limit (default 4), tabs reopened after a kill;
   built, not run on a device yet.
   Vulkan misdrew on an Infinix Hot 30i (PowerVR): the debug log now names the
-  GPU and driver (docs/ANDROID.md, "Misdrawing"; Safe Drawing, which turned Mugetsu's speed-ups
-  off, was removed on 2026-11-17 untried there: nobody used it since Turu Mas).
+  GPU and driver (docs/ANDROID.md, "Misdrawing"; Safe Drawing, untried there, turns Mugetsu's
+  speed-ups off: removed on 2026-11-17, back on 2026-11-19).
 - **Windowless mode logs in and farms** (2026-11-03: desktop `--headless` and Android, GoldFarm).
   It needed a fix in ruffle-aqw (`core/src/bitmap/operations.rs`): with AQW's default settings
   (no saved `AQWUserPref`, as on a new server or phone) the game draws the stage into a bitmap

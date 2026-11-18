@@ -76,7 +76,7 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
 - Mugetsu's 2.0.0 right-click menu (`app/src/gui/context_menu.rs`): Performance mode, memory
   limit, Free memory now, uncapped pacing, FPS limit. **Only the window for a movie given on the
   command line has it now**; AQW runs in clients (below).
-- Removed: Safe Drawing (desktop and Android), Edge Smoothing (Mugetsu: always Flash-style, an
+- Removed: Safe Drawing (desktop and Android; back since 2026-11-19, with 2.0.0's speed-ups in it), Edge Smoothing (Mugetsu: always Flash-style, an
   `msaa` file brings MSAA back), Mugetsu's update reminders (Turu has its own updates).
 - Kept as Turu's (not ported): `app/src/windows.rs` (Mugetsu's crash-handler rework), the graphics
   restart dialogs, `gui/controller.rs`'s window drawing (Mugetsu's present-thread rewrite).

@@ -606,7 +606,10 @@ fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
     );
     // As the window (`gui/controller.rs`): which speed-ups are off, transient textures, and the
     // size detailed shapes are tessellated for at least (8 px on a dedicated card, else 32).
-    let off = crate::mugetsu::drawing_switches_off();
+    if crate::mugetsu::safe_drawing() {
+        tracing::info!("Safe Drawing (a safe-drawing file): the drawing speed-ups are off");
+    }
+    let off = crate::platform::drawing_switches_off();
     if !off.is_empty() {
         tracing::info!("Drawing speed-ups switched off: {off:?}");
     }

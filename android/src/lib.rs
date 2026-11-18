@@ -562,6 +562,8 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     .filter(|(flag, _)| take_flag(&mut args, flag))
     .map(|(_, var)| var)
     .collect::<Vec<_>>();
+    // Safe Drawing: `--safe-drawing` in turu-args.txt, else Options > Application's switch.
+    let safe_drawing = take_flag(&mut args, "--safe-drawing") || saved_safe_drawing(root);
     let perf_log = take_value(&mut args, "--perf-log");
     // `--env NAME=value` (repeatable): an environment variable, which an app can't be started
     // with (`--env NAME` unsets one): Ruffle's test and A/B switches (`RUFFLE_GL_STATS`, `RUFFLE_GL_LEVERS`,
@@ -586,11 +588,12 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // 32 px at least, as on built-in graphics: `set_shape_min_px`.)
     ruffle_core::set_forgiving_removal(true);
     ruffle_render::tessellator::set_flash_aa(true);
-    // Mugetsu 2.0.0's speed-ups (`DEFAULT_ON`), as on a computer.
-    for var in turu_frontend::platform::drawing_switches(|_| false) {
+    // Mugetsu 2.0.0's speed-ups (`DEFAULT_ON`), as on a computer; with Safe Drawing, Ruffle's
+    // plain ways of drawing instead (`SAFE_DRAWING`). `--env` below can still change one.
+    for (var, value) in turu_frontend::platform::drawing_switches(|_| false, safe_drawing) {
         // SAFETY: before the engine's threads exist and before Ruffle reads them; the
         // process's other threads (Java's) don't read Turu's environment.
-        unsafe { std::env::set_var(var, "1") };
+        unsafe { std::env::set_var(var, value) };
     }
     for var in test_tips {
         // SAFETY: as the drawing switches'.
@@ -649,6 +652,17 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         tracing::error!("No graphics API worked; the game can't start");
         return;
     };
+    // In the debug log (Diagnostics > Logs) after the GPU's line, for a report of misdrawing.
+    if safe_drawing {
+        turu::bot()
+            .logs
+            .debug
+            .push("Safe Drawing: the drawing speed-ups are off");
+    }
+    let off = turu_frontend::platform::drawing_switches_off();
+    if !off.is_empty() {
+        tracing::info!("Drawing speed-ups switched off: {off:?}");
+    }
     GPU.set(Some((descriptors, blit)));
     let sender = ENGINE_TX
         .get()
@@ -737,6 +751,20 @@ const INTERPOLATION_FILE: &str = "mugetsu-interpolation.txt";
 /// Saves frame interpolation's switch (`platform.rs`).
 pub(crate) fn save_interpolation(on: bool) {
     save_switch(INTERPOLATION_FILE, on);
+}
+
+/// Safe Drawing (Options > Application; off by default) is on while this file is in the data
+/// folder: each slot reads it at its start (`turu_frontend::platform::SAFE_DRAWING`).
+const SAFE_DRAWING_FILE: &str = "safe-drawing.txt";
+
+/// Whether Safe Drawing is saved on.
+pub(crate) fn saved_safe_drawing(root: &Path) -> bool {
+    root.join(SAFE_DRAWING_FILE).exists()
+}
+
+/// Saves Safe Drawing's switch (`platform.rs`).
+pub(crate) fn save_safe_drawing(on: bool) {
+    save_switch(SAFE_DRAWING_FILE, on);
 }
 
 /// The graphics API Options > Application chose (`--graphics`' values; no file: Automatic). Each

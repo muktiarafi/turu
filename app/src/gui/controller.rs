@@ -112,8 +112,11 @@ impl GuiController {
         crate::mugetsu::set_adapter_ids(adapter_info.vendor, adapter_info.device);
         #[cfg(not(windows))]
         crate::mugetsu::set_video_memory_adapter(adapter.clone());
-        // Which drawing speed-ups are switched off (for test logs).
-        let off = crate::mugetsu::drawing_switches_off();
+        // Which drawing speed-ups are switched off (for test logs). Turu: Safe Drawing first.
+        if crate::mugetsu::safe_drawing() {
+            tracing::info!("Safe Drawing (a safe-drawing file): the drawing speed-ups are off");
+        }
+        let off = crate::platform::drawing_switches_off();
         if !off.is_empty() {
             tracing::info!("Drawing speed-ups switched off: {off:?}");
         }

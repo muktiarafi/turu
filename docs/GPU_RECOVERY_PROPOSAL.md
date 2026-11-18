@@ -148,4 +148,5 @@ as today (`gpu: lost`) plus whether the rebuild worked.
 
 ## Meanwhile
 
-(Safe Drawing, suggested here before, was removed on 2026-11-17: docs/ANDROID.md, "Misdrawing".)
+(Safe Drawing, suggested here before, was removed on 2026-11-17 and is back since 2026-11-19:
+docs/ANDROID.md, "Misdrawing".)
