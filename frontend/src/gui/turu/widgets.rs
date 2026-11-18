@@ -1101,9 +1101,15 @@ impl Selection {
 /// points down (under the bar); returns how many shapes it added. The window's and a process
 /// tab's client's (Show FPS).
 pub fn fps_badge(ctx: &egui::Context, top: f32, fps: f32) -> usize {
+    fps_badge_at(ctx, 0.0, top, fps)
+}
+
+/// [`fps_badge`] for a game `left` points from the window's left too (Android's, right of the
+/// nav rail).
+pub fn fps_badge_at(ctx: &egui::Context, left: f32, top: f32, fps: f32) -> usize {
     use egui::{Color32, CornerRadius, FontId, Id, LayerId, Order, Rect, pos2, vec2};
     let text = format!("{fps:.0} FPS");
-    let origin = pos2(8.0, top + 8.0);
+    let origin = pos2(left + 8.0, top + 8.0);
     let painter = ctx.layer_painter(LayerId::new(Order::Background, Id::new("mugetsu_fps")));
     let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), Color32::from_rgb(232, 234, 242));
     let badge = Rect::from_min_size(origin, galley.size() + vec2(22.0, 8.0));

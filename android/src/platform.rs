@@ -109,6 +109,35 @@ impl Platform for AndroidPlatform {
         crate::render_scale()
     }
 
+    // Mugetsu 2.0.0's other options that fit a phone (as a desktop tab's Options has them).
+    // Frame Pacing and the FPS limit don't: Android's compositor shows every picture at the
+    // display's rate, so uncapped (for G-Sync and FreeSync monitors) has nothing to do here.
+    fn show_fps(&self) -> Option<bool> {
+        Some(crate::show_fps())
+    }
+
+    fn set_show_fps(&self, on: bool) {
+        crate::set_show_fps(on);
+    }
+
+    fn memory_limit_mb(&self) -> Option<u32> {
+        Some(crate::memory_limit_mb())
+    }
+
+    fn set_memory_limit_mb(&self, mb: u32) {
+        crate::set_memory_limit_mb(mb);
+        tracing::info!("Memory limit: {}", if mb == 0 { "off".to_string() } else { format!("{mb} MB") });
+    }
+
+    fn memory_now_mb(&self) -> Option<u64> {
+        turu_frontend::process_memory::Reading::now().map(|reading| reading.rss >> 20)
+    }
+
+    // On the engine thread, which has the player (Options runs there too, inside a draw).
+    fn free_memory(&self) {
+        crate::run_on_engine(crate::memory::free_now);
+    }
+
     // The app's executable is Android's app_process, not a `turu` Army could start.
     fn launches_processes(&self) -> bool {
         false

@@ -116,6 +116,10 @@ pub struct Screen {
     render_scale: f64,
     /// The game's pictures over 5-second windows, for the graphics tips (`turu_frontend::graphics_tips`).
     pictures: turu_frontend::graphics_tips::PictureCount,
+    /// The game's pictures drawn since `fps_since`, and the last second's rate, for Show FPS.
+    fps_frames: u32,
+    fps_since: Instant,
+    fps: f32,
     /// Frame interpolation's pacing, with the display's refresh rate.
     pacing: Pacing,
     /// The display's refresh rate the pacing has (mHz), 0 before the first.
@@ -275,6 +279,9 @@ impl Screen {
             movie_size: (0, 0),
             render_scale: 1.0,
             pictures: Default::default(),
+            fps_frames: 0,
+            fps_since: Instant::now(),
+            fps: 0.0,
             pacing: Pacing::new(),
             refresh_millihertz: 0,
             draw_started: Instant::now(),
@@ -739,6 +746,14 @@ impl Screen {
         if new_picture && !turu::headless_mode() {
             player.render();
             self.pictures.drawn();
+            // Pictures of the game a second, for Show FPS (as a desktop tab counts them).
+            self.fps_frames += 1;
+            let elapsed = self.fps_since.elapsed().as_secs_f32();
+            if elapsed >= 1.0 {
+                self.fps = self.fps_frames as f32 / elapsed;
+                self.fps_frames = 0;
+                self.fps_since = Instant::now();
+            }
             let took = started.elapsed();
             crate::frame_perf::add(crate::frame_perf::Phase::Render, took);
             self.pacing.record_draw(took.as_secs_f64() * 1000.0);
@@ -794,9 +809,14 @@ impl Screen {
         // The game's focused text field, as a native one above the keyboard (`game_field.rs`);
         // not while one of Turu's text boxes has it.
         self.game_field.sync(player, self.ui_field.is_shown());
+        let fps = crate::show_fps().then_some(self.fps);
+        let left = self.left() / ppp;
         let ui = &mut self.ui;
         let output = self.egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
+            if let Some(fps) = fps {
+                turu_frontend::gui::turu::fps_badge_at(root.ctx(), left, top, fps);
+            }
             if turu::headless_mode() {
                 turu_frontend::gui::turu::show_headless_screen(root.ctx(), top);
             }

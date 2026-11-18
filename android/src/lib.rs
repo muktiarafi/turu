@@ -613,6 +613,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     }
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     load_performance(root);
+    load_show_fps_and_memory_limit(root);
     turu::configure_startup();
     turu::start_api();
     restart::start();
@@ -815,6 +816,62 @@ pub(crate) fn set_performance(level: u8) {
         },
         1 => std::fs::write(&path, "balanced\n"),
         _ => std::fs::write(&path, "fast\n"),
+    };
+    if let Err(e) = result {
+        tracing::warn!("Couldn't save {}: {e}", path.display());
+    }
+}
+
+/// Mugetsu 2.0.0's FPS counter (Options > Application > Show FPS): on while this file is in the data
+/// folder, as Mugetsu's on a desktop. Each slot reads it at its start; a change applies to the slot
+/// that made it at once.
+const SHOW_FPS_FILE: &str = "mugetsu-show-fps.txt";
+/// Mugetsu 2.0.0's memory limit in MB (Options > Application > Memory Limit, `memory.rs`): the
+/// number in this file in the data folder, no file when off. As `SHOW_FPS_FILE`.
+const MEMORY_LIMIT_FILE: &str = "mugetsu-memory-limit.txt";
+
+static SHOW_FPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static MEMORY_LIMIT_MB: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Reads Show FPS and the memory limit (`root`: the data folder).
+fn load_show_fps_and_memory_limit(root: &Path) {
+    use std::sync::atomic::Ordering;
+    SHOW_FPS.store(root.join(SHOW_FPS_FILE).exists(), Ordering::Relaxed);
+    // `RUFFLE_TEST_MEMORY_LIMIT_MB` (`--env`) sets it for a run, as on a desktop.
+    let limit = std::env::var("RUFFLE_TEST_MEMORY_LIMIT_MB")
+        .ok()
+        .or_else(|| std::fs::read_to_string(root.join(MEMORY_LIMIT_FILE)).ok())
+        .and_then(|text| text.trim().parse::<u32>().ok())
+        .unwrap_or(0);
+    MEMORY_LIMIT_MB.store(limit, Ordering::Relaxed);
+}
+
+/// Whether the FPS counter is on.
+pub(crate) fn show_fps() -> bool {
+    SHOW_FPS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Turns the FPS counter on or off, and saves it.
+pub(crate) fn set_show_fps(on: bool) {
+    SHOW_FPS.store(on, std::sync::atomic::Ordering::Relaxed);
+    save_switch(SHOW_FPS_FILE, on);
+}
+
+/// The memory limit in MB (0: none).
+pub(crate) fn memory_limit_mb() -> u32 {
+    MEMORY_LIMIT_MB.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Sets the memory limit and saves it.
+pub(crate) fn set_memory_limit_mb(mb: u32) {
+    MEMORY_LIMIT_MB.store(mb, std::sync::atomic::Ordering::Relaxed);
+    let path = turu_bot::paths::Paths::new().root.join(MEMORY_LIMIT_FILE);
+    let result = match mb {
+        0 => match std::fs::remove_file(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        },
+        mb => std::fs::write(&path, format!("{mb}\n")),
     };
     if let Err(e) = result {
         tracing::warn!("Couldn't save {}: {e}", path.display());

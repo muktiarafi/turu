@@ -131,9 +131,14 @@ object CrashReports {
         ApplicationExitInfo.REASON_PACKAGE_UPDATED,
         ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE,
         -> false
-        ApplicationExitInfo.REASON_EXIT_SELF -> exit.status != 0
+        // A slot that lost its GPU ends itself to start again (`memory.rs`, `EXIT_GPU_LOST`): that
+        // went to Sentry as a warning already.
+        ApplicationExitInfo.REASON_EXIT_SELF -> exit.status != 0 && exit.status != EXIT_GPU_LOST
         else -> true
     }
+
+    /** The exit status of a Turu slot that lost its GPU (`android/src/memory.rs`). */
+    private const val EXIT_GPU_LOST = 86
 
     private fun write(context: Context, activities: ActivityManager, dir: File, exit: ApplicationExitInfo) {
         if (!dir.isDirectory && !dir.mkdirs()) {

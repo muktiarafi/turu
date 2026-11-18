@@ -155,11 +155,17 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
    gone (it plays no AQW); its dedicated-card tip (`check_gpu_choice`) isn't in clients. Checked:
    macOS client (both tips, "Turn on" → Balanced) and the emulator (both tips, Fast, a game tap
    at 70 %), with the test switches only, not a real slow PC or phone.
-6. **Android**: a slot that loses its GPU goes on without a picture (the desktop client restarts);
-   Mugetsu's options aren't in Android's Options, except Performance Mode (2026-11-18); TuruActivity's `?: native…` fallbacks for the
-   text field and documents are unreachable now and can go with their natives (`android/src/java.rs`
-   `TuruActivity` binding, `ui_field.rs`, the document natives). (The web monitor and client
-   update checks are fine: the slots elect one of them to run both, `turu::start_monitor_election`.)
+6. ~~**Android**~~ done (2026-11-18, branch `android-open-items`, cut from `gl-renderer`):
+   * A slot that loses its GPU ends (status 86) and Android starts it again logged in, as a
+     desktop tab's client is restarted; at most 3 times in 10 minutes, then it goes on without a
+     picture as before (`memory.rs` `gpu_lost`; docs/ANDROID.md, "A lost GPU device").
+   * Show FPS, Memory Limit and Free Memory Now in Android's Options (Performance Mode was there).
+     Frame Pacing and the FPS limit are left out on purpose (STATUS.md).
+   * TuruActivity's `?: native…` fallbacks for the text fields and the pickers are gone, with
+     their natives, their `java.rs` bindings and the Rust activity branches of `game_field.rs`,
+     `ui_field.rs` and `saf.rs` (only slots run the engine).
+   (The web monitor and client update checks are fine: the slots elect one of them to run both,
+   `turu::start_monitor_election`.)
 7. **Cleanups**: delete `aqw-2.0` on ruffle-aqw and the two local backup branches once `main`'s
    CI is green; `app/src/mugetsu.rs` `log_folder` is unused (warning from before).
 

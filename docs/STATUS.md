@@ -48,7 +48,12 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   Headless Mode; on Android not with frame interpolation, and a phone's refresh rate caps the
   yardstick); each tip once per data folder. Android has Performance mode too (Options >
   Application; `mugetsu-performance.txt` in the data folder, read at a slot's start, touches
-  scaled). In a tab's client (every AQW tab since M6) Performance Mode,
+  scaled), and since 2026-11-18 Show FPS, Memory Limit (over it the slot frees shapes and spare
+  textures, at most every 20 s, on top of Turu's own budget) and Free Memory Now (unused SWFs,
+  shapes not drawn for 30 s, spare textures), saved as Mugetsu's files in the data folder
+  (`mugetsu-show-fps.txt`, `mugetsu-memory-limit.txt`). Frame Pacing and the FPS limit aren't:
+  Android's compositor shows every picture at the display's rate, so uncapped has nothing to do
+  on a phone. In a tab's client (every AQW tab since M6) Performance Mode,
   Memory Limit and Free Memory Now are in Options > Application, and since 2026-11-18 Frame
   Pacing (V-sync, Uncapped) and the FPS Limit (Off, Screen, 60, 120, 144).
   **Frame interpolation in a tab's client** (2026-11-18): with Frame Interpolation on, the client

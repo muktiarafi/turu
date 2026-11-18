@@ -522,17 +522,24 @@ The GPU can drop the device: wgpu marks it lost when the driver runs out of memo
 That aborted Turu: the next `Device::poll` (the engine's every 10 s, or ruffle-aqw's) panicked,
 as wgpu treats any poll error but a timeout as fatal (Sentry TURU-ANDROID-7 on beta.6, a Redmi 10
 2022 with 4 GB, "Error in Device::poll: ... Parent device is lost"). A device can't come back, and
-the game's shapes and bitmaps live on it, so Turu now goes on without a picture:
+the game's shapes and bitmaps live on it, so the slot starts again (since 2026-11-18, as a desktop
+tab's client does), and goes on without a picture when that's done too often:
 
 * ruffle-aqw's wgpu-core patch makes a lost device's poll return as if its queue were empty, and
   its error handler tolerates every GPU error once the device-lost callback fired
   (`ruffle_render_wgpu::device_lost`). Frames aren't drawn, and reading an image back
   (`BitmapData.draw`) gives transparent black instead of waiting for a submission that failed.
-* The screen stops drawing, so the activity shows its last picture or black. The game, its
-  scripts and the notification's Stop and Pause go on.
-* `memory.rs` says so once: in logcat, the debug log, the notification ("Graphics stopped:
-  restart Turu to see the game") and to Sentry as a warning of its own (`gpu: lost`, one issue
-  whatever the driver's message, which it carries).
+* `memory.rs` says so once: in logcat, the debug log and to Sentry as a warning of its own (`gpu:
+  lost`, one issue whatever the driver's message, which it carries).
+* Then the slot's process ends (status 86, which `CrashReports.kt` doesn't report as a crash),
+  Android starts the slot's service again (`START_STICKY`), logged in from its record, with the
+  script it ran (`restart.rs`), and the shell binds it again: the tab is back with a new GPU
+  device. At most 3 times in 10 minutes (`crash/gpu-lost-c<N>.log` keeps the times): a GPU that
+  keeps failing would log the account in again and again.
+* After that the slot goes on without a picture, as every slot did before: the screen stops
+  drawing (the activity shows its last picture or black), the game, its scripts and the
+  notification's Stop and Pause go on, and the notification says "Graphics stopped: restart Turu
+  to see the game".
 
 Checked on the emulator with `--test-gpu-loss`: in game, the device destroyed, Turu kept running
 (its memory readings went on) and the notification said so. On a phone: a Redmi 10 2022 lost its

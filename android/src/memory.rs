@@ -30,7 +30,11 @@
 //! couldn't say what had grown.
 //!
 //! When the GPU drops the device (wgpu loses it when the driver runs out of memory), nothing can be
-//! drawn any more, but the game and its scripts keep running: [`gpu_lost`] says so once.
+//! drawn any more: [`gpu_lost`] says so once, and the slot's process ends, as a desktop tab's client
+//! does; Android starts the slot again (`START_STICKY`), logged in from its record and with its
+//! script (`restart.rs`), and the shell binds it again. At most [`GPU_RESTARTS`] times in
+//! [`GPU_RESTART_WINDOW`] (a GPU that keeps failing would log the account in again and again):
+//! after that the slot plays on without a picture, as every slot did before.
 //!
 //! All of it runs on the engine thread: the shape caches are the player's thread's.
 
@@ -46,6 +50,15 @@ use turu_frontend::turu;
 
 use crate::screen::MovieTexture;
 
+/// The exit status of a slot that lost its GPU ([`gpu_lost`]): `CrashReports.kt` doesn't report it
+/// as a crash (the loss went to Sentry already). The desktop client's.
+const EXIT_GPU_LOST: i32 = 86;
+/// A slot starts again for a lost GPU at most this many times in this window.
+const GPU_RESTARTS: usize = 3;
+const GPU_RESTART_WINDOW: Duration = Duration::from_secs(600);
+
+/// The least time between two trims for the memory limit (as Mugetsu's, and Options says).
+const LIMIT_TRIM_EVERY: Duration = Duration::from_secs(20);
 /// How often the phone's memory is read.
 const CHECK_EVERY: Duration = Duration::from_secs(10);
 /// How often shapes not drawn for [`SWEEP_UNUSED_SECS`] are freed.
@@ -78,6 +91,8 @@ struct Watch {
     /// Turu over its own memory budget, and when it last trimmed for that.
     over: bool,
     last_own_trim: Option<Instant>,
+    /// The last trim for the memory limit (Options > Application > Memory Limit).
+    last_limit_trim: Option<Instant>,
     /// The GPU device was lost, and that was reported ([`gpu_lost`]).
     gpu_lost: bool,
     log: MemoryLog,
@@ -104,6 +119,7 @@ thread_local! {
         low: false,
         over: false,
         last_own_trim: None,
+        last_limit_trim: None,
         gpu_lost: false,
         log: MemoryLog {
             started: Instant::now(),
@@ -190,7 +206,31 @@ pub fn tick(player: &mut Player) {
             trim(player, "the phone is low on memory");
         }
         check_own_budget(watch, player, total, now);
+        check_memory_limit(watch, player, now);
     });
+}
+
+/// Mugetsu 2.0.0's memory limit (Options > Application > Memory Limit, `crate::memory_limit_mb`):
+/// over it, this slot frees what it can, at most every [`LIMIT_TRIM_EVERY`]. On top of Turu's own budget
+/// ([`check_own_budget`]), for a phone that kills Turu below that.
+fn check_memory_limit(watch: &mut Watch, player: &mut Player, now: Instant) {
+    let limit_mb = u64::from(crate::memory_limit_mb());
+    if limit_mb == 0
+        || watch
+            .last_limit_trim
+            .is_some_and(|t| now.duration_since(t) < LIMIT_TRIM_EVERY)
+    {
+        return;
+    }
+    let Some(reading) = Reading::now() else {
+        return;
+    };
+    let rss_mb = reading.rss >> 20;
+    if rss_mb <= limit_mb {
+        return;
+    }
+    watch.last_limit_trim = Some(now);
+    trim(player, &format!("over the memory limit: {rss_mb} of {limit_mb} MB"));
 }
 
 /// Trims when Turu itself is over its memory budget ([`process_memory::over_budget`]), at most
@@ -237,18 +277,77 @@ fn release_finished_gpu_work(player: &mut Player) {
     }
 }
 
-/// The GPU dropped the device: ruffle-aqw draws nothing from now on and the screen stops drawing
-/// (`Screen::draw`), while the game, its scripts and the notification's buttons go on. Said once:
-/// in the log, the debug log, the notification, and to Sentry as a warning of its own (a lost
-/// device used to abort in `Device::poll`, Sentry TURU-ANDROID-7 on beta.6: a Redmi 10 2022).
+/// The GPU dropped the device: ruffle-aqw draws nothing from now on. Said once: in the log, the
+/// debug log, the notification, and to Sentry as a warning of its own (a lost device used to abort
+/// in `Device::poll`, Sentry TURU-ANDROID-7 on beta.6: a Redmi 10 2022). Then a slot's process ends
+/// and Android starts it again (see the module), unless it did that [`GPU_RESTARTS`] times lately:
+/// the game, its scripts and the notification's buttons go on without a picture then.
 fn gpu_lost(why: &str) {
-    tracing::error!(
-        "The GPU stopped working ({why}); the game goes on without a picture until Turu restarts"
-    );
-    turu::bot().logs.debug.push(format!(
-        "Graphics: the GPU stopped working ({why}); restart Turu to see the game"
-    ));
+    let restart = crate::slots::slot().is_some_and(gpu_restart_allowed);
+    if restart {
+        tracing::error!("The GPU stopped working ({why}); this tab's process ends, and Android starts it again");
+        turu::bot().logs.debug.push(format!(
+            "Graphics: the GPU stopped working ({why}); the tab starts again"
+        ));
+    } else {
+        tracing::error!(
+            "The GPU stopped working ({why}); the game goes on without a picture until Turu restarts"
+        );
+        turu::bot().logs.debug.push(format!(
+            "Graphics: the GPU stopped working ({why}); restart Turu to see the game"
+        ));
+    }
     crate::notify::gpu_lost(why);
+    if restart {
+        // Sentry keeps the warning on disk before sending it; a moment for the log to be written.
+        std::thread::sleep(Duration::from_secs(1));
+        std::process::exit(EXIT_GPU_LOST);
+    }
+}
+
+/// Whether slot `slot` may start again for a lost GPU now (see [`GPU_RESTARTS`]); if so, this time
+/// is kept with the others (`crash/gpu-lost-c<N>.log`, seconds since 1970, one a line).
+fn gpu_restart_allowed(slot: u32) -> bool {
+    let Some(dir) = crate::CRASH_DIR.get() else {
+        return false;
+    };
+    let path = dir.join(format!("gpu-lost-c{slot}.log"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let Some(times) = restart_times(&text, now) else {
+        tracing::warn!(
+            "The GPU was lost {GPU_RESTARTS} times in {} minutes: this tab doesn't start again for it",
+            GPU_RESTART_WINDOW.as_secs() / 60
+        );
+        return false;
+    };
+    let _ = std::fs::create_dir_all(dir);
+    let kept = times
+        .iter()
+        .map(|time| format!("{time}\n"))
+        .collect::<String>();
+    if let Err(e) = std::fs::write(&path, kept) {
+        tracing::warn!("Couldn't keep the time of the GPU's loss ({e}): the tab doesn't start again");
+        return false;
+    }
+    true
+}
+
+/// The times kept in `text` within [`GPU_RESTART_WINDOW`] of `now`, with `now`; `None` if that
+/// would be more than [`GPU_RESTARTS`].
+fn restart_times(text: &str, now: u64) -> Option<Vec<u64>> {
+    let mut times: Vec<u64> = text
+        .lines()
+        .filter_map(|line| line.trim().parse::<u64>().ok())
+        .filter(|time| *time <= now && now - *time < GPU_RESTART_WINDOW.as_secs())
+        .collect();
+    if times.len() >= GPU_RESTARTS {
+        return None;
+    }
+    times.push(now);
+    Some(times)
 }
 
 /// Frees the idle pooled textures (waiting for the GPU to let them go) and the shapes not drawn
@@ -263,6 +362,26 @@ pub fn trim(player: &mut Player, why: &str) {
     tracing::info!(
         target: "ruffle_aqw_perf",
         "freed spare textures and {shapes} unused shapes: {why}"
+    );
+}
+
+/// Options > Application > Free Memory Now (Mugetsu 2.0.0's "Free memory now", as a desktop tab
+/// does it, `app/src/memory.rs`): every loaded SWF nothing uses any more, the shapes not drawn in
+/// the last 30 seconds (what's on screen is drawn in every picture), and the spare textures. On
+/// the engine thread.
+pub fn free_now(player: &mut Player) {
+    let before = Reading::now().map_or(0, |reading| reading.rss >> 20);
+    let (libraries, took_ms) = player.free_unused_libraries_now();
+    let shapes = ruffle_core::evict_unused_shapes(30);
+    if let Some(renderer) =
+        <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
+    {
+        renderer.aqw_trim_memory();
+    }
+    let after = Reading::now().map_or(0, |reading| reading.rss >> 20);
+    tracing::info!(
+        target: "ruffle_aqw_perf",
+        "free memory now: {before} -> {after} MB resident; {libraries} unused SWFs ({took_ms:.1} ms), {shapes} shapes not drawn in the last 30 s and the spare textures freed"
     );
 }
 
@@ -384,6 +503,16 @@ fn trim_asked(level: jni::sys::jint) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lost_gpu_restarts_a_slot_three_times_in_ten_minutes() {
+        assert_eq!(restart_times("", 1000), Some(vec![1000]));
+        // Times older than the window, and from a clock set back, don't count.
+        assert_eq!(restart_times("100\n1500\n2000\n", 1000 + 700), Some(vec![1500, 1700]));
+        assert_eq!(restart_times("1000\n1100\n", 1200), Some(vec![1000, 1100, 1200]));
+        assert_eq!(restart_times("1000\n1100\n1200\n", 1300), None);
+        assert_eq!(restart_times("1000\n1100\n1200\n", 1650), Some(vec![1100, 1200, 1650]));
+    }
 
     #[test]
     fn reads_available_and_total_memory() {
