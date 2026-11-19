@@ -1,7 +1,7 @@
 # Proposal: native windows on each platform, over process tabs
 
-Status: **reopened (2026-11-20), in steps; the first two are planned, the rest waits for a
-checkpoint.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+Status: **reopened (2026-11-20), in steps. L0 is done (2026-11-20: go for L5a, "L0's answers"
+below); L5a is next; the rest waits for a checkpoint.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -52,7 +52,7 @@ The steps, with their state:
 
 | Step | What | State |
 |---|---|---|
-| L0 | Spike: Compose in the shell, model copies over the control API, type generation | Planned, first |
+| L0 | Spike: Compose in the shell, model copies over the control API, type generation | Done 2026-11-20: go (branch `native-ui-l0`) |
 | L5a | Android: design pass, then the tab strip and Accounts in Compose | Design pass approved (2026-11-20, `docs/UI.md`); build after L0 |
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Planned, any time |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
@@ -466,7 +466,7 @@ Later, with the steps that need them:
 Each ends with the three frontends building and `cargo nextest run -p turu_bot` and the app's tests
 passing. Sizes are relative (S, M, L, XL), from the files each touches; none is measured.
 
-### L0: The spike (S, planned)
+### L0: The spike (S, done 2026-11-20)
 
 Throwaway code on a branch, answering what L5a and the checkpoint need:
 
@@ -488,6 +488,67 @@ callbacks arrive on, binary size, build time).
 
 **Done when** answers 1 to 3 are written into this document's status, with a go for L5a, or what
 to change, or a stop.
+
+#### L0's answers (2026-11-20)
+
+Measured on the Android 16 arm64 emulator (`-gpu host`, Apple M5) with two slots in game, debug
+APK, arm64 only. The spike's code is on the branch `native-ui-l0` (commit `2d3233730`), not on
+`main`. **Go for L5a**, with the changes below.
+
+1. **Compose in the shell works.** A `ComposeView` over the `SurfaceView`, in the activity's
+   `FrameLayout`, draws over the slot's picture; taps on it reach Compose when
+   `TuruActivity.dispatchTouchEvent` lets a gesture that starts on it go to the views (as the
+   text strip's do) and every other touch goes to the slot. It stayed up through a tab switch
+   (the surface handed from slot 1 to slot 3 in 20 ms, as before) and beside the native text
+   strip with the keyboard up.
+   * **Memory**: the shell's PSS went from 53.5 MB to 77.3 MB (+23.8 MB). Almost all of it is
+     the activity's hardware renderer, not Compose: a plain `TextView` in the same place cost
+     74.9 MB (+21.4 MB; "Unknown" in `meminfo` goes from 11 to 32 MB, which is the renderer's
+     buffers). Compose itself adds about 2.4 MB. So: **the first view drawn over the surface
+     costs ~21 MB**, whatever toolkit draws it. The "Starting the tab..." view pays it today only
+     while it shows. The shell is still the smallest process (a slot is 380 to 480 MB).
+   * **APK**: dex grew from 10.6 MB to 32.2 MB uncompressed (+21.6 MB; +7.3 MB in the APK) in a
+     debug build without R8. Release builds have `isMinifyEnabled = false`, so they pay the same
+     until R8 is turned on for the shell's classes (to measure in L5a).
+   * **Compose's version**: the BOM 2026.09 (Compose 1.12) needs compileSdk 37; the SDK has 36,
+     so 2026.06.01 (Compose 1.11). Moving to 37 is a separate change.
+2. **A copy over the control API works and is fast.** A registry in `control_api.rs`
+   (`add_model(name, view)`, filled by the client before it starts the API) serves
+   `GET /models/<name>` (`{revision, view}`) and `event: model` on `/events?models=<name>` when the
+   view's revision moves (the revision is a hash of the view: no bookkeeping in the model). The
+   shell reads with `HttpURLConnection` on a thread, from the address in the slot's `Hello`;
+   loopback HTTP needs a network security config allowing cleartext to `127.0.0.1` only.
+   * The scripts view is 154 to 254 bytes and reads in 1 to 4 ms (17 ms the first time).
+   * From a tap on a Compose Start or Stop to the Compose view redrawn with the new state: **50 to
+     270 ms**, bounded by `/events`' 250 ms poll (`EVENTS_EVERY`). Fine for status; a model that
+     needs less (a script's own message box) can poll faster or push.
+   * A slot killed with its copy shown: the reader's stream ends (`EOFException`), its retries
+     fail for 2 s, the slot says hello again from a new port and the shell follows it. The copy
+     was current 2 s after the kill.
+   * Sizes for later: the monitor's `Snapshot` is 698 bytes; a log line about 200 bytes, so a full
+     buffer (5,000 lines) about 1 MB (estimated from 6 lines, not measured full): Logs must stay
+     line-fed, as planned.
+3. **Generated types: facet-generate over typeshare.** Both ran on `Snapshot`'s records
+   (scratch crates, not committed).
+   * **typeshare 1.13.4** dropped `Snapshot` and every record with an `i64`, `u64` or `usize`
+     field, with an error each (it refuses 64-bit integers for JavaScript's sake unless every such
+     field says `#[typeshare(serialized_as = "...")]`). Turu's records are full of them (gold,
+     XP, counters). Only `ScriptInfo` and `BotState` came out.
+   * **facet-generate 0.22.4** (Crux's generator) produced every record for Kotlin (with
+     kotlinx.serialization: `Long`, `ULong`, enums with `@SerialName`) and Swift (`Codable`),
+     plus a runtime package each (`com.novi.serde`, `Serde`). It needs `#[derive(Facet)]` (facet
+     0.46, pinned exactly by the generator) on the records beside serde's, and its own
+     `#[facet(rename_all = ...)]`. Two traps: serde's `#[serde(default)]` on a struct isn't seen,
+     so a field Rust may leave out is required in Kotlin; and kotlinx.serialization refuses
+     unknown keys unless the `Json` has `ignoreUnknownKeys = true`, which a shell must set
+     (shell and client are the same build, but a missing field must not fail the whole view).
+   * A field changed on one side fails decoding loudly in kotlinx (missing or wrong type), which
+     is what "Types across the boundary" wants. Decoding a slot's live view in the Android build
+     is L4's, after the checkpoint.
+
+What changes for L5a: nothing in its plan. It needs only Compose and `java.rs` (no copies, no
+generated types). L5a also turns R8 on for the release build if the shell's dex is still +20 MB
+there, or records why not.
 
 ### L5a: Android, the shell's own windows (M, planned after L0)
 
