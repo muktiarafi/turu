@@ -131,6 +131,10 @@ export interface Aura {
     duration: number;
     /** When it was applied, in Unix milliseconds (0 when unknown). */
     timeStamp: number;
+    /** When it ends, in Unix milliseconds: `timeStamp` plus `duration` (VibeSkua `ExpiresAt`). */
+    expiresAt: number;
+    /** Whole seconds left, 0 once it ended or when `timeStamp` is unknown (VibeSkua `RemainingTime`). */
+    remainingTime: number;
     passive: boolean;
     potionType: string;
     icon: string;

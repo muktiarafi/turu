@@ -56,9 +56,9 @@ pub fn dispatch(bot: &Arc<Bot>, subject: Subject, name: &str, args: Args) -> Bot
                 vec![subject.name().into(), names.into()],
             )?)
         }
-        "getPlayerAura" if subject == Subject::Self_ => ok(parse_list::<Aura>(
+        "getPlayerAura" if subject == Subject::Self_ => ok(with_times(parse_list::<Aura>(
             &bot.flash.call("GetPlayerAura", vec![args.str(0)?.into()])?,
-        )),
+        ))),
         "getMonsterAura" if subject == Subject::Target => {
             ok(monster_auras(bot, args.name_or_id(0)?)?)
         }
@@ -75,9 +75,9 @@ pub fn auras(bot: &Bot, subject: Subject) -> BotResult<Vec<Aura>> {
     match subject {
         Subject::Self_ => {
             let me = player::username(bot)?.to_lowercase();
-            Ok(parse_list(
+            Ok(with_times(parse_list(
                 &bot.flash.call("GetPlayerAura", vec![me.into()])?,
-            ))
+            )))
         }
         Subject::Target => {
             let map_id = player::target(bot)?.map_or(0, |m| m.map_id);
@@ -92,7 +92,13 @@ fn monster_auras(bot: &Bot, monster: NameOrId) -> BotResult<Vec<Aura>> {
         NameOrId::Name(name) => bot.flash.call("GetMonsterAuraByName", vec![name.into()])?,
         NameOrId::Id(id) => bot.flash.call("GetMonsterAuraByID", vec![id.into()])?,
     };
-    Ok(parse_list(&raw))
+    Ok(with_times(parse_list(&raw)))
+}
+
+/// The auras with their end and seconds left on the clock now ([`Aura::with_times`]).
+fn with_times(auras: Vec<Aura>) -> Vec<Aura> {
+    let now_ms = crate::gear::now_ms() as i64;
+    auras.into_iter().map(|a| a.with_times(now_ms)).collect()
 }
 
 /// VibeSkua `Snapshots`: the auras as the HUD shows them (`GetAuraSnapshots`), without the

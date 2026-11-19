@@ -945,6 +945,29 @@ pub struct Aura {
     pub potion_type: String,
     #[serde(deserialize_with = "lenient_string", default)]
     pub icon: String,
+    /// When it ends, in Unix milliseconds (VibeSkua `ExpiresAt`: the time stamp plus the
+    /// duration); filled by [`Aura::with_times`].
+    #[serde(skip_deserializing)]
+    pub expires_at: i64,
+    /// Whole seconds left, 0 once it ended (VibeSkua `RemainingTime`); filled by
+    /// [`Aura::with_times`].
+    #[serde(skip_deserializing)]
+    pub remaining_time: i64,
+}
+
+impl Aura {
+    /// Fills [`expires_at`](Self::expires_at) and [`remaining_time`](Self::remaining_time) as
+    /// VibeSkua computes them from the time stamp, the duration and the clock at `now_ms`. An
+    /// unknown time stamp (0) is VibeSkua's `DateTimeOffset.MinValue`: already ended.
+    pub fn with_times(mut self, now_ms: i64) -> Self {
+        self.expires_at = self.time_stamp + self.duration * 1000;
+        self.remaining_time = if self.time_stamp > 0 {
+            ((self.expires_at - now_ms) / 1000).max(0)
+        } else {
+            0
+        };
+        self
+    }
 }
 
 fn one() -> f64 {
@@ -1036,5 +1059,24 @@ mod tests {
         assert!(item.name_is("crag &amp; bamboozle"));
         assert!(!item.name_is("Crag and Bamboozle"));
         assert_eq!(game_name("a &lt;b&gt; &amp;amp;"), "a <b> &amp;");
+    }
+
+    #[test]
+    fn aura_times_follow_vibeskua() {
+        let aura: Aura =
+            serde_json::from_str(r#"{"nam":"Focus","dur":"10","ts":1000000}"#).unwrap();
+        // 10 s from its time stamp; 4.5 s later, 5 whole seconds are left.
+        let aura = aura.with_times(1_004_500);
+        assert_eq!(aura.expires_at, 1_010_000);
+        assert_eq!(aura.remaining_time, 5);
+        assert_eq!(aura.clone().with_times(1_020_000).remaining_time, 0);
+
+        let json = serde_json::to_value(&aura).unwrap();
+        assert_eq!(json["expiresAt"], 1_010_000);
+        assert_eq!(json["remainingTime"], 5);
+
+        // No time stamp: VibeSkua's `DateTimeOffset.MinValue`, already ended.
+        let untimed: Aura = serde_json::from_str(r#"{"nam":"Focus","dur":10}"#).unwrap();
+        assert_eq!(untimed.with_times(1_004_500).remaining_time, 0);
     }
 }
