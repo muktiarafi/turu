@@ -220,9 +220,13 @@ fn arg(args: &[FlashArg], i: usize) -> String {
 }
 
 impl FlashHost for FakeGame {
-    /// Records the engine's calls, not the single reads a batched one is answered from.
+    /// Records the engine's calls, not the single reads a batched one is answered from, nor the
+    /// monitor's samples: `cargo test` runs the control API's and monitor's tests in this
+    /// process too, and their requests have every bot's monitor read the game for a while.
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
-        self.calls.lock().push((name.to_owned(), args.clone()));
+        if std::thread::current().name() != Some("Turu Monitor") {
+            self.calls.lock().push((name.to_owned(), args.clone()));
+        }
         if let Some(answer) =
             turu_bot::testing::batched(name, &args, |n, a| self.answer(n, a).unwrap_or_default())
         {
@@ -294,8 +298,7 @@ impl FakeGame {
 }
 
 fn new_bot(game: &Arc<FakeGame>) -> Arc<Bot> {
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let bot = Bot::new();
     bot.set_host(Some(game.clone() as Arc<dyn FlashHost>));
     *bot.options.write() = Default::default();

@@ -215,7 +215,7 @@ convert. Then fix what `tsc` reports, read the draft against the C#, and remove 
    game strings back as XML text, so its names carry `&amp;`, `&lt;` and `&gt;`; Turu reads the
    game's own `&`. The engine still accepts the `&amp;` spelling in item, monster and drop names.
 5. Type-check: `cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .`. Then also run
-   `cargo test -p turu_bot --test scripts_transpile`.
+   `cargo test -p turu_bot scripts_transpile::`.
 
 ## Publishing
 

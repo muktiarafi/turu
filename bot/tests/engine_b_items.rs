@@ -1,6 +1,6 @@
 //! Item matching, quest/shop JSON parsing and the item APIs against a fake game.
 
-mod common;
+use crate::common;
 
 use parking_lot::Mutex;
 use serde_json::{Value, json};
@@ -221,13 +221,7 @@ impl FakeGame {
 }
 
 fn setup() -> (Arc<Bot>, Arc<FakeGame>) {
-    // SAFETY: every test in this file sets the same value.
-    unsafe {
-        std::env::set_var(
-            "TURU_DATA_DIR",
-            std::env::temp_dir().join("turu-test-engine-b"),
-        )
-    };
+    crate::common::data_dir();
     let bot = Bot::new();
     let game = Arc::new(FakeGame {
         sent: Mutex::new(Vec::new()),

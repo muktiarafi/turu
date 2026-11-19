@@ -1,5 +1,6 @@
 //! Scripts > Scheduler: the playlist runs real scripts one after another against a fake game.
 
+use crate::common::data_dir;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,13 +26,6 @@ impl FlashHost for FakeGame {
             _ => "null".into(),
         })
     }
-}
-
-fn data_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("turu-test-scheduler-data-{}", std::process::id()));
-    // SAFETY: every test in this file sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", &dir) };
-    dir
 }
 
 fn scripts_dir(name: &str) -> PathBuf {

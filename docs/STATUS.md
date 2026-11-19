@@ -624,7 +624,7 @@ client of its own, a Ruffle player and its bot, in one window and one process (V
   naming a loopback host (so Tailscale Serve needs it); a command also needs the page's own
   `Origin` or the key. Clients launched by Army don't serve it. Checked: the tests (a real
   Army client reaching the hub is an ignored test, `TURU_EXE=target/debug/turu cargo test -p
-  turu_bot --test monitor -- --ignored`), the page against the headless client at the login
+  turu_bot monitor:: -- --ignored`), the page against the headless client at the login
   screen, and two headless processes (`--monitor` and `--report-to`): the remote's card, a
   command (about 0.1 s) and its log. The in-game cards, commands and history only with sample
   data; the Options window's Report section and QR code only built, not looked at. Not built:

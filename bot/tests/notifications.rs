@@ -11,8 +11,7 @@ use turu_bot::script;
 use turu_bot::{Bot, FlashArg, FlashHost, HostError};
 
 fn new_bot() -> Arc<Bot> {
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     Bot::new()
 }
 

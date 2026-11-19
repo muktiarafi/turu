@@ -1,6 +1,6 @@
 //! Tools > Loader's quest cache and Tools > Grabber's readers and actions against a fake game.
 
-mod common;
+use crate::common;
 
 use parking_lot::Mutex;
 use serde_json::{Map, Value, json};
@@ -127,13 +127,7 @@ impl FlashHost for FakeGame {
 }
 
 fn setup(dir: &str) -> (Arc<Bot>, Arc<FakeGame>) {
-    // SAFETY: every test in this file sets the same value.
-    unsafe {
-        std::env::set_var(
-            "TURU_DATA_DIR",
-            std::env::temp_dir().join("turu-test-loader-grabber"),
-        )
-    };
+    crate::common::data_dir();
     let bot = Bot::new();
     let game = Arc::new(FakeGame {
         logged_in: AtomicBool::new(true),

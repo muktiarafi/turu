@@ -27,8 +27,7 @@ impl FlashHost for RecordingGame {
 fn run(name: &str, source: &str) -> (Arc<Bot>, Arc<RecordingGame>) {
     let dir = std::env::temp_dir().join(format!("turu-test-story-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // SAFETY: tests in this file set the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     // The repo's scripts/core, imported by absolute path.
     let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../scripts/core")

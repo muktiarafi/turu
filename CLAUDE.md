@@ -49,7 +49,7 @@ it, bump `ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/
 ```bash
 cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ./target/debug/turu                      # starts turu.swf -> AQW; log in with the game's own screen
-cargo nextest run -p turu_bot            # engine + script runtime tests (fake Flash host): ~25 s, `cargo test` ~2 min (see below)
+cargo nextest run -p turu_bot            # engine + script runtime tests (fake Flash host): ~25 s, `cargo test` ~30 s (see below)
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
@@ -62,7 +62,8 @@ cd scripts && npx -y prettier@3.6.2 --write "**/*.{ts,mjs}"   # format scripts (
 
 Run the engine's tests with cargo-nextest (`.config/nextest.toml`): each test in its own process,
 every test binary at once. `cargo nextest run -p turu_bot <name>` runs the tests whose names
-contain `<name>`, `--test <file>` one `bot/tests/` file, `--run-ignored only` the ignored ones.
+contain `<name>` (`<file>::` for one `bot/tests/` file: they are modules of one test binary,
+`bot/tests/main.rs`, where a new file needs its `mod` line), `--run-ignored only` the ignored ones.
 Install it with `brew install cargo-nextest` or `cargo install cargo-nextest --locked`; without
 it, use `cargo test`. Keep `cargo test` for the app and frontend on macOS: the system checks each
 newly built test program at launch, and nextest launches one per test (over 100 s against

@@ -105,8 +105,7 @@ impl FlashHost for FakeGame {
 }
 
 fn start(game: FakeGame) -> (Arc<Bot>, Arc<FakeGame>) {
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let game = Arc::new(game);
     let bot = Bot::new();
     game.bot.set(Arc::downgrade(&bot)).ok();

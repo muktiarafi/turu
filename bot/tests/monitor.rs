@@ -19,8 +19,7 @@ fn start() -> (Arc<Bot>, Server, String) {
 }
 
 fn start_with(allow_control: bool) -> (Arc<Bot>, Server, String) {
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let bot = Bot::new();
     let tab = bot.clone();
     let hub = Hub::new(None);
@@ -536,8 +535,7 @@ fn streams_a_bots_log() {
 #[test]
 fn peers_are_polled_through_their_control_api() {
     use turu_bot::monitor::hub::{Control, Kind, PeerSource};
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let token = "0123456789abcdef0123456789abcdef".to_owned();
     let bot = turu_bot::Bot::new();
     let api =
