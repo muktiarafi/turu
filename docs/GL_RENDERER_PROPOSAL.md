@@ -18,7 +18,8 @@ there, and make each pass cheaper without changing what the GPU draws.
 
 The milestone has four steps, in order. **G0** makes the picture complete. It blocks the rest,
 because numbers measured on half a frame mean nothing. **G1** measures. **G2 and G3** are the
-levers, ranked by what G1 shows. **G4** makes OpenGL a fallback Turu can offer.
+levers, ranked by what G1 shows. **G4** makes OpenGL a fallback Turu can offer. **G5** lists what
+else of Mugetsu's carries over, from a survey of its D3D12, Metal and wgpu-core changes.
 
 ## Where things stand
 
@@ -438,6 +439,90 @@ Only after G0 to G2:
 
 **Done when:** a phone or emulator with Vulkan off starts on GL by itself, and a 30-minute farm
 on GL draws the whole picture with no errors in the log.
+
+## G5: More from Mugetsu (survey of 2026-11-19)
+
+"How Mugetsu optimized Vulkan" above covers its Vulkan patch. This survey covers the rest of
+Mugetsu 2.0.0: its D3D12 and Metal hal changes (`mugetsu/source/patches/wgpu-hal.patch`), its
+wgpu-core changes (`wgpu-core.patch`), and the places in `ruffle/render/wgpu` that act by
+backend. Nothing here is built. Every gain needs a real phone to measure: the emulator's GLES
+sends every call to the host and buffers them, so it overstates call counts and hides flushes
+and memory bandwidth.
+
+### Candidates, best first
+
+**G5a: Pipeline warm-up on GL** (Mugetsu's D3D12 warm-up). On D3D12, building a render
+pipeline compiles its shaders with FXC, and Ruffle built ~90 the first time it drew: freezes of
+up to 2.8 s entering Yulgar, and 50-570 ms per page blend mode seen for the first time.
+`Descriptors::warm_up` (`render/wgpu/src/descriptors.rs:112`) builds them all on background
+threads while AQW loads, but only on D3D12 (`descriptors.rs:119`: "Vulkan doesn't need this").
+GL pays the same cost: a pipeline's first use translates its shaders to GLSL (naga), then
+compiles and links them, which phone drivers are known to be slow at. So GL phones very likely
+freeze as D3D12 did.
+
+- **The catch:** the GL backend takes its program cache with `try_lock().expect(...)`
+  (`patches/wgpu-hal/src/gles/device.rs:424`), so two threads building pipelines at once
+  panic. Mugetsu's one thread per job would crash on GL: warm up on a single thread, or make
+  that a plain `lock()` (an `AQW build:` change). Each compile also holds the GL context lock,
+  which competes with the engine thread; acceptable during AQW's loading screen.
+- **Size:** small. Android draws with one sample (Flash-style edges, no MSAA), so one set of
+  pipelines per format.
+- **To check:** whether Android keeps compiled programs between runs (its EGL blob cache, set
+  up per app process) for slot processes. If it does, warm-up costs little after the first run.
+- **Measure:** the first entry into a crowded room and the first skill effects, with and
+  without; a "GL pipelines ready after N s" line as D3D12 logs.
+
+**G5b: Keep the EGL context current on the engine thread.** Every lock of the GL context
+makes it current and releases it (`gles/egl.rs:317`, `make_current`/`unmake_current`), and the
+release flushes. G1 counted ~400 locks/s, `eglMakeCurrent` 20% inclusive of the engine thread on
+the emulator. On a tiled phone GPU a flush in mid-frame can cost more than the call. The only
+other thread that locks is wgpu-core's background drop of finished command buffers
+(`drop_finished_encoders`, `patches/wgpu-core/src/device/life.rs`), itself a Mugetsu change.
+
+- **Plan:** on GL, drop encoders inline (`WGPU_INLINE_ENCODER_DROP` already does it), so the
+  engine thread is GL's only user. Then the lock keeps the context current, releasing it only
+  when another thread waits or at a frame's end. This is the "every GL call on one thread"
+  design that "Two GL-only costs from G1" above asks for.
+- **First experiment, no code:** `--env WGPU_INLINE_ENCODER_DROP=1 --env RUFFLE_GL_STATS=1`, and
+  check that the `GL replay` line's locks by thread show only the engine thread.
+- **Risk:** a context current on one thread can't be made current on another (EGL_BAD_ACCESS),
+  so a missed caller deadlocks or fails. Inventory every thread that touches the device first
+  (surface configure, the encoder drop, anything on rayon's workers). Biggest potential of the
+  three; needs a design of its own.
+
+**G5c: Reuse command buffers' memory** (Mugetsu's D3D12 `recycle_ops`). Every GL command
+buffer starts from empty `commands` and `data_bytes` (`end_encoding` takes them,
+`gles/command.rs:274`), ~3,200 buffers/s each growing them again, and `reset_all` drops the
+buffers it gets back. Keep a few emptied ones per encoder, within Mugetsu's limits: 4 per
+encoder, 256 entries at most. Keeping more or bigger ones grew to gigabytes over a session on
+D3D12. Small and low risk; a small gain.
+
+Already planned above and waiting for a phone profile: G2c (one FBO per target), G2d (merging
+command buffers, Mugetsu's D3D12 hook) and merging uploads.
+
+### What doesn't carry over
+
+| Mugetsu change | Backend | Why not on GL |
+|---|---|---|
+| Device-wide pool of command lists, created ahead on a background thread | D3D12 | GL has no command list object; a GL command buffer is a `Vec`. |
+| One sampler index buffer per distinct sampler list | D3D12 | A GL bind group creates no GL object. |
+| FXC blob copied out on the compiling thread | D3D12 | An FXC thread-safety bug. |
+| `d3d12.dll` never unloaded | D3D12 | A D3D12 shutdown crash. |
+| Texture-kind allocators, submits in batches of 512, lean pools | D3D12, Vulkan | See "What does nothing on OpenGL". |
+| Present thread | Vulkan, D3D12 | Presenting on another thread needs the context there, against G5b. |
+
+### Not from Mugetsu: worth a look on tiled phone GPUs
+
+- **The stencil is stored after every pass and loaded in the next.** `stencil_attachment`
+  (`render/wgpu/src/surface/target.rs:430-436`) always uses `StoreOp::Store` and, after the first
+  pass, `LoadOp::Load`. That keeps masks across a target's passes, but on a tiler each such pass
+  writes the stencil to memory and reads it back. `StoreOp::Discard` on a target's last pass
+  would let GL skip the write: the GL backend already turns discarded attachments into
+  `glInvalidateFramebuffer`.
+- **Two full-screen copies per picture.** wgpu's EGL present blits the surface's texture to the
+  window every frame (`gles/egl.rs:1155`), on top of Turu's own blit of the game into the
+  surface (`android/src/screen.rs`). Vulkan has one. A 720p-to-1440p screen at 60-120 Hz pays
+  that in fill rate and bandwidth.
 
 ## Where the work lands
 
