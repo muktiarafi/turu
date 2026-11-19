@@ -46,10 +46,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             ok(())
         }
         "canUseSkill" => ok(skills::can_use_skill(bot, args.i64(0)?)?),
-        "useSkill" => {
-            skills::use_skill(bot, args.i64(0)?)?;
-            ok(())
-        }
+        "useSkill" => ok(skills::use_skill(bot, args.i64(0)?)?),
         _ => Err(BotError::UnknownMethod(format!("skills.{name}"))),
     }
 }

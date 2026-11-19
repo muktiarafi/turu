@@ -222,11 +222,14 @@ public class Combat {
         return now >= Number(skill.ts) + cooldown * haste;
     }
 
-    private function useSkill(index:*):void {
+    /** Uses the skill when it is off cooldown; "true" when it was used. */
+    private function useSkill(index:*):String {
         var skill:* = world.actions.active[int(index)];
         if (skill != null && cooledDown(skill)) {
             world.testAction(skill);
+            return "true";
         }
+        return "false";
     }
 
     /** Every skill reaches across the map. */

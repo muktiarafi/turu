@@ -886,7 +886,8 @@ export class Skills {
     pause(): void { call("skills.pause"); }
     resume(): void { call("skills.resume"); }
     canUseSkill(index: number): boolean { return call("skills.canUseSkill", index); }
-    useSkill(index: number): void { call("skills.useSkill", index); }
+    /** Uses the skill when it is off cooldown; true when it was used (VibeSkua `UseSkill`). */
+    useSkill(index: number): boolean { return call("skills.useSkill", index); }
 }
 
 /** Waits. `timeout` counts tries of ~100 ms each, like VibeSkua (10 = about 1 s). */

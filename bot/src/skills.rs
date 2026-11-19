@@ -1381,7 +1381,7 @@ pub fn can_use_skill(bot: &Bot, index: i64) -> BotResult<bool> {
     bot.flash.call_bool("canUseSkill", vec![index.into()])
 }
 
-/// `useSkill(index)`: uses it if it's off cooldown.
+/// `useSkill(index)`: uses it if it's off cooldown; true when it was used (VibeSkua `UseSkill`).
 pub fn use_skill(bot: &Bot, index: i64) -> BotResult<bool> {
     bot.flash.call_bool("useSkill", vec![index.into()])
 }
