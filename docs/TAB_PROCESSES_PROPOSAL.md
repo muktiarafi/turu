@@ -1130,6 +1130,8 @@ so the 503 wasn't seen there). Not run: `POST /update` through it (the client's 
 * Lowering one client's memory. That is what helps single-account kills, and M0 may show it
   matters more.
 * Turu Mas (above).
-* Native windows: not planned. The client draws the whole tab, Turu's egui windows included;
-  `docs/NATIVE_UI_PROPOSAL.md`, withdrawn on 2026-11-16, is the record of that proposal.
+* Native windows. The client draws the whole tab, Turu's egui windows included.
+  `docs/NATIVE_UI_PROPOSAL.md` (withdrawn on 2026-11-16, reopened in steps on 2026-11-20) plans
+  native windows in the shell on top of this design: first the Android shell's tab strip and
+  Accounts in Compose, the bot windows staying in the clients' egui until its checkpoint.
 * A thread per tab within one process (more cores, no containment).

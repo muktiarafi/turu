@@ -277,6 +277,11 @@ an update, alerts and passwords (the same generated calls, checked at start).
 
 ## Kept in egui
 
+Under review since 2026-11-20: `docs/NATIVE_UI_PROPOSAL.md` plans the tab strip and Accounts in
+Compose in the shell (its L5a, after its L0 spike), with Android's screens designed for the phone
+rather than copied from the egui UI. What follows stands until each step lands, and for the bot
+windows until that proposal's checkpoint.
+
 * **The nav rail and the bot windows** (about 40,000 lines): the desktop shares them, `CLAUDE.md`
   wants VibeSkua's UI, and egui draws with the game in one pass. A Compose port would be a second
   UI to keep in step.
