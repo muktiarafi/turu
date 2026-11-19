@@ -29,8 +29,6 @@ Each is how earlier ports solved it; follow the existing port named where one is
   `JSON.stringify(packet.params.dataObj)`. See `ultrasv3/challengebosses/Kathoolv3.ts`.
 - **`Bot.Skills.LoadAdvanced` / `OverrideProvider` / `SetProvider` / `Start`**: restart the
   rotation with `bot.skills.startSkills(skills, timeout, mode)` (`prototypes/InfernalArenaLW.ts`).
-- **`Bot.Skills.UseSkill` used as a bool**: Turu's returns nothing; rely on the
-  `canUseSkill` check before it.
 - **Aura `RemainingTime`**: `bot.target.getAuraSnapshot(name)` / `bot.self.getAuraSnapshot`.
   `Bot.Target.GetMonsterAura` already returns `Aura[]`; drop the JSON parsing.
 - **`DateTimeOffset` / `Stopwatch`**: Unix milliseconds from `Date.now()`.
@@ -45,5 +43,13 @@ Each is how earlier ports solved it; follow the existing port named where one is
   to buy. C# that passes a count is a bug to fix (owned + count).
 - **Error text in a `catch`**: `String(ex)` (CoreBots' `errorMessage` isn't exported), after
   `rethrowIfStopped(ex)`.
+- **Silent traps that type-check**: integer division between C# ints (`(a - b) / q`) needs
+  `Math.trunc`; an untyped `GetGameObject(path)` compared with `"\"Bank\""` is raw JSON in C#
+  but a parsed value in Turu (`bot.flash.get<string>(path) !== "Bank"`); `GetMonsterAura(...)` is
+  an `Aura[]`, not JSON to `Contains`; `x is >= 'A' and <= 'Z' || ...` comes out with the wrong
+  precedence; `ThenBy` sorts twice (write one comparator); `[...list?.map(...)] ?? []` throws on
+  null; a generic method can lose its `<T>`. Grep the draft for each.
+- **Many `ref`/`out` sites** (a script passing timers around): `ultraslw/LWRef.ts` has `Ref<T>`,
+  `ref(get, set)` and `discard()`; the callee takes `Ref<T>` and uses `.value`.
 - **Unused imports** left after a fix (`SkillUseMode`, `ClassType`, `CoreBots`): tsc names them;
   remove them.
