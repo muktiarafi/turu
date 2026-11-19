@@ -8,7 +8,8 @@ tabs are built, with the owner's decisions in "Decisions taken". Planned:
 1. **L0**, a narrowed spike: what Compose costs in the Android shell, and copies of a client's
    models read over its control API.
 2. **L5a**, after L0 and a design pass: the Android shell's own windows (the tab strip, Accounts
-   opening a tab) in Compose, beside the bot windows, which stay egui.
+   opening a tab) in Compose, beside the bot windows, which stay egui. The design pass is
+   approved (2026-11-20) and recorded in `docs/UI.md`, "Native shells".
 
 Then a **checkpoint**: the owner decides from L5a whether to go on to view models and native bot
 windows (L1 to L5b) and to macOS (L6, L7). Planned any time, as it pays without native UI: the
@@ -52,7 +53,7 @@ The steps, with their state:
 | Step | What | State |
 |---|---|---|
 | L0 | Spike: Compose in the shell, model copies over the control API, type generation | Planned, first |
-| L5a | Android: design pass, then the tab strip and Accounts in Compose | Planned, after L0 |
+| L5a | Android: design pass, then the tab strip and Accounts in Compose | Design pass approved (2026-11-20, `docs/UI.md`); build after L0 |
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Planned, any time |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | After the checkpoint |
@@ -491,9 +492,15 @@ to change, or a stop.
 ### L5a: Android, the shell's own windows (M, planned after L0)
 
 * The design pass for Android (above), approved by the owner: at least the tab switcher, Accounts
-  and where the rest of the app's navigation will go.
+  and where the rest of the app's navigation will go. **Approved 2026-11-20**, recorded in
+  `docs/UI.md` ("Native shells", "Android"): landscape only; Material 3 on egui's colours; the
+  tabs as one item at the top of the rail (a landscape phone has room for one, not a strip),
+  opening a panel beside it that holds the tabs, New tab and Accounts; the whole rail native in
+  L5b. It adds to the link: the shell drawing the tabs, `rail_top`, `waits` and `rail_hidden` in
+  `Status`, and `ToShell::OpenAccounts`.
 * The tab strip in Compose, from `slots::SlotShell`'s list (open, select, close, a down tab with its
-  reason), and the clients told not to draw theirs.
+  reason), and the clients told not to draw theirs: as the design pass shapes it, the Tabs item
+  and its panel, with the client's rail starting below it.
 * Accounts opening a tab in Compose (the accounts list, Start in a tab), through `java.rs` and the
   shell's existing open-tab path.
 * Focus between Compose and a slot's egui windows; Back closes what's on top, native or egui.
@@ -660,6 +667,7 @@ Still open:
   checkpoint.
 * **The checkpoint**, after L5a: go on to L1's client part and L2 to L5b, and to macOS, or stop.
 * **Who drafts each design pass** (an agent session or a person); the owner approves either way.
+  Android's was drafted by an agent session.
 
 Order: L0 first; L5a after L0 and Android's design pass; L1's shell part any time; after the
 checkpoint, L1's client part, then L2 and L3, then L4, then L5b; L6 after L1's shell part and the

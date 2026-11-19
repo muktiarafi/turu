@@ -2,6 +2,8 @@
 
 Turu uses **VibeSkua's layout and flow** (see `VIBESKUA_SPEC.md`, section 5) in **Mugetsu's
 look** (its right-click panel: dark panel, purple accent, corner radius 12, soft shadow).
+That is the egui UI, drawn by every tab's client. Native shells follow their platform instead:
+"Native shells" below records, per feature, where each puts it (`docs/NATIVE_UI_PROPOSAL.md`).
 Code: `frontend/src/gui/turu/`. Integration points: `app/src/gui.rs` (`RuffleGui::update`
 draws the Turu nav bar instead of Ruffle's menu bar and then the tool windows when
 `mugetsu::plays_aqw()`), `gui::MENU_HEIGHT` (34), `mugetsu::window_title()` ("Turu <version>").
@@ -365,10 +367,12 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   release without this platform's package says to download it from the release page; an APK
   without sums gets **Download APK**, which opens its URL.
 * **Accounts** (`accounts.rs`): add / edit form (Username, Password with Show, Display Name, Tags;
-  the password goes to the system keychain off the UI thread; no title when adding, "Editing
+  the password goes to the system keychain off the UI thread, on both Android apps to a key in
+  the Android Keystore (`android/src/storage.rs`, `air/ane/rust/src/passwords.rs`); no title
+  when adding, "Editing
   Hero" when editing, whose greyed username says on hover it's the account's key; Enter in any
   field saves; Show has a width of its own so the two columns line up; where nothing keeps
-  passwords, `accounts::keeps_passwords()` false as on Android, the field and Show are replaced
+  passwords, `accounts::keeps_passwords()` false (no store installed), the field and Show are replaced
   by "Passwords can't be saved here yet: log in by hand in the account's tab", which "Log in by
   hand"'s tooltip says too) behind "+ Add account" (open while
   editing, or with no accounts yet; it closes on Add or Cancel; adding a username that's saved
@@ -864,6 +868,99 @@ the new value; Load Script to All opens Army Control. Tooltips show the current 
 Stop, Force Stop, Load Script, Bank). VibeSkua has no action for pausing, so Turu has none.
 Android runs them from a hardware keyboard: `android/src/input.rs` gives egui every key (F1-F12,
 letters, digits) with Ctrl, Shift and Alt, as winit does on a desktop.
+
+## Native shells
+
+`docs/NATIVE_UI_PROPOSAL.md` puts native windows in the shell, beside the client's picture, each
+shell designed for its platform after a design pass the owner approves. This section is those
+passes' record. Nothing here is built yet: until a step lands, the egui windows above stand.
+
+### Android (design pass approved 2026-11-20; for L5a, and the frame for L5b)
+
+**Mode and scene.** A phone held sideways (`sensorLandscape`, kept: native screens are designed
+for landscape only), short check-ins on several accounts: which tab needs me, switch to it, start
+another account. The game never leaves the screen: native screens are panes beside the rail over
+the dimmed game, never full-screen pages. No bottom sheets (landscape is too short for them).
+
+**Look.** Material 3 components with a fixed dark scheme, no wallpaper colours (Material You):
+Compose and egui share one 64-dp column until L5b, so the surfaces are pinned to egui's tokens
+(`theme.rs`), not generated from a seed. Surface `PANEL` `#11131A`, rows and cards `CARD`
+`#181B25`, outlines `EDGE`, text `TEXT` and `MUTED`; primary `ACCENT` `#7C6CF0` with white on
+it; success, warning and danger as egui's. Roboto in the M3 type scale, in sp; Material Symbols
+Rounded for icons. Touch targets 48 dp. DESIGN.md's palette is the Monitor's and doesn't apply.
+
+**Structure.** A navigation rail, the pattern for landscape. In L5a the shell owns its top item
+and the client's egui rail starts below it; in L5b the whole rail is native.
+
+**The room on the rail** decided the tabs' shape. The emulator is 411 dp tall in landscape, a
+Redmi 10 about 393; the egui rail needs at least 320 (Menu, Auto and Jump at 52, the gap, the
+48-dp chip, two 44-dp run controls, padding: `nav_bar.rs`), which leaves room for one item. So
+the tabs are one **Tabs** item that opens a panel; on a screen 560 dp tall or more the tabs are
+listed one by one in the rail instead. Auto and Jump don't fold into Menu to make room.
+
+**Tabs item** (top of the rail, 64 x 52 dp, with the cutout's inset as the rail has):
+
+* The active tab's avatar (two letters of its label, so army accounts with similar names stay
+  apart) with its status dot; a count badge with two tabs or more; a warning "!" while another
+  tab waits for you or has closed.
+* Shown with one tab too: it is the way to New tab and Accounts.
+* Hidden with the client's rail (Menu > Hide Side Bar); the `›` tab brings both back.
+
+**Tab panel** (from the left, beside the rail, about 320 dp, full height, a scrim over the game;
+Back or a tap on the scrim closes it):
+
+* A row per tab: avatar, the whole label, and a status line: "Script running" (busy), "Waits for
+  you: ...", "Restarting..." with a spinner, or "Closed" with **Restart**. The active row is
+  selected. A tap switches to it and closes the panel; the native "Starting the tab..." view
+  covers the hand-over as now.
+* ✕ on each row closes it, asking first only while its script runs ("Hero's script is running.
+  Close the tab?").
+* At the foot, **New tab**; with every slot taken, "4 tabs at most" instead.
+
+**New tab** (a page pushed in the same panel, with a back arrow): the accounts list, a tap starting
+that account in a new tab, and under it "Blank tab (log in by hand)". With no tab open, the
+shell's area shows "No tabs open" with the same list and Blank tab.
+
+**Accounts** (the same panel, from New tab or from egui's Menu > Army > Accounts, which opens it;
+the egui Accounts window goes on Android, Turu Mas keeps it):
+
+* Rows: avatar, the display name, the username muted, up to two group or tag chips with "+N".
+  At the end, a tonal **Start**, or the account's state: "In tab 2" (a tap switches to it),
+  "Starting...", "Log in by hand" (amber), "Failed: reason" (red). A ⋮ menu: Edit, Move up,
+  Move down, Remove... (its dialog says the saved password goes too).
+* Search in the top bar, and filter chips under it: All, each group, each tag.
+* A long press selects: a contextual bar with "3 selected", Start, Add to group, Select all.
+  Start with more accounts selected than free tabs starts as many as there are free tabs and says
+  so.
+* Add and Edit: a page pushed in the panel, Username, Password (with a show toggle; saved to the
+  Keystore), Display name, Tags. Typing in landscape uses Android's full-screen keyboard field,
+  so the form needn't fit above the keyboard. A username already saved: "Hero is already in the
+  list" with an "Edit it" link.
+* Launch options, folded at the panel's foot: Server (with its ping where the shell can measure
+  it, the names alone otherwise) and the script, from favourites and recent
+  (`quick-scripts.json`) or none, with Auto-start. A script's full search stays the Script
+  Loader's.
+
+**Where the rest goes** (L5b, after the checkpoint). The native rail, top down: Tabs, Scripts,
+Logs, Army, More; then Auto, Jump and Bank; the script chip and run controls at the bottom.
+Screens open as panes beside it. The egui rail's icons move to Material Symbols with it.
+
+| Feature | Android |
+|---|---|
+| Tabs, Accounts | native (L5a) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Army Queue | native (L5b) |
+| Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
+| Tools & Helpers, Combat, Butler, Cosmetics, Notification Center, Console | decided when reached; egui from More until then |
+| Grid View | none (a phone has no Grid View) |
+
+**What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
+of `Tabs` or `Show`) and where the client's rail starts (`rail_top`, apart from the strip's
+height, since the game keeps its full height); `waits` and `rail_hidden` in `Status`; and
+`ToShell::OpenAccounts`. It rests on L0 showing a `ComposeView` sharing the column with a slot's
+surface through a tab switch; if it can't, the same panel opens from a Menu entry instead.
+
+To check before building: what `SlotShell` does when the last tab closes (the empty state above
+assumes it stays open), and whether the shell's Rust can read the server list for the ping.
 
 ## Adding a window
 
