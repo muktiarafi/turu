@@ -233,6 +233,13 @@ impl Flash {
         Ok(())
     }
 
+    /// `deleteGameObjectKey(path, key)`: removes the key (AS3 `delete`), where
+    /// [`set_key`](Self::set_key) with null would keep it holding null.
+    pub fn delete_key(&self, path: &str, key: &str) -> BotResult<()> {
+        self.call("deleteGameObjectKey", vec![path.into(), key.into()])?;
+        Ok(())
+    }
+
     /// `isNull(path)`: true when the value is null or the path doesn't resolve.
     pub fn is_null(&self, path: &str) -> BotResult<bool> {
         self.call_bool("isNull", vec![path.into()])

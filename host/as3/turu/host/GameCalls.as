@@ -37,6 +37,7 @@ public class GameCalls {
         expose("getMany", getMany, undefined, true);
         expose("setGameObject", setGameObject);
         expose("setGameObjectKey", setGameObjectKey);
+        expose("deleteGameObjectKey", deleteGameObjectKey);
         expose("callGameFunction", callGameFunction);
         expose("callGameFunction0", callGameFunction0);
     }
@@ -71,6 +72,14 @@ public class GameCalls {
 
     private function setGameObjectKey(path:String, key:String, value:*):void {
         walk(gameOf(), path)[key] = value;
+    }
+
+    /**
+     * Removes the key, as the game's own code does (`delete objData.eqp[sES]`). Setting it to
+     * null keeps the key, and the game's loops over such objects read a field of each value.
+     */
+    private function deleteGameObjectKey(path:String, key:String):void {
+        delete walk(gameOf(), path)[key];
     }
 
     private function getArrayObject(path:String, index:*):String {

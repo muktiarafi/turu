@@ -1118,6 +1118,17 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
 - **A script dropped on the window is loaded** (a process tab's, 2026-11-18): VibeSkua takes no
   dropped files; Turu loads a dropped `.ts` or `.js` in the tab on screen, as Load Script does.
 
+- **Cosmetics empties a slot by deleting it** (2026-11-19, `cosmetics::avatar::unequip_slot`,
+  turu.swf's `deleteGameObjectKey`): VibeSkua sets `objData.eqp[slot]` (and `eqp.pe`) to null.
+  The game reads a field of every `eqp` value in two places, and a null one threw: the
+  `equipItem` reply (`Avatar.calculateIntoBoosts`, before the item is marked equipped), so
+  equips after an emptied slot went through on the server but never showed as equipped (CoreBots'
+  `equip` retried 5 times, UltrasLW's `equipClass` stopped with "<class> could not be
+  equipped."), and Character > Outfits (`outfitsetsr2.swf`'s `initAvatar`), which stuck half
+  built. Copying a look and Reset to Real Gear empty slots. The game's own unequip deletes the key
+  too. Found from the game's decompiled code and a log; not yet run in game. A session already
+  in that state needs a relog.
+
 - **Refusals are logged:** a turn-in the server refuses (`ccqr` without `bSuccess`), with its
   reply and how far apart the quest's last two `tryQuestComplete` were sent, and the server's
   `warning`/`server` messages go to the Debug log and to the app's log with the account

@@ -21,6 +21,7 @@ const PATH_CALLS: &[&str] = &[
     "getGameObjectKey",
     "setGameObject",
     "setGameObjectKey",
+    "deleteGameObjectKey",
     "getArrayObject",
     "callGameFunction",
     "callGameFunction0",

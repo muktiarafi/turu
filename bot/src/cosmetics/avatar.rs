@@ -322,11 +322,16 @@ pub fn unequip_slot(bot: &Bot, group: &str) -> BotResult<()> {
         let _ = f.call_game_function("world.destroyPet", vec!["world.myAvatar".into()]);
         let _ = f.call_game_function("world.destroyPetMC", vec!["world.myAvatar".into()]);
         let _ = f.call_game_function("world.myAvatar.unloadPet", vec![]);
-        let _ = f.set("world.myAvatar.objData.eqp.pe", FlashArg::Null);
+        // Turu: VibeSkua sets the slot to null. The key stays, and the game's `equipItem`
+        // reply reads `eqp[slot].sMeta` for every key (`calculateIntoBoosts`) before it marks
+        // the item equipped: it threw there, so equips went through on the server but never
+        // showed as equipped. Character > Outfits loops over `eqp` the same way and stuck.
+        // Deleted, as the game's own `unequipItem` reply does (STATUS.md, "Differences").
+        let _ = f.delete_key(EQP, "pe");
         let _ = f.set("world.myAvatar.petMC", FlashArg::Null);
     } else {
         f.call_game_function("world.myAvatar.unloadMovieAtES", vec![group.into()])?;
-        let _ = f.set_key(EQP, group, FlashArg::Null);
+        let _ = f.delete_key(EQP, group);
     }
     if let Some(slot) = Slot::from_group(group) {
         bot.cosmetics.set_slot(slot, None);

@@ -99,6 +99,22 @@ impl FakeGame {
         obj[last] = value;
     }
 
+    fn delete(&self, path: &str, key: &str) {
+        let mut root = self.root.lock();
+        let obj = path.split('.').fold(&mut *root, |v, part| &mut v[part]);
+        if let Some(map) = obj.as_object_mut() {
+            map.remove(key);
+        }
+    }
+
+    /// The game's loops over `objData.eqp` (`calculateIntoBoosts`) read a field of every value,
+    /// so an emptied slot has to be gone, not null.
+    fn assert_no_null_slots(&self) {
+        let eqp = self.get("world.myAvatar.objData.eqp");
+        let eqp = eqp.as_object().expect("eqp is an object");
+        assert!(eqp.values().all(Value::is_object), "{eqp:?}");
+    }
+
     fn calls(&self) -> Vec<String> {
         self.calls.lock().clone()
     }
@@ -125,6 +141,10 @@ impl FlashHost for FakeGame {
             }
             "setGameObjectKey" => {
                 self.set(&first, Some(&text(args.get(1))), value_of(&args[2]));
+                String::new()
+            }
+            "deleteGameObjectKey" => {
+                self.delete(&first, &text(args.get(1)));
                 String::new()
             }
             "gender" => self.get("world.myAvatar.objData.strGender").to_string(),
@@ -224,6 +244,7 @@ fn copying_a_look_takes_gear_gender_and_colors_and_empties_the_rest() {
         json!("items/armors/F/Fancy.swf")
     );
     assert_eq!(game.get("world.myAvatar.objData.eqp.Weapon"), Value::Null);
+    game.assert_no_null_slots();
 
     // Female, through the game's own genderSwap answer.
     assert_eq!(game.get("world.myAvatar.objData.strGender"), json!("F"));
@@ -267,6 +288,7 @@ fn copying_a_look_takes_gear_gender_and_colors_and_empties_the_rest() {
         json!("items/swords/real.swf")
     );
     assert_eq!(game.get("world.myAvatar.objData.eqp.he"), Value::Null);
+    game.assert_no_null_slots();
     assert_eq!(game.get("world.myAvatar.objData.intColorBase"), json!(1));
     assert_eq!(game.get("world.myAvatar.objData.intColorSkin"), json!(5));
     assert!(!bot.cosmetics.current().has_any_item());
@@ -298,6 +320,7 @@ fn a_character_page_look_is_applied_like_a_copied_one() {
         json!("items/helms/APIllusionSkinFace.swf")
     );
     assert_eq!(game.get("world.myAvatar.objData.eqp.Weapon"), Value::Null);
+    game.assert_no_null_slots();
     let current = bot.cosmetics.current();
     assert_eq!(current.helm.map(|i| i.name), Some("Unmasked".to_owned()));
     assert!(current.misc.is_none());
