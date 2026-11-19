@@ -271,6 +271,206 @@
           "skipOnMatch": true
         }
       ]
+    },
+	"Base": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 0
+        }
+      ]
+    }
+  },
+  "Archivist of Temporis": {
+    "Base": {
+      "skillUseMode": "WaitForCooldown",
+      "skillTimeout": 100,
+      "skills": [
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 3
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 1
+        },
+        {
+          "skillId": 0
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 2
+        },
+        {
+          "skillId": 4
+        },
+        {
+          "skillId": 0
+        }
+      ]
     }
   },
   "Abyssal Angel": {
@@ -5556,7 +5756,7 @@
           "rules": [
             {
               "type": "Aura",
-              "value": 2,
+              "value": 0,
               "comparison": "less",
               "auraName": "Ex Mortis",
               "auraTarget": "self"
@@ -5568,7 +5768,7 @@
           "rules": [
             {
               "type": "MultiAura",
-              "value": 2,
+              "value": 1,
               "comparison": "greater",
               "auraName": "Ex Mortis",
               "auraTarget": "self"
@@ -5589,7 +5789,7 @@
           "rules": [
             {
               "type": "MultiAura",
-              "value": 2,
+              "value": 1,
               "comparison": "greater",
               "auraName": "Ex Mortis",
               "auraTarget": "self"
@@ -5610,7 +5810,7 @@
           "rules": [
             {
               "type": "MultiAura",
-              "value": 2,
+              "value": 1,
               "comparison": "greater",
               "auraName": "Ex Mortis",
               "auraTarget": "self"
@@ -5642,7 +5842,7 @@
           "rules": [
             {
               "type": "MultiAura",
-              "value": 2,
+              "value": 1,
               "comparison": "greater",
               "auraName": "Ex Mortis",
               "auraTarget": "self"
@@ -9653,91 +9853,7 @@
     }
   },
   "Void Highlord": {
-    "Atk": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 50,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 30,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 90,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 30,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 50,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 30,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        }
-      ]
-    },
-    "Def": {
+    "Base": {
       "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
@@ -9799,91 +9915,7 @@
     }
   },
   "Void Highlord (IoDA)": {
-    "Atk": {
-      "skillUseMode": "WaitForCooldown",
-      "skillTimeout": 100,
-      "skills": [
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 50,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 4
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 30,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 50,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 30,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 3,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 50,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        },
-        {
-          "skillId": 2
-        },
-        {
-          "skillId": 1,
-          "rules": [
-            {
-              "type": "Health",
-              "value": 30,
-              "comparison": "greater",
-              "isPercentage": true
-            }
-          ]
-        }
-      ]
-    },
-    "Def": {
+    "Base": {
       "skillUseMode": "UseIfAvailable",
       "skillTimeout": 100,
       "skills": [
@@ -10147,9 +10179,6 @@
       "skills": [
         {
           "skillId": 1
-        },
-        {
-          "skillId": 2
         },
         {
           "skillId": 4
