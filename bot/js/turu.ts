@@ -402,6 +402,8 @@ export class GameMap {
     get loaded(): boolean { return call("map.loaded"); }
     get cells(): string[] { return call("map.cells"); }
     get playerNames(): string[] { return call("map.playerNames"); }
+    /** Every player in your room, you included (VibeSkua `Map.Players`), read at once from `world.uoTree`. */
+    get players(): PlayerInfo[] { return call("map.players"); }
     get playerCount(): number { return call("map.playerCount"); }
     /**
      * Another player in your room (VibeSkua `Map.GetPlayer` / `TryGetPlayer`), from

@@ -257,35 +257,57 @@ pub fn get_player(bot: &Bot, username: &str) -> BotResult<Option<Value>> {
     for attempt in 0..3 {
         let info: Option<Value> = bot.flash.get_key("world.uoTree", &key)?;
         if let Some(info) = info.filter(Value::is_object) {
-            let text = |k: &str| info.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
-            let num = |k: &str| {
-                info.get(k)
-                    .and_then(|v| {
-                        v.as_f64()
-                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-                    })
-                    .unwrap_or(0.0)
-            };
-            return Ok(Some(serde_json::json!({
-                "name": text("uoName"),
-                "hp": num("intHP"),
-                "maxHp": num("intHPMax"),
-                "mp": num("intMP"),
-                "afk": info.get("afk").and_then(Value::as_bool).unwrap_or(false),
-                "entId": num("entID"),
-                "level": num("intLevel"),
-                "cell": text("strFrame"),
-                "pad": text("strPad"),
-                "x": num("tx"),
-                "y": num("ty"),
-                "state": num("intState"),
-            })));
+            return Ok(Some(player_info(&info)));
         }
         if attempt < 2 {
             bot.sleep(50)?;
         }
     }
     Ok(None)
+}
+
+/// Every player in your room, you included (VibeSkua `Map.Players`): the `world.uoTree` entries,
+/// read at once, as [`get_player`] gives one.
+pub fn players(bot: &Bot) -> BotResult<Vec<Value>> {
+    let tree: Option<Value> = bot.flash.get_opt("world.uoTree")?;
+    Ok(tree
+        .as_ref()
+        .and_then(Value::as_object)
+        .map(|entries| {
+            entries
+                .values()
+                .filter(|info| info.is_object())
+                .map(player_info)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// A `world.uoTree` entry with VibeSkua `PlayerInfo`'s names.
+fn player_info(info: &Value) -> Value {
+    let text = |k: &str| info.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
+    let num = |k: &str| {
+        info.get(k)
+            .and_then(|v| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
+            .unwrap_or(0.0)
+    };
+    serde_json::json!({
+        "name": text("uoName"),
+        "hp": num("intHP"),
+        "maxHp": num("intHPMax"),
+        "mp": num("intMP"),
+        "afk": info.get("afk").and_then(Value::as_bool).unwrap_or(false),
+        "entId": num("entID"),
+        "level": num("intLevel"),
+        "cell": text("strFrame"),
+        "pad": text("strPad"),
+        "x": num("tx"),
+        "y": num("ty"),
+        "state": num("intState"),
+    })
 }
 
 pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
@@ -304,6 +326,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         "playerCount" => ok(f.get_or::<i64>("world.areaUsers.length", 0)?),
         "cellPlayers" => ok(cell_players(bot)?),
         "getPlayer" => ok(get_player(bot, args.str(0)?)?),
+        "players" => ok(players(bot)?),
         "filePath" => ok(bot.state.lock().map_file_path.clone()),
         "lastMap" => ok(bot.state.lock().last_map.clone()),
         "join" => ok(join(
