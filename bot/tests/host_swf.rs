@@ -47,8 +47,7 @@ fn turu_info() -> Value {
 }
 
 fn bot_with(swf: &Arc<FakeSwf>) -> Arc<Bot> {
-    // SAFETY: tests in this file set the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let bot = Bot::new();
     bot.set_host(Some(swf.clone()));
     bot

@@ -9,8 +9,7 @@ use turu_bot::Bot;
 const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
 fn start() -> (Arc<Bot>, String) {
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let bot = Bot::new();
     let addr =
         turu_bot::control_api::start(&bot, "127.0.0.1:0".parse().unwrap(), TOKEN.into()).unwrap();
@@ -464,7 +463,7 @@ fn keeps_playlist_files_in_the_data_folder() {
 /// `/tabs` lists the tabs; `/tabs/<id>/...` reaches one, the rest the first.
 #[test]
 fn routes_requests_to_tabs() {
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let (first, second) = (Bot::new(), Bot::new());
     let bots = [first.clone(), second.clone()];
     let tabs: turu_bot::monitor::hub::Sources = Arc::new(move || {

@@ -3,12 +3,12 @@
 //! suspend question and the offline write on close; Send to player, the target history and
 //! Follow master's quests.
 
-mod common;
+use crate::common::{self, data_dir};
 
 use parking_lot::{Condvar, Mutex};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
 use turu_bot::butler::quest_sync::{self, Entry, Mirror, Plan};
 use turu_bot::butler::sync::{
@@ -337,18 +337,6 @@ fn until(what: &str, timeout: Duration, mut done: impl FnMut() -> bool) {
         assert!(start.elapsed() < timeout, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(50));
     }
-}
-
-/// One data folder for every bot of this test binary, set before the first one reads it.
-fn data_dir() -> std::path::PathBuf {
-    static INIT: Once = Once::new();
-    let data = std::env::temp_dir().join(format!("turu-butler-test-{}", std::process::id()));
-    INIT.call_once(|| {
-        let _ = std::fs::remove_dir_all(&data);
-        // SAFETY: set once, before any bot of this test binary reads it.
-        unsafe { std::env::set_var("TURU_DATA_DIR", &data) };
-    });
-    data
 }
 
 fn client(game: &Arc<FakeGame>) -> Arc<Bot> {

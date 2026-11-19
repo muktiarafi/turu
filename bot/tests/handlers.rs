@@ -30,8 +30,7 @@ impl FlashHost for FakeGame {
 fn run(name: &str, source: &str) -> Arc<Bot> {
     let dir = std::env::temp_dir().join(format!("turu-handlers-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // SAFETY: tests in this file set the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     std::fs::write(dir.join("main.ts"), source).unwrap();
 
     let bot = Bot::new();

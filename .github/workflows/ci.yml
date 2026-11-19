@@ -167,8 +167,8 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/linux-deps
 
-      # cargo-nextest runs each test in its own process and every binary's tests at once, instead
-      # of one bot/tests/ file after another (.config/nextest.toml). There are no doctests for it
+      # cargo-nextest runs each test in its own process and every binary's tests at once
+      # (.config/nextest.toml). There are no doctests for it
       # to miss. One command for all three crates: tested apart, the engine's dependencies
       # resolved other features, and oxc, rquickjs and turu_bot compiled twice.
       - uses: taiki-e/install-action@v2

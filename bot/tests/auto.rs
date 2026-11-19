@@ -169,8 +169,7 @@ fn mon(id: i64, map_id: i64, name: &'static str, cell: &'static str) -> Mon {
 }
 
 fn new_bot(game: &Arc<FakeGame>) -> Arc<Bot> {
-    // SAFETY: every test of this crate sets the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let bot = Bot::new();
     bot.set_host(Some(game.clone() as Arc<dyn FlashHost>));
     *bot.options.write() = Default::default();

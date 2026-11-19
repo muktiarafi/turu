@@ -1,6 +1,6 @@
 //! Runs `scripts/core/CoreDailies.ts` against a fake game.
 
-mod common;
+use crate::common;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -58,8 +58,7 @@ impl FlashHost for FakeGame {
 fn run(name: &str, daily_done: bool, body: &str) -> (Arc<Bot>, String) {
     let dir = std::env::temp_dir().join(format!("turu-test-dailies-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // SAFETY: tests in this file set the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../scripts/core")
         .canonicalize()

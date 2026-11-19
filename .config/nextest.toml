@@ -1,7 +1,7 @@
 # cargo-nextest, the test runner CI uses (`cargo nextest run`, ci.yml). It runs
-# every test in its own process and the tests of every binary at once, instead of one bot/tests/
-# file after another; tests no longer slow down the others of their file (butler's control API
-# test: 8.5 s alone, 28 s beside its file's other tests). `cargo test` still works the same.
+# every test in its own process and the tests of every binary at once; tests no longer slow down
+# the others of their file (butler's control API test: 8.5 s alone, 28 s beside its file's other
+# tests). `cargo test` still works the same. bot/tests is one test binary (bot/tests/main.rs).
 
 [profile.default]
 # A test over 30 s is reported as slow; one still running after 2 minutes has hung and is killed.

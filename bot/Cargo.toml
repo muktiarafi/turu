@@ -5,6 +5,12 @@ authors.workspace = true
 edition.workspace = true
 license = "GPL-3.0-or-later"
 version.workspace = true
+# The tests are one binary, bot/tests/main.rs, which declares each file in bot/tests as a module.
+autotests = false
+
+[[test]]
+name = "engine"
+path = "tests/main.rs"
 
 [dependencies]
 serde = { workspace = true, features = ["derive", "rc"] }

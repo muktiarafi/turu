@@ -30,8 +30,7 @@ impl FlashHost for FakeGame {
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("turu-test-{name}-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("lib")).unwrap();
-    // SAFETY: tests in this file set the same value.
-    unsafe { std::env::set_var("TURU_DATA_DIR", std::env::temp_dir().join("turu-test-data")) };
+    crate::common::data_dir();
     dir
 }
 
