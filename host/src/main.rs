@@ -90,7 +90,13 @@ fn build(root: &Path) -> anyhow::Result<Vec<u8>> {
     let wrapper = tmp.path().join("turu.as");
     let includes: String = compile_order(&files)?
         .iter()
-        .map(|file| format!("include \"{}\";\n", file.path.display()))
+        // Forward slashes: the path is an AS3 string, where Windows' `\t` in `\turu` is a tab.
+        .map(|file| {
+            format!(
+                "include \"{}\";\n",
+                file.path.display().to_string().replace('\\', "/")
+            )
+        })
         .collect();
     std::fs::write(&wrapper, includes)?;
 
