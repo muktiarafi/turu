@@ -1003,11 +1003,11 @@ above, and why:
   reason a control is off under it, Search and Options (the slot's egui windows, the panel
   closing for them), and the script log (its last 500 lines, line-fed).
 * **The native rail** (L5b, 2026-11-20) replaces the egui one on Android: the Tabs item, then
-  Scripts, Logs, Army, More, Auto, Jump, Bank (and Update while one is out), the script chip and
-  its run controls at the bottom. Scripts opens Search Scripts; the chip opens the Script Loader.
-  On a short screen it folds least needed first (Army, Bank, Logs and Update, then Jump and Auto;
-  Scripts last; More never), counting two run controls so starting a script moves nothing: the
-  emulator's 411 dp keeps Scripts, More and Auto (Jump folds into More).
+  Logs, Army, More, Auto, Jump, Bank (and Update while one is out), the script chip and its run
+  controls at the bottom; the chip opens the Script Loader. No Scripts item: the owner took it off
+  (2026-11-20) to keep Jump on a short screen. On a short screen it folds least needed first
+  (Army, Bank, Logs and Update, then Jump and Auto; More never), counting two run controls so
+  starting a script moves nothing: the emulator's 411 dp keeps More, Auto and Jump.
   Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
   Army opens Army Control. Bank's reason for opening nothing shows as a toast (a snackbar
   would need the panel open). More (440 dp) is list and detail, so nothing in it needs scrolling
@@ -1020,8 +1020,8 @@ above, and why:
   icons are drawn in one stroke where Material Symbols' core set lacks them (`RailIcons.kt`);
   Jump's pin is the core set's filled one.
 * **Search Scripts** (L5b, 2026-11-20) is a page of the panel, 440 dp wide (its rows need it),
-  opened from the rail's Scripts, the Script Loader's Search, More, and however the slot opens
-  Search Scripts (but
+  opened from the Script Loader's Search, More > Scripts, and however the slot opens Search
+  Scripts (but
   while the egui Search Scripts picks a script for the egui Army Control). From the native Army
   Control's Search scripts… it picks (and from Accounts' launch options: "Pick the script launched
   accounts run", each row's button Use, a script that needs a download downloaded first while
@@ -1085,8 +1085,8 @@ above, and why:
   count was. ⋮ has Copy and Share for every event shown, Clear (asked first, where the window
   clears at once) and Full window. Save is the window's.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
-  how users reach scripts, so it is never only the Script Loader's. The rail's Scripts opens it,
-  and every place that chooses a script offers Search scripts…, which opens it picking for that
+  how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
+  every place that chooses a script offers Search scripts…, which opens it picking for that
   place: Army Control (load in the clients), Accounts' launch options (the launch script), the
   Scheduler's Add scripts (its queue). A new screen that chooses a script does the same.
 * **Full window**: every native page's ⋮ ends with Full window, the slot's egui window (which

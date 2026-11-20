@@ -54,14 +54,6 @@ object RailIcons {
         moveTo(11f, 10f); lineTo(11f, 13.5f); lineTo(13f, 13.5f); lineTo(13f, 10f)
     }
 
-    /** A page with lines: a script. */
-    val Script = icon("Script") {
-        moveTo(6f, 3.5f); lineTo(14f, 3.5f); lineTo(18.5f, 8f); lineTo(18.5f, 20.5f); lineTo(6f, 20.5f); close()
-        moveTo(14f, 3.5f); lineTo(14f, 8f); lineTo(18.5f, 8f)
-        moveTo(9f, 12f); lineTo(15.5f, 12f)
-        moveTo(9f, 15.5f); lineTo(15.5f, 15.5f)
-    }
-
     /** Lines of text: a log. */
     val Logs = icon("Logs") {
         moveTo(5f, 6f); lineTo(19f, 6f)
