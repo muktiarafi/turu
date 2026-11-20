@@ -95,51 +95,54 @@ pub struct Windows {
     pub notifications: bool,
     /// The nav bar's "Update" notice: a newer Turu (`client_update`).
     pub client_update: bool,
+    /// The windows Android's shell asked to see in egui (a native page's "Full window"): they
+    /// stay egui until they close, not handed back to the shell's native page.
+    pub egui: Vec<&'static str>,
 }
 
 impl Windows {
     /// Opens the window named `key` (its field's name, as `models::rail`'s menus name it);
     /// false for none of that name. "new_tab" opens a tab at the login screen.
-    pub fn open(&mut self, key: &str) -> bool {
-        let flag = match key {
-            "script_loader" => &mut self.script_loader,
-            "script_options" => &mut self.script_options,
-            "script_repo" => &mut self.script_repo,
-            "scheduler" => &mut self.scheduler,
-            "game_options" => &mut self.game_options,
-            "application_options" => &mut self.application_options,
-            "core_bots" => &mut self.core_bots,
-            "hotkeys" => &mut self.hotkeys,
-            "skills" => &mut self.skills,
-            "stats" => &mut self.stats,
-            "runtime" => &mut self.runtime,
-            "notify_drop" => &mut self.notify_drop,
-            "logs" => &mut self.logs,
-            "console" => &mut self.console,
-            "packet_logger" => &mut self.packet_logger,
-            "spammer" => &mut self.spammer,
-            "interceptor" => &mut self.interceptor,
-            "current_drops" => &mut self.current_drops,
-            "loader" => &mut self.loader,
-            "grabber" => &mut self.grabber,
-            "junk_items" => &mut self.junk_items,
-            "fast_travel" => &mut self.fast_travel,
-            "loadouts" => &mut self.loadouts,
-            "accounts" => &mut self.accounts,
-            "army" => &mut self.army,
-            "army_queue" => &mut self.army_queue,
-            "butler" => &mut self.butler,
-            "cosmetics" => &mut self.cosmetics,
-            "notifications" => &mut self.notifications,
-            "client_update" => &mut self.client_update,
+    pub fn open(&mut self, key: &str) -> Option<&'static str> {
+        let (key, flag): (&'static str, &mut bool) = match key {
+            "script_loader" => ("script_loader", &mut self.script_loader),
+            "script_options" => ("script_options", &mut self.script_options),
+            "script_repo" => ("script_repo", &mut self.script_repo),
+            "scheduler" => ("scheduler", &mut self.scheduler),
+            "game_options" => ("game_options", &mut self.game_options),
+            "application_options" => ("application_options", &mut self.application_options),
+            "core_bots" => ("core_bots", &mut self.core_bots),
+            "hotkeys" => ("hotkeys", &mut self.hotkeys),
+            "skills" => ("skills", &mut self.skills),
+            "stats" => ("stats", &mut self.stats),
+            "runtime" => ("runtime", &mut self.runtime),
+            "notify_drop" => ("notify_drop", &mut self.notify_drop),
+            "logs" => ("logs", &mut self.logs),
+            "console" => ("console", &mut self.console),
+            "packet_logger" => ("packet_logger", &mut self.packet_logger),
+            "spammer" => ("spammer", &mut self.spammer),
+            "interceptor" => ("interceptor", &mut self.interceptor),
+            "current_drops" => ("current_drops", &mut self.current_drops),
+            "loader" => ("loader", &mut self.loader),
+            "grabber" => ("grabber", &mut self.grabber),
+            "junk_items" => ("junk_items", &mut self.junk_items),
+            "fast_travel" => ("fast_travel", &mut self.fast_travel),
+            "loadouts" => ("loadouts", &mut self.loadouts),
+            "accounts" => ("accounts", &mut self.accounts),
+            "army" => ("army", &mut self.army),
+            "army_queue" => ("army_queue", &mut self.army_queue),
+            "butler" => ("butler", &mut self.butler),
+            "cosmetics" => ("cosmetics", &mut self.cosmetics),
+            "notifications" => ("notifications", &mut self.notifications),
+            "client_update" => ("client_update", &mut self.client_update),
             "new_tab" => {
                 tab_limit::open_tab(Default::default());
-                return true;
+                return Some("new_tab");
             }
-            _ => return false,
+            _ => return None,
         };
         *flag = true;
-        true
+        Some(key)
     }
 }
 
@@ -351,25 +354,43 @@ impl TuruUi {
         // opened here (a menu, the script chip, a hotkey, Search Scripts' Start), the shell shows
         // its own.
         use crate::shell::NativeScreen;
-        if w.script_loader && crate::turu::open_shell_screen(NativeScreen::Scripts) {
+        // The egui windows the shell asked for (not native yet, or a native page's Full window):
+        // they stay egui until closed.
+        for window in crate::turu::take_window_requests() {
+            match w.open(&window) {
+                Some(key) => {
+                    if !w.egui.contains(&key) {
+                        w.egui.push(key);
+                    }
+                }
+                None => tracing::warn!("The shell asked for a window I don't know: {window}"),
+            }
+        }
+        let open_now = [
+            ("script_loader", w.script_loader),
+            ("accounts", w.accounts),
+            ("script_repo", w.script_repo),
+            ("game_options", w.game_options),
+        ];
+        w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
+        let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
+        if w.script_loader && !kept(w, "script_loader") && crate::turu::open_shell_screen(NativeScreen::Scripts) {
             w.script_loader = false;
         }
-        if w.accounts && crate::turu::open_shell_screen(NativeScreen::Accounts) {
+        if w.accounts && !kept(w, "accounts") && crate::turu::open_shell_screen(NativeScreen::Accounts) {
             w.accounts = false;
         }
         // Not while it picks a script for another window (Army Control's Search…): only the egui
         // window does that.
-        if w.script_repo && !tab.script_repo.picking() && crate::turu::open_shell_screen(NativeScreen::Search) {
+        if w.script_repo
+            && !kept(w, "script_repo")
+            && !tab.script_repo.picking()
+            && crate::turu::open_shell_screen(NativeScreen::Search)
+        {
             w.script_repo = false;
         }
-        if w.game_options && crate::turu::open_shell_screen(NativeScreen::GameOptions) {
+        if w.game_options && !kept(w, "game_options") && crate::turu::open_shell_screen(NativeScreen::GameOptions) {
             w.game_options = false;
-        }
-        // And the egui windows its native screens open, while those aren't native yet.
-        for window in crate::turu::take_window_requests() {
-            if !w.open(&window) {
-                tracing::warn!("The shell asked for a window I don't know: {window}");
-            }
         }
         tab.script_loader.show(
             ctx,

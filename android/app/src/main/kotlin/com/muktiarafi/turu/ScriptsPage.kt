@@ -122,7 +122,7 @@ private fun statusColor(status: Status): Color = when (status) {
 
 /** The Script Loader: status, the run controls, setup, the script log (docs/UI.md, "Native shells"). */
 @Composable
-fun ScriptsPage(state: ShellState, scripts: ScriptsPanel) {
+fun ScriptsPage(state: ShellState, scripts: ScriptsPanel, fullWindow: () -> Unit) {
     val view = scripts.view
     Column(Modifier.fillMaxSize()) {
         PageBar("Script Loader", onBack = { state.back() }) {
@@ -134,9 +134,10 @@ fun ScriptsPage(state: ShellState, scripts: ScriptsPanel) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                    modifier = Modifier.padding(end = 16.dp).width(96.dp),
+                    modifier = Modifier.width(96.dp),
                 )
             }
+            FullWindowMenu("The log's Find and Copy, opening the script in an editor", fullWindow)
         }
         if (view == null) {
             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {

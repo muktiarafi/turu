@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -222,21 +223,45 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                 when (page) {
                     Page.Tabs -> TabsPage(state, actions)
                     Page.NewTab -> NewTabPage(state, actions)
-                    Page.Accounts -> AccountsPage(state, actions.accounts)
-                    Page.Scripts -> ScriptsPage(state, actions.scripts)
+                    Page.Accounts -> AccountsPage(state, actions.accounts) { actions.window("accounts") }
+                    Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
                     Page.Auto -> AutoPage(state, actions.scripts.models)
                     Page.Jump -> JumpPage(state, actions.scripts.models)
                     Page.Logs -> LogsPage(state, actions.scripts.models)
                     Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.hideRail)
-                    Page.Search -> SearchPage(state, actions.search)
+                    Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
                     Page.GameOptions -> GameOptionsPage(
                         state,
                         actions.gameOptions,
                         running = actions.scripts.models.scripts?.controls?.stop != null,
-                    )
+                    ) { actions.window("game_options") }
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }
+        }
+    }
+}
+
+/**
+ * A native page's ⋮ with "Full window": the slot's egui window, which has what the page doesn't
+ * (`adds`, said under it), opened in its picture with the panel out of the way.
+ */
+@Composable
+fun FullWindowMenu(adds: String, open: () -> Unit, more: @Composable (close: () -> Unit) -> Unit = {}) {
+    var shown by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { shown = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More", tint = Turu.Muted) }
+        androidx.compose.material3.DropdownMenu(expanded = shown, onDismissRequest = { shown = false }, containerColor = Turu.Card) {
+            more { shown = false }
+            androidx.compose.material3.DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("Full window")
+                        Text(adds, style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
+                    }
+                },
+                onClick = { shown = false; open() },
+            )
         }
     }
 }

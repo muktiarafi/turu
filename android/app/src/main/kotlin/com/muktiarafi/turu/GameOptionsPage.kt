@@ -143,7 +143,7 @@ private fun OptionValue.string() = (this as? OptionValue.text)?.value ?: ""
  * differ; Defaults, Revert and Save at the foot.
  */
 @Composable
-fun GameOptionsPage(state: ShellState, options: GameOptionsPanel, running: Boolean) {
+fun GameOptionsPage(state: ShellState, options: GameOptionsPanel, running: Boolean, fullWindow: () -> Unit) {
     DisposableEffect(Unit) { onDispose { options.follow(null) } }
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { options.follow(state.tabs.active) }
     val view = options.view
@@ -151,7 +151,9 @@ fun GameOptionsPage(state: ShellState, options: GameOptionsPanel, running: Boole
     var section by remember { mutableStateOf<String?>(null) }
     var changedOnly by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        PageBar("Game Options", onBack = { state.back() })
+        PageBar("Game Options", onBack = { state.back() }) {
+            FullWindowMenu("Revert mine, Relogin Server's list", fullWindow)
+        }
         if (view == null) {
             Text("Reading the tab…", color = Turu.Muted, modifier = Modifier.padding(20.dp))
             return@Column

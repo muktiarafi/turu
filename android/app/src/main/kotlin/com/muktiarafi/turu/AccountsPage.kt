@@ -158,7 +158,7 @@ private fun shows(account: Account, filter: String?, search: String): Boolean {
 
 /** Accounts: search, filter chips, the list with Start and a ⋮ menu each, launch options at the foot. */
 @Composable
-fun AccountsPage(state: ShellState, accounts: AccountsPanel) {
+fun AccountsPage(state: ShellState, accounts: AccountsPanel, fullWindow: () -> Unit) {
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<Account?>(null) }
@@ -168,6 +168,7 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel) {
             IconButton(onClick = { state.push(Page.AccountForm(null)) }) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add an account")
             }
+            FullWindowMenu("Groups, selecting accounts, Start Selected", fullWindow)
         }
         OutlinedTextField(
             value = search,

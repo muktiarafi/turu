@@ -121,7 +121,7 @@ private fun toneColor(tone: Tone) = when (tone) {
  * and its buttons at the foot. Delete and Reset Scripts stay in the egui window.
  */
 @Composable
-fun SearchPage(state: ShellState, search: SearchPanel) {
+fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
     DisposableEffect(Unit) { onDispose { search.follow(null) } }
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { search.follow(state.tabs.active) }
     val view = search.view
@@ -133,7 +133,7 @@ fun SearchPage(state: ShellState, search: SearchPanel) {
                     style = MaterialTheme.typography.labelMedium,
                     color = Turu.Muted,
                 )
-                RepoMenu(it, search)
+                RepoMenu(it, search, fullWindow)
             }
         }
         if (view == null) {
@@ -408,7 +408,7 @@ private fun Footer(view: RepoView, search: SearchPanel) {
 
 /** The page bar's ⋮: Update all (with how many), Download all, Refresh. */
 @Composable
-private fun RepoMenu(view: RepoView, search: SearchPanel) {
+private fun RepoMenu(view: RepoView, search: SearchPanel, fullWindow: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
@@ -419,6 +419,16 @@ private fun RepoMenu(view: RepoView, search: SearchPanel) {
             MenuAction(update, view.updateAll) { open = false; search.act("update-all") }
             MenuAction("Download all", view.downloadAll) { open = false; search.act("download-all") }
             MenuAction("Refresh the list", view.refresh) { open = false; search.act("refresh") }
+            HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("Full window")
+                        Text("Delete a script, Reset Scripts", style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
+                    }
+                },
+                onClick = { open = false; fullWindow() },
+            )
         }
     }
 }
