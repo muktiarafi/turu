@@ -1,6 +1,7 @@
 package com.muktiarafi.turu
 
 import android.util.Log
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -28,7 +30,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -55,9 +56,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -94,6 +97,8 @@ class ArmyPanel {
         following = tab
         client?.stop()
         client = null
+        // Another slot answers now, or none while it starts again: no stale copy meanwhile.
+        view = null
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
@@ -113,8 +118,9 @@ class ArmyPanel {
     }
 
     private fun act(action: String, body: JSONObject = JSONObject()) {
+        val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client?.act("army", action, body) { error = it }
+        client.act("army", action, body) { error = it }
     }
 
     /** A command to the checked rows, or to every row still running. */
@@ -159,7 +165,12 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
             }
         }
         if (view == null) {
-            Text("Reading the tab…", color = Turu.Muted, modifier = Modifier.padding(20.dp))
+            val down = state.tabs.active?.down != null || state.tabs.active?.api == null
+            Text(
+                if (down) "This tab is starting again. Army Control is back with it." else "Reading the tab…",
+                color = Turu.Muted,
+                modifier = Modifier.padding(20.dp),
+            )
             return@Column
         }
         val live = view.rows.filter { !it.ended }
@@ -427,10 +438,15 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
             }
         }
         when {
-            row.ended && row.kind != "tab" -> OutlinedButton(onClick = { panel.row(row, "restart") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Restart") }
+            row.ended && row.kind != "tab" -> OutlinedButton(onClick = { panel.row(row, "restart") }, border = edge(true), modifier = Modifier.heightIn(min = 48.dp)) { Text("Restart") }
             row.ended -> {}
-            row.running -> OutlinedButton(onClick = { panel.row(row, "stop") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop") }
+            row.running -> OutlinedButton(onClick = { panel.row(row, "stop") }, border = edge(true), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop") }
             else -> FilledTonalButton(onClick = { panel.row(row, "start") }, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
+        }
+        // A tab that's down has nothing to offer here: the shell restarts it (Tabs).
+        if (row.ended && row.kind == "tab") {
+            Spacer(Modifier.width(48.dp))
+            return@Row
         }
         Box {
             IconButton(onClick = { menu = true }) {
@@ -438,9 +454,7 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
                 if (row.ended) {
-                    if (row.kind != "tab") {
-                        DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; panel.row(row, "close") })
-                    }
+                    DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; panel.row(row, "close") })
                     return@DropdownMenu
                 }
                 if (row.shellTab >= 0 && !shown) {
@@ -540,14 +554,16 @@ private fun Fold(title: String, content: @Composable () -> Unit) {
 private class Action(val label: String, val primary: Boolean = false, val enabled: Boolean = true, val onClick: () -> Unit)
 
 /**
- * Buttons in even columns, as many to a line as fit at [min] wide, balanced so the lines keep
- * the same count (2 + 2, not 3 + 1).
+ * Buttons in even columns, as many to a line as fit at [min] wide (wider with a larger font, so
+ * labels wrap to fewer columns rather than cut), balanced so the lines keep the same count (2 + 2,
+ * not 3 + 1).
  */
 @Composable
 private fun ButtonGrid(actions: List<Action>, min: Dp = 128.dp) {
+    val least = min * LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 8.dp
-        val fit = ((maxWidth + gap) / (min + gap)).toInt().coerceIn(1, actions.size)
+        val fit = ((maxWidth + gap) / (least + gap)).toInt().coerceIn(1, actions.size)
         val lines = (actions.size + fit - 1) / fit
         val columns = (actions.size + lines - 1) / lines
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
@@ -561,7 +577,13 @@ private fun ButtonGrid(actions: List<Action>, min: Dp = 128.dp) {
                                 Text(action.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         } else {
-                            OutlinedButton(onClick = action.onClick, enabled = action.enabled, modifier = modifier, contentPadding = padding) {
+                            OutlinedButton(
+                                onClick = action.onClick,
+                                enabled = action.enabled,
+                                modifier = modifier,
+                                contentPadding = padding,
+                                border = edge(action.enabled),
+                            ) {
                                 Text(action.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
@@ -572,6 +594,9 @@ private fun ButtonGrid(actions: List<Action>, min: Dp = 128.dp) {
         }
     }
 }
+
+/** An outlined button's border: the shell's edge, still drawn while it's off, so it reads as a button. */
+private fun edge(enabled: Boolean) = BorderStroke(1.dp, if (enabled) Turu.Edge else Turu.Edge.copy(alpha = 0.45f))
 
 @Composable
 private fun Reason(text: String) {
@@ -584,6 +609,8 @@ private fun QuestForm(any: Boolean, accept: (Long, Long?) -> Unit) {
     var quest by remember { mutableStateOf("") }
     var reward by remember { mutableStateOf("") }
     val id = quest.trim().toLongOrNull()?.takeIf { it > 0 }
+    // In landscape the keyboard covers Accept quest: its Done accepts.
+    val done = KeyboardActions(onDone = { if (any) id?.let { accept(it, reward.trim().toLongOrNull()) } })
     Column(Modifier.padding(horizontal = 16.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -592,7 +619,7 @@ private fun QuestForm(any: Boolean, accept: (Long, Long?) -> Unit) {
                 label = { Text("Quest ID") },
                 singleLine = true,
                 colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                 modifier = Modifier.weight(1f),
             )
             OutlinedTextField(
@@ -601,13 +628,15 @@ private fun QuestForm(any: Boolean, accept: (Long, Long?) -> Unit) {
                 label = { Text("Reward ID (optional)") },
                 singleLine = true,
                 colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = done,
                 modifier = Modifier.weight(1f),
             )
         }
         OutlinedButton(
             onClick = { id?.let { accept(it, reward.trim().toLongOrNull()) } },
             enabled = any && id != null,
+            border = edge(any && id != null),
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
         ) { Text("Accept quest") }
         if (id == null) Reason("Enter a quest ID")
