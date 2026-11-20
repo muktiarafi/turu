@@ -1,29 +1,44 @@
 package com.muktiarafi.turu
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +49,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,12 +61,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.Control
+import com.muktiarafi.turu.models.MenuItem
 import org.json.JSONObject
 
 /** Why a control is off, under it (a touch screen has no tooltips). */
@@ -203,10 +221,13 @@ fun JumpPage(state: ShellState, models: TabModels) {
     }
 }
 
-/** Logs: the script's and the client's, line-fed (`models::logs`). */
+/**
+ * Logs: the script's and the client's, line-fed (`models::logs`); Find and Copy in the full
+ * window.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogsPage(state: ShellState, models: TabModels) {
+fun LogsPage(state: ShellState, models: TabModels, full: () -> Unit) {
     var kind by rememberSaveable { mutableStateOf("script") }
     val lines = if (kind == "script") models.scriptLog else models.clientLog
     val list = rememberLazyListState()
@@ -214,6 +235,7 @@ fun LogsPage(state: ShellState, models: TabModels) {
     Column(Modifier.fillMaxSize()) {
         PageBar("Logs", onBack = { state.back() }) {
             TextButton(onClick = { models.clearLog(kind) }, enabled = lines.isNotEmpty()) { Text("Clear") }
+            FullWindowMenu(adds = "Find and Copy", open = full)
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             listOf("script" to "Script", "debug" to "Client").forEachIndexed { i, (key, label) ->
@@ -252,64 +274,120 @@ fun LogsPage(state: ShellState, models: TabModels) {
     }
 }
 
+/** The windows the shell has as pages of the panel, by their egui key (`Windows::open`). */
+private fun nativePage(window: String): Page? = when (window) {
+    "script_loader" -> Page.Scripts
+    "accounts" -> Page.Accounts
+    "new_tab" -> Page.NewTab
+    "script_repo" -> Page.Search
+    "game_options" -> Page.GameOptions
+    "application_options" -> Page.AppOptions
+    "core_bots" -> Page.CoreBots
+    "scheduler" -> Page.Scheduler
+    "logs" -> Page.Logs
+    else -> null
+}
+
 /**
- * More: every menu's windows (VibeSkua's menus, what this platform has: `models::rail`), the
- * native ones opening their page, the rest the slot's egui window; then Hide Side Bar.
+ * More: VibeSkua's menus as this platform has them (`models::rail`), list and detail so none is
+ * more than a tap away: the menus down the left, the one picked on the right (kept while the
+ * panel is closed). A native window opens its page (a chevron says so), the rest the slot's egui
+ * window. The bar holds what the rail folded and no menu has (Bank, Update) and Hide Side Bar.
  */
 @Composable
-fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, hideRail: () -> Unit) {
-    val menus = models.rail?.menus
+fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, bank: () -> Unit, hideRail: () -> Unit) {
+    val rail = models.rail
+    val menus = rail?.menus
     Column(Modifier.fillMaxSize()) {
-        PageBar("More", onBack = { state.back() })
-        if (menus == null) return@Column Waiting(models)
-        LazyColumn(Modifier.fillMaxSize()) {
-            for (menu in menus) {
-                item(key = menu.title) {
-                    Text(
-                        menu.title,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Turu.Muted,
-                        modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp),
-                    )
-                }
-                itemsIndexed(menu.items, key = { _, item -> menu.title + item.window }) { _, item ->
-                    val native = when (item.window) {
-                        "script_loader" -> Page.Scripts
-                        "accounts" -> Page.Accounts
-                        "new_tab" -> Page.NewTab
-                        "script_repo" -> Page.Search
-                        "game_options" -> Page.GameOptions
-                        "application_options" -> Page.AppOptions
-                        "core_bots" -> Page.CoreBots
-                        "scheduler" -> Page.Scheduler
-                        else -> null
-                    }
-                    ListItem(
-                        modifier = Modifier
-                            .padding(horizontal = 8.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .heightIn(min = 48.dp)
-                            .clickable(enabled = item.control.enabled) {
-                                if (native != null) state.push(native) else window(item.window)
-                            },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = {
-                            Text(item.label, color = if (item.control.enabled) Turu.Text else Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        supportingContent = item.control.takeIf { !it.enabled && it.reason.isNotEmpty() }?.let { c -> { Text(c.reason, color = Turu.Muted) } },
-                    )
+        PageBar("More", onBack = { state.back() }) {
+            if ("Bank" in state.folded) {
+                TextButton(onClick = bank) {
+                    Icon(RailIcons.Bank, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Bank")
                 }
             }
-            item {
-                HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f), modifier = Modifier.padding(top = 8.dp))
-                ListItem(
-                    modifier = Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = hideRail),
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = { Text("Hide Side Bar") },
-                    supportingContent = { Text("The game takes the whole width; the tab at the left edge brings it back", color = Turu.Muted) },
-                )
-                Box(Modifier.heightIn(min = 12.dp))
+            val update = rail?.update
+            if ("Update" in state.folded && update != null) {
+                TextButton(onClick = { window("client_update") }) {
+                    BadgedBox(badge = { Badge(containerColor = if (update.failed != null) Turu.Danger else Turu.Accent) }) {
+                        Icon(RailIcons.Update, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text("Update")
+                }
+            }
+            TextButton(onClick = hideRail) { Text("Hide Side Bar") }
+        }
+        if (menus == null) return@Column Waiting(models)
+        val shown = menus.firstOrNull { it.title == state.moreMenu } ?: menus.firstOrNull() ?: return@Column
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .width(152.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                    .selectableGroup(),
+            ) {
+                for (menu in menus) {
+                    val selected = menu.title == shown.title
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) Turu.AccentTint else Color.Transparent)
+                            .selectable(selected = selected, role = Role.Tab) { state.moreMenu = menu.title }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text(
+                            menu.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (selected) Turu.Text else Turu.Muted,
+                        )
+                    }
+                }
+            }
+            VerticalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+            AnimatedContent(
+                targetState = shown.title,
+                transitionSpec = { fadeIn(tween(150, delayMillis = 60)).togetherWith(fadeOut(tween(90))) },
+                label = "more menu",
+            ) { title ->
+                val menu = menus.firstOrNull { it.title == title } ?: return@AnimatedContent
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    items(menu.items, key = { it.window }) { item ->
+                        MenuRow(item, nativePage(item.window)) { page ->
+                            if (page != null) state.push(page) else window(item.window)
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/** A row of More: the window's name, why it's off under it, a chevron if it opens a page here. */
+@Composable
+private fun MenuRow(item: MenuItem, page: Page?, open: (Page?) -> Unit) {
+    val enabled = item.control.enabled
+    ListItem(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled) { open(page) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        headlineContent = {
+            Text(item.label, color = if (enabled) Turu.Text else Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        supportingContent = item.control.takeIf { !it.enabled && it.reason.isNotEmpty() }?.let { c ->
+            { Text(c.reason, color = Turu.Muted) }
+        },
+        trailingContent = if (page != null && enabled) {
+            { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Muted) }
+        } else {
+            null
+        },
+    )
 }

@@ -1000,8 +1000,13 @@ above, and why:
   script moves nothing: the emulator's 411 dp keeps More, Auto and Jump, as the egui rail did.
   Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
   Army opens Army Control (egui). Bank's reason for opening nothing shows as a toast (a snackbar
-  would need the panel open). More lists every menu's windows (the native ones open their page)
-  and Hide Side Bar; a `›` tab at the left edge brings the rail back, in every tab. The rail's
+  would need the panel open). More (440 dp) is list and detail, so nothing in it needs scrolling
+  on the emulator: the menus down the left (Scripts, Options, Tools & Helpers, Combat,
+  Diagnostics, Plugins, Army), the one picked on the right, kept while the panel is closed. A row
+  that opens a native page has a chevron (Logs included, whose page has Full window for Find and
+  Copy); the rest open the slot's egui window. Its bar has Hide Side Bar, and Bank and Update while
+  the rail has folded them (no menu has either); a `›` tab at the left edge brings the rail back,
+  in every tab. The rail's
   icons are drawn in one stroke where Material Symbols' core set lacks them (`RailIcons.kt`);
   Jump's pin is the core set's filled one.
 * **Search Scripts** (L5b, 2026-11-20) is a page of the panel, 440 dp wide (its rows need it),

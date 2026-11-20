@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,6 +107,8 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
         val room = maxHeight - 60.dp - ChipHeight - CellHeight * 2 - 8.dp - 12.dp
         val fit = (room / ItemHeight).toInt().coerceAtLeast(1)
         val kept = entries.sortedBy { it.keep }.take(fit).toSet()
+        val folded = entries.filter { it !in kept }.map { it.label }.toSet()
+        SideEffect { if (state.folded != folded) state.folded = folded }
         Column(Modifier.fillMaxSize().padding(start = state.cutoutLeftDp.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.padding(end = 0.dp)) { TabsItemContent(state, onTabs) }
             for (entry in entries) {

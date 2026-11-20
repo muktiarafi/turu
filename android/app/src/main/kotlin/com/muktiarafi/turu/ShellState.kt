@@ -103,6 +103,12 @@ class ShellState {
     /** The display cutout on the rail's side, in dp: the item grows by it, as egui's rail does. */
     var cutoutLeftDp by mutableStateOf(0f)
 
+    /** More's menu on show (its title), kept while the panel is closed: More opens where it was. */
+    var moreMenu by mutableStateOf<String?>(null)
+
+    /** The rail's items a short screen folded away (their labels), for More to offer. */
+    var folded by mutableStateOf<Set<String>>(emptySet())
+
     /** Told when the panel opens or closes (`ShellScreens` shows its view only while open). */
     var onOpenChanged: (Boolean) -> Unit = {}
 

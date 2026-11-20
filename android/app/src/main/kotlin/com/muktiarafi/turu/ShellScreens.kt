@@ -36,6 +36,10 @@ class ShellScreens(private val activity: TuruActivity) {
         scripts = scripts,
         window = ::openWindow,
         hideRail = { railHidden(true) },
+        bank = {
+            close()
+            models.act("bank", "open")
+        },
         search = SearchPanel(),
         gameOptions = GameOptionsPanel(),
         appOptions = AppOptionsPanel(),

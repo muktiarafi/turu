@@ -76,6 +76,8 @@ class TabActions(
     /** One of the slot's egui windows, by its key (`Windows::open`). */
     val window: (String) -> Unit,
     val hideRail: () -> Unit,
+    /** Opens the bank (the rail's Bank, for More while the rail has folded it). */
+    val bank: () -> Unit,
     val search: SearchPanel,
     val gameOptions: GameOptionsPanel,
     val appOptions: AppOptionsPanel,
@@ -87,7 +89,7 @@ class TabActions(
 private val PanelWidth = 320.dp
 
 /** Pages whose rows need more room than a list of tabs. */
-private val widePages = setOf(Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler)
+private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -232,8 +234,8 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
                     Page.Auto -> AutoPage(state, actions.scripts.models)
                     Page.Jump -> JumpPage(state, actions.scripts.models)
-                    Page.Logs -> LogsPage(state, actions.scripts.models)
-                    Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.hideRail)
+                    Page.Logs -> LogsPage(state, actions.scripts.models) { actions.window("logs") }
+                    Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.bank, actions.hideRail)
                     Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
                     Page.GameOptions -> GameOptionsPage(
                         state,
