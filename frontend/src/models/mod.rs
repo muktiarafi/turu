@@ -21,6 +21,7 @@ pub mod auto;
 pub mod bank;
 pub mod butler;
 pub mod core_bots;
+pub mod cosmetics;
 pub mod drops;
 pub mod fast_travel;
 pub mod form;
@@ -458,6 +459,13 @@ pub fn register() {
         "core-bots",
         "do",
         Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
+    add_model("cosmetics", Box::new(|bot| to_json(&cosmetics::view(bot))));
+    add_model_action(
+        "cosmetics",
+        "do",
+        Box::new(|bot, body| cosmetics::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("butler", Box::new(|bot| to_json(&butler::view(bot))));

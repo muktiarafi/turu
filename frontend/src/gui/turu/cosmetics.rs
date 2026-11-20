@@ -9,22 +9,23 @@
 //! the window fills the screen and every target is finger-sized.
 //!
 //! The catalog, favorites and outfits are `turu_bot::cosmetics::Library`, shared by the tabs;
-//! the game calls run off the UI thread and report back through `Shared`.
+//! the game calls run off the UI thread and report back through the tab's `models::cosmetics`
+//! state, which a native page shares (with the catalog filter, the presets and the actions).
 
 use super::theme::{ACCENT, ACCENT_HOVER, DANGER, EDGE, HOVER, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, TRACK};
 use super::widgets::{self, Kind};
+use crate::models::cosmetics as model;
+use crate::models::tab_state::lock;
 use egui::{
     Align, Color32, ComboBox, Context, CornerRadius, Frame, Key, Label, Layout, Margin, Rect, RichText, ScrollArea,
     Sense, Stroke, Ui, UiBuilder, pos2, vec2,
 };
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 use turu_bot::Bot;
-use turu_bot::cosmetics::avatar::{self, ColorChange, Colors};
-use turu_bot::cosmetics::{CosmeticItem, CosmeticSet, Library, Slot, WEAPON_KINDS, charpage, group_digits};
+use turu_bot::cosmetics::avatar;
+use turu_bot::cosmetics::{CosmeticItem, CosmeticSet, Library, Slot, WEAPON_KINDS, group_digits};
 
-/// How often the room's players are read for the copy list.
-const PLAYERS_REFRESH: Duration = Duration::from_secs(3);
 /// The right-hand column of the Catalog, Outfits and CC tabs.
 const SIDE_WIDTH: f32 = 270.0;
 /// The quick bar's player list and character name box, and the Copy buttons after them.
@@ -65,6 +66,27 @@ fn row_height() -> f32 {
 }
 
 /// How the window is laid out, from the room its content has.
+/// A preset row.
+const PRESET_HEIGHT: f32 = 44.0;
+
+/// The Manual SWF tab's fields: label and the game's name for it.
+const MANUAL_FIELDS: [(&str, &str); 4] = [
+    ("SWF File Path", "sFile"),
+    ("Linkage Identifier", "sLink"),
+    ("Equipment Slot", "group"),
+    ("Meta Data", "sMeta, optional"),
+];
+
+/// The Manual SWF tab's slots: label and `eqp` key.
+const MANUAL_SLOTS: [(&str, &str); 6] = [
+    ("Armor / Class (co)", "co"),
+    ("Helm (he)", "he"),
+    ("Cape (ba)", "ba"),
+    ("Weapon (Weapon)", "Weapon"),
+    ("Pet (pe)", "pe"),
+    ("Ground Rune / Misc (mi)", "mi"),
+];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct Fit {
     /// The Catalog, Outfits and CC tabs are a list and a side column; else one column, where
@@ -111,80 +133,6 @@ const CATEGORIES: [(Category, &str); 8] = [
     (Category::Slot(Slot::Pet), "Pet"),
     (Category::Slot(Slot::Rune), "Ground Rune"),
     (Category::Favorites, "♥ Favorites"),
-];
-
-/// The color rows of the CC tab, in `Colors`' order: label and what it colors.
-const COLOR_ROWS: [(&str, &str); 6] = [
-    ("Base Color", "Primary Armor / Clothes"),
-    ("Trim Color", "Secondary Highlights"),
-    ("Accessory Color", "Gems, Accents, Glows"),
-    ("Eye Color", "Pupils & Eyes"),
-    ("Skin Color", "Body & Face Tone"),
-    ("Hair Color", "Hair & Eyebrows"),
-];
-
-/// VibeSkua's themed presets: name, description, base, trim, accessory and eye.
-const PRESETS: [(&str, &str, [&str; 4]); 8] = [
-    (
-        "Void Fiend",
-        "Deep obsidian purple",
-        ["#1A0826", "#8A2BE2", "#E0B0FF", "#FF00FF"],
-    ),
-    (
-        "Legion Soul",
-        "Underworld cyan glow",
-        ["#0D1117", "#00E5FF", "#1DE9B6", "#00FFFF"],
-    ),
-    (
-        "Shadow Assassin",
-        "Pure stealth black & crimson",
-        ["#0D0D0D", "#262626", "#404040", "#FF1744"],
-    ),
-    (
-        "Celestial Light",
-        "Pure white & heavenly gold",
-        ["#F5F5F5", "#FFD700", "#FFB300", "#40C4FF"],
-    ),
-    (
-        "Doom Crimson",
-        "Blood vampire scarlet",
-        ["#1F0000", "#800000", "#FF1A1A", "#FF3333"],
-    ),
-    (
-        "Cyber Synth",
-        "Neon magenta & cyan",
-        ["#180033", "#FF007F", "#00F0FF", "#FFFF00"],
-    ),
-    (
-        "Royal Gold",
-        "Gilded imperial regalia",
-        ["#1C1C1C", "#D4AF37", "#F3E5AB", "#FFD700"],
-    ),
-    (
-        "Pure Frost",
-        "Glacial crystalline ice",
-        ["#E0F7FA", "#80DEEA", "#00BCD4", "#00E5FF"],
-    ),
-];
-/// A preset row.
-const PRESET_HEIGHT: f32 = 44.0;
-
-/// The Manual SWF tab's fields: label and the game's name for it.
-const MANUAL_FIELDS: [(&str, &str); 4] = [
-    ("SWF File Path", "sFile"),
-    ("Linkage Identifier", "sLink"),
-    ("Equipment Slot", "group"),
-    ("Meta Data", "sMeta, optional"),
-];
-
-/// The Manual SWF tab's slots: label and `eqp` key.
-const MANUAL_SLOTS: [(&str, &str); 6] = [
-    ("Armor / Class (co)", "co"),
-    ("Helm (he)", "he"),
-    ("Cape (ba)", "ba"),
-    ("Weapon (Weapon)", "Weapon"),
-    ("Pet (pe)", "pe"),
-    ("Ground Rune / Misc (mi)", "mi"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -249,26 +197,11 @@ struct FilterKey {
     sort: Sort,
 }
 
-/// What the background actions report.
-#[derive(Default)]
-struct Shared {
-    /// The quick bar's message (VibeSkua `QuickActionBarStatus`).
-    status: String,
-    catalog_status: String,
-    catalog_busy: bool,
-    /// Colors read from the avatar for the CC tab; `true` also fills all-black ones.
-    colors: Option<(Colors, bool)>,
-    cc_status: String,
-    room_players: Vec<String>,
-    reading_players: bool,
-    busy: bool,
-}
-
 pub struct CosmeticsWindow {
-    shared: Arc<Mutex<Shared>>,
+    /// `State::colors_count` last taken into the color boxes.
+    colors_seen: u32,
     was_open: bool,
     tab: Tab,
-    players_read_at: Option<Instant>,
     room_player: String,
     /// A character name for Copy from Character Page.
     char_name: String,
@@ -303,10 +236,9 @@ pub struct CosmeticsWindow {
 impl Default for CosmeticsWindow {
     fn default() -> Self {
         Self {
-            shared: Arc::default(),
+            colors_seen: 0,
             was_open: false,
             tab: Tab::default(),
-            players_read_at: None,
             room_player: String::new(),
             char_name: String::new(),
             query: String::new(),
@@ -332,19 +264,10 @@ impl Default for CosmeticsWindow {
     }
 }
 
-fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
-    shared.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Runs a game action off the UI thread; a failure goes to the script log as VibeSkua's
-/// "[Cosmetics] ... error" lines do.
+/// Runs a game action off the UI thread for the active tab (the model's, shared with a native
+/// page).
 fn act(what: &'static str, action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult<()> + Send + 'static) {
-    crate::turu::spawn_action("Cosmetics", move |bot| {
-        if let Err(e) = action(bot) {
-            bot.log(format!("[Cosmetics] {what} error: {e}"));
-        }
-        Ok(())
-    });
+    model::act_in_game(&crate::turu::bot(), what, action);
 }
 
 /// What the quick bar shows: the room's players, the last action's outcome, and whether one runs.
@@ -364,15 +287,22 @@ impl CosmeticsWindow {
         let library = Library::shared(&bot.paths);
         if !self.was_open {
             self.was_open = true;
-            self.on_open(&library);
+            // Colors read before don't fill the boxes; this opening reads them again.
+            self.colors_seen = lock(&model::STATE.of(&bot)).colors_count;
+            model::on_open(&bot, &library);
         }
-        if self.players_read_at.is_none_or(|t| t.elapsed() >= PLAYERS_REFRESH) {
-            self.read_players();
-        }
-        if let Some((colors, force)) = lock(&self.shared).colors.take()
-            && (force || colors.to_array().iter().any(|&c| c != 0))
+        model::read_players(&bot, false);
         {
-            self.hex = colors.to_array().map(|c| format!("#{c:06X}"));
+            let state = model::STATE.of(&bot);
+            let s = lock(&state);
+            if s.colors_count != self.colors_seen {
+                self.colors_seen = s.colors_count;
+                if let Some(colors) = s.colors
+                    && (s.colors_force || colors.to_array().iter().any(|&c| c != 0))
+                {
+                    self.hex = colors.to_array().map(|c| format!("#{c:06X}"));
+                }
+            }
         }
         let mut window = super::window(ctx, "Cosmetics & Outfits", [900.0, 620.0], 7).open(open);
         // On a phone a floating window leaves the list off screen: it fills the screen instead.
@@ -382,88 +312,6 @@ impl CosmeticsWindow {
         }
         window.show(ctx, |ui| self.ui(ui, &library));
         ctx.request_repaint_after(Duration::from_millis(500));
-    }
-
-    /// VibeSkua `CosmeticsWindow_Loaded`: remember the real look, fill the CC tab, load the
-    /// catalog.
-    fn on_open(&self, library: &Arc<Library>) {
-        self.read_colors(false);
-        if library.is_loaded() {
-            lock(&self.shared).catalog_status =
-                format!("{} items (Local Machine)", group_digits(library.catalog().len()));
-            return;
-        }
-        let mut shared = lock(&self.shared);
-        if shared.catalog_busy {
-            return;
-        }
-        shared.catalog_busy = true;
-        shared.catalog_status = "Streaming local catalog...".into();
-        drop(shared);
-        let (shared, library) = (self.shared.clone(), library.clone());
-        std::thread::spawn(move || {
-            let result = library.ensure_loaded();
-            let mut shared = lock(&shared);
-            shared.catalog_busy = false;
-            shared.catalog_status = result.unwrap_or_else(|e| e);
-        });
-    }
-
-    /// Reads the avatar's colors into the CC tab (and remembers the real look first).
-    fn read_colors(&self, force: bool) {
-        let shared = self.shared.clone();
-        act("Read colors", move |bot| {
-            avatar::capture_original_state(bot)?;
-            let colors = avatar::current_colors(bot)?;
-            let mut shared = lock(&shared);
-            shared.colors = Some((colors, force));
-            if force {
-                shared.cc_status = "Read colors from avatar.".into();
-            }
-            Ok(())
-        });
-    }
-
-    fn read_players(&mut self) {
-        self.players_read_at = Some(Instant::now());
-        let mut shared = lock(&self.shared);
-        if shared.reading_players {
-            return;
-        }
-        shared.reading_players = true;
-        drop(shared);
-        let shared = self.shared.clone();
-        crate::turu::spawn_action("Cosmetics players", move |bot| {
-            let names = avatar::room_player_names(bot);
-            let mut shared = lock(&shared);
-            shared.reading_players = false;
-            shared.room_players = names?;
-            Ok(())
-        });
-    }
-
-    /// A quick-bar action that reports a message and reads the colors after it worked.
-    fn quick(&self, start: &str, action: impl FnOnce(&Arc<Bot>) -> Result<String, String> + Send + 'static) {
-        let mut shared = lock(&self.shared);
-        shared.status = start.into();
-        shared.busy = true;
-        drop(shared);
-        let shared = self.shared.clone();
-        crate::turu::spawn_action("Cosmetics", move |bot| {
-            let result = action(bot);
-            let colors = if result.is_ok() {
-                avatar::current_colors(bot).ok()
-            } else {
-                None
-            };
-            let mut shared = lock(&shared);
-            shared.busy = false;
-            shared.status = result.unwrap_or_else(|e| e);
-            if let Some(colors) = colors {
-                shared.colors = Some((colors, false));
-            }
-            Ok(())
-        });
     }
 
     fn ui(&mut self, ui: &mut Ui, library: &Arc<Library>) {
@@ -497,9 +345,9 @@ impl CosmeticsWindow {
     /// column the chips take the row, and that line goes under it.
     fn tab_row(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
         let (catalog_status, catalog_busy, status, busy) = {
-            let shared = lock(&self.shared);
-            let status = shared.status.clone();
-            (shared.catalog_status.clone(), shared.catalog_busy, status, shared.busy)
+            let state = model::STATE.of(&crate::turu::bot());
+            let s = lock(&state);
+            (s.catalog_status.clone(), s.catalog_busy, s.status.clone(), s.busy)
         };
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -563,11 +411,12 @@ impl CosmeticsWindow {
     /// picked one left.
     fn quick_state(&mut self) -> Quick {
         let quick = {
-            let shared = lock(&self.shared);
+            let state = model::STATE.of(&crate::turu::bot());
+            let s = lock(&state);
             Quick {
-                players: shared.room_players.clone(),
-                status: shared.status.clone(),
-                busy: shared.busy,
+                players: s.room_players.clone(),
+                status: s.status.clone(),
+                busy: s.busy,
             }
         };
         if !self.room_player.is_empty() && !quick.players.contains(&self.room_player) {
@@ -698,10 +547,7 @@ impl CosmeticsWindow {
             .on_hover_text("Copy the look of the selected room player")
             .clicked()
         {
-            let (library, name) = (library.clone(), self.room_player.clone());
-            self.quick(&format!("Copying look from {name}..."), move |bot| {
-                avatar::copy_player_look_by_name(bot, &library, &name)
-            });
+            model::copy_player(&crate::turu::bot(), library, self.room_player.clone());
         }
     }
 
@@ -710,10 +556,7 @@ impl CosmeticsWindow {
             .on_hover_text("Copy the equipment and colors of the player you target")
             .clicked()
         {
-            let library = library.clone();
-            self.quick("Reading target avatar...", move |bot| {
-                avatar::copy_target_look(bot, &library)
-            });
+            model::copy_target(&crate::turu::bot(), library);
         }
     }
 
@@ -726,11 +569,7 @@ impl CosmeticsWindow {
             .on_hover_text("Copy the gear, gender and colors shown on the character's account.aq.com page")
             .clicked();
         if (clicked || entered) && can_copy {
-            let name = self.char_name.trim().to_owned();
-            self.quick(&format!("Reading {name}'s character page..."), move |bot| {
-                let page = charpage::fetch(&name)?;
-                avatar::copy_char_page(bot, &page)
-            });
+            model::copy_page(&crate::turu::bot(), self.char_name.trim().to_owned());
         }
     }
 
@@ -745,11 +584,7 @@ impl CosmeticsWindow {
 
     /// Reset to Real Gear: the equipped inventory items, colors and gender again.
     fn reset_gear(&self) {
-        self.quick("Reverting to real inventory gear & colors...", |bot| {
-            avatar::revert_to_real_gear(bot)
-                .map(|()| "Reverted to actual equipped gear & colors!".to_owned())
-                .map_err(|e| format!("Reset to real gear error: {e}"))
-        });
+        model::reset_gear(&crate::turu::bot());
     }
 
     // -------------------------------------------------------------------------------------
@@ -795,7 +630,7 @@ impl CosmeticsWindow {
     /// drop-down on the search row. In one column: search, then category and sort side by side
     /// (Check Updates is on the pagination row).
     fn catalog_toolbar(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
-        let catalog_busy = lock(&self.shared).catalog_busy;
+        let catalog_busy = lock(&model::STATE.of(&crate::turu::bot())).catalog_busy;
         let weapons = self.category == Category::Slot(Slot::Weapon);
         let gap = ui.spacing().item_spacing.x;
         if !fit.columns {
@@ -939,17 +774,7 @@ impl CosmeticsWindow {
     }
 
     fn check_updates(&self, library: &Arc<Library>) {
-        let mut shared = lock(&self.shared);
-        shared.catalog_busy = true;
-        shared.catalog_status = "Checking for updates...".into();
-        drop(shared);
-        let (shared, library) = (self.shared.clone(), library.clone());
-        std::thread::spawn(move || {
-            let result = library.check_for_updates();
-            let mut shared = lock(&shared);
-            shared.catalog_busy = false;
-            shared.catalog_status = result.unwrap_or_else(|e| e);
-        });
+        model::check_updates(&crate::turu::bot(), library);
     }
 
     /// Makes the filtered list again when the catalog or the filter changed (VibeSkua
@@ -965,49 +790,25 @@ impl CosmeticsWindow {
         if self.filter_key.as_ref() == Some(&key) {
             return;
         }
-        let favorites = key.category == Category::Favorites;
-        self.source = if favorites {
-            Arc::new(library.favorites())
-        } else {
-            library.catalog()
-        };
-        let query = key.query.to_lowercase();
-        let id_query = key.query.parse::<i64>().ok();
-        let matches = |item: &CosmeticItem| {
-            let in_category = match key.category {
-                Category::Slot(Slot::Weapon) => {
-                    item.is_in(Slot::Weapon) && key.weapon_kind.is_none_or(|kind| item.kind() == kind)
-                }
-                Category::Slot(slot) => item.is_in(slot),
-                Category::All | Category::Favorites => true,
-            };
-            in_category
-                && match id_query {
-                    _ if query.is_empty() => true,
-                    Some(id) => item.id == id || item.id.to_string().contains(&query),
-                    None => item.name.to_lowercase().contains(&query),
-                }
-        };
-        let mut filtered: Vec<u32> = self
-            .source
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| matches(item))
-            .map(|(i, _)| i as u32)
-            .collect();
-        let source = &self.source;
-        let item = |i: &u32| &source[*i as usize];
-        match key.sort {
-            // The catalog is already newest first.
-            Sort::Newest if !favorites => {}
-            Sort::Newest => filtered.sort_by_key(|i| std::cmp::Reverse(item(i).id)),
-            Sort::Oldest => filtered.sort_by_key(|i| item(i).id),
-            Sort::NameAsc => filtered.sort_by_cached_key(|i| item(i).name.to_lowercase()),
-            Sort::NameDesc => {
-                filtered.sort_by_cached_key(|i| item(i).name.to_lowercase());
-                filtered.reverse();
-            }
-        }
+        let (source, filtered) = model::filter(
+            library,
+            &model::Filter {
+                query: key.query.clone(),
+                category: match key.category {
+                    Category::All => model::Category::All,
+                    Category::Slot(slot) => model::Category::Slot(slot),
+                    Category::Favorites => model::Category::Favorites,
+                },
+                weapon_kind: key.weapon_kind,
+                sort: match key.sort {
+                    Sort::Newest => model::Sort::Newest,
+                    Sort::Oldest => model::Sort::Oldest,
+                    Sort::NameAsc => model::Sort::NameAsc,
+                    Sort::NameDesc => model::Sort::NameDesc,
+                },
+            },
+        );
+        self.source = source;
         self.filtered = filtered;
         // A new search or category starts at page 1; a new favorite keeps the page.
         let same_view = self.filter_key.as_ref().is_some_and(|old| {
@@ -1176,7 +977,7 @@ impl CosmeticsWindow {
     /// First, previous, the page, next, last; the range and the page size when there's room.
     /// In one column Check Updates takes the page size's place.
     fn pagination(&mut self, ui: &mut Ui, library: &Arc<Library>, fit: Fit) {
-        let catalog_busy = lock(&self.shared).catalog_busy;
+        let catalog_busy = lock(&model::STATE.of(&crate::turu::bot())).catalog_busy;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             let full = fit.columns && ui.available_width() >= FULL_PAGINATION;
@@ -1387,7 +1188,7 @@ impl CosmeticsWindow {
             self.palette(ui, false);
             ui.add_space(4.0);
             widgets::section_label(ui, "THEMED PRESETS");
-            let height = PRESETS.len() as f32 * (PRESET_HEIGHT + 2.0) + 8.0;
+            let height = model::PRESETS.len() as f32 * (PRESET_HEIGHT + 2.0) + 8.0;
             inset(ui, height, |ui| self.presets(ui));
             return;
         }
@@ -1408,7 +1209,7 @@ impl CosmeticsWindow {
     /// The color rows, Apply Palette and Read Avatar Colors. With `fill` the card fills the
     /// column and its rows scroll, the buttons staying at the bottom.
     fn palette(&mut self, ui: &mut Ui, fill: bool) {
-        let cc_status = lock(&self.shared).cc_status.clone();
+        let cc_status = lock(&model::STATE.of(&crate::turu::bot())).cc_status.clone();
         let contents = |this: &mut Self, ui: &mut Ui| {
             ui.label(
                 RichText::new("Character Color Customizer")
@@ -1427,7 +1228,7 @@ impl CosmeticsWindow {
             ui.add_space(4.0);
             let rows = |ui: &mut Ui, hexes: &mut [String; 6]| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                for ((label, what), hex) in COLOR_ROWS.iter().zip(hexes.iter_mut()) {
+                for ((label, what), hex) in model::COLOR_ROWS.iter().zip(hexes.iter_mut()) {
                     color_row(ui, label, what, hex);
                 }
             };
@@ -1435,15 +1236,15 @@ impl CosmeticsWindow {
                 ui.horizontal(|ui| {
                     let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
                     if widgets::button(ui, "Apply Palette", Kind::Primary, true, vec2(width, action()), "").clicked() {
-                        let colors = ColorChange(this.hex.each_ref().map(|h| parse_hex(h)));
-                        act("SetColors", move |bot| avatar::set_colors(bot, colors, true));
-                        lock(&this.shared).cc_status = "Applied palette colors to character!".into();
+                        let bot = crate::turu::bot();
+                        model::set_colors(&bot, &this.hex);
+                        lock(&model::STATE.of(&bot)).cc_status = "Applied palette colors to character!".into();
                     }
                     if widgets::button(ui, "Read Avatar Colors", Kind::Normal, true, vec2(width, action()), "")
                         .on_hover_text("Fill the boxes with the colors your avatar has now")
                         .clicked()
                     {
-                        this.read_colors(true);
+                        model::read_colors(&crate::turu::bot(), true);
                     }
                 });
             };
@@ -1482,7 +1283,7 @@ impl CosmeticsWindow {
     /// in the boxes.
     fn presets(&mut self, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.y = 2.0;
-        for (name, description, colors) in PRESETS {
+        for (name, description, colors) in model::PRESETS {
             let response = row(ui, false, PRESET_HEIGHT, |ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 3.0;
@@ -1515,9 +1316,9 @@ impl CosmeticsWindow {
                 for (box_, hex) in self.hex.iter_mut().zip(colors) {
                     *box_ = hex.to_owned();
                 }
-                let colors = ColorChange(self.hex.each_ref().map(|h| parse_hex(h)));
-                act("SetColors", move |bot| avatar::set_colors(bot, colors, true));
-                lock(&self.shared).cc_status = format!("Preset {name} applied!");
+                let bot = crate::turu::bot();
+                model::set_colors(&bot, &self.hex);
+                lock(&model::STATE.of(&bot)).cc_status = format!("Preset {name} applied!");
             }
         }
     }
@@ -1703,8 +1504,7 @@ fn slot_row(ui: &mut Ui, slot: Slot, item: Option<&CosmeticItem>) {
 }
 
 fn equip_set(set: &CosmeticSet) {
-    let set = set.clone();
-    act("Equip set", move |bot| avatar::equip_set(bot, &set));
+    model::equip_set(&crate::turu::bot(), set.clone());
 }
 
 /// A text box of the window's control height.
@@ -1955,13 +1755,7 @@ fn swatch(ui: &mut Ui, color: i64) {
 }
 
 /// "#1A0826" or "1a0826" (VibeSkua `ParseHexToInt`); `None` for anything else.
-fn parse_hex(text: &str) -> Option<i64> {
-    let digits = text.trim().trim_start_matches('#');
-    if digits.is_empty() {
-        return None;
-    }
-    i64::from_str_radix(digits, 16).ok()
-}
+use model::parse_hex;
 
 #[cfg(test)]
 mod tests {
