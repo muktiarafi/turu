@@ -782,8 +782,13 @@ script's message box and options request.
   named `index` (it shadows a local in the generated decoder): the views say `position`. Checked
   on the emulator: a made-up class typed with the keyboard up, skills added, a skill's rules set
   and confirmed, Full window showing the same sequence, Save, finding the class, Remove (asked;
-  the class went with its set), Reset's question (cancelled), font scale 1.3. Not checked: Several
-  auras with real auras, Move, a script using a set saved here.
+  the class went with its set), Reset's question (cancelled), font scale 1.3, a tab switch with
+  the page open (each tab shows its own slot's draft; back again, the first is as left). The
+  rules page keeps its own copy and sends it whole a moment after the last change and before Done
+  or Back, and mirrors the model's "last aura removed turns Several auras off"; Save carries the
+  Class field's text as typed. Not checked: Several auras with real auras, Move, a script using a
+  set saved here, the slot killed with the page open (the draft lives in the slot and goes with
+  it, as the egui window's would).
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.

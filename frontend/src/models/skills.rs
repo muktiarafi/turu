@@ -595,7 +595,13 @@ impl Skills {
                 };
                 *rules = view.to_rules(rules);
             }
-            "save" => self.save(paths)?,
+            "save" => {
+                // The class name as typed, when the page sends it with Save.
+                if let Some(name) = body.get("className").and_then(Json::as_str) {
+                    self.editor.class_name = name.to_owned();
+                }
+                self.save(paths)?
+            }
             "class" => {
                 let class = body.get("class").and_then(Json::as_str).unwrap_or("");
                 self.pick_class((!class.is_empty()).then(|| class.to_owned()));
@@ -688,7 +694,9 @@ mod tests {
         assert_eq!((view.mode.as_str(), view.timeout), ("Farm", MAX_MS));
         assert!(view.save.enabled && !view.replaces);
 
-        s.act(&paths, "save", &json!({})).unwrap();
+        // The name as typed comes with Save.
+        s.act(&paths, "save", &json!({ "className": "Questwalker Mage" }))
+            .unwrap();
         assert_eq!(s.outcome.as_ref().unwrap().text, "Saved Questwalker Mage (Farm).");
         assert_eq!(s.sets.len(), shipped + 1);
         assert!(s.view().replaces, "saving again replaces it");

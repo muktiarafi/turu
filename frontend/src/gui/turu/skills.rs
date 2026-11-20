@@ -33,19 +33,26 @@ pub struct SkillsWindow {
     /// The Saved Skills row selected (an index in the sets).
     selected: Option<usize>,
     reset_armed: Option<Instant>,
+    was_open: bool,
 }
 
 impl SkillsWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         let bot = crate::turu::bot();
-        let state = model::STATE.of(&bot);
-        let mut skills = lock(&state);
         if !*open {
-            if self.tab != Tab::Editor || self.selected.is_some() || self.selected_skill.is_some() {
-                *self = Self::default();
+            // Closed however (its X, the menu, a hotkey): the next opening reads the file again,
+            // which another tab's process may have changed, and Edit Rules is dropped.
+            if std::mem::take(&mut self.was_open) {
+                let state = model::STATE.of(&bot);
+                let mut skills = lock(&state);
+                skills.forget();
+                skills.editing = None;
             }
             return;
         }
+        self.was_open = true;
+        let state = model::STATE.of(&bot);
+        let mut skills = lock(&state);
         if skills.ensure_loaded(&bot.paths) {
             // Read again: the rows may be others.
             self.selected = None;
@@ -58,16 +65,10 @@ impl SkillsWindow {
             skills: &mut skills,
             paths: &bot.paths,
         };
-        let mut still_open = *open;
         super::window(ctx, "Advanced Skills", [700.0, 530.0], 1)
-            .open(&mut still_open)
+            .open(open)
             .show(ctx, |ui| view.ui(ui));
         view.rules_dialog(ctx);
-        if !still_open {
-            *open = false;
-            skills.forget();
-            skills.editing = None;
-        }
         if self.reset_armed.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
         }

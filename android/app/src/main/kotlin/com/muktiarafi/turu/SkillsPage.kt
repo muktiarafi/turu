@@ -158,6 +158,8 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
     var rulesFor by remember { mutableStateOf<RulesTarget?>(null) }
     var resetting by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<SetView?>(null) }
+    // The Class field's text as typed: Save sends it, so a name typed just before isn't lost.
+    var typedClass by remember { mutableStateOf<String?>(null) }
 
     // Edit Rules open in the slot (from here or its egui window): the rules page shows it.
     val editing = view?.editing
@@ -168,7 +170,6 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             if (target == RulesTarget.Skill) panel.act("cancel-rules")
             rulesFor = null
         }
-        BackHandler { close() }
         RulesPage(
             title = if (target == RulesTarget.New) "Rules for added skills" else "Skill ${editing!!.position.toInt() + 1}: rules",
             subtitle = if (target == RulesTarget.New) "Each skill you add gets a copy of these." else "${slotName(editing!!.skill.substringBefore(" "))}: ${rulesWords(editing.skill)}",
@@ -211,7 +212,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             }
         }
         when (tab) {
-            SkillsTab.Edit -> EditTab(view, panel, Modifier.weight(1f)) { rulesFor = RulesTarget.New }
+            SkillsTab.Edit -> EditTab(view, panel, Modifier.weight(1f), onTyping = { typedClass = it }) { rulesFor = RulesTarget.New }
             SkillsTab.Saved -> SavedTab(view, panel, Modifier.weight(1f), onRemove = { removing = it }) { tab = SkillsTab.Edit }
         }
         if (typing) return@Column
@@ -237,7 +238,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             )
             if (tab == SkillsTab.Edit) {
                 Spacer(Modifier.width(12.dp))
-                Button(onClick = { panel.act("save") }, enabled = view.save.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save set") }
+                Button(onClick = { panel.act("save", JSONObject().apply { typedClass?.let { put("className", it) } }) }, enabled = view.save.enabled || typedClass?.isNotBlank() == true, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save set") }
             }
         }
     }
@@ -286,7 +287,7 @@ private fun GroupLabel(text: String, modifier: Modifier = Modifier) {
 
 /** The editor: class and mode, the sequence, the slot buttons, how skills are used. */
 @Composable
-private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, openNewRules: () -> Unit) {
+private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, onTyping: (String) -> Unit, openNewRules: () -> Unit) {
     LazyColumn(modifier) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -295,6 +296,7 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, op
                     label = "Class",
                     placeholder = "Void Highlord",
                     modifier = Modifier.weight(1f),
+                    onTyping = onTyping,
                 ) { panel.editor("className", it) }
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.width(132.dp)) {
@@ -565,11 +567,23 @@ private fun RulesPage(
     confirms: Boolean,
 ) {
     var r by remember(key) { mutableStateOf(rules) }
-    val set = { next: RulesView -> r = next; onChange(next) }
+    // Each change shows at once; the slot gets the copy a moment after the last one, and at once
+    // before Done or Back, so nothing typed is lost or arrives after Edit Rules closed.
+    var sent by remember(key) { mutableStateOf(rules) }
+    val set = { next: RulesView -> r = next }
+    val flush = { if (r != sent) { sent = r; onChange(r) } }
+    LaunchedEffect(r) {
+        if (r != sent) {
+            delay(300)
+            flush()
+        }
+    }
+    val back = { flush(); onBack() }
+    BackHandler { back() }
     Column(Modifier.fillMaxSize()) {
-        PageBar(title, onBack = onBack) {
+        PageBar(title, onBack = back) {
             TextButton(onClick = { set(defaultRules()) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Reset") }
-            Button(onClick = onDone, modifier = Modifier.padding(end = 8.dp).heightIn(min = 40.dp)) { Text(if (confirms) "Done" else "Close") }
+            Button(onClick = { flush(); onDone() }, modifier = Modifier.padding(end = 8.dp).heightIn(min = 40.dp)) { Text(if (confirms) "Done" else "Close") }
         }
         Text(
             subtitle,
@@ -608,7 +622,11 @@ private fun RulesPage(
                             Toggle(listOf("All of them", "Any of them"), if (r.aurasOr) 1 else 0, r.useRule, Modifier.width(220.dp)) { set(r.copy(aurasOr = it == 1)) }
                         }
                         r.auras.forEachIndexed { i, aura ->
-                            AuraEditor(aura, enabled = r.useRule, onRemove = { set(r.copy(auras = r.auras.filterIndexed { j, _ -> j != i })) }) { a ->
+                            AuraEditor(aura, enabled = r.useRule, onRemove = {
+                                // As the slot does: the last aura removed turns Several auras off.
+                                val left = r.auras.filterIndexed { j, _ -> j != i }
+                                set(r.copy(auras = left, multiAura = left.isNotEmpty()))
+                            }) { a ->
                                 set(r.copy(auras = r.auras.mapIndexed { j, old -> if (j == i) a else old }))
                             }
                         }
@@ -669,7 +687,18 @@ private fun AuraEditor(aura: AuraView, enabled: Boolean, onRemove: (() -> Unit)?
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            DebouncedText(aura.name, label = "Aura", placeholder = "Focus", enabled = enabled, modifier = Modifier.weight(1f)) { onSet(aura.copy(name = it)) }
+            OutlinedTextField(
+                value = aura.name,
+                onValueChange = { onSet(aura.copy(name = it)) },
+                label = { Text("Aura") },
+                placeholder = { Text("Focus") },
+                singleLine = true,
+                enabled = enabled,
+                shape = RoundedCornerShape(12.dp),
+                colors = fieldColors(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                modifier = Modifier.weight(1f),
+            )
             if (onRemove != null) {
                 IconButton(onClick = onRemove, enabled = enabled) { Icon(Icons.Rounded.Close, contentDescription = "Remove this aura", tint = Turu.Muted) }
             }
@@ -784,7 +813,15 @@ private fun StacksBox(value: Double, enabled: Boolean, modifier: Modifier, onSet
 
 /** Text, sent a moment after the typing stops. */
 @Composable
-private fun DebouncedText(value: String, label: String, placeholder: String, modifier: Modifier, enabled: Boolean = true, onSet: (String) -> Unit) {
+private fun DebouncedText(
+    value: String,
+    label: String,
+    placeholder: String,
+    modifier: Modifier,
+    enabled: Boolean = true,
+    onTyping: (String) -> Unit = {},
+    onSet: (String) -> Unit,
+) {
     var text by remember { mutableStateOf(value) }
     // A change from elsewhere (a set opened, the egui window) shows unless this is mid-typing.
     var sent by remember { mutableStateOf(value) }
@@ -792,6 +829,7 @@ private fun DebouncedText(value: String, label: String, placeholder: String, mod
         if (value != sent) {
             text = value
             sent = value
+            onTyping(value)
         }
     }
     LaunchedEffect(text) {
@@ -803,7 +841,7 @@ private fun DebouncedText(value: String, label: String, placeholder: String, mod
     }
     OutlinedTextField(
         value = text,
-        onValueChange = { text = it },
+        onValueChange = { text = it; onTyping(it) },
         label = { Text(label) },
         placeholder = { Text(placeholder) },
         singleLine = true,
