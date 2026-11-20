@@ -679,9 +679,18 @@ script's message box and options request.
   the slot opens the Script Loader or Accounts (its chip, menus, a hotkey), the shell shows its
   own (`ToShell::OpenScreen`). Verified on the emulator: load, Start, Pause, Resume, Stop, the
   log arriving, the state on the native pane and the egui rail in step.
-* Not yet: the native rail (Tabs, Scripts, Logs, Army, More, with Auto, Jump and Bank, which need
-  models first), Search Scripts, Logs and Options as native screens, and "Done when"'s "found
-  ... without an egui window" (finding a script is still Search Scripts, egui).
+* **The native rail** (2026-11-20): Auto, Jump and Bank have models now (`models::auto`,
+  `jump`, `bank`: what the egui popups kept per tab, the egui bar and rail use them too), and
+  `models::rail` gives the update notice, the chip's favourite and recent scripts and VibeSkua's
+  menus as the platform offers them. The shell draws the whole rail (`ToClient::Tabs`'
+  `native_rail`; the slot keeps its room) and hides it in every tab (`ToClient::RailHidden`).
+  Auto, Jump, Logs and More are pages of the side panel; More opens the slot's egui windows by
+  key. Verified on the emulator: the items, each page, Hide Side Bar and its handle.
+* Not yet: Search Scripts and Options as native screens, Army Control (egui, from the rail's Army),
+  and "Done when"'s "found ... without an egui window" (finding a script is still Search Scripts,
+  egui). Nothing that needs the game was tried since 08:10: the emulator's certificate checks
+  against game.aq.com fail ("certificate was revoked", with or without this work's network
+  security config).
 
 ### L5b: Android, the daily features (L, after L2 to L4)
 

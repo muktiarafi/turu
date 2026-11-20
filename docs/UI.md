@@ -992,6 +992,17 @@ above, and why:
   error's first line), Start alone or Stop with Pause/Resume (Force Stop while stopping), the
   reason a control is off under it, Search and Options (the slot's egui windows, the panel
   closing for them), and the script log (its last 500 lines, line-fed).
+* **The native rail** (L5b, 2026-11-20) replaces the egui one on Android: the Tabs item, then
+  Scripts, Logs, Army, More, Auto, Jump, Bank (and Update while one is out), the script chip and
+  its run controls at the bottom. On a short screen it folds least needed first (Army, Scripts,
+  Bank, Logs and Update, then Jump and Auto; More never), counting two run controls so starting a
+  script moves nothing: the emulator's 411 dp keeps More, Auto and Jump, as the egui rail did.
+  Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
+  Army opens Army Control (egui). Bank's reason for opening nothing shows as a toast (a snackbar
+  would need the panel open). More lists every menu's windows (the native ones open their page)
+  and Hide Side Bar; a `›` tab at the left edge brings the rail back, in every tab. The rail's
+  icons are drawn in one stroke where Material Symbols' core set lacks them (`RailIcons.kt`);
+  Jump's pin is the core set's filled one.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
   pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
 
