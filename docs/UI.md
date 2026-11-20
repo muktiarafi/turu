@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers (Loader, Grabber, Junk Items), Console | decided when reached; egui from More until then |
+| Tools & Helpers (Grabber, Junk Items), Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1203,6 +1203,16 @@ above, and why:
   does (a beep, and on Android a notification heard with the screen off). The add field (a name,
   `|` between several) sits at the foot. ⋮: Clear all, Full window. With the keyboard up only the
   field typed in stays: the add bar, or the beep settings.
+* **Loader** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Tools & Helpers and
+  however the slot opens it; the bar says how many quests are cached. Quests or Shop (segments),
+  the IDs ("2566, 2567"; a shop takes one) and Load (the keyboard's Go loads), then the cache's
+  search (name or ID), its quests a page of 50 at a time (name, ID; a tap checks one, kept across
+  pages), and "1 to 50 of 158" with the page arrows; the fields scroll away with the quests on a
+  landscape phone. The foot, only when there is something: what runs with a spinner (Cancel for
+  a cache update) or the last notice, and with quests checked Copy (IDs, Names, As // Name | ID),
+  Fake complete (one quest checked) and Load N. ⋮: Download community cache, Add missing quests,
+  Rebuild all, Update range… (asks the first and last IDs), Full window. The first open with no
+  cache file downloads the community one. With the keyboard up the foot steps aside.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that

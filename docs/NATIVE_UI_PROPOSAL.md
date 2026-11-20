@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime and Notify Drop. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop and Loader. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -892,6 +892,17 @@ script's message box and options request.
   notifications pushes the page. Checked on the emulator: a made-up name added (keyboard up),
   checked and removed, Test beep, the gap typed with the keyboard up and set back, Back to
   Runtime, font scale 1.3. Not checked: a real drop beeping and its notification.
+* **Loader** (2026-11-20, the owner's pick): `models::loader` holds per tab the quest cache as
+  read (with a revision), what runs (progress, Cancel), the notice, and a native page's search and
+  page (filtered outside the lock; 50 quests a page, as the cache has over 10,000); its functions
+  read (or, with no file, download) the cache on open, download, update (Add missing, Rebuild all,
+  a range), cancel, fake complete, and load a shop or quests. The egui window keeps its search,
+  selection and layout. The page copies the checked quests itself (the same three formats).
+  Checked on the emulator: the first open downloading the community cache (10,345 quests), a
+  search with the keyboard up, two quests checked and Copy IDs, the pages (a new page starts at
+  its first quest), font scale 1.3; the downloaded QuestData.json and its .etag were removed.
+  Fake complete shows only with one quest checked. Not checked, as they act in game: Load (IDs,
+  a shop, the checked quests), Fake complete, Add missing, Rebuild all, Update range, Cancel.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -918,8 +929,8 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Console, HotKeys, and for
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Tools & Helpers (Grabber, Junk Items), Console, HotKeys, and for
 good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
