@@ -1,70 +1,18 @@
 //! Tools & Helpers > Loader (VibeSkua `LoaderView`): loads a shop or quests by ID, and lists
-//! the quest cache (`QuestData.json`, `turu_bot::quest_cache`) to load, copy or fake complete
-//! quests from. The cache is read, downloaded and updated on bot threads; the list keeps IDs
-//! and names. With no cache file, opening the window downloads the community one.
+//! the quest cache to load, copy or fake complete quests from. The cache and its work are
+//! `models::loader`'s; the window keeps its search and selection.
 
 use super::theme::{MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind, Selection};
+use crate::models::loader::{self as model, LoaderStatus};
 use egui::{Align, Context, Label, Layout, RichText, ScrollArea, Ui, vec2};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
-use turu_bot::api::{player, quests, shops};
-use turu_bot::quest_cache::{self, Downloaded, HttpSource, QuestSummary, UpdateMode};
+use std::sync::Arc;
+use std::time::Duration;
+use turu_bot::Bot;
+use turu_bot::quest_cache::{self, QuestSummary, UpdateMode};
 
 const ROW_HEIGHT: f32 = 22.0;
 const CONTROL_HEIGHT: f32 = 26.0;
-
-/// What the bot threads hand back to the window.
-#[derive(Default)]
-struct Shared {
-    /// Reading or updating the cache, or fake completing a quest.
-    busy: bool,
-    /// The cache update can be cancelled.
-    cancellable: bool,
-    /// VibeSkua's progress text while busy.
-    progress: String,
-    /// The cache as read or updated, for the window to take.
-    quests: Option<Arc<Vec<QuestSummary>>>,
-    /// A message shown for a few seconds (a bad range, a failure, a download's result), and
-    /// whether it is good news.
-    notice: Option<(String, Instant, bool)>,
-}
-
-fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
-    shared.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-fn notify(shared: &Mutex<Shared>, text: impl Into<String>, seconds: u64) {
-    lock(shared).notice = Some((text.into(), Instant::now() + Duration::from_secs(seconds), false));
-}
-
-fn notify_ok(shared: &Mutex<Shared>, text: impl Into<String>, seconds: u64) {
-    lock(shared).notice = Some((text.into(), Instant::now() + Duration::from_secs(seconds), true));
-}
-
-/// Downloads the community cache into the file (`quest_cache::download`) and hands the list
-/// to the window; reports the result as a notice.
-fn download(bot: &turu_bot::Bot, shared: &Mutex<Shared>) {
-    lock(shared).progress = "Downloading quest cache...".into();
-    match quest_cache::download(&bot.paths.quest_data_file(), &HttpSource::from_env()) {
-        Ok(Downloaded::Updated {
-            quests,
-            downloaded,
-            kept,
-        }) => {
-            lock(shared).quests = Some(Arc::new(quests.iter().map(QuestSummary::from).collect()));
-            let kept = if kept > 0 {
-                format!(", kept {kept} of yours")
-            } else {
-                String::new()
-            };
-            notify_ok(shared, format!("Downloaded {downloaded} quests{kept}."), 5);
-        }
-        Ok(Downloaded::Unchanged) => notify_ok(shared, "The quest cache is up to date.", 4),
-        Err(e) => notify(shared, format!("Couldn't download the quest cache: {e}"), 8),
-    }
-}
 
 #[derive(Default)]
 pub struct LoaderWindow {
@@ -74,13 +22,11 @@ pub struct LoaderWindow {
     search: String,
     range: String,
     quests: Arc<Vec<QuestSummary>>,
+    revision: Option<u64>,
     /// Indices into `quests` that match the search, and what they were made for.
     shown: Vec<usize>,
-    shown_for: Option<(String, usize)>,
+    shown_for: Option<(String, u64)>,
     selection: Selection,
-    shared: Arc<Mutex<Shared>>,
-    cancel: Arc<AtomicBool>,
-    read_started: bool,
 }
 
 impl LoaderWindow {
@@ -88,117 +34,28 @@ impl LoaderWindow {
         if !*open {
             return;
         }
-        if !self.read_started {
-            self.read_started = true;
-            self.read_cache();
-        }
+        let bot = crate::turu::bot();
+        model::open(&bot);
+        let status = model::status(&bot);
         super::window(ctx, "Loader", [720.0, 520.0], 3)
             .open(open)
-            .show(ctx, |ui| self.ui(ui));
-        if lock(&self.shared).busy {
+            .show(ctx, |ui| self.ui(ui, &bot, &status));
+        if status.busy {
             ctx.request_repaint_after(Duration::from_millis(100));
+        } else if status.notice.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(500));
         }
     }
 
-    /// VibeSkua `GetQuestsAsync`: the cache file's quests, when the window opens; without a
-    /// file, the community cache is downloaded first (VibeSkua ships one).
-    fn read_cache(&self) {
-        let shared = self.shared.clone();
-        {
-            let mut s = lock(&shared);
-            s.busy = true;
-            s.progress = "Getting quests".into();
-        }
-        crate::turu::spawn_action("Read the quest cache", move |bot| {
-            let path = bot.paths.quest_data_file();
-            // Not in the layout test, which would download into the real data folder.
-            if !path.exists() && !cfg!(test) {
-                download(bot, &shared);
-            } else {
-                match quest_cache::read_summaries(&path) {
-                    Ok(quests) => lock(&shared).quests = Some(Arc::new(quests)),
-                    Err(e) => notify(&shared, format!("Failed to load quests: {e}"), 6),
-                }
-            }
-            let mut s = lock(&shared);
-            s.busy = false;
-            s.progress.clear();
-            Ok(())
-        });
-    }
-
-    /// Download: the community cache merged into the file.
-    fn download_cache(&self) {
-        let shared = self.shared.clone();
-        lock(&shared).busy = true;
-        crate::turu::spawn_action("Download the quest cache", move |bot| {
-            download(bot, &shared);
-            let mut s = lock(&shared);
-            s.busy = false;
-            s.progress.clear();
-            Ok(())
-        });
-    }
-
-    /// VibeSkua `UpdateQuests(getAll)` / `UpdateQuestsRange`.
-    fn update_cache(&mut self, mode: UpdateMode) {
-        self.cancel = Arc::default();
-        let (shared, cancel) = (self.shared.clone(), self.cancel.clone());
-        {
-            let mut s = lock(&shared);
-            s.busy = true;
-            s.cancellable = true;
-            s.progress.clear();
-        }
-        crate::turu::spawn_action("Update the quest cache", move |bot| {
-            let path = bot.paths.quest_data_file();
-            if !player::logged_in(bot).unwrap_or(false) {
-                notify(&shared, "Log in to update the quest cache.", 4);
-            }
-            let progress = |text: String| lock(&shared).progress = text;
-            match quest_cache::update(bot, &path, mode, &progress, &cancel) {
-                Ok(quests) => {
-                    let quests = quests.iter().map(QuestSummary::from).collect();
-                    lock(&shared).quests = Some(Arc::new(quests));
-                }
-                Err(e) => notify(&shared, format!("Failed to update the quest cache: {e}"), 6),
-            }
-            let mut s = lock(&shared);
-            s.busy = false;
-            s.cancellable = false;
-            s.progress.clear();
-            Ok(())
-        });
-    }
-
-    /// VibeSkua `UpdateSelectedQuest`: a client-side quest-complete packet.
-    fn fake_complete(&self, quest: QuestSummary) {
-        let shared = self.shared.clone();
-        {
-            let mut s = lock(&shared);
-            s.busy = true;
-            s.progress = format!("Fake completing quest: {}.", quest.name);
-        }
-        crate::turu::spawn_action("Fake complete", move |bot| {
-            match quests::update_quest(bot, quest.id) {
-                Ok(true) => {}
-                Ok(false) => notify(&shared, format!("Failed to update quest: {} didn't load.", quest.id), 4),
-                Err(e) => notify(&shared, format!("Failed to update quest: {e}"), 4),
-            }
-            let mut s = lock(&shared);
-            s.busy = false;
-            s.progress.clear();
-            Ok(())
-        });
-    }
-
-    /// Takes a list the bot threads read, and matches the search again when needed.
-    fn refresh(&mut self) {
-        if let Some(quests) = lock(&self.shared).quests.take() {
+    /// Takes the list as last read, and matches the search again when needed.
+    fn refresh(&mut self, bot: &Arc<Bot>) {
+        let (quests, revision) = model::quests(bot);
+        if self.revision != Some(revision) {
             self.quests = quests;
+            self.revision = Some(revision);
             self.selection.clear();
         }
-        let key = (self.search.clone(), Arc::as_ptr(&self.quests) as usize);
+        let key = (self.search.clone(), revision);
         if self.shown_for.as_ref() != Some(&key) {
             self.shown = quest_cache::search(&self.quests, &self.search);
             self.shown_for = Some(key);
@@ -213,9 +70,9 @@ impl LoaderWindow {
             .collect()
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
-        self.refresh();
-        self.load_bar(ui);
+    fn ui(&mut self, ui: &mut Ui, bot: &Arc<Bot>, status: &LoaderStatus) {
+        self.refresh(bot);
+        self.load_bar(ui, bot);
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             widgets::section_label(ui, "QUEST CACHE");
@@ -226,13 +83,13 @@ impl LoaderWindow {
         });
         let footer = 46.0 + CONTROL_HEIGHT + 3.0 * ui.spacing().item_spacing.y + 4.0;
         let height = (ui.available_height() - footer).max(80.0);
-        widgets::list_well(ui, height, |ui| self.quest_list(ui));
-        self.cache_bar(ui);
-        self.selection_bar(ui);
+        widgets::list_well(ui, height, |ui| self.quest_list(ui, status.busy));
+        self.cache_bar(ui, bot, status);
+        self.selection_bar(ui, bot, status.busy);
     }
 
     /// Shop / Quests, the IDs box and Load.
-    fn load_bar(&mut self, ui: &mut Ui) {
+    fn load_bar(&mut self, ui: &mut Ui, bot: &Arc<Bot>) {
         ui.horizontal(|ui| {
             for (label, quests) in [("Shop", false), ("Quests", true)] {
                 if widgets::chip(ui, label, self.quests_mode == quests) {
@@ -258,20 +115,18 @@ impl LoaderWindow {
             }
             if !self.quests_mode {
                 // VibeSkua loads a shop only for a single ID.
-                if let Some(id) = quest_cache::parse_shop_id(&self.ids) {
-                    crate::turu::spawn_action("Load shop", move |bot| shops::load(bot, id).map(|_| ()));
-                }
+                let _ = model::load_shop(bot, &self.ids);
             } else if let Some(ids) = ids {
-                crate::turu::spawn_action("Load quests", move |bot| quests::load(bot, &ids));
+                model::load_quests(bot, ids);
             }
         });
     }
 
-    fn quest_list(&mut self, ui: &mut Ui) {
+    fn quest_list(&mut self, ui: &mut Ui, busy: bool) {
         if self.shown.is_empty() {
             ui.add_space(16.0);
             ui.vertical_centered(|ui| {
-                let text = if lock(&self.shared).busy && self.quests.is_empty() {
+                let text = if busy && self.quests.is_empty() {
                     "Getting quests..."
                 } else if self.quests.is_empty() {
                     "The quest cache is empty: use Download, or log in and use Add missing."
@@ -315,22 +170,9 @@ impl LoaderWindow {
 
     /// Update cache (Add missing, Rebuild all, Download) or the progress with Cancel, and Update
     /// range.
-    fn cache_bar(&mut self, ui: &mut Ui) {
-        let (busy, cancellable, progress, notice) = {
-            let mut s = lock(&self.shared);
-            if s.notice.as_ref().is_some_and(|(_, until, _)| Instant::now() >= *until) {
-                s.notice = None;
-            }
-            (
-                s.busy,
-                s.cancellable,
-                s.progress.clone(),
-                s.notice.as_ref().map(|(text, _, ok)| (text.clone(), *ok)),
-            )
-        };
-        if notice.is_some() {
-            ui.ctx().request_repaint_after(Duration::from_millis(500));
-        }
+    fn cache_bar(&mut self, ui: &mut Ui, bot: &Arc<Bot>, status: &LoaderStatus) {
+        let (busy, cancellable, progress) = (status.busy, status.cancellable, &status.progress);
+        let notice = status.notice.as_ref().map(|n| (n.text.clone(), n.ok));
         // On a phone the range gets a row of its own: beside the buttons it has no room.
         let narrow = ui.available_width() < 640.0;
         widgets::card(ui, |ui| {
@@ -338,12 +180,11 @@ impl LoaderWindow {
             let body = |ui: &mut Ui| {
                 let small = vec2(0.0, CONTROL_HEIGHT);
                 if busy {
-                    ui.label(RichText::new(&progress).size(11.0).strong().color(MUTED));
+                    ui.label(RichText::new(progress).size(11.0).strong().color(MUTED));
                     if cancellable
                         && widgets::button(ui, "Cancel", Kind::Danger, true, vec2(84.0, CONTROL_HEIGHT), "").clicked()
                     {
-                        self.cancel.store(true, Ordering::Release);
-                        lock(&self.shared).progress = "Cancelling task...".into();
+                        model::cancel(bot);
                     }
                 } else {
                     match &notice {
@@ -363,13 +204,13 @@ impl LoaderWindow {
                         .on_hover_text("Keep the quests already cached and add new ones")
                         .clicked()
                     {
-                        self.update_cache(UpdateMode::AddMissing);
+                        model::update_cache(bot, UpdateMode::AddMissing);
                     }
                     if widgets::button(ui, "Rebuild all", Kind::Normal, true, small, "")
                         .on_hover_text("Replace every quest in the cache")
                         .clicked()
                     {
-                        self.update_cache(UpdateMode::RebuildAll);
+                        model::update_cache(bot, UpdateMode::RebuildAll);
                     }
                     if widgets::button(ui, "Download", Kind::Normal, true, small, "")
                         .on_hover_text(
@@ -378,12 +219,12 @@ impl LoaderWindow {
                         )
                         .clicked()
                     {
-                        self.download_cache();
+                        model::download_cache(bot);
                     }
                 }
                 if !narrow {
                     ui.separator();
-                    self.range_row(ui, busy);
+                    self.range_row(ui, bot, busy);
                 }
             };
             if narrow {
@@ -393,13 +234,13 @@ impl LoaderWindow {
             }
             if narrow {
                 ui.add_space(4.0);
-                ui.horizontal(|ui| self.range_row(ui, busy));
+                ui.horizontal(|ui| self.range_row(ui, bot, busy));
             }
         });
     }
 
     /// The range box and Update range, right-aligned.
-    fn range_row(&mut self, ui: &mut Ui, busy: bool) {
+    fn range_row(&mut self, ui: &mut Ui, bot: &Arc<Bot>, busy: bool) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let clicked = widgets::button(
                 ui,
@@ -413,17 +254,13 @@ impl LoaderWindow {
             let width = ui.available_width();
             widgets::text_box(ui, &mut self.range, "Range, e.g. 2566, 2599", width);
             if clicked {
-                match quest_cache::parse_range(&self.range) {
-                    Ok((start, end)) => self.update_cache(UpdateMode::Range(start, end)),
-                    Err(message) => notify(&self.shared, message, 2),
-                }
+                model::update_range(bot, &self.range);
             }
         });
     }
 
     /// The selection count, Copy, Fake complete and Load selected.
-    fn selection_bar(&self, ui: &mut Ui) {
-        let busy = lock(&self.shared).busy;
+    fn selection_bar(&self, ui: &mut Ui, bot: &Arc<Bot>, busy: bool) {
         ui.horizontal(|ui| {
             let count = self.selection.len();
             let text = if count == 0 {
@@ -440,7 +277,7 @@ impl LoaderWindow {
                     .clicked()
                 {
                     let ids: Vec<i64> = self.selected().iter().map(|q| q.id).collect();
-                    crate::turu::spawn_action("Load quests", move |bot| quests::load(bot, &ids));
+                    model::load_quests(bot, ids);
                 }
                 // VibeSkua fakes the quest clicked last.
                 let current = self.selection.current().and_then(|i| self.quests.get(i)).cloned();
@@ -458,7 +295,7 @@ impl LoaderWindow {
                 .clicked()
                     && let Some(quest) = current
                 {
-                    self.fake_complete(quest);
+                    model::fake_complete(bot, quest.id);
                 }
                 ui.add_enabled_ui(some, |ui| {
                     ui.spacing_mut().interact_size.y = CONTROL_HEIGHT;

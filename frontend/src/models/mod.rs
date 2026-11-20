@@ -27,6 +27,7 @@ pub mod fast_travel;
 pub mod form;
 pub mod game_options;
 pub mod jump;
+pub mod loader;
 pub mod loadouts;
 pub mod logs;
 pub mod notifications;
@@ -483,6 +484,13 @@ pub fn register() {
         "butler",
         "do",
         Box::new(|bot, body| butler::act(bot, &text(body, "action")?, body)),
+    );
+
+    add_model("loader", Box::new(|bot| to_json(&loader::view(bot))));
+    add_model_action(
+        "loader",
+        "do",
+        Box::new(|bot, body| loader::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("notify-drop", Box::new(|bot| to_json(&notify_drop::view(bot))));

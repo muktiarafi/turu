@@ -10,7 +10,7 @@ use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
     application_options::AppOptionsView, army::ArmyView, auto::AutoView, bank::BankView, butler::ButlerView,
     core_bots::CoreBotsView, cosmetics::CosmeticsView, drops::DropsView, fast_travel::FastTravelView,
-    game_options::GameOptionsView, jump::JumpView, loadouts::LoadoutsView, logs::LogsView,
+    game_options::GameOptionsView, jump::JumpView, loader::LoaderView, loadouts::LoadoutsView, logs::LogsView,
     notifications::NotificationsView, notify_drop::NotifyDropView, rail::RailView, repo::RepoView,
     runtime::RuntimeView, scheduler::SchedulerView, script_options::ScriptOptionsView, scripts::ScriptsView,
     skills::SkillsView, stats::StatsView,
@@ -38,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<ScriptOptionsView>()?
         .add_type::<RuntimeView>()?
         .add_type::<NotifyDropView>()?
+        .add_type::<LoaderView>()?
         .add_type::<ArmyView>()?
         .add_type::<NotificationsView>()?
         .add_type::<StatsView>()?
