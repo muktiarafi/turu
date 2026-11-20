@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -123,9 +124,9 @@ fun TabsItem(state: ShellState, onClick: () -> Unit) {
                         Text(
                             if (warn) "!" else "${tabs.tabs.size}",
                             color = if (warn) Turu.Panel else Color.White,
-                            fontSize = 10.sp,
+                            fontSize = (10f / LocalDensity.current.fontScale).sp,
                             fontWeight = FontWeight.Bold,
-                            lineHeight = 10.sp,
+                            lineHeight = (10f / LocalDensity.current.fontScale).sp,
                         )
                     }
                 }
@@ -152,7 +153,8 @@ fun Avatar(label: String, size: Dp, tab: ShellTab? = null, tint: Color = Turu.Tr
                 initials(label),
                 color = Turu.Text,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = (size.value * 0.36f).sp,
+                // Sized to the circle, not the font scale: the circle doesn't grow with it.
+                fontSize = (size.value * 0.36f / LocalDensity.current.fontScale).sp,
                 maxLines = 1,
             )
         }
