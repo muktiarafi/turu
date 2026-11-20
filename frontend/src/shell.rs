@@ -505,6 +505,8 @@ pub enum NativeScreen {
     CurrentDrops,
     /// Combat > Skills.
     Skills,
+    /// Tools > Loadouts.
+    Loadouts,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

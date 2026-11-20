@@ -381,6 +381,7 @@ impl TuruUi {
             ("stats", w.stats),
             ("current_drops", w.current_drops),
             ("skills", w.skills),
+            ("loadouts", w.loadouts),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -428,6 +429,9 @@ impl TuruUi {
         }
         if w.skills && !kept(w, "skills") && crate::turu::open_shell_screen(NativeScreen::Skills) {
             w.skills = false;
+        }
+        if w.loadouts && !kept(w, "loadouts") && crate::turu::open_shell_screen(NativeScreen::Loadouts) {
+            w.loadouts = false;
         }
         tab.script_loader.show(
             ctx,

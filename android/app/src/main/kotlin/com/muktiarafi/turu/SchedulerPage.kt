@@ -300,7 +300,7 @@ private fun EntryRow(index: Int, entry: EntryView, view: SchedulerView, panel: S
  * confirms (in landscape the keyboard covers the dialog's buttons).
  */
 @Composable
-private fun NameDialog(title: String, initial: String, confirm: String, note: String? = null, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+fun NameDialog(title: String, initial: String, confirm: String, note: String? = null, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var field by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
     val text = field.text
     val focus = remember { FocusRequester() }

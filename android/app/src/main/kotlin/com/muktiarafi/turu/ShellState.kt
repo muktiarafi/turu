@@ -105,6 +105,9 @@ sealed interface Page {
     /** Combat > Skills. */
     data object Skills : Page
 
+    /** Tools > Loadouts. */
+    data object Loadouts : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }
