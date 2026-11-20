@@ -1,7 +1,8 @@
 # Proposal: native windows on each platform, over process tabs
 
 Status: **reopened (2026-11-20), in steps. L0 and L5a are done (2026-11-20, on the emulator; "L0's
-answers" and "L5a as built" below); next is the owner's checkpoint.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with Android's bot
+windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot is under way.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -738,11 +739,18 @@ they get through AIR's `d8`.
 10. **Across the boundary**: JSON, with Kotlin and Swift types generated from the Rust records.
     Android needs no generated FFI binding; BoltFFI only for macOS.
 
+11. **The checkpoint** (2026-11-20): go on to Android's bot windows (L1's client part, L2 to
+    L5b). macOS (L6, L7) is not decided. The work stacks on the branch `native-ui`, one PR later.
+12. **Order after the checkpoint** (taken by the session doing it, 2026-11-20): L2's pilot comes
+    before L1's client split. The pilot's models live in `turu_frontend::models`, which imports no
+    egui (a test checks the module's sources), so the split later moves them as they are; the
+    pilot's ratio says how much the split and the rest are worth first.
+
 Still open:
 
 * **Why it was withdrawn on 2026-11-16.** Not recorded; worth writing here if it bears on the
   checkpoint.
-* **The checkpoint**, after L5a: go on to L1's client part and L2 to L5b, and to macOS, or stop.
+* **macOS** (L6, L7): not decided at the checkpoint.
 * **Who drafts each design pass** (an agent session or a person); the owner approves either way.
   Android's was drafted by an agent session.
 
