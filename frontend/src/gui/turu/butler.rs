@@ -551,22 +551,22 @@ fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
                 };
                 row_ui(ui, o.label, o.description, |ui| match (&o.kind, &o.value) {
                     (KindView::Switch, OptionValue::Switch(on)) => {
-                        let mut on = *on;
-                        let response = widgets::switch(ui, &mut on);
-                        if response.changed() {
-                            set(serde_json::json!(on));
+                        let mut now = *on;
+                        let response = widgets::switch(ui, &mut now);
+                        if now != *on {
+                            set(serde_json::json!(now));
                         }
                         response
                     }
                     (KindView::Number { min, max, unit }, OptionValue::Number(n)) => {
-                        let mut n = *n;
+                        let mut now = *n;
                         let size = vec2(80.0, widgets::target(24.0, 40.0));
                         let max = max.map_or(i64::MAX, i64::from);
                         let unit = unit.map(|u| format!(" {u}")).unwrap_or_default();
                         let response =
-                            widgets::number(ui, o.label, &mut n, i64::from(*min)..=max, 10.0, unit.as_str(), size);
-                        if response.changed() {
-                            set(serde_json::json!(n));
+                            widgets::number(ui, o.label, &mut now, i64::from(*min)..=max, 10.0, unit.as_str(), size);
+                        if now != *n {
+                            set(serde_json::json!(now));
                         }
                         response
                     }
@@ -589,10 +589,10 @@ fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
                         response
                     }
                     (KindView::Text { hint }, OptionValue::Text(text)) => {
-                        let mut text = text.clone();
-                        let response = widgets::text_box(ui, &mut text, hint, 140.0);
-                        if response.changed() {
-                            set(serde_json::json!(text));
+                        let mut now = text.clone();
+                        let response = widgets::text_box(ui, &mut now, hint, 140.0);
+                        if now != *text {
+                            set(serde_json::json!(now));
                         }
                         response
                     }

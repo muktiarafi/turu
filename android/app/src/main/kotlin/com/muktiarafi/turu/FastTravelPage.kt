@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,6 +139,8 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
     var form by remember { mutableStateOf<Form?>(null) }
     var clearing by remember { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
+    var roomFocused by remember { mutableStateOf(false) }
 
     val f = form
     if (view != null && f != null) {
@@ -161,8 +164,9 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
             Text("Reading the tab…", color = Turu.Muted, modifier = Modifier.padding(20.dp))
             return@Column
         }
+        // With the keyboard up the panel has room for one field: the one not typed in steps aside.
         val typing = WindowInsets.isImeVisible
-        OutlinedTextField(
+        if (!(typing && roomFocused)) OutlinedTextField(
             value = search,
             onValueChange = { search = it },
             placeholder = { Text("Search name, map or cell") },
@@ -172,9 +176,9 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
             shape = RoundedCornerShape(12.dp),
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).onFocusChanged { searchFocused = it.isFocused },
         )
-        if (!typing) PrivateRoom(view, panel)
+        if (!(typing && searchFocused)) PrivateRoom(view, panel) { roomFocused = it }
         val q = search.trim()
         val shown = view.destinations.filter {
             q.isEmpty() || it.name.contains(q, true) || it.map.contains(q, true) || it.cell.contains(q, true)
@@ -230,7 +234,7 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
 
 /** VibeSkua's private room: travels join `map-<room>` while it's on. */
 @Composable
-private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel) {
+private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel, onFocus: (Boolean) -> Unit) {
     var text by remember(view.room) { mutableStateOf(view.room.toString()) }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
@@ -262,7 +266,7 @@ private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel) {
             shape = RoundedCornerShape(12.dp),
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-            modifier = Modifier.width(136.dp),
+            modifier = Modifier.width(136.dp).onFocusChanged { onFocus(it.isFocused) },
         )
         Spacer(Modifier.width(12.dp))
         Switch(checked = view.privateRoom, onCheckedChange = { panel.act("private", JSONObject().put("on", it)) })

@@ -28,7 +28,13 @@ const LOG_LINES: usize = 300;
 pub struct State {
     pub message: Option<Note>,
     roster: Vec<SyncData>,
+    /// Send to player's recent names (a file), read with the roster.
+    recent: Vec<String>,
     read_at: Option<Instant>,
+    /// The newest log lines as last taken, the log's version then, and how many it held.
+    log: Vec<ButlerLogLine>,
+    log_version: Option<u64>,
+    log_count: u32,
 }
 
 pub static STATE: PerTab<State> = PerTab::new();
@@ -58,11 +64,36 @@ pub fn roster(bot: &Arc<Bot>, fresh: bool) -> Vec<SyncData> {
     if stale {
         // Read outside the lock: Butler has locks of its own.
         let roster = bot.butler.roster();
+        let recent = bot.butler.recent_targets();
         let mut s = lock(&state);
         s.roster = roster;
+        s.recent = recent;
         s.read_at = Some(Instant::now());
     }
     lock(&state).roster.clone()
+}
+
+/// The newest log lines, taken again only when the log changed.
+fn log(bot: &Arc<Bot>) -> (Vec<ButlerLogLine>, u32) {
+    let state = STATE.of(bot);
+    let version = bot.butler.log_version();
+    if lock(&state).log_version != Some(version) {
+        let lines = bot.butler.log_lines();
+        let skip = lines.len().saturating_sub(LOG_LINES);
+        let log: Vec<ButlerLogLine> = lines[skip..]
+            .iter()
+            .map(|l| ButlerLogLine {
+                text: l.text.clone(),
+                tint: level_tint(l.level),
+            })
+            .collect();
+        let mut s = lock(&state);
+        s.log = log;
+        s.log_count = lines.len() as u32;
+        s.log_version = Some(version);
+    }
+    let s = lock(&state);
+    (s.log.clone(), s.log_count)
 }
 
 // --- the header ---------------------------------------------------------------------------
@@ -617,24 +648,18 @@ pub fn view(bot: &Arc<Bot>) -> ButlerView {
     let butler = &bot.butler;
     let roster = roster(bot, false);
     let settings = butler.settings();
-    let lines = butler.log_lines();
-    let skip = lines.len().saturating_sub(LOG_LINES);
+    let (log, log_count) = log(bot);
+    let recent = lock(&STATE.of(bot)).recent.iter().take(8).cloned().collect();
     ButlerView {
         header: header(bot),
         message: message(bot),
         accounts: roster.iter().map(|a| account(bot, a)).collect(),
         summon_all: summon_all_control(bot),
-        recent: butler.recent_targets().into_iter().take(8).collect(),
+        recent,
         sections: sections(),
         options: options(&settings, &butler.username()),
-        log: lines[skip..]
-            .iter()
-            .map(|l| ButlerLogLine {
-                text: l.text.clone(),
-                tint: level_tint(l.level),
-            })
-            .collect(),
-        log_count: lines.len() as u32,
+        log,
+        log_count,
         logging: settings.debug_logs,
     }
 }
@@ -649,9 +674,29 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
             .map(str::to_owned)
             .ok_or_else(|| format!("{key} is missing"))
     };
+    // Follow on a row as it is now, not as the view a tick ago showed it: `start_follow` checks
+    // less than the button (it would switch masters, or follow one that follows you).
+    let row_now = |name: &str| {
+        roster(bot, true)
+            .iter()
+            .find(|a| a.username.eq_ignore_ascii_case(name))
+            .map(|a| account(bot, a))
+            .ok_or_else(|| format!("{name} isn't online with Butler"))
+    };
     match action {
-        "follow" => follow(bot, text("name")?),
-        "summon" | "release" => say(bot, butler::toggle_follower(bot, &text("name")?)),
+        "follow" => {
+            let name = text("name")?;
+            let row = row_now(&name)?;
+            if !row.follow.enabled {
+                return Err(row.follow.reason);
+            }
+            if !row.followed {
+                follow(bot, row.username);
+            }
+        }
+        // Not a toggle: a tap on a view a tick old must not undo itself.
+        "summon" => say(bot, butler::summon(bot, &text("name")?)),
+        "release" => say(bot, butler::release(bot, &text("name")?)),
         "stop-follow" => {
             butler::stop_follow(bot);
             say(bot, Ok("Stopped following.".into()));
@@ -689,6 +734,19 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_and_summon_dont_toggle() {
+        let bot = Arc::new(Bot::new());
+        // Nobody is summoned: Release says so and summons nobody.
+        assert!(act(&bot, "release", &json!({ "name": "Questwalker" })).is_ok());
+        assert!(bot.butler.followers().is_empty());
+        assert_eq!(message(&bot).unwrap().tint, Tint::Danger);
+        // Not online: Summon refuses rather than adding a name.
+        assert!(act(&bot, "summon", &json!({ "name": "Questwalker" })).is_ok());
+        assert!(bot.butler.followers().is_empty());
+        assert!(act(&bot, "follow", &json!({ "name": "Questwalker" })).is_err());
+    }
 
     #[test]
     fn every_option_row_sets_its_field() {

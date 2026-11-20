@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -148,8 +150,11 @@ fun ButlerPage(state: ShellState, panel: ButlerPanel, fullWindow: () -> Unit) {
             Text("Reading the tab…", color = Turu.Muted, modifier = Modifier.padding(20.dp))
             return@Column
         }
-        Header(view, panel)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        // With the keyboard up (a setting's number or text) the header and segments step aside,
+        // so the field shows above it in landscape.
+        val typing = WindowInsets.isImeVisible
+        if (!typing) Header(view, panel)
+        if (!typing) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
             ButlerTab.entries.forEachIndexed { i, t ->
                 SegmentedButton(
                     selected = tab == t,
