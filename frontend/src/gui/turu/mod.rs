@@ -385,6 +385,7 @@ impl TuruUi {
             ("fast_travel", w.fast_travel),
             ("butler", w.butler),
             ("cosmetics", w.cosmetics),
+            ("script_options", w.script_options),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -445,6 +446,14 @@ impl TuruUi {
         if w.cosmetics && !kept(w, "cosmetics") && crate::turu::open_shell_screen(NativeScreen::Cosmetics) {
             w.cosmetics = false;
         }
+        if w.script_options
+            && !kept(w, "script_options")
+            && crate::turu::open_shell_screen(NativeScreen::ScriptOptions)
+        {
+            w.script_options = false;
+            // The page shows the draft: the egui window hiding now isn't a Cancel.
+            crate::models::script_options::hand_over(&crate::turu::bot());
+        }
         tab.script_loader.show(
             ctx,
             &mut w.script_loader,
@@ -455,7 +464,8 @@ impl TuruUi {
         tab.scheduler.files(ctx);
         w.script_repo |= std::mem::take(&mut tab.scheduler.open_repo);
         if let Some(options) = tab.scheduler.edit_options.take() {
-            tab.script_options.edit_queued(options);
+            let bot = crate::turu::bot();
+            crate::models::tab_state::lock(&crate::models::script_options::STATE.of(&bot)).edit_queued(options);
             w.script_options = true;
         }
         tab.script_options.show(ctx, &mut w.script_options);
@@ -534,7 +544,8 @@ impl TuruUi {
             let tab = self.active();
             tab.windows.script_repo |= open_repo;
             if let Some(options) = options {
-                tab.script_options.edit_queued(options);
+                let bot = crate::turu::bot();
+                crate::models::tab_state::lock(&crate::models::script_options::STATE.of(&bot)).edit_queued(options);
                 tab.windows.script_options = true;
             }
             ctx.request_repaint();

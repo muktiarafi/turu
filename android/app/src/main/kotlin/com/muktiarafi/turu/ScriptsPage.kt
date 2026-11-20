@@ -102,8 +102,11 @@ class ScriptsPanel(
     /** Search Scripts, native: a page pushed over this one (set by the shell). */
     var openSearch: () -> Unit = { openWindow("script_repo") }
 
+    /** Script Options, native: a page pushed over this one (set by the shell). */
+    var openOptions: () -> Unit = { openWindow("script_options") }
+
     fun searchScripts() = openSearch()
-    fun editOptions() = openWindow("script_options")
+    fun editOptions() = openOptions()
 }
 
 /** "45s", "12m", "3h 05m": the egui card's clock. */

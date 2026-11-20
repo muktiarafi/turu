@@ -25,6 +25,7 @@ class ShellScreens(private val activity: TuruActivity) {
 
     private val scripts = ScriptsPanel(models) { window -> openWindow(window) }.also {
         it.openSearch = { state.push(Page.Search) }
+        it.openOptions = { state.push(Page.ScriptOptions) }
     }
 
     /** The shell's tab actions, as if from the slot on screen (`SlotShell.asShown`). */
@@ -54,6 +55,7 @@ class ShellScreens(private val activity: TuruActivity) {
         fastTravel = FastTravelPanel(),
         butler = ButlerPanel(),
         cosmetics = CosmeticsPanel(),
+        scriptOptions = ScriptOptionsPanel(),
     )
 
     private val railActions = RailActions(
@@ -132,6 +134,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "fast_travel" -> open(Page.FastTravel)
             "butler" -> open(Page.Butler)
             "cosmetics" -> open(Page.Cosmetics)
+            "script_options" -> open(Page.ScriptOptions)
         }
     }
 

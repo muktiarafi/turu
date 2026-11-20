@@ -117,6 +117,9 @@ sealed interface Page {
     /** Plugins > Cosmetics. */
     data object Cosmetics : Page
 
+    /** Scripts > Edit Script Options (also when a script asks for its options). */
+    data object ScriptOptions : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

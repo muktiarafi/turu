@@ -513,6 +513,8 @@ pub enum NativeScreen {
     Butler,
     /// Plugins > Cosmetics.
     Cosmetics,
+    /// Scripts > Edit Script Options (also when a script asks for its options).
+    ScriptOptions,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the
