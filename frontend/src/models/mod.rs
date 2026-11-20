@@ -15,9 +15,14 @@
 //! * No egui here (`models_import_no_ui` checks the sources): L1's client split moves this module
 //!   to `turu_client` as it is.
 
+pub mod auto;
+pub mod bank;
 pub mod game_options;
+pub mod jump;
 pub mod logs;
+pub mod rail;
 pub mod scripts;
+pub mod tab_state;
 
 use serde::Serialize;
 
@@ -117,6 +122,117 @@ pub fn register() {
         "logs",
         "clear",
         Box::new(|bot, body| logs::clear(bot, &text(body, "kind")?).and_then(|()| done())),
+    );
+
+    add_model("auto", Box::new(|bot| to_json(&auto::view(bot))));
+    add_model_action(
+        "auto",
+        "reload-classes",
+        Box::new(|bot, _| {
+            auto::reload_classes(bot);
+            done()
+        }),
+    );
+    add_model_action(
+        "auto",
+        "class",
+        Box::new(|bot, body| {
+            auto::pick_class(bot, text(body, "class")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "auto",
+        "mode",
+        Box::new(|bot, body| {
+            auto::pick_mode(bot, text(body, "mode")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "auto",
+        "map-ids",
+        Box::new(|bot, body| {
+            auto::set_map_ids(bot, text(body, "mapIds")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "auto",
+        "attack",
+        Box::new(|bot, _| auto::start(bot, auto::AutoMode::Attack).and_then(|()| done())),
+    );
+    add_model_action(
+        "auto",
+        "hunt",
+        Box::new(|bot, _| auto::start(bot, auto::AutoMode::Hunt).and_then(|()| done())),
+    );
+    add_model_action(
+        "auto",
+        "stop",
+        Box::new(|bot, _| {
+            auto::stop(bot);
+            done()
+        }),
+    );
+
+    add_model("jump", Box::new(|bot| to_json(&jump::view(bot))));
+    add_model_action(
+        "jump",
+        "refresh",
+        Box::new(|bot, _| {
+            jump::refresh(bot);
+            done()
+        }),
+    );
+    add_model_action(
+        "jump",
+        "cell",
+        Box::new(|bot, body| {
+            jump::select_cell(bot, text(body, "cell")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "jump",
+        "pad",
+        Box::new(|bot, body| {
+            jump::select_pad(bot, text(body, "pad")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "jump",
+        "current",
+        Box::new(|bot, _| {
+            jump::current(bot);
+            done()
+        }),
+    );
+    add_model_action(
+        "jump",
+        "jump",
+        Box::new(|bot, _| {
+            jump::jump(bot);
+            done()
+        }),
+    );
+
+    add_model("bank", Box::new(|bot| to_json(&bank::view(bot))));
+    add_model_action(
+        "bank",
+        "open",
+        Box::new(|bot, _| {
+            bank::open(bot);
+            done()
+        }),
+    );
+
+    add_model("rail", Box::new(|bot| to_json(&rail::view(bot))));
+    add_model_action(
+        "rail",
+        "start-quick",
+        Box::new(|bot, body| rail::start_quick(bot, &text(body, "path")?).and_then(|()| done())),
     );
 
     add_model("game-options", Box::new(|bot| to_json(&game_options::view(bot))));

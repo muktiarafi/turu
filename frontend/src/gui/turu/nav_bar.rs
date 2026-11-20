@@ -2,25 +2,21 @@
 //! actions (Grid, Auto, Jump, Bank), then the script's status with its run controls, the one
 //! place a check-in needs.
 
-use super::skills::SkillSets;
 use super::theme::{
     ACCENT, ACCENT_HOVER, DANGER, DANGER_HOVER, EDGE, HOVER, MUTED, ON_ACCENT, PANEL, SMALL_RADIUS, SUCCESS, TEXT,
     TRACK, WARNING,
 };
 use super::widgets::{self, Kind};
 use super::{Windows, auto, script_loader};
-use crate::map_pads::MapCells;
+use crate::models::{auto as auto_model, bank, jump};
 use egui::containers::menu::{MenuBar, MenuConfig};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, Align2, Button, Color32, CornerRadius, FontId, Frame, Id, Layout, Margin, Panel, Popup, PopupCloseBehavior,
     Rect, RectAlign, Response, RichText, Sense, Spinner, Stroke, Style, Ui, pos2, vec2,
 };
-use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
-use turu_bot::api::dispatch;
+use std::sync::Arc;
+use std::time::Duration;
 use turu_bot::map_scripts::MapScript;
 use turu_bot::script::{self, ScriptOptionsState, ScriptStatus};
 
@@ -65,50 +61,12 @@ enum Fold {
     More,
     All,
 }
-/// VibeSkua `MapService.Pads`, in its order.
-const PADS: [&str; 8] = ["Spawn", "Center", "Left", "Right", "Up", "Down", "Top", "Bottom"];
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Bank's last press: a spinner in its button while it runs, then for a moment, under it, why
-/// nothing opened (`bank.open` itself does nothing logged out or while a map loads).
-#[derive(Default)]
-struct BankState {
-    busy: bool,
-    failed: Option<(String, Instant)>,
-}
-
-/// How long Bank's failure shows.
-const BANK_NOTE_FOR: Duration = Duration::from_secs(4);
-
-/// Fast Map Jump's choices; filled from the game by bot threads.
-struct JumpState {
-    cells: Vec<String>,
-    cell: Option<String>,
-    pad: String,
-    /// The current map's cells, pads and doors, read from its SWF (`map_pads`): the map file,
-    /// and what it says (empty while it's read or when it can't be).
-    map: Option<(String, MapCells)>,
-    /// The last jump's outcome, shown under the buttons.
-    status: Option<String>,
-}
 
 pub struct NavBar {
-    sets: SkillSets,
-    /// The Class items in the inventory, for Auto's class drop-down (VibeSkua `PlayerClasses`).
-    owned_classes: Arc<Mutex<Vec<String>>>,
-    /// While [`Self::reload_classes`] reads them.
-    classes_loading: Arc<AtomicBool>,
     class_dropdown_was_open: bool,
-    auto_class: Option<String>,
-    auto_mode: Option<String>,
-    map_ids: String,
     /// The Auto and Jump popups' open state. Kept here, not in egui's memory: egui keeps one
     /// open popup per window, so opening a drop-down inside them would close them.
     auto_open: bool,
-    jump: Arc<Mutex<JumpState>>,
     jump_open: bool,
     cells_dropdown_was_open: bool,
     /// The right side's width on the last frame it was drawn in full (not folded all the way):
@@ -117,7 +75,6 @@ pub struct NavBar {
     /// The right side's width on the last frame, without the script's name: folded all the
     /// way, the name gets what's left, or nothing.
     right_rest: f32,
-    bank: Arc<Mutex<BankState>>,
     /// The scripts for the active tab's map, on the rail's script chip.
     map_scripts: MapScriptsCache,
 }
@@ -150,26 +107,12 @@ impl MapScriptsCache {
 impl Default for NavBar {
     fn default() -> Self {
         Self {
-            sets: SkillSets::default(),
-            owned_classes: Arc::default(),
-            classes_loading: Arc::default(),
             class_dropdown_was_open: false,
-            auto_class: None,
-            auto_mode: None,
-            map_ids: String::new(),
             auto_open: false,
-            jump: Arc::new(Mutex::new(JumpState {
-                cells: Vec::new(),
-                cell: None,
-                pad: String::new(),
-                map: None,
-                status: None,
-            })),
             jump_open: false,
             cells_dropdown_was_open: false,
             right_width: 0.0,
             right_rest: 0.0,
-            bank: Arc::default(),
             map_scripts: MapScriptsCache::default(),
         }
     }
@@ -229,7 +172,7 @@ fn item(ui: &mut Ui, label: &str) -> bool {
 impl NavBar {
     /// Bank, as the bar's button does it (the OpenBank hotkey): the bar shows how it went.
     pub(super) fn open_bank(&self) {
-        open_bank(&self.bank);
+        bank::open(&crate::turu::bot());
     }
 
     /// Auto Attack or Auto Hunt with the Auto popup's class and mode, as its buttons; stops it
@@ -251,10 +194,9 @@ impl NavBar {
     /// VibeSkua: the picked class and mode only when both are set, else the equipped class in
     /// Base.
     fn start_auto(&self, mode: auto::AutoMode) {
-        let map_ids = auto::parse_map_ids(&self.map_ids);
-        match (self.auto_class.clone(), self.auto_mode.clone()) {
-            (Some(class), Some(class_mode)) => auto::start(mode, Some(class), class_mode, map_ids),
-            _ => auto::start(mode, None, "Base".into(), map_ids),
+        let bot = crate::turu::bot();
+        if let Err(e) = auto_model::start(&bot, mode) {
+            bot.log(format!("Couldn't start {mode:?}: {e}"));
         }
     }
 
@@ -335,11 +277,11 @@ impl NavBar {
             }
             Fold::More => {
                 ui.menu_button("Scripts", |ui| menu_contents(ui, windows, Menu::Scripts));
-                ui.menu_button("More", |ui| folded(ui, windows, &menus()[1..], None));
+                ui.menu_button("More", |ui| folded(ui, windows, &menus()[1..], false));
                 None
             }
             Fold::All => {
-                let menu = ui.menu_button("Menu", |ui| folded(ui, windows, menus(), Some(&self.bank)));
+                let menu = ui.menu_button("Menu", |ui| folded(ui, windows, menus(), true));
                 Some(menu.response)
             }
         }
@@ -348,12 +290,11 @@ impl NavBar {
     /// For a moment after Bank didn't open, why, in a note under its button (or under "Menu"),
     /// or beside it on the rail.
     fn bank_note(&self, ui: &Ui, anchor: Option<&Response>, align: RectAlign) {
-        let mut bank = lock(&self.bank);
-        let Some((why, at)) = &bank.failed else {
+        let bot = crate::turu::bot();
+        let Some(why) = bank::view(&bot).note else {
             return;
         };
-        let Some(left) = BANK_NOTE_FOR.checked_sub(at.elapsed()) else {
-            bank.failed = None;
+        let Some(left) = bank::note_left(&bot) else {
             return;
         };
         if let Some(anchor) = anchor {
@@ -400,7 +341,7 @@ impl NavBar {
 
     /// Bank: VibeSkua's direct action (no menu), with a spinner while it runs.
     fn bank_toggle(&self, ui: &mut Ui) -> Response {
-        let lead = if lock(&self.bank).busy {
+        let lead = if bank::view(&crate::turu::bot()).busy {
             Lead::Spinner
         } else {
             Lead::None
@@ -408,7 +349,7 @@ impl NavBar {
         let response = toggle_button(ui, "Bank", lead, false)
             .on_hover_text(format!("Opens the bank window{}", super::hotkeys::hint("OpenBank")));
         if response.clicked() {
-            open_bank(&self.bank);
+            bank::open(&crate::turu::bot());
         }
         response
     }
@@ -424,9 +365,6 @@ impl NavBar {
     fn auto_popup(&mut self, ui: &Ui, button: &Response, align: RectAlign) {
         if button.clicked() {
             self.auto_open = !self.auto_open;
-            if self.auto_open {
-                self.sets = SkillSets::load();
-            }
         }
         let mut open = self.auto_open;
         let shown = nav_popup(button, &mut open, 280.0, align).show(|ui| self.auto_panel(ui));
@@ -494,17 +432,17 @@ impl NavBar {
             auto::stop();
         }
         ui.add_space(4.0);
+        // What Auto shows and allows: its model's (`crate::models::auto`).
+        let view = auto_model::view(&bot);
         let mut picked_class = None;
         let mut class_open = false;
         ui.horizontal(|ui| {
-            let owned = lock(&self.owned_classes).clone();
-            let loading = self.classes_loading.load(Ordering::Relaxed);
-            let class = self.auto_class.clone().unwrap_or_else(|| "Select Class...".into());
+            let class = view.class.clone().unwrap_or_else(|| "Select Class...".into());
             // The class list spans the panel: class names are longer than half of it.
             let list = widgets::dropdown(ui, "auto_class", &class, vec2(half, height), width, 420.0, |ui| {
                 touch_rows(ui);
-                if owned.is_empty() {
-                    if loading {
+                if view.classes.is_empty() {
+                    if view.loading {
                         ui.horizontal(|ui| {
                             ui.add(Spinner::new().size(12.0));
                             ui.label(RichText::new("Loading classes...").small().color(MUTED));
@@ -513,9 +451,9 @@ impl NavBar {
                         ui.label(RichText::new("No classes (not logged in?)").small().color(MUTED));
                     }
                 }
-                for class in &owned {
+                for class in &view.classes {
                     if ui
-                        .selectable_label(self.auto_class.as_deref() == Some(class), class)
+                        .selectable_label(view.class.as_deref() == Some(class), class)
                         .clicked()
                     {
                         picked_class = Some(class.clone());
@@ -523,25 +461,17 @@ impl NavBar {
                 }
             });
             class_open = list.inner.is_some();
-            let modes = self
-                .auto_class
-                .as_deref()
-                .map(|c| self.sets.modes_for(c))
-                .unwrap_or_default();
-            let mode = self.auto_mode.clone().unwrap_or_else(|| "Select Mode...".into());
+            let mode = view.mode.clone().unwrap_or_else(|| "Select Mode...".into());
             widgets::dropdown(ui, "auto_mode", &mode, vec2(half, height), half, 320.0, |ui| {
                 touch_rows(ui);
-                if self.auto_class.is_none() {
+                if view.class.is_none() {
                     ui.label(RichText::new("Pick a class first").small().color(MUTED));
-                } else if modes.is_empty() {
+                } else if view.modes.is_empty() {
                     ui.label(RichText::new("No saved skills for this class").small().color(MUTED));
                 }
-                for mode in modes {
-                    if ui
-                        .selectable_label(self.auto_mode.as_deref() == Some(&mode), &mode)
-                        .clicked()
-                    {
-                        self.auto_mode = Some(mode);
+                for mode in &view.modes {
+                    if ui.selectable_label(view.mode.as_deref() == Some(mode), mode).clicked() {
+                        auto_model::pick_mode(&bot, mode.clone());
                     }
                 }
             });
@@ -549,41 +479,26 @@ impl NavBar {
         // VibeSkua `ReloadClasses` (on opening the class drop-down): re-read the owned classes
         // and the skill sets, and clear the selection.
         if class_open && !self.class_dropdown_was_open {
-            self.reload_classes(ui.ctx());
+            auto_model::reload_classes(&bot);
         }
         self.class_dropdown_was_open = class_open;
-        // VibeSkua `SelectedClass`: list its modes, pick the first, and equip the class.
-        if let Some(class) = picked_class {
-            self.auto_mode = self.sets.modes_for(&class).into_iter().next();
-            self.auto_class = Some(class.clone());
-            crate::turu::spawn_action("Equip class", move |bot| {
-                dispatch(bot, "inventory.equipItem", &[json!(class)]).map(|_| ())
-            });
+        if view.loading {
+            ui.ctx().request_repaint_after(Duration::from_millis(200));
         }
-        widgets::text_box_sized(
+        if let Some(class) = picked_class {
+            auto_model::pick_class(&bot, class);
+        }
+        let mut map_ids = view.map_ids.clone();
+        if widgets::text_box_sized(
             ui,
-            &mut self.map_ids,
+            &mut map_ids,
             "Manual MapIDs (optional, e.g. 1, 2)",
             vec2(width, height),
-        );
-    }
-
-    /// Reads the inventory's Class items (sorted, ignoring case) and the skill sets again, and
-    /// draws the drop-down again once they are in.
-    fn reload_classes(&mut self, ctx: &egui::Context) {
-        self.sets = SkillSets::load();
-        self.auto_class = None;
-        self.auto_mode = None;
-        let owned = self.owned_classes.clone();
-        let loading = self.classes_loading.clone();
-        loading.store(true, Ordering::Relaxed);
-        let ctx = ctx.clone();
-        crate::turu::spawn_action("Auto classes", move |bot| {
-            let read = read_classes(bot, &owned);
-            loading.store(false, Ordering::Relaxed);
-            ctx.request_repaint();
-            read
-        });
+        )
+        .changed()
+        {
+            auto_model::set_map_ids(&bot, map_ids);
+        }
     }
 
     fn jump_toggle(&mut self, ui: &mut Ui) {
@@ -596,7 +511,7 @@ impl NavBar {
         if button.clicked() {
             self.jump_open = !self.jump_open;
             if self.jump_open {
-                self.refresh_cells();
+                jump::refresh(&crate::turu::bot());
             }
         }
         let mut open = self.jump_open;
@@ -617,222 +532,78 @@ impl NavBar {
         ui.separator();
         let half = (ui.available_width() - 6.0) / 2.0;
         let height = widgets::target(28.0, 48.0);
-        let mut state = lock(&self.jump);
-        let mut picked = None;
-        let mut picked_pad = false;
+        // What Jump shows and allows: its model's (`crate::models::jump`).
+        let bot = crate::turu::bot();
+        let view = jump::view(&bot);
         let mut cells_open = false;
-        let auto_jump = crate::turu::bot().settings.read().auto_jump_on_position_change;
         ui.horizontal(|ui| {
-            let cells = state.cells.clone();
-            let selected = state.cell.clone().unwrap_or_else(|| "Select Cell...".into());
+            let selected = view.cell.clone().unwrap_or_else(|| "Select Cell...".into());
             // The cells are read again when it opens: a `dropdown` grows as they arrive.
             let list = widgets::dropdown(ui, "jump_cell", &selected, vec2(half, height), half, 320.0, |ui| {
                 touch_rows(ui);
-                if cells.is_empty() {
+                if view.cells.is_empty() {
                     ui.label(RichText::new("No cells (not in a map?)").small().color(MUTED));
                 }
-                for cell in &cells {
-                    if ui.selectable_label(state.cell.as_deref() == Some(cell), cell).clicked() {
-                        picked = Some(cell.clone());
+                for cell in &view.cells {
+                    if ui.selectable_label(view.cell.as_deref() == Some(cell), cell).clicked() {
+                        jump::select_cell(&bot, cell.clone());
                     }
                 }
             });
             cells_open = list.inner.is_some();
-            let current = state.pad.clone();
-            let pads = state
-                .cell
-                .as_deref()
-                .and_then(|cell| state.map()?.pads(cell))
-                .map(<[String]>::to_vec)
-                .unwrap_or_else(|| PADS.map(str::to_owned).to_vec());
-            let selected = if current.is_empty() { "Select Pad..." } else { &current };
+            let selected = if view.pad.is_empty() {
+                "Select Pad..."
+            } else {
+                &view.pad
+            };
             widgets::dropdown(ui, "jump_pad", selected, vec2(half, height), half, 320.0, |ui| {
                 touch_rows(ui);
-                for pad in pads {
-                    if ui.selectable_label(current == pad, &pad).clicked() {
-                        if pad != current {
-                            picked_pad = true;
-                        }
-                        state.pad = pad;
+                for pad in &view.pads {
+                    if ui.selectable_label(view.pad == *pad, pad).clicked() {
+                        jump::select_pad(&bot, pad.clone());
                     }
                 }
             });
         });
-        if let Some(cell) = picked {
-            // Turu: the map SWF says which pads the cell has, so the jump lands on one of them
-            // (VibeSkua corrects the pad after jumping, in `jumpCorrectRoom`); the jump itself
-            // picks the pad the walk from the player's cell arrives on (`jump_to`).
-            let auto = state.map().and_then(|map| map.jump_pad(&cell, None, &state.pad));
-            if let Some(pad) = auto {
-                state.pad = pad;
-            } else if cell == "Enter" {
-                state.pad = "Spawn".into();
-            } else if state.pad.is_empty() {
-                state.pad = "Left".into();
-            }
-            state.cell = Some(cell.clone());
-            if auto_jump {
-                let pad = state.pad.clone();
-                drop(state);
-                self.jump_to(cell, pad, true);
-                state = lock(&self.jump);
-            }
-        } else if picked_pad
-            && auto_jump
-            && let Some(cell) = state.cell.clone()
-        {
-            let pad = state.pad.clone();
-            drop(state);
-            self.jump_to(cell, pad, true);
-            state = lock(&self.jump);
-        }
-        let target = state
-            .cell
-            .clone()
-            .filter(|_| !state.pad.is_empty())
-            .map(|cell| (cell, state.pad.clone()));
-        let status = state.status.clone();
-        drop(state);
         if cells_open && !self.cells_dropdown_was_open {
-            self.refresh_cells();
+            jump::refresh(&bot);
         }
         self.cells_dropdown_was_open = cells_open;
 
         ui.horizontal(|ui| {
             if widgets::button(ui, "Current", Kind::Normal, true, vec2(half, height), "").clicked() {
-                self.refresh_cells();
-                let state = self.jump.clone();
-                crate::turu::spawn_action("Fast Map Jump current", move |bot| {
-                    let playing = dispatch(bot, "player.playing", &[])?.as_bool() == Some(true);
-                    let (cell, pad) = if playing {
-                        (dispatch(bot, "player.cell", &[])?, dispatch(bot, "player.pad", &[])?)
-                    } else {
-                        (json!("Enter"), json!("Spawn"))
-                    };
-                    let mut state = lock(&state);
-                    state.cell = cell.as_str().filter(|c| !c.is_empty()).map(str::to_owned);
-                    state.pad = pad.as_str().unwrap_or_default().to_owned();
-                    Ok(())
-                });
+                jump::current(&bot);
             }
-            let jump = widgets::button(
+            if widgets::button(
                 ui,
                 "Jump",
                 Kind::Primary,
-                target.is_some(),
+                view.jump.enabled,
                 vec2(half, height),
-                "Select a cell and a pad first",
-            );
-            if jump.clicked()
-                && let Some((cell, pad)) = target
+                &view.jump.reason,
+            )
+            .clicked()
             {
-                self.jump_to(cell, pad, false);
+                jump::jump(&bot);
             }
         });
-        if let Some(status) = status {
+        if let Some(status) = view.status {
             ui.label(RichText::new(status).small().color(MUTED));
         }
+        // Bot threads fill the cells and the outcome in.
+        ui.ctx().request_repaint_after(Duration::from_millis(250));
     }
-
-    /// Reads the current map's cells (`map.cells`) into the drop-down, and, once per map file,
-    /// each cell's pads from the map's SWF.
-    fn refresh_cells(&self) {
-        let state = self.jump.clone();
-        crate::turu::spawn_action("Fast Map Jump cells", move |bot| {
-            let cells: Vec<String> = serde_json::from_value(dispatch(bot, "map.cells", &[])?).unwrap_or_default();
-            let file = turu_bot::map_items::current_file(bot).ok();
-            {
-                let mut state = lock(&state);
-                if state.cells != cells {
-                    state.cells = cells;
-                }
-                let Some(file) = file
-                    .clone()
-                    .filter(|f| state.map.as_ref().is_none_or(|(known, _)| known != f))
-                else {
-                    return Ok(());
-                };
-                state.map = Some((file, MapCells::default()));
-            }
-            let Some(file) = file else { return Ok(()) };
-            let map = turu_bot::map_items::map_swf(bot, &file)
-                .and_then(|swf| crate::map_pads::scan(&swf).map_err(turu_bot::BotError::Other))
-                .map_err(|e| turu_bot::BotError::Other(format!("cells of {file}: {e}")))?;
-            let mut state = lock(&state);
-            if let Some((known, slot)) = state.map.as_mut()
-                && *known == file
-            {
-                *slot = map;
-            }
-            Ok(())
-        });
-    }
-
-    /// VibeSkua `MapService.Jump`: only when logged in, without auto-correcting the pad. With
-    /// `auto` (a cell picked, not a pad), the pad is where the walk from the player's cell
-    /// through the map's doors arrives, when the map SWF says.
-    fn jump_to(&self, cell: String, pad: String, auto: bool) {
-        let state = self.jump.clone();
-        lock(&state).status = Some(format!("Jumping to {cell} ({pad})..."));
-        crate::turu::spawn_action("Fast Map Jump", move |bot| {
-            let status = if dispatch(bot, "player.loggedIn", &[])?.as_bool() != Some(true) {
-                "Not logged in".to_owned()
-            } else {
-                let mut pad = pad;
-                if auto {
-                    let from = dispatch(bot, "player.cell", &[])?;
-                    let mut state = lock(&state);
-                    let walked = state.map().and_then(|map| map.jump_pad(&cell, from.as_str(), &pad));
-                    if let Some(walked) = walked.filter(|walked| *walked != pad) {
-                        state.pad.clone_from(&walked);
-                        state.status = Some(format!("Jumping to {cell} ({walked})..."));
-                        pad = walked;
-                    }
-                }
-                match dispatch(bot, "map.jump", &[json!(cell), json!(pad), json!(false)]) {
-                    Ok(_) => format!("Jumped to {cell} ({pad})"),
-                    Err(e) => format!("Jump failed: {e}"),
-                }
-            };
-            lock(&state).status = Some(status);
-            Ok(())
-        });
-    }
-}
-
-/// Bank: VibeSkua's direct action (no menu).
-fn open_bank(state: &Arc<Mutex<BankState>>) {
-    *lock(state) = BankState {
-        busy: true,
-        failed: None,
-    };
-    let state = state.clone();
-    crate::turu::spawn_action("Bank", move |bot| {
-        use turu_bot::api::player;
-        let failed = if !player::logged_in(bot).unwrap_or(false) {
-            Some("Not logged in".to_owned())
-        } else if !player::world_loaded(bot).unwrap_or(false) {
-            Some("The map is still loading".to_owned())
-        } else {
-            dispatch(bot, "bank.open", &[]).err().map(|e| e.to_string())
-        };
-        *lock(&state) = BankState {
-            busy: false,
-            failed: failed.map(|why| (why, Instant::now())),
-        };
-        Ok(())
-    });
 }
 
 /// `menus` folded into one drop-down: a submenu each, then Bank as a row when it's given.
-fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], bank: Option<&Arc<Mutex<BankState>>>) {
+fn folded(ui: &mut Ui, windows: &mut Windows, menus: &[(Menu, &str)], with_bank: bool) {
     for &(menu, label) in menus {
         ui.menu_button(label, |ui| menu_contents(ui, windows, menu));
     }
-    if let Some(bank) = bank {
+    if with_bank {
         ui.separator();
         if item(ui, "Bank") {
-            open_bank(bank);
+            bank::open(&crate::turu::bot());
         }
     }
 }
@@ -966,38 +737,12 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
     }
 }
 
-impl JumpState {
-    /// What the current map's SWF says, once read.
-    fn map(&self) -> Option<&MapCells> {
-        self.map.as_ref().map(|(_, map)| map)
-    }
-}
-
 /// On a touch screen, the Auto and Jump popups' drop-downs and text boxes are 48 points high,
 /// as their buttons are (`widgets::target`).
 fn touch_controls(ui: &mut Ui) {
     if widgets::touch() {
         ui.spacing_mut().interact_size.y = 48.0;
     }
-}
-
-/// The inventory's Class items, sorted ignoring case, into `owned`.
-fn read_classes(bot: &Arc<turu_bot::Bot>, owned: &Mutex<Vec<String>>) -> turu_bot::BotResult<()> {
-    let items: Vec<serde_json::Value> =
-        serde_json::from_value(dispatch(bot, "inventory.items", &[])?).unwrap_or_default();
-    let mut classes: Vec<String> = items
-        .iter()
-        .filter(|item| {
-            item.get("category")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|c| c.eq_ignore_ascii_case("Class"))
-        })
-        .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
-        .map(str::to_owned)
-        .collect();
-    classes.sort_by_key(|name| name.to_lowercase());
-    *lock(owned) = classes;
-    Ok(())
 }
 
 /// The Auto popup's content width, and the room between its controls.
@@ -1644,7 +1389,7 @@ impl NavBar {
         let menu = rail_item(ui, RailIcon::Menu, "Menu", menu_lead, |response| {
             Popup::is_id_open(&response.ctx, Popup::default_response_id(response))
         });
-        let folded_bank = (!fit.bank).then_some(&self.bank);
+        let folded_bank = !fit.bank;
         let config = MenuConfig::new().style(menu_style);
         Popup::menu(&menu)
             .align(RectAlign::RIGHT_START)
@@ -1678,14 +1423,14 @@ impl NavBar {
         self.jump_popup(ui, &jump, RectAlign::RIGHT_START);
 
         let bank = fit.bank.then(|| {
-            let lead = if lock(&self.bank).busy {
+            let lead = if bank::view(&bot).busy {
                 Lead::Spinner
             } else {
                 Lead::None
             };
             let response = rail_item(ui, RailIcon::Bank, "Bank", lead, |_| false);
             if response.clicked() {
-                open_bank(&self.bank);
+                bank::open(&bot);
             }
             response
         });

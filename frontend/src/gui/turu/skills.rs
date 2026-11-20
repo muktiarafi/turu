@@ -6,7 +6,6 @@
 use super::theme::{DANGER, INSET, MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
 use egui::{ComboBox, Context, CornerRadius, Frame, Margin, Modal, RichText, ScrollArea, Ui, vec2};
-use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 use turu_bot::skill_editor::{self, AuraRow, SkillItem, SkillRules};
 use turu_bot::skills::{self as bot_skills, AdvancedSkill, CLASS_USE_MODES, SkillUseMode};
@@ -14,64 +13,7 @@ use turu_bot::skills::{self as bot_skills, AdvancedSkill, CLASS_USE_MODES, Skill
 /// How long Reset Sets stays armed for its second click.
 const CONFIRM_FOR: Duration = Duration::from_secs(4);
 
-/// The saved skill sets by class and mode, for the windows that pick a class's mode (Auto,
-/// CoreBots Options).
-#[derive(Default, Clone)]
-pub struct SkillSets {
-    classes: BTreeMap<String, Vec<String>>,
-}
-
-impl SkillSets {
-    pub fn load() -> Self {
-        Self::from_sets(&bot_skills::load_advanced_skills(&crate::turu::bot().paths))
-    }
-
-    fn from_sets(sets: &[AdvancedSkill]) -> Self {
-        let mut classes: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for set in sets {
-            classes
-                .entry(set.class_name.clone())
-                .or_default()
-                .push(set.mode.clone());
-        }
-        for modes in classes.values_mut() {
-            modes.sort();
-            modes.dedup();
-        }
-        Self { classes }
-    }
-
-    pub fn classes(&self) -> impl Iterator<Item = &String> {
-        self.classes.keys()
-    }
-
-    pub fn modes(&self, class: &str) -> Vec<String> {
-        self.classes.get(class).cloned().unwrap_or_default()
-    }
-
-    /// The saved modes of `class`, sorted; the class name is matched ignoring case, since
-    /// the inventory and the skill file may spell it differently.
-    pub fn modes_for(&self, class: &str) -> Vec<String> {
-        self.classes
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(class))
-            .map(|(_, modes)| modes.clone())
-            .unwrap_or_default()
-    }
-
-    /// VibeSkua `EnsureSkillEntryExists`: gives `class` the default `Base` set in the user's
-    /// file when it has none (saved at once), and lists it here.
-    pub fn ensure(&mut self, class: &str) {
-        match bot_skills::ensure_skill_set(&crate::turu::bot().paths, class) {
-            Ok(true) => {
-                tracing::info!("Added a Base skill set for {class}");
-                self.classes.entry(class.to_owned()).or_default().push("Base".into());
-            }
-            Ok(false) => {}
-            Err(e) => tracing::warn!("Couldn't add a skill set for {class}: {e}"),
-        }
-    }
-}
+pub use crate::models::auto::SkillSets;
 
 /// The "Create / Edit Skill" tab (VibeSkua `AdvancedSkillEditorViewModel`).
 struct Editor {
