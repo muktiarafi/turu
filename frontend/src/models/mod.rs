@@ -20,6 +20,7 @@ pub mod army;
 pub mod auto;
 pub mod bank;
 pub mod butler;
+pub mod console;
 pub mod core_bots;
 pub mod cosmetics;
 pub mod drops;
@@ -493,6 +494,13 @@ pub fn register() {
         "grabber",
         "do",
         Box::new(|bot, body| grabber::act(bot, &text(body, "action")?, body)),
+    );
+
+    add_model("console", Box::new(|bot| to_json(&console::view(bot))));
+    add_model_action(
+        "console",
+        "do",
+        Box::new(|bot, body| console::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("junk", Box::new(|bot| to_json(&junk::view(bot))));

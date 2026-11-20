@@ -1,70 +1,37 @@
 //! Diagnostics > Console: runs a TypeScript snippet with `bot` in scope (VibeSkua's C# snippet
 //! console). It runs on a bot thread that counts as a script thread, so Stop interrupts it, and
 //! its `bot.log` lines, its result (the last expression's value, as JSON) or its error show
-//! below the editor.
+//! below the editor. The run and its output are the tab's (`models::console`).
 
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::console::{self as model, LineKind};
 use egui::{
     Align, Color32, Context, Frame, Key, Label, Layout, Margin, Modifiers, RichText, ScrollArea, Stroke, TextEdit,
     TextWrapMode, Ui, vec2,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use turu_bot::script::{self, RunError};
 
-/// VibeSkua's default snippet, in TypeScript.
-const DEFAULT_CODE: &str = "bot.log(\"Test\");";
-
-/// Most output lines kept; older ones are dropped (a snippet may log in a loop).
-const MAX_OUTPUT: usize = 1000;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Entry {
-    /// "› code": a run started.
-    Run,
-    Log,
-    Value,
-    Error,
-    Stopped,
-}
-
-impl Entry {
-    fn color(self) -> Color32 {
-        match self {
-            Self::Run => MUTED,
-            Self::Log => TEXT,
-            Self::Value => SUCCESS,
-            Self::Error => DANGER,
-            Self::Stopped => WARNING,
-        }
+fn color(kind: LineKind) -> Color32 {
+    match kind {
+        LineKind::Run => MUTED,
+        LineKind::Log => TEXT,
+        LineKind::Value => SUCCESS,
+        LineKind::Error => DANGER,
+        LineKind::Stopped => WARNING,
     }
 }
 
-type Output = Arc<Mutex<Vec<(Entry, String)>>>;
-
-fn push(output: &Output, entry: Entry, text: impl Into<String>) {
-    let mut output = output.lock().unwrap_or_else(|e| e.into_inner());
-    if output.len() >= MAX_OUTPUT {
-        output.remove(0);
-    }
-    output.push((entry, text.into()));
-}
-
+/// The editor is the window's; the output and the run are the tab's (`models::console`, shared
+/// with a native page).
 pub struct ConsoleWindow {
     code: String,
-    output: Output,
-    /// From Run until the bot thread is done (the engine's flag is set a moment later).
-    running: Arc<AtomicBool>,
 }
 
 impl Default for ConsoleWindow {
     fn default() -> Self {
         Self {
-            code: DEFAULT_CODE.to_owned(),
-            output: Output::default(),
-            running: Arc::default(),
+            code: model::DEFAULT_CODE.to_owned(),
         }
     }
 }
@@ -77,7 +44,7 @@ impl ConsoleWindow {
         super::window(ctx, "Console", [700.0, 520.0], 4)
             .open(open)
             .show(ctx, |ui| self.ui(ui));
-        if self.running.load(Ordering::Acquire) {
+        if model::status(&crate::turu::bot()).0 {
             // Log lines and the result arrive from the bot thread.
             ctx.request_repaint_after(Duration::from_millis(100));
         }
@@ -85,9 +52,7 @@ impl ConsoleWindow {
 
     fn ui(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
-        let running = self.running.load(Ordering::Acquire) || bot.scripts.is_snippet_running();
-        let script_active = bot.scripts.status().is_active();
-        let auto = super::auto::running(&bot);
+        let (running, can) = model::status(&bot);
 
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -132,7 +97,7 @@ impl ConsoleWindow {
                 super::native_field::follow(ui, &mut response, &mut self.code, "bot.player.gold", kind);
             });
 
-        let can_run = !running && !script_active && !auto && !self.code.trim().is_empty();
+        let can_run = can.enabled && !self.code.trim().is_empty();
         ui.horizontal(|ui| {
             if widgets::button(ui, "Clear", Kind::Normal, !self.code.is_empty(), vec2(80.0, 28.0), "").clicked() {
                 self.code.clear();
@@ -141,34 +106,31 @@ impl ConsoleWindow {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if running {
                     if widgets::button(ui, "Stop", Kind::Danger, true, vec2(80.0, 28.0), "").clicked() {
-                        script::stop_snippet(&bot);
+                        model::stop(&bot);
                     }
                 } else {
-                    let tip = if script_active {
-                        "Stop the script first"
-                    } else if auto {
-                        "Stop Auto Attack/Hunt first"
-                    } else {
+                    let tip = if can.enabled {
                         "Write a snippet first"
+                    } else {
+                        can.reason.as_str()
                     };
                     run |= widgets::button(ui, "Run", Kind::Primary, can_run, vec2(80.0, 28.0), tip).clicked();
                 }
             });
         });
         if run && can_run {
-            self.run();
+            let _ = model::run(&bot, &self.code);
         }
 
-        let output = self.output.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let output = model::output(&bot);
         ui.horizontal(|ui| {
             widgets::section_label(ui, "OUTPUT");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if widgets::small_button(ui, "Clear", !output.is_empty()).clicked() {
-                    self.output.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                    model::clear(&bot);
                 }
                 if widgets::small_button(ui, "Copy", !output.is_empty()).clicked() {
-                    let text: Vec<&str> = output.iter().map(|(_, text)| text.as_str()).collect();
-                    ui.ctx().copy_text(text.join("\n"));
+                    ui.ctx().copy_text(model::copy_text(&bot));
                 }
             });
         });
@@ -192,37 +154,12 @@ impl ConsoleWindow {
                         }
                         for (entry, text) in &output {
                             ui.add(
-                                Label::new(RichText::new(text).monospace().color(entry.color()))
+                                Label::new(RichText::new(text).monospace().color(color(*entry)))
                                     .wrap_mode(TextWrapMode::Extend)
                                     .selectable(true),
                             );
                         }
                     });
             });
-    }
-
-    /// Runs the snippet on a bot thread of the active tab.
-    fn run(&mut self) {
-        let code = self.code.clone();
-        let first = code.trim().lines().next().unwrap_or_default();
-        let more = if code.trim().lines().nth(1).is_some() {
-            " …"
-        } else {
-            ""
-        };
-        push(&self.output, Entry::Run, format!("› {first}{more}"));
-        self.running.store(true, Ordering::Release);
-        let (output, running) = (self.output.clone(), self.running.clone());
-        crate::turu::spawn_action("Console", move |bot| {
-            let sink = output.clone();
-            let result = script::run_snippet(bot, &code, move |line| push(&sink, Entry::Log, line));
-            match result {
-                Ok(value) => push(&output, Entry::Value, value),
-                Err(RunError::Stopped) => push(&output, Entry::Stopped, "Stopped"),
-                Err(RunError::Failed(error)) => push(&output, Entry::Error, error),
-            }
-            running.store(false, Ordering::Release);
-            Ok(())
-        });
     }
 }
