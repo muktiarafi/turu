@@ -816,7 +816,9 @@ script's message box and options request.
   opening filled and Back, Remove, Clear's question (cancelled), Full window; the
   FastTravels.json the check made (there was none) was removed. A travel starts on the caller's
   guard as Loadouts' work does (tested under a held one), and the egui form stops editing on
-  opening unless its row still has the name it took. Not checked: travelling (a tap on a
+  opening unless its row still has the name it took. With the keyboard up only the field typed in
+  stays (the search or the room number); checked editing the room number (set back). Not
+  checked: travelling (a tap on a
   destination), the private room on a travel, a list changed in the other shell.
 * **Butler** (2026-11-20): Butler's state is the bot's (`bot.butler`), so `models::butler` keeps
   per tab only the last outcome and the roster as read (once a second), and gives the header, each
@@ -826,8 +828,12 @@ script's message box and options request.
   above). The native page reuses Game Options' `OptionRow`. Checked on the emulator, layout only
   as the owner chose: the roster with one account, Settings (one switch on and back off, read in
   butler.json; the file the check made, there was none, removed), Log empty, Send to player's
-  dialog (cancelled), font scale 1.3, Full window with its settings drawn from the rows. Not
-  checked: Follow, Summon, Summon all, Release, Send to player (they move characters), the log
+  dialog (cancelled), font scale 1.3, the keyboard up on Goto delay (the header and segments step
+  aside), Full window with its settings drawn from the rows (Leech mode on and off, read in
+  butler.json). Summon and Release call `butler::summon` and `release`, not the toggle, so a tap
+  on a view a tick old can't undo itself (tested); Follow is refused unless the row's Follow is
+  enabled now; the recent targets (a file) and the log lines are read with the roster and by the
+  log's version, not on each view. Not checked: Follow, Summon, Summon all, Release, Send to player (they move characters), the log
   with lines, Copy and Save.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
@@ -877,6 +883,9 @@ Travel and Butler (all done).
   and with the keyboard up. The shell's look is `ShellTheme.kt` and docs/UI.md's pass, not
   DESIGN.md (the web monitor's).
 * **Commits**: one per model, page and docs, without asking; never push or open the PR unasked.
+* **Layout-only checks for pages that move a character** (2026-11-20): Fast Travel's travel and
+  Butler's Follow, Summon and Send to player aren't pressed on the emulator's real accounts; the
+  pages, forms, dialogs and states are checked, and the rest listed as not checked.
 
 **Patterns added since Army Control**: a model action may answer data (`Ok(json!(...))`), which
 `ModelClient.act`'s `answer` hands the shell (Stats' Export gives the CSV, repo's `launch` whether
@@ -899,7 +908,14 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    Kotlin: no two views may have an enum of the same name (hence `scheduler::Tint` beside
    `repo::Tone`; Army reuses `Tint`). `view()` runs on every `/events` tick (250 ms): nothing slow
    in it unthrottled.
-2. **The egui window draws from it**, in the same commit, so both shells say the same.
+2. **The egui window draws from it**, in the same commit, so both shells say the same. Two rules
+   learnt the hard way (2026-11-20): **never lock the model's state twice on one thread**: an
+   egui window that holds the `PerTab` guard for its frame calls `State` methods on that guard,
+   never a free function that locks again (a std mutex taken twice never returns; Loadouts and
+   Fast Travel hung on their buttons until this, and each has a test calling under a held guard);
+   and **keep what the window's open and close did** (read the file again, reset the pick, drop
+   a pending question, forget a stale edit), since a list the other shell changed meanwhile makes
+   a kept index point at another row.
 3. **The link**: a `NativeScreen` variant (`frontend/src/shell.rs`); in `gui/turu/mod.rs` the
    window's key in `open_now` and a bounce (`open_shell_screen`) unless `kept` (a per-process
    window, Army, also unless its egui window is open).
