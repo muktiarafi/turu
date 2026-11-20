@@ -43,7 +43,7 @@ import com.muktiarafi.turu.models.Status
 class RailActions(
     val open: (Page) -> Unit,
     val bank: () -> Unit,
-    /** One of the slot's egui windows (Army Control). */
+    /** One of the slot's egui windows (the Update window). */
     val window: (String) -> Unit,
     val scripts: ScriptsPanel,
 )
@@ -80,7 +80,7 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
     val entries = listOfNotNull(
         Entry("Scripts", RailIcons.Script, 5, Page.Scripts) { actions.open(Page.Scripts) },
         Entry("Logs", RailIcons.Logs, 3, Page.Logs) { actions.open(Page.Logs) },
-        Entry("Army", RailIcons.Army, 6, null) { actions.window("army") },
+        Entry("Army", RailIcons.Army, 6, Page.Army) { actions.open(Page.Army) },
         Entry("More", Icons.Rounded.Menu, 0, Page.More) { actions.open(Page.More) },
         Entry("Auto", RailIcons.Auto, 1, Page.Auto, badge = if (auto?.running == true) Turu.Success else null) {
             actions.open(Page.Auto)

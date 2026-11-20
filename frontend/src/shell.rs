@@ -495,6 +495,8 @@ pub enum NativeScreen {
     CoreBots,
     /// Scripts > Scheduler.
     Scheduler,
+    /// Army > Army Control.
+    Army,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

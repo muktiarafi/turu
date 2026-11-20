@@ -83,13 +83,14 @@ class TabActions(
     val appOptions: AppOptionsPanel,
     val coreBots: CoreBotsPanel,
     val scheduler: SchedulerPanel,
+    val army: ArmyPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
 private val PanelWidth = 320.dp
 
 /** Pages whose rows need more room than a list of tabs. */
-private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler)
+private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -245,6 +246,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
                     Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
                     Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = { state.close() }) { actions.window("scheduler") }
+                    Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }

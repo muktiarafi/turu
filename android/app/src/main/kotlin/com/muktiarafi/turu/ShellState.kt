@@ -90,6 +90,9 @@ sealed interface Page {
     /** Scripts > Scheduler. */
     data object Scheduler : Page
 
+    /** Army > Army Control. */
+    data object Army : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

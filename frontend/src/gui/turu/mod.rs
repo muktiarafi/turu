@@ -347,6 +347,8 @@ impl TuruUi {
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
         grid_overlay::show(ctx);
+        // Army Control is one per process, open while its egui window is (a Full window stays).
+        let army_open = self.army_open;
         let tab = self.active();
         hotkeys::run_pressed(ctx, tab);
         let w = &mut tab.windows;
@@ -374,6 +376,7 @@ impl TuruUi {
             ("application_options", w.application_options),
             ("core_bots", w.core_bots),
             ("scheduler", w.scheduler),
+            ("army", w.army),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -406,6 +409,9 @@ impl TuruUi {
         }
         if w.scheduler && !kept(w, "scheduler") && crate::turu::open_shell_screen(NativeScreen::Scheduler) {
             w.scheduler = false;
+        }
+        if w.army && !army_open && !kept(w, "army") && crate::turu::open_shell_screen(NativeScreen::Army) {
+            w.army = false;
         }
         tab.script_loader.show(
             ctx,
