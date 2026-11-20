@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Console | decided when reached; egui from More until then |
+| Tools & Helpers (Loader, Grabber, Junk Items), Notify Drop, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1185,6 +1185,17 @@ above, and why:
   another tab) drops the draft, unless the script waits for it: then the slot's own window shows
   it again, and in a tab not on screen it waits in that tab's picture until the tab is shown. With
   the keyboard up the filter steps aside unless it's the field typed in.
+* **Runtime** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Combat and however the
+  slot opens it, as segments with their counts (Drops 2, Quests 1, Boosts with how many are on);
+  the bar says "Picking drops · Boosting" in green while either runs, whichever part shows. Drops:
+  Pick drops (tinted while on, saying what it does), the pickup list (a tap checks a row; Remove N
+  in the heading), then Options: Reject else, Accept AC drops, Interval (ms, sent as typed, empty
+  is 0) and Drop notifications with Open (Notify Drop, still the slot's window). Quests: what
+  registering does, the registered quests ("1234 (Reward: 5678)") with Remove N. Boosts: Use
+  boosts, the four boosts with their item ("Item 12345", or none found yet), Search inventory and
+  Search bank ("Searching…" while one runs). The add fields sit at the foot: a drop name or IDs
+  (`|` between several), or quest IDs and an optional reward; a quest typo stays with the error.
+  ⋮: Full window. With the keyboard up the segments step aside.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
