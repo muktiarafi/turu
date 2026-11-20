@@ -523,6 +523,8 @@ pub enum NativeScreen {
     Grabber,
     /// Tools & Helpers > Junk Items.
     JunkItems,
+    /// Diagnostics > Console.
+    Console,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }

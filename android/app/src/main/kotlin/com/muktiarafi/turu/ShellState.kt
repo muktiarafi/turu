@@ -132,6 +132,9 @@ sealed interface Page {
     /** Tools & Helpers > Junk Items. */
     data object JunkItems : Page
 
+    /** Diagnostics > Console. */
+    data object Console : Page
+
     /** Scripts > Edit Script Options (also when a script asks for its options). */
     data object ScriptOptions : Page
 

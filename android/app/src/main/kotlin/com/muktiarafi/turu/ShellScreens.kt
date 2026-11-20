@@ -60,6 +60,7 @@ class ShellScreens(private val activity: TuruActivity) {
         loader = LoaderPanel(),
         grabber = GrabberPanel(),
         junk = JunkPanel(),
+        console = ConsolePanel(),
         scriptOptions = ScriptOptionsPanel(),
     )
 
@@ -144,6 +145,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "loader" -> open(Page.Loader)
             "grabber" -> open(Page.Grabber)
             "junk_items" -> open(Page.JunkItems)
+            "console" -> open(Page.Console)
             "script_options" -> open(Page.ScriptOptions)
         }
     }
