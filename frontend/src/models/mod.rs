@@ -32,6 +32,7 @@ pub mod logs;
 pub mod notifications;
 pub mod rail;
 pub mod repo;
+pub mod runtime;
 pub mod scheduler;
 pub mod script_options;
 pub mod scripts;
@@ -481,6 +482,13 @@ pub fn register() {
         "butler",
         "do",
         Box::new(|bot, body| butler::act(bot, &text(body, "action")?, body)),
+    );
+
+    add_model("runtime", Box::new(|bot| to_json(&runtime::view(bot))));
+    add_model_action(
+        "runtime",
+        "do",
+        Box::new(|bot, body| runtime::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("fast-travel", Box::new(|bot| to_json(&fast_travel::view(bot))));
