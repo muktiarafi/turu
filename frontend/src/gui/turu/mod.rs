@@ -387,6 +387,7 @@ impl TuruUi {
             ("cosmetics", w.cosmetics),
             ("runtime", w.runtime),
             ("notify_drop", w.notify_drop),
+            ("loader", w.loader),
             ("script_options", w.script_options),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
@@ -453,6 +454,9 @@ impl TuruUi {
         }
         if w.notify_drop && !kept(w, "notify_drop") && crate::turu::open_shell_screen(NativeScreen::NotifyDrop) {
             w.notify_drop = false;
+        }
+        if w.loader && !kept(w, "loader") && crate::turu::open_shell_screen(NativeScreen::Loader) {
+            w.loader = false;
         }
         // Only from the tab on screen: the native page shows that tab's, and a script waiting in
         // another tab waits in that tab's picture until it's shown.

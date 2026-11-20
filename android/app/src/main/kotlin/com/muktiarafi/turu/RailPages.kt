@@ -295,6 +295,7 @@ private fun nativePage(window: String): Page? = when (window) {
     "cosmetics" -> Page.Cosmetics
     "runtime" -> Page.Runtime
     "notify_drop" -> Page.NotifyDrop
+    "loader" -> Page.Loader
     "script_options" -> Page.ScriptOptions
     "logs" -> Page.Logs
     else -> null

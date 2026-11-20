@@ -517,6 +517,8 @@ pub enum NativeScreen {
     Runtime,
     /// Combat > Runtime > Notifications.
     NotifyDrop,
+    /// Tools & Helpers > Loader.
+    Loader,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }

@@ -57,6 +57,7 @@ class ShellScreens(private val activity: TuruActivity) {
         cosmetics = CosmeticsPanel(),
         runtime = RuntimePanel(),
         notifyDrop = NotifyDropPanel(),
+        loader = LoaderPanel(),
         scriptOptions = ScriptOptionsPanel(),
     )
 
@@ -138,6 +139,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "cosmetics" -> open(Page.Cosmetics)
             "runtime" -> open(Page.Runtime)
             "notify_drop" -> open(Page.NotifyDrop)
+            "loader" -> open(Page.Loader)
             "script_options" -> open(Page.ScriptOptions)
         }
     }
