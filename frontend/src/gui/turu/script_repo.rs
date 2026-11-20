@@ -8,13 +8,17 @@
 use super::files;
 use super::theme::{DANGER, MUTED, SUCCESS, TRACK, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::repo::{
+    self as model, Allowed, Query, Ran, Rules, Sort, Tone, Work, delete_text, outdated_count, rules, scope_label,
+    wait_tip,
+};
 use egui::{
     Align, Button, ComboBox, Context, CornerRadius, FontId, Key, Layout, Modal, Rect, RichText, ScrollArea, Sense, Ui,
     pos2, vec2,
 };
 use std::path::PathBuf;
 use std::time::Duration;
-use turu_bot::repo::{self, Entry, Scope, Snapshot, Status};
+use turu_bot::repo::{Entry, Scope, Snapshot, Status};
 
 /// One row of the list, at least: the text takes 69 px with Turu's theme, plus the margins
 /// ([`ROW_MARGIN`] above and below). A row whose text needs more makes every row taller.
@@ -66,13 +70,6 @@ impl Header {
 /// A [`Header::Compact`] row at least: name, then badge and description (51 px with Turu's
 /// theme), plus the margins; it fits a 48-point touch button too.
 const COMPACT_ROW_HEIGHT: f32 = 60.0;
-
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-enum Sort {
-    #[default]
-    Name,
-    Added,
-}
 
 /// What the list was filtered for; it is worked out again when this changes.
 #[derive(Clone, PartialEq, Default)]
@@ -139,53 +136,6 @@ struct Pick {
     answer: crate::platform::Answer,
 }
 
-/// What the rows may do now, before asking whether a script is ready ([`Rules::for_row`]).
-struct Rules {
-    /// A repo task runs: only ready scripts can be loaded or started.
-    busy: bool,
-    start: bool,
-    load: bool,
-    queue: bool,
-    /// Why Start or Load can't (another script runs, ...).
-    reason: String,
-    /// Why a script that needs a download waits ([`wait_tip`]).
-    wait: String,
-    queue_tip: String,
-}
-
-/// What one row's buttons may do, and why not.
-struct Allowed {
-    /// Pick (in [`ScriptRepoWindow::pick`]'s mode): a script that needs a download waits
-    /// while a task runs.
-    pick: bool,
-    start: bool,
-    load: bool,
-    queue: bool,
-    run_tip: String,
-    queue_tip: String,
-}
-
-impl Rules {
-    /// While a task runs, a script that's downloaded and current still loads and starts
-    /// (`ScriptRepo::ready`); one that needs a download waits.
-    fn for_row(&self, path: &str) -> Allowed {
-        let can_run = !self.busy || crate::turu::script_repo().ready(path).is_some();
-        let run_tip = if !can_run {
-            format!("{} (this script needs a download first)", self.wait)
-        } else {
-            self.reason.clone()
-        };
-        Allowed {
-            pick: can_run,
-            start: self.start && can_run,
-            load: self.load && can_run,
-            queue: self.queue,
-            run_tip,
-            queue_tip: self.queue_tip.clone(),
-        }
-    }
-}
-
 /// How [`ScriptRepoWindow::row`] lays a row out.
 #[derive(Clone, Copy)]
 struct RowStyle {
@@ -196,16 +146,6 @@ struct RowStyle {
     /// The top search hit: Start has the accent.
     top_hit: bool,
     min_height: f32,
-}
-
-/// How a row's work went at once.
-enum Ran {
-    /// It runs as the repo's task.
-    Spawned,
-    /// Done at once (a ready script); whether it worked.
-    Done(bool),
-    /// Another task runs.
-    Refused,
 }
 
 /// The key that, with Enter in the search box, starts the top hit.
@@ -391,7 +331,7 @@ impl ScriptRepoWindow {
             }
         }
 
-        let rules = rules(snapshot);
+        let rules = rules(&crate::turu::bot(), snapshot);
         if let Some(start) = enter
             && !self.search.trim().is_empty()
             && let Some(&top) = self.filtered.first()
@@ -639,54 +579,20 @@ impl ScriptRepoWindow {
         if self.filter.as_ref() == Some(&filter) {
             return;
         }
-        let entries = &snapshot.entries;
-        let mut folders: Vec<String> = entries
-            .iter()
-            .filter(|e| !e.info.library)
-            .filter_map(|e| e.info.category())
-            .map(capitalize)
-            .collect();
-        folders.sort();
-        folders.dedup();
-        self.total = entries.iter().filter(|e| !e.info.library).count();
-        self.categories = vec!["All".into()];
-        self.categories.extend(folders);
-
-        // Libraries (CoreBots, ...) have nothing to run; they come with the scripts importing them.
-        let mut rows: Vec<(usize, u8)> = entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| !e.info.library)
-            .filter(|(_, e)| self.category == "All" || repo::in_category(&e.info, &self.category))
-            .filter(|(_, e)| !self.pinned_only || e.pinned)
-            .filter(|(_, e)| !self.local_only || e.status == Status::Local)
-            .filter_map(|(i, e)| repo::search_rank(&e.info, &self.search, self.scope).map(|rank| (i, rank)))
-            .collect();
-        // VibeSkua: pinned first, then the sort; the search rank orders what that gives.
-        rows.sort_by(|&(a, _), &(b, _)| {
-            let (a, b) = (&entries[a], &entries[b]);
-            b.pinned.cmp(&a.pinned).then_with(|| {
-                let by_name = || a.info.name.to_lowercase().cmp(&b.info.name.to_lowercase());
-                match self.sort {
-                    Sort::Name if self.descending => by_name().reverse(),
-                    Sort::Name => by_name(),
-                    // VibeSkua `CompareScripts`: scripts without a date go last either way, and
-                    // scripts of the same date are in name order.
-                    Sort::Added => {
-                        let (a_dated, b_dated) = (!a.info.added.is_empty(), !b.info.added.is_empty());
-                        b_dated.cmp(&a_dated).then_with(|| {
-                            let dates = a.info.added.cmp(&b.info.added);
-                            if self.descending { dates.reverse() } else { dates }
-                        })
-                    }
-                    .then_with(by_name),
-                }
-            })
-        });
-        if !self.search.trim().is_empty() {
-            rows.sort_by_key(|&(_, rank)| rank);
-        }
-        self.filtered = rows.into_iter().map(|(i, _)| i).collect();
+        // What the list shows: the repo model's search (`crate::models::repo`).
+        let query = Query {
+            search: self.search.clone(),
+            scope: self.scope,
+            category: self.category.clone(),
+            pinned_only: self.pinned_only,
+            local_only: self.local_only,
+            sort: self.sort,
+            descending: self.descending,
+        };
+        let found = model::filter(&snapshot.entries, &query);
+        self.total = found.total;
+        self.categories = found.categories;
+        self.filtered = found.rows;
         self.filter = Some(filter);
     }
 
@@ -830,7 +736,7 @@ impl ScriptRepoWindow {
     /// Starts `work` for the script at `path`, its row showing a spinner until it's done; a
     /// Start that worked brings up the Script Loader.
     fn run(&mut self, path: &str, work: Work) {
-        match run(path, work) {
+        match model::run(&crate::turu::bot(), path, work) {
             Ran::Spawned => self.working = Some((path.to_owned(), work == Work::Start)),
             Ran::Done(worked) => self.open_loader |= worked && work == Work::Start,
             Ran::Refused => {}
@@ -1144,153 +1050,11 @@ fn reason_line(ui: &mut Ui, text: &str) {
 }
 
 /// What the rows can do now, and the reasons they can't (as tooltips, or in the menu).
-fn rules(snapshot: &Snapshot) -> Rules {
-    let bot = crate::turu::bot();
-    let busy = snapshot.busy.is_some();
-    let active = bot.scripts.status().is_active();
-    let auto = super::auto::running(&bot);
-    let snippet = bot.scripts.is_snippet_running();
-    let queue_running = bot.scheduler.is_running();
-    let wait = wait_tip(snapshot);
-    let reason = if active {
-        "Stop the script first"
-    } else if snippet {
-        "Stop the Console snippet first"
-    } else {
-        "Stop Auto Attack/Hunt first"
-    };
-    Rules {
-        busy,
-        start: !active && !auto && !snippet,
-        load: !active,
-        queue: !busy && !queue_running,
-        reason: reason.into(),
-        queue_tip: if busy {
-            wait.clone()
-        } else {
-            "Cannot add scripts while the playlist is running".into()
-        },
-        wait,
-    }
-}
-
-/// Why the buttons wait: one task runs at a time, and it can be cancelled.
-/// What Update all would update. Libraries (CoreBots, ...) count although the list hides them:
-/// an update that only changes CoreBots must still enable the button.
-fn outdated_count(entries: &[Entry]) -> usize {
-    entries.iter().filter(|e| e.status == Status::Outdated).count()
-}
-
-fn wait_tip(snapshot: &Snapshot) -> String {
-    match &snapshot.busy {
-        Some(progress) => format!("Wait for {} to finish, or Cancel it", progress.task),
-        None => String::new(),
-    }
-}
-
-/// The scope dropdown's words: "All fields" rather than a second "All".
-fn scope_label(scope: Scope) -> &'static str {
-    match scope {
-        Scope::All => "All fields",
-        other => other.label(),
-    }
-}
-
-/// What Delete's confirmation says for a script of `status`.
-fn delete_text(status: Status) -> &'static str {
-    match status {
-        Status::Local => {
-            "This is your own script: the repository has no copy of it. The file moves to \
-             scripts-backup in the data folder, where you can get it back."
-        }
-        Status::Removed => {
-            "The repository no longer has this script, so this is the only copy. The file moves to \
-             scripts-backup in the data folder, where you can get it back."
-        }
-        Status::Modified => {
-            "Your edits go with it. The file moves to scripts-backup in the data folder, where you \
-             can get it back; the repository's version can be downloaded again."
-        }
-        _ => {
-            "The file moves to scripts-backup in the data folder; you can download it again from \
-             the repository."
-        }
-    }
-}
-
 /// On a touch screen, a menu's or drop-down's rows are about 44 points high.
 fn touch_rows(ui: &mut Ui) {
     if widgets::touch() {
         ui.spacing_mut().button_padding.y = 14.0;
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Work {
-    Start,
-    Load,
-    Queue,
-    Download,
-    /// Download over the user's edits.
-    Replace,
-}
-
-/// Runs `work` for the script at `path`: a Load or Start of a ready script at once (it needs
-/// no download, so it doesn't wait for a task), the rest on the repo's thread (one task at a
-/// time).
-fn run(path: &str, work: Work) -> Ran {
-    let bot = crate::turu::bot();
-    let repo = crate::turu::script_repo();
-    if matches!(work, Work::Start | Work::Load)
-        && let Some(local) = repo.ready(path)
-    {
-        bot.scripts.load(&local);
-        bot.log(format!("Loaded script {}", local.display()));
-        let result = if work == Work::Start {
-            turu_bot::script::start(&bot)
-                .map(|()| format!("Started {path}."))
-                .map_err(|e| format!("Start failed: couldn't start the script: {e}"))
-        } else {
-            Ok(format!("Loaded {path}."))
-        };
-        let worked = result.is_ok();
-        let (message, failed) = match result {
-            Ok(message) => (message, false),
-            Err(message) => (message, true),
-        };
-        repo.set_message(message, failed);
-        return Ran::Done(worked);
-    }
-    let path = path.to_owned();
-    let spawned = match work {
-        // Downloads the script (and what it imports), then loads it in the active tab and, for
-        // Start, starts it.
-        Work::Start | Work::Load => {
-            let start = work == Work::Start;
-            repo.spawn(if start { "Start" } else { "Load" }, move |repo| {
-                let local = repo.ensure(&path)?;
-                bot.scripts.load(&local);
-                bot.log(format!("Loaded script {}", local.display()));
-                if start {
-                    turu_bot::script::start(&bot).map_err(|e| format!("couldn't start the script: {e}"))?;
-                    return Ok(format!("Started {path}."));
-                }
-                Ok(format!("Loaded {path}."))
-            })
-        }
-        // Scheduler's Queue (VibeSkua `QueueScript`): downloads the script if needed, then adds
-        // it to the active tab's playlist.
-        Work::Queue => repo.spawn("Queue", move |repo| {
-            let local = repo.ensure(&path)?;
-            bot.scheduler.add(&local)?;
-            Ok(format!("Queued {path}."))
-        }),
-        Work::Download | Work::Replace => repo.spawn("Download", move |repo| {
-            let count = repo.download(&[path], work == Work::Replace)?;
-            Ok(format!("Downloaded {count} files."))
-        }),
-    };
-    if spawned { Ran::Spawned } else { Ran::Refused }
 }
 
 /// A row's left side: name, badges and path; the description; the tags. Returns its height.
@@ -1392,14 +1156,15 @@ fn chip(ui: &mut Ui, galley: std::sync::Arc<egui::Galley>, width: f32) -> egui::
 
 /// VibeSkua's "Update" and "Local" badges, and Turu's Modified and Removed: label, colour and
 /// what it means.
+/// A status's badge (`model::badge`) in Turu's colours: words, colour, meaning.
 fn badge(status: Status) -> Option<(&'static str, egui::Color32, &'static str)> {
-    Some(match status {
-        Status::Outdated => ("Update", WARNING, "The repository has a newer version"),
-        Status::Modified => ("Modified", WARNING, "Edited here: updates keep it"),
-        Status::Local => ("Local", MUTED, "Your own script, not in the repository"),
-        Status::Removed => ("Removed", MUTED, "No longer in the repository"),
-        Status::UpToDate => ("Downloaded", SUCCESS, "Up to date"),
-        Status::NotDownloaded => return None,
+    model::badge(status).map(|(label, meaning, tone)| {
+        let color = match tone {
+            Tone::Success => SUCCESS,
+            Tone::Warning => WARNING,
+            Tone::Muted => MUTED,
+        };
+        (label, color, meaning)
     })
 }
 
@@ -1415,14 +1180,6 @@ fn empty_state(ui: &mut Ui, title: &str, text: &str) {
         ui.label(RichText::new(title).strong().size(14.0));
         ui.label(RichText::new(text).color(MUTED));
     });
-}
-
-fn capitalize(folder: &str) -> String {
-    let mut chars = folder.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

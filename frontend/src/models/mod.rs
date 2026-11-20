@@ -21,6 +21,7 @@ pub mod game_options;
 pub mod jump;
 pub mod logs;
 pub mod rail;
+pub mod repo;
 pub mod scripts;
 pub mod tab_state;
 
@@ -234,6 +235,42 @@ pub fn register() {
         "start-quick",
         Box::new(|bot, body| rail::start_quick(bot, &text(body, "path")?).and_then(|()| done())),
     );
+
+    add_model("repo", Box::new(|bot| to_json(&repo::view(bot))));
+    add_model_action(
+        "repo",
+        "query",
+        Box::new(|bot, body| repo::set_query(bot, body).and_then(|()| done())),
+    );
+    for (action, work) in [
+        ("start", repo::Work::Start),
+        ("load", repo::Work::Load),
+        ("queue", repo::Work::Queue),
+        ("download", repo::Work::Download),
+        ("replace", repo::Work::Replace),
+    ] {
+        add_model_action(
+            "repo",
+            action,
+            Box::new(move |bot, body| repo::work(bot, &text(body, "path")?, work).and_then(|()| done())),
+        );
+    }
+    add_model_action(
+        "repo",
+        "pin",
+        Box::new(|_, body| {
+            let pinned = body.get("pinned").and_then(Value::as_bool).ok_or("pinned is missing")?;
+            repo::set_pinned(&text(body, "path")?, pinned);
+            done()
+        }),
+    );
+    for task in ["update-all", "download-all", "refresh", "cancel"] {
+        add_model_action(
+            "repo",
+            task,
+            Box::new(move |_, _| repo::task(task).and_then(|()| done())),
+        );
+    }
 
     add_model("game-options", Box::new(|bot| to_json(&game_options::view(bot))));
     add_model_action(
