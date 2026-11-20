@@ -109,3 +109,30 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 * Pull requests run `.github/workflows/ci.yml` (rebased on main, format, clippy, tests) and
   are merged by rebase only: see `CONTRIBUTING.md`.
 * Don't commit unless asked.
+
+## The owner's standing requests
+
+* **UI work follows Impeccable**: load its skill, run `impeccable context --target <file>` once,
+  read its platform reference and craft-floor before editing, `impeccable detect <file>` after,
+  and look at the result (Android: emulator screenshots at font scale 1.0 and 1.3, and with the
+  keyboard up). Its hook is wired but skips every file here (`skipped: native-platform`:
+  PRODUCT.md's platform is `adaptive`); the owner chose to keep it so and check by hand. Don't
+  edit `.impeccable/config.json` to force it. Android's shell looks like `ShellTheme.kt` and
+  docs/UI.md's pass, not DESIGN.md (the web monitor's).
+* **Search Scripts wherever a script is chosen**: every screen that picks a script offers
+  "Search scripts…" opening Search Scripts picking for it, never only the Script Loader's
+  (docs/UI.md, "Search Scripts everywhere a script is chosen"; Android's `ScriptPick`). Not as an
+  Android rail item: one was tried and taken off to keep Jump.
+* **Kotlin uses no deprecated API**, and none is hidden with `@Suppress("DEPRECATION")`: use the
+  AndroidX compat replacement. Gradle prints no `w:` for the files touched.
+* **Made-up player names** in tests, fixtures, examples and docs ("Questwalker"), never the
+  owner's account or character names from logs and screenshots; replace them when copying a
+  packet or log line.
+* **Nothing relogs on a crowded server**: a check script or test plan that relogs names a quiet
+  server, never Twilly (Turu's default relogin server), Artix or Alteon.
+* **The emulator renders on the host GPU**: `emulator -avd turu_api36 -gpu host` (the AVD alone
+  gives llvmpipe, which skews memory and timing); check the "Graphics:" log line.
+* **On the emulator the tabs are the owner's real accounts**: start no script on them unasked,
+  test with made-up accounts and remove them after, and set back any setting or data a check
+  changed (docs/NATIVE_UI_PROPOSAL.md, "Handover", has the details).
+* **Never push or open a pull request unasked.**
