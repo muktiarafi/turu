@@ -143,7 +143,7 @@ pub fn set_picking(bot: &Arc<Bot>, on: bool) {
     if on {
         bot.drops.start(bot);
     } else {
-        crate::turu::spawn_action("Stop drops", |bot| {
+        crate::turu::spawn_action_for(bot.clone(), "Stop drops", |bot| {
             bot.drops.stop();
             Ok(())
         });
@@ -172,7 +172,7 @@ pub fn search(bot: &Arc<Bot>, bank: bool) {
         return;
     }
     let label = if bank { "Search Bank" } else { "Search Inventory" };
-    crate::turu::spawn_action(label, move |bot| {
+    crate::turu::spawn_action_for(bot.clone(), label, move |bot| {
         let result = boosts::set_all_ids(bot, bank);
         flag.store(false, Ordering::Release);
         result
@@ -184,7 +184,7 @@ pub fn set_boosting(bot: &Arc<Bot>, on: bool) {
     if on {
         bot.boosts.start(bot);
     } else {
-        crate::turu::spawn_action("Stop boosts", |bot| {
+        crate::turu::spawn_action_for(bot.clone(), "Stop boosts", |bot| {
             bot.boosts.stop();
             Ok(())
         });
