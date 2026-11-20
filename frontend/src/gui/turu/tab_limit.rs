@@ -1,55 +1,35 @@
 //! The Tab Limit's notice (Turu on Android, Turu Mas: `Platform::limits_tabs`): a new tab asked
 //! for with the tab strip's "+", Army > New Tab or Accounts' "In a tab" while as many tabs are
 //! open as Options > Application > Tab Limit allows isn't opened; this box says why and offers
-//! the setting (or, at the most Turu runs, to close a tab first).
+//! the setting (or, at the most Turu runs, to close a tab first). The state is `models::prompts`',
+//! which a native shell shows instead.
 
 use super::widgets::{self, Kind};
-use crate::turu::{self, TabRequest};
+use crate::models::prompts;
 use egui::{Align, Context, Layout, Modal, vec2};
-use std::sync::atomic::{AtomicBool, Ordering};
 use turu_bot::startup::Startup;
 
-/// The most tabs Options > Application > Tab Limit allows.
-const MAX: i32 = 4;
-
-/// A tab was refused and the box isn't answered yet.
-static REFUSED: AtomicBool = AtomicBool::new(false);
-
-/// The Tab Limit, where the platform limits tabs.
-fn limit() -> Option<usize> {
-    crate::platform::platform()
-        .limits_tabs()
-        .then(|| turu::bot().settings.read().tab_limit.clamp(1, MAX) as usize)
-}
-
-/// As many tabs are open as the Tab Limit allows: the shell's tabs, where this process is one of
-/// them (an Android slot has only its own), else this process's (Turu Mas).
+/// As many tabs are open as the Tab Limit allows.
 pub fn reached() -> bool {
-    let open = turu::shell_tabs().map_or_else(|| turu::tabs().len(), |(tabs, _)| tabs.len());
-    limit().is_some_and(|limit| open >= limit)
+    prompts::tab_limit_reached()
 }
 
 /// Asks for a new tab, unless the Tab Limit is reached: then the notice shows and it's false.
 /// Any thread.
 pub fn open_tab(startup: Startup) -> bool {
-    if reached() {
-        REFUSED.store(true, Ordering::Relaxed);
-        return false;
-    }
-    turu::request_tab(TabRequest::Open(Box::new(startup)))
+    prompts::open_tab(startup)
 }
 
 /// Shows the notice while a refused tab waits for an answer. True when the user picked "Raise
 /// Tab Limit": the caller opens Options > Application at the setting.
 pub fn show(ctx: &Context) -> bool {
-    if !REFUSED.load(Ordering::Relaxed) {
+    if prompts::native_shown() {
         return false;
     }
-    let Some(limit) = limit() else {
-        REFUSED.store(false, Ordering::Relaxed);
+    let Some(limit) = prompts::tab_refused() else {
         return false;
     };
-    let at_most = limit as i32 >= MAX;
+    let (text, at_most) = prompts::tab_limit_text(limit);
     let mut raise = false;
     let mut done = false;
     let size = vec2(0.0, widgets::target(28.0, 48.0));
@@ -57,15 +37,7 @@ pub fn show(ctx: &Context) -> bool {
         ui.set_min_width(300.0);
         ui.set_max_width(420.0);
         ui.heading("Tab limit reached");
-        ui.label(if at_most {
-            format!("{limit} tabs are open, the most Turu runs at once. Close a tab to open another.")
-        } else {
-            format!(
-                "{limit} {} open, as many as your Tab Limit allows. Raise it in Options > Application, \
-                 or close a tab first.",
-                if limit == 1 { "tab is" } else { "tabs are" }
-            )
-        });
+        ui.label(text);
         ui.add_space(4.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if at_most {
@@ -77,7 +49,7 @@ pub fn show(ctx: &Context) -> bool {
         });
     });
     if raise || done || response.should_close() {
-        REFUSED.store(false, Ordering::Relaxed);
+        prompts::answer_tab_refused();
     }
     raise
 }

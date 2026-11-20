@@ -7,6 +7,10 @@ use egui::{Align, Context, Layout, Modal, ScrollArea, vec2};
 
 /// Shows the message box the script waits on, if any, and passes on the answer.
 pub fn show(ctx: &Context) {
+    // A native shell shows it (`models::prompts`).
+    if crate::models::prompts::native_shown() {
+        return;
+    }
     let scripts = &crate::turu::bot().scripts;
     let Some(message_box) = scripts.message_box() else {
         return;

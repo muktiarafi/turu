@@ -490,8 +490,8 @@ fn level_color(level: Level) -> Color32 {
 /// closing the box), No stops following.
 pub fn show_suspend_notice(ctx: &Context) {
     let bot = crate::turu::bot();
-    // One question at a time: the script's own box first.
-    if bot.scripts.message_box().is_some() {
+    // One question at a time: the script's own box first; a native shell shows it itself.
+    if bot.scripts.message_box().is_some() || crate::models::prompts::native_shown() {
         return;
     }
     let Some(notice) = bot.butler.suspend_notice() else {

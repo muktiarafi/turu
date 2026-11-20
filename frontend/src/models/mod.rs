@@ -37,6 +37,7 @@ pub mod loadouts;
 pub mod logs;
 pub mod notifications;
 pub mod notify_drop;
+pub mod prompts;
 pub mod rail;
 pub mod repo;
 pub mod runtime;
@@ -515,6 +516,9 @@ pub fn register() {
         "do",
         Box::new(|bot, body| console::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
+
+    add_model("prompts", Box::new(|bot| to_json(&prompts::view(bot))));
+    add_model_action("prompts", "answer", Box::new(prompts::answer));
 
     add_model("junk", Box::new(|bot| to_json(&junk::view(bot))));
     add_model_action(

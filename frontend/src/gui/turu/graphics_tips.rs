@@ -8,30 +8,13 @@ use egui::{Align, Context, Layout, Modal, vec2};
 
 /// Shows the oldest tip waiting, if any, and passes on the answer.
 pub fn show(ctx: &Context) {
+    if crate::models::prompts::native_shown() {
+        return;
+    }
     let Some(tip) = graphics_tips::pending() else {
         return;
     };
-    let (title, body, hint) = match &tip {
-        Tip::QualityLow { chip, quality } => (
-            "Set Quality to Low for more FPS",
-            format!(
-                "AQW is running on your built-in graphics ({chip}) with Quality set to {quality}, which is \
-                slow on built-in graphics. Open AQW's Options and change Quality to Low: edges are a little \
-                less smooth, but built-in graphics usually run AQW several times faster."
-            ),
-            "Turu won't show this again.",
-        ),
-        Tip::PerformanceMode { chip, .. } => (
-            "Turn on Performance mode?",
-            format!(
-                "AQW is running slower than it should on your built-in graphics ({chip}). Performance mode \
-                draws the game with fewer pixels and stretches it over its area: the picture gets a little \
-                softer, and the game runs faster."
-            ),
-            "It applies to this tab now and to the others when they start again. You can change it any \
-            time in Options > Application. Turu won't ask again.",
-        ),
-    };
+    let (title, body, hint) = crate::models::prompts::tip_texts(&tip);
     let mut answered = false;
     let mut turn_on = false;
     let response = Modal::new(egui::Id::new("turu_graphics_tip")).show(ctx, |ui| {
@@ -55,10 +38,7 @@ pub fn show(ctx: &Context) {
             }
         });
     });
-    if turn_on && let Tip::PerformanceMode { level, .. } = tip {
-        crate::platform::platform().set_performance(level);
-    }
     if answered || response.should_close() {
-        graphics_tips::answered();
+        crate::models::prompts::answer_tip(&tip, turn_on);
     }
 }

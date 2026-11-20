@@ -8,7 +8,7 @@ use super::widgets::{self, Kind, LogView};
 use crate::crash_reports::{self, Report};
 use egui::{Align, Color32, Context, Frame, Layout, Margin, Modal, RichText, ScrollArea, TextStyle, Ui, vec2};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Once};
+use std::sync::Arc;
 use turu_bot::log::{LogBuffer, LogLine};
 
 /// How long Clear can be undone.
@@ -115,7 +115,7 @@ impl LogsWindow {
     }
 
     /// Opens on the Crashes tab with `report` chosen.
-    fn show_report(&mut self, report: &Report) {
+    pub(super) fn show_report(&mut self, report: &Report) {
         self.tab = Tab::Crashes;
         self.crashes.selected = Some(report.path.clone());
         self.crashes.listed_at = None;
@@ -270,20 +270,15 @@ impl Crashes {
     }
 }
 
-/// The reports added since Turu last showed the notice, looked up once per process.
-static UNSEEN: Mutex<Vec<Report>> = Mutex::new(Vec::new());
-static LOOKED: Once = Once::new();
-
 /// "Turu closed unexpectedly" the first time Turu starts after a new crash report, with a way
 /// to the report (Logs > Crashes, where Share is).
 pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWindow) {
-    LOOKED.call_once(|| *UNSEEN.lock().unwrap_or_else(|e| e.into_inner()) = crash_reports::take_unseen());
-    let mut unseen = UNSEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let unseen = crate::models::prompts::unseen_crashes();
     let Some(newest) = unseen.first().cloned() else {
         return;
     };
-    // One box at a time: the script's own first.
-    if crate::turu::bot().scripts.message_box().is_some() {
+    // One box at a time: the script's own first; a native shell shows it itself.
+    if crate::turu::bot().scripts.message_box().is_some() || crate::models::prompts::native_shown() {
         return;
     }
     let more = unseen.len() - 1;
@@ -310,7 +305,7 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
         ["Close", "Show report"],
     );
     if clicked.is_some() || close {
-        unseen.clear();
+        crate::models::prompts::answer_crashes(false);
         if clicked == Some(1) {
             *logs_open = true;
             logs.show_report(&newest);
@@ -332,7 +327,7 @@ pub fn show_crash_upload_question(ctx: &Context) {
     }
     let bot = crate::turu::bot();
     if bot.settings.read().send_crash_reports.is_some()
-        || !UNSEEN.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        || !crate::models::prompts::unseen_crashes().is_empty()
         || bot.scripts.message_box().is_some()
         || !crate::platform::platform().uploads_crash_reports()
     {
