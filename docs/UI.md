@@ -949,7 +949,7 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control | native (L5b; Army Control not built yet) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
 | Tools & Helpers, Combat, Butler, Cosmetics, Notification Center, Console | decided when reached; egui from More until then |
@@ -999,7 +999,7 @@ above, and why:
   Bank, Logs and Update, then Jump and Auto; More never), counting two run controls so starting a
   script moves nothing: the emulator's 411 dp keeps More, Auto and Jump, as the egui rail did.
   Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
-  Army opens Army Control (egui). Bank's reason for opening nothing shows as a toast (a snackbar
+  Army opens Army Control. Bank's reason for opening nothing shows as a toast (a snackbar
   would need the panel open). More (440 dp) is list and detail, so nothing in it needs scrolling
   on the emulator: the menus down the left (Scripts, Options, Tools & Helpers, Combat,
   Diagnostics, Plugins, Army), the one picked on the right, kept while the panel is closed. A row
@@ -1044,10 +1044,25 @@ above, and why:
   selected so typing replaces it, and the keyboard's Done confirms (in landscape it covers the
   dialog's buttons). Script options opens the slot's Script Options window, the panel closing,
   or says why there's nothing to set. Double-click to rename is the egui window's.
+* **Army Control** (L5b, 2026-11-20), a page of the panel (440 dp) from the rail's Army, More >
+  Army and however the slot opens it. Above, a box that checks all or none, the count ("2 of 3
+  selected"), and Groups (an Army > Accounts group's rows, and only those). Then a row per client
+  (every tab, the others read from their own slots): a check box, a dot in its state's colour, the
+  name with "on screen", "tab" or "no window", and on the second line its script (or Auto) and
+  where it is; Start, or Stop while it runs, and a ⋮ of Show its tab, Log in or Log out, Relog,
+  Start or Stop Auto-Attack (with why not), and for a launched client Restart and Close. A tap on
+  the row checks it. Under the rows, who the commands go to ("To all 2 clients · check rows to
+  pick", amber; or the checked names), then Script (Start script, Stop script, This tab's script),
+  Account (Log in, Log out, Relog, Go to house) and Auto-Attack, Quest and Misc options folded,
+  and a last row to the full window for Travel, Gear and a client's logs. Stop script and Log out
+  to every client ask first in a dialog, where the window wants a second click. The last outcome
+  sits at the foot with History. The shell keeps the checked rows, by a key every slot gives the
+  same row, so they stay through a tab switch; the outcomes are the slot's, so the list after a
+  switch is that tab's. Search… and Load file… are the window's.
 * **Full window**: every native page's ⋮ ends with Full window, the slot's egui window (which
   stays egui until it closes), and says what it adds there.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
-  pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
+  pass pins it (as egui does); it is used on the filled buttons (Add/Save, Start queue, Start script) and the count badge.
 
 ## Adding a window
 

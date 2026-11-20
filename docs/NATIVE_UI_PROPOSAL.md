@@ -3,8 +3,8 @@
 Status: **reopened (2026-11-20), in steps. L0 and L5a are done (2026-11-20, on the emulator; "L0's
 answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with Android's bot
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
-and most of L5b are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
-window the pass made native but Army Control. Continuing: "Handover" under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
+window the pass made native, Army Control last. Left before the PR: "Handover" under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -60,10 +60,10 @@ The steps, with their state:
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Planned, any time |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | After the checkpoint |
-| L2 | View models in the client, by feature | After the checkpoint |
+| L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
 | L3 | Questions, dialogs and alerts as events with an ID and an answer | After the checkpoint |
-| L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | After the checkpoint |
-| L5b | Android: navigation and the daily features in Compose | After L2 to L4 |
+| L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
+| L5b | Android: navigation and the daily features in Compose | Built 2026-11-20 (emulator); PR next |
 | L6, L7 | macOS: the game view behind a native window, then the app | After the checkpoint |
 | L8 | Windows and Linux native shells | Not planned: egui |
 | L9 | Turu Mas | Not planned: egui |
@@ -723,7 +723,18 @@ script's message box and options request.
   Script options on a script that has some, and a running queue's statuses.
 * **Army Queue stays hidden on Android**: its squads run as `turu` processes of their own, which
   Android can't start (`Platform::launches_processes`; docs/ANDROID.md). Nothing to port.
-* Not yet: Army Control as a native screen, and a phone (M4).
+* **Army Control** (2026-11-20): `models::army` holds the rows (with `Peer`, which Gear, a
+  client's logs and Map Travel use), who a command goes to, the commands and their outcomes; the
+  egui window draws from it. A row's key is the same whichever slot answers (`tab:<the shell's
+  number>`, the slot's own tab too), so the native page keeps the checked rows in Kotlin through a
+  tab switch and sends them with each action (`send`, `row`). Reading the view counts as Army
+  Control drawn, so the other tabs are polled while the page reads it. The outcomes are
+  process-wide, which on Android means per slot: after a tab switch the page lists that slot's.
+  Gear, client logs, Travel, Search… and Load file… stay in the full window. Checked on the
+  emulator with two tabs: the other tab's row shows its map and HP; Hide Players on and off
+  reached both ("done" from each); a checked row narrows the target; Stop script to both asks
+  first; Show its tab switches and the check stays; Full window stays egui.
+* Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)
 
@@ -740,20 +751,24 @@ shell's memory there.
 
 #### Handover (2026-11-20)
 
-All on branch `native-ui` (from `main`, not pushed; one PR planned for all of it). Left: **Army
-Control**, then the checks before the PR. The steps one page took, Scheduler being the smallest
-example (`a32d53d76` the model, `477523df6` the page):
+All on branch `native-ui` (from `main`, not pushed; one PR planned for all of it). Every window
+the Android pass made native is built. Left: the checks before the PR (below). The steps a page
+takes, for a later one (Scheduler's `a32d53d76` and `477523df6` are the smallest example; Army
+Control's `0141dbc6a` and `d600f879c` one that is per process, not per tab):
 
 1. **The model** (`frontend/src/models/<name>.rs`): a view struct (`Serialize`, and
    `cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))`; a
-   field inside an enum variant must be one word), functions for each action, per-tab state
-   that isn't the bot's in a `PerTab` (`tab_state.rs`). No egui (`models_import_no_ui`). Add
-   the view and actions to `models::register()` and the view type to `bin/turu-typegen.rs`. Type
-   names are global in Kotlin: no two views may have an enum of the same name (hence
-   `scheduler::Tint` beside `repo::Tone`).
+   field inside an enum variant must be one word; no tuples, so `Option<(String, bool)>` becomes
+   two fields), functions for each action, per-tab state that isn't the bot's in a `PerTab`
+   (`tab_state.rs`). No egui (`models_import_no_ui`). Add the view and actions to
+   `models::register()` and the view type to `bin/turu-typegen.rs`. Type names are global in
+   Kotlin: no two views may have an enum of the same name (hence `scheduler::Tint` beside
+   `repo::Tone`; Army reuses `Tint`). `view()` runs on every `/events` tick (250 ms): nothing slow
+   in it unthrottled.
 2. **The egui window draws from it**, in the same commit, so both shells say the same.
 3. **The link**: a `NativeScreen` variant (`frontend/src/shell.rs`); in `gui/turu/mod.rs` the
-   window's key in `open_now` and a bounce (`open_shell_screen`) unless `kept`.
+   window's key in `open_now` and a bounce (`open_shell_screen`) unless `kept` (a per-process
+   window, Army, also unless its egui window is open).
 4. **The page** (`android/.../turu/<Name>Page.kt`): a panel class reading the model over
    `ModelClient` while it shows (copy `SchedulerPanel`); the generated types come from
    `com.muktiarafi.turu.models` (enum constants are UPPER_CASE). Then `Page.<Name>`
@@ -763,45 +778,21 @@ example (`a32d53d76` the model, `477523df6` the page):
    `rustfmt --edition 2024 --config max_width=120 <file>` on each changed file, not on
    `gui/turu/mod.rs` or `models/mod.rs` (it follows their `mod` lines into every file; check
    `git status` after and restore what you didn't touch).
+6. **Design**: the Impeccable skill's context (`impeccable context --target <page>`) and its
+   Android reference; the per-edit hook skips Kotlin (its log says `skipped: native-platform`),
+   so run `impeccable detect <page>` by hand. The shell's look is `ShellTheme.kt` and the pass in
+   `docs/UI.md`, not DESIGN.md's (the web monitor's).
 
-**Army Control** (`gui/turu/army.rs`, 1,518 lines, with `army_travel.rs`, `gear.rs`,
-`client_logs.rs`). It's one per process (`TuruUi::army`), not per tab, and lists this slot's tab,
-the shell's other tabs (`Peer::Shell`) and Army's launched clients (none on Android). Traps, from
-reading it:
-
-* **Other tabs are polled only while Army Control draws** (`turu::army_control_drawn()`, the
-  monitor hub's `tab:<id>` snapshots). A view read over the API must call it too, or every other
-  tab stays "starting…".
-* **Row keys depend on which slot answers**: its own tab is `tab:{TabId:?}`, the others
-  `ShellTab::hub_id()`. Give the view keys stable across slots (the shell's tab id), or clear the
-  page's selection when the tab on screen changes.
-* **Keep the checked rows in Kotlin** and send their keys with each action; the slot keeps none.
-  None checked means every running row, and Stop script and Log out to every row ask twice
-  (`guarded`, `CONFIRM_FOR`).
-* `Row.color` is an egui colour: a tint in the view. `Peer` has no egui: move it to the model
-  and re-export it, as `gear.rs`, `client_logs.rs` and `army_travel.rs` use it. Move `targets()`
-  with its test (`actions_go_to_the_checked_rows_or_everyone`).
-* **The results** (`results`, 40 lines) should be process-wide in the model, so both shells
-  list the same.
-* **First cut**: the rows (each with Start/Stop, Log in/out, ⋯), ACTIONS (Script, Account,
-  Auto-attack, Quest, Misc options) and the results; Gear, Logs, Map Travel, Jump to Player,
-  Change Server and Search…'s pick mode stay in the full window. Loading a script uses "This
-  tab's script" (Android has no file dialog there).
-* The rail's Army item opens the egui window today (`NativeRail.kt`, `actions.window("army")`):
-  point it at the page.
-* **Check with two tabs open**: the other tab's row shows its real map, and a command reaches
-  both.
-
-**Before the PR**: `cargo clippy` and `cargo test` as CLAUDE.md gives them (only
-`cargo test -p turu_frontend --lib` was run since the CoreBots work); `air/ane/rust` still
+**Before the PR**: `cargo clippy` and `cargo test` as CLAUDE.md gives them; `air/ane/rust` still
 builds (it shares `turu_frontend`); CI's Android job can run the host `cargo run -p
-turu_frontend --no-default-features --features typegen --bin turu-typegen` that Gradle's `turuTypes` needs; update
-`docs/STATUS.md` with what a user notices.
+turu_frontend --no-default-features --features typegen --bin turu-typegen` that Gradle's
+`turuTypes` needs.
 
 **On the emulator** (`-gpu host`): the screenshots are 2400x1080, so a tap read off a scaled
 picture lands wrong; tap by label from `adb shell uiautomator dump` (Compose's text is in it).
 Delete what a check saves (`/sdcard/Android/data/com.muktiarafi.turu/files/playlists/`,
-`CBO_Storage(<name>).txt`), and log in only on a quiet server.
+`CBO_Storage(<name>).txt`), and log in only on a quiet server. The emulator's own alerts (a
+ShakeAlert) can open over the app mid-check: Back, then carry on.
 
 ### L6: The macOS game view behind a native window (M, after the checkpoint)
 
