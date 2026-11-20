@@ -809,12 +809,14 @@ was a PR and a phone run (M4) before more pages.
   rail: a rail Scripts item was tried and taken off the same day, to keep Jump on a short screen.
 * **Army Control's script** comes from Search scripts…, not "This tab's script" (removed).
 * **Starting several accounts** asks first when the free tabs are fewer, naming who won't start.
-* **Design checks by hand**: Impeccable's hook is wired but skips every file here (its log says
-  `skipped: native-platform`, PRODUCT.md's platform being `adaptive`); the owner chose to keep it
-  so. Per page: `impeccable context --target <page>` once, its Android reference and
-  craft-floor, `impeccable detect <file>`, and screenshots at font scale 1.0 and 1.3 and with the
-  keyboard up. The shell's look is `ShellTheme.kt` and docs/UI.md's pass, not DESIGN.md (the web
-  monitor's).
+* **Design checks**: Impeccable's hook is wired but skips every file here (its log says
+  `skipped: native-platform`, PRODUCT.md's platform being `adaptive`), and its detector has no
+  Compose rules. Since 2026-11-20 the owner's pick is a hook of Turu's beside it,
+  `.claude/hooks/compose-design-check.py` (CLAUDE.md, "UI work follows Impeccable"): per edit on
+  Android's Kotlin screens and a deep pass on Stop. Per page still: `impeccable context --target
+  <page>` once, its Android reference and craft-floor, and screenshots at font scale 1.0 and 1.3
+  and with the keyboard up. The shell's look is `ShellTheme.kt` and docs/UI.md's pass, not
+  DESIGN.md (the web monitor's).
 * **Commits**: one per model, page and docs, without asking; never push or open the PR unasked.
 
 **Patterns added since Army Control**: a model action may answer data (`Ok(json!(...))`), which
@@ -851,8 +853,8 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    `gui/turu/mod.rs` or `models/mod.rs` (it follows their `mod` lines into every file; check
    `git status` after and restore what you didn't touch).
 6. **Design**: the Impeccable skill's context (`impeccable context --target <page>`) and its
-   Android reference; the per-edit hook skips Kotlin (its log says `skipped: native-platform`),
-   so run `impeccable detect <page>` by hand. The shell's look is `ShellTheme.kt` and the pass in
+   Android reference; Turu's Compose hook checks each edit (`.claude/hooks/compose-design-check.py
+   --check <page>` by hand), Impeccable's own skips Kotlin. The shell's look is `ShellTheme.kt` and the pass in
    `docs/UI.md`, not DESIGN.md's (the web monitor's).
 
 **Before the PR**: `cargo clippy` and `cargo test` as CLAUDE.md gives them; `air/ane/rust` still

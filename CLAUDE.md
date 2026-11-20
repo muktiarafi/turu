@@ -115,10 +115,16 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 * **UI work follows Impeccable**: load its skill, run `impeccable context --target <file>` once,
   read its platform reference and craft-floor before editing, `impeccable detect <file>` after,
   and look at the result (Android: emulator screenshots at font scale 1.0 and 1.3, and with the
-  keyboard up). Its hook is wired but skips every file here (`skipped: native-platform`:
-  PRODUCT.md's platform is `adaptive`); the owner chose to keep it so and check by hand. Don't
-  edit `.impeccable/config.json` to force it. Android's shell looks like `ShellTheme.kt` and
-  docs/UI.md's pass, not DESIGN.md (the web monitor's).
+  keyboard up). Impeccable's own hook skips every file here (`skipped: native-platform`:
+  PRODUCT.md's platform is `adaptive`) and its detector has no Compose rules, so the owner chose
+  (2026-11-20) a hook of Turu's beside it: `.claude/hooks/compose-design-check.py` checks each
+  edited Kotlin screen (colours outside `ShellTheme.kt`, text under 12 sp or in dp, touch targets
+  under 48 dp, gradients, glyph icons, em dashes, suppressed deprecations...) plus `impeccable
+  detect`, and makes a deep pass on Stop; wire it in `.claude/settings.local.json` beside
+  Impeccable's entries. Act on its findings; waive a deliberate one on its line
+  (`// impeccable-disable-line <rule>: <why>`). Run it by hand with `--check <files>`. Don't
+  edit `.impeccable/config.json` to force Impeccable's. Android's shell looks like
+  `ShellTheme.kt` and docs/UI.md's pass, not DESIGN.md (the web monitor's).
 * **Search Scripts wherever a script is chosen**: every screen that picks a script offers
   "Search scripts…" opening Search Scripts picking for it, never only the Script Loader's
   (docs/UI.md, "Search Scripts everywhere a script is chosen"; Android's `ScriptPick`). Not as an
