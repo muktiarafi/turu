@@ -57,4 +57,5 @@ rayon = { workspace = true }
 rquickjs = { version = "0.14", features = ["bindgen"] }
 url = { workspace = true }
 # The tabs reopened after a kill (`tabs.rs`, `android-tabs.json`).
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

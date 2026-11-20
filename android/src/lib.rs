@@ -27,6 +27,7 @@ mod platform;
 mod restart;
 mod saf;
 mod screen;
+mod shell_accounts;
 mod slot_shell;
 mod slots;
 mod storage;
@@ -94,6 +95,9 @@ static WINDOW: Mutex<Option<NativeWindow>> = Mutex::new(None);
 fn android_main(app: AndroidApp) {
     init_logging();
     *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
+    // The shell's native Accounts fetches the server list (`shell_accounts.rs`): reqwest needs
+    // the crypto provider here as in a slot.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     if let Err(e) = init_certificates(&app) {
         log::error!("Couldn't set up certificate checks; HTTPS will fail: {e}");
     }

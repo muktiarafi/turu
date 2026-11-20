@@ -173,6 +173,27 @@ jni::bind_java_type! {
     },
 }
 
+jni::bind_java_type! {
+    rust_type = AccountsPanel,
+    rust_type_vis = pub(crate),
+    java_type = com.muktiarafi.turu.AccountsPanel,
+    native_methods_export = false,
+    native_methods {
+        static raw fn native_accounts {
+            sig = () -> JString,
+            fn = crate::shell_accounts::Java_com_muktiarafi_turu_AccountsPanel_nativeAccounts,
+        },
+        static raw fn native_accounts_do {
+            sig = (json: JString) -> JString,
+            fn = crate::shell_accounts::Java_com_muktiarafi_turu_AccountsPanel_nativeAccountsDo,
+        },
+        static raw fn native_servers {
+            sig = () -> JString,
+            fn = crate::shell_accounts::Java_com_muktiarafi_turu_AccountsPanel_nativeServers,
+        },
+    },
+}
+
 /// Looks up every bound class's methods and registers its native methods, through `loader` (a
 /// native thread's own class loader doesn't see the app's classes). Each mismatch is logged with
 /// what Java said, and the app stops: a mismatch shows the first time a build is started.
@@ -183,6 +204,7 @@ pub(crate) fn check(env: &mut Env, loader: &LoaderContext) {
         ("Storage", StorageAPI::get(env, loader).map(drop)),
         ("SlotService", SlotServiceAPI::get(env, loader).map(drop)),
         ("SlotShell", SlotShellAPI::get(env, loader).map(drop)),
+        ("AccountsPanel", AccountsPanelAPI::get(env, loader).map(drop)),
     ];
     let count = checked.len();
     let failures: Vec<String> = checked

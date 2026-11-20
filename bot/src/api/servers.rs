@@ -147,6 +147,12 @@ impl ServerRunner {
     }
 }
 
+/// The game's server list, fetched now, with no bot (Android's shell, for Accounts' launch
+/// options).
+pub fn fetch_list() -> Result<Vec<Server>, String> {
+    fetch_servers()
+}
+
 fn fetch_servers() -> Result<Vec<Server>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
