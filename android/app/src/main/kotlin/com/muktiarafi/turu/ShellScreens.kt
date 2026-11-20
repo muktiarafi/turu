@@ -97,6 +97,15 @@ class ShellScreens(private val activity: TuruActivity) {
         setContent { ShellTheme { TabPanel(state, actions) } }
     }
 
+    private val prompts = PromptsPanel()
+
+    /** The prompts' own view: always attached and visible, drawing nothing but their dialog. */
+    private val promptsView = ComposeView(activity).apply {
+        isFocusable = false
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        setContent { ShellTheme { PromptsHost(state, prompts, window = ::openWindow, open = ::openScreen) } }
+    }
+
     init {
         state.onOpenChanged = { open ->
             panel.visibility = if (open) View.VISIBLE else View.GONE
@@ -111,6 +120,7 @@ class ShellScreens(private val activity: TuruActivity) {
         parent.addView(panel, FrameLayout.LayoutParams(full, full))
         parent.addView(rail, FrameLayout.LayoutParams(wrap, full))
         parent.addView(handle, FrameLayout.LayoutParams(wrap, wrap, Gravity.START or Gravity.CENTER_VERTICAL))
+        parent.addView(promptsView, FrameLayout.LayoutParams(0, 0))
         updateRail()
     }
 
