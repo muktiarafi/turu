@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -218,36 +219,39 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                 // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
                 .imePadding(),
         ) {
-            AnimatedContent(
-                targetState = state.page,
-                transitionSpec = {
-                    val forward = targetState !is Page.Tabs
-                    val dir = if (forward) 1 else -1
-                    (slideInHorizontally(tween(220)) { it / 6 * dir } + fadeIn(tween(220)))
-                        .togetherWith(slideOutHorizontally(tween(160)) { -it / 8 * dir } + fadeOut(tween(120)))
-                },
-                label = "panel page",
-            ) { page ->
-                when (page) {
-                    Page.Tabs -> TabsPage(state, actions)
-                    Page.NewTab -> NewTabPage(state, actions)
-                    Page.Accounts -> AccountsPage(state, actions.accounts) { actions.window("accounts") }
-                    Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
-                    Page.Auto -> AutoPage(state, actions.scripts.models)
-                    Page.Jump -> JumpPage(state, actions.scripts.models)
-                    Page.Logs -> LogsPage(state, actions.scripts.models) { actions.window("logs") }
-                    Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.bank, actions.hideRail)
-                    Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
-                    Page.GameOptions -> GameOptionsPage(
-                        state,
-                        actions.gameOptions,
-                        running = actions.scripts.models.scripts?.controls?.stop != null,
-                    ) { actions.window("game_options") }
-                    Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
-                    Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
-                    Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = { state.close() }) { actions.window("scheduler") }
-                    Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
-                    is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
+            // A new opening starts the pages afresh: no slide from the page the panel last closed on.
+            key(state.openings) {
+                AnimatedContent(
+                    targetState = state.page,
+                    transitionSpec = {
+                        val forward = targetState !is Page.Tabs
+                        val dir = if (forward) 1 else -1
+                        (slideInHorizontally(tween(220)) { it / 6 * dir } + fadeIn(tween(220)))
+                            .togetherWith(slideOutHorizontally(tween(160)) { -it / 8 * dir } + fadeOut(tween(120)))
+                    },
+                    label = "panel page",
+                ) { page ->
+                    when (page) {
+                        Page.Tabs -> TabsPage(state, actions)
+                        Page.NewTab -> NewTabPage(state, actions)
+                        Page.Accounts -> AccountsPage(state, actions.accounts) { actions.window("accounts") }
+                        Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
+                        Page.Auto -> AutoPage(state, actions.scripts.models)
+                        Page.Jump -> JumpPage(state, actions.scripts.models)
+                        Page.Logs -> LogsPage(state, actions.scripts.models) { actions.window("logs") }
+                        Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.bank, actions.hideRail)
+                        Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
+                        Page.GameOptions -> GameOptionsPage(
+                            state,
+                            actions.gameOptions,
+                            running = actions.scripts.models.scripts?.controls?.stop != null,
+                        ) { actions.window("game_options") }
+                        Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
+                        Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
+                        Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = { state.close() }) { actions.window("scheduler") }
+                        Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
+                        is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
+                    }
                 }
             }
         }

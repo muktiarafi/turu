@@ -118,10 +118,18 @@ class ShellState {
     /** The pages under the one shown, for Back. */
     private val stack = ArrayDeque<Page>()
 
+    /**
+     * Counts the panel's openings: the panel starts its pages afresh on each, so the page it opens
+     * on shows at once instead of crossing from the one it last closed on.
+     */
+    var openings by mutableStateOf(0)
+        private set
+
     fun openAt(at: Page) {
         stack.clear()
         page = at
         if (!open) {
+            openings++
             open = true
             onOpenChanged(true)
         }
