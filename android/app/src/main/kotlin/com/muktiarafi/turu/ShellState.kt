@@ -120,6 +120,9 @@ sealed interface Page {
     /** Combat > Runtime. */
     data object Runtime : Page
 
+    /** Combat > Runtime > Notifications. */
+    data object NotifyDrop : Page
+
     /** Scripts > Edit Script Options (also when a script asks for its options). */
     data object ScriptOptions : Page
 

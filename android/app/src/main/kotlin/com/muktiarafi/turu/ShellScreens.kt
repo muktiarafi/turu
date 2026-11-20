@@ -56,6 +56,7 @@ class ShellScreens(private val activity: TuruActivity) {
         butler = ButlerPanel(),
         cosmetics = CosmeticsPanel(),
         runtime = RuntimePanel(),
+        notifyDrop = NotifyDropPanel(),
         scriptOptions = ScriptOptionsPanel(),
     )
 
@@ -136,6 +137,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "butler" -> open(Page.Butler)
             "cosmetics" -> open(Page.Cosmetics)
             "runtime" -> open(Page.Runtime)
+            "notify_drop" -> open(Page.NotifyDrop)
             "script_options" -> open(Page.ScriptOptions)
         }
     }

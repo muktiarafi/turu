@@ -515,6 +515,8 @@ pub enum NativeScreen {
     Cosmetics,
     /// Combat > Runtime.
     Runtime,
+    /// Combat > Runtime > Notifications.
+    NotifyDrop,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }
