@@ -153,7 +153,7 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
     var history by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         PageBar("Army Control", onBack = { state.back() }) {
-            FullWindowMenu("Gear, client logs, Map Travel, Jump to Player, Change Server", fullWindow) { close ->
+            FullWindowMenu("Gear, client logs, Load file…, Map Travel, Jump to Player, Change Server", fullWindow) { close ->
                 if (view?.launched == true) {
                     DropdownMenuItem(text = { Text("Clear ended") }, onClick = { close(); panel.task("clear-ended") })
                     DropdownMenuItem(
@@ -215,10 +215,12 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
                         listOf(
                             Action("Start script", primary = true, enabled = any) { panel.send("start-script") },
                             Action("Stop script", enabled = any) { guarded("Stop the script", "stop-script") },
-                            Action("This tab's script", enabled = any && view.thisTabScript.enabled) { panel.send("this-tab-script") },
+                            Action("Search scripts…", enabled = any) {
+                                state.scriptPick = ScriptPick(panel.checked.keys.toList(), targets.singleOrNull()?.label ?: "${targets.size} clients")
+                                state.push(Page.Search)
+                            },
                         ),
                     )
-                    if (!view.thisTabScript.enabled) Reason("This tab's script: ${view.thisTabScript.reason}")
                 }
             }
             item {

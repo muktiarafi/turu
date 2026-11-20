@@ -97,11 +97,21 @@ sealed interface Page {
     data class AccountForm(val original: Account?) : Page
 }
 
+/**
+ * Search Scripts opened to pick a script for Army Control: the checked rows' keys (none: every
+ * client) and who that is, for the page to say ("cecilus", "2 clients").
+ */
+@Immutable
+data class ScriptPick(val keys: List<String>, val who: String)
+
 /** The shell's screens' state, read by Compose and changed on the main thread. */
 class ShellState {
     var tabs by mutableStateOf(ShellTabs())
     var open by mutableStateOf(false)
     var page by mutableStateOf<Page>(Page.Tabs)
+
+    /** Search Scripts picks a script for Army Control while this is set ([ScriptPick]). */
+    var scriptPick by mutableStateOf<ScriptPick?>(null)
 
     /** The display cutout on the rail's side, in dp: the item grows by it, as egui's rail does. */
     var cutoutLeftDp by mutableStateOf(0f)

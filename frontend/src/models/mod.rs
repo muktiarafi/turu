@@ -330,11 +330,11 @@ pub fn register() {
         }),
     );
 
-    add_model("army", Box::new(|bot| to_json(&army::view(bot))));
+    add_model("army", Box::new(|_| to_json(&army::view())));
     add_model_action(
         "army",
         "send",
-        Box::new(|bot, body| army::command(bot, body).and_then(|()| done())),
+        Box::new(|_, body| army::command(body).and_then(|()| done())),
     );
     add_model_action("army", "row", Box::new(|_, body| army::row(body).and_then(|()| done())));
     for (action, work) in [

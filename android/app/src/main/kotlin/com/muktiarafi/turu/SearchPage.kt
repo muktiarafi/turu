@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -106,7 +107,19 @@ class SearchPanel {
     }
 
     fun query(field: String, value: Any) = act("query", JSONObject().put(field, value))
+
+    /** Loads the script at `path` in Army Control's clients (`pick`), downloading it first if needed. */
+    fun pick(path: String, pick: ScriptPick, done: (String?) -> Unit) {
+        error = null
+        val client = client ?: return done("The tab isn't up yet")
+        val body = JSONObject().put("command", "script").put("path", path).put("keys", org.json.JSONArray(pick.keys))
+        client.act("army", "send", body) { failed ->
+            error = failed
+            done(failed)
+        }
+    }
 }
+
 
 private fun toneColor(tone: Tone) = when (tone) {
     Tone.SUCCESS -> Turu.Success
@@ -119,10 +132,16 @@ private fun toneColor(tone: Tone) = when (tone) {
  * filters as chips (folder, Pinned, Local, the sort, what the search looks in), the rows with
  * Start and a menu (Load, Add to the queue, Download or Update, Pin), and the repository's task
  * and its buttons at the foot. Delete and Reset Scripts stay in the egui window.
+ *
+ * Opened from Army Control's Search scripts… ([ShellState.scriptPick]) it picks instead: a bar
+ * says for how many clients, each row offers "Load in N clients", and a pick goes back to Army
+ * Control, whose outcome line reports each client.
  */
 @Composable
 fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
-    DisposableEffect(Unit) { onDispose { search.follow(null) } }
+    // Leaving the page ends a pick (Back, Cancel, or the pick itself).
+    DisposableEffect(Unit) { onDispose { search.follow(null); state.scriptPick = null } }
+    val pick = state.scriptPick
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { search.follow(state.tabs.active) }
     val view = search.view
     Column(Modifier.fillMaxSize()) {
@@ -140,6 +159,7 @@ fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
             Text("Reading the tab…", color = Turu.Muted, modifier = Modifier.padding(20.dp))
             return@Column
         }
+        pick?.let { PickBar(it) { state.scriptPick = null; state.back() } }
         SearchBox(view, search)
         Filters(view, search)
         val top = view.rows.firstOrNull()?.path.takeIf { view.query.search.isNotBlank() }
@@ -161,7 +181,13 @@ fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
                 }
             }
             items(view.rows, key = { it.path }) { row ->
-                ScriptRow(row, topHit = row.path == top, search = search) { state.push(Page.Scripts) }
+                if (pick != null) {
+                    PickRow(row, topHit = row.path == top, pick = pick) {
+                        search.pick(row.path, pick) { failed -> if (failed == null) state.back() }
+                    }
+                } else {
+                    ScriptRow(row, topHit = row.path == top, search = search) { state.push(Page.Scripts) }
+                }
             }
             if (view.found.toLong() > view.rows.size) {
                 item {
@@ -267,6 +293,74 @@ private fun MenuChip(label: String, selected: Boolean, options: List<Pair<String
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
             for ((value, words) in options) {
                 DropdownMenuItem(text = { Text(words) }, onClick = { open = false; onPick(value) })
+            }
+        }
+    }
+}
+
+/** What Search Scripts picks for, and Cancel (back to Army Control with nothing loaded). */
+@Composable
+private fun PickBar(pick: ScriptPick, cancel: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Turu.AccentTint)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Pick a script to load in ${pick.who}",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        TextButton(onClick = cancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+    }
+}
+
+/** A script while picking for Army Control: name, badge and description; a tap (or Load) picks it. */
+@Composable
+private fun PickRow(row: RowView, topHit: Boolean, pick: ScriptPick, onPick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !row.working, onClick = onPick)
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(row.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                row.badge?.let { badge ->
+                    Text(
+                        badge.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = toneColor(badge.tone),
+                        modifier = Modifier
+                            .background(toneColor(badge.tone).copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(row.description.ifEmpty { row.path }, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (row.working) {
+            CircularProgressIndicator(Modifier.padding(horizontal = 16.dp).size(20.dp), strokeWidth = 2.dp)
+        } else {
+            val label = "Load in ${pick.who}"
+            // A long account name stops at the button's width.
+            val modifier = Modifier.heightIn(min = 48.dp).widthIn(max = 200.dp)
+            val text: @Composable () -> Unit = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            if (topHit) {
+                Button(onClick = onPick, modifier = modifier) { text() }
+            } else {
+                FilledTonalButton(onClick = onPick, modifier = modifier) { text() }
             }
         }
     }

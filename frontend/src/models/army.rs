@@ -729,8 +729,6 @@ pub struct ArmyView {
     pub launched: bool,
     /// The commands' outcomes, oldest first.
     pub results: Vec<String>,
-    /// "This tab's script": loads the script this tab has loaded in every target.
-    pub this_tab_script: Control,
     /// Misc options' switches, as (label, name) pairs for `option`.
     pub options: Vec<ArmyOption>,
 }
@@ -780,7 +778,7 @@ pub struct ArmyOption {
 
 /// The view, for a shell: reading it counts as Army Control being open, so the shell's other tabs
 /// are polled while a page reads it.
-pub fn view(bot: &Arc<Bot>) -> ArmyView {
+pub fn view() -> ArmyView {
     crate::turu::army_control_drawn();
     let rows = rows();
     let groups = groups()
@@ -796,10 +794,6 @@ pub fn view(bot: &Arc<Bot>) -> ArmyView {
         groups,
         launched: rows.iter().any(|r| !r.is_tab()),
         results: results(),
-        this_tab_script: Control::when(
-            bot.scripts.loaded().is_some(),
-            "Load one in the Script Loader (Search Scripts) first",
-        ),
         options: MISC_OPTIONS
             .iter()
             .map(|(label, name)| ArmyOption {
@@ -841,8 +835,9 @@ fn checked(body: &Value) -> HashSet<String> {
 
 /// `send`: a command to the checked rows (`keys`), or to every row still running. `command` is
 /// `start-script`, `stop-script`, `login`, `logout`, `relog`, `house`, `auto-attack`,
-/// `stop-auto`, `this-tab-script`, `quest` (`id`, optional `reward`) or `option` (`name`, `on`).
-pub fn command(bot: &Arc<Bot>, body: &Value) -> Result<(), String> {
+/// `stop-auto`, `script` (`path`: a Search Scripts path, downloaded first when it needs it), `quest`
+/// (`id`, optional `reward`) or `option` (`name`, `on`).
+pub fn command(body: &Value) -> Result<(), String> {
     let name = body
         .get("command")
         .and_then(Value::as_str)
@@ -856,13 +851,7 @@ pub fn command(bot: &Arc<Bot>, body: &Value) -> Result<(), String> {
         "house" => Command::JumpHouse,
         "auto-attack" => Command::StartAutoAttack,
         "stop-auto" => Command::StopAuto,
-        "this-tab-script" => {
-            let path = bot
-                .scripts
-                .loaded()
-                .ok_or("Load one in the Script Loader (Search Scripts) first")?;
-            Command::LoadScript(path.display().to_string())
-        }
+        "script" => return load_from_repo(&text(body, "path")?, &checked(body)),
         "quest" => {
             let id = body
                 .get("id")
@@ -888,6 +877,34 @@ pub fn command(bot: &Arc<Bot>, body: &Value) -> Result<(), String> {
     }
     send(&rows, &checked(body), command);
     Ok(())
+}
+
+/// Loads Search Scripts' script at `path` in the rows commands go to: at once when it's
+/// downloaded and current, else once the repository's task has downloaded it (as the egui Search
+/// Scripts' pick mode does). The outcomes are listed as for any command.
+pub fn load_from_repo(path: &str, checked: &HashSet<String>) -> Result<(), String> {
+    let rows = rows();
+    let targets: Vec<Row> = targets(&rows, checked).into_iter().map(|i| rows[i].clone()).collect();
+    if targets.is_empty() {
+        return Err("None of the checked clients runs".into());
+    }
+    let repo = crate::turu::script_repo();
+    if let Some(local) = repo.ready(path) {
+        send_to(&targets, Command::LoadScript(local.display().to_string()));
+        return Ok(());
+    }
+    let owned = path.to_owned();
+    let spawned = repo.spawn("Download", move |repo| {
+        let local = repo.ensure(&owned)?;
+        let count = targets.len();
+        send_to(&targets, Command::LoadScript(local.display().to_string()));
+        Ok(format!("Downloaded {owned}; loading it in {count} clients."))
+    });
+    if spawned {
+        Ok(())
+    } else {
+        Err(super::repo::wait_tip(&repo.snapshot()))
+    }
 }
 
 /// `row`: one row's own button (`key`, `action`: see [`RowAction::named`]).
@@ -977,14 +994,13 @@ mod tests {
 
     #[test]
     fn options_and_commands_are_checked() {
-        let bot = Bot::new();
-        let err = command(&bot, &json!({ "command": "option", "name": "nope", "on": true }));
+        let err = command(&json!({ "command": "option", "name": "nope", "on": true }));
         assert_eq!(err, Err("no option named nope".into()));
         assert_eq!(
-            command(&bot, &json!({ "command": "quest", "id": 0 })),
+            command(&json!({ "command": "quest", "id": 0 })),
             Err("Enter a quest ID".into())
         );
-        assert!(command(&bot, &json!({ "command": "dance" })).is_err());
+        assert!(command(&json!({ "command": "dance" })).is_err());
         assert_eq!(RowAction::named("auto-attack"), Some(RowAction::AutoAttack));
         assert_eq!(RowAction::named("gear"), None);
     }
