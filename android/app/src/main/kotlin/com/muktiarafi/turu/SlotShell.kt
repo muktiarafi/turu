@@ -210,6 +210,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         run(nativeFromSlot(current, json))
     }
 
+    /** A message to every slot up (`ToClient`, as JSON). */
+    fun toAll(json: String) {
+        for (slot in messengers.keys) sendJson(slot, json)
+    }
+
     /** A message to the slot on screen (`ToClient`, as JSON). */
     fun toShown(json: String) {
         sendJson(current, json)

@@ -72,6 +72,9 @@ class TabActions(
     val blank: () -> Unit,
     val accounts: AccountsPanel,
     val scripts: ScriptsPanel,
+    /** One of the slot's egui windows, by its key (`Windows::open`). */
+    val window: (String) -> Unit,
+    val hideRail: () -> Unit,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
@@ -82,7 +85,7 @@ private val PanelWidth = 320.dp
  * avatar with its status dot, how many tabs are open, and a warning while another tab waits.
  */
 @Composable
-fun TabsItem(state: ShellState, onClick: () -> Unit) {
+fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
     val tabs = state.tabs
     val active = tabs.active
     val description = buildString {
@@ -90,55 +93,48 @@ fun TabsItem(state: ShellState, onClick: () -> Unit) {
         active?.let { append(", on screen: ${it.label}") }
         if (tabs.othersNeedYou) append(", a tab waits for you")
     }
-    Box(
+    val selected = state.open && (state.page == Page.Tabs || state.page == Page.NewTab)
+    Column(
         Modifier
-            .width(64.dp + state.cutoutLeftDp.dp)
-            .height(60.dp)
-            .background(Turu.Panel)
-            .padding(start = state.cutoutLeftDp.dp, top = 8.dp)
+            .padding(top = 8.dp)
+            .width(56.dp)
+            .height(52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) Turu.AccentTint else Color.Transparent)
+            .clickable(onClick = onClick)
             .semantics { contentDescription = description },
-        contentAlignment = Alignment.TopCenter,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Column(
-            Modifier
-                .width(56.dp)
-                .height(52.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (state.open) Turu.AccentTint else Color.Transparent)
-                .clickable(onClick = onClick),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Avatar(active?.label ?: "", size = 32.dp, tab = active)
-                if (tabs.tabs.size > 1 || tabs.othersNeedYou) {
-                    val warn = tabs.othersNeedYou
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(start = 26.dp)
-                            .size(16.dp)
-                            .clip(CircleShape)
-                            .background(if (warn) Turu.Warning else Turu.Accent),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            if (warn) "!" else "${tabs.tabs.size}",
-                            color = if (warn) Turu.Panel else Color.White,
-                            fontSize = (10f / LocalDensity.current.fontScale).sp,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = (10f / LocalDensity.current.fontScale).sp,
-                        )
-                    }
+        Box(contentAlignment = Alignment.Center) {
+            Avatar(active?.label ?: "", size = 32.dp, tab = active)
+            if (tabs.tabs.size > 1 || tabs.othersNeedYou) {
+                val warn = tabs.othersNeedYou
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(start = 26.dp)
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .background(if (warn) Turu.Warning else Turu.Accent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (warn) "!" else "${tabs.tabs.size}",
+                        color = if (warn) Turu.Panel else Color.White,
+                        fontSize = (10f / LocalDensity.current.fontScale).sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = (10f / LocalDensity.current.fontScale).sp,
+                    )
                 }
             }
-            Text(
-                "Tabs",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (state.open) Turu.Text else Turu.Muted,
-                modifier = Modifier.padding(top = 2.dp),
-            )
         }
+        Text(
+            "Tabs",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) Turu.Text else Turu.Muted,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
@@ -192,6 +188,8 @@ fun TabPanel(state: ShellState, actions: TabActions) {
         Box(
             Modifier
                 .fillMaxSize()
+                // The rail stays in use beside the panel (it's drawn above this view).
+                .padding(start = 64.dp + state.cutoutLeftDp.dp)
                 .background(Color.Black.copy(alpha = 0.48f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                     state.close()
@@ -223,6 +221,10 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.NewTab -> NewTabPage(state, actions)
                     Page.Accounts -> AccountsPage(state, actions.accounts)
                     Page.Scripts -> ScriptsPage(state, actions.scripts)
+                    Page.Auto -> AutoPage(state, actions.scripts.models)
+                    Page.Jump -> JumpPage(state, actions.scripts.models)
+                    Page.Logs -> LogsPage(state, actions.scripts.models)
+                    Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.hideRail)
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }

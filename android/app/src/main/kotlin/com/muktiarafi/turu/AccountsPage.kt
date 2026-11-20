@@ -399,12 +399,25 @@ private fun LaunchOptions(accounts: AccountsPanel) {
 /** A drop-down field: `options` are (value, what the menu shows). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Picker(label: String, value: String, options: List<Pair<String, String>>, loading: Boolean, onPick: (String) -> Unit) {
+fun Picker(
+    label: String,
+    value: String,
+    options: List<Pair<String, String>>,
+    loading: Boolean,
+    onOpen: () -> Unit = {},
+    empty: String? = null,
+    /** What it says while nothing is chosen. */
+    none: String = "None",
+    onPick: (String) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     val shown = options.firstOrNull { it.first == value }?.second?.substringBefore(" - ") ?: value
-    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = {
+        if (it && !open) onOpen()
+        open = it
+    }) {
         OutlinedTextField(
-            value = shown.ifEmpty { "None" },
+            value = shown.ifEmpty { none },
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
@@ -418,6 +431,9 @@ private fun Picker(label: String, value: String, options: List<Pair<String, Stri
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
+            if (options.isEmpty() && empty != null) {
+                DropdownMenuItem(text = { Text(empty, color = Turu.Muted) }, onClick = {}, enabled = false)
+            }
             for ((option, text) in options) {
                 DropdownMenuItem(
                     text = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },

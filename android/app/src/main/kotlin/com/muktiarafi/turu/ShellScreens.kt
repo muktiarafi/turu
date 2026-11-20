@@ -1,5 +1,6 @@
 package com.muktiarafi.turu
 
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -9,13 +10,20 @@ import org.json.JSONObject
 
 /**
  * The shell's own screens, in Compose over the slot's `SurfaceView` (docs/NATIVE_UI_PROPOSAL.md,
- * L5a; docs/UI.md, "Native shells", Android): the Tabs item at the top of the rail, and the panel
- * it opens (the tabs, New tab, Accounts). The slots draw no tab strip and start their rail below
- * the item (`slots::RAIL_TOP`). Two views: the item, always there; the panel, only while open, so
- * touches elsewhere go to the slot on screen ([hits]).
+ * L5a and L5b; docs/UI.md, "Native shells", Android): the native rail down the left (the Tabs
+ * item, the rail's items, the script chip and run controls), and the panel its items open beside
+ * it (the tabs, New tab, Accounts, the Script Loader, Auto, Jump, Logs, More). The slots draw no
+ * rail and keep its room (`ToClient::Tabs`' `native_rail`). Three views: the rail, or while it's
+ * hidden the `›` handle; the panel, only while open, under the rail so the rail stays in use.
+ * Touches elsewhere go to the slot on screen ([hits]).
  */
 class ShellScreens(private val activity: TuruActivity) {
     val state = ShellState()
+
+    /** The tab on screen's view models, read for the rail and its pages. */
+    private val models = TabModels()
+
+    private val scripts = ScriptsPanel(models) { window -> openWindow(window) }
 
     /** The shell's tab actions, as if from the slot on screen (`SlotShell.asShown`). */
     private val actions = TabActions(
@@ -23,18 +31,34 @@ class ShellScreens(private val activity: TuruActivity) {
         close = { id -> activity.shell?.asShown(JSONObject().put("type", "close_tab").put("id", id).toString()) },
         blank = { activity.shell?.asShown(JSONObject().put("type", "open_tab").toString()) },
         accounts = AccountsPanel { actions -> activity.shell?.actions(actions) },
-        // The slot's egui windows the Script Loader opens, while they aren't native: in its
-        // picture, with the panel out of the way.
-        scripts = ScriptsPanel { window ->
-            activity.shell?.toShown(JSONObject().put("type", "open_window").put("window", window).toString())
-            close()
-        },
+        scripts = scripts,
+        window = ::openWindow,
+        hideRail = { railHidden(true) },
     )
 
-    private val item = ComposeView(activity).apply {
+    private val railActions = RailActions(
+        open = { page -> if (state.open && state.page == page) close() else open(page) },
+        bank = { models.act("bank", "open") },
+        window = ::openWindow,
+        scripts = scripts,
+    )
+
+    private val rail = ComposeView(activity).apply {
         isFocusable = false
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-        setContent { ShellTheme { TabsItem(state) { if (state.open) close() else open(Page.Tabs) } } }
+        setContent {
+            ShellTheme {
+                NativeRail(state, models, railActions) { if (state.open && state.page == Page.Tabs) close() else open(Page.Tabs) }
+                BankNote(models)
+            }
+        }
+    }
+
+    private val handle = ComposeView(activity).apply {
+        isFocusable = false
+        visibility = View.GONE
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        setContent { ShellTheme { RailHandle(state.cutoutLeftDp.let { androidx.compose.ui.unit.Dp(it) }) { railHidden(false) } } }
     }
 
     private val panel = ComposeView(activity).apply {
@@ -46,8 +70,6 @@ class ShellScreens(private val activity: TuruActivity) {
     init {
         state.onOpenChanged = { open ->
             panel.visibility = if (open) View.VISIBLE else View.GONE
-            // The Script Loader reads the tab's models only while it shows.
-            if (!open) actions.scripts.follow(null)
             // The keys go back to the slot (egui's text boxes, the game) once the panel is gone.
             if (!open) activity.focusSurface()
         }
@@ -56,15 +78,17 @@ class ShellScreens(private val activity: TuruActivity) {
     fun attach(parent: ViewGroup) {
         val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
         val full = ViewGroup.LayoutParams.MATCH_PARENT
-        parent.addView(item, FrameLayout.LayoutParams(wrap, wrap))
         parent.addView(panel, FrameLayout.LayoutParams(full, full))
-        updateItem()
+        parent.addView(rail, FrameLayout.LayoutParams(wrap, full))
+        parent.addView(handle, FrameLayout.LayoutParams(wrap, wrap, Gravity.START or Gravity.CENTER_VERTICAL))
+        updateRail()
     }
 
     /** The shell's tab list (`slots::NativeTabs`), on the main thread. */
     fun tabs(json: String) {
         state.tabs = ShellTabs.parse(json)
-        updateItem()
+        models.follow(state.tabs.active)
+        updateRail()
         // A tab opened or closed: where each account plays changed.
         if (state.open) actions.accounts.reload()
     }
@@ -78,30 +102,46 @@ class ShellScreens(private val activity: TuruActivity) {
     }
 
     fun open(page: Page) {
-        actions.accounts.reload()
+        if (page == Page.Accounts || page == Page.NewTab) actions.accounts.reload()
         state.openAt(page)
     }
 
     fun close() = state.close()
 
-    /** The display cutout on the left, in window pixels: the item and panel keep clear of it. */
+    /** One of the slot on screen's egui windows (`Windows::open`'s key), the panel out of its way. */
+    private fun openWindow(window: String) {
+        activity.shell?.toShown(JSONObject().put("type", "open_window").put("window", window).toString())
+        close()
+    }
+
+    /** Hides or shows the rail in every tab: each gives the game the room and keeps the choice. */
+    private fun railHidden(hidden: Boolean) {
+        if (hidden) close()
+        activity.shell?.toAll(JSONObject().put("type", "rail_hidden").put("hidden", hidden).toString())
+    }
+
+    /** The display cutout on the left, in window pixels: the rail and panel keep clear of it. */
     fun cutout(left: Int) {
         state.cutoutLeftDp = left / activity.resources.displayMetrics.density
     }
 
-    /** The item hides with the slot's rail (Menu > Hide Side Bar) and before there are tabs. */
-    private fun updateItem() {
-        val hidden = state.tabs.railHidden || state.tabs.tabs.isEmpty()
-        item.visibility = if (hidden) View.GONE else View.VISIBLE
+    /** The rail hides with the tab on screen's choice (`side_bar_hidden`), its handle showing. */
+    private fun updateRail() {
+        val noTabs = state.tabs.tabs.isEmpty()
+        val hidden = state.tabs.railHidden
+        rail.visibility = if (hidden || noTabs) View.GONE else View.VISIBLE
+        handle.visibility = if (hidden && !noTabs) View.VISIBLE else View.GONE
         if (hidden && state.open) state.close()
     }
 
     /** Whether a finger down at window (`x`, `y`) lands on a native screen, not the slot's. */
     fun hits(x: Float, y: Float): Boolean {
         if (panel.visibility == View.VISIBLE) return true
-        if (item.visibility != View.VISIBLE) return false
-        val at = IntArray(2)
-        item.getLocationInWindow(at)
-        return x >= at[0] && y >= at[1] && x < at[0] + item.width && y < at[1] + item.height
+        return listOf<View>(rail, handle).any { view ->
+            if (view.visibility != View.VISIBLE) return@any false
+            val at = IntArray(2)
+            view.getLocationInWindow(at)
+            x >= at[0] && y >= at[1] && x < at[0] + view.width && y < at[1] + view.height
+        }
     }
 }

@@ -1,6 +1,5 @@
 package com.muktiarafi.turu
 
-import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,7 +38,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,26 +50,20 @@ import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.Control
 import com.muktiarafi.turu.models.ScriptsView
 import com.muktiarafi.turu.models.Status
-import kotlinx.serialization.json.Json
 import org.json.JSONObject
 
 /**
- * The Script Loader's copy of the tab on screen (`turu_frontend::models::scripts`, decoded into
- * the generated [ScriptsView]) and its script log, line-fed, read while the page is open.
+ * The Script Loader's actions on the tab on screen, over its models ([TabModels]): the view is
+ * `models.scripts`, the log `models.scriptLog`.
  */
 class ScriptsPanel(
+    val models: TabModels,
     /** Opens one of the slot's egui windows ("script_repo", "script_options") and closes the panel. */
     private val openWindow: (String) -> Unit,
 ) {
-    var view by mutableStateOf<ScriptsView?>(null)
-        private set
-
-    /** The tab followed, and whether its slot answers. */
-    var tab by mutableStateOf<ShellTab?>(null)
-        private set
-
-    /** The script log's last lines (the window keeps [KEEP]). */
-    val log = mutableStateListOf<Pair<String, String>>()
+    val view: ScriptsView? get() = models.scripts
+    val tab: ShellTab? get() = models.tab
+    val log get() = models.scriptLog
 
     /** An action's error, until the next action. */
     var error by mutableStateOf<String?>(null)
@@ -81,49 +73,10 @@ class ScriptsPanel(
     var busy by mutableStateOf<String?>(null)
         private set
 
-    private var client: ModelClient? = null
-    private val json = Json { ignoreUnknownKeys = true }
-
-    /** Reads `tab`'s models (or stops reading, with null): the tab on screen while the page shows. */
-    fun follow(next: ShellTab?) {
-        val same = next?.id == tab?.id && next?.api == tab?.api
-        tab = next
-        if (same && client != null) return
-        client?.stop()
-        client = null
-        view = null
-        log.clear()
-        error = null
-        val api = next?.api ?: return
-        val token = next.token ?: return
-        client = ModelClient(
-            api, token, models = listOf("scripts"), logs = listOf("script"),
-            onView = { _, text ->
-                runCatching { json.decodeFromString<ScriptsView>(text) }
-                    .onSuccess { view = it }
-                    // A record changed on one side only: loud, with the route.
-                    .onFailure { Log.e(ModelClient.TAG, "/models/scripts doesn't decode: $it") }
-            },
-            onLog = { _, time, text -> append(time, text) },
-        ).also { client ->
-            client.start()
-            // The lines before now: the last few hundred, as the window shows.
-            client.readLog("script", 0) { lines ->
-                log.clear()
-                lines.takeLast(KEEP).forEach { (time, text) -> log.add(time to text) }
-            }
-        }
-    }
-
-    private fun append(time: String, text: String) {
-        log.add(time to text)
-        while (log.size > KEEP) log.removeAt(0)
-    }
-
-    private fun act(action: String) {
+    private fun act(action: String, body: JSONObject = JSONObject()) {
         busy = action
         error = null
-        client?.act("scripts", action) { failed ->
+        models.act("scripts", action, body) { failed ->
             busy = null
             error = failed
         }
@@ -134,16 +87,20 @@ class ScriptsPanel(
     fun pause() = act("pause")
     fun resume() = act("resume")
     fun favourite() = act("favourite")
-    fun clearLog() {
-        client?.act("logs", "clear", JSONObject().put("kind", "script")) { if (it == null) log.clear() }
+    fun clearLog() = models.clearLog("script")
+
+    /** A favourite or recent script: loaded and started (the chip's list). */
+    fun startQuick(path: String) {
+        busy = "start"
+        error = null
+        models.act("rail", "start-quick", JSONObject().put("path", path)) { failed ->
+            busy = null
+            error = failed
+        }
     }
 
     fun searchScripts() = openWindow("script_repo")
     fun editOptions() = openWindow("script_options")
-
-    companion object {
-        const val KEEP = 500
-    }
 }
 
 /** "45s", "12m", "3h 05m": the egui card's clock. */
@@ -163,7 +120,6 @@ private fun statusColor(status: Status): Color = when (status) {
 /** The Script Loader: status, the run controls, setup, the script log (docs/UI.md, "Native shells"). */
 @Composable
 fun ScriptsPage(state: ShellState, scripts: ScriptsPanel) {
-    LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { scripts.follow(state.tabs.active) }
     val view = scripts.view
     Column(Modifier.fillMaxSize()) {
         PageBar("Script Loader", onBack = { state.back() }) {
@@ -212,8 +168,33 @@ fun ScriptsPage(state: ShellState, scripts: ScriptsPanel) {
                 }
             }
             if (view.script != null) Reason(view.controls.editOptions)
+            QuickScripts(scripts, active = view.status.isActive())
         }
         ScriptLog(scripts, running = view.status != Status.EMPTY && view.status != Status.LOADED && view.status != Status.ERROR)
+    }
+}
+
+private fun Status.isActive() = this == Status.COMPILING || this == Status.RUNNING || this == Status.PAUSED || this == Status.STOPPING
+
+/** Favourite and recent scripts, a tap loading and starting one (the egui chip's list), while none runs. */
+@Composable
+private fun QuickScripts(scripts: ScriptsPanel, active: Boolean) {
+    val rail = scripts.models.rail ?: return
+    if (active || (rail.favourites.isEmpty() && rail.recent.isEmpty())) return
+    Column {
+        for ((title, list) in listOf("Favourites" to rail.favourites, "Recent" to rail.recent)) {
+            if (list.isEmpty()) continue
+            Text(title, style = MaterialTheme.typography.labelMedium, color = Turu.Muted, modifier = Modifier.padding(top = 4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                for (quick in list.take(3)) {
+                    androidx.compose.material3.AssistChip(
+                        onClick = { scripts.startQuick(quick.path) },
+                        label = { Text(quick.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+            }
+        }
     }
 }
 

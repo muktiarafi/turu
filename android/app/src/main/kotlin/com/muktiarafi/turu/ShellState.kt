@@ -68,6 +68,12 @@ sealed interface Page {
 
     /** The Script Loader. */
     data object Scripts : Page
+    data object Auto : Page
+    data object Jump : Page
+    data object Logs : Page
+
+    /** Every menu's windows, Hide Side Bar. */
+    data object More : Page
 
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
@@ -91,8 +97,10 @@ class ShellState {
     fun openAt(at: Page) {
         stack.clear()
         page = at
-        open = true
-        onOpenChanged(true)
+        if (!open) {
+            open = true
+            onOpenChanged(true)
+        }
     }
 
     fun push(next: Page) {

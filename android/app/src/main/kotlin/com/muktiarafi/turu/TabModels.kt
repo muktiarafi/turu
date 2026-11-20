@@ -1,0 +1,114 @@
+package com.muktiarafi.turu
+
+import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.muktiarafi.turu.models.AutoView
+import com.muktiarafi.turu.models.BankView
+import com.muktiarafi.turu.models.JumpView
+import com.muktiarafi.turu.models.RailView
+import com.muktiarafi.turu.models.ScriptsView
+import kotlinx.serialization.json.Json
+import org.json.JSONObject
+
+/**
+ * The tab on screen's view models, read from its slot's control API (`turu_frontend::models`,
+ * decoded into the generated types) for the native rail and its pages: one [ModelClient] for the
+ * tab shown, made again when another tab shows or the slot comes back on a new port. Its logs are
+ * line-fed, their last [KEEP] lines kept.
+ */
+class TabModels {
+    var tab by mutableStateOf<ShellTab?>(null)
+        private set
+    var scripts by mutableStateOf<ScriptsView?>(null)
+        private set
+    var auto by mutableStateOf<AutoView?>(null)
+        private set
+    var jump by mutableStateOf<JumpView?>(null)
+        private set
+    var bank by mutableStateOf<BankView?>(null)
+        private set
+    var rail by mutableStateOf<RailView?>(null)
+        private set
+
+    /** The script log and the client's (debug) log. */
+    val scriptLog = mutableStateListOf<Pair<String, String>>()
+    val clientLog = mutableStateListOf<Pair<String, String>>()
+
+    private var client: ModelClient? = null
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /** Reads `next`'s models (the tab on screen), or nothing with null. */
+    fun follow(next: ShellTab?) {
+        val same = next?.id == tab?.id && next?.api == tab?.api
+        tab = next
+        if (same && client != null) return
+        client?.stop()
+        client = null
+        scripts = null
+        auto = null
+        jump = null
+        bank = null
+        rail = null
+        scriptLog.clear()
+        clientLog.clear()
+        val api = next?.api ?: return
+        val token = next.token ?: return
+        client = ModelClient(
+            api, token,
+            models = listOf("scripts", "auto", "jump", "bank", "rail"),
+            logs = listOf("script", "debug"),
+            onView = ::decode,
+            onLog = { kind, time, text -> log(kind)?.let { append(it, time, text) } },
+        ).also { client ->
+            client.start()
+            for (kind in listOf("script", "debug")) {
+                client.readLog(kind, 0) { lines ->
+                    val list = log(kind) ?: return@readLog
+                    list.clear()
+                    lines.takeLast(KEEP).forEach { list.add(it) }
+                }
+            }
+        }
+    }
+
+    private fun log(kind: String) = when (kind) {
+        "script" -> scriptLog
+        "debug" -> clientLog
+        else -> null
+    }
+
+    private fun append(list: MutableList<Pair<String, String>>, time: String, text: String) {
+        list.add(time to text)
+        while (list.size > KEEP) list.removeAt(0)
+    }
+
+    private fun decode(model: String, text: String) {
+        // A record changed on one side only fails loudly here, with the route.
+        runCatching {
+            when (model) {
+                "scripts" -> scripts = json.decodeFromString<ScriptsView>(text)
+                "auto" -> auto = json.decodeFromString<AutoView>(text)
+                "jump" -> jump = json.decodeFromString<JumpView>(text)
+                "bank" -> bank = json.decodeFromString<BankView>(text)
+                "rail" -> rail = json.decodeFromString<RailView>(text)
+            }
+        }.onFailure { Log.e(ModelClient.TAG, "/models/$model doesn't decode: $it") }
+    }
+
+    /** Runs `action` of `model`; `done` gets the error, or null. */
+    fun act(model: String, action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+        val client = client ?: return done("The tab isn't up yet")
+        client.act(model, action, body, done)
+    }
+
+    fun clearLog(kind: String) {
+        act("logs", "clear", JSONObject().put("kind", kind)) { if (it == null) log(kind)?.clear() }
+    }
+
+    companion object {
+        const val KEEP = 500
+    }
+}
