@@ -1020,6 +1020,16 @@ above, and why:
   outlined after the label; an option that depends on another indented and dimmed while that one
   is off; an unused one dimmed with "Coming soon". At the foot one status line, Defaults (asks
   first), Revert (asks first while a script changed options) and Save.
+* **Application Options and CoreBots** (L5b, 2026-11-20), pages of the panel from More > Options.
+  Application Options: search and section chips, each setting with its control and saved as it
+  changes ("Restart required" under those that need it), Test, Clear Flash Cache (asks first),
+  Check Now, Free and Open as buttons; the Web Monitor's links, QR code and keys say "In the full
+  window" with Open. CoreBots: the character and whether its file is saved, Loadout, Options and
+  Other as segments, a card per role (class, mode, Use equipment, the gear folded under "Gear · N
+  of 6 set"), Options and Other as option rows under their groups, Refresh from game, Revert and
+  Save (asking before public rooms); the page saves when it closes, as the window does.
+* **Full window**: every native page's ⋮ ends with Full window, the slot's egui window (which
+  stays egui until it closes), and says what it adds there.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
   pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
 

@@ -695,10 +695,24 @@ script's message box and options request.
   facet-generate doesn't rename fields inside enum variants, so they're one word) and generated;
   a native page edits it live, marks Edited against Changed outside (the page's own record), and
   has Defaults, Revert and Save. The first decode failed loudly on that rename, as planned.
-* Not yet: Application Options and CoreBots (1,191 and 1,583 egui lines, each as big a move as
-  Game Options), Scheduler, Army Control and Army Queue as native screens, and a phone (M4). Nothing that needs the game was tried since 08:10: the emulator's certificate checks
-  against game.aq.com fail ("certificate was revoked", with or without this work's network
-  security config).
+* **Application Options and CoreBots** (2026-11-20): Application Options' field table is
+  `models::application_options` (the egui window draws from it), with the option rows of
+  `models::form` shared with Game Options; the Web Monitor's links, QR code and keys stay in the
+  full window. CoreBots' state machine is `models::core_bots::Draft` (the egui window derefs to
+  one); the slot keeps one per tab for the native page, opened with it and saved when it closes,
+  never a copy in the shell.
+* **Every egui window stays reachable**: each native page's menu has Full window, and a window the
+  shell asks for stays egui until it closes (`Windows::egui`). Before that (from the native
+  Script Loader to here) the native pages caught every opening of their windows, and what only
+  the egui windows have (Delete and Reset Scripts, account groups and Start Selected, Revert
+  mine, Relogin Server's list, the log's Find and Copy) couldn't be reached on Android.
+* **A bug this work caused, fixed**: the app's `network_security_config.xml` (loopback, for the
+  model reads) replaced rustls-platform-verifier's file of the same name, and with it the
+  revocation lists the certificate checks fetch: every HTTPS request failed ("certificate was
+  revoked") from the native Script Loader's build on. It's generated from the library's now.
+  Notes here that blamed the emulator were wrong; the game was tried again after the fix (Jump,
+  Bank, CoreBots' class list).
+* Not yet: Scheduler, Army Control and Army Queue as native screens, and a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)
 
