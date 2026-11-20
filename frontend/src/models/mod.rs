@@ -24,6 +24,7 @@ pub mod drops;
 pub mod form;
 pub mod game_options;
 pub mod jump;
+pub mod loadouts;
 pub mod logs;
 pub mod notifications;
 pub mod rail;
@@ -455,6 +456,13 @@ pub fn register() {
         "core-bots",
         "do",
         Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
+    add_model("loadouts", Box::new(|bot| to_json(&loadouts::view(bot))));
+    add_model_action(
+        "loadouts",
+        "do",
+        Box::new(|bot, body| loadouts::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("skills", Box::new(|bot| to_json(&skills::view(bot))));
