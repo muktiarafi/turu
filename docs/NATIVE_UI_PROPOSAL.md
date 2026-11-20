@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber and Junk Items. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items and Console. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -923,6 +923,13 @@ script's message box and options request.
   items' actions scroll sideways on one row); no junk list or goal was saved. Not checked, as they
   sell in game or change the owner's data: Mark, Unmark, Unmark all, Set and Clear goal, the sales
   and Skip sell warning.
+* **Console** (2026-11-21, the owner's pick): `models::console` holds per tab the output (1,000
+  lines, with a count of those dropped), whether a snippet runs and the snippet last run; Run
+  refuses while a snippet, a script or Auto runs, with the reason. Runs go to the tab's own bot
+  (the egui window ran on the tab on screen). The egui window keeps its own editor. Checked on the
+  emulator: the page, typing with the keyboard up (the editor first lost its focus when it moved
+  between two layouts; it now has one call site), ⋮, font scale 1.3. Not checked: Run, Stop and the
+  output's colours, as a snippet runs on the owner's account.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -949,8 +956,8 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Console, HotKeys, and for
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: HotKeys, and for
 good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
