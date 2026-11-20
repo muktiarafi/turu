@@ -182,9 +182,9 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, selected: Bool
     }
     val words = when {
         view == null -> "…"
-        view.elapsedSecs != null -> durationText(view.elapsedSecs!!.toLong())
+        view.elapsedSecs != null -> durationText(view.elapsedSecs.toLong())
         status == Status.ERROR -> "Error"
-        view.lastRun != null -> if (view.lastRun!!.finished) "Finished" else "Stopped"
+        view.lastRun != null -> if (view.lastRun.finished) "Finished" else "Stopped"
         view.script == null -> "No script"
         else -> "Ready"
     }

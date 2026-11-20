@@ -220,7 +220,7 @@ private fun StatusCard(view: ScriptsView, scripts: ScriptsPanel) {
             val state = when {
                 run != null && view.status == Status.ERROR -> "${view.state} · ran ${durationText(run.ranSecs.toLong())}"
                 run != null -> "${if (run.finished) "Finished" else "Stopped"} · ran ${durationText(run.ranSecs.toLong())}"
-                view.elapsedSecs != null -> "${view.state} · ${durationText(view.elapsedSecs!!.toLong())}"
+                view.elapsedSecs != null -> "${view.state} · ${durationText(view.elapsedSecs.toLong())}"
                 else -> view.state
             }
             Text(state, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
