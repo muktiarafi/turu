@@ -499,6 +499,10 @@ pub enum NativeScreen {
     Army,
     /// Diagnostics > Notification Center.
     Notifications,
+    /// Combat > Stats.
+    Stats,
+    /// Tools > Current Drops.
+    CurrentDrops,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

@@ -96,6 +96,12 @@ sealed interface Page {
     /** Diagnostics > Notification Center. */
     data object Notifications : Page
 
+    /** Combat > Stats. */
+    data object Stats : Page
+
+    /** Tools > Current Drops. */
+    data object CurrentDrops : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

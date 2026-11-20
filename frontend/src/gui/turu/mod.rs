@@ -378,6 +378,8 @@ impl TuruUi {
             ("scheduler", w.scheduler),
             ("army", w.army),
             ("notifications", w.notifications),
+            ("stats", w.stats),
+            ("current_drops", w.current_drops),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -416,6 +418,12 @@ impl TuruUi {
         }
         if w.notifications && !kept(w, "notifications") && crate::turu::open_shell_screen(NativeScreen::Notifications) {
             w.notifications = false;
+        }
+        if w.stats && !kept(w, "stats") && crate::turu::open_shell_screen(NativeScreen::Stats) {
+            w.stats = false;
+        }
+        if w.current_drops && !kept(w, "current_drops") && crate::turu::open_shell_screen(NativeScreen::CurrentDrops) {
+            w.current_drops = false;
         }
         tab.script_loader.show(
             ctx,

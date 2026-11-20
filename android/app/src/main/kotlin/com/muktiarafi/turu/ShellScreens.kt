@@ -47,6 +47,8 @@ class ShellScreens(private val activity: TuruActivity) {
         scheduler = SchedulerPanel(),
         army = ArmyPanel(),
         notifications = NotificationsPanel(),
+        stats = StatsPanel(),
+        drops = DropsPanel(),
     )
 
     private val railActions = RailActions(
@@ -118,6 +120,8 @@ class ShellScreens(private val activity: TuruActivity) {
             "scheduler" -> open(Page.Scheduler)
             "army" -> open(Page.Army)
             "notifications" -> open(Page.Notifications)
+            "stats" -> open(Page.Stats)
+            "current_drops" -> open(Page.CurrentDrops)
         }
     }
 
