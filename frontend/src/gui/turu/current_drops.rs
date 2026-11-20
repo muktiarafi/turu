@@ -2,11 +2,10 @@
 
 use super::theme::{MUTED, SUCCESS, TEXT};
 use super::widgets::{self, Kind};
+use crate::models::drops as model;
 use egui::{Context, RichText, ScrollArea, Ui, vec2};
-use serde_json::json;
 use std::collections::HashSet;
 use std::time::Duration;
-use turu_bot::api::dispatch;
 
 #[derive(Default)]
 pub struct CurrentDrops {
@@ -28,10 +27,10 @@ impl CurrentDrops {
 
     fn ui(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
-        let mut drops: Vec<_> = bot.state.lock().drops.values().cloned().collect();
-        drops.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
+        let view = model::view(&bot);
+        let drops = view.drops;
         self.selected.retain(|id| drops.iter().any(|d| d.id == *id));
-        let ac_count = drops.iter().filter(|d| d.coins).count();
+        let ac_count = view.ac_count;
 
         ui.horizontal(|ui| {
             let width = ui.available_width() - 150.0;
@@ -41,10 +40,9 @@ impl CurrentDrops {
             });
             ui.checkbox(&mut self.ac_only, "AC only");
         });
-        let needle = self.search.to_lowercase();
         let shown: Vec<_> = drops
             .iter()
-            .filter(|d| (!self.ac_only || d.coins) && (needle.is_empty() || d.name.to_lowercase().contains(&needle)))
+            .filter(|d| model::shows(d, &self.search, self.ac_only))
             .collect();
 
         ui.horizontal(|ui| {
@@ -58,7 +56,7 @@ impl CurrentDrops {
             )
             .clicked()
             {
-                crate::turu::spawn_action("Pick up all", |bot| dispatch(bot, "drops.pickupAll", &[]).map(|_| ()));
+                model::pickup_all(&bot);
             }
             let count = self.selected.len();
             let label = if count == 0 {
@@ -67,10 +65,7 @@ impl CurrentDrops {
                 format!("Pick up selected ({count})")
             };
             if widgets::button(ui, &label, Kind::Normal, count > 0, vec2(0.0, 26.0), "").clicked() {
-                let ids: Vec<i64> = self.selected.iter().copied().collect();
-                crate::turu::spawn_action("Pick up selected", move |bot| {
-                    dispatch(bot, "drops.pickup", &[json!(ids)]).map(|_| ())
-                });
+                model::pickup(&bot, self.selected.iter().copied().collect());
             }
         });
 

@@ -20,6 +20,7 @@ pub mod army;
 pub mod auto;
 pub mod bank;
 pub mod core_bots;
+pub mod drops;
 pub mod form;
 pub mod game_options;
 pub mod jump;
@@ -138,6 +139,31 @@ pub fn register() {
         "clear",
         Box::new(|bot, _| {
             notifications::clear(bot);
+            done()
+        }),
+    );
+
+    add_model("drops", Box::new(|bot| to_json(&drops::view(bot))));
+    add_model_action(
+        "drops",
+        "pickup-all",
+        Box::new(|bot, _| {
+            drops::pickup_all(bot);
+            done()
+        }),
+    );
+    add_model_action(
+        "drops",
+        "pickup",
+        Box::new(|bot, body| {
+            let ids: Vec<i64> = body
+                .get("ids")
+                .and_then(Value::as_array)
+                .ok_or("ids is missing")?
+                .iter()
+                .filter_map(Value::as_i64)
+                .collect();
+            drops::pickup(bot, ids);
             done()
         }),
     );
