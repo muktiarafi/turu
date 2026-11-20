@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats and Current Drops. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops and Skills. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -772,6 +772,21 @@ script's message box and options request.
   Checked on the emulator: Stats' counters, Advanced on and off by its label, gameplay, Save and
   Clear on an empty history (left empty); Current Drops' empty state. Not checked: drops in the
   list and picking them up (none dropped), Export, Reset.
+* **Skills** (2026-11-20, the owner's pick for the next page): `models::skills` holds the editor,
+  Edit Rules' copy, the saved sets with the class picked, and Save, Remove, Open and Reset, one per
+  tab in `skills::STATE`, which the egui window and the native page share (a first: Skills has no
+  save on close, so a copy per shell would lose a sequence in progress at Full window). The view
+  carries the class list and only the picked class's sets (the file holds about 270 classes,
+  85 KB). Rules go back whole (`rules`, a `RulesView`) and are bounded in the model (a percentage
+  stops at 100, the last aura removed turns Several auras off). facet-generate refuses a field
+  named `index` (it shadows a local in the generated decoder): the views say `position`. Checked
+  on the emulator: a made-up class typed with the keyboard up, skills added, a skill's rules set
+  and confirmed, Full window showing the same sequence, Save, finding the class, Remove (asked;
+  the class went with its set), Reset's question (cancelled), font scale 1.3. Not checked: Several
+  auras with real auras, Move, a script using a set saved here.
+* **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
+  after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
+  found and cleared nine findings in the pages before Skills.
 * Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)
@@ -795,11 +810,11 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops. Each window's page has Full window for the
+Control, Notification Center, Stats, Current Drops, Skills. Each window's page has Full window for the
 egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items,
-Loadouts, Fast Travel), Combat's Skills and Runtime, Butler, Cosmetics, Console, HotKeys, and for
-good Spammer, Packet Logger and Interceptor. The owner hasn't picked the next; the last advice
-was a PR and a phone run (M4) before more pages.
+Loadouts, Fast Travel), Combat's Runtime, Butler, Cosmetics, Console, HotKeys, and for
+good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills (done), then
+Loadouts, Fast Travel and Butler.
 
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
 
@@ -833,7 +848,8 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
 1. **The model** (`frontend/src/models/<name>.rs`): a view struct (`Serialize`, and
    `cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))`; a
    field inside an enum variant must be one word; no tuples, so `Option<(String, bool)>` becomes
-   two fields), functions for each action, per-tab state that isn't the bot's in a `PerTab`
+   two fields; no field named `index`: the generated decoder has a local of that name),
+   functions for each action, per-tab state that isn't the bot's in a `PerTab`
    (`tab_state.rs`). No egui (`models_import_no_ui`). Add the view and actions to
    `models::register()` and the view type to `bin/turu-typegen.rs`. Type names are global in
    Kotlin: no two views may have an enum of the same name (hence `scheduler::Tint` beside

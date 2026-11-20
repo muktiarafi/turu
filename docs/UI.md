@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers, Combat, Butler, Cosmetics, Console | decided when reached; egui from More until then |
+| Tools & Helpers, Combat's Runtime, Butler, Cosmetics, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1096,6 +1096,26 @@ above, and why:
   however the slot opens it: a search and an "AC only" chip with the AC count, the drops as rows
   (a check box, the name, ×quantity, an AC tag), a tap checking one, and Pick up N and Pick up all
   at the foot.
+* **Skills** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Combat and however the
+  slot opens Advanced Skills. VibeSkua's two tabs as segments. Edit: Class and Mode, the sequence
+  (a row per skill: its place, the slot in a tonal circle, "Skill 2" or "Auto attack" / "Potion",
+  its rules in words; a tap opens its rules, ⋮ has Edit rules, Move up, Move down, Remove), the
+  0 to 5 buttons (the line under them says what 0 and 5 are), Rules for added skills (a row with
+  On or Off), Use if available / Wait for cooldown as segments with a line on what each does,
+  Skill timeout and Reset on target change; at the foot what Save does ("Save adds …" or "Saving
+  replaces …'s Farm set"), or why it can't, beside Save set. A skill's rules are a page pushed
+  over it, as Edit Rules (Done keeps them, Back and the arrow drop them; Reset in its bar): Use
+  rules, then Health, Mana and Party HP as ≥/≤, the amount and %/# on one row, the aura (or
+  Several auras with All of them / Any of them, each aura a card with ×), Wait before use and
+  Skip if not available, all dimmed while Use rules is off. Rules for added skills is the same
+  page, applying as it changes (Close). Saved sets: Find a class over the classes' list (the file
+  holds about 270, so the page reads one class's sets at a time), then that class's sets (the mode
+  as a chip, how it uses skills, the sequence); a tap opens one in Edit, ⋮ has Remove… (asked
+  first). The page's ⋮: Refresh saved sets, Reset sets… (asked first, where the window wants a
+  second click) and Full window. The editor is the slot's, shared with the egui window, so Full
+  window shows what is being built. With the keyboard up the segments and the foot step aside so
+  the field shows above it. Differs from the window: no selection (each row's ⋮ acts on it), and
+  no Load Classes / mode drop-down / Open (a class's sets are listed whole).
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
