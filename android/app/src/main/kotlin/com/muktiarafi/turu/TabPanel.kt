@@ -78,6 +78,7 @@ class TabActions(
     val hideRail: () -> Unit,
     val search: SearchPanel,
     val gameOptions: GameOptionsPanel,
+    val appOptions: AppOptionsPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
@@ -204,7 +205,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
             modifier = Modifier
                 .padding(start = 64.dp + state.cutoutLeftDp.dp)
                 // Search Scripts' rows need more room than a list of tabs.
-                .width(if (state.page == Page.Search || state.page == Page.GameOptions) 440.dp else PanelWidth)
+                .width(if (state.page == Page.Search || state.page == Page.GameOptions || state.page == Page.AppOptions) 440.dp else PanelWidth)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
                 // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
@@ -235,6 +236,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                         actions.gameOptions,
                         running = actions.scripts.models.scripts?.controls?.stop != null,
                     ) { actions.window("game_options") }
+                    Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }

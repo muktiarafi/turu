@@ -38,6 +38,7 @@ class ShellScreens(private val activity: TuruActivity) {
         hideRail = { railHidden(true) },
         search = SearchPanel(),
         gameOptions = GameOptionsPanel(),
+        appOptions = AppOptionsPanel(),
     )
 
     private val railActions = RailActions(
@@ -104,6 +105,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "scripts" -> open(Page.Scripts)
             "search" -> open(Page.Search)
             "game_options" -> open(Page.GameOptions)
+            "app_options" -> open(Page.AppOptions)
         }
     }
 

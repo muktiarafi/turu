@@ -81,6 +81,9 @@ sealed interface Page {
     /** Options > Game. */
     data object GameOptions : Page
 
+    /** Options > Application. */
+    data object AppOptions : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

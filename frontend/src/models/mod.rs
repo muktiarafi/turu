@@ -15,8 +15,10 @@
 //! * No egui here (`models_import_no_ui` checks the sources): L1's client split moves this module
 //!   to `turu_client` as it is.
 
+pub mod application_options;
 pub mod auto;
 pub mod bank;
+pub mod form;
 pub mod game_options;
 pub mod jump;
 pub mod logs;
@@ -271,6 +273,21 @@ pub fn register() {
             Box::new(move |_, _| repo::task(task).and_then(|()| done())),
         );
     }
+
+    add_model("app-options", Box::new(|bot| to_json(&application_options::view(bot))));
+    add_model_action(
+        "app-options",
+        "set",
+        Box::new(|bot, body| {
+            let value = body.get("value").ok_or("value is missing")?;
+            application_options::set(bot, &text(body, "section")?, &text(body, "label")?, value).and_then(|()| done())
+        }),
+    );
+    add_model_action(
+        "app-options",
+        "act",
+        Box::new(|bot, body| application_options::act(bot, &text(body, "label")?).and_then(|()| done())),
+    );
 
     add_model("game-options", Box::new(|bot| to_json(&game_options::view(bot))));
     add_model_action(

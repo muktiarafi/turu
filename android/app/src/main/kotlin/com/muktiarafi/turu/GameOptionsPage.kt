@@ -227,7 +227,15 @@ fun GameOptionsPage(state: ShellState, options: GameOptionsPanel, running: Boole
                         }
                     }
                     group = o.group
-                    item(key = o.label) { OptionRow(o, options, view.inGame) }
+                    item(key = o.label) {
+                        OptionRow(
+                            o,
+                            edited = o.label in options.edited,
+                            inGame = view.inGame,
+                            onSet = { options.set(o, it) },
+                            onAction = { options.reload(o) },
+                        )
+                    }
                 }
             }
         }
@@ -248,8 +256,19 @@ private fun SectionChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /** One option: its label (and why it differs), its description, its control. */
+/**
+ * One option (both options pages): its label (why it differs, "Restart required"), description
+ * and control. `edited`: changed on this page; `onAction` for a button's press.
+ */
 @Composable
-private fun OptionRow(o: OptionView, options: GameOptionsPanel, inGame: Boolean) {
+fun OptionRow(
+    o: OptionView,
+    edited: Boolean,
+    inGame: Boolean,
+    onSet: (Any) -> Unit,
+    onAction: () -> Unit,
+    fullWindow: () -> Unit = {},
+) {
     val dim = !o.applies || o.unused
     Column(
         Modifier
@@ -262,7 +281,7 @@ private fun OptionRow(o: OptionView, options: GameOptionsPanel, inGame: Boolean)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(o.label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (o.differs) {
-                        val mine = o.label in options.edited
+                        val mine = edited
                         val color = if (mine) Turu.Accent else Turu.Warning
                         Spacer(Modifier.width(6.dp))
                         // Outlined, not filled: on a tinted pill the accent text would be under 4.5:1.
@@ -276,32 +295,48 @@ private fun OptionRow(o: OptionView, options: GameOptionsPanel, inGame: Boolean)
                         )
                     }
                 }
-                Text(
-                    if (o.unused) "Coming soon: Turu doesn't use this yet" else o.description,
+                if (o.restart) {
+                    Text("Restart required", style = MaterialTheme.typography.labelSmall, color = Turu.Muted)
+                }
+                val about = when {
+                    o.kind is KindView.elsewhere -> "In the full window. ${o.description}".trim()
+                    o.unused && o.kind is KindView.switch -> "Coming soon: Turu doesn't use this yet"
+                    else -> o.description
+                }
+                if (about.isNotEmpty()) Text(
+                    when {
+                        o.kind is KindView.elsewhere -> "In the full window. ${o.description}".trim()
+                        o.unused && o.kind is KindView.switch -> "Coming soon: Turu doesn't use this yet"
+                        else -> o.description
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = Turu.Muted,
                 )
             }
             val kind = o.kind
             when (kind) {
-                is KindView.switch -> Switch(checked = o.value.bool(), enabled = !o.unused, onCheckedChange = { options.set(o, it) })
-                is KindView.action -> OutlinedButton(onClick = { options.reload(o) }, enabled = inGame || !kind.login, modifier = Modifier.heightIn(min = 40.dp)) {
-                    Text(kind.label)
+                is KindView.switch -> Switch(checked = o.value.bool(), enabled = !o.unused, onCheckedChange = { onSet(it) })
+                is KindView.action -> OutlinedButton(
+                    onClick = onAction,
+                    enabled = (inGame || !kind.login) && !o.unused && o.applies,
+                    modifier = Modifier.heightIn(min = 40.dp),
+                ) { Text(kind.label) }
+                is KindView.elsewhere -> TextButton(onClick = fullWindow, modifier = Modifier.heightIn(min = 40.dp)) { Text("Open") }
+                is KindView.choice -> Box(Modifier.width(150.dp)) {
+                    Picker(label = "", value = o.value.string(), options = kind.choices.map { it.first to it.second }, loading = false) { onSet(it) }
                 }
-                is KindView.choice -> Box(Modifier.width(160.dp)) {
-                    Picker(label = "", value = o.value.string(), options = kind.choices.map { it.first to it.second }, loading = false) { options.set(o, it) }
-                }
-                is KindView.number -> NumberField(o.value.long(), kind.min.toLong(), Long.MAX_VALUE, kind.unit, enabled = !o.unused) { options.set(o, it) }
+                is KindView.number -> NumberField(o.value.long(), kind.min.toLong(), kind.max?.toLong() ?: Long.MAX_VALUE, kind.unit, enabled = !o.unused) { onSet(it) }
                 is KindView.fps -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    NumberField(o.value.long(), 0, kind.max.toLong(), if (o.value.long() == 0L) "Off" else "FPS", enabled = true) { options.set(o, it) }
-                    FpsPresets(kind.presets) { options.set(o, it) }
+                    NumberField(o.value.long(), 0, kind.max.toLong(), if (o.value.long() == 0L) "Off" else "FPS", enabled = true) { onSet(it) }
+                    FpsPresets(kind.presets) { onSet(it) }
                 }
                 else -> {}
             }
         }
         when (val kind = o.kind) {
-            is KindView.text -> TextOption(o.value.string(), kind.hint) { options.set(o, it) }
-            is KindView.server -> TextOption(o.value.string(), "A server's name") { options.set(o, it) }
+            is KindView.text -> TextOption(o.value.string(), kind.hint, secret = false) { onSet(it) }
+            is KindView.secret -> TextOption(o.value.string(), "", secret = true) { onSet(it) }
+            is KindView.server -> TextOption(o.value.string(), "A server's name", secret = false) { onSet(it) }
             else -> {}
         }
     }
@@ -342,7 +377,7 @@ private fun FpsPresets(presets: List<Int>, onSet: (Long) -> Unit) {
 
 /** Text, sent a moment after the typing stops. */
 @Composable
-private fun TextOption(value: String, hint: String, onSet: (String) -> Unit) {
+private fun TextOption(value: String, hint: String, secret: Boolean, onSet: (String) -> Unit) {
     var text by remember { mutableStateOf(value) }
     LaunchedEffect(text) {
         if (text != value) {
@@ -355,6 +390,7 @@ private fun TextOption(value: String, hint: String, onSet: (String) -> Unit) {
         onValueChange = { text = it },
         placeholder = { Text(hint) },
         singleLine = true,
+        visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         shape = RoundedCornerShape(12.dp),
         colors = fieldColors(),
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),

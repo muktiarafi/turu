@@ -8,7 +8,7 @@
 //! state, not the bot's: each shell keeps its own set of edited options and passes it in.
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::collections::HashSet;
 use turu_bot::Bot;
 use turu_bot::options::{BotOptions, HuntPriority};
@@ -596,101 +596,16 @@ pub struct GameOptionsView {
     pub in_game: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
-#[serde(rename_all = "camelCase")]
-pub struct SectionView {
-    /// Its short name, for a filter chip ("Combat").
-    pub chip: &'static str,
-    /// Its heading ("Combat & Targeting").
-    pub title: &'static str,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
-#[serde(rename_all = "camelCase")]
-pub struct OptionView {
-    /// Its label, which is also its key for [`set`].
-    pub label: &'static str,
-    pub description: &'static str,
-    /// The section's chip.
-    pub section: &'static str,
-    /// The small heading inside its section ("" for none).
-    pub group: &'static str,
-    pub kind: KindView,
-    pub value: OptionValue,
-    pub saved: OptionValue,
-    pub differs: bool,
-    /// It matters now: the option it depends on (Private Rooms for Private Number) is on.
-    pub applies: bool,
-    /// Turu stores it but nothing reads it yet.
-    pub unused: bool,
-}
-
-/// An option's value, typed for the shells (a switch's, a number's, a text's or a choice's key).
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
-#[serde(rename_all = "camelCase")]
-#[repr(C)]
-pub enum OptionValue {
-    Switch(bool),
-    Number(i64),
-    /// Text, a server's name, or a choice's key ("HighHP").
-    Text(String),
-    /// An action's (Reload Map): none.
-    None,
-}
-
-impl OptionValue {
-    /// As JSON, as [`set`] takes it.
-    pub fn to_json(&self) -> Value {
-        match self {
-            Self::Switch(on) => json!(on),
-            Self::Number(n) => json!(n),
-            Self::Text(text) => json!(text),
-            Self::None => Value::Null,
-        }
-    }
-}
-
-/// How an option is edited.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
-#[serde(rename_all = "camelCase")]
-#[repr(C)]
-pub enum KindView {
-    Switch,
-    #[serde(rename_all = "camelCase")]
-    Number {
-        min: i32,
-        unit: Option<&'static str>,
-    },
-    /// Set FPS: 0 is Off; `presets` for a menu.
-    Fps {
-        max: i32,
-        presets: Vec<i32>,
-    },
-    Text {
-        hint: &'static str,
-    },
-    /// A server's name (Relogin Server).
-    Server,
-    /// One of `choices`: (key, words).
-    Choice {
-        choices: Vec<(String, String)>,
-    },
-    /// A button (Reload Map), not a value; `login`: it needs one. (One-word fields in variants:
-    /// facet-generate doesn't rename inside them as serde does.)
-    Action {
-        label: &'static str,
-        login: bool,
-    },
-}
+pub use super::form::{KindView, OptionValue, OptionView, SectionView};
 
 fn kind_view(field: &Field) -> KindView {
     match field {
         Field::Bool(_) => KindView::Switch,
-        Field::Int(_, min, unit) => KindView::Number { min: *min, unit: *unit },
+        Field::Int(_, min, unit) => KindView::Number {
+            min: *min,
+            max: None,
+            unit: *unit,
+        },
         Field::Fps => KindView::Fps {
             max: MAX_FPS,
             presets: FPS_PRESETS.to_vec(),
@@ -782,6 +697,7 @@ pub fn view(bot: &Bot) -> GameOptionsView {
                 kind: kind_view(&e.field),
                 value: e.field.get(&live),
                 saved: e.field.get(&saved),
+                restart: false,
                 differs: differs.contains(&e.label),
                 applies: e.requires.is_none_or(|requires| requires(&live)),
                 unused: UNUSED.contains(&e.label),
