@@ -338,115 +338,118 @@ impl State {
     }
 }
 
-/// Saves what's worn, as a new loadout or into one ([`WornFor`]), read on a bot thread.
-pub fn read_worn(bot: &Arc<Bot>, target: WornFor) {
-    let state = STATE.of(bot);
-    {
-        let mut s = lock(&state);
-        if s.busy.is_some() {
+// The work a bot thread does. Each `State` method takes the guard its caller holds (the egui
+// window holds it for the whole frame) and spawns the thread with the tab's handle, which locks
+// it there; the free functions lock first, for the control API's actions. Never lock the state
+// again while holding it: a std mutex taken twice on one thread never returns.
+
+impl State {
+    /// Saves what's worn, as a new loadout or into one ([`WornFor`]), read on a bot thread.
+    pub fn read_worn(&mut self, bot: &Arc<Bot>, target: WornFor) {
+        if self.busy.is_some() {
             return;
         }
-        s.busy = Some(LoadoutWork::Reading);
-    }
-    crate::turu::spawn_action_for(bot.clone(), "Loadouts save", move |bot| {
-        let file = gear::refresh(bot);
-        let mut s = lock(&state);
-        s.busy = None;
-        match file {
-            Ok(Some(file)) => s.worn = Some((target, Loadout::from_worn("", &file.items))),
-            Ok(None) => s.note = note("Not in a map: log in first", Tint::Danger),
-            Err(e) => s.note = note(format!("Couldn't read your gear: {e}"), Tint::Danger),
-        }
-        Ok(())
-    });
-}
-
-/// Reads the gear now rather than within the gear thread's 30 s.
-pub fn read_gear(bot: &Arc<Bot>) {
-    lock(&STATE.of(bot)).reread();
-    crate::turu::spawn_action_for(bot.clone(), "Loadouts gear", |bot| {
-        gear::refresh(bot)?;
-        Ok(())
-    });
-}
-
-/// Equip (VibeSkua `EquipLoadoutAsync`): held while a script runs unless `stop`.
-pub fn equip(bot: &Arc<Bot>, loadout: Loadout, stop: bool) {
-    let state = STATE.of(bot);
-    {
-        let mut s = lock(&state);
-        if s.busy.is_some() {
-            return;
-        }
-        s.busy = Some(LoadoutWork::Equipping);
-        s.note = note(format!("Equipping {}...", loadout.name), Tint::Muted);
-    }
-    crate::turu::spawn_action_for(bot.clone(), "Loadouts equip", move |bot| {
-        let outcome = loadouts::equip(bot, &loadout, stop);
-        let _ = gear::refresh(bot);
-        let mut s = lock(&state);
-        s.busy = None;
-        s.gear_at = None;
-        s.note = Some(match outcome {
-            Ok(report) => equip_outcome(&loadout.name, &report),
-            Err(GearError::ScriptRunning(name)) => Note {
-                text: format!("{name} started meanwhile: press Equip again to stop it"),
-                tint: Tint::Warning,
-            },
-            Err(e) => Note {
-                text: format!("Couldn't equip {}: {e}", loadout.name),
-                tint: Tint::Danger,
-            },
+        self.busy = Some(LoadoutWork::Reading);
+        let state = STATE.of(bot);
+        crate::turu::spawn_action_for(bot.clone(), "Loadouts save", move |bot| {
+            let file = gear::refresh(bot);
+            let mut s = lock(&state);
+            s.busy = None;
+            match file {
+                Ok(Some(file)) => s.worn = Some((target, Loadout::from_worn("", &file.items))),
+                Ok(None) => s.note = note("Not in a map: log in first", Tint::Danger),
+                Err(e) => s.note = note(format!("Couldn't read your gear: {e}"), Tint::Danger),
+            }
+            Ok(())
         });
-        Ok(())
-    });
-}
+    }
 
-/// Enhance the worn items as the loadout saved them (VibeSkua's `LoadoutEnhancerTemp`, as a
-/// script: it may travel and spend gold).
-pub fn enhance(bot: &Arc<Bot>, loadout: Loadout) {
-    let state = STATE.of(bot);
-    {
-        let mut s = lock(&state);
-        if s.busy.is_some() {
+    /// Reads the file and the gear again, the gear now rather than within the gear thread's 30 s.
+    pub fn read_gear(&mut self, bot: &Arc<Bot>) {
+        self.reread();
+        crate::turu::spawn_action_for(bot.clone(), "Loadouts gear", |bot| {
+            gear::refresh(bot)?;
+            Ok(())
+        });
+    }
+
+    /// Equip (VibeSkua `EquipLoadoutAsync`): held while a script runs unless `stop`.
+    pub fn equip(&mut self, bot: &Arc<Bot>, loadout: Loadout, stop: bool) {
+        if self.busy.is_some() {
             return;
         }
-        s.busy = Some(LoadoutWork::Enhancing);
-        s.note = note(
+        self.busy = Some(LoadoutWork::Equipping);
+        self.note = note(format!("Equipping {}...", loadout.name), Tint::Muted);
+        let state = STATE.of(bot);
+        crate::turu::spawn_action_for(bot.clone(), "Loadouts equip", move |bot| {
+            let outcome = loadouts::equip(bot, &loadout, stop);
+            let _ = gear::refresh(bot);
+            let mut s = lock(&state);
+            s.busy = None;
+            s.gear_at = None;
+            s.note = Some(match outcome {
+                Ok(report) => equip_outcome(&loadout.name, &report),
+                Err(GearError::ScriptRunning(name)) => Note {
+                    text: format!("{name} started meanwhile: press Equip again to stop it"),
+                    tint: Tint::Warning,
+                },
+                Err(e) => Note {
+                    text: format!("Couldn't equip {}: {e}", loadout.name),
+                    tint: Tint::Danger,
+                },
+            });
+            Ok(())
+        });
+    }
+
+    /// Enhance the worn items as the loadout saved them (VibeSkua's `LoadoutEnhancerTemp`, as a
+    /// script: it may travel and spend gold).
+    pub fn enhance(&mut self, bot: &Arc<Bot>, loadout: Loadout) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.busy = Some(LoadoutWork::Enhancing);
+        self.note = note(
             format!("Enhancing {}: Stop in the Script Loader stops it", loadout.name),
             Tint::Muted,
         );
-    }
-    crate::turu::spawn_action_for(bot.clone(), "Loadouts enhance", move |bot| {
-        let outcome = loadouts::apply_enhancements(bot, &loadout);
-        let _ = gear::refresh(bot);
-        let mut s = lock(&state);
-        s.busy = None;
-        s.gear_at = None;
-        s.note = Some(match outcome {
-            Ok(Enhanced::AlreadyDone) => Note {
-                text: "Already enhanced as saved".to_owned(),
-                tint: Tint::Success,
-            },
-            Ok(Enhanced::Ran { items, finished: true }) => Note {
-                text: format!(
-                    "Enhanced {items} item{} of {}",
-                    if items == 1 { "" } else { "s" },
-                    loadout.name
-                ),
-                tint: Tint::Success,
-            },
-            Ok(Enhanced::Ran { finished: false, .. }) => Note {
-                text: "Enhancing was stopped".to_owned(),
-                tint: Tint::Warning,
-            },
-            Err(e) => Note {
-                text: format!("Couldn't enhance: {e}"),
-                tint: Tint::Danger,
-            },
+        let state = STATE.of(bot);
+        crate::turu::spawn_action_for(bot.clone(), "Loadouts enhance", move |bot| {
+            let outcome = loadouts::apply_enhancements(bot, &loadout);
+            let _ = gear::refresh(bot);
+            let mut s = lock(&state);
+            s.busy = None;
+            s.gear_at = None;
+            s.note = Some(match outcome {
+                Ok(Enhanced::AlreadyDone) => Note {
+                    text: "Already enhanced as saved".to_owned(),
+                    tint: Tint::Success,
+                },
+                Ok(Enhanced::Ran { items, finished: true }) => Note {
+                    text: format!(
+                        "Enhanced {items} item{} of {}",
+                        if items == 1 { "" } else { "s" },
+                        loadout.name
+                    ),
+                    tint: Tint::Success,
+                },
+                Ok(Enhanced::Ran { finished: false, .. }) => Note {
+                    text: "Enhancing was stopped".to_owned(),
+                    tint: Tint::Warning,
+                },
+                Err(e) => Note {
+                    text: format!("Couldn't enhance: {e}"),
+                    tint: Tint::Danger,
+                },
+            });
+            Ok(())
         });
-        Ok(())
-    });
+    }
+}
+
+/// [`State::read_gear`], locking the tab's state (not while holding it).
+pub fn read_gear(bot: &Arc<Bot>) {
+    lock(&STATE.of(bot)).read_gear(bot);
 }
 
 // --- the view a shell reads -------------------------------------------------------------
@@ -619,13 +622,17 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
     };
     match action {
         "open" => read_gear(bot),
-        "save-current" => read_worn(bot, WornFor::New),
-        "replace" => read_worn(bot, WornFor::Replace(name()?)),
+        "save-current" => lock(&state).read_worn(bot, WornFor::New),
+        "replace" => lock(&state).read_worn(bot, WornFor::Replace(name()?)),
         "equip" => {
             let stop = body.get("stop").and_then(Json::as_bool).unwrap_or(false);
-            equip(bot, loadout(&name()?)?, stop);
+            let loadout = loadout(&name()?)?;
+            lock(&state).equip(bot, loadout, stop);
         }
-        "enhance" => enhance(bot, loadout(&name()?)?),
+        "enhance" => {
+            let loadout = loadout(&name()?)?;
+            lock(&state).enhance(bot, loadout);
+        }
         "rename" => {
             let to = body.get("to").and_then(Json::as_str).ok_or("to is missing")?;
             lock(&state).rename(bot, &name()?, to);
@@ -685,6 +692,21 @@ mod tests {
         let weapon = view.slots.iter().find(|s| s.item == "Blade & Shield").unwrap();
         assert_eq!(weapon.place, ItemPlace::Bag);
         assert_eq!(loadout_view(&Loadout::default(), None, true).class, "No class");
+    }
+
+    /// The window holds the tab's state for its whole frame: what it starts must not lock it
+    /// again on the same thread (a std mutex taken twice never returns).
+    #[test]
+    fn work_starts_under_the_callers_guard() {
+        let bot = Bot::new();
+        let state = STATE.of(&bot);
+        let mut s = lock(&state);
+        s.read_gear(&bot);
+        s.equip(&bot, Loadout::default(), false);
+        assert_eq!(s.busy, Some(LoadoutWork::Equipping));
+        s.read_worn(&bot, WornFor::New);
+        s.enhance(&bot, Loadout::default());
+        assert_eq!(s.busy, Some(LoadoutWork::Equipping), "one at a time");
     }
 
     #[test]

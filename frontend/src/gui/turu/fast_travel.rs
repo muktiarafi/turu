@@ -38,6 +38,7 @@ fn tint_color(tint: Tint) -> Color32 {
 
 /// What a tile's menu asked for.
 enum Action {
+    Travel(usize),
     Edit(usize),
     Remove(usize),
 }
@@ -56,6 +57,8 @@ pub struct FastTravelWindow {
     form_height: Option<f32>,
     /// `State::here_count` last taken into the form.
     here_seen: u32,
+    /// The name of the destination `editing` points at when the form took it.
+    editing_name: String,
 }
 
 impl Default for FastTravelWindow {
@@ -68,6 +71,7 @@ impl Default for FastTravelWindow {
             was_open: false,
             form_height: None,
             here_seen: 0,
+            editing_name: String::new(),
         }
     }
 }
@@ -87,7 +91,12 @@ impl FastTravelWindow {
             // changed it. A Get current from before doesn't fill the form.
             st.load(&bot);
             self.here_seen = st.here_count;
-            if self.editing.is_some_and(|i| i >= st.list.len()) {
+            // The destination being edited, unless the list changed under it meanwhile (the
+            // native page, another tab): Save would overwrite another.
+            if self
+                .editing
+                .is_some_and(|i| st.list.get(i).is_none_or(|d| d.name != self.editing_name))
+            {
                 self.stop_editing();
             }
         }
@@ -170,9 +179,15 @@ impl FastTravelWindow {
             action = self.tiles(ui, &st.list, &shown, traveling.as_ref(), tile_height);
         });
         match action {
+            // On the guard this frame holds: the travel's thread locks it, not this one.
+            Some(Action::Travel(i)) => {
+                let dest = st.list[i].clone();
+                st.travel(bot, dest);
+            }
             Some(Action::Edit(i)) => {
                 self.form = st.list[i].clone();
                 self.editing = Some(i);
+                self.editing_name = st.list[i].name.clone();
             }
             Some(Action::Remove(i)) => {
                 st.remove(bot, i);
@@ -331,8 +346,9 @@ impl FastTravelWindow {
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
+        let mut action = None;
         if response.on_hover_text(format!("Travel to {place}")).clicked() && !busy {
-            model::travel(&crate::turu::bot(), dest.clone());
+            action = Some(Action::Travel(index));
         }
 
         // The menu, drawn last so it gets the click over the tile.
@@ -345,7 +361,6 @@ impl FastTravelWindow {
                 .max_rect(menu_rect)
                 .layout(Layout::left_to_right(Align::Center)),
         );
-        let mut action = None;
         let button = Button::new(RichText::new("⋮").size(16.0).color(MUTED))
             .fill(Color32::TRANSPARENT)
             .min_size(menu_rect.size());

@@ -50,6 +50,14 @@ fn tint_color(tint: Tint) -> Color32 {
     }
 }
 
+/// What a click asked a bot thread to do, run on the frame's guard once drawing is done.
+enum Pending {
+    ReadWorn(WornFor),
+    ReadGear,
+    Equip(Loadout, bool),
+    Enhance(Loadout),
+}
+
 /// The list's pick.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pick {
@@ -75,6 +83,7 @@ pub struct LoadoutsWindow {
     created_seen: u32,
     /// Whose list the pick is in.
     username: Option<String>,
+    pending: Option<Pending>,
 }
 
 impl Default for LoadoutsWindow {
@@ -89,6 +98,7 @@ impl Default for LoadoutsWindow {
             was_open: false,
             created_seen: 0,
             username: None,
+            pending: None,
         }
     }
 }
@@ -141,6 +151,14 @@ impl LoadoutsWindow {
         }
         window.show(ctx, |ui| self.ui(ui, &mut st, &bot));
         self.delete_dialog(ctx, &mut st);
+        // On the guard this frame holds: these spawn their thread without locking again.
+        match self.pending.take() {
+            Some(Pending::ReadWorn(target)) => st.read_worn(&bot, target),
+            Some(Pending::ReadGear) => st.read_gear(&bot),
+            Some(Pending::Equip(loadout, stop)) => st.equip(&bot, loadout, stop),
+            Some(Pending::Enhance(loadout)) => st.enhance(&bot, loadout),
+            None => {}
+        }
         if st.busy.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));
         } else {
@@ -211,7 +229,7 @@ impl LoadoutsWindow {
                     )
                     .on_hover_text("Read the file and the worn gear again");
                 if refresh.clicked() {
-                    model::read_gear(&crate::turu::bot());
+                    self.pending = Some(Pending::ReadGear);
                     self.reset();
                 }
             });
@@ -306,7 +324,7 @@ impl LoadoutsWindow {
         )
         .on_hover_text("Save what this character wears now as a new loadout");
         if save.clicked() {
-            model::read_worn(&crate::turu::bot(), WornFor::New);
+            self.pending = Some(Pending::ReadWorn(WornFor::New));
         }
     }
 
@@ -369,6 +387,7 @@ impl LoadoutsWindow {
         // Heading. On the narrow window's page: back, then the name under it. Wide: the name
         // beside Replace with worn, as VibeSkua's LOADOUT row and name box in one.
         let header = widgets::target(24.0, 40.0);
+        let replace_clicked = std::cell::Cell::new(false);
         let replace_button = |ui: &mut Ui, height: f32| {
             let replace = widgets::button(
                 ui,
@@ -380,7 +399,7 @@ impl LoadoutsWindow {
             )
             .on_hover_text("Put what you wear now in this loadout instead");
             if replace.clicked() {
-                model::read_worn(bot, WornFor::Replace(shown.name.clone()));
+                replace_clicked.set(true);
             }
         };
         if page {
@@ -419,6 +438,9 @@ impl LoadoutsWindow {
             });
         }
 
+        if replace_clicked.get() {
+            self.pending = Some(Pending::ReadWorn(WornFor::Replace(shown.name.clone())));
+        }
         // The slots take what the actions under them leave.
         let footer = self.footer_height.unwrap_or(control * 2.0 + GAP * 2.0);
         let slots_height = (ui.available_height() - footer - GAP).max(widgets::target(34.0, 44.0) * 2.0 + 8.0);
@@ -468,7 +490,6 @@ impl LoadoutsWindow {
         self.actions(
             ui,
             st,
-            bot,
             saved.as_ref(),
             !changes.is_empty(),
             script.is_some(),
@@ -588,7 +609,6 @@ impl LoadoutsWindow {
         &mut self,
         ui: &mut Ui,
         st: &State,
-        bot: &Arc<turu_bot::Bot>,
         saved: Option<&Loadout>,
         differs: bool,
         script_runs: bool,
@@ -615,7 +635,7 @@ impl LoadoutsWindow {
                         tip,
                     );
                     if save.clicked() {
-                        model::read_worn(bot, WornFor::New);
+                        self.pending = Some(Pending::ReadWorn(WornFor::New));
                     }
                 });
                 return;
@@ -648,7 +668,7 @@ impl LoadoutsWindow {
                     ui.add(Spinner::new().size(14.0).color(ACCENT));
                 }
                 if equip.clicked() {
-                    model::equip(bot, loadout.clone(), script_runs);
+                    self.pending = Some(Pending::Equip(loadout.clone(), script_runs));
                 }
                 if differs {
                     let enhancing = busy == Some(Busy::Enhancing);
@@ -665,7 +685,7 @@ impl LoadoutsWindow {
                         ui.add(Spinner::new().size(14.0).color(ACCENT));
                     }
                     if enhance.clicked() {
-                        model::enhance(bot, loadout.clone());
+                        self.pending = Some(Pending::Enhance(loadout.clone()));
                     }
                 }
             });

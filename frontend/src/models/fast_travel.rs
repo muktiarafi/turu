@@ -152,18 +152,22 @@ impl State {
     }
 }
 
-/// VibeSkua `MapService.Travel`, on a bot thread, saying how it went.
-pub fn travel(bot: &Arc<Bot>, dest: FastTravel) {
-    let state = STATE.of(bot);
-    let room = {
-        let mut s = lock(&state);
-        if s.traveling.is_some() {
+impl State {
+    /// VibeSkua `MapService.Travel`, on a bot thread, saying how it went. Takes the guard its
+    /// caller holds (the egui window holds it for the whole frame); the thread locks it there.
+    pub fn travel(&mut self, bot: &Arc<Bot>, dest: FastTravel) {
+        if self.traveling.is_some() {
             return;
         }
-        s.traveling = Some(dest.clone());
-        s.note = note(format!("Traveling to {}...", dest.name), Tint::Muted);
-        s.private_room.then_some(s.room)
-    };
+        self.traveling = Some(dest.clone());
+        self.note = note(format!("Traveling to {}...", dest.name), Tint::Muted);
+        let room = self.private_room.then_some(self.room);
+        spawn_travel(bot, dest, room);
+    }
+}
+
+fn spawn_travel(bot: &Arc<Bot>, dest: FastTravel, room: Option<i64>) {
+    let state = STATE.of(bot);
     crate::turu::spawn_action_for(bot.clone(), "Fast Travel", move |bot| {
         let outcome = travel_outcome(bot, &dest, room);
         let mut s = lock(&state);
@@ -323,12 +327,10 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
     match action {
         "open" => lock(&state).load(bot),
         "travel" => {
-            let dest = {
-                let s = lock(&state);
-                let i = s.at(index()?, &named("name")?)?;
-                s.list[i].clone()
-            };
-            travel(bot, dest);
+            let mut s = lock(&state);
+            let i = s.at(index()?, &named("name")?)?;
+            let dest = s.list[i].clone();
+            s.travel(bot, dest);
         }
         "add" => lock(&state).put(bot, &destination(body)?, None)?,
         "edit" => {
@@ -375,6 +377,20 @@ mod tests {
         assert_eq!(view.destinations[1].position, 1);
         assert_eq!(view.pads.len(), 8);
         assert!(view.private_room && view.room == DEFAULT_ROOM);
+    }
+
+    /// The window holds the tab's state for its whole frame: a travel it starts must not lock it
+    /// again on the same thread.
+    #[test]
+    fn travel_starts_under_the_callers_guard() {
+        let bot = Bot::new();
+        let state = STATE.of(&bot);
+        let mut s = lock(&state);
+        let dest = FastTravel::new("Quest hub", "battleon", "Enter", "Spawn");
+        s.travel(&bot, dest.clone());
+        assert_eq!(s.traveling.as_ref(), Some(&dest));
+        s.travel(&bot, FastTravel::new("Farm", "farm", "r2", "Left"));
+        assert_eq!(s.traveling.as_ref(), Some(&dest), "one at a time");
     }
 
     #[test]

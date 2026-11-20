@@ -800,8 +800,11 @@ script's message box and options request.
   emulator (no script running): the list with no loadouts, Currently equipped's slots, Save as
   loadout opening Rename (confirmed from the keyboard), the Worn chip, Equip on what was already
   worn ("was already worn": nothing changed), Rename following the loadout, Delete (asked), font
-  scale 1.3, Full window (the egui window drawing from the model); the loadouts file and folder
-  the check made were removed. Not checked: Enhance
+  scale 1.3, Full window: Save current gear (its name selected), rename, Equip (already worn),
+  Refresh and Delete in the egui window; the loadouts file and folder the checks made were
+  removed. A first cut hung the egui window on those buttons: it holds the tab's state for the
+  frame and the work locked it again; `State` methods now start the work on the caller's guard
+  (a test calls them under a held one), and the free functions that lock are the control API's. Not checked: Enhance
   (spends gold), Equip of items in the bag or bank, Replace with worn, Equip while a script runs.
 * **Fast Travel** (2026-11-20): `models::fast_travel` holds the destinations, the travel in
   flight and its outcome, Get current's answer (with a count, so each shell's form takes it once)
@@ -809,10 +812,12 @@ script's message box and options request.
   and what it edits stay each shell's. Actions name a destination by its place and its name, so
   one that moved is refused. The owner chose layout-only checks for pages that move a character
   (2026-11-20): checked on the emulator were the list (the three defaults), Add with the keyboard
-  up, Use where I am (it answered the defaults' own battleon · Enter · Spawn, so the fill isn't
-  proven), Edit opening filled and Back, Remove, Clear's question (cancelled), Full window; the
-  FastTravels.json the check made (there was none) was removed. Not checked: travelling (a tap on
-  a destination), the private room on a travel, a list changed in the other shell.
+  up, Use where I am (Map typed as another map came back as the one the character is in), Edit
+  opening filled and Back, Remove, Clear's question (cancelled), Full window; the
+  FastTravels.json the check made (there was none) was removed. A travel starts on the caller's
+  guard as Loadouts' work does (tested under a held one), and the egui form stops editing on
+  opening unless its row still has the name it took. Not checked: travelling (a tap on a
+  destination), the private room on a travel, a list changed in the other shell.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
