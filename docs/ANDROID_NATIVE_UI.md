@@ -277,15 +277,15 @@ an update, alerts and passwords (the same generated calls, checked at start).
 
 ## Kept in egui
 
-Since 2026-11-20 the tab strip and Accounts are Compose in the shell (`docs/NATIVE_UI_PROPOSAL.md`,
-L5a; `docs/UI.md`, "Android, as built"): a Tabs item at the top of the rail and the panel it opens,
-and Army > Accounts opens that panel (Turu Mas keeps the egui window). What follows stands for the
-rest until that proposal's checkpoint.
+Since 2026-11-20 the shell draws much of Turu's UI in Compose (`docs/NATIVE_UI_PROPOSAL.md`, L5a
+and L5b, its "Handover" for the current list; `docs/UI.md`, "Android, as built"): the tabs and
+Accounts, the rail, and the daily windows as pages of a side panel, each over a view model the
+egui window shares. Turu Mas keeps egui throughout. What follows stands for what isn't ported:
 
-* **The nav rail and the bot windows** (about 40,000 lines): the desktop shares them, `CLAUDE.md`
-  wants VibeSkua's UI, and egui draws with the game in one pass. A Compose port would be a second
-  UI to keep in step.
-* **Modals and confirmations** (26: Remove account, Clear stats, Delete loadout, ...) and the
+* **The windows not ported yet** (Tools & Helpers, Skills, Runtime, Butler, Cosmetics, Console)
+  and **for good** Spammer, Packet Logger and Interceptor: egui in the slot's picture, opened from
+  More, as on the desktop.
+* **Modals and confirmations** in those windows (26: Remove account, Clear stats, Delete loadout, ...) and the
   **Tab Limit notice**: they lead back into Turu's windows ("Raise Tab Limit" opens Options), and on
   Turu Mas a native dialog takes AIR's focus each time.
 * **Drop-downs and number boxes**: egui's, sized for a finger (`widgets::dropdown`,

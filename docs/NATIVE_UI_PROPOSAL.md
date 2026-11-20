@@ -4,7 +4,9 @@ Status: **reopened (2026-11-20), in steps. L0 and L5a are done (2026-11-20, on t
 answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with Android's bot
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
-window the pass made native, Army Control last. Left before the PR: "Handover" under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+window the pass made native, then past it Notification Center, Accounts' selection and groups,
+Stats and Current Drops. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -787,10 +789,44 @@ shell's memory there.
 
 #### Handover (2026-11-20)
 
-All on branch `native-ui` (from `main`, not pushed; one PR planned for all of it). Every window
-the Android pass made native is built. Left: the checks before the PR (below). The steps a page
-takes, for a later one (Scheduler's `a32d53d76` and `477523df6` are the smallest example; Army
-Control's `0141dbc6a` and `d600f879c` one that is per process, not per tab):
+All on branch `native-ui` (from `main`, not pushed; one PR planned for all of it, opened only when
+the owner says so).
+
+**Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
+groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
+Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
+Control, Notification Center, Stats, Current Drops. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items,
+Loadouts, Fast Travel), Combat's Skills and Runtime, Butler, Cosmetics, Console, HotKeys, and for
+good Spammer, Packet Logger and Interceptor. The owner hasn't picked the next; the last advice
+was a PR and a phone run (M4) before more pages.
+
+**Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
+
+* **Search Scripts everywhere a script is chosen** (docs/UI.md has the rule): every screen that
+  chooses a script offers Search scripts…, opening Search Scripts picking for it
+  (`ScriptPick` in `ShellState.kt`: `Army`, `Launch`; add a variant for a new one). Not on the
+  rail: a rail Scripts item was tried and taken off the same day, to keep Jump on a short screen.
+* **Army Control's script** comes from Search scripts…, not "This tab's script" (removed).
+* **Starting several accounts** asks first when the free tabs are fewer, naming who won't start.
+* **Design checks by hand**: Impeccable's hook is wired but skips every file here (its log says
+  `skipped: native-platform`, PRODUCT.md's platform being `adaptive`); the owner chose to keep it
+  so. Per page: `impeccable context --target <page>` once, its Android reference and
+  craft-floor, `impeccable detect <file>`, and screenshots at font scale 1.0 and 1.3 and with the
+  keyboard up. The shell's look is `ShellTheme.kt` and docs/UI.md's pass, not DESIGN.md (the web
+  monitor's).
+* **Commits**: one per model, page and docs, without asking; never push or open the PR unasked.
+
+**Patterns added since Army Control**: a model action may answer data (`Ok(json!(...))`), which
+`ModelClient.act`'s `answer` hands the shell (Stats' Export gives the CSV, repo's `launch` whether
+the script was set now); a native page shares and copies itself (`Intent.ACTION_SEND`,
+`ClipboardManager`) rather than through the slot; a page shows "This tab is starting again" while
+its slot is down and keeps a `PerTab`'s selection only for ids still in the view. Shell-side
+requests that touch `accounts.json` go in `android/src/shell_accounts.rs`'s `Ask`.
+
+The steps a page takes, for a later one (Scheduler's `a32d53d76` and `477523df6` are the
+smallest example; Army Control's `0141dbc6a` and `d600f879c` one that is per process, not per
+tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
 
 1. **The model** (`frontend/src/models/<name>.rs`): a view struct (`Serialize`, and
    `cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))`; a
@@ -828,7 +864,12 @@ turu_frontend --no-default-features --features typegen --bin turu-typegen` that 
 picture lands wrong; tap by label from `adb shell uiautomator dump` (Compose's text is in it).
 Delete what a check saves (`/sdcard/Android/data/com.muktiarafi.turu/files/playlists/`,
 `CBO_Storage(<name>).txt`), and log in only on a quiet server. The emulator's own alerts (a
-ShakeAlert) can open over the app mid-check: Back, then carry on.
+ShakeAlert) can open over the app mid-check: Back, then carry on. Back with the keyboard up closes
+the panel, not the keyboard: hide it with the keyboard's own chevron. Test with made-up accounts
+added through the form and removed after (search for each before Remove, so the row's ⋮ can't be
+a real account's); never Clear or Reset data the owner keeps (the rate history is every client's)
+unless it was empty; set back any setting a check changes (Advanced, the launch script). The
+emulator's two tabs are the owner's real accounts: no scripts started on them unasked.
 
 ### L6: The macOS game view behind a native window (M, after the checkpoint)
 
