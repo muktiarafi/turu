@@ -277,6 +277,7 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, hid
                         "script_loader" -> Page.Scripts
                         "accounts" -> Page.Accounts
                         "new_tab" -> Page.NewTab
+                        "script_repo" -> Page.Search
                         else -> null
                     }
                     ListItem(

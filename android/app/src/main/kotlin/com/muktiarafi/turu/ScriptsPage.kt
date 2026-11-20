@@ -99,7 +99,10 @@ class ScriptsPanel(
         }
     }
 
-    fun searchScripts() = openWindow("script_repo")
+    /** Search Scripts, native: a page pushed over this one (set by the shell). */
+    var openSearch: () -> Unit = { openWindow("script_repo") }
+
+    fun searchScripts() = openSearch()
     fun editOptions() = openWindow("script_options")
 }
 

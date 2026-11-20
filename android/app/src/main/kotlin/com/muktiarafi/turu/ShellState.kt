@@ -75,6 +75,9 @@ sealed interface Page {
     /** Every menu's windows, Hide Side Bar. */
     data object More : Page
 
+    /** Search Scripts. */
+    data object Search : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

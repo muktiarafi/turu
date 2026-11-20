@@ -23,7 +23,9 @@ class ShellScreens(private val activity: TuruActivity) {
     /** The tab on screen's view models, read for the rail and its pages. */
     private val models = TabModels()
 
-    private val scripts = ScriptsPanel(models) { window -> openWindow(window) }
+    private val scripts = ScriptsPanel(models) { window -> openWindow(window) }.also {
+        it.openSearch = { state.push(Page.Search) }
+    }
 
     /** The shell's tab actions, as if from the slot on screen (`SlotShell.asShown`). */
     private val actions = TabActions(
@@ -34,6 +36,7 @@ class ShellScreens(private val activity: TuruActivity) {
         scripts = scripts,
         window = ::openWindow,
         hideRail = { railHidden(true) },
+        search = SearchPanel(),
     )
 
     private val railActions = RailActions(
@@ -98,6 +101,7 @@ class ShellScreens(private val activity: TuruActivity) {
         when (screen) {
             "accounts" -> open(Page.Accounts)
             "scripts" -> open(Page.Scripts)
+            "search" -> open(Page.Search)
         }
     }
 

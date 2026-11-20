@@ -75,6 +75,7 @@ class TabActions(
     /** One of the slot's egui windows, by its key (`Windows::open`). */
     val window: (String) -> Unit,
     val hideRail: () -> Unit,
+    val search: SearchPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
@@ -200,7 +201,8 @@ fun TabPanel(state: ShellState, actions: TabActions) {
             color = Turu.Panel,
             modifier = Modifier
                 .padding(start = 64.dp + state.cutoutLeftDp.dp)
-                .width(PanelWidth)
+                // Search Scripts' rows need more room than a list of tabs.
+                .width(if (state.page == Page.Search) 440.dp else PanelWidth)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
                 // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
@@ -225,6 +227,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.Jump -> JumpPage(state, actions.scripts.models)
                     Page.Logs -> LogsPage(state, actions.scripts.models)
                     Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.hideRail)
+                    Page.Search -> SearchPage(state, actions.search)
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }

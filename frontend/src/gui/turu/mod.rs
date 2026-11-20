@@ -357,6 +357,11 @@ impl TuruUi {
         if w.accounts && crate::turu::open_shell_screen(NativeScreen::Accounts) {
             w.accounts = false;
         }
+        // Not while it picks a script for another window (Army Control's Search…): only the egui
+        // window does that.
+        if w.script_repo && !tab.script_repo.picking() && crate::turu::open_shell_screen(NativeScreen::Search) {
+            w.script_repo = false;
+        }
         // And the egui windows its native screens open, while those aren't native yet.
         for window in crate::turu::take_window_requests() {
             if !w.open(&window) {

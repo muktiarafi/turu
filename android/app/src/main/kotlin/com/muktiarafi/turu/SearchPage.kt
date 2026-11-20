@@ -1,0 +1,424 @@
+package com.muktiarafi.turu
+
+import android.util.Log
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.RepoView
+import com.muktiarafi.turu.models.RowView
+import com.muktiarafi.turu.models.Tone
+import kotlinx.coroutines.delay
+import kotlinx.serialization.json.Json
+import org.json.JSONObject
+
+/**
+ * Search Scripts' copy of the tab on screen (`turu_frontend::models::repo`): its own client, read
+ * only while the page shows (the view searches the whole repository each time it's read).
+ */
+class SearchPanel {
+    var view by mutableStateOf<RepoView?>(null)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+
+    private var client: ModelClient? = null
+    private var following: ShellTab? = null
+    private val json = Json { ignoreUnknownKeys = true }
+
+    fun follow(tab: ShellTab?) {
+        if (tab?.id == following?.id && tab?.api == following?.api && client != null) return
+        following = tab
+        client?.stop()
+        client = null
+        view = null
+        val api = tab?.api ?: return
+        val token = tab.token ?: return
+        client = ModelClient(
+            api, token, models = listOf("repo"), logs = emptyList(),
+            onView = { _, text ->
+                runCatching { json.decodeFromString<RepoView>(text) }
+                    .onSuccess { view = it }
+                    .onFailure { Log.e(ModelClient.TAG, "/models/repo doesn't decode: $it") }
+            },
+            onLog = { _, _, _ -> },
+        ).also { it.start() }
+    }
+
+    fun act(action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+        error = null
+        val client = client ?: return done("The tab isn't up yet")
+        client.act("repo", action, body) { failed ->
+            error = failed
+            done(failed)
+        }
+    }
+
+    fun query(field: String, value: Any) = act("query", JSONObject().put(field, value))
+}
+
+private fun toneColor(tone: Tone) = when (tone) {
+    Tone.SUCCESS -> Turu.Success
+    Tone.WARNING -> Turu.Warning
+    Tone.MUTED -> Turu.Muted
+}
+
+/**
+ * Search Scripts (docs/UI.md, "Native shells"; VibeSkua's Script Repo): the search box, the
+ * filters as chips (folder, Pinned, Local, the sort, what the search looks in), the rows with
+ * Start and a menu (Load, Add to the queue, Download or Update, Pin), and the repository's task
+ * and its buttons at the foot. Delete and Reset Scripts stay in the egui window.
+ */
+@Composable
+fun SearchPage(state: ShellState, search: SearchPanel) {
+    DisposableEffect(Unit) { onDispose { search.follow(null) } }
+    LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { search.follow(state.tabs.active) }
+    val view = search.view
+    Column(Modifier.fillMaxSize()) {
+        PageBar("Search Scripts", onBack = { state.back() }) {
+            view?.let {
+                Text(
+                    if (it.query.search.isBlank() && it.query.activeFilters == 0UL) "${it.total} scripts" else "${it.found} found",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Turu.Muted,
+                )
+                RepoMenu(it, search)
+            }
+        }
+        if (view == null) {
+            Text("Reading the tab…", color = Turu.Muted, modifier = Modifier.padding(20.dp))
+            return@Column
+        }
+        SearchBox(view, search)
+        Filters(view, search)
+        val top = view.rows.firstOrNull()?.path.takeIf { view.query.search.isNotBlank() }
+        LazyColumn(Modifier.weight(1f).padding(top = 4.dp)) {
+            if (view.rows.isEmpty()) {
+                item {
+                    Column(Modifier.padding(20.dp)) {
+                        Text(if (view.total == 0UL) "No scripts yet" else "No scripts found", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            if (view.total == 0UL) "Refresh gets the repository's list." else "Try other words, or clear the filters.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Turu.Muted,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        if (view.query.activeFilters > 0UL) {
+                            TextButton(onClick = { search.act("query", JSONObject().put("clearFilters", true)) }) { Text("Clear the filters") }
+                        }
+                    }
+                }
+            }
+            items(view.rows, key = { it.path }) { row ->
+                ScriptRow(row, topHit = row.path == top, search = search) { state.push(Page.Scripts) }
+            }
+            if (view.found.toLong() > view.rows.size) {
+                item {
+                    Text(
+                        "${view.found.toLong() - view.rows.size} more: narrow the search to see them",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Turu.Muted,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
+            }
+        }
+        Footer(view, search)
+    }
+}
+
+@Composable
+private fun SearchBox(view: RepoView, search: SearchPanel) {
+    // Typed here and sent a moment after the typing stops, so each key doesn't search again.
+    var text by remember { mutableStateOf(view.query.search) }
+    LaunchedEffect(text) {
+        if (text != view.query.search) {
+            delay(250)
+            search.query("search", text)
+        }
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        placeholder = { Text("Search ${view.total} scripts") },
+        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+        trailingIcon = if (text.isNotEmpty()) {
+            { IconButton(onClick = { text = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") } }
+        } else {
+            null
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        colors = fieldColors(),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { search.query("search", text) }),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+    )
+}
+
+@Composable
+private fun Filters(view: RepoView, search: SearchPanel) {
+    val q = view.query
+    LazyRow(
+        Modifier.padding(top = 8.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            MenuChip(if (q.category == "All") "All folders" else q.category, q.category != "All", view.categories.map { it to (if (it == "All") "All folders" else it) }) {
+                search.query("category", it)
+            }
+        }
+        item { ToggleChip("Pinned", q.pinnedOnly) { search.query("pinnedOnly", !q.pinnedOnly) } }
+        item { ToggleChip("Local", q.localOnly) { search.query("localOnly", !q.localOnly) } }
+        item {
+            // VibeSkua's sort in words; a tap goes to the next.
+            val (label, next) = when (q.sort to q.descending) {
+                "name" to false -> "Name A to Z" to ("name" to true)
+                "name" to true -> "Name Z to A" to ("added" to true)
+                "added" to true -> "Newest first" to ("added" to false)
+                else -> "Oldest first" to ("name" to false)
+            }
+            ToggleChip(label, false) {
+                search.act("query", JSONObject().put("sort", next.first).put("descending", next.second))
+            }
+        }
+        item {
+            val scope = view.scopes.firstOrNull { it.first == q.scope }?.second ?: "All fields"
+            MenuChip("In: $scope", q.scope != "all", view.scopes) { search.query("scope", it) }
+        }
+    }
+}
+
+@Composable
+private fun ToggleChip(label: String, selected: Boolean, menu: Boolean = false, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, maxLines = 1) },
+        trailingIcon = if (menu) {
+            { Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+        } else {
+            null
+        },
+        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Turu.AccentTint, selectedLabelColor = Turu.Text, labelColor = Turu.Muted),
+        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = selected, borderColor = Turu.Edge, selectedBorderColor = Turu.Accent.copy(alpha = 0.6f)),
+        modifier = Modifier.heightIn(min = 40.dp),
+    )
+}
+
+/** A chip that opens a menu of `options` (value, words). */
+@Composable
+private fun MenuChip(label: String, selected: Boolean, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ToggleChip(label, selected, menu = true) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
+            for ((value, words) in options) {
+                DropdownMenuItem(text = { Text(words) }, onClick = { open = false; onPick(value) })
+            }
+        }
+    }
+}
+
+/** One script: name (a star when pinned), badge and description; Start and its menu. */
+@Composable
+private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, started: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    val body = JSONObject().put("path", row.path)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { menu = true }
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (row.pinned) {
+                    Icon(Icons.Rounded.Star, contentDescription = "Pinned", tint = Turu.Warning, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(row.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                row.badge?.let { badge ->
+                    Text(
+                        badge.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = toneColor(badge.tone),
+                        modifier = Modifier
+                            .background(toneColor(badge.tone).copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    row.description.ifEmpty { row.path },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Turu.Muted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (row.working) {
+            CircularProgressIndicator(Modifier.padding(horizontal = 16.dp).size(20.dp), strokeWidth = 2.dp)
+        } else {
+            val start = { search.act("start", body) { if (it == null) started() } }
+            if (topHit) {
+                Button(onClick = start, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("Start") }
+            } else {
+                FilledTonalButton(onClick = start, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("Start") }
+            }
+        }
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More for ${row.name}", tint = Turu.Muted) }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
+                Text(row.path, style = MaterialTheme.typography.labelSmall, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                row.badge?.let {
+                    Text("${it.label}: ${it.meaning}", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                }
+                // A touch screen has no tooltips: why an item rests, under it.
+                MenuAction("Load", row.load) { menu = false; search.act("load", body) }
+                MenuAction("Add to the queue", row.queue) { menu = false; search.act("queue", body) }
+                row.download?.let { label ->
+                    MenuAction(label, com.muktiarafi.turu.models.Control(true, "")) {
+                        menu = false
+                        search.act(if (label.startsWith("Replace")) "replace" else "download", body)
+                    }
+                }
+                MenuAction(if (row.pinned) "Unpin" else "Pin", com.muktiarafi.turu.models.Control(true, "")) {
+                    menu = false
+                    search.act("pin", JSONObject().put("path", row.path).put("pinned", !row.pinned))
+                }
+                if (!row.start.enabled && row.start.reason.isNotEmpty()) {
+                    HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+                    Text("Start: ${row.start.reason}", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuAction(label: String, control: com.muktiarafi.turu.models.Control, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(label, color = if (control.enabled) Turu.Text else Turu.Muted)
+                if (!control.enabled && control.reason.isNotEmpty()) {
+                    Text(control.reason, style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
+                }
+            }
+        },
+        enabled = control.enabled,
+        onClick = onClick,
+    )
+}
+
+/** The repository's task (its progress and Cancel) or its last outcome, on one line at the foot. */
+@Composable
+private fun Footer(view: RepoView, search: SearchPanel) {
+    val busy = view.busy
+    val note = search.error?.let { it to true } ?: view.message?.let { it.text to it.failed }
+    if (busy == null && note == null) return
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+        if (busy != null) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${busy.task}: ${busy.message}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (busy.total.toLong() > 0) {
+                        LinearProgressIndicator(
+                            progress = { busy.done.toFloat() / busy.total.toFloat() },
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            color = Turu.Accent,
+                            trackColor = Turu.Track,
+                        )
+                    }
+                }
+                TextButton(onClick = { search.act("cancel") }) { Text("Cancel") }
+            }
+        } else if (note != null) {
+            Text(
+                note.first,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (note.second) Turu.Danger else Turu.Muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/** The page bar's ⋮: Update all (with how many), Download all, Refresh. */
+@Composable
+private fun RepoMenu(view: RepoView, search: SearchPanel) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = "Update, download, refresh", tint = Turu.Muted)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
+            val update = if (view.outdated.toLong() > 0) "Update all (${view.outdated})" else "Update all"
+            MenuAction(update, view.updateAll) { open = false; search.act("update-all") }
+            MenuAction("Download all", view.downloadAll) { open = false; search.act("download-all") }
+            MenuAction("Refresh the list", view.refresh) { open = false; search.act("refresh") }
+        }
+    }
+}

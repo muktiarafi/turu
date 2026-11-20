@@ -258,6 +258,11 @@ impl ScriptRepoWindow {
     }
 
     /// Whether a Start from this window just worked, so the Script Loader should open.
+    /// Whether it's open to choose a script for another window ([`Self::pick`]).
+    pub fn picking(&self) -> bool {
+        self.pick.is_some()
+    }
+
     pub fn take_open_loader(&mut self) -> bool {
         std::mem::take(&mut self.open_loader)
     }
