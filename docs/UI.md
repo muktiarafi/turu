@@ -950,7 +950,7 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
 | Tools & Helpers, Combat's Runtime, Butler, Cosmetics, Console | decided when reached; egui from More until then |
@@ -1116,6 +1116,20 @@ above, and why:
   window shows what is being built. With the keyboard up the segments and the foot step aside so
   the field shows above it. Differs from the window: no selection (each row's ⋮ acts on it), and
   no Load Classes / mode drop-down / Open (a class's sets are listed whole).
+* **Loadouts** (L5b, 2026-11-20), a page of the panel (440 dp) titled Loadouts Manager, from More >
+  Tools & Helpers and however the slot opens it. The list: Currently equipped (its class) and the
+  character's loadouts (name, class, a green Worn chip when every item is worn), each opening the
+  loadout in the same page (Back returns). A loadout: class and item count, then the seven slots
+  (the slot's name, the item or Nothing, the enhancement it keeps under it, amber "· worn with …"
+  while the worn one differs, and a chip for where the item is: Worn, In bag, In bank, Not found,
+  Not in bag), notes on what Equip meets (enhancements that differ, a running script, the bank not
+  read yet or when it was), then the foot: the outcome, a spinner while reading, equipping or
+  enhancing, and Equip (with Enhance, tonal, when enhancements differ). Equip while a script runs
+  asks before stopping it ("Stop Farm.ts and equip?"), where the window's button says so; Enhance
+  asks first (it may travel and spend gold). Save current gear, at the list's foot (Save as
+  loadout on Currently equipped), opens the new loadout with Rename's dialog, its name selected,
+  where the window puts the cursor in its name field. The page's ⋮: Rename…, Replace with worn,
+  Delete… (asked first), Read again, Full window.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that

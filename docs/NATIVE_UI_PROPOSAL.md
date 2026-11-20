@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops and Skills. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills and Loadouts. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -789,6 +789,17 @@ script's message box and options request.
   Class field's text as typed. Not checked: Several auras with real auras, Move, a script using a
   set saved here, the slot killed with the page open (the draft lives in the slot and goes with
   it, as the egui window's would).
+* **Loadouts** (2026-11-20): `models::loadouts` holds the character's list, the gear cache,
+  where each item is, what a bot thread does (reading, equipping, enhancing) and its outcome, and
+  Save current gear, Replace with worn, Equip, Enhance, rename and Delete, one per tab
+  (`loadouts::STATE`), shared by the egui window and the page; the pick and the name being typed
+  stay each shell's. The rows are worked out when the gear cache or the list changes (taken at
+  most once a second), not on each read. Actions name the loadout, not its place. Checked on the
+  emulator (no script running): the list with no loadouts, Currently equipped's slots, Save as
+  loadout opening Rename (confirmed from the keyboard), the Worn chip, Equip on what was already
+  worn ("was already worn": nothing changed), Rename following the loadout, Delete (asked), font
+  scale 1.3; the loadouts file and folder the check made were removed. Not checked: Enhance
+  (spends gold), Equip of items in the bag or bank, Replace with worn, Equip while a script runs.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -815,11 +826,11 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills. Each window's page has Full window for the
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts. Each window's page has Full window for the
 egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items,
-Loadouts, Fast Travel), Combat's Runtime, Butler, Cosmetics, Console, HotKeys, and for
-good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills (done), then
-Loadouts, Fast Travel and Butler.
+Fast Travel), Combat's Runtime, Butler, Cosmetics, Console, HotKeys, and for
+good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills and Loadouts (done),
+then Fast Travel and Butler.
 
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
 
