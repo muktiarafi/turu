@@ -303,7 +303,7 @@ pub fn view(bot: &Arc<Bot>) -> GrabberView {
         .and_then(|i| items.get(i).map(|item| (i, item)))
         .map(|(i, item)| GrabDetailsView {
             position: i as u32,
-            title: item.row(),
+            title: item.name().to_owned(),
             fields: item
                 .details()
                 .into_iter()

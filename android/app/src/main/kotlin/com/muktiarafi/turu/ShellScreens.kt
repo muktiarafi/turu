@@ -58,6 +58,7 @@ class ShellScreens(private val activity: TuruActivity) {
         runtime = RuntimePanel(),
         notifyDrop = NotifyDropPanel(),
         loader = LoaderPanel(),
+        grabber = GrabberPanel(),
         scriptOptions = ScriptOptionsPanel(),
     )
 
@@ -140,6 +141,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "runtime" -> open(Page.Runtime)
             "notify_drop" -> open(Page.NotifyDrop)
             "loader" -> open(Page.Loader)
+            "grabber" -> open(Page.Grabber)
             "script_options" -> open(Page.ScriptOptions)
         }
     }

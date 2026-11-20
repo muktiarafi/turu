@@ -519,6 +519,8 @@ pub enum NativeScreen {
     NotifyDrop,
     /// Tools & Helpers > Loader.
     Loader,
+    /// Tools & Helpers > Grabber.
+    Grabber,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }

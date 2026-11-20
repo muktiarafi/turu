@@ -126,6 +126,9 @@ sealed interface Page {
     /** Tools & Helpers > Loader. */
     data object Loader : Page
 
+    /** Tools & Helpers > Grabber. */
+    data object Grabber : Page
+
     /** Scripts > Edit Script Options (also when a script asks for its options). */
     data object ScriptOptions : Page
 
