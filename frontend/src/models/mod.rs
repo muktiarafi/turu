@@ -25,6 +25,7 @@ pub mod jump;
 pub mod logs;
 pub mod rail;
 pub mod repo;
+pub mod scheduler;
 pub mod scripts;
 pub mod tab_state;
 
@@ -274,6 +275,59 @@ pub fn register() {
             Box::new(move |_, _| repo::task(task).and_then(|()| done())),
         );
     }
+
+    add_model("scheduler", Box::new(|bot| to_json(&scheduler::view(bot))));
+    add_model_action(
+        "scheduler",
+        "toggle",
+        Box::new(|bot, _| {
+            scheduler::toggle(bot);
+            done()
+        }),
+    );
+    add_model_action(
+        "scheduler",
+        "load",
+        Box::new(|bot, body| scheduler::load(bot, &text(body, "name")?).and_then(|()| done())),
+    );
+    add_model_action(
+        "scheduler",
+        "save",
+        Box::new(|bot, body| scheduler::save(bot, &text(body, "name")?).and_then(|()| done())),
+    );
+    add_model_action(
+        "scheduler",
+        "move",
+        Box::new(|bot, body| {
+            let by = body.get("by").and_then(Value::as_i64).ok_or("by is missing")?;
+            scheduler::move_by(bot, &text(body, "id")?, by as isize);
+            done()
+        }),
+    );
+    add_model_action(
+        "scheduler",
+        "remove",
+        Box::new(|bot, body| {
+            scheduler::remove(bot, &text(body, "id")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "scheduler",
+        "rename",
+        Box::new(|bot, body| {
+            scheduler::rename(bot, &text(body, "id")?, &text(body, "name")?);
+            done()
+        }),
+    );
+    add_model_action(
+        "scheduler",
+        "options",
+        Box::new(|bot, body| {
+            scheduler::options(bot, &text(body, "id")?);
+            done()
+        }),
+    );
 
     add_model("app-options", Box::new(|bot| to_json(&application_options::view(bot))));
     add_model_action(

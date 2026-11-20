@@ -10,7 +10,7 @@ use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
     application_options::AppOptionsView, auto::AutoView, bank::BankView, core_bots::CoreBotsView,
     game_options::GameOptionsView, jump::JumpView, logs::LogsView, rail::RailView, repo::RepoView,
-    scripts::ScriptsView,
+    scheduler::SchedulerView, scripts::ScriptsView,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<GameOptionsView>()?
         .add_type::<AppOptionsView>()?
         .add_type::<CoreBotsView>()?
+        .add_type::<SchedulerView>()?
         .build()?;
     kotlin::Installer::new("com.muktiarafi.turu.models", std::path::Path::new(&out))
         .plugin(JsonPlugin)
