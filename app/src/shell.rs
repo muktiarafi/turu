@@ -1108,6 +1108,7 @@ impl ShellApp {
                 shown,
                 you: Some(tab.id),
                 rail_top: None,
+                native_rail: false,
             };
             send(tab, &message);
         }

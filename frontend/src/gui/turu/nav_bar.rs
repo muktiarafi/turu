@@ -1266,7 +1266,7 @@ fn rail_fit(height: f32, update: bool, grid: bool) -> RailFit {
 
 /// Hides or shows the rail and keeps the choice in `settings.json` (`side_bar_hidden`), so it
 /// holds when Turu opens again.
-fn set_rail_hidden(hidden: bool) {
+pub(super) fn set_rail_hidden(hidden: bool) {
     crate::gui::set_rail_hidden(hidden);
     let bot = crate::turu::bot();
     if bot.settings.read().side_bar_hidden != hidden {
@@ -1331,6 +1331,10 @@ impl NavBar {
         // The first time: hidden as it was when Turu last closed.
         static RESTORED: std::sync::Once = std::sync::Once::new();
         RESTORED.call_once(|| crate::gui::set_rail_hidden(crate::turu::bot().settings.read().side_bar_hidden));
+        // Android's shell draws the rail itself (and its `›` handle): only its room stays.
+        if crate::turu::shell_native_rail() {
+            return;
+        }
         if crate::gui::rail_hidden() {
             rail_handle(ui, inset);
             return;

@@ -14,6 +14,26 @@ pub struct RailView {
     pub favourites: Vec<QuickScript>,
     /// Recent scripts that aren't favourites, newest first.
     pub recent: Vec<QuickScript>,
+    /// The menus (VibeSkua's, in its order), for a shell's More: what this platform offers.
+    pub menus: Vec<MenuView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct MenuView {
+    pub title: &'static str,
+    pub items: Vec<MenuItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct MenuItem {
+    pub label: &'static str,
+    /// The window it opens (`gui::turu::Windows::open`'s key), or "new_tab".
+    pub window: &'static str,
+    pub control: super::Control,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -68,6 +88,7 @@ pub fn view(bot: &Arc<Bot>) -> RailView {
     // Only what's still on disk.
     let here = |path: &&std::path::PathBuf| path.is_file();
     RailView {
+        menus: menus(bot),
         update,
         favourites: lists.favorites.iter().filter(here).map(|p| quick(p)).collect(),
         recent: lists.recent_only().filter(here).map(|p| quick(p)).collect(),
@@ -78,4 +99,100 @@ pub fn view(bot: &Arc<Bot>) -> RailView {
 pub fn start_quick(bot: &Arc<Bot>, path: &str) -> Result<(), String> {
     super::scripts::load(bot, std::path::Path::new(path))?;
     super::scripts::start(bot)
+}
+
+/// VibeSkua's menus as the egui nav bar has them (`nav_bar::menu_contents`), less what this
+/// platform can't do: HotKeys without a keyboard, Butler and Army Queue without several clients'
+/// processes.
+pub fn menus(bot: &Bot) -> Vec<MenuView> {
+    let platform = crate::platform::platform();
+    let on = super::Control::on;
+    let item = |label, window| MenuItem {
+        label,
+        window,
+        control: on(),
+    };
+    let options = super::scripts::view_controls_edit_options(bot);
+    let mut list = vec![
+        MenuView {
+            title: "Scripts",
+            items: vec![
+                item("Script Loader", "script_loader"),
+                item("Search Scripts", "script_repo"),
+                MenuItem {
+                    label: "Edit Script Options",
+                    window: "script_options",
+                    control: options,
+                },
+                item("Scheduler", "scheduler"),
+            ],
+        },
+        MenuView {
+            title: "Options",
+            items: [
+                Some(item("Game", "game_options")),
+                Some(item("Application", "application_options")),
+                Some(item("CoreBots", "core_bots")),
+                platform.has_hotkeys().then(|| item("HotKeys", "hotkeys")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        },
+        MenuView {
+            title: "Tools & Helpers",
+            items: vec![
+                item("Loader", "loader"),
+                item("Grabber", "grabber"),
+                item("Current Drops", "current_drops"),
+                item("Junk Items", "junk_items"),
+                item("Loadouts Manager", "loadouts"),
+                item("Fast Travel", "fast_travel"),
+            ],
+        },
+        MenuView {
+            title: "Combat",
+            items: vec![
+                item("Skills", "skills"),
+                item("Stats", "stats"),
+                item("Runtime", "runtime"),
+            ],
+        },
+        MenuView {
+            title: "Diagnostics",
+            items: vec![
+                item("Notification Center", "notifications"),
+                item("Logs", "logs"),
+                item("Console", "console"),
+                item("Spammer", "spammer"),
+                item("Packet Logger", "packet_logger"),
+                item("Interceptor", "interceptor"),
+            ],
+        },
+        MenuView {
+            title: "Plugins",
+            items: [
+                platform.has_army().then(|| item("Butler", "butler")),
+                Some(item("Cosmetics", "cosmetics")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        },
+    ];
+    if platform.has_army() {
+        list.push(MenuView {
+            title: "Army",
+            items: [
+                Some(item("Accounts", "accounts")),
+                Some(item("Army Control", "army")),
+                platform.launches_processes().then(|| item("Army Queue", "army_queue")),
+                Some(item("New Tab", "new_tab")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        });
+    }
+    list
 }

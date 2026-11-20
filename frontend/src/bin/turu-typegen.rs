@@ -7,11 +7,20 @@
 use facet_generate::generation::json::JsonPlugin;
 use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
-use turu_frontend::models::scripts::ScriptsView;
+use turu_frontend::models::{
+    auto::AutoView, bank::BankView, jump::JumpView, logs::LogsView, rail::RailView, scripts::ScriptsView,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = std::env::args().nth(1).ok_or("give the folder to write into")?;
-    let registry = RegistryBuilder::new().add_type::<ScriptsView>()?.build()?;
+    let registry = RegistryBuilder::new()
+        .add_type::<ScriptsView>()?
+        .add_type::<AutoView>()?
+        .add_type::<JumpView>()?
+        .add_type::<BankView>()?
+        .add_type::<RailView>()?
+        .add_type::<LogsView>()?
+        .build()?;
     kotlin::Installer::new("com.muktiarafi.turu.models", std::path::Path::new(&out))
         .plugin(JsonPlugin)
         .generate(&registry)?;

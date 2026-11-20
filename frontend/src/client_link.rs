@@ -74,8 +74,9 @@ pub fn set_army_clients(clients: Vec<crate::shell::ArmyClientInfo>) {
 }
 
 /// The shell's tab list, from its `Tabs` message: `you` is this tab.
-pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>, rail_top: Option<f32>) {
+pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>, rail_top: Option<f32>, native_rail: bool) {
     turu::set_shell_rail_top(rail_top);
+    turu::set_shell_native_rail(native_rail);
     let tabs = tabs
         .into_iter()
         .map(|tab| turu::ShellTab {

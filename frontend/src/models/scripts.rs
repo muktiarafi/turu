@@ -240,6 +240,11 @@ fn controls(bot: &Bot, status: ScriptStatus, loaded: bool) -> Controls {
     }
 }
 
+/// Edit Script Options' state (also the menus').
+pub fn view_controls_edit_options(bot: &Bot) -> Control {
+    controls(bot, bot.scripts.status(), bot.scripts.loaded().is_some()).edit_options
+}
+
 /// Why Start can't start now: no script, or Auto or a Console snippet runs.
 fn start_blocker(bot: &Bot, loaded: bool) -> Option<&'static str> {
     if bot.auto.is_running() {

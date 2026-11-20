@@ -585,8 +585,9 @@ impl SlotShell {
                         tabs: tabs.clone(),
                         shown: self.shown,
                         you: Some(slot),
-                        // The activity draws the tabs (its Tabs item): the slots draw no strip.
+                        // The activity draws the tabs and the rail: the slots draw neither.
                         rail_top: Some(RAIL_TOP),
+                        native_rail: true,
                     },
                 )
             })

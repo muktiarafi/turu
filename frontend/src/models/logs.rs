@@ -15,12 +15,14 @@ pub const KINDS: [(LogKind, &str, &str); 2] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct LogsView {
     pub logs: Vec<LogView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct LogView {
     /// Its name in the routes ("script").

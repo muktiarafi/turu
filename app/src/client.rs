@@ -506,8 +506,9 @@ impl ClientEnd for Forward {
                 shown,
                 you,
                 rail_top,
+                native_rail,
             } => {
-                turu_frontend::client_link::set_tabs(tabs, shown, you, rail_top);
+                turu_frontend::client_link::set_tabs(tabs, shown, you, rail_top, native_rail);
                 let _ = self.sender.send(EngineEvent::Run(Box::new(|_| {
                     SCREEN.with_borrow_mut(|screen| {
                         if let Some(screen) = screen {

@@ -823,6 +823,7 @@ impl ClientScreen {
             | ToClient::ArmyClients { .. }
             | ToClient::FullScreen { .. }
             | ToClient::OpenWindow { .. }
+            | ToClient::RailHidden { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

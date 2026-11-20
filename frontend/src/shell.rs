@@ -107,7 +107,14 @@ pub enum ToClient {
         /// many points down. `None`: the client draws the strip, as before.
         #[serde(default)]
         rail_top: Option<f32>,
+        /// Android: the shell draws the whole rail natively (docs/UI.md, "Native shells"): the
+        /// client draws none, but keeps its room (`gui::left_width`) unless hidden.
+        #[serde(default)]
+        native_rail: bool,
     },
+    /// Android: the shell's rail was hidden or shown (its More > Hide Side Bar, its `›`
+    /// handle): the client gives the game the room and keeps the choice (`side_bar_hidden`).
+    RailHidden { hidden: bool },
     /// The answer to a request the client made: a [`ToShell::FileDialog`]'s `id` and the path
     /// chosen (`None`: cancelled, or another dialog was open).
     Answer { id: u32, value: Option<String> },
@@ -1106,7 +1113,9 @@ mod tests {
                 shown: 1,
                 you: Some(1),
                 rail_top: Some(56.0),
+                native_rail: true,
             },
+            ToClient::RailHidden { hidden: true },
             ToClient::Hide,
             ToClient::RefreshRate {
                 millihertz: 119_880,
@@ -1299,6 +1308,7 @@ mod tests {
                 shown: 1,
                 you: None,
                 rail_top: None,
+                native_rail: false,
             })
         );
         // And an open-tab request without its optional fields.

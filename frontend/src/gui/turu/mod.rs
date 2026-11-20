@@ -97,6 +97,52 @@ pub struct Windows {
     pub client_update: bool,
 }
 
+impl Windows {
+    /// Opens the window named `key` (its field's name, as `models::rail`'s menus name it);
+    /// false for none of that name. "new_tab" opens a tab at the login screen.
+    pub fn open(&mut self, key: &str) -> bool {
+        let flag = match key {
+            "script_loader" => &mut self.script_loader,
+            "script_options" => &mut self.script_options,
+            "script_repo" => &mut self.script_repo,
+            "scheduler" => &mut self.scheduler,
+            "game_options" => &mut self.game_options,
+            "application_options" => &mut self.application_options,
+            "core_bots" => &mut self.core_bots,
+            "hotkeys" => &mut self.hotkeys,
+            "skills" => &mut self.skills,
+            "stats" => &mut self.stats,
+            "runtime" => &mut self.runtime,
+            "notify_drop" => &mut self.notify_drop,
+            "logs" => &mut self.logs,
+            "console" => &mut self.console,
+            "packet_logger" => &mut self.packet_logger,
+            "spammer" => &mut self.spammer,
+            "interceptor" => &mut self.interceptor,
+            "current_drops" => &mut self.current_drops,
+            "loader" => &mut self.loader,
+            "grabber" => &mut self.grabber,
+            "junk_items" => &mut self.junk_items,
+            "fast_travel" => &mut self.fast_travel,
+            "loadouts" => &mut self.loadouts,
+            "accounts" => &mut self.accounts,
+            "army" => &mut self.army,
+            "army_queue" => &mut self.army_queue,
+            "butler" => &mut self.butler,
+            "cosmetics" => &mut self.cosmetics,
+            "notifications" => &mut self.notifications,
+            "client_update" => &mut self.client_update,
+            "new_tab" => {
+                tab_limit::open_tab(Default::default());
+                return true;
+            }
+            _ => return false,
+        };
+        *flag = true;
+        true
+    }
+}
+
 /// Where tool windows live: the app window below the nav bar (and the tab strip), or right of
 /// the rail.
 fn window_area(ctx: &Context) -> Rect {
@@ -313,10 +359,8 @@ impl TuruUi {
         }
         // And the egui windows its native screens open, while those aren't native yet.
         for window in crate::turu::take_window_requests() {
-            match window.as_str() {
-                "script_repo" => w.script_repo = true,
-                "script_options" => w.script_options = true,
-                other => tracing::warn!("The shell asked for a window I don't know: {other}"),
+            if !w.open(&window) {
+                tracing::warn!("The shell asked for a window I don't know: {window}");
             }
         }
         tab.script_loader.show(
@@ -485,6 +529,11 @@ pub fn waits_for(bot: &turu_bot::Bot) -> Option<&'static str> {
     bot.scripts
         .waits_for()
         .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"))
+}
+
+/// Hides or shows the rail and keeps the choice (the shell's native rail asks, Android).
+pub fn set_side_bar_hidden(hidden: bool) {
+    nav_bar::set_rail_hidden(hidden);
 }
 
 /// Whether the bot runs a script, a Console snippet or Auto Attack/Hunt.

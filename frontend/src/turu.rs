@@ -495,6 +495,18 @@ pub fn shell_rail_top() -> Option<f32> {
     }
 }
 
+/// Whether the shell draws the whole rail (`ToClient::Tabs`' `native_rail`, Android).
+static SHELL_NATIVE_RAIL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_shell_native_rail(native: bool) {
+    SHELL_NATIVE_RAIL.store(native, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the shell draws the rail: this client draws none (but keeps its room).
+pub fn shell_native_rail() -> bool {
+    SHELL_NATIVE_RAIL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Whether this process draws a tab strip: two tabs or more, and no shell drawing them natively.
 pub fn tab_strip_shown() -> bool {
     tab_strip_count() > 1 && shell_rail_top().is_none()

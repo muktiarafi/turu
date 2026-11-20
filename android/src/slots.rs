@@ -261,8 +261,9 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                     shown,
                     you,
                     rail_top,
+                    native_rail,
                 }) => {
-                    turu_frontend::client_link::set_tabs(tabs, shown, you, rail_top);
+                    turu_frontend::client_link::set_tabs(tabs, shown, you, rail_top, native_rail);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
                 // The text fields above the keyboard are the shell's activity's.
@@ -328,6 +329,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                             crate::with_screen(|screen| screen.key(player, &key))
                         });
                     }
+                }
+                // The shell's rail hidden or shown: the game gets the room.
+                Ok(ToClient::RailHidden { hidden }) => {
+                    turu_frontend::gui::turu::set_side_bar_hidden(hidden);
+                    crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
                 // One of this tab's egui windows, which the shell's native screens open.
                 Ok(ToClient::OpenWindow { window }) => {
