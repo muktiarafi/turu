@@ -758,6 +758,12 @@ script's message box and options request.
   accounts (removed after): selecting, Select all shown, Start's question with 2 tabs free (not
   started), a new group and its chip, filtering by it, Remove from the group, Army Control's
   Groups listing it ("0 of 1 open"), Remove the group. Not checked: starting several for real.
+* **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20; docs/UI.md):
+  the rail's Scripts opens Search Scripts (folding last), and Accounts' launch options get
+  Search scripts… (`ScriptPick.Launch`; repo's `launch` action sets the launch script in the
+  tab, downloading first when needed). Checked on the emulator: the rail item, a launch-script
+  pick (set back to none after). Not checked: a pick that needs a download (every script here
+  was downloaded).
 * Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)
