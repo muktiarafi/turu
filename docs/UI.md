@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Cosmetics, Console | decided when reached; egui from More until then |
+| Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1152,6 +1152,22 @@ above, and why:
   with a line saying when there are more or when Debug logs is off. ⋮ has Send to player… (a name
   and the recent ones; the keyboard's Go sends), Copy, Save and Clear the log, and Full window
   (which also opens the saved logs' folder). Butler's suspend question stays the slot's.
+* **Cosmetics** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Plugins and however
+  the slot opens it, as segments. Copy: a room player (a drop-down of the room's players, read
+  again when it opens) with Copy, Copy my target's look, a character name with Copy (its
+  account.aq.com page; the keyboard's Go copies), Female, Male and Swap, and a line saying the
+  changes are this client's only. Catalog: the search (name or ID), the category chips (All,
+  Armor, Weapon, Helm, Cape, Pet, Ground Rune, Favorites with a heart), Kind within Weapon and
+  Sort scroll away with the items, since a landscape phone has no height to pin them; a row is
+  the name, "category · #ID", a heart (red when kept) and Equip; the foot is "1 to 50 of 67,619"
+  with the page arrows. Outfits: the count and Save current look (asks a name), then each outfit
+  with the slots it fills and when it was made, Equip, and ⋮ Delete… (asked). Colors: the six
+  colors (a swatch, what it colors, the hex, red while it isn't one), Apply colors and Read from
+  avatar, then the themed presets with their four swatches (a tap fills base, trim, accessory and
+  eye and applies; skin and hair stay). The outcome of the last action sits at the foot (with a
+  spinner) only while there is one. ⋮: Reset to Real Gear, Check catalog updates, Full window
+  (Manual SWF, and the catalog beside its item, are the window's). With the keyboard up the
+  segments and the foot step aside.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that

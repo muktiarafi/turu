@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel and Butler. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler and Cosmetics. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -835,6 +835,20 @@ script's message box and options request.
   enabled now; the recent targets (a file) and the log lines are read with the roster and by the
   log's version, not on each view. Not checked: Follow, Summon, Summon all, Release, Send to player (they move characters), the log
   with lines, Copy and Save.
+* **Cosmetics** (2026-11-20, the owner's pick): `models::cosmetics` keeps per tab what the game
+  actions report (the quick bar's outcome, the catalog's status, colors read, by a count so each
+  shell takes them once, the room's players) and the native page's catalog query with its filtered
+  list (filtered outside the lock when the query or the catalog changes; 50 items a page), and has
+  the actions, the catalog filter both shells use, the presets and the color rows. The catalog,
+  favorites and outfits stay `turu_bot::cosmetics::Library`'s (per process). The egui window keeps
+  its layout, filter and selections. The first native layout pinned search, chips and sort above
+  the list and left it no height on the emulator's 411 dp: they scroll with the items now.
+  Checked on the emulator: Copy's room players, a search, a favorite on and off, Equip then Reset
+  to Real Gear (client side; "Reverted to actual equipped gear & colors!"), Save current look and
+  Delete, Colors read from the avatar, the presets, Full window. The cosmetics folder the checks
+  made (an empty favorites and outfits file and the 10 MB catalog download) was removed. Not
+  checked: Copy Player, Copy my target's look and Copy page, Apply colors and a preset, gender,
+  Check catalog updates, Kind within Weapon.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -861,8 +875,8 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Cosmetics, Console, HotKeys, and for
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Console, HotKeys, and for
 good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
