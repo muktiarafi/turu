@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts and Fast Travel. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel and Butler. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -818,6 +818,17 @@ script's message box and options request.
   guard as Loadouts' work does (tested under a held one), and the egui form stops editing on
   opening unless its row still has the name it took. Not checked: travelling (a tap on a
   destination), the private room on a travel, a list changed in the other shell.
+* **Butler** (2026-11-20): Butler's state is the bot's (`bot.butler`), so `models::butler` keeps
+  per tab only the last outcome and the roster as read (once a second), and gives the header, each
+  roster row's chips and why Follow and Summon rest, Summon all's rule, the options as
+  `models::form` option rows (one table both shells read, with `set`) and the newest log lines.
+  Nothing holds its lock across a frame or while calling into Butler (the lesson of the hang
+  above). The native page reuses Game Options' `OptionRow`. Checked on the emulator, layout only
+  as the owner chose: the roster with one account, Settings (one switch on and back off, read in
+  butler.json; the file the check made, there was none, removed), Log empty, Send to player's
+  dialog (cancelled), font scale 1.3, Full window with its settings drawn from the rows. Not
+  checked: Follow, Summon, Summon all, Release, Send to player (they move characters), the log
+  with lines, Copy and Save.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -844,10 +855,10 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Butler, Cosmetics, Console, HotKeys, and for
-good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts and Fast
-Travel (done), then Butler.
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Cosmetics, Console, HotKeys, and for
+good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
+Travel and Butler (all done).
 
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
 

@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers, Combat's Runtime, Butler, Cosmetics, Console | decided when reached; egui from More until then |
+| Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Cosmetics, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1139,6 +1139,19 @@ above, and why:
   Map, Cell beside Pad (a drop-down of the eight), Use where I am (Get current, filling map, cell
   and pad), and Add or Save in its bar, the keyboard's Done on Cell confirming. Clear… (asked
   first), Read again and Full window in ⋮. The window's tiles in columns are a list here.
+* **Butler** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Plugins and however the
+  slot opens it: this account and its state in its colour ("Following Hero (summoned)", "Not
+  following anyone"), Release all and Stop following (red) when they apply, and the last outcome;
+  then Accounts, Settings and Log as segments. Accounts: a row per online account (the name and
+  its chips in their colours: fighting, following me, busy: Farm.ts, other server...; where it is;
+  Follow or Stop, outlined, and Summon, tonal, or Release; a line under them with why either
+  rests), and at the foot the count (or why Summon all rests) beside Summon all. Settings:
+  Butler's options under Settings (every client), While following and This account, as Game
+  Options' option rows (descriptions shown, where the window keeps them in tooltips), saved as
+  they change. Log: the newest 300 lines in monospace in their level's colour, kept at the bottom,
+  with a line saying when there are more or when Debug logs is off. ⋮ has Send to player… (a name
+  and the recent ones; the keyboard's Go sends), Copy, Save and Clear the log, and Full window
+  (which also opens the saved logs' folder). Butler's suspend question stays the slot's.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
