@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers (Loader, Grabber, Junk Items), Notify Drop, Console | decided when reached; egui from More until then |
+| Tools & Helpers (Loader, Grabber, Junk Items), Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1190,12 +1190,19 @@ above, and why:
   the bar says "Picking drops · Boosting" in green while either runs, whichever part shows. Drops:
   Pick drops (tinted while on, saying what it does), the pickup list (a tap checks a row; Remove N
   in the heading), then Options: Reject else, Accept AC drops, Interval (ms, sent as typed, empty
-  is 0) and Drop notifications with Open (Notify Drop, still the slot's window). Quests: what
+  is 0) and Drop notifications with Open (pushes Notify Drop). Quests: what
   registering does, the registered quests ("1234 (Reward: 5678)") with Remove N. Boosts: Use
   boosts, the four boosts with their item ("Item 12345", or none found yet), Search inventory and
   Search bank ("Searching…" while one runs). The add fields sit at the foot: a drop name or IDs
   (`|` between several), or quest IDs and an optional reward; a quest typo stays with the error.
   ⋮: Full window. With the keyboard up the segments step aside.
+* **Notify Drop** (L5b, 2026-11-20), a page of the panel (440 dp) pushed from Runtime's Drop
+  notifications, and however the slot opens it. Beep on a drop with Test beep beside it, then
+  "[5] beeps, [200 ms] apart" (number boxes, sent once in range: 1 to 25, 10 to 2000 ms); Watching
+  with its count and Remove N for the checked rows, a tap checking one; empty, it says what a drop
+  does (a beep, and on Android a notification heard with the screen off). The add field (a name,
+  `|` between several) sits at the foot. ⋮: Clear all, Full window. With the keyboard up only the
+  field typed in stays: the add bar, or the beep settings.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
