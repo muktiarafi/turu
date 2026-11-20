@@ -730,10 +730,16 @@ script's message box and options request.
   tab switch and sends them with each action (`send`, `row`). Reading the view counts as Army
   Control drawn, so the other tabs are polled while the page reads it. The outcomes are
   process-wide, which on Android means per slot: after a tab switch the page lists that slot's.
-  Gear, client logs, Travel, Search… and Load file… stay in the full window. Checked on the
-  emulator with two tabs: the other tab's row shows its map and HP; Hide Players on and off
-  reached both ("done" from each); a checked row narrows the target; Stop script to both asks
-  first; Show its tab switches and the check stays; Full window stays egui.
+  Gear, client logs, Travel, Search… and Load file… stay in the full window. A tab's own row reads
+  its monitor snapshot while fresh, as the other tabs read it, and Army Control open keeps the
+  samplers going (`monitor::touch`). Checked on the emulator with two tabs: each row shows its
+  map and HP the same from either tab; Hide Players on reached both ("done" from each; off was
+  sent, its outcome not read); a checked row narrows the target; Stop script to both asks first;
+  Show its tab switches and the check stays; Full window stays egui; the slot on screen killed
+  with the page open, and the other one, each came back current; font scale 1.3 and the keyboard
+  over Quest. Not checked: Groups (no groups saved), Accept quest, a row's own Start, Stop and
+  Log in or out, a launched client's rows (Android has none), the slot opening Army Control by
+  itself (`openScreen("army")`), and typegen on the release job's Linux runner.
 * Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)

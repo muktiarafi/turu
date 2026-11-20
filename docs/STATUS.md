@@ -868,8 +868,9 @@ memory budget (NVIDIA, AMD).
   built, not run on a device yet.
   Since 2026-11-20 (branch `native-ui`, docs/NATIVE_UI_PROPOSAL.md) the rail, the tabs and
   Accounts and the daily windows are native Android pages beside the game: Script Loader, Search
-  Scripts, Scheduler, Logs, Auto, Jump, Options (Game, Application, CoreBots) and Army Control,
-  each with Full window for the egui window and what only it has. Checked on the emulator.
+  Scripts, Scheduler, Logs, Auto, Jump, Options (Game, Application, CoreBots) and Army Control;
+  each window's page has Full window for the egui window and what only it has (Auto and Jump are
+  the rail's popups, with no window). Checked on the emulator.
   Vulkan misdrew on an Infinix Hot 30i (PowerVR): the debug log now names the
   GPU and driver (docs/ANDROID.md, "Misdrawing"; Safe Drawing, untried there, turns Mugetsu's
   speed-ups off: removed on 2026-11-17, back on 2026-11-19).
