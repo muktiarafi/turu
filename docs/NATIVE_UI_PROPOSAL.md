@@ -862,9 +862,19 @@ script's message box and options request.
   started): its options (a switch, a choice, a number), a switch changed then Cancel (dropped),
   changed again and Save (written to options/BuyScrolls.cfg), the Script Loader's Options, Full
   window showing the same draft and its Cancel; the .cfg the check wrote (there was none) was
-  removed and the recent scripts are as they were. Not checked: a script asking for its options
-  (that starts it), a queued entry's options, a checklist (merge scripts), an item option, the
-  keyboard over a text option. The test script stays loaded (not running) in the first tab.
+  removed and the recent scripts are as they were. The page sends `leave` when it goes or the tab
+  changes: with nothing waiting the draft goes; with a script waiting the slot's window takes the
+  editor back. A draft follows the loaded script (one of a script no longer loaded is dropped), and
+  a script's request starts from a fresh draft. The hand-over to the native page happens only from
+  the tab on screen (`turu::tab_shown`, set where an Android slot gets and loses its window, and by
+  `client_screen` on the desktop), since a native page shows the tab on screen: a background
+  tab's script waits in that tab's picture until it's shown. A test drives a real script's request
+  through Opened, hand_over, leave, Save and Cancel. Also checked on the emulator: a queued
+  entry's options from the native Scheduler (now opening the native page; Cancel; the entry
+  removed), the draft following a newly loaded script (EternalDragonDrops after BuyScrolls, the
+  panel dismissed between), the keyboard up on a number. Not checked: a script asking for its
+  options on the emulator (that starts it), a checklist (merge scripts), an item option, font
+  scale 1.3 on this page.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.

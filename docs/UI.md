@@ -1181,7 +1181,10 @@ above, and why:
   None (for the rows shown), Hide owned (N), each row toggling as a whole with "Owned" or "In bank",
   and an amber note with "Use select" when a choice elsewhere leaves it unused. Cancel and Save
   at the foot; Back cancels. ⋮: Reset to defaults… (asked; saved only by Save), Full window. The
-  draft is the slot's, so Full window shows the same.
+  draft is the slot's, so Full window shows the same. Leaving the page (the scrim, another page,
+  another tab) drops the draft, unless the script waits for it: then the slot's own window shows
+  it again, and in a tab not on screen it waits in that tab's picture until the tab is shown. With
+  the keyboard up the filter steps aside unless it's the field typed in.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
