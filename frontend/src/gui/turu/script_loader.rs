@@ -8,7 +8,7 @@ use super::widgets::{self, Kind};
 use crate::models::scripts::{self as model, FORCE_STOP_DOES, Status};
 use crate::platform::FileDialog;
 use egui::{Align, Context, CursorIcon, Key, Label, Layout, RichText, Sense, Ui, vec2};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use turu_bot::script::ScriptStatus;
 
@@ -143,7 +143,7 @@ impl ScriptLoader {
             }
             match &view.script {
                 Some(script) => {
-                    let (path, name, favourite) = (&script.path, &script.name, script.favourite);
+                    let (path, name, favourite) = (Path::new(&script.path), &script.name, script.favourite);
                     ui.horizontal(|ui| {
                         // For script authors: one way to open the file, in VS Code when there is
                         // one. Small and beside the name, so it stays out of a runner's way.

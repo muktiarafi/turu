@@ -24,6 +24,7 @@ use serde::Serialize;
 /// Whether a control is offered and why not, as every shell shows it: enabled, or disabled with
 /// the reason (a tooltip on the desktop, a line under it on a touch screen).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct Control {
     pub enabled: bool,

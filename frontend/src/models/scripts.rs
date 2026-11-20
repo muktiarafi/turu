@@ -5,7 +5,7 @@
 
 use super::Control;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use turu_bot::Bot;
@@ -21,6 +21,7 @@ pub const FORCE_STOP_WAIT: &str = "Force Stop is offered after 1.5 s of stopping
 pub const FORCE_STOP_DOES: &str = "Interrupts the script's stopping steps (such as going to the stop location)";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptsView {
     pub status: Status,
@@ -43,7 +44,9 @@ pub struct ScriptsView {
 
 /// [`ScriptStatus`] for a view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
+#[repr(u8)]
 pub enum Status {
     Empty,
     Loaded,
@@ -76,9 +79,11 @@ impl Status {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct Loaded {
-    pub path: PathBuf,
+    /// Its full path (a string: views cross to other languages).
+    pub path: String,
     /// Its file name ("Gold.ts").
     pub name: String,
     /// On the side bar's quick list (`quick_scripts`).
@@ -86,6 +91,7 @@ pub struct Loaded {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptError {
     pub first_line: String,
@@ -93,6 +99,7 @@ pub struct ScriptError {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct LastRun {
     /// `main` returned (else it was stopped, or failed: then `error` says why).
@@ -103,6 +110,7 @@ pub struct LastRun {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct LastLog {
     pub quiet_secs: u64,
@@ -116,6 +124,7 @@ pub struct LastLog {
 /// not shown now: Start while nothing runs, Stop and Pause (or Resume) while it runs, Force Stop
 /// in Pause's place while it stops.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct Controls {
     pub start: Option<Control>,
@@ -183,7 +192,7 @@ pub fn view(bot: &Bot) -> ScriptsView {
             stale: status == ScriptStatus::Running && quiet >= QUIET_FOR,
         });
     let script = loaded.as_deref().map(|path| Loaded {
-        path: path.to_owned(),
+        path: path.to_string_lossy().into_owned(),
         name: path
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),

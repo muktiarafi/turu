@@ -1,8 +1,10 @@
 import java.util.Properties
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 android {
@@ -86,6 +88,7 @@ dependencies {
     implementation(libs.composeMaterial3)
     implementation(libs.composeIconsCore)
     implementation(libs.activityCompose)
+    implementation(libs.kotlinxSerializationJson)
     implementation(libs.composeUiToolingPreview)
     debugImplementation(libs.composeUiTooling)
 }
@@ -168,4 +171,50 @@ val cargoNdk = tasks.register<Exec>("cargoNdk") {
 
 tasks.named("preBuild") {
     dependsOn(cargoNdk)
+}
+
+/**
+ * The view models' Kotlin types (docs/NATIVE_UI_PROPOSAL.md, L4), generated from the Rust records
+ * (`turu_frontend::models`) by `turu-typegen` on the build machine, into the build folder: never
+ * committed, so a record changed in Rust can't ship with stale types here.
+ */
+abstract class TuruTypes : DefaultTask() {
+    @get:InputFiles
+    abstract val sources: ConfigurableFileCollection
+
+    @get:Internal
+    abstract val workspace: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outDir: DirectoryProperty
+
+    @get:Inject
+    abstract val exec: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        val out = outDir.get().asFile
+        out.deleteRecursively()
+        exec.exec {
+            workingDir = workspace.get().asFile
+            commandLine(
+                "cargo", "run", "-q", "-p", "turu_frontend", "--no-default-features", "--features", "typegen",
+                "--bin", "turu-typegen", "--", out.absolutePath,
+            )
+        }
+        // The generator writes a Gradle project of its own: its sources are what's wanted.
+        out.resolve("build.gradle.kts").delete()
+    }
+}
+
+val turuTypes = tasks.register<TuruTypes>("turuTypes") {
+    workspace.set(rootProject.layout.projectDirectory.dir(".."))
+    sources.from(rootProject.fileTree("../frontend/src/models"), rootProject.file("../frontend/src/bin/turu-typegen.rs"))
+    outDir.set(layout.buildDirectory.dir("generated/turu-models"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.kotlin?.addGeneratedSourceDirectory(turuTypes, TuruTypes::outDir)
+    }
 }
