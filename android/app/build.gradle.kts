@@ -213,8 +213,46 @@ val turuTypes = tasks.register<TuruTypes>("turuTypes") {
     outDir.set(layout.buildDirectory.dir("generated/turu-models"))
 }
 
+/**
+ * The network security config: rustls-platform-verifier's (`res/xml/network_security_config.xml`:
+ * plain HTTP to the certificate authorities' revocation lists, which the certificate checks fetch)
+ * with loopback added, where the shell reads its slots' control APIs. An app resource of the same
+ * name replaces the library's, so it's made from the library's at build time, never copied by
+ * hand: one written by hand dropped the revocation lists and every HTTPS check failed.
+ */
+abstract class TuruNetworkConfig : DefaultTask() {
+    @get:InputFile
+    abstract val library: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val text = library.get().asFile.readText()
+        val loopback = """
+  <!-- Turu: the shell reads its slots' control APIs over loopback (each with its own token). -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">127.0.0.1</domain>
+  </domain-config>
+</network-security-config>"""
+        check(text.contains("</network-security-config>")) { "rustls-platform-verifier's config changed shape" }
+        val out = outDir.get().asFile.resolve("xml/network_security_config.xml")
+        out.parentFile.mkdirs()
+        out.writeText(text.replace("</network-security-config>", loopback.trimStart('\n')))
+    }
+}
+
+val turuNetworkConfig = tasks.register<TuruNetworkConfig>("turuNetworkConfig") {
+    library.set(rootProject.layout.projectDirectory.file(
+        "vendor/rustls-platform-verifier/android/rustls-platform-verifier/src/main/res/xml/network_security_config.xml",
+    ))
+    outDir.set(layout.buildDirectory.dir("generated/turu-res"))
+}
+
 androidComponents {
     onVariants { variant ->
         variant.sources.kotlin?.addGeneratedSourceDirectory(turuTypes, TuruTypes::outDir)
+        variant.sources.res?.addGeneratedSourceDirectory(turuNetworkConfig, TuruNetworkConfig::outDir)
     }
 }
