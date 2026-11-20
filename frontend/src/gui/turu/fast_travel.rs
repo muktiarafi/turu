@@ -8,20 +8,17 @@
 
 use super::theme::{ACCENT, CARD, DANGER, EDGE, HOVER, MUTED, SMALL_RADIUS, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::fast_travel::{self as model, PADS, State, empty_form};
+use crate::models::scheduler::{Note, Tint};
+use crate::models::tab_state::lock;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, Button, Color32, ComboBox, Context, CornerRadius, FontId, Key, Layout, Modal, Rect, Response, RichText,
     ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
 };
-use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
-use turu_bot::api::{map, player};
 use turu_bot::settings::FastTravel;
 
-/// VibeSkua `MapService.Pads`.
-const PADS: [&str; 8] = ["Spawn", "Center", "Left", "Right", "Up", "Down", "Top", "Bottom"];
-/// VibeSkua `MapService.PrivateRoomNumber`'s default.
-const DEFAULT_ROOM: i64 = 111111;
 /// A tile is never narrower than this; the columns (at most three) follow from it.
 const MIN_TILE_WIDTH: f32 = 190.0;
 const MAX_COLUMNS: usize = 3;
@@ -29,38 +26,14 @@ const GAP: f32 = 6.0;
 /// Below this width the form puts each field on a row of its own (in pairs).
 const NARROW: f32 = 440.0;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tone {
-    Muted,
-    Success,
-    Warning,
-    Danger,
-}
-
-impl Tone {
-    fn color(self) -> Color32 {
-        match self {
-            Tone::Muted => MUTED,
-            Tone::Success => SUCCESS,
-            Tone::Warning => WARNING,
-            Tone::Danger => DANGER,
-        }
+fn tint_color(tint: Tint) -> Color32 {
+    match tint {
+        Tint::Plain => TEXT,
+        Tint::Muted => MUTED,
+        Tint::Success => SUCCESS,
+        Tint::Warning => WARNING,
+        Tint::Danger => DANGER,
     }
-}
-
-/// What the bot threads hand back.
-#[derive(Default)]
-struct Shared {
-    /// The destination being travelled to.
-    traveling: Option<FastTravel>,
-    /// How the last travel (or Get current) went.
-    status: Option<(String, Tone)>,
-    /// Get current's map, cell and pad, for the form to take.
-    current: Option<(String, String, String)>,
-}
-
-fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
-    shared.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// What a tile's menu asked for.
@@ -69,11 +42,10 @@ enum Action {
     Remove(usize),
 }
 
+/// The window's own state; the list, the travel, Get current's answer and the private room are
+/// the tab's [`State`] (`models::fast_travel`).
 pub struct FastTravelWindow {
-    list: Vec<FastTravel>,
     search: String,
-    private_room: bool,
-    room: i64,
     /// The add form (or, with `editing`, the destination being edited).
     form: FastTravel,
     /// The index the form edits; `None`: it adds.
@@ -82,39 +54,42 @@ pub struct FastTravelWindow {
     was_open: bool,
     /// The form card's height last frame, so the tiles take the rest of the window.
     form_height: Option<f32>,
-    shared: Arc<Mutex<Shared>>,
+    /// `State::here_count` last taken into the form.
+    here_seen: u32,
 }
 
 impl Default for FastTravelWindow {
     fn default() -> Self {
         Self {
-            list: Vec::new(),
             search: String::new(),
-            private_room: true,
-            room: DEFAULT_ROOM,
             form: empty_form(),
             editing: None,
             confirm_clear: false,
             was_open: false,
             form_height: None,
-            shared: Arc::default(),
+            here_seen: 0,
         }
     }
 }
 
-/// VibeSkua's new destination: no name, `battleon`, `Enter`, `Spawn`.
-fn empty_form() -> FastTravel {
-    FastTravel::new("", "battleon", "Enter", "Spawn")
-}
-
 impl FastTravelWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
-        if *open && !self.was_open {
-            self.load();
-        }
+        let opened = *open && !self.was_open;
         self.was_open = *open;
         if !*open {
             return;
+        }
+        let bot = crate::turu::bot();
+        let state = model::STATE.of(&bot);
+        let mut st = lock(&state);
+        if opened {
+            // Read again each time the window opens: another tab, or the native page, may have
+            // changed it. A Get current from before doesn't fill the form.
+            st.load(&bot);
+            self.here_seen = st.here_count;
+            if self.editing.is_some_and(|i| i >= st.list.len()) {
+                self.stop_editing();
+            }
         }
         let mut window = super::window(ctx, "Fast Travel", [600.0, 470.0], 4).open(open);
         // On a phone a floating window leaves the form under the keyboard: it fills the screen.
@@ -122,44 +97,11 @@ impl FastTravelWindow {
         if widgets::touch() && (area.width() < 620.0 || area.height() < 520.0) {
             window = window.sheet(ctx);
         }
-        window.show(ctx, |ui| self.ui(ui));
-        self.clear_dialog(ctx);
-        if lock(&self.shared).traveling.is_some() {
+        window.show(ctx, |ui| self.ui(ui, &mut st, &bot));
+        self.clear_dialog(ctx, &mut st, &bot);
+        if st.traveling.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-    }
-
-    /// The saved list, read again each time the window opens (another tab may have changed it).
-    /// A file that can't be read is kept beside it as `.bad`, and the defaults take its place.
-    fn load(&mut self) {
-        let path = crate::turu::bot().paths.fast_travels_file();
-        self.list = match FastTravel::load(&path) {
-            Ok(list) => list,
-            Err(e) => {
-                let bad = path.with_extension("json.bad");
-                let _ = std::fs::rename(&path, &bad);
-                self.set_status(
-                    format!("Couldn't read {} ({e}): kept as {}", path.display(), bad.display()),
-                    Tone::Danger,
-                );
-                FastTravel::defaults()
-            }
-        };
-        if self.editing.is_some_and(|i| i >= self.list.len()) {
-            self.stop_editing();
-        }
-    }
-
-    /// VibeSkua `SaveFastTravels`, after every change.
-    fn save(&self) {
-        let path = crate::turu::bot().paths.fast_travels_file();
-        if let Err(e) = FastTravel::save(&path, &self.list) {
-            self.set_status(format!("Couldn't save {}: {e}", path.display()), Tone::Danger);
-        }
-    }
-
-    fn set_status(&self, text: String, tone: Tone) {
-        lock(&self.shared).status = Some((text, tone));
     }
 
     fn stop_editing(&mut self) {
@@ -167,16 +109,16 @@ impl FastTravelWindow {
         self.form = empty_form();
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
-        if let Some((map, cell, pad)) = lock(&self.shared).current.take() {
-            self.form.map = map;
-            self.form.cell = cell;
-            self.form.pad = pad;
+    fn ui(&mut self, ui: &mut Ui, st: &mut State, bot: &std::sync::Arc<turu_bot::Bot>) {
+        if st.here_count != self.here_seen {
+            self.here_seen = st.here_count;
+            if let Some(here) = &st.here {
+                self.form.map = here.map.clone();
+                self.form.cell = here.cell.clone();
+                self.form.pad = here.pad.clone();
+            }
         }
-        let (traveling, status) = {
-            let s = lock(&self.shared);
-            (s.traveling.clone(), s.status.clone())
-        };
+        let (traveling, status) = (st.traveling.clone(), st.note.clone());
         ui.spacing_mut().item_spacing = vec2(GAP, 8.0);
         let control = widgets::target(28.0, 40.0);
         let narrow = ui.available_width() < NARROW;
@@ -184,18 +126,18 @@ impl FastTravelWindow {
         // Search, and VibeSkua's private room (its own row when narrow).
         if narrow {
             widgets::text_box(ui, &mut self.search, "Search name, map or cell", ui.available_width());
-            ui.horizontal(|ui| self.private_room_controls(ui, control));
+            ui.horizontal(|ui| self.private_room_controls(ui, st, control));
         } else {
             ui.horizontal(|ui| {
                 let width = ui.available_width() - self.private_room_width(ui, control) - GAP;
                 widgets::text_box(ui, &mut self.search, "Search name, map or cell", width);
-                self.private_room_controls(ui, control);
+                self.private_room_controls(ui, st, control);
             });
         }
 
         // Heading: the count of what the search shows, how the last travel went, and Clear.
-        let shown: Vec<usize> = (0..self.list.len())
-            .filter(|&i| self.list[i].matches(&self.search))
+        let shown: Vec<usize> = (0..st.list.len())
+            .filter(|&i| st.list[i].matches(&self.search))
             .collect();
         ui.horizontal(|ui| {
             widgets::section_label(ui, "DESTINATIONS");
@@ -205,7 +147,7 @@ impl FastTravelWindow {
                     ui,
                     "Clear",
                     Kind::Normal,
-                    !self.list.is_empty(),
+                    !st.list.is_empty(),
                     vec2(64.0, widgets::target(22.0, 40.0)),
                     "The list is empty",
                 )
@@ -213,8 +155,8 @@ impl FastTravelWindow {
                 if clear.clicked() {
                     self.confirm_clear = true;
                 }
-                if let Some((text, tone)) = &status {
-                    status_line(ui, text, tone.color());
+                if let Some(Note { text, tint }) = &status {
+                    status_line(ui, text, tint_color(*tint));
                 }
             });
         });
@@ -225,26 +167,25 @@ impl FastTravelWindow {
         let list_height = (ui.available_height() - form_height - ui.spacing().item_spacing.y).max(tile_height + 10.0);
         let mut action = None;
         widgets::list_well(ui, list_height, |ui| {
-            action = self.tiles(ui, &shown, traveling.as_ref(), tile_height);
+            action = self.tiles(ui, &st.list, &shown, traveling.as_ref(), tile_height);
         });
         match action {
             Some(Action::Edit(i)) => {
-                self.form = self.list[i].clone();
+                self.form = st.list[i].clone();
                 self.editing = Some(i);
             }
             Some(Action::Remove(i)) => {
-                self.list.remove(i);
+                st.remove(bot, i);
                 match self.editing {
                     Some(e) if e == i => self.stop_editing(),
                     Some(e) if e > i => self.editing = Some(e - 1),
                     _ => {}
                 }
-                self.save();
             }
             None => {}
         }
         let top = ui.cursor().top();
-        self.form(ui, control, narrow);
+        self.form(ui, st, bot, control, narrow);
         let height = ui.min_rect().bottom() - top;
         if self.form_height.is_none_or(|h| (h - height).abs() > 0.5) {
             self.form_height = Some(height);
@@ -263,33 +204,44 @@ impl FastTravelWindow {
     }
 
     /// VibeSkua `UsePrivateRoom` and `PrivateRoomNumber`: travels join `map-<room>`.
-    fn private_room_controls(&mut self, ui: &mut Ui, control: f32) {
-        widgets::switch(ui, &mut self.private_room).on_hover_text("Join private rooms with this number");
+    fn private_room_controls(&self, ui: &mut Ui, st: &mut State, control: f32) {
+        let (mut on, mut room) = (st.private_room, st.room);
+        widgets::switch(ui, &mut on).on_hover_text("Join private rooms with this number");
         let label = ui.add(egui::Label::new("Private room").sense(Sense::click()).selectable(false));
         if label.clicked() {
-            self.private_room = !self.private_room;
+            on = !on;
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             widgets::number(
                 ui,
                 "turu_fast_travel_room",
-                &mut self.room,
-                1..=999_999_999,
+                &mut room,
+                1..=model::MAX_ROOM,
                 1.0,
                 "",
                 vec2(room_width(control), control),
             )
             .on_hover_text("Room number");
         });
+        if (on, room) != (st.private_room, st.room) {
+            st.set_private(on, room);
+        }
     }
 
     /// The destinations as tiles, in as many columns (up to three) as fit; returns what a tile's
     /// menu asked for.
-    fn tiles(&self, ui: &mut Ui, shown: &[usize], traveling: Option<&FastTravel>, height: f32) -> Option<Action> {
+    fn tiles(
+        &self,
+        ui: &mut Ui,
+        list: &[FastTravel],
+        shown: &[usize],
+        traveling: Option<&FastTravel>,
+        height: f32,
+    ) -> Option<Action> {
         if shown.is_empty() {
             ui.add_space(16.0);
             ui.vertical_centered(|ui| {
-                let text = if self.list.is_empty() {
+                let text = if list.is_empty() {
                     "No destinations yet. Fill in the form below (Get current takes where you are), then Add."
                         .to_owned()
                 } else {
@@ -313,7 +265,7 @@ impl FastTravelWindow {
                 for row in range {
                     ui.horizontal(|ui| {
                         for &index in shown.iter().skip(row * columns).take(columns) {
-                            let dest = &self.list[index];
+                            let dest = &list[index];
                             let busy = traveling == Some(dest);
                             let edited = self.editing == Some(index);
                             if let Some(asked) = self.tile(ui, index, dest, busy, edited, vec2(tile_width, height)) {
@@ -380,7 +332,7 @@ impl FastTravelWindow {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if response.on_hover_text(format!("Travel to {place}")).clicked() && !busy {
-            self.travel(dest.clone());
+            model::travel(&crate::turu::bot(), dest.clone());
         }
 
         // The menu, drawn last so it gets the click over the tile.
@@ -413,14 +365,14 @@ impl FastTravelWindow {
     }
 
     /// VibeSkua `FastTravelEditorViewModel`: the add form, which also edits a destination.
-    fn form(&mut self, ui: &mut Ui, control: f32, narrow: bool) {
+    fn form(&mut self, ui: &mut Ui, st: &mut State, bot: &std::sync::Arc<turu_bot::Bot>, control: f32, narrow: bool) {
         widgets::card(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(GAP, GAP);
             ui.spacing_mut().interact_size.y = control;
             let width = ui.available_width();
             ui.horizontal(|ui| {
                 ui.set_min_height(18.0);
-                match self.editing.and_then(|i| self.list.get(i)) {
+                match self.editing.and_then(|i| st.list.get(i)) {
                     Some(dest) => {
                         let label = format!("EDITING {}", dest.name.to_uppercase());
                         ui.add(
@@ -459,7 +411,7 @@ impl FastTravelWindow {
                 });
             }
             if submit {
-                self.submit();
+                self.submit(st, bot);
             }
         });
     }
@@ -493,7 +445,7 @@ impl FastTravelWindow {
             .on_hover_text("Fill in the map, cell and pad you are in")
             .clicked()
         {
-            self.get_current();
+            model::get_current(&crate::turu::bot());
         }
         let label = if self.editing.is_some() { "Save" } else { "Add" };
         let valid = self.form.is_valid();
@@ -509,63 +461,14 @@ impl FastTravelWindow {
     }
 
     /// VibeSkua `AddFastTravel`, or the edit dialog's OK: the form's destination is saved.
-    fn submit(&mut self) {
-        if !self.form.is_valid() {
-            return;
+    fn submit(&mut self, st: &mut State, bot: &turu_bot::Bot) {
+        if st.put(bot, &self.form, self.editing).is_ok() {
+            self.stop_editing();
         }
-        let dest = self.form.trimmed();
-        match self.editing.filter(|&i| i < self.list.len()) {
-            Some(i) => self.list[i] = dest,
-            None => self.list.push(dest),
-        }
-        self.save();
-        self.stop_editing();
-    }
-
-    /// VibeSkua `GetCurrent`: the map, cell and pad you are in, into the form.
-    fn get_current(&self) {
-        let shared = self.shared.clone();
-        crate::turu::spawn_action("Fast Travel current", move |bot| {
-            let here = if player::logged_in(bot)? && player::world_loaded(bot)? {
-                Some((map::name(bot)?, player::cell(bot)?, player::pad(bot)?))
-            } else {
-                None
-            };
-            let mut s = lock(&shared);
-            match here {
-                Some(here) if !here.0.is_empty() => s.current = Some(here),
-                _ => s.status = Some(("Not in a map: log in first".to_owned(), Tone::Danger)),
-            }
-            Ok(())
-        });
-    }
-
-    /// VibeSkua `MapService.Travel`, on a bot thread, saying how it went.
-    fn travel(&self, dest: FastTravel) {
-        let room = self.private_room.then_some(self.room);
-        {
-            let mut s = lock(&self.shared);
-            if s.traveling.is_some() {
-                return;
-            }
-            s.traveling = Some(dest.clone());
-            s.status = Some((format!("Traveling to {}...", dest.name), Tone::Muted));
-        }
-        let shared = self.shared.clone();
-        crate::turu::spawn_action("Fast Travel", move |bot| {
-            let outcome = travel_outcome(bot, &dest, room);
-            let mut s = lock(&shared);
-            s.traveling = None;
-            s.status = Some(match outcome {
-                Ok(outcome) => outcome,
-                Err(e) => (format!("Travel failed: {e}"), Tone::Danger),
-            });
-            Ok(())
-        });
     }
 
     /// VibeSkua `ClearFastTravels`' question.
-    fn clear_dialog(&mut self, ctx: &Context) {
+    fn clear_dialog(&mut self, ctx: &Context, st: &mut State, bot: &turu_bot::Bot) {
         if !self.confirm_clear {
             return;
         }
@@ -591,33 +494,10 @@ impl FastTravelWindow {
         }
         self.confirm_clear = false;
         if answer == Some(true) {
-            self.list.clear();
+            st.clear(bot);
             self.stop_editing();
-            self.save();
         }
     }
-}
-
-/// Travels to `dest` and says where that left you.
-fn travel_outcome(bot: &turu_bot::Bot, dest: &FastTravel, room: Option<i64>) -> turu_bot::BotResult<(String, Tone)> {
-    if !player::logged_in(bot)? {
-        return Ok(("Not logged in".to_owned(), Tone::Danger));
-    }
-    if !player::alive(bot)? {
-        return Ok(("You're dead: travel once you respawn".to_owned(), Tone::Warning));
-    }
-    map::fast_travel(bot, &dest.map, &dest.cell, &dest.pad, room)?;
-    let (now, cell) = (map::name(bot)?, player::cell(bot)?);
-    Ok(
-        if now.eq_ignore_ascii_case(&dest.map) && cell.eq_ignore_ascii_case(&dest.cell) {
-            (format!("At {}", dest.name), Tone::Success)
-        } else {
-            (
-                format!("Didn't reach {} \u{B7} {}: in {now} \u{B7} {cell}", dest.map, dest.cell),
-                Tone::Warning,
-            )
-        },
-    )
 }
 
 /// The room number box's width.

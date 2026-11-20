@@ -21,6 +21,7 @@ pub mod auto;
 pub mod bank;
 pub mod core_bots;
 pub mod drops;
+pub mod fast_travel;
 pub mod form;
 pub mod game_options;
 pub mod jump;
@@ -456,6 +457,13 @@ pub fn register() {
         "core-bots",
         "do",
         Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
+    add_model("fast-travel", Box::new(|bot| to_json(&fast_travel::view(bot))));
+    add_model_action(
+        "fast-travel",
+        "do",
+        Box::new(|bot, body| fast_travel::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("loadouts", Box::new(|bot| to_json(&loadouts::view(bot))));
