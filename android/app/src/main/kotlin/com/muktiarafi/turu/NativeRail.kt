@@ -78,15 +78,17 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
     val bank = models.bank
     val update = models.rail?.update
     val entries = listOfNotNull(
-        Entry("Scripts", RailIcons.Script, 5, Page.Scripts) { actions.open(Page.Scripts) },
-        Entry("Logs", RailIcons.Logs, 3, Page.Logs) { actions.open(Page.Logs) },
+        // Search Scripts: how scripts are found, so it stays on the shortest rail. The Script
+        // Loader is the chip's, at the foot.
+        Entry("Scripts", RailIcons.Script, 1, Page.Search) { actions.open(Page.Search) },
+        Entry("Logs", RailIcons.Logs, 4, Page.Logs) { actions.open(Page.Logs) },
         Entry("Army", RailIcons.Army, 6, Page.Army) { actions.open(Page.Army) },
         Entry("More", Icons.Rounded.Menu, 0, Page.More) { actions.open(Page.More) },
-        Entry("Auto", RailIcons.Auto, 1, Page.Auto, badge = if (auto?.running == true) Turu.Success else null) {
+        Entry("Auto", RailIcons.Auto, 2, Page.Auto, badge = if (auto?.running == true) Turu.Success else null) {
             actions.open(Page.Auto)
         },
-        Entry("Jump", Icons.Rounded.LocationOn, 2, Page.Jump) { actions.open(Page.Jump) },
-        Entry("Bank", RailIcons.Bank, 4, null, busy = bank?.busy == true) { actions.bank() },
+        Entry("Jump", Icons.Rounded.LocationOn, 3, Page.Jump) { actions.open(Page.Jump) },
+        Entry("Bank", RailIcons.Bank, 5, null, busy = bank?.busy == true) { actions.bank() },
         update?.let {
             Entry("Update", RailIcons.Update, 3, null, badge = if (it.failed != null) Turu.Danger else Turu.Accent, busy = it.busy != null) {
                 actions.window("client_update")
