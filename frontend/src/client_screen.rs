@@ -822,6 +822,7 @@ impl ClientScreen {
             | ToClient::Updates { .. }
             | ToClient::ArmyClients { .. }
             | ToClient::FullScreen { .. }
+            | ToClient::OpenWindow { .. }
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

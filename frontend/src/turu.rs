@@ -299,8 +299,8 @@ impl ShellTab {
 pub enum ShellTabAction {
     Select(u32),
     Close(u32),
-    /// Open the shell's native Accounts.
-    Accounts,
+    /// Open one of the shell's native screens.
+    Open(crate::shell::NativeScreen),
 }
 
 /// The shell's tabs and the one shown, while this process is a client.
@@ -500,16 +500,30 @@ pub fn tab_strip_shown() -> bool {
     tab_strip_count() > 1 && shell_rail_top().is_none()
 }
 
-/// Asks the shell to open its native Accounts, where it has one (Android's).
-pub fn open_shell_accounts() -> bool {
+/// Asks the shell to show its native `screen` in place of the egui window, where it has one
+/// (Android's); false when the egui window is the one to show.
+pub fn open_shell_screen(screen: crate::shell::NativeScreen) -> bool {
     if shell_rail_top().is_none() {
         return false;
     }
     if let Some(send) = SHELL_ACTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-        send(ShellTabAction::Accounts);
+        send(ShellTabAction::Open(screen));
         return true;
     }
     false
+}
+
+/// The egui windows the shell's native screens asked to open (`ToClient::OpenWindow`).
+static WINDOW_REQUESTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Opens the egui window named `window` ("script_repo", "script_options") at the next frame.
+pub fn request_window(window: String) {
+    WINDOW_REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).push(window);
+}
+
+/// The windows asked for since the last call.
+pub fn take_window_requests() -> Vec<String> {
+    std::mem::take(&mut *WINDOW_REQUESTS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// How many tabs the tab strip shows: the shell's in a client, else this window's.

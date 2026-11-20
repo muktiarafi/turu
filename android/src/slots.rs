@@ -329,6 +329,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                         });
                     }
                 }
+                // One of this tab's egui windows, which the shell's native screens open.
+                Ok(ToClient::OpenWindow { window }) => {
+                    turu::request_window(window);
+                    crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
+                }
                 // The display's refresh rate, from the shell's activity.
                 Ok(ToClient::RefreshRate { millihertz }) => crate::ui::set_refresh_millihertz(millihertz),
                 // Another tab turned Headless Mode on or off.

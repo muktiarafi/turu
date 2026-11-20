@@ -71,6 +71,7 @@ class TabActions(
     /** A new tab at the game's login screen. */
     val blank: () -> Unit,
     val accounts: AccountsPanel,
+    val scripts: ScriptsPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
@@ -221,6 +222,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.Tabs -> TabsPage(state, actions)
                     Page.NewTab -> NewTabPage(state, actions)
                     Page.Accounts -> AccountsPage(state, actions.accounts)
+                    Page.Scripts -> ScriptsPage(state, actions.scripts)
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }

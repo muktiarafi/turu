@@ -23,6 +23,12 @@ class ShellScreens(private val activity: TuruActivity) {
         close = { id -> activity.shell?.asShown(JSONObject().put("type", "close_tab").put("id", id).toString()) },
         blank = { activity.shell?.asShown(JSONObject().put("type", "open_tab").toString()) },
         accounts = AccountsPanel { actions -> activity.shell?.actions(actions) },
+        // The slot's egui windows the Script Loader opens, while they aren't native: in its
+        // picture, with the panel out of the way.
+        scripts = ScriptsPanel { window ->
+            activity.shell?.toShown(JSONObject().put("type", "open_window").put("window", window).toString())
+            close()
+        },
     )
 
     private val item = ComposeView(activity).apply {
@@ -40,6 +46,8 @@ class ShellScreens(private val activity: TuruActivity) {
     init {
         state.onOpenChanged = { open ->
             panel.visibility = if (open) View.VISIBLE else View.GONE
+            // The Script Loader reads the tab's models only while it shows.
+            if (!open) actions.scripts.follow(null)
             // The keys go back to the slot (egui's text boxes, the game) once the panel is gone.
             if (!open) activity.focusSurface()
         }
@@ -61,9 +69,12 @@ class ShellScreens(private val activity: TuruActivity) {
         if (state.open) actions.accounts.reload()
     }
 
-    /** Army > Accounts in a slot's egui menu: the panel's Accounts. */
-    fun openAccounts() {
-        open(Page.Accounts)
+    /** A window the shell has natively, opened in a slot's egui menus (`ToShell::OpenScreen`). */
+    fun openScreen(screen: String) {
+        when (screen) {
+            "accounts" -> open(Page.Accounts)
+            "scripts" -> open(Page.Scripts)
+        }
     }
 
     fun open(page: Page) {

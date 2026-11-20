@@ -296,13 +296,16 @@ pub fn toggle(bot: &Arc<Bot>) {
     }
 }
 
-/// Load Script; refused while one runs.
+/// Load Script: an absolute path, or one in the scripts folder (as `/script/load` takes it);
+/// refused while a script runs.
 pub fn load(bot: &Bot, path: &Path) -> Result<(), String> {
     if bot.scripts.status().is_active() {
         return Err("Stop the script first".into());
     }
-    bot.scripts.load(path);
-    bot.log(format!("Loaded script {}", path.display()));
+    let found =
+        script::resolve(&bot.paths.scripts_dir(), path).ok_or_else(|| format!("No script at {}", path.display()))?;
+    bot.scripts.load(&found);
+    bot.log(format!("Loaded script {}", found.display()));
     Ok(())
 }
 

@@ -278,6 +278,10 @@ pub struct NativeTab {
     pub waits: Option<String>,
     /// Its process isn't up: "starting".
     pub down: Option<String>,
+    /// Its control API (`127.0.0.1:<port>`) and token, from its hello: the native screens read
+    /// its view models there.
+    pub api: Option<String>,
+    pub token: Option<String>,
 }
 
 /// A slot whose process is bound and has said hello.
@@ -419,8 +423,8 @@ impl SlotShell {
                 }
                 _ => Vec::new(),
             },
-            // Army > Accounts in a slot: the activity's native Accounts.
-            ToShell::OpenAccounts => vec![Action::Activity(slot, ToShell::OpenAccounts)],
+            // A window the activity has natively (Accounts, the Script Loader): its own.
+            open @ ToShell::OpenScreen { .. } => vec![Action::Activity(slot, open)],
             hello @ ToShell::Hello { .. } => self.connected(slot, &hello),
             // Every tab's: to the other slots up.
             ToShell::HeadlessMode { on } => {
@@ -529,6 +533,8 @@ impl SlotShell {
                     busy: live.is_some_and(|l| l.busy),
                     waits: live.and_then(|l| l.waits.clone()),
                     down: live.is_none().then(|| "starting".into()),
+                    api: live.and_then(|l| l.api.clone()),
+                    token: live.and_then(|l| l.token.clone()),
                 }
             })
             .collect();
@@ -1000,9 +1006,9 @@ mod tests {
         assert_eq!(actions.len(), 1);
         assert!(native(&actions).expect("the activity's list").rail_hidden);
         // Army > Accounts goes to the activity.
-        assert_eq!(
-            shell.message(1, ToShell::OpenAccounts),
-            [Action::Activity(1, ToShell::OpenAccounts)]
-        );
+        let open = ToShell::OpenScreen {
+            screen: crate::shell::NativeScreen::Accounts,
+        };
+        assert_eq!(shell.message(1, open.clone()), [Action::Activity(1, open)]);
     }
 }

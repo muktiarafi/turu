@@ -947,8 +947,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
         }
         Menu::Army => {
-            // Android: the shell's native Accounts, beside its Tabs item.
-            if item(ui, "Accounts") && !crate::turu::open_shell_accounts() {
+            if item(ui, "Accounts") {
                 windows.accounts = true;
             }
             if item(ui, "Army Control") {

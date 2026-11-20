@@ -113,6 +113,9 @@ pub enum ToClient {
     Answer { id: u32, value: Option<String> },
     /// Debugging: write the next frame drawn to `path` as a PNG.
     Dump { path: String },
+    /// Android: one of the tab's egui windows the shell's native screens open ("script_repo",
+    /// "script_options"), while those windows aren't native yet.
+    OpenWindow { window: String },
     /// Android: the text field above the keyboard (`FieldShow`) was edited: all its text, the
     /// selection in UTF-16 units (M3).
     FieldEdited {
@@ -401,8 +404,9 @@ pub enum ToShell {
         #[serde(default)]
         rail_hidden: bool,
     },
-    /// Android: Army > Accounts opens the shell's native Accounts (docs/UI.md, "Native shells").
-    OpenAccounts,
+    /// Android: a window the shell has natively (docs/UI.md, "Native shells") was opened in the
+    /// tab's egui menus: the shell shows its own instead.
+    OpenScreen { screen: NativeScreen },
     /// The bar's Grid toggle: Grid View on or off. `left` and `top` are what Turu's UI takes of the
     /// window, in points (the rail, the bar and the tab strip): the tiles fill the rest.
     Grid {
@@ -465,6 +469,15 @@ pub enum ToShell {
     /// A message this shell doesn't know.
     #[serde(other)]
     Unknown,
+}
+
+/// A screen Android's shell has natively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeScreen {
+    Accounts,
+    /// The Script Loader.
+    Scripts,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the
@@ -1178,7 +1191,9 @@ mod tests {
                 waits: Some("a message box".into()),
                 rail_hidden: true,
             },
-            ToShell::OpenAccounts,
+            ToShell::OpenScreen {
+                screen: NativeScreen::Scripts,
+            },
             ToShell::Grid {
                 on: true,
                 left: 0.0,

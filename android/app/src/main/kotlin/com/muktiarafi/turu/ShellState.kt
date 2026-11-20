@@ -17,6 +17,9 @@ data class ShellTab(
     val waits: String?,
     /** Its process isn't up yet ("starting"). */
     val down: String?,
+    /** Its control API and token, where its view models are read (null until it says hello). */
+    val api: String? = null,
+    val token: String? = null,
 )
 
 /** The tab list (`slots::NativeTabs`). */
@@ -45,6 +48,8 @@ data class ShellTabs(
                         busy = t.optBoolean("busy"),
                         waits = t.optStringOrNull("waits"),
                         down = t.optStringOrNull("down"),
+                        api = t.optStringOrNull("api"),
+                        token = t.optStringOrNull("token"),
                     )
                 },
                 shown = o.getInt("shown"),
@@ -60,6 +65,9 @@ sealed interface Page {
     data object Tabs : Page
     data object NewTab : Page
     data object Accounts : Page
+
+    /** The Script Loader. */
+    data object Scripts : Page
 
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page

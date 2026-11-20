@@ -210,6 +210,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         run(nativeFromSlot(current, json))
     }
 
+    /** A message to the slot on screen (`ToClient`, as JSON). */
+    fun toShown(json: String) {
+        sendJson(current, json)
+    }
+
     /** Actions the Rust side sent of its own (keys for the slot on screen), on the main thread. */
     fun actions(actions: String) {
         if (!stopped) run(actions)
@@ -293,8 +298,8 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
             }
             "install" -> install(slot, message.optString("path"))
             "prefer_refresh_rate" -> activity.preferRefreshRate(message.optInt("hz").toFloat())
-            // Army > Accounts in the slot's egui menu: the shell's native Accounts.
-            "open_accounts" -> activity.screens.openAccounts()
+            // A window the shell has natively, opened in the slot's egui menus.
+            "open_screen" -> activity.screens.openScreen(message.optString("screen"))
         }
     }
 

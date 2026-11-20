@@ -301,6 +301,24 @@ impl TuruUi {
         let tab = self.active();
         hotkeys::run_pressed(ctx, tab);
         let w = &mut tab.windows;
+        // Android's shell has these natively (docs/UI.md, "Native shells"): however they were
+        // opened here (a menu, the script chip, a hotkey, Search Scripts' Start), the shell shows
+        // its own.
+        use crate::shell::NativeScreen;
+        if w.script_loader && crate::turu::open_shell_screen(NativeScreen::Scripts) {
+            w.script_loader = false;
+        }
+        if w.accounts && crate::turu::open_shell_screen(NativeScreen::Accounts) {
+            w.accounts = false;
+        }
+        // And the egui windows its native screens open, while those aren't native yet.
+        for window in crate::turu::take_window_requests() {
+            match window.as_str() {
+                "script_repo" => w.script_repo = true,
+                "script_options" => w.script_options = true,
+                other => tracing::warn!("The shell asked for a window I don't know: {other}"),
+            }
+        }
         tab.script_loader.show(
             ctx,
             &mut w.script_loader,

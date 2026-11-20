@@ -50,7 +50,7 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
         actions(match action {
             turu::ShellTabAction::Select(id) => ToShell::SelectTab { id },
             turu::ShellTabAction::Close(id) => ToShell::CloseTab { id },
-            turu::ShellTabAction::Accounts => ToShell::OpenAccounts,
+            turu::ShellTabAction::Open(screen) => ToShell::OpenScreen { screen },
         });
     }));
     report_status(send, open);

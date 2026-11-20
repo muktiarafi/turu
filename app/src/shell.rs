@@ -1416,7 +1416,7 @@ impl ShellApp {
             | ToShell::SoftKeyboard { .. }
             | ToShell::PreferRefreshRate { .. }
             // Android's: the desktop's clients keep their own Accounts window.
-            | ToShell::OpenAccounts
+            | ToShell::OpenScreen { .. }
             | ToShell::Unknown => {}
         }
     }
