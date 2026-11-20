@@ -1012,6 +1012,14 @@ above, and why:
   Replace, Pin, and why Start rests. The task's progress with Cancel, or the last outcome, on one
   line at the foot; Update all, Download all and Refresh in the bar's menu, to leave the short
   screen to the rows. Delete and Reset Scripts stay in the egui window.
+* **Game Options** (L5b, 2026-11-20) is a page of the panel, 440 dp wide, from More > Game and
+  however the slot opens it: the search and the sections as chips (with counts, and Changed while
+  anything differs from options.json), the options under their section's heading (and group's)
+  with a switch, a number box, Set FPS with its presets, a text box (Relogin Server's a text box
+  too: the page has no server list), a choice or Reload Map; "Edited" or "Changed outside"
+  outlined after the label; an option that depends on another indented and dimmed while that one
+  is off; an unused one dimmed with "Coming soon". At the foot one status line, Defaults (asks
+  first), Revert (asks first while a script changed options) and Save.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
   pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
 

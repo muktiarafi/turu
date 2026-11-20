@@ -691,8 +691,12 @@ script's message box and options request.
   window lays it out, a native page reads a per-tab query and the first 80 results while it
   shows. With it, "Done when"'s first part holds on the emulator: a script found, loaded, started
   and stopped without an egui window.
-* Not yet: Options (Game, Application, CoreBots), Scheduler, Army Control and Army Queue as native
-  screens (the pass's L5b list), and a phone (M4). Nothing that needs the game was tried since 08:10: the emulator's certificate checks
+* **Game Options** (2026-11-20): its view is typed for the shells (`OptionValue`, `KindView`;
+  facet-generate doesn't rename fields inside enum variants, so they're one word) and generated;
+  a native page edits it live, marks Edited against Changed outside (the page's own record), and
+  has Defaults, Revert and Save. The first decode failed loudly on that rename, as planned.
+* Not yet: Application Options and CoreBots (1,191 and 1,583 egui lines, each as big a move as
+  Game Options), Scheduler, Army Control and Army Queue as native screens, and a phone (M4). Nothing that needs the game was tried since 08:10: the emulator's certificate checks
   against game.aq.com fail ("certificate was revoked", with or without this work's network
   security config).
 
