@@ -10,7 +10,9 @@ Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
 tooling quirks). Continuing the Mugetsu 2.0.0 update or the process tabs (M6):
 `docs/MUGETSU_2_M6_HANDOVER.md` (state, open items, decisions, traps). The Android port: `docs/ANDROID_HANDOVER.md` (start here: state,
 branches, setup, testing, pitfalls), `docs/ANDROID_PROPOSAL.md` (plan) and `docs/ANDROID.md`
-(build, run); what of Turu's UI is native Android there, and why: `docs/ANDROID_NATIVE_UI.md`.
+(build, run); what of Turu's UI is native Android there, and why: `docs/ANDROID_NATIVE_UI.md`. Native
+windows on Android (Compose pages over view models, branch `native-ui`): `docs/NATIVE_UI_PROPOSAL.md`,
+"L4 and L5b so far" and its "Handover".
 Turu Mas, the Android app on Adobe AIR: `docs/TURU_MAS.md` (build, release,
 license; how it came about: `docs/AIR_PROPOSAL.md`). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
 behaviour, Flash bridge, API and UI, surveyed from its source), `docs/SCRIPTING.md`

@@ -949,7 +949,8 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Army Queue | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control | native (L5b; Army Control not built yet) |
+| Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
 | Tools & Helpers, Combat, Butler, Cosmetics, Notification Center, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
@@ -1028,6 +1029,16 @@ above, and why:
   Other as segments, a card per role (class, mode, Use equipment, the gear folded under "Gear · N
   of 6 set"), Options and Other as option rows under their groups, Refresh from game, Revert and
   Save (asking before public rooms); the page saves when it closes, as the window does.
+* **Scheduler** (L5b, 2026-11-20), a page of the panel (440 dp) from More and however the slot
+  opens the Scheduler: Start queue (Stop queue in red while it runs) with the summary, and the
+  reason it's off under it; the playlist as rows (number, name, status chip in its colour, time;
+  the running one tinted), each with a ⋮ of Move up, Move down, Rename, Script options and
+  Remove (Move and Remove off while it runs, saying why); an empty state that says where scripts
+  come from; Load, Save and Add scripts (Search Scripts, whose Add to the queue adds them) at the
+  foot, with the note above. Load lists the playlists folder; Save and Rename ask for a name,
+  selected so typing replaces it, and the keyboard's Done confirms (in landscape it covers the
+  dialog's buttons). Script options opens the slot's Script Options window, the panel closing,
+  or says why there's nothing to set. Double-click to rename is the egui window's.
 * **Full window**: every native page's ⋮ ends with Full window, the slot's egui window (which
   stays egui until it closes), and says what it adds there.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
