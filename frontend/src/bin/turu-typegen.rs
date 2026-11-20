@@ -11,8 +11,8 @@ use turu_frontend::models::{
     application_options::AppOptionsView, army::ArmyView, auto::AutoView, bank::BankView, butler::ButlerView,
     core_bots::CoreBotsView, cosmetics::CosmeticsView, drops::DropsView, fast_travel::FastTravelView,
     game_options::GameOptionsView, jump::JumpView, loadouts::LoadoutsView, logs::LogsView,
-    notifications::NotificationsView, rail::RailView, repo::RepoView, scheduler::SchedulerView, scripts::ScriptsView,
-    skills::SkillsView, stats::StatsView,
+    notifications::NotificationsView, rail::RailView, repo::RepoView, scheduler::SchedulerView,
+    script_options::ScriptOptionsView, scripts::ScriptsView, skills::SkillsView, stats::StatsView,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,6 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<FastTravelView>()?
         .add_type::<ButlerView>()?
         .add_type::<CosmeticsView>()?
+        .add_type::<ScriptOptionsView>()?
         .add_type::<ArmyView>()?
         .add_type::<NotificationsView>()?
         .add_type::<StatsView>()?

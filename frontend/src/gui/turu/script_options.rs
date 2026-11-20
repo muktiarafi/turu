@@ -17,6 +17,11 @@
 
 use super::theme::{ACCENT, EDGE, INSET, MUTED, SMALL_RADIUS, TEXT, WARNING};
 use super::widgets::{self, Kind as ButtonKind};
+use crate::models::script_options::{
+    self as model, Category, Gear, Link, Plan, Request, State, candidates, default_text, matches, missing_note, noun,
+    place_tag, plural, tidy,
+};
+use crate::models::tab_state::lock;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, Align2, ComboBox, Context, CornerRadius, FontId, Frame, Key, Label, Layout, Margin, RichText, ScrollArea,
@@ -24,15 +29,10 @@ use egui::{
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
-use turu_bot::gear::{self, GearFile, GearItem, Place, Slot};
+use turu_bot::gear::{GearItem, Place};
 use turu_bot::script::ScriptOptionsState;
 use turu_bot::script::options::{ItemPick, Kind, MAIN, OptionDecl, ScriptOptions};
 
-/// How often the window takes the account's items from the gear cache again.
-const GEAR_READ: Duration = Duration::from_secs(1);
-/// A group of this many switches or more is a checklist.
-const CHECKLIST: usize = 8;
 /// From this many options on, the window has a filter box.
 const FILTER_FROM: usize = 10;
 /// Narrower than this, a row puts its editor under its label.
@@ -42,28 +42,15 @@ const EDITOR_WIDTH: f32 = 220.0;
 /// The tallest the item list of a picker gets before it scrolls.
 const PICKER_LIST: f32 = 220.0;
 
+/// The window's own state; the draft, the script's request and the last error are the tab's
+/// `models::script_options` state, shared with a native page.
 #[derive(Default)]
 pub struct ScriptOptionsWindow {
-    /// The values being edited. Taken from the bot when the window opens.
-    draft: Option<ScriptOptions>,
-    /// Why the last Save failed.
-    error: Option<String>,
-    /// The script's request (`bot.config.configure`, or before a run) the window is open for.
-    request: Option<u64>,
-    /// The draft is a Scheduler entry's options (VibeSkua `EditScriptConfig`): Save writes its
-    /// own file and leaves the loaded script alone.
-    queued: bool,
     /// What the filter box keeps.
     filter: String,
     /// The item picker that is open.
     picker: Picker,
-    /// The checklist groups that hide the items the account owns.
-    hide_owned: HashSet<String>,
-    /// The account's wearable items, as the gear cache last had them.
-    gear: Option<GearFile>,
-    gear_at: Option<Instant>,
-    /// A gear read was started for this opening (the cache had none yet).
-    asked_gear: bool,
+    was_open: bool,
 }
 
 /// The open item picker: which option, and what its search box holds.
@@ -97,90 +84,57 @@ impl Picker {
 }
 
 impl ScriptOptionsWindow {
-    /// Edits a Scheduler entry's options, read from its `Queue_<name>_<id>` file.
-    pub fn edit_queued(&mut self, options: ScriptOptions) {
-        self.draft = Some(options);
-        self.queued = true;
-        self.error = None;
-    }
-
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         let bot = crate::turu::bot();
-        let scripts = &bot.scripts;
-        let pending = scripts.configure_request();
-        if pending.is_some() && pending != self.request {
+        let state = model::STATE.of(&bot);
+        // Held for the frame: only `State` methods below, never a function that locks it again.
+        let mut st = lock(&state);
+        match st.follow_request(&bot) {
             // The script waits for the window (VibeSkua's options dialog on Start).
-            self.request = pending;
-            if self.queued {
-                self.queued = false;
-                self.draft = None;
-            }
-            *open = true;
-        } else if self.request.is_some() && pending != self.request {
+            Request::Opened => *open = true,
             // The script was stopped while it waited.
-            self.request = None;
-            *open = false;
+            Request::Gone => *open = false,
+            Request::None => {}
         }
         if !*open {
-            if let Some(request) = self.request.take() {
-                scripts.finish_configure(request);
+            if std::mem::take(&mut self.was_open) {
+                self.filter.clear();
+                self.picker.close();
+                // Closed here (a menu, a hotkey): a Cancel, unless the native page shows it.
+                if !st.native {
+                    st.close(&bot);
+                }
             }
-            self.draft = None;
-            self.error = None;
-            self.queued = false;
-            self.filter.clear();
-            self.picker.close();
-            self.hide_owned.clear();
-            self.gear = None;
-            self.gear_at = None;
-            self.asked_gear = false;
             return;
         }
-        if self.draft.is_none()
-            && let ScriptOptionsState::Loaded(options) = scripts.options()
-        {
-            self.draft = Some(options);
-        }
-        if self.gear_at.is_none_or(|t| t.elapsed() >= GEAR_READ) {
-            self.gear_at = Some(Instant::now());
-            self.gear = bot.gear.last();
-            if self.gear.is_none() && bot.gear.logged_in() && !self.asked_gear {
-                // Logged in, but the gear thread hasn't read the items yet: read them now.
-                self.asked_gear = true;
-                crate::turu::spawn_action("Script Options gear", |bot| {
-                    gear::refresh(bot)?;
-                    Ok(())
-                });
+        self.was_open = true;
+        st.native = false;
+        st.ensure_draft(&bot);
+        let mut done = false;
+        let mut still_open = true;
+        super::window(ctx, "Script Options", [600.0, 560.0], 2)
+            .open(&mut still_open)
+            .show(ctx, |ui| self.ui(ui, &mut st, &bot, &mut done));
+        if done || !still_open {
+            *open = false;
+            self.was_open = false;
+            self.filter.clear();
+            self.picker.close();
+            if !done {
+                st.close(&bot);
             }
         }
-        let mut done = false;
-        super::window(ctx, "Script Options", [600.0, 560.0], 2)
-            .open(open)
-            .show(ctx, |ui| self.ui(ui, &mut done));
-        if done {
-            *open = false;
-        }
-        if self.gear.is_none() {
-            ctx.request_repaint_after(GEAR_READ);
+        if st.gear(&bot).file.is_none() {
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, done: &mut bool) {
-        let bot = crate::turu::bot();
+    fn ui(&mut self, ui: &mut Ui, st: &mut State, bot: &std::sync::Arc<turu_bot::Bot>, done: &mut bool) {
         ui.spacing_mut().item_spacing = vec2(6.0, 8.0);
-        let Self {
-            draft,
-            error,
-            queued,
-            filter,
-            picker,
-            hide_owned,
-            gear,
-            asked_gear,
-            ..
-        } = self;
-
-        let Some(draft) = draft.as_mut() else {
+        let Self { filter, picker, .. } = self;
+        let gear_file = st.gear(bot).file.cloned();
+        let reading = st.gear(bot).reading;
+        if st.draft.is_none() {
             // Nothing to edit: no script is loaded, or the loaded one declares no options.
             let message = match bot.scripts.options() {
                 ScriptOptionsState::Failed(e) => {
@@ -191,9 +145,18 @@ impl ScriptOptionsWindow {
             ui.label(RichText::new(message).color(MUTED));
             if widgets::button(ui, "Close", ButtonKind::Normal, true, vec2(80.0, 28.0), "").clicked() {
                 *done = true;
+                st.close(bot);
             }
             return;
-        };
+        }
+        let (mut save, mut cancel) = (false, false);
+        let State {
+            draft,
+            error,
+            hide_owned,
+            ..
+        } = st;
+        let draft = draft.as_mut().expect("checked above");
 
         let saved_in = draft
             .path()
@@ -215,8 +178,8 @@ impl ScriptOptionsWindow {
         }
         let query = filter.trim().to_lowercase();
         let gear = Gear {
-            file: gear.as_ref(),
-            reading: *asked_gear && bot.gear.logged_in(),
+            file: gear_file.as_ref(),
+            reading,
         };
 
         let footer = widgets::target(28.0, 40.0) + 18.0 + if error.is_some() { 22.0 } else { 0.0 };
@@ -313,148 +276,23 @@ impl ScriptOptionsWindow {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if widgets::button(ui, "Save", ButtonKind::Primary, true, vec2(80.0, height), "").clicked() {
-                    let saved = if *queued {
-                        draft
-                            .save()
-                            .map_err(|e| format!("couldn't save {}: {e}", draft.path().display()))
-                    } else {
-                        bot.scripts.save_options(draft.clone())
-                    };
-                    match saved {
-                        Ok(()) => *done = true,
-                        Err(e) => *error = Some(e),
-                    }
+                    save = true;
                 }
                 if widgets::button(ui, "Cancel", ButtonKind::Normal, true, vec2(80.0, height), "").clicked() {
-                    *done = true;
+                    cancel = true;
                 }
             });
         });
-    }
-}
-
-/// What the window lays out, worked out from the declaration.
-struct Plan {
-    categories: Vec<Category>,
-    /// Per checklist group, the choice that makes it used (merge `Select` and `Generic:mode`).
-    links: HashMap<String, Link>,
-    /// The options with a row (explanations aren't counted).
-    option_count: usize,
-}
-
-struct Category {
-    name: String,
-    /// The name as shown: `_` as spaces.
-    title: String,
-    options: Vec<OptionDecl>,
-    /// A group of switches long enough to show as a checklist.
-    checklist: bool,
-    /// Per choice option, the explanation of each of its choices.
-    explanations: HashMap<String, HashMap<String, String>>,
-    /// The text options that are explanations, shown under their choice instead of as rows.
-    explanation_options: HashSet<String>,
-}
-
-/// A choice one of whose names is a checklist group's name: the group is used only when that
-/// choice is picked (CoreAdvanced's merge `Mode` and its `Select` group).
-struct Link {
-    category: String,
-    option: String,
-    display_name: String,
-    choice: String,
-}
-
-impl Plan {
-    fn of(draft: &ScriptOptions) -> Self {
-        let categories: Vec<Category> = draft
-            .declaration()
-            .categories()
-            .filter(|(_, options)| !options.is_empty())
-            .map(|(name, options)| Category::of(name, options))
-            .collect();
-        let mut links = HashMap::new();
-        for category in &categories {
-            for option in category.options.iter().filter(|o| o.kind == Kind::Choice) {
-                for choice in &option.choices {
-                    let group = categories
-                        .iter()
-                        .find(|g| g.checklist && g.name != MAIN && g.name.eq_ignore_ascii_case(choice));
-                    if let Some(group) = group {
-                        links.insert(
-                            group.name.clone(),
-                            Link {
-                                category: category.name.clone(),
-                                option: option.name.clone(),
-                                display_name: option.display_name.clone(),
-                                choice: choice.clone(),
-                            },
-                        );
-                    }
-                }
+        if save {
+            // Saved: the editor closes (`State::save` finishes the script's request).
+            if st.save(bot).is_ok() {
+                *done = true;
             }
-        }
-        let option_count = categories
-            .iter()
-            .map(|c| c.options.len() - c.explanation_options.len())
-            .sum();
-        Self {
-            categories,
-            links,
-            option_count,
+        } else if cancel {
+            st.close(bot);
+            *done = true;
         }
     }
-}
-
-impl Category {
-    fn of(name: &str, options: &[OptionDecl]) -> Self {
-        let mut explanations = HashMap::new();
-        let mut explanation_options = HashSet::new();
-        for option in options.iter().filter(|o| o.kind == Kind::Choice) {
-            let mut texts = HashMap::new();
-            for choice in &option.choices {
-                let key = format!("{}Explanation{}", option.name, capitalized(choice));
-                if let Some(text) = options.iter().find(|o| o.kind == Kind::Text && o.name == key) {
-                    texts.insert(choice.clone(), explanation(&text.description));
-                    explanation_options.insert(key);
-                }
-            }
-            if !texts.is_empty() {
-                explanations.insert(option.name.clone(), texts);
-            }
-        }
-        Self {
-            name: name.to_owned(),
-            title: name.replace('_', " "),
-            checklist: name != MAIN && options.len() >= CHECKLIST && options.iter().all(|o| o.kind == Kind::Bool),
-            options: options.to_vec(),
-            explanations,
-            explanation_options,
-        }
-    }
-}
-
-/// The account's items for the pickers and checklists.
-struct Gear<'a> {
-    file: Option<&'a GearFile>,
-    /// The items are being read (logged in, the cache had none yet).
-    reading: bool,
-}
-
-impl Gear<'_> {
-    /// Where the item with this ID is: the inventory before the bank.
-    fn place_of(&self, id: i64) -> Option<Place> {
-        let items = self.file?.items.iter().filter(|i| i.id == id);
-        items.map(|i| i.place).min_by_key(|p| *p == Place::Bank)
-    }
-
-    fn bank_read(&self) -> bool {
-        self.file.is_some_and(|f| f.bank_as_of.is_some())
-    }
-}
-
-/// Whether the filter keeps the option.
-fn matches(option: &OptionDecl, query: &str) -> bool {
-    query.is_empty() || option.display_name.to_lowercase().contains(query) || option.name.to_lowercase().contains(query)
 }
 
 /// A hairline between two rows of a card.
@@ -787,49 +625,6 @@ fn picker_panel(ui: &mut Ui, pick: ItemPick, current: &str, picker: &mut Picker,
     edit
 }
 
-/// The account's items an item option offers: its slot's (or every wearable but ground items),
-/// inventory first, then bank, each by name, one per name.
-fn candidates(file: &GearFile, pick: ItemPick) -> Vec<&GearItem> {
-    let mut items: Vec<&GearItem> = file
-        .items
-        .iter()
-        .filter(|i| match pick.slot() {
-            Some(slot) => i.slot == slot,
-            None => i.slot != Slot::Ground,
-        })
-        .collect();
-    items.sort_by_key(|i| (i.place == Place::Bank, i.name.to_lowercase()));
-    let mut seen = HashSet::new();
-    items.retain(|i| seen.insert(i.name.to_lowercase()));
-    items
-}
-
-/// "Worn" or "Bank"; nothing for an item in the inventory.
-fn place_tag(item: &GearItem) -> Option<&'static str> {
-    if item.equipped {
-        Some("Worn")
-    } else if item.place == Place::Bank {
-        Some("Bank")
-    } else {
-        None
-    }
-}
-
-/// A warning under an item option whose name isn't among the account's items.
-fn missing_note(pick: ItemPick, current: &str, gear: &Gear) -> Option<String> {
-    let file = gear.file?;
-    let name = current.trim();
-    if name.is_empty() || candidates(file, pick).iter().any(|i| i.name.eq_ignore_ascii_case(name)) {
-        return None;
-    }
-    let what = noun(pick).0;
-    Some(if gear.bank_read() {
-        format!("No {what} of this name in your inventory or bank")
-    } else {
-        format!("No {what} of this name in your inventory (the bank hasn't been opened yet)")
-    })
-}
-
 /// A group of switches as a checklist: a count, All and None for the rows shown, Hide owned, the
 /// note when the group is unused, then one row per item.
 #[allow(clippy::too_many_arguments)]
@@ -1003,81 +798,5 @@ fn use_choice(ui: &mut Ui, link: &Link, width: f32, edits: &mut Vec<(String, Str
             link.option.clone(),
             Value::String(link.choice.clone()),
         ));
-    }
-}
-
-/// What an item option picks: `("helm", "a helm")`.
-fn noun(pick: ItemPick) -> (&'static str, &'static str) {
-    match pick {
-        ItemPick::Any => ("item", "an item"),
-        ItemPick::Class => ("class", "a class"),
-        ItemPick::Weapon => ("weapon", "a weapon"),
-        ItemPick::Armor => ("armor", "an armor"),
-        ItemPick::Helm => ("helm", "a helm"),
-        ItemPick::Cape => ("cape", "a cape"),
-        ItemPick::Pet => ("pet", "a pet"),
-        ItemPick::Necklace => ("necklace", "a necklace"),
-    }
-}
-
-fn plural(noun: &str) -> String {
-    if noun.ends_with('s') {
-        format!("{noun}es")
-    } else {
-        format!("{noun}s")
-    }
-}
-
-/// "acOnly" -> "AcOnly", as CoreAdvanced names its explanation options.
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
-}
-
-/// An explanation option's description without its "Mode [all]:" lead.
-fn explanation(description: &str) -> String {
-    let text = description.split_once("]:").map_or(description, |(_, rest)| rest);
-    tidy(text)
-}
-
-/// A description on one line's terms: tabs and runs of spaces as one space, each line trimmed.
-fn tidy(text: &str) -> String {
-    text.lines()
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_owned()
-}
-
-/// A default as the window's tooltip shows it (VibeSkua: "Default: True").
-fn default_text(value: &Value) -> String {
-    match value {
-        Value::Bool(true) => "True".into(),
-        Value::Bool(false) => "False".into(),
-        Value::String(text) if text.is_empty() => "(empty)".into(),
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn explanations_lose_their_lead_and_tabs() {
-        assert_eq!(
-            explanation("Mode [all]: \t\tYou get all the items from shop."),
-            "You get all the items from shop."
-        );
-        assert_eq!(capitalized("acOnly"), "AcOnly");
-        assert_eq!(
-            tidy("Mode: [select] only\nShould  it\tbuy?"),
-            "Mode: [select] only\nShould it buy?"
-        );
-        assert_eq!(plural("class"), "classes");
     }
 }

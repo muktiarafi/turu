@@ -33,6 +33,7 @@ pub mod notifications;
 pub mod rail;
 pub mod repo;
 pub mod scheduler;
+pub mod script_options;
 pub mod scripts;
 pub mod skills;
 pub mod stats;
@@ -459,6 +460,13 @@ pub fn register() {
         "core-bots",
         "do",
         Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
+    add_model("script-options", Box::new(|bot| to_json(&script_options::view(bot))));
+    add_model_action(
+        "script-options",
+        "do",
+        Box::new(|bot, body| script_options::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("cosmetics", Box::new(|bot| to_json(&cosmetics::view(bot))));
