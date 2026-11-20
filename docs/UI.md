@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers (Grabber, Junk Items), Console | decided when reached; egui from More until then |
+| Tools & Helpers' Junk Items, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1213,6 +1213,15 @@ above, and why:
   Fake complete (one quest checked) and Load N. ⋮: Download community cache, Add missing quests,
   Rebuild all, Update range… (asks the first and last IDs), Full window. The first open with no
   cache file downloads the community one. With the keyboard up the foot steps aside.
+* **Grabber** (L5b, 2026-11-21), a page of the panel (440 dp) from More > Tools & Helpers and
+  however the slot opens it. List (a drop-down of the ten, "Inventory - 166 grabbed") and Grab,
+  then the search (once something is grabbed) and the rows a page of 100 at a time: the row's
+  text, its ID and an info button showing its fields (a dialog titled by the item's name). A tap
+  checks a row; Shop IDs and Temp Inventory keep one. The foot: what runs with a spinner and
+  Cancel, or the status ("Copied 1 item(s) to clipboard.", "3 checked"), then the list's actions
+  (Sell and Sell All in red), wrapping; Kill says why it waits. An action's quantity question
+  and message box are dialogs. ⋮: Copy (the checked rows, or all shown), Full window (Export to a
+  file). With the keyboard up the foot steps aside.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that

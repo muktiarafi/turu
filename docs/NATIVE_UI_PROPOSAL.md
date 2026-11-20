@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop and Loader. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader and Grabber. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -903,6 +903,16 @@ script's message box and options request.
   its first quest), font scale 1.3; the downloaded QuestData.json and its .etag were removed.
   Fake complete shows only with one quest checked. Not checked, as they act in game: Load (IDs,
   a shop, the checked quests), Fake complete, Add missing, Rebuild all, Update range, Cancel.
+* **Grabber** (2026-11-21, the owner's pick): `models::grabber` holds per tab each list's rows
+  (with a revision), what runs and its status, the quantity an action asks for and the message box
+  it shows (one question, which either shell answers), and a native page's list, search, page
+  (100 rows) and details row. Shells keep their selection as positions in one grab; an action on
+  rows of an older grab is refused. Kill waits while a script, a Console snippet or Auto runs, the
+  reason under the buttons. Copy answers its text; Export stays the window's (Full window).
+  Checked on the emulator: the drop-down, Grab of Inventory (166 rows), a row's fields, a check,
+  Copy from the menu, Quests' five actions wrapping at font scale 1.3. Not checked, as they act
+  in game: every list action (Buy, Equip, Sell, To Bank, Accept, Kill, ...) and so the quantity
+  question and the message box on the page.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -929,8 +939,8 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Tools & Helpers (Grabber, Junk Items), Console, HotKeys, and for
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Tools & Helpers' Junk Items, Console, HotKeys, and for
 good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
