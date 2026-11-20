@@ -2,7 +2,8 @@
 
 Status: **reopened (2026-11-20), in steps. L0 and L5a are done (2026-11-20, on the emulator; "L0's
 answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with Android's bot
-windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot is under way.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot is done ("L2's
+pilot" below); L4 and L5b's Scripts screen are next.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -621,6 +622,24 @@ through a real control API.
 **Done when**, per feature, its egui code imports nothing from `turu_bot` but record types and its
 model has tests; egui's nav bar and hotkeys run on the models; every feature in `docs/UI.md` is
 marked moved or kept in egui (with a reason).
+
+#### L2's pilot (2026-11-20)
+
+Three features of different kinds moved into `turu_frontend::models` (no egui; L1's split moves
+the module as it is), each served by the control API (`GET /models/<name>`, `POST
+/models/<name>/<action>`, `event: model`), tested without UI and through the API:
+
+| Feature | egui before | egui after | Moved | Model (with its view and actions) |
+|---|---|---|---|---|
+| Scripts (a status and commands) | 516 | 446 | 70 (14%) | 331 |
+| Game Options (a form that saves) | 1,330 | 786 | 544 (41%) | 779 |
+| Logs (lines arriving) | 476 | 476 | 0 | 59 (the lines were already the engine's: `/log`, `event: log`) |
+
+So: a feature's logic is 15 to 40% of its egui code, more for forms; line-fed features have
+almost none. The rest of the 31,700 lines would move about 25% (8,000 lines) and add a view
+and actions per feature. What stays in egui per window: layout, the window's own state (search,
+filters, which confirm is pending, what this window edited), and drawing. "Edited here" against
+"changed outside" is a window's state, passed into the model, not the bot's.
 
 ### L3: Questions, dialogs and alerts as events (M, after the checkpoint)
 
