@@ -108,6 +108,9 @@ sealed interface Page {
     /** Tools > Loadouts. */
     data object Loadouts : Page
 
+    /** Tools > Fast Travel. */
+    data object FastTravel : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

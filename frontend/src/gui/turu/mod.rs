@@ -382,6 +382,7 @@ impl TuruUi {
             ("current_drops", w.current_drops),
             ("skills", w.skills),
             ("loadouts", w.loadouts),
+            ("fast_travel", w.fast_travel),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -432,6 +433,9 @@ impl TuruUi {
         }
         if w.loadouts && !kept(w, "loadouts") && crate::turu::open_shell_screen(NativeScreen::Loadouts) {
             w.loadouts = false;
+        }
+        if w.fast_travel && !kept(w, "fast_travel") && crate::turu::open_shell_screen(NativeScreen::FastTravel) {
+            w.fast_travel = false;
         }
         tab.script_loader.show(
             ctx,

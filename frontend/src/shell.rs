@@ -507,6 +507,8 @@ pub enum NativeScreen {
     Skills,
     /// Tools > Loadouts.
     Loadouts,
+    /// Tools > Fast Travel.
+    FastTravel,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the
