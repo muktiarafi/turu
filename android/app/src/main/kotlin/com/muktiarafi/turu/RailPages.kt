@@ -293,6 +293,7 @@ private fun nativePage(window: String): Page? = when (window) {
     "fast_travel" -> Page.FastTravel
     "butler" -> Page.Butler
     "cosmetics" -> Page.Cosmetics
+    "runtime" -> Page.Runtime
     "script_options" -> Page.ScriptOptions
     "logs" -> Page.Logs
     else -> null

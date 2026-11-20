@@ -93,6 +93,7 @@ class TabActions(
     val fastTravel: FastTravelPanel,
     val butler: ButlerPanel,
     val cosmetics: CosmeticsPanel,
+    val runtime: RuntimePanel,
     val scriptOptions: ScriptOptionsPanel,
 )
 
@@ -100,7 +101,7 @@ class TabActions(
 private val PanelWidth = 320.dp
 
 /** Pages whose rows need more room than a list of tabs. */
-private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills, Page.Loadouts, Page.FastTravel, Page.Butler, Page.Cosmetics, Page.ScriptOptions)
+private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills, Page.Loadouts, Page.FastTravel, Page.Butler, Page.Cosmetics, Page.Runtime, Page.ScriptOptions)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -267,6 +268,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.FastTravel -> FastTravelPage(state, actions.fastTravel) { actions.window("fast_travel") }
                     Page.Butler -> ButlerPage(state, actions.butler) { actions.window("butler") }
                     Page.Cosmetics -> CosmeticsPage(state, actions.cosmetics) { actions.window("cosmetics") }
+                    Page.Runtime -> RuntimePage(state, actions.runtime, notifyDrop = { actions.window("notify_drop") }) { actions.window("runtime") }
                     Page.ScriptOptions -> ScriptOptionsPage(state, actions.scriptOptions) { actions.window("script_options") }
                     Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
                         is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)

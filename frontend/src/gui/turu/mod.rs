@@ -385,6 +385,7 @@ impl TuruUi {
             ("fast_travel", w.fast_travel),
             ("butler", w.butler),
             ("cosmetics", w.cosmetics),
+            ("runtime", w.runtime),
             ("script_options", w.script_options),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
@@ -445,6 +446,9 @@ impl TuruUi {
         }
         if w.cosmetics && !kept(w, "cosmetics") && crate::turu::open_shell_screen(NativeScreen::Cosmetics) {
             w.cosmetics = false;
+        }
+        if w.runtime && !kept(w, "runtime") && crate::turu::open_shell_screen(NativeScreen::Runtime) {
+            w.runtime = false;
         }
         // Only from the tab on screen: the native page shows that tab's, and a script waiting in
         // another tab waits in that tab's picture until it's shown.

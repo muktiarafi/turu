@@ -513,6 +513,8 @@ pub enum NativeScreen {
     Butler,
     /// Plugins > Cosmetics.
     Cosmetics,
+    /// Combat > Runtime.
+    Runtime,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }

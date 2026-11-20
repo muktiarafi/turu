@@ -55,6 +55,7 @@ class ShellScreens(private val activity: TuruActivity) {
         fastTravel = FastTravelPanel(),
         butler = ButlerPanel(),
         cosmetics = CosmeticsPanel(),
+        runtime = RuntimePanel(),
         scriptOptions = ScriptOptionsPanel(),
     )
 
@@ -134,6 +135,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "fast_travel" -> open(Page.FastTravel)
             "butler" -> open(Page.Butler)
             "cosmetics" -> open(Page.Cosmetics)
+            "runtime" -> open(Page.Runtime)
             "script_options" -> open(Page.ScriptOptions)
         }
     }

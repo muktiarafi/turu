@@ -117,6 +117,9 @@ sealed interface Page {
     /** Plugins > Cosmetics. */
     data object Cosmetics : Page
 
+    /** Combat > Runtime. */
+    data object Runtime : Page
+
     /** Scripts > Edit Script Options (also when a script asks for its options). */
     data object ScriptOptions : Page
 
