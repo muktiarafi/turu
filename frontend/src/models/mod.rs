@@ -18,6 +18,7 @@
 pub mod application_options;
 pub mod auto;
 pub mod bank;
+pub mod core_bots;
 pub mod form;
 pub mod game_options;
 pub mod jump;

@@ -6,288 +6,13 @@
 use super::skills::SkillSets;
 use super::theme::{CARD, EDGE, HOVER, INSET, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::core_bots::{Draft, OPTION_GROUPS, Opt, PUBLIC_CONFIRMED, Purpose, Role, SLOTS, Value};
 use egui::{
     Align, Color32, ComboBox, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
     Ui, UiBuilder, vec2,
 };
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
-use turu_bot::api::inventory::{self, Container};
-use turu_bot::api::player;
-use turu_bot::models::ItemBase;
-
-/// VibeSkua's `[Current]` class entry: the class equipped when the bot runs.
-const CURRENT_CLASS: &str = "[Current]";
-
-/// `ClassUseMode` (the values the file may hold for a mode).
-const CLASS_USE_MODES: [&str; 8] = ["Base", "Atk", "Def", "Farm", "Solo", "Supp", "Dodge", "Ultra"];
-
-#[derive(Clone, PartialEq)]
-enum Value {
-    Bool(bool),
-    Int(i32),
-    Text(String),
-}
-
-impl Value {
-    fn to_file(&self) -> String {
-        match self {
-            // C# bool.ToString()
-            Value::Bool(b) => if *b { "True" } else { "False" }.to_owned(),
-            Value::Int(n) => n.to_string(),
-            Value::Text(s) => s.clone(),
-        }
-    }
-
-    /// The file's `text` as this kind of value (VibeSkua `SetValues`; ints out of range become
-    /// 100000); `None` when it doesn't parse.
-    fn parse_like(&self, text: &str) -> Option<Value> {
-        match self {
-            Value::Bool(_) => match text.to_ascii_lowercase().as_str() {
-                "true" => Some(Value::Bool(true)),
-                "false" => Some(Value::Bool(false)),
-                _ => None,
-            },
-            Value::Int(_) => Some(Value::Int(
-                text.parse::<i64>()
-                    .ok()
-                    .and_then(|n| i32::try_from(n).ok())
-                    .unwrap_or(100000),
-            )),
-            Value::Text(_) => Some(Value::Text(text.to_owned())),
-        }
-    }
-}
-
-struct Opt {
-    label: &'static str,
-    description: &'static str,
-    /// Shown after a number ("ms").
-    unit: &'static str,
-    tag: &'static str,
-    value: Value,
-    default: Value,
-}
-
-fn opt(label: &'static str, tag: &'static str, default: Value) -> Opt {
-    Opt {
-        label,
-        description: "",
-        unit: "",
-        tag,
-        value: default.clone(),
-        default,
-    }
-}
-
-impl Opt {
-    /// What the option does, from CoreBots' own comments on it (`CoreBots.cs`) or, where it has
-    /// none, from what CoreBots and its farms do with it. VibeSkua shows none.
-    fn about(self, description: &'static str) -> Self {
-        Self { description, ..self }
-    }
-
-    fn unit(self, unit: &'static str) -> Self {
-        Self { unit, ..self }
-    }
-}
-
-/// The Options tab (VibeSkua `CoreBots.CreateOptions`), in file order.
-fn options() -> Vec<Opt> {
-    use Value::{Bool, Int, Text};
-    vec![
-        opt("Private Rooms", "PrivateRooms", Bool(true)).about("Join private rooms rather than public ones"),
-        opt("Public on Difficult Parts", "PublicDifficult", Bool(false))
-            .about("Use public rooms where the enemy is tough"),
-        opt("Bank Misc. AC items on Start-Up", "BankMiscAC", Bool(true))
-            .about("Clean your inventory by banking Misc. AC items before the bot starts"),
-        opt("Logger in Chat", "LoggerInChat", Bool(true)).about("Also write the bot's log in AQW's chat"),
-        opt("Force Off MessageBoxes", "MessageBoxCheck", Bool(false))
-            .about("Show no message boxes unless absolutely necessary"),
-        opt("Should Rest", "RestCheck", Bool(false)).about("Rest after killing a monster"),
-        opt("Disable AutoEnhance", "DisableAutoEnhance", Bool(false))
-            .about("Don't enhance a class when CoreBots equips it"),
-        opt("Disable BestGear", "DisableBestGear", Bool(false))
-            .about("Don't swap in your best gold, EXP, REP or class point gear while farming"),
-        opt("Anti Lag", "AntiLag", Bool(true)).about("Lag killer, invisible monsters and 10 FPS while the bot runs"),
-        opt("Incognito Mode", "IncognitoMode", Bool(true))
-            .about("Turn off whispers and party, friend, duel and guild invites while the bot runs"),
-        opt("Room Number", "PrivateRoomNr", Int(100000))
-            .about("The private room's number; above 99999 picks a random room"),
-        opt("Action Delay", "ActionDelayNr", Int(700))
-            .about("Delay between common actions; 700 is the safe number")
-            .unit("ms"),
-        opt("Exit Combat Delay", "ExitCombatNr", Int(1600))
-            .about("Delay to get out of combat; 1600 is the safe number")
-            .unit("ms"),
-        opt("Hunt Delay", "HuntDelayNr", Int(100))
-            .about("Delay between jumping rooms while hunting; raise it if the bot jumps too much")
-            .unit("ms"),
-        opt("Accept and Complete Tries", "QuestTriesNr", Int(20))
-            .about("How many times accepting or completing a quest is tried"),
-        opt("Loaded Quests Max.", "QuestMaxNr", Int(150)).about("How many quests the bot can have loaded at once"),
-        opt("Map after stopping the Bot", "StopLocationSelect", Text("Home".into()))
-            .about("A map, Home (your house, else whitemap) or None to stay where you are"),
-    ]
-}
-
-/// The Other tab (VibeSkua `CoreBots.CreateOtherOptions`): categories of switches.
-fn other_options() -> Vec<(&'static str, Vec<Opt>)> {
-    let b = |label, tag, default, description| opt(label, tag, Value::Bool(default)).about(description);
-    vec![
-        (
-            "Boosters",
-            vec![
-                b(
-                    "Use Gold Boosts when farming gold",
-                    "doGoldBoost",
-                    false,
-                    "CoreFarms uses a Gold Boost from your inventory while it farms gold",
-                ),
-                b(
-                    "Use Class Boosts when ranking up a class",
-                    "doClassBoost",
-                    false,
-                    "CoreFarms uses a Class Boost while it ranks up a class",
-                ),
-                b(
-                    "Use Reputation Boosts when farming REP",
-                    "doRepBoost",
-                    false,
-                    "CoreFarms uses a Reputation Boost while it farms reputation",
-                ),
-                b(
-                    "Use Experience Boosts when farming EXP",
-                    "doExpBoost",
-                    false,
-                    "CoreFarms uses an Experience Boost while it farms EXP",
-                ),
-            ],
-        ),
-        (
-            "Nation Farms",
-            vec![
-                b(
-                    "Sell Voucher of Nulgath if not needed",
-                    "Nation_SellMemVoucher",
-                    true,
-                    "Sell the Voucher of Nulgath when the farm doesn't need it",
-                ),
-                b(
-                    "Do Swindles Return during Supplies",
-                    "Nation_ReturnPolicyDuringSupplies",
-                    true,
-                    "Run Swindles Return Policy while farming Supplies, when you have the Unidentified items it needs",
-                ),
-                b(
-                    "Ultra Alteon for Supplies",
-                    "UltraAlteonForSupplies",
-                    false,
-                    "Use Ultra Alteon when farming Supplies instead of Escherion",
-                ),
-            ],
-        ),
-        (
-            "Bludrut Brawl (PvP)",
-            vec![b(
-                "Kill ads before boss",
-                "PvP_SoloPvPBoss",
-                false,
-                "Kill the brawlers and restorers in the PvP before the boss",
-            )],
-        ),
-        (
-            "Bot Creators Only",
-            vec![b(
-                "Story Bot Test Mode",
-                "BCO_Story_TestBot",
-                false,
-                "Turn off CoreStory's isCompleteBefore checks; they stay on for quests you complete once",
-            )],
-        ),
-    ]
-}
-
-/// One of the four class roles (Solo = 1, Farm = 2, Dodge = 3, Boss = 4 in the gear keys).
-struct Role {
-    name: &'static str,
-    /// What the role is for, beside its name (VibeSkua's badge: "SINGLE TARGET", ...).
-    purpose: &'static str,
-    /// The role's dot.
-    color: Color32,
-    class: Option<String>,
-    /// The selected skill set mode (VibeSkua keeps the mode string and the `ClassUseMode`
-    /// in sync; every shipped mode is a `ClassUseMode`).
-    mode: Option<String>,
-    modes: Vec<String>,
-    use_equipment: bool,
-    /// Helm, Armor, Cape, Weapon, Pet, Ground item.
-    gear: [String; 6],
-}
-
-const SLOTS: [(&str, &str); 6] = [
-    ("Helm", "Helm"),
-    ("Armor", "Armor"),
-    ("Cape", "Cape"),
-    ("Weapon", "Weapon"),
-    ("Pet", "Pet"),
-    ("Ground", "GroundItem"),
-];
-
-fn roles() -> [Role; 4] {
-    let role = |name, purpose, color: u32| Role {
-        name,
-        purpose,
-        color: Color32::from_rgb((color >> 16) as u8, (color >> 8) as u8, color as u8),
-        class: None,
-        mode: None,
-        modes: Vec::new(),
-        use_equipment: false,
-        gear: Default::default(),
-    };
-    [
-        role("Solo", "Single target", 0x34D399),
-        role("Farm", "AoE farming", 0xFBBF24),
-        role("Dodge", "Survivability", 0x93C5FD),
-        role("Boss", "Heavy bosses", 0xC4B5FD),
-    ]
-}
-
-impl Role {
-    /// VibeSkua `SelectedSoloClass` setter: lists the class's modes and picks the first when
-    /// none is picked. `[Current]` with an equipped class that has no skill set offers `Base`
-    /// and gives the class the default set (`EnsureSkillEntryExists`).
-    fn select_class(&mut self, class: String, sets: &mut SkillSets, current_class: Option<&str>) {
-        let resolved = if class == CURRENT_CLASS {
-            current_class.unwrap_or_default()
-        } else {
-            &class
-        };
-        let mut modes = sets.modes_for(resolved);
-        modes.sort();
-        if modes.is_empty() && class == CURRENT_CLASS {
-            modes.push("Base".into());
-            if !resolved.is_empty() {
-                sets.ensure(resolved);
-            }
-        }
-        if self.mode.is_none() {
-            self.mode = modes.first().cloned();
-        }
-        self.modes = modes;
-        self.class = Some(class);
-    }
-
-    /// The mode as the file stores it (a `ClassUseMode` name).
-    fn use_mode(&self) -> &'static str {
-        self.mode
-            .as_deref()
-            .and_then(|m| CLASS_USE_MODES.iter().find(|u| u.eq_ignore_ascii_case(m)))
-            .copied()
-            .unwrap_or("Base")
-    }
-}
+use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -296,91 +21,41 @@ enum Tab {
     Other,
 }
 
-/// Why the game was read.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Purpose {
-    /// The window opened: load quietly.
-    Open,
-    Load,
-    LoadCharacter,
-    Save,
-}
-
-/// What a bot thread read from the game for the window.
-struct Fetched {
-    purpose: Purpose,
-    username: String,
-    current_class: Option<String>,
-    items: Vec<ItemBase>,
-}
-
-/// The inventory lists the dropdowns offer (VibeSkua `PlayerClasses`, `Helms`, ...).
-#[derive(Default)]
-struct Owned {
-    /// Classes with `[Current]` first.
-    classes: Vec<String>,
-    /// Per slot of [`SLOTS`].
-    gear: [Vec<String>; 6],
-}
-
 pub struct CoreBotsWindow {
+    /// The options file's state (`crate::models::core_bots`): whose, as read, as changed.
+    draft: Draft,
     was_open: bool,
     tab: Tab,
     search: String,
-    username: String,
-    current_class: Option<String>,
-    /// The last inventory read, for the dropdown lists.
-    items: Vec<ItemBase>,
-    owned: Owned,
-    sets: SkillSets,
-    roles: [Role; 4],
-    options: Vec<Opt>,
-    other: Vec<(&'static str, Vec<Opt>)>,
-    /// What was read from or saved to each character's file (VibeSkua `_readValues`).
-    read_values: HashMap<String, Vec<(String, String)>>,
-    fetched: Arc<Mutex<Option<Fetched>>>,
-    busy: bool,
-    message: Option<(&'static str, String)>,
     /// Save is waiting for the public room warning's answer.
     confirm_public: bool,
     /// Revert to saved is waiting for its question's answer.
     confirm_revert: bool,
-    /// The window's lines as last read or saved: what "Unsaved changes" compares with (None
-    /// until a character's file was looked for).
-    baseline: Option<Vec<String>>,
-    /// The character has a saved file (else the window shows CoreBots' defaults).
-    has_file: bool,
-    /// When Save last wrote the file: "Saved" shows next to the button for a moment.
-    saved_at: Option<Instant>,
 }
 
 impl Default for CoreBotsWindow {
     fn default() -> Self {
         Self {
+            draft: Draft::default(),
             was_open: false,
             tab: Tab::Loadout,
             search: String::new(),
-            username: String::new(),
-            current_class: None,
-            items: Vec::new(),
-            owned: Owned {
-                classes: vec![CURRENT_CLASS.into()],
-                ..Default::default()
-            },
-            sets: SkillSets::default(),
-            roles: roles(),
-            options: options(),
-            other: other_options(),
-            read_values: HashMap::new(),
-            fetched: Arc::default(),
-            busy: false,
-            message: None,
             confirm_public: false,
             confirm_revert: false,
-            baseline: None,
-            has_file: false,
-            saved_at: None,
         }
+    }
+}
+
+impl std::ops::Deref for CoreBotsWindow {
+    type Target = Draft;
+    fn deref(&self) -> &Draft {
+        &self.draft
+    }
+}
+
+impl std::ops::DerefMut for CoreBotsWindow {
+    fn deref_mut(&mut self) -> &mut Draft {
+        &mut self.draft
     }
 }
 
@@ -393,7 +68,7 @@ impl CoreBotsWindow {
         if *open && !self.was_open {
             // VibeSkua OnActivated: load without explaining why when logged out.
             self.sets = SkillSets::load();
-            self.fetch(Purpose::Open);
+            self.draft.fetch(&crate::turu::bot(), Purpose::Open);
         } else if !*open && self.was_open && !self.username.is_empty() {
             // VibeSkua OnDeactivated: save without a dialog.
             self.save(false);
@@ -409,308 +84,6 @@ impl CoreBotsWindow {
         self.dialogs(ctx);
     }
 
-    /// Reads the username, the equipped class and the inventory on a bot thread; the result
-    /// is applied on the next frame by [`Self::apply_fetched`].
-    fn fetch(&mut self, purpose: Purpose) {
-        self.busy = true;
-        let slot = self.fetched.clone();
-        crate::turu::spawn_action("CoreBots Options", move |bot| {
-            let username = if player::logged_in(bot).unwrap_or(false) {
-                player::username(bot).unwrap_or_default()
-            } else {
-                String::new()
-            };
-            let (current_class, items) = if username.is_empty() {
-                (None, Vec::new())
-            } else {
-                // Read straight from the engine: `inventory.items` serializes for scripts, with
-                // other field names than `ItemBase` reads. A failure still answers, or the
-                // window would stay busy.
-                let items = inventory::items(bot, Container::Inventory).unwrap_or_default();
-                (inventory::current_class(bot).ok().flatten(), items)
-            };
-            *lock(&slot) = Some(Fetched {
-                purpose,
-                username,
-                current_class,
-                items,
-            });
-            Ok(())
-        });
-    }
-
-    fn apply_fetched(&mut self) {
-        let Some(fetched) = lock(&self.fetched).take() else {
-            return;
-        };
-        self.busy = false;
-        let previous = std::mem::replace(&mut self.username, fetched.username);
-        let switched = previous != self.username;
-        let previous_was_empty = previous.is_empty();
-        if switched && !previous_was_empty && self.has_changes() {
-            // Another character now: the last one's changes are saved first, as closing would.
-            let current = std::mem::replace(&mut self.username, previous);
-            self.save(false);
-            self.username = current;
-        }
-        self.current_class = fetched.current_class;
-        if !self.username.is_empty() {
-            self.items = fetched.items;
-        }
-        let logged_out = self.username.is_empty();
-        match fetched.purpose {
-            Purpose::Open => self.load(false),
-            Purpose::Load => self.load(true),
-            // Not over another character's file with the last one's values: its own first.
-            Purpose::Save if switched && !previous_was_empty && !logged_out => {
-                self.load(true);
-                self.message = Some((
-                    "Save",
-                    format!(
-                        "You're now on {}: the window shows its saved options. Change them and press Save again.",
-                        self.username
-                    ),
-                ));
-            }
-            Purpose::Save => self.save(true),
-            Purpose::LoadCharacter if logged_out => {
-                self.message = Some((
-                    "Refresh from game",
-                    "Login first so that we can read your character's classes and equipment.".into(),
-                ));
-            }
-            // A character the window hadn't loaded (logged in since, or another one): its file.
-            Purpose::LoadCharacter if switched => self.load(true),
-            // Not VibeSkua's, whose Reload Classes clears every role's class and mode: the lists
-            // are read again and the picks kept.
-            Purpose::LoadCharacter => self.refresh_keeping_picks(),
-        }
-    }
-
-    /// Reads the class and gear lists again and keeps the window's picks (a pick no longer in
-    /// the inventory stays, listed, as when a file names it).
-    fn refresh_keeping_picks(&mut self) {
-        let selections = turu_bot::cbo::parse(&self.lines());
-        self.reload_classes();
-        self.refresh_inventory();
-        self.set_values(&selections);
-    }
-
-    /// VibeSkua `LoadInternal`.
-    fn load(&mut self, show_dialog: bool) {
-        if self.username.is_empty() {
-            if show_dialog {
-                self.message = Some((
-                    "Load",
-                    "Login first so that we can fetch your username to load the options file.".into(),
-                ));
-            }
-            return;
-        }
-        // Not in VibeSkua (it fills the lists only when a file loads): the dropdowns list the
-        // character's classes and gear as soon as the window knows them.
-        self.reload_classes();
-        self.refresh_inventory();
-        if let Some(values) = self.read_values.get(&self.username).cloned() {
-            self.set_values(&values);
-            self.baseline = Some(self.lines());
-            self.has_file = true;
-            return;
-        }
-        let path = crate::turu::bot().paths.cbo_file(&self.username);
-        match turu_bot::cbo::read_lines(&path, |_, _| {}) {
-            Ok(Some(lines)) => {
-                let values = turu_bot::cbo::parse(&lines);
-                self.set_values(&values);
-                self.read_values.insert(self.username.clone(), values);
-                self.baseline = Some(self.lines());
-                self.has_file = true;
-            }
-            Ok(None) => {
-                self.baseline = Some(self.lines());
-                self.has_file = false;
-            }
-            Err(e) => {
-                if show_dialog {
-                    self.message = Some(("Load", format!("Couldn't read {}: {e}", path.display())));
-                }
-            }
-        }
-    }
-
-    /// VibeSkua `SaveInternal`.
-    fn save(&mut self, show_dialog: bool) {
-        if self.username.is_empty() {
-            if show_dialog {
-                self.message = Some((
-                    "Save",
-                    "Login first so that we can fetch your username for the save file".into(),
-                ));
-            }
-            return;
-        }
-        let path = crate::turu::bot().paths.cbo_file(&self.username);
-        // VibeSkua asks before saving public rooms; a save without the answer (closing the
-        // window) keeps private rooms, in the window too so that it shows what was saved.
-        if !self.public_confirmed() {
-            for opt in self.options.iter_mut().filter(|o| o.tag == "PrivateRooms") {
-                opt.value = Value::Bool(true);
-            }
-        }
-        let lines = self.lines();
-        let values = turu_bot::cbo::parse(&lines);
-        let entries: Vec<(String, String)> = lines
-            .iter()
-            .map(|line| {
-                let (k, v) = line.split_once(": ").unwrap_or((line, ""));
-                (k.to_owned(), v.to_owned())
-            })
-            .collect();
-        match turu_bot::cbo::write(&path, &entries) {
-            Ok(()) => {
-                // Said next to Save, not in a message box (VibeSkua's "Save Successful!").
-                if show_dialog {
-                    self.saved_at = Some(Instant::now());
-                }
-                self.read_values.insert(self.username.clone(), values);
-                self.baseline = Some(self.lines());
-                self.has_file = true;
-            }
-            Err(e) => self.message = Some(("Save", format!("Couldn't write {}: {e}", path.display()))),
-        }
-    }
-
-    /// The file's lines, in VibeSkua's order: Loadout (classes, then gear), Options, Other.
-    fn lines(&self) -> Vec<String> {
-        let mut lines = Vec::new();
-        for role in &self.roles {
-            lines.push(format!(
-                "{}ClassSelect: {}",
-                role.name,
-                role.class.as_deref().unwrap_or_default()
-            ));
-            lines.push(format!(
-                "{}EquipCheck: {}",
-                role.name,
-                Value::Bool(role.use_equipment).to_file()
-            ));
-            lines.push(format!("{}ModeSelect: {}", role.name, role.use_mode()));
-        }
-        for (n, role) in self.roles.iter().enumerate() {
-            for ((_, key), item) in SLOTS.iter().zip(&role.gear) {
-                lines.push(format!("{key}{}Select: {item}", n + 1));
-            }
-        }
-        for opt in &self.options {
-            lines.push(format!("{}: {}", opt.tag, opt.value.to_file()));
-        }
-        for (_, opts) in &self.other {
-            for opt in opts {
-                lines.push(format!("{}: {}", opt.tag, opt.value.to_file()));
-            }
-        }
-        lines
-    }
-
-    fn public_confirmed(&self) -> bool {
-        lock(&PUBLIC_CONFIRMED).as_deref() == Some(self.username.as_str())
-    }
-
-    /// VibeSkua `SetValues` of every tab.
-    fn set_values(&mut self, values: &[(String, String)]) {
-        let get = |key: &str| values.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
-        let all = self
-            .options
-            .iter_mut()
-            .chain(self.other.iter_mut().flat_map(|(_, opts)| opts.iter_mut()));
-        for opt in all {
-            opt.value = get(opt.tag)
-                .filter(|v| !v.trim().is_empty())
-                .and_then(|v| opt.default.parse_like(v))
-                .unwrap_or_else(|| opt.default.clone());
-        }
-
-        // CBOClassSelectViewModel.SetValues
-        self.reload_classes();
-        for i in 0..self.roles.len() {
-            let name = self.roles[i].name;
-            match get(&format!("{name}ClassSelect")) {
-                Some(class) => {
-                    if class != CURRENT_CLASS && !self.owned.classes.iter().any(|c| c == class) {
-                        self.owned.classes.push(class.to_owned());
-                        sort_classes(&mut self.owned.classes);
-                    }
-                    let role = &mut self.roles[i];
-                    role.select_class(class.to_owned(), &mut self.sets, self.current_class.as_deref());
-                    role.use_equipment =
-                        get(&format!("{name}EquipCheck")).is_some_and(|v| v.eq_ignore_ascii_case("true"));
-                    let mode = get(&format!("{name}ModeSelect"))
-                        .and_then(|m| CLASS_USE_MODES.iter().find(|u| u.eq_ignore_ascii_case(m)))
-                        .copied()
-                        .unwrap_or("Base");
-                    role.mode = Some(mode.to_owned());
-                }
-                None => {
-                    let role = &mut self.roles[i];
-                    role.class = Some(String::new());
-                    role.modes.clear();
-                    role.use_equipment = false;
-                    role.mode = Some("Base".into());
-                }
-            }
-        }
-
-        // CBOClassEquipmentViewModel.SetValues
-        for (n, role) in self.roles.iter_mut().enumerate() {
-            for (slot, (_, key)) in SLOTS.iter().enumerate() {
-                let item = get(&format!("{key}{}Select", n + 1)).unwrap_or_default().to_owned();
-                if !item.is_empty() && !self.owned.gear[slot].contains(&item) {
-                    self.owned.gear[slot].push(item.clone());
-                }
-                role.gear[slot] = item;
-            }
-        }
-        for list in &mut self.owned.gear {
-            list.sort_by_key(|name| name.to_lowercase());
-        }
-    }
-
-    /// VibeSkua `ReloadClasses`: the enhanced classes in the inventory; clears the picks.
-    fn reload_classes(&mut self) {
-        let mut classes = vec![CURRENT_CLASS.to_owned()];
-        classes.extend(
-            self.items
-                .iter()
-                .filter(|i| i.category.eq_ignore_ascii_case("Class") && i.enhancement_level > 0)
-                .map(|i| i.name.clone()),
-        );
-        sort_classes(&mut classes);
-        self.owned.classes = classes;
-        for role in &mut self.roles {
-            role.class = None;
-            role.mode = None;
-            role.modes.clear();
-        }
-    }
-
-    /// VibeSkua `RefreshInventory`: the gear each slot's dropdown offers.
-    fn refresh_inventory(&mut self) {
-        let names = |keep: &dyn Fn(&ItemBase) -> bool| {
-            let mut names: Vec<String> = self.items.iter().filter(|i| keep(i)).map(|i| i.name.clone()).collect();
-            names.sort_by_key(|name| name.to_lowercase());
-            names
-        };
-        let category = |i: &ItemBase, c: &str| i.category.eq_ignore_ascii_case(c);
-        self.owned.gear = [
-            names(&|i| category(i, "Helm") && i.enhancement_level > 0),
-            names(&|i| category(i, "Armor")),
-            names(&|i| category(i, "Cape") && i.enhancement_level > 0),
-            names(&|i| i.equip_slot == "Weapon" && i.enhancement_level > 0),
-            names(&|i| category(i, "Pet")),
-            names(&|i| category(i, "Misc")),
-        ];
-    }
-
     fn ui(&mut self, ui: &mut Ui) {
         ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
         self.header(ui);
@@ -723,11 +96,6 @@ impl CoreBotsWindow {
             Tab::Options => self.options_tab(ui),
             Tab::Other => self.other_tab(ui),
         });
-    }
-
-    /// Whether the window differs from what was last read or saved.
-    fn has_changes(&self) -> bool {
-        self.baseline.as_ref().is_some_and(|saved| *saved != self.lines())
     }
 
     /// The header's second line: whose file this is and whether it's saved.
@@ -805,7 +173,7 @@ impl CoreBotsWindow {
             if public {
                 self.confirm_public = true;
             } else {
-                self.fetch(Purpose::Save);
+                self.draft.fetch(&crate::turu::bot(), Purpose::Save);
             }
         }
         if widgets::button(ui, "Refresh from game", Kind::Normal, enabled, vec2(140.0, 28.0), "")
@@ -815,7 +183,7 @@ impl CoreBotsWindow {
                 )
                 .clicked()
             {
-                self.fetch(Purpose::LoadCharacter);
+                self.draft.fetch(&crate::turu::bot(), Purpose::LoadCharacter);
             }
         let changed = self.has_changes();
         if widgets::button(
@@ -892,8 +260,9 @@ impl CoreBotsWindow {
     }
 
     fn role_row(&mut self, ui: &mut Ui, i: usize, columns: Option<&RoleColumns>) {
-        let (sets, current_class, owned) = (&mut self.sets, self.current_class.as_deref(), &self.owned);
-        let role = &mut self.roles[i];
+        let draft = &mut self.draft;
+        let (sets, current_class, owned) = (&mut draft.sets, draft.current_class.as_deref(), &draft.owned);
+        let role = &mut draft.roles[i];
         Frame::new()
             .inner_margin(Margin::symmetric(ROW_PAD.x as i8, 8))
             .show(ui, |ui| {
@@ -938,7 +307,7 @@ impl CoreBotsWindow {
     /// The Options tab: its options by what they're about, in [`OPTION_GROUPS`]' order.
     fn options_tab(&mut self, ui: &mut Ui) {
         let needle = self.search.trim().to_lowercase();
-        let options = &mut self.options;
+        let options = &mut self.draft.options;
         ScrollArea::vertical()
             .id_salt("cbo_options")
             .auto_shrink([false, false])
@@ -961,7 +330,7 @@ impl CoreBotsWindow {
 
     fn other_tab(&mut self, ui: &mut Ui) {
         let needle = self.search.trim().to_lowercase();
-        let other = &mut self.other;
+        let other = &mut self.draft.other;
         ScrollArea::vertical()
             .id_salt("cbo_other")
             .auto_shrink([false, false])
@@ -1002,7 +371,7 @@ impl CoreBotsWindow {
                 self.confirm_public = false;
                 // The answer holds for this character until the window saves a different one.
                 *lock(&PUBLIC_CONFIRMED) = yes.then(|| self.username.clone());
-                self.fetch(Purpose::Save);
+                self.draft.fetch(&crate::turu::bot(), Purpose::Save);
             }
         }
         if self.confirm_revert {
@@ -1023,7 +392,7 @@ impl CoreBotsWindow {
             if let Some(revert) = answer {
                 self.confirm_revert = false;
                 if revert {
-                    self.fetch(Purpose::Load);
+                    self.draft.fetch(&crate::turu::bot(), Purpose::Load);
                 }
             }
         }
@@ -1051,38 +420,6 @@ const HEADER_TEXT_MIN_WIDTH: f32 = 300.0;
 
 /// How long "Saved" shows next to Save.
 const SAVED_SHOWN_FOR: Duration = Duration::from_secs(3);
-
-/// The character whose public rooms were confirmed (None: not confirmed).
-static PUBLIC_CONFIRMED: Mutex<Option<String>> = Mutex::new(None);
-
-fn sort_classes(classes: &mut Vec<String>) {
-    classes.retain(|c| c != CURRENT_CLASS);
-    classes.sort_by_key(|c| c.to_lowercase());
-    classes.insert(0, CURRENT_CLASS.to_owned());
-}
-
-/// The Options tab's groups: a heading and its options' tags, in the order shown (the file keeps
-/// VibeSkua's order).
-const OPTION_GROUPS: [(&str, &[&str]); 6] = [
-    ("Rooms", &["PrivateRooms", "PrivateRoomNr", "PublicDifficult"]),
-    ("Timing", &["ActionDelayNr", "ExitCombatNr", "HuntDelayNr"]),
-    ("Quests", &["QuestTriesNr", "QuestMaxNr"]),
-    (
-        "Gear and inventory",
-        &["DisableAutoEnhance", "DisableBestGear", "BankMiscAC"],
-    ),
-    (
-        "While the bot runs",
-        &[
-            "AntiLag",
-            "IncognitoMode",
-            "LoggerInChat",
-            "MessageBoxCheck",
-            "RestCheck",
-        ],
-    ),
-    ("When the bot stops", &["StopLocationSelect"]),
-];
 
 /// A row's padding inside its surface.
 const ROW_PAD: egui::Vec2 = vec2(12.0, 10.0);
@@ -1142,7 +479,11 @@ fn column_names(ui: &mut Ui, c: &RoleColumns) {
 fn role_name(ui: &mut Ui, role: &Role, width: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, 32.0), Sense::hover());
     let painter = ui.painter();
-    painter.circle_filled(egui::pos2(rect.left() + 4.0, rect.top() + 8.0), 4.0, role.color);
+    painter.circle_filled(
+        egui::pos2(rect.left() + 4.0, rect.top() + 8.0),
+        4.0,
+        egui::Color32::from_rgb((role.color >> 16) as u8, (role.color >> 8) as u8, role.color as u8),
+    );
     painter.text(
         egui::pos2(rect.left() + 14.0, rect.top() + 8.0),
         egui::Align2::LEFT_CENTER,
