@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills and Loadouts. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts and Fast Travel. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -803,6 +803,16 @@ script's message box and options request.
   scale 1.3, Full window (the egui window drawing from the model); the loadouts file and folder
   the check made were removed. Not checked: Enhance
   (spends gold), Equip of items in the bag or bank, Replace with worn, Equip while a script runs.
+* **Fast Travel** (2026-11-20): `models::fast_travel` holds the destinations, the travel in
+  flight and its outcome, Get current's answer (with a count, so each shell's form takes it once)
+  and the private room, one per tab, shared by the egui window and the page; the search, the form
+  and what it edits stay each shell's. Actions name a destination by its place and its name, so
+  one that moved is refused. The owner chose layout-only checks for pages that move a character
+  (2026-11-20): checked on the emulator were the list (the three defaults), Add with the keyboard
+  up, Use where I am (it answered the defaults' own battleon · Enter · Spawn, so the fill isn't
+  proven), Edit opening filled and Back, Remove, Clear's question (cancelled), Full window; the
+  FastTravels.json the check made (there was none) was removed. Not checked: travelling (a tap on
+  a destination), the private room on a travel, a list changed in the other shell.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -829,11 +839,10 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items,
-Fast Travel), Combat's Runtime, Butler, Cosmetics, Console, HotKeys, and for
-good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills and Loadouts (done),
-then Fast Travel and Butler.
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Butler, Cosmetics, Console, HotKeys, and for
+good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts and Fast
+Travel (done), then Butler.
 
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
 

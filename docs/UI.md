@@ -950,7 +950,7 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
 | Tools & Helpers, Combat's Runtime, Butler, Cosmetics, Console | decided when reached; egui from More until then |
@@ -1130,6 +1130,15 @@ above, and why:
   loadout on Currently equipped), opens the new loadout with Rename's dialog, its name selected,
   where the window puts the cursor in its name field. The page's ⋮: Rename…, Replace with worn,
   Delete… (asked first), Read again, Full window.
+* **Fast Travel** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Tools & Helpers and
+  however the slot opens it: the search, Private room (its number in a box, the switch at the end,
+  the row's line saying what it does; the number dimmed while off), then the destinations as rows
+  (a pin in a tonal circle, the name, "map · cell · pad"; a tap travels, the row tinted with a
+  spinner while it does, the others resting; ⋮ has Edit and Remove), and at the foot the outcome
+  (or "3 saved · a tap travels") beside Add. Add and Edit are a page pushed over the list: Name,
+  Map, Cell beside Pad (a drop-down of the eight), Use where I am (Get current, filling map, cell
+  and pad), and Add or Save in its bar, the keyboard's Done on Cell confirming. Clear… (asked
+  first), Read again and Full window in ⋮. The window's tiles in columns are a list here.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
