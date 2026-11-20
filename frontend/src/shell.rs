@@ -493,6 +493,8 @@ pub enum NativeScreen {
     AppOptions,
     /// Options > CoreBots.
     CoreBots,
+    /// Scripts > Scheduler.
+    Scheduler,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

@@ -80,10 +80,14 @@ class TabActions(
     val gameOptions: GameOptionsPanel,
     val appOptions: AppOptionsPanel,
     val coreBots: CoreBotsPanel,
+    val scheduler: SchedulerPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
 private val PanelWidth = 320.dp
+
+/** Pages whose rows need more room than a list of tabs. */
+private val widePages = setOf(Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -205,8 +209,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
             color = Turu.Panel,
             modifier = Modifier
                 .padding(start = 64.dp + state.cutoutLeftDp.dp)
-                // Search Scripts' rows need more room than a list of tabs.
-                .width(if (state.page == Page.Search || state.page == Page.GameOptions || state.page == Page.AppOptions || state.page == Page.CoreBots) 440.dp else PanelWidth)
+                .width(if (state.page in widePages) 440.dp else PanelWidth)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
                 // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
@@ -239,6 +242,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     ) { actions.window("game_options") }
                     Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
                     Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
+                    Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = { state.close() }) { actions.window("scheduler") }
                     is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                 }
             }

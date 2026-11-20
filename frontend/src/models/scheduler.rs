@@ -42,6 +42,9 @@ pub struct SchedulerView {
     /// The saved playlists' file names ("Daily.json"), for Load.
     pub playlists: Vec<String>,
     pub note: Option<Note>,
+    /// How many Script options reads have reached the window that edits them: after one, `note`
+    /// says why no window opened, or is empty and the Script Options window is open.
+    pub reads: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -74,6 +77,8 @@ pub struct Note {
 pub struct State {
     pub note: Option<Note>,
     pub read: Option<ScriptOptionsState>,
+    /// Reads the window took ([`SchedulerView::reads`]).
+    pub reads: u32,
 }
 
 pub static STATE: PerTab<State> = PerTab::new();
@@ -108,6 +113,8 @@ pub fn view(bot: &Arc<Bot>) -> SchedulerView {
         })
         .collect();
     let empty = entries.is_empty();
+    let state = STATE.of(bot);
+    let state = lock(&state);
     SchedulerView {
         running,
         summary: scheduler.summary(),
@@ -116,7 +123,8 @@ pub fn view(bot: &Arc<Bot>) -> SchedulerView {
         save: Control::when(!empty, "The playlist is empty"),
         edit: Control::when(!running, "Cannot change the playlist while the queue is running"),
         playlists: playlists(bot),
-        note: lock(&STATE.of(bot)).note.clone(),
+        note: state.note.clone(),
+        reads: state.reads,
         entries,
     }
 }
@@ -234,10 +242,11 @@ pub fn options(bot: &Arc<Bot>, id: &str) {
     let Some(entry) = bot.scheduler.entries().into_iter().find(|e| e.id == id) else {
         return;
     };
-    let bot = bot.clone();
+    set_note(bot, None);
+    let reader = bot.clone();
     let spawned = std::thread::Builder::new()
         .name("Turu Script Options".into())
-        .spawn(move || read(&bot, &entry));
+        .spawn(move || read(&reader, &entry));
     if let Err(e) = spawned {
         tracing::error!("Couldn't read the script's options: {e}");
     }
@@ -253,7 +262,9 @@ fn read(bot: &Arc<Bot>, entry: &Entry) {
 pub fn take_read(bot: &Arc<Bot>) -> Option<turu_bot::script::options::ScriptOptions> {
     let state = STATE.of(bot);
     let mut state = lock(&state);
-    match state.read.take()? {
+    let read = state.read.take()?;
+    state.reads = state.reads.wrapping_add(1);
+    match read {
         ScriptOptionsState::Loaded(options) => Some(options),
         ScriptOptionsState::NoOptions => {
             state.note = warn("The loaded script has no options to configure.");

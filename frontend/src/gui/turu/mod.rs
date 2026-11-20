@@ -373,6 +373,7 @@ impl TuruUi {
             ("game_options", w.game_options),
             ("application_options", w.application_options),
             ("core_bots", w.core_bots),
+            ("scheduler", w.scheduler),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -402,6 +403,9 @@ impl TuruUi {
         }
         if w.core_bots && !kept(w, "core_bots") && crate::turu::open_shell_screen(NativeScreen::CoreBots) {
             w.core_bots = false;
+        }
+        if w.scheduler && !kept(w, "scheduler") && crate::turu::open_shell_screen(NativeScreen::Scheduler) {
+            w.scheduler = false;
         }
         tab.script_loader.show(
             ctx,

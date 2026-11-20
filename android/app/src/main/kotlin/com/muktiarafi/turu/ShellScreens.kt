@@ -40,6 +40,7 @@ class ShellScreens(private val activity: TuruActivity) {
         gameOptions = GameOptionsPanel(),
         appOptions = AppOptionsPanel(),
         coreBots = CoreBotsPanel(),
+        scheduler = SchedulerPanel(),
     )
 
     private val railActions = RailActions(
@@ -108,6 +109,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "game_options" -> open(Page.GameOptions)
             "app_options" -> open(Page.AppOptions)
             "core_bots" -> open(Page.CoreBots)
+            "scheduler" -> open(Page.Scheduler)
         }
     }
 

@@ -87,6 +87,9 @@ sealed interface Page {
     /** Options > CoreBots. */
     data object CoreBots : Page
 
+    /** Scripts > Scheduler. */
+    data object Scheduler : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

@@ -281,6 +281,7 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, hid
                         "game_options" -> Page.GameOptions
                         "application_options" -> Page.AppOptions
                         "core_bots" -> Page.CoreBots
+                        "scheduler" -> Page.Scheduler
                         else -> null
                     }
                     ListItem(
