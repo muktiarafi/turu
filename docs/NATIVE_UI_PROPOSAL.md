@@ -686,9 +686,13 @@ script's message box and options request.
   `native_rail`; the slot keeps its room) and hides it in every tab (`ToClient::RailHidden`).
   Auto, Jump, Logs and More are pages of the side panel; More opens the slot's egui windows by
   key. Verified on the emulator: the items, each page, Hide Side Bar and its handle.
-* Not yet: Search Scripts and Options as native screens, Army Control (egui, from the rail's Army),
-  and "Done when"'s "found ... without an egui window" (finding a script is still Search Scripts,
-  egui). Nothing that needs the game was tried since 08:10: the emulator's certificate checks
+* **Search Scripts** (2026-11-20): `models::repo` holds what the egui window decided (the search,
+  filters and sort, each row's rules and why not, running a row's work, the badges); the egui
+  window lays it out, a native page reads a per-tab query and the first 80 results while it
+  shows. With it, "Done when"'s first part holds on the emulator: a script found, loaded, started
+  and stopped without an egui window.
+* Not yet: Options (Game, Application, CoreBots), Scheduler, Army Control and Army Queue as native
+  screens (the pass's L5b list), and a phone (M4). Nothing that needs the game was tried since 08:10: the emulator's certificate checks
   against game.aq.com fail ("certificate was revoked", with or without this work's network
   security config).
 

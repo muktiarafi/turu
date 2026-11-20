@@ -1003,6 +1003,15 @@ above, and why:
   and Hide Side Bar; a `›` tab at the left edge brings the rail back, in every tab. The rail's
   icons are drawn in one stroke where Material Symbols' core set lacks them (`RailIcons.kt`);
   Jump's pin is the core set's filled one.
+* **Search Scripts** (L5b, 2026-11-20) is a page of the panel, 440 dp wide (its rows need it),
+  opened from the Script Loader's Search, More, and however the slot opens Search Scripts (but
+  while it picks a script for Army Control, which only the egui window does). The search, then
+  the filters as chips (folder, Pinned, Local, the sort in words, what the search looks in),
+  then the rows: name (a star when pinned), badge and description; Start (the top hit's filled)
+  and a menu with the path, what the badge means, Load, Add to the queue, Download, Update or
+  Replace, Pin, and why Start rests. The task's progress with Cancel, or the last outcome, on one
+  line at the foot; Update all, Download all and Refresh in the bar's menu, to leave the short
+  screen to the rows. Delete and Reset Scripts stay in the egui window.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
   pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
 
