@@ -3,7 +3,7 @@
 Cross-platform (macOS, Windows, Linux, Android) AdventureQuest Worlds bot client: a port of
 VibeSkua (C#/Avalonia, Windows only) onto **Ruffle + Mugetsu's AQW patches**, with the
 bot engine in **Rust** and scripts in **TypeScript**. The egui UI keeps VibeSkua's layout and flow;
-a native shell (Android's Tabs and Accounts, in Compose) follows its platform and its approved design
+a native shell (Android's, in Compose: the tabs, the rail and the daily windows) follows its platform and its approved design
 pass in `docs/UI.md` ("Native shells"), with every feature reachable and behaving the same.
 
 Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
