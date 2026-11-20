@@ -30,6 +30,7 @@ pub mod rail;
 pub mod repo;
 pub mod scheduler;
 pub mod scripts;
+pub mod skills;
 pub mod stats;
 pub mod tab_state;
 
@@ -454,6 +455,13 @@ pub fn register() {
         "core-bots",
         "do",
         Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
+    add_model("skills", Box::new(|bot| to_json(&skills::view(bot))));
+    add_model_action(
+        "skills",
+        "do",
+        Box::new(|bot, body| skills::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("game-options", Box::new(|bot| to_json(&game_options::view(bot))));
