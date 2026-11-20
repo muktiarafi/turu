@@ -73,6 +73,15 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)]) -> Valu
 enum Ask {
     /// Starts the account in a new tab, with the launch options.
     Start { username: String },
+    /// Starts each account in a new tab of its own, in the list's order, as far as there are free
+    /// tabs (the panel says first which won't fit).
+    StartMany { usernames: Vec<String> },
+    /// Puts the accounts in the group, making it if there's none of that name.
+    AddToGroup { group: String, usernames: Vec<String> },
+    /// Takes the accounts out of the group (the group stays, even empty).
+    RemoveFromGroup { group: String, usernames: Vec<String> },
+    /// Removes the group; its accounts stay.
+    RemoveGroup { group: String },
     /// Adds an account, or changes the one named `original`.
     #[serde(rename_all = "camelCase")]
     Save {
@@ -103,16 +112,47 @@ fn act(root: &Path, ask: Ask) -> String {
         Ok(()) => "[]".to_owned(),
         Err(e) => json!({ "error": format!("Couldn't save the accounts: {e}") }).to_string(),
     };
+    let start_args = |list: &Accounts, username: String| {
+        let script = list.script.as_ref().map(|s| s.to_string_lossy().into_owned());
+        turu_frontend::slots::open_args(
+            Some(username),
+            Some(list.server.clone()).filter(|s| !s.trim().is_empty()),
+            script,
+            list.auto_start,
+        )
+    };
     match ask {
         Ask::Start { username } => {
-            let script = list.script.as_ref().map(|s| s.to_string_lossy().into_owned());
-            let args = turu_frontend::slots::open_args(
-                Some(username),
-                Some(list.server.clone()).filter(|s| !s.trim().is_empty()),
-                script,
-                list.auto_start,
-            );
+            let args = start_args(&list, username);
             with_shell_actions(|shell| shell.open(args, None))
+        }
+        Ask::StartMany { usernames } => {
+            // One answer for all: each `open` adds its slot's actions, the last tab shown. A
+            // full pool opens nothing more.
+            let all: Vec<Vec<String>> = usernames.into_iter().map(|u| start_args(&list, u)).collect();
+            with_shell_actions(|shell| all.into_iter().flat_map(|args| shell.open(args, None)).collect())
+        }
+        Ask::AddToGroup { group, usernames } => {
+            let group = group.trim();
+            if group.is_empty() {
+                return json!({ "error": "Name the group" }).to_string();
+            }
+            for username in &usernames {
+                list.add_to_group(group, username);
+            }
+            saved(&list)
+        }
+        Ask::RemoveFromGroup { group, usernames } => {
+            if let Some(found) = list.groups.iter_mut().find(|g| g.name == group) {
+                found
+                    .accounts
+                    .retain(|a| !usernames.iter().any(|u| u.eq_ignore_ascii_case(a)));
+            }
+            saved(&list)
+        }
+        Ask::RemoveGroup { group } => {
+            list.remove_group(&group);
+            saved(&list)
         }
         Ask::Save {
             original,

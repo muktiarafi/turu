@@ -82,6 +82,22 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
         ask(JSONObject().put("do", "start").put("username", account.username)) {}
     }
 
+    /** Starts each of `accounts` in a new tab of its own (the caller keeps them to the free tabs). */
+    fun startMany(accounts: List<Account>) {
+        if (accounts.isEmpty()) return
+        starting = starting + accounts.map { it.username }
+        ask(JSONObject().put("do", "startMany").put("usernames", JSONArray(accounts.map { it.username }))) {}
+    }
+
+    /** Puts `accounts` in `group` (made if new); `done` gets the error, or null. */
+    fun addToGroup(group: String, accounts: List<Account>, done: (String?) -> Unit = {}) =
+        ask(JSONObject().put("do", "addToGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username })), done)
+
+    fun removeFromGroup(group: String, accounts: List<Account>) =
+        ask(JSONObject().put("do", "removeFromGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username }))) {}
+
+    fun removeGroup(group: String) = ask(JSONObject().put("do", "removeGroup").put("group", group)) {}
+
     /** Adds or changes an account; `done` gets the error, or null once saved. */
     fun save(original: Account?, username: String, password: String, displayName: String, tags: List<String>, done: (String?) -> Unit) {
         val ask = JSONObject().put("do", "save")
