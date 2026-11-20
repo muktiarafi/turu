@@ -1,20 +1,22 @@
 //! Tools & Helpers > Grabber (VibeSkua `GrabberView` / `GrabberListView`): a sidebar of lists
 //! (shops, quests, items, monsters); each grabs its game data on a bot thread into a
 //! searchable list with the selected row's details, Copy / Export, and its own actions (Buy,
-//! Accept, Equip, Kill, ...). The readers and actions are `turu_bot::grabber`.
+//! Accept, Equip, Kill, ...). The rows, what runs and the questions actions ask are
+//! `models::grabber`'s; the window keeps each list's search and selection.
 
 use super::files::SaveText;
 use super::theme::{ACCENT, CARD, EDGE, HOVER, MUTED, TEXT};
 use super::widgets::{self, Kind, Selection};
+use crate::models::grabber as model;
 use egui::{
     Align, Context, CornerRadius, Label, Layout, Modal, Rect, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2,
     vec2,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
-use turu_bot::grabber::{self, GrabAction, GrabKind, Grabbed, Prepared};
+use std::sync::Arc;
+use std::time::Duration;
+use turu_bot::Bot;
+use turu_bot::grabber::{self, GrabKind, Grabbed};
 
 const ROW_HEIGHT: f32 = 22.0;
 const CONTROL_HEIGHT: f32 = 26.0;
@@ -23,70 +25,42 @@ const DETAILS_WIDTH: f32 = 232.0;
 /// Narrower than this, the window shows its lists in a drop-down instead of the sidebar.
 const NARROW_WIDTH: f32 = 720.0;
 
-/// What a list's bot threads hand back.
-#[derive(Default)]
-struct Shared {
-    /// Grabbing or running an action.
-    busy: bool,
-    /// The status text, and when it goes away (never while busy).
-    message: Option<(String, Option<Instant>)>,
-    /// A fresh grab for the list to take.
-    grabbed: Option<Vec<Grabbed>>,
-    /// A message box an action asked for (title, text).
-    notice: Option<(String, String)>,
-}
-
-fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
-    shared.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Shows `text` as the status for `seconds` (0: until replaced).
-fn report(shared: &Mutex<Shared>, text: impl Into<String>, seconds: u64) {
-    let until = (seconds > 0).then(|| Instant::now() + Duration::from_secs(seconds));
-    lock(shared).message = Some((text.into(), until));
-}
-
 /// One sidebar list (VibeSkua `GrabberListViewModel`).
 struct List {
     kind: GrabKind,
-    items: Vec<Grabbed>,
+    items: Arc<Vec<Grabbed>>,
+    revision: u64,
     search: String,
     multiple: bool,
     selection: Selection,
     shown: Vec<usize>,
     shown_for: Option<String>,
-    shared: Arc<Mutex<Shared>>,
-    cancel: Arc<AtomicBool>,
 }
 
 impl List {
     fn new(kind: GrabKind) -> Self {
         Self {
             kind,
-            items: Vec::new(),
+            items: Arc::default(),
+            revision: 0,
             search: String::new(),
             multiple: true,
             selection: Selection::default(),
             shown: Vec::new(),
             shown_for: None,
-            shared: Arc::default(),
-            cancel: Arc::default(),
         }
     }
 
-    /// Takes a fresh grab, and filters again when the search changed (VibeSkua `ApplyFilter`:
-    /// the summary contains the search, ignoring case).
-    fn refresh(&mut self) {
-        if let Some(items) = lock(&self.shared).grabbed.take() {
-            self.items = items;
+    /// Takes a fresh grab, and filters again when the search changed (VibeSkua `ApplyFilter`).
+    fn refresh(&mut self, snapshot: &model::Snapshot) {
+        if snapshot.revision != self.revision {
+            self.items = snapshot.items.clone();
+            self.revision = snapshot.revision;
             self.selection.clear();
             self.shown_for = None;
         }
         if self.shown_for.as_deref() != Some(self.search.as_str()) {
-            let query = self.search.trim().to_lowercase();
-            self.shown = (0..self.items.len())
-                .filter(|&i| query.is_empty() || self.items[i].summary().to_lowercase().contains(&query))
-                .collect();
+            self.shown = model::filter(&self.items, &self.search);
             self.shown_for = Some(self.search.clone());
         }
     }
@@ -111,68 +85,13 @@ impl List {
                 .collect()
         }
     }
-
-    /// VibeSkua `Grab`.
-    fn grab(&self) {
-        let (shared, kind) = (self.shared.clone(), self.kind);
-        {
-            let mut s = lock(&shared);
-            s.busy = true;
-            s.message = Some(("Working...".into(), None));
-        }
-        crate::turu::spawn_action("Grab", move |bot| {
-            match grabber::grab(bot, kind, &crate::map_items::scan) {
-                Ok(items) => {
-                    lock(&shared).grabbed = Some(items);
-                    report(&shared, "Finished.", 1);
-                }
-                Err(e) => report(&shared, format!("Grab failed: {e}"), 4),
-            }
-            lock(&shared).busy = false;
-            Ok(())
-        });
-    }
-
-    /// VibeSkua `GrabberTask`: runs the action on the selected rows.
-    fn run(&mut self, action: GrabAction, selected: Vec<Grabbed>, quantity: Option<i64>) {
-        self.cancel = Arc::default();
-        let (shared, cancel) = (self.shared.clone(), self.cancel.clone());
-        lock(&shared).busy = true;
-        crate::turu::spawn_action(action.label(), move |bot| {
-            let refs: Vec<&Grabbed> = selected.iter().collect();
-            let progress = |text: String| report(&shared, text, 0);
-            match grabber::run(bot, action, &refs, quantity, &progress, &cancel) {
-                Ok(notice) => lock(&shared).notice = notice,
-                Err(_) if cancel.load(Ordering::Acquire) => progress("Task cancelled.".into()),
-                Err(e) => progress(format!("Operation failed: {e}")),
-            }
-            let mut s = lock(&shared);
-            s.busy = false;
-            // VibeSkua clears the status a second after the task.
-            if let Some((_, until)) = s.message.as_mut() {
-                *until = Some(Instant::now() + Duration::from_secs(1));
-            }
-            Ok(())
-        });
-    }
-}
-
-/// The quantity box an action asks for first.
-struct Ask {
-    kind: GrabKind,
-    action: GrabAction,
-    selected: Vec<Grabbed>,
-    title: String,
-    prompt: String,
-    text: String,
 }
 
 pub struct GrabberWindow {
     tab: GrabKind,
     lists: HashMap<GrabKind, List>,
-    ask: Option<Ask>,
-    /// A message box (title, text).
-    notice: Option<(String, String)>,
+    /// The quantity typed for the question an action asks.
+    quantity: String,
     /// Export's text, waiting for the save dialog.
     export: Option<(String, String)>,
     save: SaveText,
@@ -183,8 +102,7 @@ impl Default for GrabberWindow {
         Self {
             tab: GrabKind::ShopItems,
             lists: GrabKind::ALL.into_iter().map(|k| (k, List::new(k))).collect(),
-            ask: None,
-            notice: None,
+            quantity: String::new(),
             export: None,
             save: SaveText::default(),
         }
@@ -196,13 +114,13 @@ impl GrabberWindow {
         if !*open {
             return;
         }
+        let bot = crate::turu::bot();
+        let snapshot = model::snapshot(&bot, self.tab);
         super::window(ctx, "Grabber", [800.0, 560.0], 5)
             .open(open)
-            .show(ctx, |ui| self.ui(ui));
-        self.modals(ctx);
-        let list = &self.lists[&self.tab];
-        let s = lock(&list.shared);
-        if s.busy || s.message.is_some() {
+            .show(ctx, |ui| self.ui(ui, &bot, &snapshot));
+        self.modals(ctx, &bot);
+        if snapshot.busy || snapshot.message.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
     }
@@ -215,7 +133,7 @@ impl GrabberWindow {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
+    fn ui(&mut self, ui: &mut Ui, bot: &Arc<Bot>, snapshot: &model::Snapshot) {
         let rect = ui.available_rect_before_wrap();
         if rect.width() < NARROW_WIDTH {
             // A phone: the lists in a drop-down above, the list below at the window's width.
@@ -224,7 +142,7 @@ impl GrabberWindow {
                 self.list_picker(ui);
             });
             ui.add_space(4.0);
-            self.list_ui(ui);
+            self.list_ui(ui, bot, snapshot);
             return;
         }
         let gap = 14.0;
@@ -233,7 +151,7 @@ impl GrabberWindow {
         let mut sidebar = ui.new_child(UiBuilder::new().id_salt("side").max_rect(side));
         self.sidebar(&mut sidebar);
         let mut content = ui.new_child(UiBuilder::new().id_salt("main").max_rect(main));
-        self.list_ui(&mut content);
+        self.list_ui(&mut content, bot, snapshot);
         ui.allocate_rect(rect, Sense::hover());
     }
 
@@ -279,23 +197,11 @@ impl GrabberWindow {
             });
     }
 
-    fn list_ui(&mut self, ui: &mut Ui) {
-        let fights_blocked = super::busy(&crate::turu::bot());
+    fn list_ui(&mut self, ui: &mut Ui, bot: &Arc<Bot>, snapshot: &model::Snapshot) {
+        let fights_blocked = model::fights_blocked(bot);
         let list = self.lists.get_mut(&self.tab).expect("every kind has a list");
-        list.refresh();
-        let (busy, message) = {
-            let mut s = lock(&list.shared);
-            if s.message
-                .as_ref()
-                .is_some_and(|(_, until)| until.is_some_and(|u| Instant::now() >= u))
-            {
-                s.message = None;
-            }
-            if let Some(notice) = s.notice.take() {
-                self.notice = Some(notice);
-            }
-            (s.busy, s.message.as_ref().map(|(text, _)| text.clone()))
-        };
+        list.refresh(snapshot);
+        let (busy, message) = (snapshot.busy, snapshot.message.clone());
 
         // Grab, search, Multi-select.
         ui.horizontal(|ui| {
@@ -313,7 +219,7 @@ impl GrabberWindow {
                 grab
             };
             if grab.clicked() {
-                list.grab();
+                model::grab(bot, list.kind);
             }
             let chip = if list.kind.select_multiple() { 120.0 } else { 0.0 };
             let width = ui.available_width() - chip;
@@ -353,10 +259,10 @@ impl GrabberWindow {
                 widgets::count_badge(ui, list.shown.len());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if !narrow {
-                        list_actions(ui, list, busy, &mut self.export);
+                        list_actions(ui, bot, list, busy, &mut self.export);
                     }
                     if busy && widgets::button(ui, "Cancel", Kind::Danger, true, vec2(64.0, 22.0), "").clicked() {
-                        list.cancel.store(true, Ordering::Release);
+                        model::cancel(bot, list.kind);
                     }
                     let status = match &message {
                         Some(text) => Some(RichText::new(text).size(11.0).strong().color(MUTED)),
@@ -375,7 +281,7 @@ impl GrabberWindow {
             if narrow {
                 ui.horizontal(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        list_actions(ui, list, busy, &mut self.export);
+                        list_actions(ui, bot, list, busy, &mut self.export);
                     });
                 });
                 ui.add_space(2.0);
@@ -431,85 +337,56 @@ impl GrabberWindow {
             }
         });
         if let Some(action) = clicked {
-            let selected = list.selected();
-            let refs: Vec<&Grabbed> = selected.iter().collect();
-            match grabber::prepare(action, &refs) {
-                Prepared::Run => list.run(action, selected, None),
-                Prepared::AskQuantity { title, prompt } => {
-                    report(&list.shared, format!("{title}, input quantity..."), 0);
-                    self.ask = Some(Ask {
-                        kind: list.kind,
-                        action,
-                        selected,
-                        title,
-                        prompt,
-                        text: String::new(),
-                    });
-                }
-                Prepared::Warn {
-                    title,
-                    message,
-                    progress,
-                } => {
-                    if !progress.is_empty() {
-                        report(&list.shared, progress, 2);
-                    }
-                    self.notice = Some((title, message));
-                }
-                Prepared::Report(text) => report(&list.shared, text, 2),
-            }
+            model::start(bot, list.kind, action, list.selected());
         }
     }
 
-    /// The quantity box (VibeSkua's input dialog) and the message box.
-    fn modals(&mut self, ctx: &Context) {
-        if let Some(ask) = &mut self.ask {
-            let mut answer = None;
-            let response = Modal::new(egui::Id::new("turu_grabber_quantity")).show(ctx, |ui| {
-                ui.set_width(320.0);
-                ui.heading(&ask.title);
-                ui.label(&ask.prompt);
-                let edit = widgets::text_box(ui, &mut ask.text, "", ui.available_width());
-                edit.request_focus();
-                let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                ui.add_space(4.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::button(ui, "OK", Kind::Primary, true, vec2(72.0, 28.0), "").clicked() || enter {
-                        answer = Some(true);
-                    }
-                    if widgets::button(ui, "Cancel", Kind::Normal, true, vec2(72.0, 28.0), "").clicked() {
-                        answer = Some(false);
-                    }
+    /// The quantity box (VibeSkua's input dialog) and the message box, of whichever list asks.
+    fn modals(&mut self, ctx: &Context, bot: &Arc<Bot>) {
+        for kind in GrabKind::ALL {
+            let snapshot = model::snapshot(bot, kind);
+            if let Some((title, prompt)) = &snapshot.ask {
+                let mut answer = None;
+                let response = Modal::new(egui::Id::new(("turu_grabber_quantity", kind.title()))).show(ctx, |ui| {
+                    ui.set_width(320.0);
+                    ui.heading(title);
+                    ui.label(prompt);
+                    let edit = widgets::text_box(ui, &mut self.quantity, "", ui.available_width());
+                    edit.request_focus();
+                    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    ui.add_space(4.0);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if widgets::button(ui, "OK", Kind::Primary, true, vec2(72.0, 28.0), "").clicked() || enter {
+                            answer = Some(true);
+                        }
+                        if widgets::button(ui, "Cancel", Kind::Normal, true, vec2(72.0, 28.0), "").clicked() {
+                            answer = Some(false);
+                        }
+                    });
                 });
-            });
-            if response.should_close() && answer.is_none() {
-                answer = Some(false);
-            }
-            if let Some(ok) = answer {
-                let ask = self.ask.take().expect("shown");
-                let list = self.lists.get_mut(&ask.kind).expect("every kind has a list");
-                match ok.then(|| ask.text.trim().parse::<i64>().ok()) {
-                    Some(Some(quantity)) => list.run(ask.action, ask.selected, Some(quantity)),
-                    // VibeSkua does nothing for a quantity that isn't a number.
-                    Some(None) => lock(&list.shared).message = None,
-                    None => report(&list.shared, "Cancelled.", 1),
+                if response.should_close() && answer.is_none() {
+                    answer = Some(false);
+                }
+                if let Some(ok) = answer {
+                    let text = std::mem::take(&mut self.quantity);
+                    model::answer(bot, kind, ok.then_some(text.as_str()));
                 }
             }
-        }
-        if let Some((title, message)) = &self.notice {
-            let mut close = false;
-            let response = Modal::new(egui::Id::new("turu_grabber_notice")).show(ctx, |ui| {
-                ui.set_min_width(280.0);
-                ui.set_max_width(420.0);
-                ui.heading(title);
-                ui.label(message);
-                ui.add_space(4.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    close = widgets::button(ui, "OK", Kind::Primary, true, vec2(72.0, 28.0), "").clicked();
+            if let Some((title, message)) = &snapshot.notice {
+                let mut close = false;
+                let response = Modal::new(egui::Id::new(("turu_grabber_notice", kind.title()))).show(ctx, |ui| {
+                    ui.set_min_width(280.0);
+                    ui.set_max_width(420.0);
+                    ui.heading(title);
+                    ui.label(message);
+                    ui.add_space(4.0);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        close = widgets::button(ui, "OK", Kind::Primary, true, vec2(72.0, 28.0), "").clicked();
+                    });
                 });
-            });
-            if close || response.should_close() {
-                self.notice = None;
+                if close || response.should_close() {
+                    model::dismiss(bot, kind);
+                }
             }
         }
     }
@@ -596,7 +473,7 @@ fn item_list(ui: &mut Ui, list: &mut List) {
 }
 
 /// Unselect / Copy / Export, laid out right to left (Export rightmost).
-fn list_actions(ui: &mut Ui, list: &mut List, busy: bool, export: &mut Option<(String, String)>) {
+fn list_actions(ui: &mut Ui, bot: &Arc<Bot>, list: &mut List, busy: bool, export: &mut Option<(String, String)>) {
     ui.add_enabled_ui(!busy, |ui| {
         if widgets::small_button(ui, "Export", true)
             .on_hover_text("Export everything grabbed for the selected items (or all) to a .txt file")
@@ -604,29 +481,25 @@ fn list_actions(ui: &mut Ui, list: &mut List, busy: bool, export: &mut Option<(S
         {
             let targets = list.targets();
             if targets.is_empty() {
-                report(&list.shared, "No items to export.", 3);
+                model::report(bot, list.kind, "No items to export.", 3);
             } else {
                 let text = grabber::detailed_export_text(list.kind.title(), &targets);
                 let file = format!("{}.txt", list.kind.title().replace(' ', ""));
-                report(&list.shared, format!("Exported {} item(s) to file.", targets.len()), 3);
+                model::report(
+                    bot,
+                    list.kind,
+                    format!("Exported {} item(s) to file.", targets.len()),
+                    3,
+                );
                 *export = Some((file, text));
             }
         }
         if widgets::small_button(ui, "Copy", true)
             .on_hover_text("Copy the selected items (or all) to the clipboard")
             .clicked()
+            && let Some(text) = model::copy_text(bot, list.kind, &list.targets())
         {
-            let targets = list.targets();
-            if targets.is_empty() {
-                report(&list.shared, "No items to copy.", 3);
-            } else {
-                ui.ctx().copy_text(grabber::export_text(list.kind.title(), &targets));
-                report(
-                    &list.shared,
-                    format!("Copied {} item(s) to clipboard.", targets.len()),
-                    3,
-                );
-            }
+            ui.ctx().copy_text(text);
         }
         if widgets::small_button(ui, "Unselect", true)
             .on_hover_text("Unselect all")
