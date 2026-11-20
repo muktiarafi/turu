@@ -16,6 +16,7 @@
 //!   to `turu_client` as it is.
 
 pub mod application_options;
+pub mod army;
 pub mod auto;
 pub mod bank;
 pub mod core_bots;
@@ -328,6 +329,28 @@ pub fn register() {
             done()
         }),
     );
+
+    add_model("army", Box::new(|bot| to_json(&army::view(bot))));
+    add_model_action(
+        "army",
+        "send",
+        Box::new(|bot, body| army::command(bot, body).and_then(|()| done())),
+    );
+    add_model_action("army", "row", Box::new(|_, body| army::row(body).and_then(|()| done())));
+    for (action, work) in [
+        ("clear-ended", army::clear_ended as fn()),
+        ("close-all", army::close_all),
+        ("clear-results", army::clear_results),
+    ] {
+        add_model_action(
+            "army",
+            action,
+            Box::new(move |_, _| {
+                work();
+                done()
+            }),
+        );
+    }
 
     add_model("app-options", Box::new(|bot| to_json(&application_options::view(bot))));
     add_model_action(

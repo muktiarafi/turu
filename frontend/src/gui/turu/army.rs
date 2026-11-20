@@ -9,430 +9,44 @@ use super::files::{self, Pending};
 use super::gear::GearWindow;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::army::{self as model, MISC_OPTIONS, Row, RowAction as ModelAction};
+use crate::models::scheduler::Tint;
 use crate::platform::FileDialog;
-use crate::turu::TabId;
 use egui::{Align, Checkbox, CollapsingHeader, Context, Label, Layout, RichText, ScrollArea, Ui, vec2};
-use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex};
+use serde_json::json;
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
-use turu_bot::Bot;
-use turu_bot::accounts::Accounts;
-use turu_bot::army::{Client, Command};
-use turu_bot::monitor::Snapshot;
-use turu_bot::monitor::snapshot::BotState;
+use turu_bot::army::Command;
 
-/// How many command outcomes the window keeps.
-const RESULTS: usize = 40;
+pub use crate::models::army::Peer;
+
 /// Narrower than this (a phone, a small window), a row keeps Start/Stop and ⋯ only.
 const NARROW: f32 = 480.0;
 /// How long a "click again to confirm" stays armed.
 const CONFIRM_FOR: Duration = Duration::from_secs(4);
 
-/// VibeSkua's "Misc Options" (`WM_SKUA_SET_OPTION`): label and option name.
-const MISC_OPTIONS: [(&str, &str); 7] = [
-    ("Lag Killer", "lagKiller"),
-    ("Headless Mode", "headlessMode"),
-    ("Hide Players", "hidePlayers"),
-    ("Disable FX", "disableFx"),
-    ("Infinite Range", "infiniteRange"),
-    ("Aggro Monsters", "aggroMonsters"),
-    ("Streamer Mode", "streamerMode"),
-];
-
-/// A client a Gear or Logs window acts on: one Army launched (by username), one of this
-/// window's tabs, or one of the shell's other tabs (in a client process, by the shell's number;
-/// docs/TAB_PROCESSES_PROPOSAL.md, M5).
-#[derive(Clone)]
-pub enum Peer {
-    Client {
-        username: String,
-        label: String,
-    },
-    Tab(Arc<Bot>),
-    Shell {
-        id: u32,
-        label: String,
-    },
-    /// One the shell's Army launched (asked from a tab, so it outlives the tab's client), in a
-    /// client: its commands go to its control API, its Close and Restart to the shell.
-    ShellClient {
-        username: String,
-        label: String,
-    },
-}
-
-/// The shell's Army client `username`, in a client.
-fn shell_client(username: &str) -> Option<crate::turu::ShellClient> {
-    crate::turu::shell_clients()
-        .into_iter()
-        .find(|client| client.username.eq_ignore_ascii_case(username))
-}
-
-/// A shell Army client's control API, while its process runs.
-fn shell_client_api(username: &str) -> Result<(std::net::SocketAddr, String), String> {
-    let client = shell_client(username).ok_or_else(|| format!("{username} isn't running"))?;
-    match (client.api, &client.exited) {
-        (Some(api), None) => Ok((api, client.token)),
-        (_, Some(exit)) => Err(format!("{username} ended ({exit})")),
-        (None, None) => Err(format!("{username} has no control API")),
-    }
-}
-
-/// The shell's tab `id`, in a client.
-fn shell_tab(id: u32) -> Option<crate::turu::ShellTab> {
-    crate::turu::shell_tabs()?.0.into_iter().find(|tab| tab.id == id)
-}
-
-/// A shell tab's latest snapshot, from the monitor hub (which polls it).
-fn shell_snapshot(id: u32) -> Option<turu_bot::monitor::Snapshot> {
-    crate::turu::monitor_hub().snapshot(&format!("tab:{id}"))
-}
-
-/// A shell tab's control API, while its process runs.
-fn shell_api(id: u32) -> Result<(std::net::SocketAddr, String), String> {
-    let tab = shell_tab(id).ok_or_else(|| "that tab is closed".to_owned())?;
-    match (tab.api, &tab.down) {
-        (Some(api), None) => Ok((api, tab.token)),
-        (_, Some(down)) => Err(format!("{} is {down}", tab.label)),
-        (None, None) => Err(format!("{} has no control API", tab.label)),
-    }
-}
-
-impl Peer {
-    pub fn label(&self) -> String {
-        match self {
-            Self::Client { label, .. } => label.clone(),
-            Self::Tab(bot) => format!("{} (tab)", crate::turu::tab_label(bot)),
-            Self::Shell { label, .. } => format!("{label} (tab)"),
-            Self::ShellClient { label, .. } => label.clone(),
-        }
-    }
-
-    /// The login its gear file is under ("" before a tab's first login).
-    pub fn username(&self) -> String {
-        match self {
-            Self::Client { username, .. } => username.clone(),
-            Self::Tab(bot) => bot.butler.username(),
-            Self::Shell { id, .. } => shell_snapshot(*id)
-                .filter(|s| s.playing())
-                .map(|s| s.name)
-                .unwrap_or_default(),
-            Self::ShellClient { username, .. } => username.clone(),
-        }
-    }
-
-    fn same(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Client { username: a, .. }, Self::Client { username: b, .. }) => a.eq_ignore_ascii_case(b),
-            (Self::Tab(a), Self::Tab(b)) => Arc::ptr_eq(a, b),
-            (Self::Shell { id: a, .. }, Self::Shell { id: b, .. }) => a == b,
-            (Self::ShellClient { username: a, .. }, Self::ShellClient { username: b, .. }) => a.eq_ignore_ascii_case(b),
-            _ => false,
-        }
-    }
-
-    /// Running and logged in.
-    pub fn online(&self) -> bool {
-        match self {
-            Self::Client { username, .. } => {
-                crate::turu::army().client(username).is_some()
-                    && crate::turu::monitor_hub()
-                        .army_snapshot(username)
-                        .is_some_and(|s| s.playing())
-            }
-            Self::Tab(bot) => bot.gear.logged_in(),
-            Self::Shell { id, .. } => {
-                crate::turu::monitor_hub().online(&format!("tab:{id}"))
-                    && shell_snapshot(*id).is_some_and(|s| s.playing())
-            }
-            Self::ShellClient { username, .. } => {
-                shell_client(username).is_some_and(|c| c.exited.is_none())
-                    && crate::turu::monitor_hub()
-                        .army_snapshot(username)
-                        .is_some_and(|s| s.playing())
-            }
-        }
-    }
-
-    /// The running script's file name.
-    pub fn running_script(&self) -> Option<String> {
-        let (running, path) = match self {
-            Self::Client { username, .. } | Self::ShellClient { username, .. } => {
-                let snapshot = crate::turu::monitor_hub().army_snapshot(username)?;
-                (
-                    snapshot.script.running,
-                    snapshot.script.path.map(std::path::PathBuf::from),
-                )
-            }
-            Self::Tab(bot) => (bot.scripts.is_running(), bot.scripts.loaded()),
-            Self::Shell { id, .. } => {
-                let snapshot = shell_snapshot(*id)?;
-                (
-                    snapshot.script.running,
-                    snapshot.script.path.map(std::path::PathBuf::from),
-                )
-            }
-        };
-        running.then(|| file_name(path.as_deref()))
-    }
-
-    /// Sends a command and waits for the answer: not on the UI thread.
-    pub fn send(&self, command: &Command) -> Result<Value, String> {
-        match self {
-            Self::Client { username, .. } => {
-                let army = crate::turu::army();
-                let client = army
-                    .client(username)
-                    .ok_or_else(|| format!("{username} isn't running"))?;
-                army.send(&client, command)
-            }
-            Self::Tab(bot) => turu_bot::army::send_local(bot, command),
-            Self::Shell { id, .. } => {
-                let (api, token) = shell_api(*id)?;
-                turu_bot::army::send_to_api(api, &token, command)
-            }
-            Self::ShellClient { username, .. } => {
-                let (api, token) = shell_client_api(username)?;
-                turu_bot::army::send_to_api(api, &token, command)
-            }
-        }
-    }
-
-    /// A control API GET (`/log?...`): not on the UI thread.
-    pub fn get(&self, path: &str) -> Result<Value, String> {
-        match self {
-            Self::Client { username, .. } => {
-                let army = crate::turu::army();
-                let client = army
-                    .client(username)
-                    .ok_or_else(|| format!("{username} isn't running"))?;
-                army.forward(&client, false, path, Vec::new())
-            }
-            Self::Tab(bot) => {
-                let (status, reply) = turu_bot::control_api::local(bot, false, path, &[]);
-                turu_bot::army::reply_result(status, reply)
-            }
-            Self::Shell { id, .. } => {
-                let (api, token) = shell_api(*id)?;
-                turu_bot::army::get_from_api(api, &token, path)
-            }
-            Self::ShellClient { username, .. } => {
-                let (api, token) = shell_client_api(username)?;
-                turu_bot::army::get_from_api(api, &token, path)
-            }
-        }
-    }
-}
-
-/// What a row's buttons asked for.
+/// What a row's buttons asked for: the model's commands, or a window of this one's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RowAction {
-    Start,
-    Stop,
-    Login,
-    Logout,
-    Relog,
+    Model(ModelAction),
     Gear,
     Logs,
-    Restart,
-    Close,
-    AutoAttack,
-    StopAuto,
 }
 
-/// One line of the list: a tab or a launched client, as the UI shows it.
-#[derive(Clone)]
-struct Row {
-    /// Its key in the checked set.
-    key: String,
-    peer: Peer,
-    tab: Option<TabId>,
-    /// The login, for group selection ("" before a tab's first login).
-    username: String,
-    headless: bool,
-    color: egui::Color32,
-    summary: String,
-    error: Option<String>,
-    /// The loaded script's file name, and whether it runs.
-    script: Option<(String, bool)>,
-    /// "Auto Attack" or "Auto Hunt" while one runs.
-    auto: Option<String>,
-    logged_in: bool,
-    /// The process ended.
-    ended: bool,
-}
-
-impl Row {
-    fn of_tab(tab: TabId, bot: &Arc<Bot>) -> Self {
-        let status = bot.scripts.status();
-        let auto = bot.auto.mode().map(|m| m.label().to_owned());
-        let logged_in = bot.gear.logged_in();
-        let waits = bot.scripts.waits_for();
-        let summary = match (waits, bot.state.lock().last_map.clone()) {
-            (Some(what), _) => format!("waits for you: {what} (Show)"),
-            (None, Some(map)) if logged_in => map,
-            (None, _) if logged_in => "logged in".into(),
-            (None, _) => "login screen".into(),
-        };
-        Self {
-            key: format!("tab:{tab:?}"),
-            peer: Peer::Tab(bot.clone()),
-            tab: Some(tab),
-            username: bot.butler.username(),
-            headless: false,
-            color: match () {
-                _ if waits.is_some() => WARNING,
-                _ if status.is_active() || auto.is_some() => SUCCESS,
-                _ => MUTED,
-            },
-            summary,
-            error: None,
-            script: bot.scripts.loaded().map(|p| (file_name(Some(&p)), status.is_active())),
-            auto,
-            logged_in,
-            ended: false,
-        }
-    }
-
-    /// Its game comes from the monitor's hub, which the Army poll feeds. The `n`th client is
-    /// "Client n" while its Streamer Mode is on.
-    fn of_client(n: usize, client: &Arc<Client>) -> Self {
-        let state = client.state();
-        let snapshot = crate::turu::monitor_hub().army_snapshot(&client.username);
-        let streamer = snapshot.as_ref().is_some_and(|s| s.streamer);
-        let (color, summary) = match (&state.exited, state.answered, &snapshot) {
-            (Some(exit), _, _) => (DANGER, format!("ended ({exit})")),
-            (None, true, Some(snapshot)) => (SUCCESS, summarize(snapshot)),
-            (None, _, _) => (MUTED, "starting…".to_owned()),
-        };
-        let live = snapshot.filter(|_| state.exited.is_none());
-        Self {
-            key: client.username.to_lowercase(),
-            peer: Peer::Client {
-                username: client.username.clone(),
-                label: if streamer {
-                    format!("Client {n}")
-                } else {
-                    client.label.clone()
-                },
-            },
-            tab: None,
-            username: client.username.clone(),
-            headless: client.headless,
-            color,
-            summary,
-            error: state.error,
-            script: live.as_ref().and_then(|s| {
-                let path = s.script.path.as_deref()?;
-                Some((file_name(Some(std::path::Path::new(path))), s.script.running))
-            }),
-            auto: live.as_ref().and_then(|s| s.auto.clone()),
-            logged_in: live
-                .as_ref()
-                .is_some_and(|s| !matches!(s.state, BotState::NotLoaded | BotState::LoggedOut)),
-            ended: state.exited.is_some(),
-        }
-    }
-
-    /// One of the clients the shell's Army launched: its game from the monitor's hub, which polls
-    /// its process (`turu::shell_peers`).
-    fn of_shell_client(n: usize, client: &crate::turu::ShellClient) -> Self {
-        let snapshot = crate::turu::monitor_hub()
-            .army_snapshot(&client.username)
-            .filter(|_| client.exited.is_none());
-        let streamer = snapshot.as_ref().is_some_and(|s| s.streamer);
-        let (color, summary) = match (&client.exited, &snapshot) {
-            (Some(exit), _) => (DANGER, format!("ended ({exit})")),
-            (None, Some(snapshot)) => (SUCCESS, summarize(snapshot)),
-            (None, None) => (MUTED, "starting…".to_owned()),
-        };
-        Self {
-            key: client.username.to_lowercase(),
-            peer: Peer::ShellClient {
-                username: client.username.clone(),
-                label: if streamer {
-                    format!("Client {n}")
-                } else {
-                    client.label.clone()
-                },
-            },
-            tab: None,
-            username: client.username.clone(),
-            headless: client.headless,
-            color,
-            summary,
-            error: None,
-            script: snapshot.as_ref().and_then(|s| {
-                let path = s.script.path.as_deref()?;
-                Some((file_name(Some(std::path::Path::new(path))), s.script.running))
-            }),
-            auto: snapshot.as_ref().and_then(|s| s.auto.clone()),
-            logged_in: snapshot
-                .as_ref()
-                .is_some_and(|s| !matches!(s.state, BotState::NotLoaded | BotState::LoggedOut)),
-            ended: client.exited.is_some(),
-        }
-    }
-
-    /// One of the shell's other tabs: its game from the monitor's hub, which polls its process.
-    fn of_shell_tab(tab: &crate::turu::ShellTab) -> Self {
-        let snapshot = shell_snapshot(tab.id).filter(|_| tab.down.is_none());
-        let (color, summary) = match (&tab.down, &snapshot) {
-            (Some(down), _) => (DANGER, down.clone()),
-            (None, Some(snapshot)) if snapshot.playing() => (SUCCESS, summarize(snapshot)),
-            (None, Some(_)) => (MUTED, "login screen".to_owned()),
-            (None, None) => (MUTED, "starting…".to_owned()),
-        };
-        Self {
-            key: tab.hub_id(),
-            peer: Peer::Shell {
-                id: tab.id,
-                label: tab.label.clone(),
-            },
-            tab: None,
-            username: snapshot
-                .as_ref()
-                .filter(|s| s.playing())
-                .map(|s| s.name.clone())
-                .unwrap_or_default(),
-            headless: false,
-            color,
-            summary,
-            error: None,
-            script: snapshot.as_ref().and_then(|s| {
-                let path = s.script.path.as_deref()?;
-                Some((file_name(Some(std::path::Path::new(path))), s.script.running))
-            }),
-            auto: snapshot.as_ref().and_then(|s| s.auto.clone()),
-            logged_in: snapshot
-                .as_ref()
-                .is_some_and(|s| !matches!(s.state, BotState::NotLoaded | BotState::LoggedOut)),
-            ended: tab.down.is_some(),
-        }
-    }
-
-    /// A tab of this window: in this process, or the shell's in another.
-    fn is_tab(&self) -> bool {
-        self.tab.is_some() || matches!(self.peer, Peer::Shell { .. })
-    }
-
-    fn label(&self) -> String {
-        match &self.peer {
-            Peer::Client { label, .. } => label.clone(),
-            Peer::Tab(bot) => crate::turu::tab_label(bot),
-            Peer::Shell { label, .. } => label.clone(),
-            Peer::ShellClient { label, .. } => label.clone(),
-        }
+/// A row's state mark in egui's palette.
+fn tint_color(tint: Tint) -> egui::Color32 {
+    match tint {
+        Tint::Plain => TEXT,
+        Tint::Muted => MUTED,
+        Tint::Success => SUCCESS,
+        Tint::Warning => WARNING,
+        Tint::Danger => DANGER,
     }
 }
 
 pub struct ArmyWindow {
     /// The checked rows' keys; none checked means every row.
     checked: HashSet<String>,
-    /// Army > Accounts' groups, read again every few seconds.
-    groups: Vec<turu_bot::accounts::Group>,
-    groups_read: Option<Instant>,
     gear: Vec<GearWindow>,
     logs: Vec<ClientLogs>,
     /// Map Travel, the player picker and Change Server (VibeSkua's travel menu items).
@@ -445,7 +59,6 @@ pub struct ArmyWindow {
     pending_targets: Option<Vec<Row>>,
     /// An action on every row waiting for its second click, and since when.
     confirm: Option<(&'static str, Instant)>,
-    results: Arc<Mutex<VecDeque<String>>>,
     /// Search… asked for a script: the answer goes to Search Scripts' pick mode
     /// ([`Self::take_script_search`]).
     script_search: Option<crate::platform::Answer>,
@@ -455,8 +68,6 @@ impl Default for ArmyWindow {
     fn default() -> Self {
         Self {
             checked: HashSet::new(),
-            groups: Vec::new(),
-            groups_read: None,
             gear: Vec::new(),
             logs: Vec::new(),
             travel: Travel::default(),
@@ -466,7 +77,6 @@ impl Default for ArmyWindow {
             pending_script: Pending::default(),
             pending_targets: None,
             confirm: None,
-            results: Arc::default(),
             script_search: None,
         }
     }
@@ -536,140 +146,45 @@ impl ArmyWindow {
         rows.iter().find(|r| r.tab == Some(active)).map(|r| r.key.clone())
     }
 
-    /// Every tab (in a shell's client: its own, then the shell's others), then every launched
-    /// client.
     fn rows() -> Vec<Row> {
-        let tabs = crate::turu::tabs().into_iter().map(|(tab, bot)| Row::of_tab(tab, &bot));
-        let shell_tabs = crate::turu::shell_tabs().map(|(tabs, _)| tabs).unwrap_or_default();
-        let others = shell_tabs.iter().filter(|tab| !tab.me).map(Row::of_shell_tab);
-        let clients = crate::turu::army().clients();
-        let shell_clients = crate::turu::shell_clients();
-        let own = clients.len();
-        tabs.chain(others)
-            .chain(clients.iter().enumerate().map(|(i, c)| Row::of_client(i + 1, c)))
-            .chain(
-                shell_clients
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| Row::of_shell_client(own + i + 1, c)),
-            )
-            .collect()
+        model::rows()
     }
 
     /// The rows ACTIONS go to: the checked ones, else all that run.
     fn targets(&self, rows: &[Row]) -> Vec<usize> {
-        let everyone = self.checked.is_empty();
-        (0..rows.len())
-            .filter(|&i| !rows[i].ended && (everyone || self.checked.contains(&rows[i].key)))
-            .collect()
+        model::targets(rows, &self.checked)
     }
 
-    /// Sends the command to these rows at once; outcomes are listed.
     fn send_to(&self, rows: &[Row], command: Command) {
-        let label = command.label();
-        let results = self.results.clone();
-        let mut local = Vec::new();
-        let mut only = Vec::new();
-        let mut shell = Vec::new();
-        // The outcomes name a client by its launch label: "Client 2" instead in Streamer Mode.
-        let mut shown = HashMap::new();
-        for row in rows {
-            match &row.peer {
-                Peer::Tab(bot) => local.push((format!("{} (tab)", crate::turu::tab_label(bot)), bot.clone())),
-                Peer::Client { username, label } => {
-                    only.push(username.clone());
-                    if let Some(client) = crate::turu::army().client(username) {
-                        shown.insert(client.label.clone(), label.clone());
-                    }
-                }
-                Peer::Shell { .. } | Peer::ShellClient { .. } => shell.push(row.peer.clone()),
-            }
-        }
-        for peer in shell {
-            let (results, label, command) = (results.clone(), label.clone(), command.clone());
-            let spawned = std::thread::Builder::new()
-                .name("Turu Army Command".into())
-                .spawn(move || push_result(&results, outcome_line(&peer.label(), &label, peer.send(&command))));
-            if let Err(e) = spawned {
-                push_result(&self.results, format!("Army: {e}"));
-            }
-        }
-        crate::turu::army().broadcast(command, local, Some(&only), move |name, result| {
-            let name = shown.get(name).map_or(name, String::as_str);
-            push_result(&results, outcome_line(name, &label, result));
-        });
+        model::send_to(rows, command);
     }
 
     /// Sends the command to the rows ACTIONS go to.
     fn send(&self, rows: &[Row], command: Command) {
-        let targets: Vec<Row> = self.targets(rows).into_iter().map(|i| rows[i].clone()).collect();
-        self.send_to(&targets, command);
+        model::send(rows, &self.checked, command);
     }
 
     /// A row's own button.
     fn act(&mut self, row: &Row, action: RowAction) {
         let peer = row.peer.clone();
-        let command = match action {
-            RowAction::Gear => {
-                match self.gear.iter_mut().find(|w| w.peer.same(&peer)) {
-                    Some(window) => window.reopen(),
-                    None => self.gear.push(GearWindow::new(peer)),
-                }
-                return;
-            }
+        match action {
+            RowAction::Gear => match self.gear.iter_mut().find(|w| w.peer.same(&peer)) {
+                Some(window) => window.reopen(),
+                None => self.gear.push(GearWindow::new(peer)),
+            },
             RowAction::Logs => {
                 if let Some(window) = self.logs.iter_mut().find(|w| w.peer.same(&peer)) {
                     window.open = true;
                 } else {
                     self.logs.push(ClientLogs::new(peer));
                 }
-                return;
             }
-            RowAction::Close => {
-                match &peer {
-                    Peer::Client { username, .. } => {
-                        crate::turu::army().close(username);
-                        self.checked.remove(&row.key);
-                    }
-                    Peer::ShellClient { username, .. } => {
-                        crate::turu::shell_army(crate::turu::ShellArmyRequest::Close(username.clone()));
-                        self.checked.remove(&row.key);
-                    }
-                    Peer::Tab(_) | Peer::Shell { .. } => {}
+            RowAction::Model(action) => {
+                if action == ModelAction::Close {
+                    self.checked.remove(&row.key);
                 }
-                return;
+                model::act(row, action);
             }
-            RowAction::Start => Some(Command::StartScript(None)),
-            RowAction::Stop => Some(Command::StopScript),
-            RowAction::Login => Some(Command::Login),
-            RowAction::Logout => Some(Command::Logout),
-            RowAction::Relog => Some(Command::Relogin),
-            RowAction::AutoAttack => Some(Command::StartAutoAttack),
-            RowAction::StopAuto => Some(Command::StopAuto),
-            RowAction::Restart => None,
-        };
-        let results = self.results.clone();
-        let name = peer.label();
-        let spawned = std::thread::Builder::new()
-            .name("Turu Army Command".into())
-            .spawn(move || {
-                let line = match (command, &peer) {
-                    (Some(command), _) => outcome_line(&name, &command.label(), peer.send(&command)),
-                    (None, Peer::Client { username, .. }) => outcome_line(
-                        &name,
-                        "Restart",
-                        crate::turu::army().restart(username).map(|_| Value::Null),
-                    ),
-                    (None, Peer::ShellClient { username, .. }) => {
-                        crate::turu::shell_army(crate::turu::ShellArmyRequest::Restart(username.clone()));
-                        outcome_line(&name, "Restart", Ok(Value::Null))
-                    }
-                    (None, Peer::Tab(_) | Peer::Shell { .. }) => return,
-                };
-                push_result(&results, line);
-            });
-        if let Err(e) = spawned {
-            push_result(&self.results, format!("Army: {e}"));
         }
     }
 
@@ -773,20 +288,19 @@ impl ArmyWindow {
             let color = if checked > 0 { TEXT } else { MUTED };
             ui.add(Label::new(RichText::new(count).size(12.0).color(color)).truncate());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let army = crate::turu::army();
                 let launched = rows.iter().any(|r| !r.is_tab());
                 ui.add_enabled_ui(launched, |ui| {
                     ui.menu_button("⋯", |ui| {
                         touch_rows(ui);
                         if ui.button("Clear ended").clicked() {
-                            army.clear_exited();
+                            model::clear_ended();
                             ui.close();
                         }
                         if ui
                             .button(RichText::new("Close all launched clients").color(DANGER))
                             .clicked()
                         {
-                            army.close_all();
+                            model::close_all();
                             self.checked.retain(|k| k.starts_with("tab:"));
                             ui.close();
                         }
@@ -801,11 +315,7 @@ impl ArmyWindow {
 
     /// Groups ⏷: checks an Army > Accounts group's rows, and only those.
     fn groups_menu(&mut self, ui: &mut Ui, rows: &[Row]) {
-        if self.groups_read.is_none_or(|t| t.elapsed() >= Duration::from_secs(3)) {
-            self.groups_read = Some(Instant::now());
-            self.groups = Accounts::load(&crate::turu::bot().paths.accounts_file()).groups;
-        }
-        let groups = self.groups.clone();
+        let groups = model::groups();
         ui.add_enabled_ui(!groups.is_empty(), |ui| {
             ui.menu_button("Groups ⏷", |ui| {
                 touch_rows(ui);
@@ -815,11 +325,7 @@ impl ArmyWindow {
                         .on_hover_text("Checks this group's clients, and only those")
                         .clicked()
                     {
-                        self.checked = rows
-                            .iter()
-                            .filter(|r| !r.ended && group.accounts.iter().any(|a| a.eq_ignore_ascii_case(&r.username)))
-                            .map(|r| r.key.clone())
-                            .collect();
+                        self.checked = model::group_keys(rows, group).into_iter().collect();
                         ui.close();
                     }
                 }
@@ -837,7 +343,7 @@ impl ArmyWindow {
             self.confirm = None;
         }
         let any = !targets.is_empty();
-        let ask = everyone && targets.len() > 1;
+        let ask = model::asks_twice(&self.checked, targets.len());
         let height = widgets::target(28.0, 44.0);
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -1085,20 +591,14 @@ impl ArmyWindow {
 
     /// The last outcome (cut to the width, whole on hover), and the earlier ones folded away.
     fn results_card(&self, ui: &mut Ui) {
-        let results: Vec<String> = self
-            .results
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .cloned()
-            .collect();
+        let results = model::results();
         let Some(last) = results.last() else { return };
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::small_button(ui, "Clear", true).clicked() {
-                        self.results.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                        model::clear_results();
                     }
                     ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                         ui.add(Label::new(RichText::new(last).monospace().size(11.0)).truncate())
@@ -1212,7 +712,7 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                 if row.ended {
                     // A shell tab that's down: the shell restarts it (or its strip does).
                     if !row.is_tab() {
-                        item(ui, RichText::new("Remove"), true, RowAction::Close);
+                        item(ui, RichText::new("Remove"), true, RowAction::Model(ModelAction::Close));
                     }
                     return;
                 }
@@ -1233,26 +733,51 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                 }
                 if narrow {
                     if row.logged_in {
-                        item(ui, RichText::new("Log out"), true, RowAction::Logout);
+                        item(
+                            ui,
+                            RichText::new("Log out"),
+                            true,
+                            RowAction::Model(ModelAction::Logout),
+                        );
                     } else {
-                        item(ui, RichText::new("Log in"), true, RowAction::Login);
+                        item(ui, RichText::new("Log in"), true, RowAction::Model(ModelAction::Login));
                     }
                     item(ui, RichText::new("Gear…"), true, RowAction::Gear);
                 }
-                item(ui, RichText::new("Relog"), true, RowAction::Relog);
+                item(ui, RichText::new("Relog"), true, RowAction::Model(ModelAction::Relog));
                 if let Some(auto) = &row.auto {
-                    item(ui, RichText::new(format!("Stop {auto}")), true, RowAction::StopAuto);
+                    item(
+                        ui,
+                        RichText::new(format!("Stop {auto}")),
+                        true,
+                        RowAction::Model(ModelAction::StopAuto),
+                    );
                 } else {
-                    let can = row.logged_in && !row.script.as_ref().is_some_and(|(_, running)| *running);
-                    item(ui, RichText::new("Start Auto-Attack"), can, RowAction::AutoAttack);
+                    let can = row.auto_attack().enabled;
+                    item(
+                        ui,
+                        RichText::new("Start Auto-Attack"),
+                        can,
+                        RowAction::Model(ModelAction::AutoAttack),
+                    );
                 }
                 if row.tab.is_none() {
                     item(ui, RichText::new("Logs…"), true, RowAction::Logs);
                 }
                 if !row.is_tab() {
                     ui.separator();
-                    item(ui, RichText::new("Restart"), true, RowAction::Restart);
-                    item(ui, RichText::new("Close").color(DANGER), true, RowAction::Close);
+                    item(
+                        ui,
+                        RichText::new("Restart"),
+                        true,
+                        RowAction::Model(ModelAction::Restart),
+                    );
+                    item(
+                        ui,
+                        RichText::new("Close").color(DANGER),
+                        true,
+                        RowAction::Model(ModelAction::Close),
+                    );
                 }
             })
             .0
@@ -1264,7 +789,7 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                 72.0,
                 true,
                 "Launch it again as it was",
-                RowAction::Restart,
+                RowAction::Model(ModelAction::Restart),
             );
         } else {
             if !narrow {
@@ -1277,7 +802,14 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                     RowAction::Gear,
                 );
                 if row.logged_in {
-                    button(ui, "Log out", 68.0, true, "Log this account out", RowAction::Logout);
+                    button(
+                        ui,
+                        "Log out",
+                        68.0,
+                        true,
+                        "Log this account out",
+                        RowAction::Model(ModelAction::Logout),
+                    );
                 } else {
                     button(
                         ui,
@@ -1285,21 +817,42 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                         68.0,
                         true,
                         "Log in with the remembered login",
-                        RowAction::Login,
+                        RowAction::Model(ModelAction::Login),
                     );
                 }
             }
             match &row.script {
-                Some((_, true)) => button(ui, "■ Stop", 68.0, true, "Stop its script", RowAction::Stop),
+                Some((_, true)) => button(
+                    ui,
+                    "■ Stop",
+                    68.0,
+                    true,
+                    "Stop its script",
+                    RowAction::Model(ModelAction::Stop),
+                ),
                 Some((name, false)) => {
                     let tip = if row.logged_in {
                         format!("Start {name}")
                     } else {
                         "Log in first".to_owned()
                     };
-                    button(ui, "▶ Start", 68.0, row.logged_in, &tip, RowAction::Start);
+                    button(
+                        ui,
+                        "▶ Start",
+                        68.0,
+                        row.logged_in,
+                        &tip,
+                        RowAction::Model(ModelAction::Start),
+                    );
                 }
-                None => button(ui, "▶ Start", 68.0, false, "No script loaded", RowAction::Start),
+                None => button(
+                    ui,
+                    "▶ Start",
+                    68.0,
+                    false,
+                    "No script loaded",
+                    RowAction::Model(ModelAction::Start),
+                ),
             }
         }
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
@@ -1309,18 +862,11 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
                 ui.spacing_mut().interact_size.y = 16.0;
                 ui.spacing_mut().item_spacing.y = 3.0;
                 ui.horizontal(|ui| {
-                    widgets::dot(ui, row.color, 4.0);
+                    widgets::dot(ui, tint_color(row.tint), 4.0);
                     let name = row.label();
                     ui.add(Label::new(RichText::new(&name).strong().color(TEXT)).truncate())
                         .on_hover_text(&name);
-                    let kind = if row.is_tab() {
-                        Some("tab")
-                    } else if row.headless {
-                        Some("no window")
-                    } else {
-                        None
-                    };
-                    if let Some(kind) = kind {
+                    if let Some(kind) = row.kind() {
                         ui.label(RichText::new(kind).size(10.5).color(MUTED));
                     }
                 });
@@ -1380,65 +926,6 @@ fn travel_peers(rows: &[Row]) -> Vec<army_travel::Peer> {
         .collect()
 }
 
-/// "Alt1: Equip Legion Revenant: done".
-fn outcome_line(name: &str, label: &str, result: Result<Value, String>) -> String {
-    match result {
-        Ok(reply) => {
-            // A client without a window started without its Script Options, and none were saved.
-            let defaults = reply.get("options").and_then(Value::as_str) == Some("defaults")
-                && reply.get("optionsWindow").and_then(Value::as_bool) == Some(false);
-            match serde_json::from_value::<turu_bot::gear::EquipReport>(reply) {
-                Ok(report) if label.starts_with("Equip ") => {
-                    format!("{name}: {label}: {}", report.summary())
-                }
-                _ if defaults => {
-                    format!("{name}: {label}: done, with the default Script Options (none saved)")
-                }
-                _ => format!("{name}: {label}: done"),
-            }
-        }
-        // The client said no (a script runs, not logged in, ...): nothing started there.
-        Err(e) if label == Command::StartAutoAttack.label() => {
-            format!("{name}: {label}: skipped ({e})")
-        }
-        Err(e) => format!("{name}: {label}: {e}"),
-    }
-}
-
-fn push_result(results: &Mutex<VecDeque<String>>, line: String) {
-    let mut results = results.lock().unwrap_or_else(|e| e.into_inner());
-    if results.len() == RESULTS {
-        results.pop_front();
-    }
-    results.push_back(line);
-}
-
-/// The file name of a script path ("" for none).
-fn file_name(path: Option<&std::path::Path>) -> String {
-    path.and_then(|p| p.file_name())
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
-}
-
-/// "battleon, Enter · 2400/2400 HP", "login screen", "relogging", ...
-fn summarize(snapshot: &Snapshot) -> String {
-    if snapshot.relogging {
-        return "relogging".into();
-    }
-    let map = match snapshot.state {
-        BotState::NotLoaded => return "loading the game".into(),
-        BotState::LoggedOut => return "login screen".into(),
-        _ if snapshot.map.is_empty() => return "joining".into(),
-        // Streamer Mode: the map without its room number.
-        _ if snapshot.streamer => snapshot.map.split('-').next().unwrap_or_default(),
-        _ => &snapshot.map,
-    };
-    let mut text = format!("{map}, {} · {}/{} HP", snapshot.cell, snapshot.hp.cur, snapshot.hp.max);
-    if !snapshot.server.is_empty() {
-        text = format!("{} · {text}", snapshot.server);
-    }
-    text
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1451,9 +938,10 @@ mod tests {
                 label: name.into(),
             },
             tab: None,
+            shell_tab: None,
             username: name.into(),
             headless: true,
-            color: SUCCESS,
+            tint: Tint::Success,
             summary: "Artix · ultradage-123456, r6, Left · 120000/120000 HP".into(),
             error: None,
             script: script.map(|(n, running)| (n.into(), running)),
@@ -1461,23 +949,6 @@ mod tests {
             logged_in: !ended,
             ended,
         }
-    }
-
-    /// ACTIONS go to the checked rows, or to every row still running when none is checked.
-    #[test]
-    fn actions_go_to_the_checked_rows_or_everyone() {
-        let rows = [
-            row("Alt1", false, None),
-            row("Alt2", false, None),
-            row("Gone", true, None),
-        ];
-        let mut window = ArmyWindow::default();
-        assert_eq!(window.targets(&rows), [0, 1]);
-        window.checked.insert("alt2".into());
-        assert_eq!(window.targets(&rows), [1]);
-        // A checked row that ended isn't sent to.
-        window.checked = ["gone".to_owned()].into();
-        assert!(window.targets(&rows).is_empty());
     }
 
     /// Long names, a long place and both button rows keep the window at its width.
