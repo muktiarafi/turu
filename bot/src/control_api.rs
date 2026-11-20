@@ -14,6 +14,7 @@
 //! |---|---|
 //! | `GET /tabs` | The tabs: `id`, `label` and `default` (the one the routes without `/tabs/<id>` act on). |
 //! | `GET /events[?logs=script,debug,packet]` | A stream of server-sent events, so a client needn't poll: `script` (as `/status`'s `script`) at the start and when it changes, `log` (`type`, `time`, `text`) for each new line of the logs asked for (`script` by default; `logs=` for none), `event` for each web monitor event (`seq`, `at`, `kind`, `text`), and a comment every 15 s. It reads the bot's state only, never the game. |
+//! | `GET /models/<name>`, `POST /models/<name>/<action>` | A native shell's view models (`turu_frontend::models`: `scripts`, `logs`, `game-options`): the view with its `revision`, and actions with a JSON body; `/events?models=a,b` adds `model` (`name`, `revision`) when a view changes. Versioned with the app, not a promise to outside callers. |
 //! | `GET /status` | Logged in, player, map, cell, HP, the script and whether it runs, stats, and `update`: a newer Turu (`version`, `current`, `url` of its notes, `download`, `prerelease`) or `null`. Asks the game: prefer `/events` to polling it. |
 //! | `GET /snapshot[?since=][&slow=1]` | The web monitor's `Snapshot` (the slow fields with `slow=1`), the events from number `since`, `next`, and this process's CPU and memory (`process`, its CPU since the last call). Army polls it. |
 //! | `POST /script/load?path=` | Load a script (relative to the scripts folder, or absolute). |
@@ -144,6 +145,90 @@ const EVENTS_EVERY: Duration = Duration::from_millis(250);
 const EVENTS_PING: Duration = Duration::from_secs(15);
 
 type Body = BoxBody<Bytes, Infallible>;
+
+/// A view model's view (docs/NATIVE_UI_PROPOSAL.md, L2): one feature's state as plain data.
+pub type ModelView = Box<dyn Fn(&Arc<Bot>) -> Value + Send + Sync>;
+
+/// A view model's action: the JSON body in, an answer (or why not) out. It returns at once.
+pub type ModelAction = Box<dyn Fn(&Arc<Bot>, &Value) -> Result<Value, String> + Send + Sync>;
+
+/// The view models a client added (`turu_frontend::models::register`): `GET /models/<name>`
+/// answers `{revision, view}`, `POST /models/<name>/<action>` runs an action, and
+/// `/events?models=a,b` sends `model` (`name`, `revision`) when a view changes. Versioned with
+/// the app, not promised to outside callers as the routes above are.
+struct Models {
+    views: Vec<(&'static str, ModelView)>,
+    actions: Vec<(&'static str, &'static str, ModelAction)>,
+}
+
+static MODELS: std::sync::RwLock<Models> = std::sync::RwLock::new(Models {
+    views: Vec::new(),
+    actions: Vec::new(),
+});
+
+/// Adds (or replaces) model `name`'s view, for every control API in this process.
+pub fn add_model(name: &'static str, view: ModelView) {
+    let mut models = MODELS.write().unwrap_or_else(|e| e.into_inner());
+    models.views.retain(|(n, _)| *n != name);
+    models.views.push((name, view));
+}
+
+/// Adds (or replaces) model `name`'s `action`.
+pub fn add_model_action(name: &'static str, action: &'static str, run: ModelAction) {
+    let mut models = MODELS.write().unwrap_or_else(|e| e.into_inner());
+    models
+        .actions
+        .retain(|(n, a, _)| (*n, *a) != (name, action));
+    models.actions.push((name, action, run));
+}
+
+/// Model `name`'s view and its revision: a hash of the view, so equal views have equal
+/// revisions and a model needs no bookkeeping.
+fn model_view(bot: &Arc<Bot>, name: &str) -> Option<(u64, Value)> {
+    let models = MODELS.read().unwrap_or_else(|e| e.into_inner());
+    let (_, view) = models.views.iter().find(|(n, _)| *n == name)?;
+    let view = view(bot);
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    view.to_string().hash(&mut hasher);
+    Some((hasher.finish(), view))
+}
+
+/// `GET /models/<name>` and `POST /models/<name>/<action>`.
+fn model_route(bot: &Arc<Bot>, method: &str, rest: &str, body: &[u8]) -> Reply {
+    match (method, rest.split_once('/')) {
+        ("GET", None) => match model_view(bot, rest) {
+            Some((revision, view)) => ok(json!({ "revision": revision.to_string(), "view": view })),
+            None => error(Code::NoRoute, "no such model"),
+        },
+        ("POST", Some((name, action))) => {
+            let body: Value = if body.is_empty() {
+                Value::Null
+            } else {
+                match serde_json::from_slice(body) {
+                    Ok(body) => body,
+                    Err(e) => {
+                        return error(Code::InvalidParameter, format!("the body isn't JSON: {e}"));
+                    }
+                }
+            };
+            let models = MODELS.read().unwrap_or_else(|e| e.into_inner());
+            match models
+                .actions
+                .iter()
+                .find(|(n, a, _)| (*n, *a) == (name, action))
+            {
+                Some((_, _, run)) => match run(bot, &body) {
+                    Ok(answer) => ok(answer),
+                    Err(e) => error(Code::InvalidParameter, e),
+                },
+                None => error(Code::NoRoute, "no such model action"),
+            }
+        }
+        (_, None) => wrong_method("GET"),
+        (_, Some(_)) => wrong_method("POST"),
+    }
+}
 
 /// Listens on `addr` on its own thread, for `bot` alone; returns the address it listens on.
 pub fn start(bot: &Arc<Bot>, addr: SocketAddr, token: String) -> Result<SocketAddr, String> {
@@ -685,8 +770,18 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 /// `GET /events`: server-sent events until the client goes (or the tab's bot does).
 fn events(bot: &Arc<Bot>, query: &str) -> Response<Body> {
     let mut kinds = vec![LogKind::Script];
+    let mut models = Vec::new();
     let url = reqwest::Url::parse(&format!("http://turu/?{query}"));
     for (name, value) in url.iter().flat_map(reqwest::Url::query_pairs) {
+        if name == "models" {
+            models = value
+                .split(',')
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+                .map(|m| (m.to_owned(), None))
+                .collect();
+            continue;
+        }
         if name != "logs" {
             continue;
         }
@@ -707,6 +802,7 @@ fn events(bot: &Arc<Bot>, query: &str) -> Response<Body> {
     let (mut tx, body) = Channel::<Bytes, Infallible>::new(16);
     tokio::spawn(async move {
         let mut news = News::new(&bot, kinds);
+        news.models = models;
         let mut quiet = Duration::ZERO;
         loop {
             let Some(frames) = news.read(&bot) else {
@@ -740,6 +836,8 @@ fn events(bot: &Arc<Bot>, query: &str) -> Response<Body> {
 /// What `/events` has sent so far.
 struct News {
     script: Option<Value>,
+    /// The models asked for and the revision last sent.
+    models: Vec<(String, Option<u64>)>,
     logs: Vec<(LogKind, u64)>,
     events: u64,
 }
@@ -754,6 +852,7 @@ impl News {
         };
         Self {
             script: None,
+            models: Vec::new(),
             logs: kinds
                 .into_iter()
                 .map(|kind| (kind, next_line(kind)))
@@ -772,6 +871,15 @@ impl News {
         if self.script.as_ref() != Some(&script) {
             push_frame(&mut frames, "script", &script);
             self.script = Some(script);
+        }
+        for (name, sent) in &mut self.models {
+            if let Some((revision, _)) = model_view(&bot, name)
+                && *sent != Some(revision)
+            {
+                *sent = Some(revision);
+                let event = json!({ "name": name, "revision": revision.to_string() });
+                push_frame(&mut frames, "model", &event);
+            }
         }
         for (kind, next) in &mut self.logs {
             let (lines, after) = bot.logs.get(*kind).since(*next);
@@ -1109,6 +1217,9 @@ fn route(bot: &Arc<Bot>, method: &str, path_and_query: &str, body: &[u8]) -> Rep
     let Ok(url) = reqwest::Url::parse(&format!("http://turu{path_and_query}")) else {
         return error(Code::InvalidParameter, "bad URL");
     };
+    if let Some(rest) = url.path().strip_prefix("/models/") {
+        return model_route(bot, method, rest, body);
+    }
     let Some(route) = ROUTES.iter().find(|r| r.path == url.path()) else {
         return error(Code::NoRoute, "no such route");
     };

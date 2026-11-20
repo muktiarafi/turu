@@ -1263,6 +1263,8 @@ fn repo_path(scripts: &Path, given: &str) -> Option<String> {
 /// token is `TURU_API_TOKEN`, else the one in the data folder's `api-token` (made the first time).
 /// A process tabs' shell starts its own instead ([`start_shell_api`]).
 pub fn start_api() {
+    // The view models a native shell's screens read (`crate::models`).
+    crate::models::register();
     if let Some((addr, token)) = api_settings() {
         let started = token.and_then(|token| turu_bot::control_api::start_tabs(tab_sources(), addr, token));
         report_api(started);

@@ -800,3 +800,50 @@ fn a_shell_passes_requests_on_to_its_tabs() {
             .contains("a line while streaming")
     );
 }
+
+/// A client's view models (L2): the view with a revision that moves only when the view does,
+/// an action with a JSON body, and the errors for what isn't there.
+#[test]
+fn view_models_answer_with_a_revision_and_take_actions() {
+    use turu_bot::control_api::{add_model, add_model_action, local};
+    let bot = turu_bot::Bot::new();
+    add_model(
+        "test-counter",
+        Box::new(|bot| serde_json::json!({ "kills": bot.state.lock().stats.kills })),
+    );
+    add_model_action(
+        "test-counter",
+        "add",
+        Box::new(|bot, body| {
+            let by = body
+                .get("by")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or("by is missing")?;
+            bot.state.lock().stats.kills += by;
+            Ok(serde_json::json!({}))
+        }),
+    );
+    let (status, first) = local(&bot, false, "/models/test-counter", &[]);
+    assert_eq!(status, 200);
+    assert_eq!(first["view"]["kills"], 0);
+    let (_, again) = local(&bot, false, "/models/test-counter", &[]);
+    assert_eq!(first["revision"], again["revision"]);
+
+    let (status, _) = local(&bot, true, "/models/test-counter/add", br#"{"by": 3}"#);
+    assert_eq!(status, 200);
+    let (_, after) = local(&bot, false, "/models/test-counter", &[]);
+    assert_eq!(after["view"]["kills"], 3);
+    assert_ne!(after["revision"], first["revision"]);
+
+    assert_eq!(local(&bot, true, "/models/test-counter/add", b"{}").0, 400);
+    assert_eq!(
+        local(&bot, true, "/models/test-counter/add", b"not json").0,
+        400
+    );
+    assert_eq!(local(&bot, false, "/models/nothing", &[]).0, 404);
+    assert_eq!(
+        local(&bot, true, "/models/test-counter/nothing", &[]).0,
+        404
+    );
+    assert_eq!(local(&bot, true, "/models/test-counter", &[]).0, 405);
+}
