@@ -1011,7 +1011,10 @@ above, and why:
   Jump's pin is the core set's filled one.
 * **Search Scripts** (L5b, 2026-11-20) is a page of the panel, 440 dp wide (its rows need it),
   opened from the Script Loader's Search, More, and however the slot opens Search Scripts (but
-  while it picks a script for Army Control, which only the egui window does). The search, then
+  while the egui Search Scripts picks a script for the egui Army Control). From the native Army
+  Control's Search scripts… it picks: a bar under the title says for whom ("Pick a script to
+  load in cecilus", "in 2 clients") with Cancel, each row's button is "Load in …" (a tap on the
+  row too), and a pick goes back to Army Control. The search, then
   the filters as chips (folder, Pinned, Local, the sort in words, what the search looks in),
   then the rows: name (a star when pinned), badge and description; Start (the top hit's filled)
   and a menu with the path, what the badge means, Load, Add to the queue, Download, Update or
@@ -1052,13 +1055,14 @@ above, and why:
   where it is; Start, or Stop while it runs, and a ⋮ of Show its tab, Log in or Log out, Relog,
   Start or Stop Auto-Attack (with why not), and for a launched client Restart and Close. A tap on
   the row checks it. Under the rows, who the commands go to ("To all 2 clients · check rows to
-  pick", amber; or the checked names), then Script (Start script, Stop script, This tab's script),
+  pick", amber; or the checked names), then Script (Start script, Stop script, Search scripts…, which opens Search Scripts to pick one),
   Account (Log in, Log out, Relog, Go to house) and Auto-Attack, Quest and Misc options folded,
   and a last row to the full window for Travel, Gear and a client's logs. Stop script and Log out
   to every client ask first in a dialog, where the window wants a second click. The last outcome
   sits at the foot with History. The shell keeps the checked rows, by a key every slot gives the
   same row, so they stay through a tab switch; the outcomes are the slot's, so the list after a
-  switch is that tab's. Search… and Load file… are the window's.
+  switch is that tab's; a script is named by its file there ("Load Farm.ts: done"). Load file… is
+  the window's.
 * **Full window**: every native page's ⋮ ends with Full window, the slot's egui window (which
   stays egui until it closes), and says what it adds there.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
