@@ -1257,6 +1257,13 @@ above, and why:
   the value green, errors red, Stopped amber), selectable, scrolling sideways, kept at the newest
   line. With the keyboard up the bar, note and output step aside: the editor fills the strip
   above it with Run beside it. ⋮: Copy output, Clear output, Full window.
+* **The engine's dialogs** (L5b, 2026-11-21): a script's message box, Butler's "a script started
+  while following", the crash notice, the Tab Limit notice and the graphics tips, one at a time
+  over the game whether the panel is open or not, as Material dialogs on the panel's card colour:
+  the title, the text (a script's or a report's scrolls past 320 dp), a smaller muted note, and
+  the buttons as text buttons left to right, the last (the main one) in the accent and semibold.
+  The words are egui's. A script's box isn't closed by a tap beside it; Back closes any of them.
+  Show report opens egui's Logs on the report; Raise Tab Limit opens Application options.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that

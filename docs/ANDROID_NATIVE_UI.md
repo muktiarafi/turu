@@ -285,9 +285,11 @@ egui window shares. Turu Mas keeps egui throughout. What follows stands for what
 * **The windows not ported yet** (Tools & Helpers, Skills, Runtime, Butler, Cosmetics, Console)
   and **for good** Spammer, Packet Logger and Interceptor: egui in the slot's picture, opened from
   More, as on the desktop.
-* **Modals and confirmations** in those windows (26: Remove account, Clear stats, Delete loadout, ...) and the
-  **Tab Limit notice**: they lead back into Turu's windows ("Raise Tab Limit" opens Options), and on
-  Turu Mas a native dialog takes AIR's focus each time.
+* **Modals and confirmations** in those windows (26: Remove account, Clear stats, Delete loadout,
+  ...): they lead back into Turu's windows, and on Turu Mas a native dialog takes AIR's focus each
+  time. Since 2026-11-21 the engine's own dialogs (a script's message box, Butler's notice, the
+  crash notice, the Tab Limit notice, the graphics tips) are native on Turu's Android app
+  (`models::prompts`); egui still draws them on Turu Mas and the desktop.
 * **Drop-downs and number boxes**: egui's, sized for a finger (`widgets::dropdown`,
   `widgets::touch_number`); a number box's typing goes through the native field.
 

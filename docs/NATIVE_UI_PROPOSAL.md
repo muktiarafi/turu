@@ -943,6 +943,19 @@ script's message box and options request.
   Change server, Equip or Refresh, Save, Clear or Delete. While building, a model test sent a
   jump into the Mac's real `army-control-jump.json` and replaced its last jump (Go to's starting
   fields) with yulgar; the history and presets were untouched, and test builds can't reach it now.
+* **Engine dialogs** (2026-11-21, the owner's pick; L3's first part): `models::prompts` gives the
+  one prompt waiting for the tab, the most pressing first (the script's message box, Butler's
+  "a script started while following", the crash notice, the Tab Limit, a graphics tip), each with
+  an ID an answer must name, so an answer to one already gone does nothing. The crash notice's
+  reports and the refused tab moved there from egui. The shell follows it whenever a tab shows,
+  from a view of its own (the panel's draws only while open), and shows a Material dialog; while
+  a shell has read it within three seconds, egui's dialogs step aside. A script's box isn't
+  closed by a tap beside it (Back still answers "closed"). Show report opens egui's Logs on the
+  report (the native Logs page has no Crashes); Raise Tab Limit opens Application options. The
+  crash upload question was already Android's own. Checked on the emulator: a made-up crash
+  report's notice and Show report (the report and the one it pushed out of the 30 kept were put
+  back, with `.seen`). Not seen: the message box, Butler's notice, the Tab Limit and the tips
+  (they need a script, Butler following, a refused tab or a slow GPU); they share the dialog.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -970,8 +983,9 @@ the owner says so).
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
 Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: HotKeys, and for
-good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
+egui one, and the engine's dialogs (a script's message box, Butler's notice, the crash notice, the
+Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys (staying
+egui), Spammer, Packet Logger and Interceptor (to be ported, decision 8 as changed 2026-11-21). The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
@@ -1134,6 +1148,9 @@ they get through AIR's `d8`.
    pass, drafted and approved by the owner, comes before each shell's first screen.
 8. **The fallback**: Packet Logger, Interceptor, Spammer and Diagnostics stay egui for good; scripts,
    logs, options, accounts, tabs and Army are ported; the rest is decided as a shell reaches it.
+   *Changed 2026-11-21 (the owner): Android ports everything left, the engine's dialogs first, then
+   Spammer, Packet Logger and Interceptor; HotKeys stays egui there (unused without a keyboard).
+   Full window stays on each page as egui's way back, and Turu Mas keeps egui.*
 9. **Turu Mas**: stays egui; if ever reopened, hand-written JNI.
 10. **Across the boundary**: JSON, with Kotlin and Swift types generated from the Rust records.
     Android needs no generated FFI binding; BoltFFI only for macOS.
