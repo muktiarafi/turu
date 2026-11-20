@@ -836,10 +836,10 @@ fn checked(body: &Value) -> HashSet<String> {
 /// `send`: a command to the checked rows (`keys`), or to every row still running. `command` is
 /// `start-script`, `stop-script`, `login`, `logout`, `relog`, `house`, `auto-attack`,
 /// `stop-auto`, `script` (`path`: a Search Scripts path, downloaded first when it needs it),
-/// `tab-script` (the script `bot`'s tab has loaded), `quest` (`id`, optional `reward`), `option`
+/// `quest` (`id`, optional `reward`), `option`
 /// (`name`, `on`), `jump` (`map`, `room`, `cell`, `pad`: remembered for Map Travel), `jump-player`
 /// (`name`) or `change-server` (`server`).
-pub fn command(bot: &Arc<Bot>, body: &Value) -> Result<(), String> {
+pub fn command(body: &Value) -> Result<(), String> {
     let name = body
         .get("command")
         .and_then(Value::as_str)
@@ -873,10 +873,6 @@ pub fn command(bot: &Arc<Bot>, body: &Value) -> Result<(), String> {
             }
             let on = body.get("on").and_then(Value::as_bool).ok_or("on is missing")?;
             Command::SetOptions(json!({ option: on }))
-        }
-        "tab-script" => {
-            let path = bot.scripts.loaded().ok_or("Load a script in this tab's Script Loader first")?;
-            Command::LoadScript(path.display().to_string())
         }
         "jump" | "jump-player" | "change-server" if !reach => return Err("None of the checked clients runs".into()),
         "jump" => {
@@ -1024,20 +1020,15 @@ mod tests {
 
     #[test]
     fn options_and_commands_are_checked() {
-        let bot = Bot::new();
-        let err = command(&bot, &json!({ "command": "option", "name": "nope", "on": true }));
+        let err = command(&json!({ "command": "option", "name": "nope", "on": true }));
         assert_eq!(err, Err("no option named nope".into()));
         assert_eq!(
-            command(&bot, &json!({ "command": "quest", "id": 0 })),
+            command(&json!({ "command": "quest", "id": 0 })),
             Err("Enter a quest ID".into())
         );
-        assert!(command(&bot, &json!({ "command": "dance" })).is_err());
+        assert!(command(&json!({ "command": "dance" })).is_err());
         assert_eq!(
-            command(&bot, &json!({ "command": "tab-script" })),
-            Err("Load a script in this tab's Script Loader first".into())
-        );
-        assert_eq!(
-            command(&bot, &json!({ "command": "jump", "map": " " })),
+            command(&json!({ "command": "jump", "map": " " })),
             Err("Type a map to go to".into())
         );
         assert_eq!(RowAction::named("auto-attack"), Some(RowAction::AutoAttack));

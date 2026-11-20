@@ -430,7 +430,7 @@ pub fn register() {
     add_model_action(
         "army",
         "send",
-        Box::new(|bot, body| army::command(bot, body).and_then(|()| done())),
+        Box::new(|_, body| army::command(body).and_then(|()| done())),
     );
     add_model_action("army", "row", Box::new(|_, body| army::row(body).and_then(|()| done())));
     add_model_action(

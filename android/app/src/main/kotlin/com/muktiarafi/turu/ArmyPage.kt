@@ -239,7 +239,6 @@ fun ArmyPage(
                                 state.scriptPick = ScriptPick.Army(panel.checked.keys.toList(), targets.singleOrNull()?.label ?: "${targets.size} clients")
                                 state.push(Page.Search)
                             },
-                            Action("This tab's script", enabled = any) { panel.send("tab-script") },
                         ),
                     )
                 }
