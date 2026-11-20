@@ -389,6 +389,7 @@ impl TuruUi {
             ("notify_drop", w.notify_drop),
             ("loader", w.loader),
             ("grabber", w.grabber),
+            ("junk_items", w.junk_items),
             ("script_options", w.script_options),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
@@ -461,6 +462,9 @@ impl TuruUi {
         }
         if w.grabber && !kept(w, "grabber") && crate::turu::open_shell_screen(NativeScreen::Grabber) {
             w.grabber = false;
+        }
+        if w.junk_items && !kept(w, "junk_items") && crate::turu::open_shell_screen(NativeScreen::JunkItems) {
+            w.junk_items = false;
         }
         // Only from the tab on screen: the native page shows that tab's, and a script waiting in
         // another tab waits in that tab's picture until it's shown.

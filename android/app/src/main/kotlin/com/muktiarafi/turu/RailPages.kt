@@ -297,6 +297,7 @@ private fun nativePage(window: String): Page? = when (window) {
     "notify_drop" -> Page.NotifyDrop
     "loader" -> Page.Loader
     "grabber" -> Page.Grabber
+    "junk_items" -> Page.JunkItems
     "script_options" -> Page.ScriptOptions
     "logs" -> Page.Logs
     else -> null

@@ -59,6 +59,7 @@ class ShellScreens(private val activity: TuruActivity) {
         notifyDrop = NotifyDropPanel(),
         loader = LoaderPanel(),
         grabber = GrabberPanel(),
+        junk = JunkPanel(),
         scriptOptions = ScriptOptionsPanel(),
     )
 
@@ -142,6 +143,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "notify_drop" -> open(Page.NotifyDrop)
             "loader" -> open(Page.Loader)
             "grabber" -> open(Page.Grabber)
+            "junk_items" -> open(Page.JunkItems)
             "script_options" -> open(Page.ScriptOptions)
         }
     }

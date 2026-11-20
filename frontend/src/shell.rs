@@ -521,6 +521,8 @@ pub enum NativeScreen {
     Loader,
     /// Tools & Helpers > Grabber.
     Grabber,
+    /// Tools & Helpers > Junk Items.
+    JunkItems,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }
