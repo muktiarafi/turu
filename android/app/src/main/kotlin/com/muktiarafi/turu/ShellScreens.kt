@@ -53,6 +53,7 @@ class ShellScreens(private val activity: TuruActivity) {
         loadouts = LoadoutsPanel(),
         fastTravel = FastTravelPanel(),
         butler = ButlerPanel(),
+        cosmetics = CosmeticsPanel(),
     )
 
     private val railActions = RailActions(
@@ -130,6 +131,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "loadouts" -> open(Page.Loadouts)
             "fast_travel" -> open(Page.FastTravel)
             "butler" -> open(Page.Butler)
+            "cosmetics" -> open(Page.Cosmetics)
         }
     }
 

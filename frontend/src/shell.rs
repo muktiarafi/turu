@@ -511,6 +511,8 @@ pub enum NativeScreen {
     FastTravel,
     /// Plugins > Butler.
     Butler,
+    /// Plugins > Cosmetics.
+    Cosmetics,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

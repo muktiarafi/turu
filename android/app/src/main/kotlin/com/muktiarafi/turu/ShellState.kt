@@ -114,6 +114,9 @@ sealed interface Page {
     /** Plugins > Butler. */
     data object Butler : Page
 
+    /** Plugins > Cosmetics. */
+    data object Cosmetics : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

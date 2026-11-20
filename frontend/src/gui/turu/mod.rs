@@ -384,6 +384,7 @@ impl TuruUi {
             ("loadouts", w.loadouts),
             ("fast_travel", w.fast_travel),
             ("butler", w.butler),
+            ("cosmetics", w.cosmetics),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -440,6 +441,9 @@ impl TuruUi {
         }
         if w.butler && !kept(w, "butler") && crate::turu::open_shell_screen(NativeScreen::Butler) {
             w.butler = false;
+        }
+        if w.cosmetics && !kept(w, "cosmetics") && crate::turu::open_shell_screen(NativeScreen::Cosmetics) {
+            w.cosmetics = false;
         }
         tab.script_loader.show(
             ctx,
