@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader and Grabber. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber and Junk Items. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -913,6 +913,16 @@ script's message box and options request.
   Copy from the menu, Quests' five actions wrapping at font scale 1.3. Not checked, as they act
   in game: every list action (Buy, Equip, Sell, To Bank, Accept, Kill, ...) and so the quantity
   question and the message box on the page.
+* **Junk Items** (2026-11-21, the owner's pick): `models::junk` holds per tab the inventory and
+  bank items as read (junk marks and goals with them), whether a refresh or sale runs and the last
+  error, and a native page's search, filters, page (100 items) and selection (by ID and category,
+  kept over a refresh). The egui window keeps its own filters and selection and passes the
+  selected items to the model's mark, goal and sell. The page checks a row at once, before the next
+  view. Checked on the emulator: the list (166 items), a check, the Highlight menu and its filter,
+  ⋮, the goal bar with the keyboard up (closed without setting), font scale 1.3 (the checked
+  items' actions scroll sideways on one row); no junk list or goal was saved. Not checked, as they
+  sell in game or change the owner's data: Mark, Unmark, Unmark all, Set and Clear goal, the sales
+  and Skip sell warning.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -939,8 +949,8 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber. Each window's page has Full window for the
-egui one. **Still egui on Android**, from More: Tools & Helpers' Junk Items, Console, HotKeys, and for
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items. Each window's page has Full window for the
+egui one. **Still egui on Android**, from More: Console, HotKeys, and for
 good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 

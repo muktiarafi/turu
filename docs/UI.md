@@ -950,10 +950,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers' Junk Items, Console | decided when reached; egui from More until then |
+| Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1222,6 +1222,18 @@ above, and why:
   (Sell and Sell All in red), wrapping; Kill says why it waits. An action's quantity question
   and message box are dialogs. ⋮: Copy (the checked rows, or all shown), Full window (Export to a
   file). With the keyboard up the foot steps aside.
+* **Junk Items** (L5b, 2026-11-21), a page of the panel (440 dp) from More > Tools & Helpers and
+  however the slot opens it; opening it reads the inventory and bank again, as VibeSkua. The
+  search with Refresh, then Category, AC and Highlight as chips on one row (a chip filtering is
+  lit; its menu ticks the choice), a box checking every shown item ("1 checked · 166 items", the
+  junk count), and the items a page of 100 at a time: the name (amber and bold when equipped, the
+  row tinted), its ID, then the quantities, category and chips (AC, Equipped, a star for a
+  favourite, Near cap, the goal, Junk in red). A tap checks a row. The foot: with items checked,
+  Mark as junk, Unmark, Goal… and Sell checked on one row that scrolls sideways at large font
+  sizes; else a hint and Sell all junk (N). Goal… swaps the foot for a goal bar (the quantity,
+  Set, Clear, close) that stays above the keyboard. The sales ask first unless Skip sell warning
+  is on, and turning that on asks too. ⋮: Sell all junk, Unmark all, Skip sell warning, Full
+  window.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
