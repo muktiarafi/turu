@@ -84,7 +84,9 @@ class ScriptOptionsPanel {
     fun follow(tab: ShellTab?) {
         if (tab?.id == following?.id && tab?.api == following?.api && client != null) return
         following = tab
-        client?.stop()
+        // The tab before: the page left it. With its script waiting, its own window takes the
+        // editor back; else the draft goes (`leave`).
+        client?.let { old -> old.act("script-options", "do", JSONObject().put("action", "leave")) { old.stop() } }
         client = null
         view = null
         val api = tab?.api ?: return
@@ -134,6 +136,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
     val view = panel.view
     var filter by rememberSaveable { mutableStateOf("") }
     var resetting by remember { mutableStateOf(false) }
+    var filterFocused by remember { mutableStateOf(false) }
     val cancel = { panel.act("cancel") { state.back() } }
     BackHandler(enabled = view?.editing == true) { cancel() }
 
@@ -175,7 +178,8 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
         }
         val rowCount = view.groups.sumOf { it.rows.size }
         val q = filter.trim().lowercase()
-        if (rowCount >= FILTER_FROM) {
+        // With the keyboard up for an option, the filter steps aside so the field has the room.
+        if (rowCount >= FILTER_FROM && (!typing || filterFocused)) {
             OutlinedTextField(
                 value = filter,
                 onValueChange = { filter = it },
@@ -186,7 +190,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).onFocusChanged { filterFocused = it.isFocused },
             )
         }
         LazyColumn(Modifier.weight(1f)) {

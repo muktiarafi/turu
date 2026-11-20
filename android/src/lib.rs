@@ -203,6 +203,8 @@ pub(crate) fn detach_surface(limit: Duration) -> bool {
         with_screen(Screen::detach);
         // The game slows down like a hidden tab's (`api::options`).
         turu::bot().state.lock().hidden_tab = true;
+        // Turu: no longer the tab on screen (a window it hands the shell's pages waits here).
+        turu::set_tab_shown(false);
         set_heard(player, false);
         set_touchable(player, false);
         let _ = done.send(());
@@ -283,6 +285,7 @@ pub(crate) fn attach_surface(player: &mut Player) {
     });
     if made {
         turu::bot().state.lock().hidden_tab = false;
+        turu::set_tab_shown(true);
     }
 }
 

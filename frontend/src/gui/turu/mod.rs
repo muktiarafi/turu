@@ -446,8 +446,11 @@ impl TuruUi {
         if w.cosmetics && !kept(w, "cosmetics") && crate::turu::open_shell_screen(NativeScreen::Cosmetics) {
             w.cosmetics = false;
         }
+        // Only from the tab on screen: the native page shows that tab's, and a script waiting in
+        // another tab waits in that tab's picture until it's shown.
         if w.script_options
             && !kept(w, "script_options")
+            && crate::turu::tab_shown()
             && crate::turu::open_shell_screen(NativeScreen::ScriptOptions)
         {
             w.script_options = false;

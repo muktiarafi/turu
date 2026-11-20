@@ -644,6 +644,7 @@ impl ClientScreen {
                     1.0
                 };
                 self.shown = Some((size, scale));
+                turu::set_tab_shown(true);
                 // Its cursor goes to the shell again, as the last tab shown may have left another.
                 self.cursor = None;
                 if self
@@ -672,6 +673,7 @@ impl ClientScreen {
                 set_grid(None);
                 self.grid = None;
                 self.shown = None;
+                turu::set_tab_shown(false);
                 self.target = None;
                 self.ui_due = None;
                 self.picture_due = false;

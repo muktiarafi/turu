@@ -66,10 +66,10 @@ impl State {
         let pending = bot.scripts.configure_request();
         if pending.is_some() && pending != self.request {
             self.request = pending;
-            if self.queued {
-                self.queued = false;
-                self.draft = None;
-            }
+            // The script asks for its own options: a fresh draft of them, never one left over.
+            self.queued = false;
+            self.draft = None;
+            self.error = None;
             Request::Opened
         } else if self.request.is_some() && pending != self.request {
             self.request = None;
@@ -82,13 +82,37 @@ impl State {
         }
     }
 
-    /// The loaded script's options as the draft, when none is being edited.
+    /// The loaded script's options as the draft, when none is being edited; a draft left from a
+    /// script no longer loaded (another was loaded since) is dropped. A queued entry's stays.
     pub fn ensure_draft(&mut self, bot: &Bot) {
-        if self.draft.is_none()
-            && let ScriptOptionsState::Loaded(options) = bot.scripts.options()
-        {
-            self.draft = Some(options);
-            self.queued = false;
+        if self.queued {
+            return;
+        }
+        match bot.scripts.options() {
+            ScriptOptionsState::Loaded(options) => {
+                let stale = self
+                    .draft
+                    .as_ref()
+                    .is_some_and(|d| d.declaration() != options.declaration() || d.path() != options.path());
+                if self.draft.is_none() || stale {
+                    self.draft = Some(options);
+                    self.error = None;
+                }
+            }
+            _ => {
+                self.draft = None;
+                self.error = None;
+            }
+        }
+    }
+
+    /// The native page went (the panel closed, another page, another tab): with a script
+    /// waiting, the slot's own window takes the editor back; else the draft goes.
+    pub fn leave(&mut self, bot: &Bot) {
+        if self.request.is_some() {
+            self.native = false;
+        } else {
+            self.close(bot);
         }
     }
 
@@ -572,8 +596,8 @@ fn row_view(category: &Category, option: &OptionDecl, value: &Value, gear: &Gear
 }
 
 impl State {
+    /// What a native page shows. Only reads: the page's `open` takes the draft.
     pub fn view(&mut self, bot: &Arc<Bot>) -> ScriptOptionsView {
-        self.ensure_draft(bot);
         let message = match (&self.draft, bot.scripts.options()) {
             (Some(_), _) => String::new(),
             (None, ScriptOptionsState::Failed(e)) => format!("The script's options couldn't be read: {e}"),
@@ -678,7 +702,7 @@ pub fn view(bot: &Arc<Bot>) -> ScriptOptionsView {
     s.view(bot)
 }
 
-/// `open` (take the loaded script's options, unless a draft is open), `set` (`category`, `name`,
+/// `open` (take the loaded script's options, unless a draft is open), `leave` (the page went), `set` (`category`, `name`,
 /// `value`), `set-all` (`category`, `names`, `value`: All and None), `hide-owned` (`category`,
 /// `on`), `reset` (every option to its default), `save`, `cancel`.
 pub fn act(bot: &Arc<Bot>, action: &str, body: &Value) -> Result<(), String> {
@@ -723,6 +747,7 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Value) -> Result<(), String> {
         }
         "save" => s.save(bot)?,
         "cancel" => s.close(bot),
+        "leave" => s.leave(bot),
         other => return Err(format!("no action {other}")),
     }
     Ok(())
@@ -744,6 +769,93 @@ mod tests {
             "Mode: [select] only\nShould it buy?"
         );
         assert_eq!(plural("class"), "classes");
+    }
+
+    /// Answers the few game calls a script makes, as `bot/tests/runtime.rs`'s fake does.
+    struct FakeGame;
+
+    impl turu_bot::FlashHost for FakeGame {
+        fn call(&self, name: &str, args: Vec<turu_bot::FlashArg>) -> Result<String, turu_bot::HostError> {
+            if let Some(answer) = turu_bot::testing::batched(name, &args, |n, a| self.call(n, a).unwrap_or_default()) {
+                return Ok(answer);
+            }
+            Ok(if name == "isLoggedIn" { "true" } else { "null" }.into())
+        }
+    }
+
+    fn wait(what: &str, mut done: impl FnMut() -> bool) {
+        let start = Instant::now();
+        while !done() {
+            assert!(start.elapsed() < Duration::from_secs(10), "{what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// A script asks for its options: the egui window opens for it, hands it to the native
+    /// page, and only the page's Save (or Cancel) lets the script go on; the page going away
+    /// meanwhile gives the editor back to the window.
+    #[test]
+    fn a_waiting_script_goes_on_only_after_save_or_cancel() {
+        let dir = std::env::temp_dir().join(format!("turu-script-options-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        turu_bot::paths::set_default_root(dir.join("data"));
+        let script = dir.join("main.ts");
+        std::fs::write(
+            &script,
+            r#"import { bot, defineScriptOptions, option } from "turu";
+export const scriptOptions = defineScriptOptions("Questwalker", [option.bool("On", "On", "")], true);
+export default function main(): void {
+    bot.config.configure();
+    bot.log(`done ${bot.config.get("On")}`);
+}
+"#,
+        )
+        .unwrap();
+        let bot = Arc::new(Bot::new());
+        bot.set_host(Some(Arc::new(FakeGame)));
+        bot.scripts.set_interactive(true);
+        bot.scripts.load(&script);
+        let state = STATE.of(&bot);
+
+        // Save: the change is saved and the script goes on with it.
+        turu_bot::script::start(&bot).unwrap();
+        wait("no request", || bot.scripts.configure_request().is_some());
+        assert_eq!(lock(&state).follow_request(&bot), Request::Opened);
+        hand_over(&bot);
+        assert!(view(&bot).waiting && view(&bot).editing);
+        act(
+            &bot,
+            "set",
+            &serde_json::json!({ "category": MAIN, "name": "On", "value": true }),
+        )
+        .unwrap();
+        // The page going away gives the editor back to the window, still waiting.
+        act(&bot, "leave", &serde_json::json!({})).unwrap();
+        assert!(!lock(&state).native && view(&bot).waiting);
+        act(&bot, "save", &serde_json::json!({})).unwrap();
+        wait("the script didn't go on", || !bot.scripts.is_running());
+        assert!(
+            bot.logs.script.text().contains("done true"),
+            "{}",
+            bot.logs.script.text()
+        );
+        assert_eq!(bot.scripts.configure_request(), None);
+        assert!(!view(&bot).editing);
+
+        // Cancel: the script goes on with what was saved.
+        turu_bot::script::start(&bot).unwrap();
+        wait("no second request", || bot.scripts.configure_request().is_some());
+        assert_eq!(lock(&state).follow_request(&bot), Request::Opened);
+        hand_over(&bot);
+        act(
+            &bot,
+            "set",
+            &serde_json::json!({ "category": MAIN, "name": "On", "value": false }),
+        )
+        .unwrap();
+        act(&bot, "cancel", &serde_json::json!({})).unwrap();
+        wait("the script didn't go on after Cancel", || !bot.scripts.is_running());
+        assert_eq!(bot.logs.script.text().matches("done true").count(), 2);
     }
 
     #[test]

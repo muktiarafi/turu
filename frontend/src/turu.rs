@@ -516,6 +516,20 @@ pub fn tab_strip_shown() -> bool {
 
 /// Asks the shell to show its native `screen` in place of the egui window, where it has one
 /// (Android's); false when the egui window is the one to show.
+/// Turu: this client is the tab the shell shows (a client is one tab's process).
+static TAB_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The shell shows (or hides) this client's tab (`client_screen`'s Show and Hide).
+pub fn set_tab_shown(shown: bool) {
+    TAB_SHOWN.store(shown, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the shell shows this client's tab: a window handed to the shell's native screens
+/// (which show the tab on screen) waits in this tab's picture until then.
+pub fn tab_shown() -> bool {
+    TAB_SHOWN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn open_shell_screen(screen: crate::shell::NativeScreen) -> bool {
     if shell_rail_top().is_none() {
         return false;

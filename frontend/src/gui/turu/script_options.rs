@@ -96,6 +96,10 @@ impl ScriptOptionsWindow {
             Request::Gone => *open = false,
             Request::None => {}
         }
+        // A script still waits but no editor shows it (the native page went): the window again.
+        if !*open && st.request.is_some() && !st.native {
+            *open = true;
+        }
         if !*open {
             if std::mem::take(&mut self.was_open) {
                 self.filter.clear();
