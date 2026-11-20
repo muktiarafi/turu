@@ -763,6 +763,13 @@ script's message box and options request.
   tab, downloading first when needed). Checked on the emulator: the rail item, a launch-script
   pick (set back to none after). Not checked: a pick that needs a download (every script here
   was downloaded).
+* **Stats and Current Drops** (2026-11-20): `models::stats` (the clock kept after a run, the
+  counters, Advanced's words in the unit, the shared history read every couple of seconds, Reset,
+  Advanced, unit, Save, Clear, Export answering the CSV) and `models::drops` (the sorted stack,
+  the AC count, the search's rule, the pickups on the tab's bot); the egui windows draw from them.
+  Checked on the emulator: Stats' counters, Advanced on and off by its label, gameplay, Save and
+  Clear on an empty history (left empty); Current Drops' empty state. Not checked: drops in the
+  list and picking them up (none dropped), Export, Reset.
 * Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)

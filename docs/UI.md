@@ -950,7 +950,7 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
 | Tools & Helpers, Combat, Butler, Cosmetics, Console | decided when reached; egui from More until then |
@@ -1084,6 +1084,18 @@ above, and why:
   selection's ("2 selected", ✕, Copy, Share), and Copy ends it with "Copied 2 events" where the
   count was. ⋮ has Copy and Share for every event shown, Clear (asked first, where the window
   clears at once) and Full window. Save is the window's.
+* **Stats** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Combat and however the
+  slot opens it: the script clock, the six counters on flat tonal cells (tabular figures, a dot
+  in each counter's colour), and Advanced, whose label toggles it as the switch does. With
+  Advanced on: the session, the unit as chips (/hr, /min, /sec), Level and Rank toward their next
+  step (a bar, the value, the rate and time left), the four rates, then the rate history: Save,
+  Export (Android's share sheet, as CSV), Clear… (asked first) and each snapshot as two lines (who
+  and when; its rates). Reset is in ⋮, asked first (the window resets at once). The history's
+  sortable table is the full window's.
+* **Current Drops** (L5b, 2026-11-20), a page of the panel from More > Tools & Helpers and
+  however the slot opens it: a search and an "AC only" chip with the AC count, the drops as rows
+  (a check box, the name, ×quantity, an AC tag), a tap checking one, and Pick up N and Pick up all
+  at the foot.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
