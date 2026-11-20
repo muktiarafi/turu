@@ -4,59 +4,24 @@
 //! the saved map presets; the preset editor, the player picker and the server picker. What they
 //! jump to goes to Army Control's targets (`ArmyWindow::send`).
 //!
-//! Where each client is gets read every second while Turu runs, as VibeSkua's clients report it,
-//! and a client's new map or room goes to the top of the history (`turu_bot::army::jump`).
+//! The settings, where each client is and the server list are the model's (`models::army_travel`).
 
 use super::theme::{DANGER, MUTED, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::army_travel::{PADS, Servers, TRAVEL, Travel as Model};
 use egui::{Align, ComboBox, Context, Layout, Modal, RichText, Ui, vec2};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
-use turu_bot::Bot;
+use std::time::Duration;
 use turu_bot::army::Command;
-use turu_bot::army::jump::{self, Destination, JumpSettings, Location, Visits};
+use turu_bot::army::jump::{self, Destination, Location};
 
-/// How often the clients' locations are read (VibeSkua's one-second timer).
-const POLL_EVERY: Duration = Duration::from_secs(1);
-/// A location older than this isn't current (VibeSkua: 5 s).
-const FRESH_FOR: Duration = Duration::from_secs(5);
-/// VibeSkua `MapService.Pads`, Go to's Pad drop-down.
-const PADS: [&str; 8] = ["Spawn", "Center", "Left", "Right", "Up", "Down", "Top", "Bottom"];
+pub use crate::models::army_travel::Peer;
+
 /// The room between controls on a row.
 const GAP: f32 = 6.0;
 /// The width of a Jump button (and Go to's Room box).
 const JUMP_WIDTH: f32 = 84.0;
 /// Narrower than this, Go to's Jump gets a row of its own and the presets' header buttons shrink.
 const NARROW: f32 = 320.0;
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// A row of Army Control, as travel needs it.
-pub struct Peer {
-    /// Army Control's row key ("tab:..." or the username, lowercase).
-    pub key: String,
-    /// The tab's bot, to read its location; `None` for a launched client.
-    pub bot: Option<Arc<Bot>>,
-    /// A launched client's login (its location comes from the monitor hub).
-    pub username: String,
-    /// Its id in the monitor hub, where its location is read: a launched client's (`army:<name>`),
-    /// or a shell's other tab's (`tab:<n>`, in a client); `None` for a tab of this process.
-    pub hub_id: Option<String>,
-    /// The logged-in player's name, for the player picker.
-    pub player: Option<String>,
-}
-
-#[derive(Default)]
-struct Shared {
-    settings: JumpSettings,
-    visits: Visits,
-    /// Each client's last location and when it was read.
-    latest: HashMap<String, (Location, Instant)>,
-}
 
 /// The preset editor (VibeSkua `OpenJumpMapPresetEditor`).
 struct Editor {
@@ -66,19 +31,13 @@ struct Editor {
     error: Option<String>,
 }
 
-/// The server picker: the list loads on another thread.
-struct ServerPicker {
-    list: Arc<Mutex<Option<Result<Vec<String>, String>>>>,
-    picked: String,
-}
-
+/// The windows and pickers; the settings, the clients' locations and the server list are the
+/// model's (`models::army_travel`, shared with a native page).
 #[derive(Default)]
 pub struct Travel {
-    shared: Arc<Mutex<Shared>>,
+    /// The model, when not the process's own (tests).
+    model: Option<&'static Model>,
     loaded: bool,
-    polling: Arc<AtomicBool>,
-    polled: Option<Instant>,
-    file: Option<std::path::PathBuf>,
     /// The Map Travel window is open.
     pub open: bool,
     history_pick: usize,
@@ -88,7 +47,8 @@ pub struct Travel {
     go_to: Destination,
     /// The player picker's box (`Some` while it shows).
     player: Option<(String, Vec<String>)>,
-    server: Option<ServerPicker>,
+    /// The server picker's choice (`Some` while it shows).
+    server: Option<String>,
     /// A message box: title and text.
     notice: Option<(String, String)>,
     /// Commands for Army Control to send to its targets.
@@ -96,29 +56,14 @@ pub struct Travel {
 }
 
 impl Travel {
-    fn file(&mut self) -> std::path::PathBuf {
-        self.file
-            .get_or_insert_with(|| crate::turu::bot().paths.army_jump_file())
-            .clone()
+    fn model(&self) -> &'static Model {
+        self.model.unwrap_or(&TRAVEL)
     }
 
     fn ensure_loaded(&mut self) {
         if !self.loaded {
             self.loaded = true;
-            let file = self.file();
-            let settings = JumpSettings::load(&file);
-            self.go_to = settings.last_jump();
-            lock(&self.shared).settings = settings;
-        }
-    }
-
-    fn save(&mut self) {
-        let file = self.file();
-        if let Err(e) = lock(&self.shared).settings.save(&file) {
-            crate::turu::bot()
-                .logs
-                .debug
-                .push(format!("Couldn't save Army Control's jump settings: {e}"));
+            self.go_to = self.model().settings().last_jump();
         }
     }
 
@@ -126,70 +71,12 @@ impl Travel {
     /// history.
     pub fn poll(&mut self, peers: &[Peer]) {
         self.ensure_loaded();
-        if self.polled.is_some_and(|t| t.elapsed() < POLL_EVERY) || self.polling.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        self.polled = Some(Instant::now());
-        let hub = crate::turu::monitor_hub();
-        let now = turu_bot::gear::now_ms();
-        let mut tabs = Vec::new();
-        let mut found = Vec::new();
-        for peer in peers {
-            match &peer.bot {
-                Some(bot) => tabs.push((peer.key.clone(), bot.clone())),
-                None => {
-                    let location = peer
-                        .hub_id
-                        .as_deref()
-                        .and_then(|id| hub.snapshot(id))
-                        .filter(|s| now.saturating_sub(s.sampled_at) < FRESH_FOR.as_millis() as u64)
-                        .and_then(|s| Location::from_full_name(&s.map, &s.cell, &s.pad, &peer.username));
-                    if let Some(location) = location {
-                        found.push((peer.key.clone(), location));
-                    }
-                }
-            }
-        }
-        let keys: Vec<String> = peers.iter().map(|p| p.key.clone()).collect();
-        let (shared, polling, file) = (self.shared.clone(), self.polling.clone(), self.file());
-        let spawned = std::thread::Builder::new()
-            .name("Turu Army Travel".into())
-            .spawn(move || {
-                // Flash calls: off the UI thread.
-                for (key, bot) in tabs {
-                    if let Some(location) = Location::read(&bot) {
-                        found.push((key, location));
-                    }
-                }
-                let mut shared = lock(&shared);
-                let Shared {
-                    settings,
-                    visits,
-                    latest,
-                } = &mut *shared;
-                visits.retain(|k| keys.iter().any(|key| key == k));
-                latest.retain(|k, _| keys.iter().any(|key| key == k));
-                let mut changed = false;
-                for (key, location) in found {
-                    changed |= visits.record(settings, &key, &location);
-                    latest.insert(key, (location, Instant::now()));
-                }
-                if changed && let Err(e) = settings.save(&file) {
-                    tracing::warn!("Couldn't save Army Control's jump settings: {e}");
-                }
-                drop(shared);
-                polling.store(false, Ordering::Release);
-            });
-        if spawned.is_err() {
-            self.polling.store(false, Ordering::Release);
-        }
+        self.model().poll(peers);
     }
 
     /// The current location of the client `key`, while fresh.
     fn location(&self, key: Option<&str>) -> Option<Location> {
-        let shared = lock(&self.shared);
-        let (location, at) = shared.latest.get(key?)?;
-        (at.elapsed() < FRESH_FOR && !location.map.is_empty()).then(|| location.clone())
+        self.model().location(key?)
     }
 
     /// Map Travel or one of its pickers is open: the clients' locations are wanted.
@@ -199,17 +86,14 @@ impl Travel {
 
     /// VibeSkua `JumpArmyToDestination`.
     fn jump(&mut self, destination: &Destination) {
-        lock(&self.shared).settings.remember_jump(destination);
-        self.save();
-        self.commands.push(destination.command());
+        let command = self.model().jump(destination);
+        self.commands.push(command);
     }
 
     /// "Jump to Player...": the picker, or why it can't open.
     pub fn open_player_picker(&mut self, peers: &[Peer]) {
         self.ensure_loaded();
-        let mut players: Vec<String> = peers.iter().filter_map(|p| p.player.clone()).collect();
-        players.sort_by_key(|p| p.to_lowercase());
-        players.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+        let players = Model::players(peers);
         if players.is_empty() {
             self.notice = Some((
                 "Jump All to Player".into(),
@@ -219,44 +103,14 @@ impl Travel {
             ));
             return;
         }
-        let last = lock(&self.shared).settings.player.clone();
-        let initial = players
-            .iter()
-            .find(|p| p.eq_ignore_ascii_case(&last))
-            .unwrap_or(&players[0])
-            .clone();
+        let initial = self.model().initial_player(&players).unwrap_or_default();
         self.player = Some((initial, players));
     }
 
     /// "Change Server...": loads the online servers, then asks which.
     pub fn open_server_picker(&mut self) {
-        let list = Arc::new(Mutex::new(None));
-        let slot = list.clone();
-        let bot = crate::turu::bot();
-        let _ = std::thread::Builder::new().name("Turu Servers".into()).spawn(move || {
-            let servers = turu_bot::api::servers::get_servers(&bot, true);
-            let result = if servers.is_empty() {
-                Err("Could not load the current server list. Check your connection and try again.".to_owned())
-            } else {
-                let mut names: Vec<String> = servers
-                    .into_iter()
-                    .filter(|s| s.online && !s.name.trim().is_empty() && !s.ip.trim().is_empty())
-                    .map(|s| s.name.trim().to_owned())
-                    .collect();
-                names.sort_by_key(|n| n.to_lowercase());
-                names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
-                if names.is_empty() {
-                    Err("The server API did not return any online servers.".to_owned())
-                } else {
-                    Ok(names)
-                }
-            };
-            *lock(&slot) = Some(result);
-        });
-        self.server = Some(ServerPicker {
-            list,
-            picked: String::new(),
-        });
+        self.model().load_servers();
+        self.server = Some(String::new());
     }
 
     /// The windows and dialogs that are open. `current` is the client "Use Current Client
@@ -293,10 +147,8 @@ impl Travel {
     /// presets, each a drop-down with its Jump beside it. `targets` is how many clients a jump
     /// reaches; none, and the Jumps are off.
     fn map_travel(&mut self, ui: &mut Ui, current: Option<&str>, targets: usize) {
-        let (history, presets) = {
-            let shared = lock(&self.shared);
-            (shared.settings.history.clone(), shared.settings.presets.clone())
-        };
+        let settings = self.model().settings();
+        let (history, presets) = (settings.history, settings.presets);
         let control = widgets::target(28.0, 40.0);
         ui.spacing_mut().item_spacing = vec2(GAP, 8.0);
         ui.spacing_mut().interact_size.y = control;
@@ -313,8 +165,7 @@ impl Travel {
                 let clear = header_button(ui, "Clear", Kind::Normal, !history.is_empty(), "Nothing to clear")
                     .on_hover_text("Forget the visited maps");
                 if clear.clicked() {
-                    lock(&self.shared).settings.clear_history();
-                    self.save();
+                    self.model().change(|s| s.clear_history());
                 }
             });
         });
@@ -348,8 +199,8 @@ impl Travel {
             widgets::section_label(ui, "SAVED PRESETS");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if header_button(ui, "Delete", Kind::Danger, any, "No presets yet").clicked() {
-                    lock(&self.shared).settings.delete_preset(self.preset_pick);
-                    self.save();
+                    let pick = self.preset_pick;
+                    self.model().change(|s| s.delete_preset(pick));
                 }
                 if header_button(ui, "Edit", Kind::Normal, any, "No presets yet").clicked() {
                     self.open_editor(Some(self.preset_pick), current);
@@ -472,7 +323,7 @@ impl Travel {
 
     fn open_editor(&mut self, editing: Option<usize>, current: Option<&str>) {
         let preset = match editing {
-            Some(i) => lock(&self.shared).settings.presets.get(i).cloned(),
+            Some(i) => self.model().settings().presets.get(i).cloned(),
             // New presets start with Go to's destination when one is typed, else the selected
             // client's current location when there is one.
             None if !self.go_to.map.trim().is_empty() => Some(Destination {
@@ -491,16 +342,11 @@ impl Travel {
     }
 
     fn editor_dialog(&mut self, ctx: &Context, current: Option<&str>) {
+        let model = self.model();
         let Some(editor) = &mut self.editor else {
             return;
         };
-        let current_location = {
-            let shared = lock(&self.shared);
-            current
-                .and_then(|k| shared.latest.get(k))
-                .filter(|(l, at)| at.elapsed() < FRESH_FOR && !l.map.is_empty())
-                .map(|(l, _)| l.clone())
-        };
+        let current_location = current.and_then(|k| model.location(k));
         let title = if editor.editing.is_none() {
             "Create Map Preset"
         } else {
@@ -568,12 +414,11 @@ impl Travel {
         match answer {
             Some(true) => {
                 let (editing, preset) = (editor.editing, editor.preset.clone());
-                let saved = lock(&self.shared).settings.save_preset(editing, preset);
+                let saved = model.change(|s| s.save_preset(editing, preset));
                 match saved {
                     Ok(index) => {
                         self.preset_pick = index;
                         self.editor = None;
-                        self.save();
                     }
                     Err(e) => editor.error = Some(e),
                 }
@@ -620,9 +465,8 @@ impl Travel {
             Some(true) => {
                 let name = text.trim().to_owned();
                 self.player = None;
-                lock(&self.shared).settings.player = name.clone();
-                self.save();
-                self.commands.push(Command::JumpPlayer(name));
+                let command = self.model().jump_player(&name);
+                self.commands.push(command);
             }
             Some(false) => self.player = None,
             None if response.should_close() => self.player = None,
@@ -632,26 +476,27 @@ impl Travel {
 
     /// VibeSkua `MenuItem_ChangeServerAll_Click`.
     fn server_dialog(&mut self, ctx: &Context, targets: usize) {
-        let Some(picker) = &mut self.server else {
+        let model = self.model();
+        let Some(picked) = &mut self.server else {
             return;
         };
-        let list = lock(&picker.list).clone();
-        let names = match list {
-            None => {
+        let names = match model.servers() {
+            Servers::None | Servers::Loading => {
                 ctx.request_repaint_after(Duration::from_millis(200));
                 None
             }
-            Some(Err(e)) => {
+            Servers::Failed(e) => {
                 self.server = None;
+                model.forget_servers();
                 self.notice = Some(("Change Server for All".into(), e));
                 return;
             }
-            Some(Ok(names)) => Some(names),
+            Servers::Ready(names) => Some(names),
         };
         if let Some(names) = &names
-            && picker.picked.is_empty()
+            && picked.is_empty()
         {
-            picker.picked = names
+            *picked = names
                 .iter()
                 .find(|n| n.eq_ignore_ascii_case("Artix"))
                 .unwrap_or(&names[0])
@@ -669,17 +514,17 @@ impl Travel {
                     ui.label("Select the server for all open clients:");
                     ComboBox::from_id_salt("turu_army_server_pick")
                         .width(width)
-                        .selected_text(picker.picked.as_str())
+                        .selected_text(picked.as_str())
                         .show_ui(ui, |ui| {
                             ui.spacing_mut().interact_size.y = widgets::target(20.0, 40.0);
                             for name in names {
-                                ui.selectable_value(&mut picker.picked, name.clone(), name);
+                                ui.selectable_value(picked, name.clone(), name);
                             }
                         });
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let ready = names.is_some() && !picker.picked.is_empty();
+                let ready = names.is_some() && !picked.is_empty();
                 if widgets::button(ui, "Change Server", Kind::Primary, ready, button_size(110.0), "").clicked() {
                     answer = Some(true);
                 }
@@ -690,8 +535,9 @@ impl Travel {
         });
         match answer {
             Some(true) => {
-                let server = picker.picked.trim().to_owned();
+                let server = picked.trim().to_owned();
                 self.server = None;
+                model.forget_servers();
                 if targets == 0 {
                     self.notice = Some((
                         "Change Server for All".into(),
@@ -701,9 +547,15 @@ impl Travel {
                     self.commands.push(Command::ChangeServer(server));
                 }
             }
-            Some(false) => self.server = None,
-            None if response.should_close() => self.server = None,
-            None => {}
+            Some(false) => {
+                self.server = None;
+                model.forget_servers();
+            }
+            None if response.should_close() => {
+                self.server = None;
+                model.forget_servers();
+            }
+            _ => {}
         }
     }
 }
@@ -799,7 +651,10 @@ mod tests {
     /// to a phone's width, and nothing in it is cut off at the right.
     #[test]
     fn map_travel_fits_any_width() {
+        let dir = std::env::temp_dir().join(format!("turu-map-travel-{}", std::process::id()));
+        let model: &'static Model = Box::leak(Box::new(Model::new(dir.join("army-control-jump.json"))));
         let mut travel = Travel {
+            model: Some(model),
             loaded: true,
             open: true,
             go_to: Destination {
@@ -812,7 +667,6 @@ mod tests {
             ..Default::default()
         };
         {
-            let mut shared = lock(&travel.shared);
             let long = Destination {
                 name: "A preset with a long name to cut off".into(),
                 map: "ultradage".into(),
@@ -820,8 +674,10 @@ mod tests {
                 cell: "Boss".into(),
                 pad: "Left".into(),
             };
-            shared.settings.presets.push(long.clone());
-            shared.settings.history.push(long);
+            model.change(|s| {
+                s.presets = vec![long.clone()];
+                s.history = vec![long];
+            });
         }
         let mut show: Show = Box::new(move |ctx, _| {
             travel.show(ctx, None, 3);

@@ -17,6 +17,8 @@
 
 pub mod application_options;
 pub mod army;
+pub mod army_client;
+pub mod army_travel;
 pub mod auto;
 pub mod bank;
 pub mod butler;
@@ -428,9 +430,20 @@ pub fn register() {
     add_model_action(
         "army",
         "send",
-        Box::new(|_, body| army::command(body).and_then(|()| done())),
+        Box::new(|bot, body| army::command(bot, body).and_then(|()| done())),
     );
     add_model_action("army", "row", Box::new(|_, body| army::row(body).and_then(|()| done())));
+    add_model_action(
+        "army-client",
+        "do",
+        Box::new(|_, body| army_client::act(&text(body, "action")?, body)),
+    );
+    add_model("army-travel", Box::new(|_| to_json(&army_travel::view())));
+    add_model_action(
+        "army-travel",
+        "do",
+        Box::new(|_, body| army_travel::act(&army_travel::TRAVEL, &text(body, "action")?, body).and_then(|()| done())),
+    );
     for (action, work) in [
         ("clear-ended", army::clear_ended as fn()),
         ("close-all", army::close_all),

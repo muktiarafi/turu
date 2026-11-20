@@ -898,32 +898,7 @@ fn row_ui(ui: &mut Ui, row: &Row, checked: &mut bool, narrow: bool) -> Option<Ro
 
 /// The rows as Map Travel needs them: tabs read their own location, clients come from the hub.
 fn travel_peers(rows: &[Row]) -> Vec<army_travel::Peer> {
-    rows.iter()
-        .filter(|r| !r.ended)
-        .map(|r| {
-            let hub_id = match &r.peer {
-                Peer::Tab(_) => None,
-                Peer::Shell { id, .. } => Some(format!("tab:{id}")),
-                Peer::Client { username, .. } | Peer::ShellClient { username, .. } => {
-                    Some(turu_bot::monitor::hub::army_id(username))
-                }
-            };
-            let (bot, player) = match &r.peer {
-                Peer::Tab(bot) => {
-                    let name = bot.state.lock().username.clone().filter(|n| !n.trim().is_empty());
-                    (Some(bot.clone()), name.or_else(|| Some(r.username.clone())))
-                }
-                Peer::Client { .. } | Peer::Shell { .. } | Peer::ShellClient { .. } => (None, Some(r.username.clone())),
-            };
-            army_travel::Peer {
-                key: r.key.clone(),
-                bot,
-                username: r.username.clone(),
-                hub_id,
-                player: player.filter(|p| r.logged_in && !p.trim().is_empty()),
-            }
-        })
-        .collect()
+    crate::models::army_travel::peers(rows)
 }
 
 #[cfg(test)]

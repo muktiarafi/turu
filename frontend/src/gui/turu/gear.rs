@@ -6,12 +6,13 @@
 use super::army::Peer;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::army_client::{ago, item_label};
 use egui::{Context, Grid, RichText, Ui, vec2};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use turu_bot::army::Command;
-use turu_bot::gear::{self, EquipReport, GearFile, Place, Slot};
+use turu_bot::gear::{self, EquipReport, GearFile, Slot};
 
 /// How often the window reads the gear file again.
 const RELOAD: Duration = Duration::from_secs(1);
@@ -235,27 +236,5 @@ impl GearWindow {
             outcome.busy = None;
             outcome.last = Some((false, e.to_string()));
         }
-    }
-}
-
-/// "Necrotic Sword (bank)", "Legion Revenant (worn)".
-fn item_label(item: &gear::GearItem) -> String {
-    if item.equipped {
-        format!("{} (worn)", item.name)
-    } else if item.place == Place::Bank {
-        format!("{} (bank)", item.name)
-    } else {
-        item.name.clone()
-    }
-}
-
-/// "just now", "12 min ago", "3 h ago", "2 days ago".
-fn ago(at_ms: u64) -> String {
-    let minutes = gear::now_ms().saturating_sub(at_ms) / 60_000;
-    match minutes {
-        0 => "just now".into(),
-        1..60 => format!("{minutes} min ago"),
-        60..2880 => format!("{} h ago", minutes / 60),
-        _ => format!("{} days ago", minutes / 1440),
     }
 }
