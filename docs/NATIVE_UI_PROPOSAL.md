@@ -795,7 +795,7 @@ reading it:
 **Before the PR**: `cargo clippy` and `cargo test` as CLAUDE.md gives them (only
 `cargo test -p turu_frontend --lib` was run since the CoreBots work); `air/ane/rust` still
 builds (it shares `turu_frontend`); CI's Android job can run the host `cargo run -p
-turu_frontend --features typegen --bin turu-typegen` that Gradle's `turuTypes` needs; update
+turu_frontend --no-default-features --features typegen --bin turu-typegen` that Gradle's `turuTypes` needs; update
 `docs/STATUS.md` with what a user notices.
 
 **On the emulator** (`-gpu host`): the screenshots are 2400x1080, so a tap read off a scaled
