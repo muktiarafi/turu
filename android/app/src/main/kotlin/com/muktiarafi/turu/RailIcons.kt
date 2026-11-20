@@ -88,6 +88,29 @@ object RailIcons {
         moveTo(4.5f, 14.5f); lineTo(4.5f, 19.5f); lineTo(19.5f, 19.5f); lineTo(19.5f, 14.5f)
     }
 
+    /** A wrapped gift: an item dropped, picked up or sold (Notification Center). */
+    val Gift = icon("Gift") {
+        moveTo(4f, 8.5f); lineTo(20f, 8.5f); lineTo(20f, 12f); lineTo(4f, 12f); close()
+        moveTo(5.5f, 12f); lineTo(5.5f, 20f); lineTo(18.5f, 20f); lineTo(18.5f, 12f)
+        moveTo(12f, 8.5f); lineTo(12f, 20f)
+        // The bow: a loop each side of the ribbon.
+        moveTo(12f, 8.5f); curveTo(9.5f, 3f, 5.5f, 5.5f, 8.5f, 8.5f)
+        moveTo(12f, 8.5f); curveTo(14.5f, 3f, 18.5f, 5.5f, 15.5f, 8.5f)
+    }
+
+    /** A circle with "!": an error (Notification Center). */
+    val Alert = icon("Alert") {
+        circle(12f, 12f, 8.5f)
+        moveTo(12f, 7.5f); lineTo(12f, 12.8f)
+        moveTo(12f, 16.2f); lineTo(12f, 16.4f)
+    }
+
+    /** A play button in a circle: activity, a script or quest (Notification Center). */
+    val Activity = icon("Activity") {
+        circle(12f, 12f, 8.5f)
+        moveTo(10f, 8.8f); lineTo(15.2f, 12f); lineTo(10f, 15.2f); close()
+    }
+
     val Play = icon("Play", filled = true) {
         moveTo(8f, 5.5f); lineTo(18.5f, 12f); lineTo(8f, 18.5f); close()
     }

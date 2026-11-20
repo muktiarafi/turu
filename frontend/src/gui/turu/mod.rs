@@ -377,6 +377,7 @@ impl TuruUi {
             ("core_bots", w.core_bots),
             ("scheduler", w.scheduler),
             ("army", w.army),
+            ("notifications", w.notifications),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -412,6 +413,9 @@ impl TuruUi {
         }
         if w.army && !army_open && !kept(w, "army") && crate::turu::open_shell_screen(NativeScreen::Army) {
             w.army = false;
+        }
+        if w.notifications && !kept(w, "notifications") && crate::turu::open_shell_screen(NativeScreen::Notifications) {
+            w.notifications = false;
         }
         tab.script_loader.show(
             ctx,

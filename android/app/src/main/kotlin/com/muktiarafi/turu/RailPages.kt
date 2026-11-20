@@ -285,6 +285,7 @@ private fun nativePage(window: String): Page? = when (window) {
     "core_bots" -> Page.CoreBots
     "scheduler" -> Page.Scheduler
     "army" -> Page.Army
+    "notifications" -> Page.Notifications
     "logs" -> Page.Logs
     else -> null
 }

@@ -93,6 +93,9 @@ sealed interface Page {
     /** Army > Army Control. */
     data object Army : Page
 
+    /** Diagnostics > Notification Center. */
+    data object Notifications : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }
