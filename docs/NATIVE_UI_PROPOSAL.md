@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler and Cosmetics. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics and Script Options. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -849,6 +849,22 @@ script's message box and options request.
   made (an empty favorites and outfits file and the 10 MB catalog download) was removed. Not
   checked: Copy Player, Copy my target's look and Copy page, Apply colors and a preset, gender,
   Check catalog updates, Kind within Weapon.
+* **Script Options** (2026-11-20, the owner's pick): `models::script_options` holds per tab the
+  draft (the loaded script's, or a queued entry's from the Scheduler and Army Queue), the script's
+  waiting request, the last error and the checklists hiding owned items, and works out the groups,
+  checklists, explanations and item candidates (moved from the egui window). The lifecycle is the
+  delicate part: the waiting script is let go only by Save, Cancel or the window's own close. The
+  egui window detects the request (`follow_request`) and opens; on Android the bounce to the
+  native page calls `hand_over`, so the egui window hiding is no Cancel; the native page's Back is
+  Cancel. The Script Loader's Options now pushes the native page (it asked the slot for its egui
+  window before), and the Scheduler page no longer closes the panel when its read arrives (the
+  slot opens the native page). Checked on the emulator with farm/BuyScrolls.ts loaded (not
+  started): its options (a switch, a choice, a number), a switch changed then Cancel (dropped),
+  changed again and Save (written to options/BuyScrolls.cfg), the Script Loader's Options, Full
+  window showing the same draft and its Cancel; the .cfg the check wrote (there was none) was
+  removed and the recent scripts are as they were. Not checked: a script asking for its options
+  (that starts it), a queued entry's options, a checklist (merge scripts), an item option, the
+  keyboard over a text option. The test script stays loaded (not running) in the first tab.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -875,7 +891,7 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics. Each window's page has Full window for the
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options. Each window's page has Full window for the
 egui one. **Still egui on Android**, from More: Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Console, HotKeys, and for
 good Spammer, Packet Logger and Interceptor. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).

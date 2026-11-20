@@ -950,7 +950,7 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
 | Tools & Helpers (Loader, Grabber, Junk Items), Combat's Runtime, Console | decided when reached; egui from More until then |
@@ -1168,6 +1168,20 @@ above, and why:
   spinner) only while there is one. ⋮: Reset to Real Gear, Check catalog updates, Full window
   (Manual SWF, and the catalog beside its item, are the window's). With the keyboard up the
   segments and the foot step aside.
+* **Script Options** (L5b, 2026-11-20), a page of the panel (440 dp) from the Script Loader's
+  Options, More > Scripts > Edit Script Options, the Scheduler's Script options (a queued entry's)
+  and whenever a script asks for its options (before a run, `bot.config.configure`). Under the bar
+  where they are saved ("A queued entry's options · Saved in options/Farm.cfg") and, while the
+  script waits, "The script waits for these options: Save or Cancel lets it go on" in amber. A
+  filter from ten options on. Each option: its label, description and the picked choice's
+  explanation, with a switch, a number box, a drop-down of the choices beside it, or a text box
+  under it; an item option's box takes a typed name and a drop-down of the account's items of that
+  kind ("Worn", "Bank"; what's typed narrows it), with a warning when the name isn't among them.
+  Groups under their titles; a group of many switches is a checklist: "3 of 40 picked", All and
+  None (for the rows shown), Hide owned (N), each row toggling as a whole with "Owned" or "In bank",
+  and an amber note with "Use select" when a choice elsewhere leaves it unused. Cancel and Save
+  at the foot; Back cancels. ⋮: Reset to defaults… (asked; saved only by Save), Full window. The
+  draft is the slot's, so Full window shows the same.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
