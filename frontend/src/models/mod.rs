@@ -30,6 +30,7 @@ pub mod jump;
 pub mod loadouts;
 pub mod logs;
 pub mod notifications;
+pub mod notify_drop;
 pub mod rail;
 pub mod repo;
 pub mod runtime;
@@ -482,6 +483,13 @@ pub fn register() {
         "butler",
         "do",
         Box::new(|bot, body| butler::act(bot, &text(body, "action")?, body)),
+    );
+
+    add_model("notify-drop", Box::new(|bot| to_json(&notify_drop::view(bot))));
+    add_model_action(
+        "notify-drop",
+        "do",
+        Box::new(|bot, body| notify_drop::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("runtime", Box::new(|bot| to_json(&runtime::view(bot))));

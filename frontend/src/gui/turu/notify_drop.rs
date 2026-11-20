@@ -1,17 +1,12 @@
-//! Combat > Runtime > Notifications (VibeSkua `NotifyDropView` / `NotifyDropViewModel`): a list
-//! of item names, and a beep (`Platform::beep`, VibeSkua's `ISoundService.Beep`) played a number
-//! of times when one of them drops. As VibeSkua, the list isn't saved: it lasts as long as the tab
-//! (closing the window keeps it), and each tab has its own. Where the platform posts alerts
-//! (Android), a drop is also a notification, heard with the screen off.
+//! Combat > Runtime > Notifications (VibeSkua `NotifyDropView`): the watched item names and the
+//! beep settings, drawn from `models::notify_drop` (which keeps them per tab and watches the drops).
 
 use super::theme::{DANGER, INSET, MUTED, TEXT};
 use super::widgets::{self, Kind, Selection};
+use crate::models::notify_drop::{self as model, NotifyDropView};
 use egui::{Align, Context, Key, Label, Layout, RichText, ScrollArea, Ui, vec2};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 use turu_bot::Bot;
-use turu_bot::events::BotEvent;
 
 pub const TITLE: &str = "Notify Drop";
 
@@ -19,67 +14,10 @@ pub const TITLE: &str = "Notify Drop";
 const NARROW: f32 = 440.0;
 /// From this width the beep settings sit in the WATCHING heading's row.
 const WIDE: f32 = 720.0;
-/// How long the same item's drop alerts only once ([`alert`]).
-const ALERT_AGAIN_AFTER: Duration = Duration::from_secs(10);
-
-/// What the drop handler reads (on the thread that emits the event).
-struct Watch {
-    items: Mutex<Vec<String>>,
-    /// VibeSkua `SoundCount`: beeps per drop.
-    count: AtomicU32,
-    /// VibeSkua `SoundDelay`: milliseconds between beeps.
-    delay: AtomicU32,
-}
-
-impl Default for Watch {
-    fn default() -> Self {
-        Self {
-            items: Mutex::new(Vec::new()),
-            count: AtomicU32::new(5),
-            delay: AtomicU32::new(200),
-        }
-    }
-}
-
-impl Watch {
-    fn lock(&self) -> MutexGuard<'_, Vec<String>> {
-        self.items.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// VibeSkua `PlayBeepsAsync`, on a thread of its own: `count` beeps, `delay` ms apart.
-    fn play(&self) {
-        let count = self.count.load(Ordering::Relaxed);
-        let delay = Duration::from_millis(self.delay.load(Ordering::Relaxed).into());
-        let spawned = std::thread::Builder::new()
-            .name("Turu Notify Drop".into())
-            .spawn(move || {
-                for i in 0..count {
-                    crate::platform::platform().beep();
-                    if i + 1 < count {
-                        std::thread::sleep(delay);
-                    }
-                }
-            });
-        if let Err(e) = spawned {
-            tracing::warn!("Notify Drop beep failed: {e}");
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct NotifyDropWindow {
     input: String,
-    watch: Arc<Watch>,
     selection: Selection,
-    /// The bot whose drops are watched, and the handler's ID: subscribed while the list has
-    /// items (VibeSkua registers on the first Add and unregisters when Remove empties it).
-    subscription: Option<(Weak<Bot>, u64)>,
-}
-
-impl Drop for NotifyDropWindow {
-    fn drop(&mut self) {
-        self.unsubscribe();
-    }
 }
 
 impl NotifyDropWindow {
@@ -99,10 +37,12 @@ impl NotifyDropWindow {
         if widgets::touch() && (area.width() < 560.0 || area.height() < 400.0) {
             window = window.sheet(ctx);
         }
-        window.show(ctx, |ui| self.ui(ui));
+        let bot = crate::turu::bot();
+        window.show(ctx, |ui| self.ui(ui, &bot));
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
+    fn ui(&mut self, ui: &mut Ui, bot: &Arc<Bot>) {
+        let view = model::view(bot);
         let control = widgets::target(28.0, 40.0);
         let spacing = ui.spacing().item_spacing;
         let width = ui.available_width();
@@ -125,11 +65,12 @@ impl NotifyDropWindow {
             let enter = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             let add = widgets::button(ui, "+  Add", Kind::Primary, true, vec2(84.0, control), "").clicked();
             if add || enter {
-                self.add();
+                model::add(bot, &self.input);
+                self.input.clear();
             }
         });
 
-        let items = self.watch.lock().clone();
+        let items = &view.items;
         let clear_size = vec2(84.0, widgets::target(24.0, 40.0));
         // Wide (a phone on its side, a big window): the beep settings join the heading, so the
         // list keeps its rows on a short screen.
@@ -142,17 +83,17 @@ impl NotifyDropWindow {
             });
             if wide {
                 if widgets::button(ui, "Clear all", Kind::Outline, !items.is_empty(), clear_size, "").clicked() {
-                    self.clear();
+                    self.clear(bot);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    self.test_button(ui, 96.0, control);
+                    self.test_button(ui, bot, 96.0, control);
                     ui.add_space(4.0);
-                    self.beep_settings(ui, control, true);
+                    self.beep_settings(ui, bot, &view, control, true);
                 });
             } else {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::button(ui, "Clear all", Kind::Outline, !items.is_empty(), clear_size, "").clicked() {
-                        self.clear();
+                        self.clear(bot);
                     }
                 });
             }
@@ -167,19 +108,19 @@ impl NotifyDropWindow {
             control + spacing.y
         };
         let height = (ui.available_height() - footer).max(3.0 * widgets::target(26.0, 44.0));
-        self.list(ui, &items, height);
+        self.list(ui, bot, items, height);
 
         if narrow {
             // A phone held upright: the settings, then Test across the window.
-            row(ui, control, |ui| self.beep_settings(ui, control, false));
+            row(ui, control, |ui| self.beep_settings(ui, bot, &view, control, false));
             ui.with_layout(Layout::top_down_justified(Align::Center), |ui| {
-                self.test_button(ui, ui.available_width(), control);
+                self.test_button(ui, bot, ui.available_width(), control);
             });
         } else if !wide {
             row(ui, control, |ui| {
-                self.beep_settings(ui, control, false);
+                self.beep_settings(ui, bot, &view, control, false);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    self.test_button(ui, 96.0, control)
+                    self.test_button(ui, bot, 96.0, control)
                 });
             });
         }
@@ -187,7 +128,7 @@ impl NotifyDropWindow {
 
     /// The watched items: a click picks rows (several, as VibeSkua's `SelectionMode="Multiple"`);
     /// the row's ✕, Delete or the right-click menu removes them.
-    fn list(&mut self, ui: &mut Ui, items: &[String], height: f32) {
+    fn list(&mut self, ui: &mut Ui, bot: &Arc<Bot>, items: &[String], height: f32) {
         if self.selection.picked().iter().any(|&i| i >= items.len()) {
             self.selection.clear();
         }
@@ -256,16 +197,17 @@ impl NotifyDropWindow {
             remove = Some(self.selection.picked());
         }
         if clear {
-            self.clear();
+            self.clear(bot);
         } else if let Some(rows) = remove {
-            self.remove(&rows);
+            let names: Vec<String> = rows.iter().filter_map(|&i| items.get(i).cloned()).collect();
+            model::remove(bot, &names);
+            self.selection.clear();
         }
     }
 
     /// "Beep [n] times every [ms]" (VibeSkua's `NumericUpDown`s: 1 to 25, 10 to 2000 ms), in a
     /// row the caller lays out; `reversed` for a right-to-left row.
-    fn beep_settings(&self, ui: &mut Ui, control: f32, reversed: bool) {
-        let watch = &self.watch;
+    fn beep_settings(&self, ui: &mut Ui, bot: &Arc<Bot>, view: &NotifyDropView, control: f32, reversed: bool) {
         let order = if reversed { [3, 2, 1, 0] } else { [0, 1, 2, 3] };
         for part in order {
             match part {
@@ -273,142 +215,45 @@ impl NotifyDropWindow {
                     ui.label(RichText::new("Beep").color(MUTED));
                 }
                 1 => {
-                    let mut count = watch.count.load(Ordering::Relaxed);
+                    let mut count = view.count;
                     let size = vec2(56.0, control);
-                    let response = widgets::number(ui, "notify_drop_count", &mut count, 1..=25, 0.1, "", size)
+                    let range = view.count_min..=view.count_max;
+                    let response = widgets::number(ui, "notify_drop_count", &mut count, range, 0.1, "", size)
                         .on_hover_text("How many beeps per drop");
                     if response.changed() {
-                        watch.count.store(count, Ordering::Relaxed);
+                        model::set_count(bot, count);
                     }
                 }
                 2 => {
                     ui.label(RichText::new("times every").color(MUTED));
                 }
                 _ => {
-                    let mut delay = watch.delay.load(Ordering::Relaxed);
+                    let mut delay = view.delay;
                     let size = vec2(84.0, control);
-                    let response = widgets::number(ui, "notify_drop_delay", &mut delay, 10..=2000, 10.0, " ms", size)
+                    let range = view.delay_min..=view.delay_max;
+                    let response = widgets::number(ui, "notify_drop_delay", &mut delay, range, 10.0, " ms", size)
                         .on_hover_text("Milliseconds between beeps");
                     if response.changed() {
-                        watch.delay.store(delay, Ordering::Relaxed);
+                        model::set_delay(bot, delay);
                     }
                 }
             }
         }
     }
 
-    fn test_button(&self, ui: &mut Ui, width: f32, control: f32) {
+    fn test_button(&self, ui: &mut Ui, bot: &Arc<Bot>, width: f32, control: f32) {
         if widgets::button(ui, "Test beep", Kind::Normal, true, vec2(width, control), "")
             .on_hover_text("Play the alert")
             .clicked()
         {
-            self.watch.play();
-        }
-    }
-
-    /// VibeSkua `AddDrop`: `|`-separated, trimmed, names not in the list yet.
-    fn add(&mut self) {
-        let added = {
-            let mut items = self.watch.lock();
-            let before = items.len();
-            for name in split(&self.input) {
-                if !items.iter().any(|i| i == name) {
-                    items.push(name.to_owned());
-                }
-            }
-            items.len() > before
-        };
-        if added {
-            self.subscribe();
-        }
-        self.input.clear();
-    }
-
-    /// VibeSkua `RemoveDrops`: unwatches when the list is empty after it.
-    fn remove(&mut self, rows: &[usize]) {
-        let empty = {
-            let mut items = self.watch.lock();
-            let mut i = 0;
-            items.retain(|_| {
-                i += 1;
-                !rows.contains(&(i - 1))
-            });
-            items.is_empty()
-        };
-        self.selection.clear();
-        if empty {
-            self.unsubscribe();
+            model::test(bot);
         }
     }
 
     /// VibeSkua `RemoveAllDropsCommand` (the list's `Clear`).
-    fn clear(&mut self) {
-        self.watch.lock().clear();
+    fn clear(&mut self, bot: &Arc<Bot>) {
+        model::clear(bot);
         self.selection.clear();
-        self.unsubscribe();
-    }
-
-    /// Watches this tab's bot: a listed item that drops (VibeSkua's `ItemDroppedMessage`, sent for
-    /// the drop and again when it reaches the inventory) plays the beeps. The handler runs where
-    /// the event is emitted (also inside `Bot::on_flash_call`): it only starts a thread.
-    fn subscribe(&mut self) {
-        if self.subscription.is_some() {
-            return;
-        }
-        let bot = crate::turu::bot();
-        let watch = Arc::downgrade(&self.watch);
-        let tab = Arc::downgrade(&bot);
-        let id = bot.events.subscribe(move |event| {
-            let (BotEvent::ItemDropped { item } | BotEvent::ItemAdded { item, .. }) = event else {
-                return;
-            };
-            let Some(watch) = watch.upgrade() else { return };
-            let listed = watch.lock().contains(&item.name);
-            if listed {
-                watch.play();
-                alert(tab.clone(), &item.name);
-            }
-        });
-        self.subscription = Some((Arc::downgrade(&bot), id));
-    }
-
-    fn unsubscribe(&mut self) {
-        if let Some((bot, id)) = self.subscription.take()
-            && let Some(bot) = bot.upgrade()
-        {
-            bot.events.unsubscribe(id);
-        }
-    }
-}
-
-/// The drop's alert where the platform posts them (Android's notification, heard with the screen
-/// off), on a thread of its own: the drop handler runs inside `Bot::on_flash_call` too. Once per
-/// drop: the handler hears it drop and again reach the inventory, so the same item within
-/// [`ALERT_AGAIN_AFTER`] alerts once.
-fn alert(tab: Weak<Bot>, item: &str) {
-    static LAST: Mutex<Option<(String, Instant)>> = Mutex::new(None);
-    if !crate::platform::platform().posts_alerts() {
-        return;
-    }
-    {
-        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
-        if last
-            .as_ref()
-            .is_some_and(|(name, at)| name == item && at.elapsed() < ALERT_AGAIN_AFTER)
-        {
-            return;
-        }
-        *last = Some((item.to_owned(), Instant::now()));
-    }
-    let item = item.to_owned();
-    let spawned = std::thread::Builder::new().name("Turu Alert".into()).spawn(move || {
-        let Some(bot) = tab.upgrade() else { return };
-        let text = format!("{}: {item}", crate::turu::tab_label(&bot));
-        tracing::info!("Alert: {item} dropped: {text}");
-        crate::platform::platform().alert(crate::platform::Alert::Drop, &format!("{item} dropped"), &text);
-    });
-    if let Err(e) = spawned {
-        tracing::warn!("Notify Drop alert failed: {e}");
     }
 }
 
@@ -417,35 +262,4 @@ fn row<R>(ui: &mut Ui, height: f32, add_contents: impl FnOnce(&mut Ui) -> R) -> 
     let width = ui.available_width();
     ui.allocate_ui_with_layout(vec2(width, height), Layout::left_to_right(Align::Center), add_contents)
         .inner
-}
-
-/// The names in `input`: split on `|`, trimmed, empty ones dropped.
-fn split(input: &str) -> impl Iterator<Item = &str> {
-    input.split('|').map(str::trim).filter(|s| !s.is_empty())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn add_splits_on_bars_and_skips_duplicates() {
-        let mut window = NotifyDropWindow::default();
-        window.input = " Void Aura | | Void Aura|Gem of Mastery ".into();
-        window.add();
-        assert_eq!(*window.watch.lock(), ["Void Aura", "Gem of Mastery"]);
-        assert!(window.input.is_empty());
-        assert!(window.subscription.is_some());
-        window.input = "Gem of Mastery|Dragon Runestone".into();
-        window.add();
-        assert_eq!(
-            *window.watch.lock(),
-            ["Void Aura", "Gem of Mastery", "Dragon Runestone"]
-        );
-        window.remove(&[0, 2]);
-        assert_eq!(*window.watch.lock(), ["Gem of Mastery"]);
-        assert!(window.subscription.is_some());
-        window.remove(&[0]);
-        assert!(window.subscription.is_none());
-    }
 }
