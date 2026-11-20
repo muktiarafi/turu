@@ -288,11 +288,18 @@ impl Row {
         let auto = bot.auto.mode().map(|m| m.label().to_owned());
         let logged_in = bot.gear.logged_in();
         let waits = bot.scripts.waits_for();
-        let summary = match (waits, bot.state.lock().last_map.clone()) {
-            (Some(what), _) => format!("waits for you: {what} (Show)"),
-            (None, Some(map)) if logged_in => map,
-            (None, _) if logged_in => "logged in".into(),
-            (None, _) => "login screen".into(),
+        // Its monitor snapshot, as the other slots read this tab: a client reads the same from
+        // every tab (place, HP, a green dot while playing).
+        // It's sampled only while something watches the tab: an old one would show an old place.
+        let fresh = |s: &Snapshot| turu_bot::gear::now_ms().saturating_sub(s.sampled_at) < 10_000;
+        let snapshot = bot.monitor.latest().filter(fresh);
+        let playing = snapshot.as_ref().map_or(logged_in, Snapshot::playing);
+        let summary = match (waits, &snapshot, bot.state.lock().last_map.clone()) {
+            (Some(what), _, _) => format!("waits for you: {what} (Show)"),
+            (None, Some(snapshot), _) => summarize(snapshot),
+            (None, None, Some(map)) if logged_in => map,
+            (None, None, _) if logged_in => "logged in".into(),
+            (None, None, _) => "login screen".into(),
         };
         Self {
             // In a shell's client, under the shell's number, as the other slots name it.
@@ -304,7 +311,7 @@ impl Row {
             headless: false,
             tint: match () {
                 _ if waits.is_some() => Tint::Warning,
-                _ if status.is_active() || auto.is_some() => Tint::Success,
+                _ if playing => Tint::Success,
                 _ => Tint::Muted,
             },
             summary,

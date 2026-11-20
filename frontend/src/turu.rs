@@ -358,6 +358,8 @@ static ARMY_CONTROL_DRAWN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
 /// Army Control is open: called each time it draws.
 pub fn army_control_drawn() {
     *ARMY_CONTROL_DRAWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+    // This process's own tabs are listed from their snapshots too, as the other tabs read them.
+    turu_bot::monitor::touch();
 }
 
 /// Army Control drew in the last few seconds.

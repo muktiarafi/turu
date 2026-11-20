@@ -45,7 +45,9 @@ pub fn watched() -> bool {
         || now_ms().saturating_sub(LAST_REQUEST.load(Ordering::Relaxed)) < WATCH_WINDOW_MS
 }
 
-pub(crate) fn touch() {
+/// Keeps the samplers going for a while: a request came, or Army Control is open (it lists each
+/// tab from its snapshot).
+pub fn touch() {
     LAST_REQUEST.store(now_ms(), Ordering::Relaxed);
 }
 
