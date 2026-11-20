@@ -178,14 +178,20 @@ pub enum Command {
     ChangeServer(String),
 }
 
+/// A script's file name ("Farm.ts"): a whole path says little in an outcome line, and a
+/// phone's is long.
+fn file_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
 impl Command {
     /// What it says, for the logs.
     pub fn label(&self) -> String {
         match self {
             Self::StartScript(None) => "Start script".into(),
-            Self::StartScript(Some(path)) => format!("Start {path}"),
+            Self::StartScript(Some(path)) => format!("Start {}", file_name(path)),
             Self::StopScript => "Stop script".into(),
-            Self::LoadScript(path) => format!("Load {path}"),
+            Self::LoadScript(path) => format!("Load {}", file_name(path)),
             Self::Login => "Log in".into(),
             Self::Logout => "Log out".into(),
             Self::JumpMap { map, .. } => format!("Join {map}"),
@@ -743,6 +749,26 @@ pub fn exit_with_parent(exit: impl FnOnce() + Send + 'static) {
 
 #[cfg(test)]
 mod tests {
+    use super::Command;
+
+    /// An outcome names the script by its file, not the device's whole path.
+    #[test]
+    fn script_commands_name_the_file() {
+        let path = "/storage/emulated/0/Android/data/x/files/scripts/farm/GoldFarm.ts".to_owned();
+        assert_eq!(
+            Command::LoadScript(path.clone()).label(),
+            "Load GoldFarm.ts"
+        );
+        assert_eq!(
+            Command::StartScript(Some(path)).label(),
+            "Start GoldFarm.ts"
+        );
+        assert_eq!(
+            Command::LoadScript(r"C:\Turu\scripts\Farm.ts".into()).label(),
+            "Load Farm.ts"
+        );
+    }
+
     use super::*;
     use serde_json::json;
 
