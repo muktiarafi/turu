@@ -29,6 +29,7 @@ pub mod rail;
 pub mod repo;
 pub mod scheduler;
 pub mod scripts;
+pub mod stats;
 pub mod tab_state;
 
 use serde::Serialize;
@@ -139,6 +140,42 @@ pub fn register() {
             notifications::clear(bot);
             done()
         }),
+    );
+
+    add_model("stats", Box::new(|bot| to_json(&stats::view(bot))));
+    for (action, work) in [
+        ("reset", stats::reset as fn(&std::sync::Arc<turu_bot::Bot>)),
+        ("save", stats::save_snapshot),
+        ("clear", stats::clear_history),
+        ("dismiss", stats::dismiss_note),
+    ] {
+        add_model_action(
+            "stats",
+            action,
+            Box::new(move |bot, _| {
+                work(bot);
+                done()
+            }),
+        );
+    }
+    add_model_action(
+        "stats",
+        "advanced",
+        Box::new(|bot, body| {
+            let on = body.get("on").and_then(Value::as_bool).ok_or("on is missing")?;
+            stats::set_advanced(bot, on);
+            done()
+        }),
+    );
+    add_model_action(
+        "stats",
+        "unit",
+        Box::new(|bot, body| stats::set_unit(bot, &text(body, "unit")?).and_then(|()| done())),
+    );
+    add_model_action(
+        "stats",
+        "export",
+        Box::new(|bot, _| Ok(json!({ "csv": stats::export(bot) }))),
     );
 
     add_model("auto", Box::new(|bot| to_json(&auto::view(bot))));

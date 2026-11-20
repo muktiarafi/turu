@@ -5,9 +5,11 @@
 use super::files::SaveText;
 use super::theme::{CARD, DANGER, EDGE, INSET, MUTED, SUCCESS, TEXT, TRACK, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::scheduler::Tint;
+use crate::models::stats::{self as model, CounterKind};
 use egui::{Align, Color32, Context, CornerRadius, Layout, Modal, RichText, ScrollArea, Sense, Stroke, Ui, vec2};
 use std::cmp::Ordering;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
 use turu_bot::stats::{self, Gameplay, RateSnapshot, RateUnit};
 
 /// VibeSkua's window: 480 wide; 760 high with Advanced on, so the history fills it.
@@ -15,8 +17,6 @@ const WIDTH: f32 = 480.0;
 const ADVANCED_HEIGHT: f32 = 760.0;
 /// Below this the rates take one column and the history's buttons a row of their own.
 const NARROW: f32 = 400.0;
-/// How often an open Advanced window looks for snapshots other clients saved.
-const HISTORY_CHECK: Duration = Duration::from_secs(2);
 
 const BLUE: Color32 = Color32::from_rgb(0x60, 0xA5, 0xFA);
 const PURPLE: Color32 = Color32::from_rgb(0xA7, 0x8B, 0xFA);
@@ -119,20 +119,13 @@ enum HistoryAction {
 
 #[derive(Default)]
 pub struct StatsWindow {
-    /// The clock keeps its last value after the script ends.
-    last_elapsed: Duration,
     /// Whether the window showed last frame, and in which mode (to size it on a switch).
     shown: Option<bool>,
-    /// The rate history as last read, newest first (VibeSkua `RateHistory`).
+    /// The rate history as last read, newest first (VibeSkua `RateHistory`; `models::stats`).
     history: Vec<RateSnapshot>,
-    /// When the history file was looked at, and its time stamp then.
-    history_checked: Option<Instant>,
-    history_modified: Option<SystemTime>,
     /// The column the table is sorted by, ascending or not; none: as saved.
     sort: Option<(Column, bool)>,
     confirm_clear: bool,
-    /// A message box to show: title, text.
-    message: Option<(&'static str, String)>,
     export: SaveText,
 }
 
@@ -145,8 +138,8 @@ impl StatsWindow {
         self.export.poll();
         let bot = crate::turu::bot();
         let advanced = bot.settings.read().stats_advanced_mode;
-        if advanced && (self.shown.is_none() || self.history_due()) {
-            self.refresh_history();
+        if advanced {
+            self.history = model::history(&bot);
         }
         let area = super::window_area(ctx);
         let height = if advanced { ADVANCED_HEIGHT } else { 250.0 };
@@ -170,11 +163,8 @@ impl StatsWindow {
 
     fn ui(&mut self, ui: &mut Ui) {
         let bot = crate::turu::bot();
-        let active = bot.scripts.status().is_active();
+        let elapsed = model::script_time(&bot);
         let stats = bot.state.lock().stats.clone();
-        if active && let Some(started) = stats.started {
-            self.last_elapsed = started.elapsed();
-        }
         let (mut advanced, unit) = {
             let settings = bot.settings.read();
             (settings.stats_advanced_mode, RateUnit::parse(&settings.stats_rate_unit))
@@ -185,7 +175,7 @@ impl StatsWindow {
         ui.horizontal(|ui| {
             ui.set_min_height(control);
             ui.label(
-                RichText::new(stats::format_hms(self.last_elapsed))
+                RichText::new(stats::format_hms(elapsed))
                     .monospace()
                     .strong()
                     .color(TEXT),
@@ -200,18 +190,14 @@ impl StatsWindow {
                     .on_hover_text("Reset all combat and drop counters")
                     .clicked()
                 {
-                    let mut state = bot.state.lock();
-                    state.stats = Default::default();
-                    state.stats.started = active.then(Instant::now);
-                    self.last_elapsed = Duration::ZERO;
+                    model::reset(&bot);
                 }
                 ui.label("Advanced");
                 if widgets::switch(ui, &mut advanced)
                     .on_hover_text("Show gameplay rates, level and class rank progress, and rate history")
                     .changed()
                 {
-                    bot.settings.write().stats_advanced_mode = advanced;
-                    bot.save_settings();
+                    model::set_advanced(&bot, advanced);
                 }
             });
         });
@@ -223,11 +209,11 @@ impl StatsWindow {
         ui.add_space(6.0);
         gameplay(ui, &stats.gameplay, unit);
         ui.add_space(6.0);
-        self.history_panel(ui, &stats.gameplay, unit);
+        self.history_panel(ui);
     }
 
     /// RATE HISTORY: Save, Export, Clear and the table (VibeSkua's manual rate snapshots).
-    fn history_panel(&mut self, ui: &mut Ui, gameplay: &Gameplay, unit: RateUnit) {
+    fn history_panel(&mut self, ui: &mut Ui) {
         panel(ui, |ui| {
             let narrow = ui.available_width() < NARROW;
             let size = vec2(if narrow { 0.0 } else { 84.0 }, widgets::target(26.0, 40.0));
@@ -268,7 +254,11 @@ impl StatsWindow {
                 ui.horizontal(|ui| ui.with_layout(Layout::right_to_left(Align::Center), &mut buttons));
             }
             match clicked {
-                Some(HistoryAction::Save) => self.save_snapshot(gameplay, unit),
+                Some(HistoryAction::Save) => {
+                    let bot = crate::turu::bot();
+                    model::save_snapshot(&bot);
+                    self.history = model::history(&bot);
+                }
                 Some(HistoryAction::Export) => self.export_history(ui.ctx()),
                 Some(HistoryAction::Clear) => self.confirm_clear = true,
                 None => {}
@@ -378,58 +368,11 @@ impl StatsWindow {
         }
     }
 
-    fn history_due(&self) -> bool {
-        self.history_checked.is_none_or(|t| t.elapsed() >= HISTORY_CHECK)
-    }
-
-    /// VibeSkua `RefreshHistory`: shows what is saved now, other clients' snapshots included.
-    /// Keeps the table as it is when the file can't be read.
-    fn refresh_history(&mut self) {
-        let paths = &crate::turu::bot().paths;
-        self.history_checked = Some(Instant::now());
-        let modified = std::fs::metadata(paths.stats_rate_history_file())
-            .and_then(|m| m.modified())
-            .ok();
-        if modified.is_some() && modified == self.history_modified {
-            return;
-        }
-        if let Ok(history) = stats::load_history(paths) {
-            self.history = history;
-            self.history_modified = modified;
-        }
-    }
-
-    /// VibeSkua `SaveRateSnapshot`.
-    fn save_snapshot(&mut self, gameplay: &Gameplay, unit: RateUnit) {
-        let bot = crate::turu::bot();
-        let character = {
-            let state = bot.state.lock();
-            if state.in_game { state.username.clone() } else { None }
-        };
-        let snapshot = RateSnapshot::capture(gameplay, unit, character);
-        match stats::save_snapshot(&bot.paths, snapshot) {
-            Ok(history) => self.history = history,
-            Err(e) => {
-                tracing::warn!("Couldn't save the rate snapshot: {e}");
-                self.message = Some((
-                    "Save Snapshot",
-                    "Couldn't save the snapshot: the history file couldn't be read or written. Nothing was changed; \
-                     try again."
-                        .to_owned(),
-                ));
-            }
-        }
-        self.history_modified = None;
-    }
-
     /// VibeSkua `ExportHistory`: what is saved now, as CSV.
     fn export_history(&mut self, ctx: &Context) {
-        self.history_modified = None;
-        self.refresh_history();
-        if self.history.is_empty() {
+        let Some(csv) = model::export(&crate::turu::bot()) else {
             return;
-        }
-        let csv = stats::history_csv(&self.history);
+        };
         let platform = crate::platform::platform();
         if platform.has_file_dialogs() {
             self.export.ask(ctx, "StatsRateHistory.csv", csv);
@@ -464,27 +407,19 @@ impl StatsWindow {
                 self.confirm_clear = false;
             }
             if answer == Some(true) {
-                match stats::clear_history(&crate::turu::bot().paths) {
-                    Ok(history) => self.history = history,
-                    Err(e) => {
-                        tracing::warn!("Couldn't clear the rate history: {e}");
-                        self.message = Some((
-                            "Clear Rate History",
-                            "Couldn't clear the history: the history file couldn't be read or written. Nothing was \
-                             changed; try again."
-                                .to_owned(),
-                        ));
-                    }
-                }
-                self.history_modified = None;
+                let bot = crate::turu::bot();
+                model::clear_history(&bot);
+                self.history = model::history(&bot);
             }
         }
-        if let Some((title, text)) = &self.message {
+        let bot = crate::turu::bot();
+        if let Some(text) = model::view_note(&bot) {
+            let title = "Rate History";
             let mut close = false;
             let response = Modal::new(egui::Id::new("turu_stats_message")).show(ctx, |ui| {
                 ui.set_min_width(260.0);
                 ui.set_max_width(420.0);
-                ui.heading(*title);
+                ui.heading(title);
                 ui.label(text.as_str());
                 ui.add_space(4.0);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -493,7 +428,7 @@ impl StatsWindow {
                 });
             });
             if close || response.should_close() {
-                self.message = None;
+                model::dismiss_note(&bot);
             }
         }
     }
@@ -515,14 +450,19 @@ fn panel<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
 
 /// The six counter tiles, three to a row (VibeSkua `stat-tile`s).
 fn counters(ui: &mut Ui, stats: &turu_bot::state::Stats) {
-    let counters = [
-        ("KILLS", stats.kills, SUCCESS),
-        ("DEATHS", stats.deaths, DANGER),
-        ("PICKUPS", stats.drops, WARNING),
-        ("ACCEPTED", stats.quests_accepted, BLUE),
-        ("COMPLETED", stats.quests_completed, SUCCESS),
-        ("RE-LOGINS", stats.relogins, PURPLE),
-    ];
+    let counters: Vec<(String, String, Color32)> = model::counters(stats)
+        .into_iter()
+        .map(|c| {
+            let color = match c.kind {
+                CounterKind::Kills | CounterKind::Completed => SUCCESS,
+                CounterKind::Deaths => DANGER,
+                CounterKind::Pickups => WARNING,
+                CounterKind::Accepted => BLUE,
+                CounterKind::Relogins => PURPLE,
+            };
+            (c.label, c.value, color)
+        })
+        .collect();
     let width = (ui.available_width() - 2.0 * ui.spacing().item_spacing.x) / 3.0;
     for row in counters.chunks(3) {
         ui.horizontal(|ui| {
@@ -538,8 +478,7 @@ fn counters(ui: &mut Ui, stats: &turu_bot::state::Stats) {
                             widgets::dot(ui, *color, 3.5);
                             widgets::section_label(ui, label);
                         });
-                        let value = stats::format_number(*value as f64, 0);
-                        ui.label(RichText::new(value).size(16.0).strong().color(TEXT));
+                        ui.label(RichText::new(value.as_str()).size(16.0).strong().color(TEXT));
                     });
             }
         });
@@ -581,63 +520,35 @@ fn gameplay(ui: &mut Ui, g: &Gameplay, unit: RateUnit) {
             });
         });
         ui.add_space(4.0);
-        progress_row(ui, "Level", None, SUCCESS, g.experience_progress, &g.experience_text());
-        hint(
-            ui,
-            &format!(
-                "{} EXP {} · next level in {}",
-                unit.format(g.experience_per_hour as f64, false),
-                unit.label(),
-                stats::format_eta(g.time_to_level)
-            ),
-        );
+        let view = model::gameplay(g, unit);
+        let level = &view.level;
+        progress_row(ui, &level.label, None, SUCCESS, level.percent, &level.value);
+        hint(ui, &level.hint);
         ui.add_space(6.0);
+        let rank = &view.rank;
         progress_row(
             ui,
-            &format!("Rank {}", g.current_class_rank),
+            &rank.label,
             Some("Current class rank; the bar runs to rank 10"),
             WARNING,
-            g.class_rank10_progress,
-            &g.class_rank10_text(),
+            rank.percent,
+            &rank.value,
         );
-        hint(
-            ui,
-            &format!(
-                "{} CP {} · rank 10 in {}",
-                unit.format(g.class_points_per_hour as f64, false),
-                unit.label(),
-                stats::format_eta(g.time_to_class_rank10)
-            ),
-        );
+        hint(ui, &rank.hint);
         ui.add_space(6.0);
         ui.separator();
-        let label = unit.label();
-        let rates = [
-            (
-                format!("Net gold {label}"),
-                unit.format(g.gold_per_hour as f64, false),
-                WARNING,
-                Some("Net gold balance change; spending reduces the measured rate."),
-            ),
-            (
-                format!("Items {label}"),
-                unit.format(g.items_per_hour as f64, false),
-                WARNING,
-                None,
-            ),
-            (
-                format!("Kills {label}"),
-                unit.format(g.kills_per_minute, true),
-                SUCCESS,
-                None,
-            ),
-            (
-                format!("Deaths {label}"),
-                unit.format(g.deaths_per_minute, true),
-                DANGER,
-                None,
-            ),
-        ];
+        let rates: Vec<(String, String, Color32, Option<String>)> = view
+            .rates
+            .into_iter()
+            .map(|r| {
+                let color = match r.tint {
+                    Tint::Success => SUCCESS,
+                    Tint::Danger => DANGER,
+                    _ => WARNING,
+                };
+                (r.label, r.value, color, Some(r.note).filter(|n| !n.is_empty()))
+            })
+            .collect();
         let columns = if ui.available_width() < NARROW { 1 } else { 2 };
         let gap = 20.0;
         let width = (ui.available_width() - gap * (columns - 1) as f32) / columns as f32;
@@ -656,10 +567,16 @@ fn gameplay(ui: &mut Ui, g: &Gameplay, unit: RateUnit) {
                             })
                             .response;
                         if let Some(tip) = tip {
-                            response.on_hover_text(*tip);
+                            response.on_hover_text(tip.as_str());
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.label(RichText::new(value).monospace().size(11.0).strong().color(TEXT));
+                            ui.label(
+                                RichText::new(value.as_str())
+                                    .monospace()
+                                    .size(11.0)
+                                    .strong()
+                                    .color(TEXT),
+                            );
                         });
                     });
                 }
