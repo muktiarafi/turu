@@ -644,6 +644,35 @@ pub fn work(bot: &Arc<Bot>, path: &str, work: Work) -> Result<(), String> {
     }
 }
 
+/// Makes the script at `path` Army > Accounts' launch script (`accounts.json`'s `script`, the
+/// local file, as the egui Accounts' Search… sets it), downloading it first when it needs that
+/// (as Search Scripts' pick mode does). True when it's set now; false while the repository's
+/// task downloads it, which sets it once done (a native shell waits for the task to end).
+pub fn set_launch_script(bot: &Arc<Bot>, path: &str) -> Result<bool, String> {
+    let file = bot.paths.accounts_file();
+    let set = move |local: std::path::PathBuf| {
+        let mut list = turu_bot::accounts::Accounts::load(&file);
+        list.script = Some(local);
+        list.save(&file).map_err(|e| format!("Couldn't save the accounts: {e}"))
+    };
+    let repo = crate::turu::script_repo();
+    if let Some(local) = repo.ready(path) {
+        set(local)?;
+        return Ok(true);
+    }
+    let owned = path.to_owned();
+    let spawned = repo.spawn("Download", move |repo| {
+        let local = repo.ensure(&owned)?;
+        set(local)?;
+        Ok(format!("Downloaded {owned}; launched accounts run it."))
+    });
+    if spawned {
+        Ok(false)
+    } else {
+        Err(wait_tip(&repo.snapshot()))
+    }
+}
+
 /// Pins or unpins the script at `path`.
 pub fn set_pinned(path: &str, pinned: bool) {
     crate::turu::script_repo().set_pinned(path, pinned);

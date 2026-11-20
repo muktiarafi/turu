@@ -273,6 +273,14 @@ pub fn register() {
     }
     add_model_action(
         "repo",
+        "launch",
+        Box::new(|bot, body| {
+            let ready = repo::set_launch_script(bot, &text(body, "path")?)?;
+            Ok(json!({ "ready": ready }))
+        }),
+    );
+    add_model_action(
+        "repo",
         "pin",
         Box::new(|_, body| {
             let pinned = body.get("pinned").and_then(Value::as_bool).ok_or("pinned is missing")?;
