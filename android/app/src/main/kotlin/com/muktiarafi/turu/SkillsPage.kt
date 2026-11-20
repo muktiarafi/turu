@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -829,7 +830,6 @@ private fun DebouncedText(
         if (value != sent) {
             text = value
             sent = value
-            onTyping(value)
         }
     }
     LaunchedEffect(text) {
@@ -839,9 +839,13 @@ private fun DebouncedText(
             onSet(text)
         }
     }
+    // What the field holds, whenever it composes: Save sends it, so it never names a class the
+    // field doesn't show. Leaving (another tab, the rules page) sends what wasn't sent yet.
+    SideEffect { onTyping(text) }
+    DisposableEffect(Unit) { onDispose { if (text != sent) onSet(text) } }
     OutlinedTextField(
         value = text,
-        onValueChange = { text = it; onTyping(it) },
+        onValueChange = { text = it },
         label = { Text(label) },
         placeholder = { Text(placeholder) },
         singleLine = true,

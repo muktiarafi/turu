@@ -498,24 +498,10 @@ pub struct GearSlotView {
     /// "" for an empty slot.
     pub item: String,
     pub place: ItemPlace,
-    /// Where it is, in a sentence ("In the bank as of 5 min ago: Equip takes it out").
-    pub place_words: String,
     /// The enhancement this loadout keeps ("" when none is known).
     pub enhancement: String,
     /// The worn item's enhancement when it isn't the saved one ("" when it is).
     pub worn_with: String,
-}
-
-fn place_words(place: ItemPlace, bank_as_of: Option<u64>) -> String {
-    let when = bank_as_of.map_or_else(|| "the bank wasn't read yet".to_owned(), ago);
-    match place {
-        ItemPlace::None => String::new(),
-        ItemPlace::Worn => "Worn now".to_owned(),
-        ItemPlace::Bag => "In the inventory: Equip puts it on".to_owned(),
-        ItemPlace::Bank => format!("In the bank as of {when}: Equip takes it out"),
-        ItemPlace::Missing => format!("Neither in the inventory nor in the bank ({when})"),
-        ItemPlace::Unknown => "Not in the inventory; the bank wasn't read yet (Equip looks there)".to_owned(),
-    }
 }
 
 fn loadout_view(loadout: &Loadout, gear: Option<&GearFile>, saved: bool) -> LoadoutView {
@@ -523,7 +509,6 @@ fn loadout_view(loadout: &Loadout, gear: Option<&GearFile>, saved: bool) -> Load
         Some(g) if saved => loadouts::enhancement_changes(loadout, &g.items),
         _ => Vec::new(),
     };
-    let bank_as_of = gear.and_then(|g| g.bank_as_of);
     let slots = SLOTS
         .iter()
         .map(|&slot| {
@@ -542,7 +527,6 @@ fn loadout_view(loadout: &Loadout, gear: Option<&GearFile>, saved: bool) -> Load
                 label: loadouts::slot_label(slot).to_owned(),
                 item: item.to_owned(),
                 place,
-                place_words: place_words(place, bank_as_of),
                 worn_with: changes
                     .iter()
                     .find(|c| c.slot == slot)
@@ -700,7 +684,6 @@ mod tests {
         assert_eq!((view.items, view.worn), (2, false));
         let weapon = view.slots.iter().find(|s| s.item == "Blade & Shield").unwrap();
         assert_eq!(weapon.place, ItemPlace::Bag);
-        assert_eq!(weapon.place_words, "In the inventory: Equip puts it on");
         assert_eq!(loadout_view(&Loadout::default(), None, true).class, "No class");
     }
 

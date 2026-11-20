@@ -96,9 +96,10 @@ impl Default for LoadoutsWindow {
 impl LoadoutsWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
         let bot = crate::turu::bot();
-        if *open && !self.was_open {
-            // Another tab of the same character may have changed the file; and read the gear
-            // now rather than within the gear thread's 30 s.
+        let opened = *open && !self.was_open;
+        if opened {
+            // Another tab of the same character (or the native page) may have changed the file;
+            // and read the gear now rather than within the gear thread's 30 s.
             model::read_gear(&bot);
         }
         self.was_open = *open;
@@ -108,6 +109,12 @@ impl LoadoutsWindow {
         let state = model::STATE.of(&bot);
         let mut st = lock(&state);
         st.sync(&bot);
+        if opened {
+            // As reading the file did before the model: the pick and the question start over,
+            // and a loadout made while the window was closed isn't jumped to.
+            self.reset();
+            self.created_seen = st.created_count;
+        }
         if st.username != self.username {
             self.username = st.username.clone();
             self.pick = Some(Pick::Current);
@@ -139,6 +146,15 @@ impl LoadoutsWindow {
         } else {
             ctx.request_repaint_after(GEAR_EVERY);
         }
+    }
+
+    /// Back to Currently equipped, with no question pending (the list was read again).
+    fn reset(&mut self) {
+        self.pick = Some(Pick::Current);
+        self.detail = false;
+        self.name.clear();
+        self.focus_name = false;
+        self.confirm_delete = None;
     }
 
     fn select(&mut self, st: &State, pick: Pick) {
@@ -196,6 +212,7 @@ impl LoadoutsWindow {
                     .on_hover_text("Read the file and the worn gear again");
                 if refresh.clicked() {
                     model::read_gear(&crate::turu::bot());
+                    self.reset();
                 }
             });
         });

@@ -786,7 +786,9 @@ script's message box and options request.
   the page open (each tab shows its own slot's draft; back again, the first is as left). The
   rules page keeps its own copy and sends it whole a moment after the last change and before Done
   or Back, and mirrors the model's "last aura removed turns Several auras off"; Save carries the
-  Class field's text as typed. Not checked: Several auras with real auras, Move, a script using a
+  Class field's text as it shows (reported whenever it composes; text not sent yet goes when it
+  leaves): checked with a set saved for one made-up class, another typed, the first opened from
+  Saved sets, and Save naming the first (both removed after). Not checked: Several auras with real auras, Move, a script using a
   set saved here, the slot killed with the page open (the draft lives in the slot and goes with
   it, as the egui window's would).
 * **Loadouts** (2026-11-20): `models::loadouts` holds the character's list, the gear cache,
@@ -798,7 +800,8 @@ script's message box and options request.
   emulator (no script running): the list with no loadouts, Currently equipped's slots, Save as
   loadout opening Rename (confirmed from the keyboard), the Worn chip, Equip on what was already
   worn ("was already worn": nothing changed), Rename following the loadout, Delete (asked), font
-  scale 1.3; the loadouts file and folder the check made were removed. Not checked: Enhance
+  scale 1.3, Full window (the egui window drawing from the model); the loadouts file and folder
+  the check made were removed. Not checked: Enhance
   (spends gold), Equip of items in the bag or bank, Replace with worn, Equip while a script runs.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
