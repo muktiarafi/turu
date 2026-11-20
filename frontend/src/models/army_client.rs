@@ -27,7 +27,7 @@ static OUTCOMES: LazyLock<Mutex<HashMap<String, Outcome>>> = LazyLock::new(Mutex
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
-pub struct GearView {
+pub struct ArmyGearView {
     pub label: String,
     pub online: bool,
     /// The running script's file name; empty with none.
@@ -36,7 +36,7 @@ pub struct GearView {
     pub bank: String,
     /// A gear file was found.
     pub known: bool,
-    pub slots: Vec<GearSlotView>,
+    pub slots: Vec<ArmyGearSlot>,
     /// The action running now ("Equip Necrotic Sword"); empty with none.
     pub busy: String,
     /// How the last one went; empty before any.
@@ -47,17 +47,17 @@ pub struct GearView {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
-pub struct GearSlotView {
+pub struct ArmyGearSlot {
     pub slot: String,
     /// What's worn; "(none)" with nothing.
     pub worn: String,
-    pub choices: Vec<GearChoiceView>,
+    pub choices: Vec<ArmyGearChoice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
-pub struct GearChoiceView {
+pub struct ArmyGearChoice {
     pub id: i64,
     /// "Necrotic Sword (bank)", "Legion Revenant (worn)".
     pub label: String,
@@ -99,7 +99,7 @@ fn peer(body: &Json) -> Result<(String, Peer), String> {
 }
 
 /// The client's gear, from its gear file (so an offline account shows its last).
-pub fn gear_view(key: &str, peer: &Peer) -> GearView {
+pub fn gear_view(key: &str, peer: &Peer) -> ArmyGearView {
     let username = peer.username();
     let file = (!username.is_empty())
         .then(|| gear::read(&turu_bot::paths::Paths::new().gear_dir(), &username))
@@ -115,13 +115,13 @@ pub fn gear_view(key: &str, peer: &Peer) -> GearView {
         .map(|file| {
             Slot::ALL
                 .iter()
-                .map(|&slot| GearSlotView {
+                .map(|&slot| ArmyGearSlot {
                     slot: slot.label().to_owned(),
                     worn: file.worn(slot).map_or_else(|| "(none)".to_owned(), |i| i.name.clone()),
                     choices: file
                         .for_slot(slot)
                         .into_iter()
-                        .map(|i| GearChoiceView {
+                        .map(|i| ArmyGearChoice {
                             id: i.id,
                             label: item_label(i),
                             worn: i.equipped,
@@ -132,7 +132,7 @@ pub fn gear_view(key: &str, peer: &Peer) -> GearView {
         })
         .unwrap_or_default();
     let (last_ok, last) = outcome.last.unwrap_or((true, String::new()));
-    GearView {
+    ArmyGearView {
         label: peer.label(),
         online: peer.online(),
         script: peer.running_script().unwrap_or_default(),
@@ -179,7 +179,7 @@ fn run(key: String, peer: Peer, action: String, command: Command) -> Result<(), 
 }
 
 /// The control API's actions (`POST /models/army-client/do`, each with the row's `key`): `gear`
-/// (answers its [`GearView`]), `refresh`, `equip` (`item`: its ID, `name`, `stop`: stop the script
+/// (answers its [`ArmyGearView`]), `refresh`, `equip` (`item`: its ID, `name`, `stop`: stop the script
 /// first) and `logs` (`kind`: script or debug, `since`: answers `lines` and `next`).
 pub fn act(action: &str, body: &Json) -> Result<Json, String> {
     let (key, peer) = peer(body)?;

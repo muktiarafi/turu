@@ -62,6 +62,8 @@ class ShellScreens(private val activity: TuruActivity) {
         junk = JunkPanel(),
         console = ConsolePanel(),
         scriptOptions = ScriptOptionsPanel(),
+        armyTravel = ArmyTravelPanel(),
+        armyClient = ArmyClientPanel(),
     )
 
     private val railActions = RailActions(

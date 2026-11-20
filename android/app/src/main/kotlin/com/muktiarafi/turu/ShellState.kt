@@ -135,6 +135,18 @@ sealed interface Page {
     /** Diagnostics > Console. */
     data object Console : Page
 
+    /** Army Control > Travel > Map Travel. */
+    data object ArmyTravel : Page
+
+    /** Map Travel's New preset (`editing` null, starting from `start`) or Edit. */
+    data class ArmyPreset(val editing: com.muktiarafi.turu.models.TravelDest?, val start: com.muktiarafi.turu.models.TravelDest? = null) : Page
+
+    /** Army Control > a row's ⋮ > Gear. */
+    data class ArmyGear(val key: String, val label: String) : Page
+
+    /** Army Control > a row's ⋮ > Logs. */
+    data class ArmyLogs(val key: String, val label: String) : Page
+
     /** Scripts > Edit Script Options (also when a script asks for its options). */
     data object ScriptOptions : Page
 

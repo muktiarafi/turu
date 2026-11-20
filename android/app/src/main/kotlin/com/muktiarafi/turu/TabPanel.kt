@@ -100,13 +100,15 @@ class TabActions(
     val junk: JunkPanel,
     val console: ConsolePanel,
     val scriptOptions: ScriptOptionsPanel,
+    val armyTravel: ArmyTravelPanel,
+    val armyClient: ArmyClientPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
 private val PanelWidth = 320.dp
 
 /** Pages whose rows need more room than a list of tabs. */
-private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills, Page.Loadouts, Page.FastTravel, Page.Butler, Page.Cosmetics, Page.Runtime, Page.NotifyDrop, Page.Loader, Page.Grabber, Page.JunkItems, Page.Console, Page.ScriptOptions)
+private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills, Page.Loadouts, Page.FastTravel, Page.Butler, Page.Cosmetics, Page.Runtime, Page.NotifyDrop, Page.Loader, Page.Grabber, Page.JunkItems, Page.Console, Page.ArmyTravel, Page.ScriptOptions)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -229,7 +231,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
             color = Turu.Panel,
             modifier = Modifier
                 .padding(start = 64.dp + state.cutoutLeftDp.dp)
-                .width(if (state.page in widePages) 440.dp else PanelWidth)
+                .width(if (state.page in widePages || state.page is Page.ArmyPreset || state.page is Page.ArmyGear || state.page is Page.ArmyLogs) 440.dp else PanelWidth)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
                 // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
@@ -280,7 +282,11 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.JunkItems -> JunkPage(state, actions.junk) { actions.window("junk_items") }
                     Page.Console -> ConsolePage(state, actions.console) { actions.window("console") }
                     Page.ScriptOptions -> ScriptOptionsPage(state, actions.scriptOptions) { actions.window("script_options") }
-                    Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
+                    Page.Army -> ArmyPage(state, actions.army, actions.armyTravel, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
+                    Page.ArmyTravel -> ArmyTravelPage(state, actions.army, actions.armyTravel)
+                        is Page.ArmyPreset -> ArmyPresetPage(state, actions.army, actions.armyTravel, page.editing, page.start)
+                        is Page.ArmyGear -> ArmyGearPage(state, actions.armyClient, page.key, page.label)
+                        is Page.ArmyLogs -> ArmyLogsPage(state, actions.armyClient, page.key, page.label) { actions.window("army") }
                         is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                     }
                 }

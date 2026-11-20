@@ -92,6 +92,16 @@ class ArmyPanel {
     private var following: ShellTab? = null
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Pages reading it (Army Control and the pages it opens): the last one leaving stops it. */
+    private var users = 0
+
+    fun open() { users++ }
+
+    fun close() {
+        users = maxOf(0, users - 1)
+        if (users == 0) follow(null)
+    }
+
     fun follow(tab: ShellTab?) {
         if (tab?.id == following?.id && tab?.api == following?.api && client != null) return
         following = tab
@@ -140,20 +150,30 @@ class ArmyPanel {
 /**
  * Army > Army Control (docs/UI.md, "Native shells"; VibeSkua's tabbed host menu): the clients,
  * each checkable with its own Start or Stop and a ⋮; then the commands, which go to the checked
- * rows or to every row; the last outcome at the foot. Gear, a client's logs, Map Travel, Jump to
- * Player and Change Server stay in the full window.
+ * rows or to every row (Travel: Map Travel's page, the player and server pickers); the last outcome
+ * at the foot. A row's ⋮ opens its Gear and Logs pages. The full window adds saving logs to a file.
  */
 @Composable
-fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWindow: () -> Unit) {
-    DisposableEffect(Unit) { onDispose { panel.follow(null) } }
+fun ArmyPage(
+    state: ShellState,
+    panel: ArmyPanel,
+    travel: ArmyTravelPanel,
+    select: (Int) -> Unit,
+    fullWindow: () -> Unit,
+) {
+    DisposableEffect(Unit) {
+        panel.open()
+        onDispose { panel.close() }
+    }
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { panel.follow(state.tabs.active) }
     val view = panel.view
     // A command for every row, asked first: its label and how to send it.
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var history by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf<TravelPick?>(null) }
     Column(Modifier.fillMaxSize()) {
         PageBar("Army Control", onBack = { state.back() }) {
-            FullWindowMenu("Gear, client logs, Load file…, Map Travel, Jump to Player, Change Server", fullWindow) { close ->
+            FullWindowMenu("Save a client's logs to a file", fullWindow) { close ->
                 if (view?.launched == true) {
                     DropdownMenuItem(text = { Text("Clear ended") }, onClick = { close(); panel.task("clear-ended") })
                     DropdownMenuItem(
@@ -185,7 +205,7 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
             item { ClientsHeader(view, live, panel) }
             items(view.rows, key = { it.key }) { row ->
-                ClientRow(row, panel, shown = row.shellTab == state.tabs.shown.toLong(), select = select)
+                ClientRow(row, panel, shown = row.shellTab == state.tabs.shown.toLong(), select = select, open = { state.push(it) })
             }
             items(view.waiting, key = { "waiting:$it" }) { name ->
                 Text(
@@ -207,7 +227,7 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
             }
             item {
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f), modifier = Modifier.padding(top = 8.dp))
-                Target(targets, everyone)
+                ArmyTarget(targets, everyone)
             }
             item {
                 Group("Script") {
@@ -219,6 +239,7 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
                                 state.scriptPick = ScriptPick.Army(panel.checked.keys.toList(), targets.singleOrNull()?.label ?: "${targets.size} clients")
                                 state.push(Page.Search)
                             },
+                            Action("This tab's script", enabled = any) { panel.send("tab-script") },
                         ),
                     )
                 }
@@ -276,24 +297,24 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
                 }
             }
             item {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = fullWindow)
-                        .heightIn(min = 56.dp)
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Travel, gear and client logs")
-                        Text("Map Travel, Jump to Player, Change Server: in the full window", style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
-                    }
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Muted)
+                Group("Travel") {
+                    ButtonGrid(
+                        listOf(
+                            Action("Map Travel…") { state.push(Page.ArmyTravel) },
+                            Action("Jump to player…", enabled = any) { picking = TravelPick.Player },
+                            Action("Change server…", enabled = any) { picking = TravelPick.Server },
+                        ),
+                    )
                 }
             }
         }
         HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
         Outcome(panel.error, view.results.lastOrNull()) { history = true }
+    }
+    when (picking) {
+        TravelPick.Player -> PlayerDialog(state, panel, travel) { picking = null }
+        TravelPick.Server -> ServerDialog(state, panel, travel) { picking = null }
+        null -> {}
     }
     asking?.let { (question, send) ->
         AlertDialog(
@@ -387,7 +408,7 @@ private fun ClientsHeader(view: ArmyView, live: List<ArmyRow>, panel: ArmyPanel)
  * where it is. Its own Start or Stop and a ⋮ at the end. A tap anywhere checks it.
  */
 @Composable
-private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (Int) -> Unit) {
+private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (Int) -> Unit, open: (Page) -> Unit) {
     val checked = row.key in panel.checked
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -452,7 +473,7 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
         }
         Box {
             IconButton(onClick = { menu = true }) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "${row.label}: log in or out, relog, Auto-Attack", tint = Turu.Muted)
+                Icon(Icons.Rounded.MoreVert, contentDescription = "${row.label}: log in or out, relog, gear, logs, Auto-Attack", tint = Turu.Muted)
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
                 if (row.ended) {
@@ -468,6 +489,8 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
                     DropdownMenuItem(text = { Text("Log in") }, onClick = { menu = false; panel.row(row, "login") })
                 }
                 DropdownMenuItem(text = { Text("Relog") }, onClick = { menu = false; panel.row(row, "relog") })
+                DropdownMenuItem(text = { Text("Gear…") }, onClick = { menu = false; open(Page.ArmyGear(row.key, row.label)) })
+                DropdownMenuItem(text = { Text("Logs…") }, onClick = { menu = false; open(Page.ArmyLogs(row.key, row.label)) })
                 if (row.auto.isNotEmpty()) {
                     DropdownMenuItem(text = { Text("Stop ${row.auto}") }, onClick = { menu = false; panel.row(row, "stop-auto") })
                 } else {
@@ -502,7 +525,7 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
 
 /** Who the commands below go to; amber while that's every client. */
 @Composable
-private fun Target(targets: List<ArmyRow>, everyone: Boolean) {
+fun ArmyTarget(targets: List<ArmyRow>, everyone: Boolean) {
     val text = when {
         targets.isEmpty() -> "No client to send to"
         everyone && targets.size == 1 -> "To the only client"

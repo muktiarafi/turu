@@ -8,7 +8,7 @@ use facet_generate::generation::json::JsonPlugin;
 use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
-    application_options::AppOptionsView, army::ArmyView, army_client::GearView, army_travel::ArmyTravelView, auto::AutoView, bank::BankView, butler::ButlerView,
+    application_options::AppOptionsView, army::ArmyView, army_client::ArmyGearView, army_travel::ArmyTravelView, auto::AutoView, bank::BankView, butler::ButlerView,
     core_bots::CoreBotsView, cosmetics::CosmeticsView, drops::DropsView, fast_travel::FastTravelView,
     game_options::GameOptionsView, grabber::GrabberView, console::ConsoleView, jump::JumpView, junk::JunkView, loader::LoaderView, loadouts::LoadoutsView,
     logs::LogsView, notifications::NotificationsView, notify_drop::NotifyDropView, rail::RailView, repo::RepoView,
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<JunkView>()?
         .add_type::<ConsoleView>()?
         .add_type::<ArmyTravelView>()?
-        .add_type::<GearView>()?
+        .add_type::<ArmyGearView>()?
         .add_type::<BankView>()?
         .add_type::<RailView>()?
         .add_type::<LogsView>()?
