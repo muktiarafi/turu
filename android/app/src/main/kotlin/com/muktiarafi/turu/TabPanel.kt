@@ -91,13 +91,14 @@ class TabActions(
     val skills: SkillsPanel,
     val loadouts: LoadoutsPanel,
     val fastTravel: FastTravelPanel,
+    val butler: ButlerPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
 private val PanelWidth = 320.dp
 
 /** Pages whose rows need more room than a list of tabs. */
-private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills, Page.Loadouts, Page.FastTravel)
+private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills, Page.Loadouts, Page.FastTravel, Page.Butler)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -262,6 +263,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     Page.Skills -> SkillsPage(state, actions.skills) { actions.window("skills") }
                     Page.Loadouts -> LoadoutsPage(state, actions.loadouts) { actions.window("loadouts") }
                     Page.FastTravel -> FastTravelPage(state, actions.fastTravel) { actions.window("fast_travel") }
+                    Page.Butler -> ButlerPage(state, actions.butler) { actions.window("butler") }
                     Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
                         is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                     }

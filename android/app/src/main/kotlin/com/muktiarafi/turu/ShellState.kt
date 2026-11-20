@@ -111,6 +111,9 @@ sealed interface Page {
     /** Tools > Fast Travel. */
     data object FastTravel : Page
 
+    /** Plugins > Butler. */
+    data object Butler : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

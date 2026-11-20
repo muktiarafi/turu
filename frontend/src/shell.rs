@@ -509,6 +509,8 @@ pub enum NativeScreen {
     Loadouts,
     /// Tools > Fast Travel.
     FastTravel,
+    /// Plugins > Butler.
+    Butler,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

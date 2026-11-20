@@ -314,6 +314,8 @@ fun OptionRow(
                 )
             }
             val kind = o.kind
+            // A gap between a long description and its control.
+            if (kind !is KindView.text && kind !is KindView.secret && kind !is KindView.server) Spacer(Modifier.width(12.dp))
             when (kind) {
                 is KindView.switch -> Switch(checked = o.value.bool(), enabled = !o.unused, onCheckedChange = { onSet(it) })
                 is KindView.action -> OutlinedButton(
