@@ -726,7 +726,7 @@ script's message box and options request.
 * **Army Queue stays hidden on Android**: its squads run as `turu` processes of their own, which
   Android can't start (`Platform::launches_processes`; docs/ANDROID.md). Nothing to port.
 * **Army Control** (2026-11-20): `models::army` holds the rows (with `Peer`, which Gear, a
-  client's logs and Map Travel use), who a command goes to, the commands and their outcomes; the
+  client's logs and Map Travel use; native since 2026-11-21, below), who a command goes to, the commands and their outcomes; the
   egui window draws from it. A row's key is the same whichever slot answers (`tab:<the shell's
   number>`, the slot's own tab too), so the native page keeps the checked rows in Kotlin through a
   tab switch and sends them with each action (`send`, `row`). Reading the view counts as Army
@@ -930,6 +930,19 @@ script's message box and options request.
   emulator: the page, typing with the keyboard up (the editor first lost its focus when it moved
   between two layouts; it now has one call site), ⋮, font scale 1.3. Not checked: Run, Stop and the
   output's colours, as a snippet runs on the owner's account.
+* **Army travel, gear and logs** (2026-11-21, the owner's pick): `models::army_travel` holds the
+  jump settings (one file every slot shares: each change reads it again first, so a slot doesn't
+  save over another's; a test build uses a temporary file), where each client is (polled under
+  one guard, from egui's frame and the page's view) and the server list; jumps are Army Control's
+  commands (`jump`, `jump-player`, `change-server`) sent by value, presets edited and deleted by
+  name. `models::army_client` answers a row's gear and logs by its key, statelessly (logs from a
+  cursor), with Equip's and Refresh's outcomes per key. Army's panel counts the pages using it,
+  so a page Army opens keeps its rows. Checked on the emulator: the Travel group, Map Travel (Go
+  to, Use current, a visited map filling Go to, the presets' empty state, New… opening the form,
+  font scale 1.3), both pickers (cancelled), Gear and Logs (both kinds). Not pressed: any Jump,
+  Change server, Equip or Refresh, Save, Clear or Delete. While building, a model test sent a
+  jump into the Mac's real `army-control-jump.json` and replaced its last jump (Go to's starting
+  fields) with yulgar; the history and presets were untouched, and test builds can't reach it now.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.

@@ -1069,12 +1069,28 @@ above, and why:
   the row checks it. Under the rows, who the commands go to ("To all 2 clients · check rows to
   pick", amber; or the checked names), then Script (Start script, Stop script, Search scripts…, which opens Search Scripts to pick one),
   Account (Log in, Log out, Relog, Go to house) and Auto-Attack, Quest and Misc options folded,
-  and a last row to the full window for Travel, Gear and a client's logs. Stop script and Log out
+  and Travel (Map Travel…, Jump to player…, Change server…, since 2026-11-21: see below). A row's
+  ⋮ also opens its Gear… and Logs… pages. Stop script and Log out
   to every client ask first in a dialog, where the window wants a second click. The last outcome
   sits at the foot with History. The shell keeps the checked rows, by a key every slot gives the
   same row, so they stay through a tab switch; the outcomes are the slot's, so the list after a
-  switch is that tab's; a script is named by its file there ("Load Farm.ts: done"). Load file… is
-  the window's.
+  switch is that tab's; a script is named by its file there ("Load Farm.ts: done"). Load file… and
+  saving a client's logs to a file are the window's.
+* **Map Travel** (L5b, 2026-11-21), a page of the panel (440 dp) from Army Control's Travel: who it
+  sends (as Army Control says it), Go to (Map and Room; Cell and a Pad drop-down; Use current, the
+  only checked row's location else the tab on screen's; `map,room,cell,pad` pasted into Map fills
+  them all; the note "Sends 2 clients to battleon-2 · Enter, Spawn" and Jump), Recent destinations
+  (Clear) and Saved presets (New…). A destination row's tap fills Go to and its Jump sends it; a
+  preset's ⋮ has Edit… and Delete (asked first). New… and Edit… open a form page (name, map,
+  room, cell, pad, Use the client's location, Save in the bar), a new one starting from Go to,
+  else where the client is. **Jump to player…** is a dialog: the clients' logged-in players as
+  chips, the name field under them (the last one jumped to first). **Change server…** is a dialog
+  listing the online servers as radio rows once loaded; none is picked until tapped.
+* **Gear** (L5b, 2026-11-21), a page from a row's ⋮: online or not with its bank's age and Refresh,
+  "Stop the script first" (a switch, off each time) while a script runs, then a row per slot, the
+  item drop-down (worn first; "(bank)" after a bank item) with Equip, and what runs or last ran at
+  the foot. **Logs** (same day): Script and Debug chips with the line count, the log monospaced in
+  an inset well, selectable, kept at the newest line; ⋮: Copy, Full window (saving to a file).
 * **Notification Center** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Diagnostics
   and however the slot opens it: the tab's feed, newest first, under filter chips with their
   counts (All, Items, Activity, Warnings, Errors, Maps). A row is the kind's icon in its colour
