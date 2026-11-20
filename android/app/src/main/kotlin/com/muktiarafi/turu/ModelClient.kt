@@ -103,9 +103,16 @@ class ModelClient(
         }
     }
 
-    /** Runs `action` of `model` with `body`; `done` gets the error, or null. */
-    fun act(model: String, action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+    /** Runs `action` of `model` with `body`; `done` gets the error, or null; `answer` what it answered. */
+    fun act(
+        model: String,
+        action: String,
+        body: JSONObject = JSONObject(),
+        answer: (JSONObject) -> Unit = {},
+        done: (String?) -> Unit = {},
+    ) {
         actions.execute {
+            var answered: JSONObject? = null
             val error = runCatching {
                 val connection = open("/models/$model/$action", "POST").apply {
                     doOutput = true
@@ -113,13 +120,18 @@ class ModelClient(
                 }
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
                 if (connection.responseCode == 200) {
+                    answered = runCatching { JSONObject(connection.inputStream.bufferedReader().use { it.readText() }) }.getOrNull()
                     null
                 } else {
                     val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                     runCatching { JSONObject(text).getString("error") }.getOrDefault(text)
                 }
             }.getOrElse { it.message ?: "the tab didn't answer" }
-            main.post { if (!stopped) done(error) }
+            main.post {
+                if (stopped) return@post
+                answered?.let(answer)
+                done(error)
+            }
         }
     }
 

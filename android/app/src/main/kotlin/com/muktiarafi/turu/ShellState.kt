@@ -100,12 +100,30 @@ sealed interface Page {
     data class AccountForm(val original: Account?) : Page
 }
 
-/**
- * Search Scripts opened to pick a script for Army Control: the checked rows' keys (none: every
- * client) and who that is, for the page to say ("cecilus", "2 clients").
- */
-@Immutable
-data class ScriptPick(val keys: List<String>, val who: String)
+/** Search Scripts opened to pick a script for another page, which the bar and each row say. */
+sealed interface ScriptPick {
+    /** "Pick a script to load in 2 clients". */
+    val bar: String
+
+    /** Each row's button: "Load in 2 clients". */
+    val button: String
+
+    /**
+     * Army Control's clients: the checked rows' keys (none: every client) and who that is
+     * ("cecilus", "2 clients").
+     */
+    @Immutable
+    data class Army(val keys: List<String>, val who: String) : ScriptPick {
+        override val bar get() = "Pick a script to load in $who"
+        override val button get() = "Load in $who"
+    }
+
+    /** Accounts' launch options: the script launched accounts run. */
+    data object Launch : ScriptPick {
+        override val bar get() = "Pick the script launched accounts run"
+        override val button get() = "Use"
+    }
+}
 
 /** The shell's screens' state, read by Compose and changed on the main thread. */
 class ShellState {
@@ -113,7 +131,7 @@ class ShellState {
     var open by mutableStateOf(false)
     var page by mutableStateOf<Page>(Page.Tabs)
 
-    /** Search Scripts picks a script for Army Control while this is set ([ScriptPick]). */
+    /** Search Scripts picks a script for another page while this is set ([ScriptPick]). */
     var scriptPick by mutableStateOf<ScriptPick?>(null)
 
     /** The display cutout on the rail's side, in dp: the item grows by it, as egui's rail does. */

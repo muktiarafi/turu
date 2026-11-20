@@ -51,6 +51,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
@@ -209,6 +210,8 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, fullWindow: () -> U
     var startingMany by remember { mutableStateOf<List<Account>?>(null) }
     var droppingGroup by remember { mutableStateOf<String?>(null) }
     val list = accounts.list
+    // Read again on coming back (Search Scripts may have set the launch script).
+    LaunchedEffect(Unit) { accounts.reload() }
     val shown = list.accounts.filter { shows(it, filter, search) }
     // Accounts that left the list can't stay selected.
     LaunchedEffect(list) { selected = selected.filterTo(mutableSetOf()) { u -> list.accounts.any { it.username == u } } }
@@ -327,7 +330,10 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, fullWindow: () -> U
             }
         }
         HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-        LaunchOptions(accounts)
+        LaunchOptions(accounts) {
+            state.scriptPick = ScriptPick.Launch
+            state.push(Page.Search)
+        }
     }
     removing?.let { account ->
         AlertDialog(
@@ -546,10 +552,13 @@ private fun AccountMenu(
     }
 }
 
-/** Launch options, folded at the foot: the server (with its ping) and the script, with Auto-start. */
+/**
+ * Launch options, folded at the foot: the server (with its ping) and the script, with Auto-start.
+ * The script is a favourite or recent one, or any from Search scripts… (Search Scripts, picking).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LaunchOptions(accounts: AccountsPanel) {
+private fun LaunchOptions(accounts: AccountsPanel, searchScripts: () -> Unit) {
     var unfolded by remember { mutableStateOf(false) }
     val list = accounts.list
     Column(Modifier.fillMaxWidth()) {
@@ -605,6 +614,14 @@ private fun LaunchOptions(accounts: AccountsPanel) {
                         (list.scripts + listOfNotNull(list.script)).distinct().map { it to it.substringAfterLast('/').removeSuffix(".ts") },
                     loading = false,
                 ) { accounts.launch(list.server, it.ifEmpty { null }, list.autoStart) }
+                OutlinedButton(
+                    onClick = searchScripts,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Search scripts…")
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(
                         "Start the script once logged in",

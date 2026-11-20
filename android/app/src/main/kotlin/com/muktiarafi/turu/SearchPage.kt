@@ -108,14 +108,22 @@ class SearchPanel {
 
     fun query(field: String, value: Any) = act("query", JSONObject().put(field, value))
 
-    /** Loads the script at `path` in Army Control's clients (`pick`), downloading it first if needed. */
-    fun pick(path: String, pick: ScriptPick, done: (String?) -> Unit) {
+    /**
+     * Hands the script at `path` to the page that asked (`pick`), downloading it first if needed.
+     * `done` gets the error (or null) and whether it's done now; false while the repository's task
+     * downloads it (the launch script is set when that ends).
+     */
+    fun pick(path: String, pick: ScriptPick, done: (String?, Boolean) -> Unit) {
         error = null
-        val client = client ?: return done("The tab isn't up yet")
-        val body = JSONObject().put("command", "script").put("path", path).put("keys", org.json.JSONArray(pick.keys))
-        client.act("army", "send", body) { failed ->
+        val client = client ?: return done("The tab isn't up yet", false)
+        val (model, action, body) = when (pick) {
+            is ScriptPick.Army -> Triple("army", "send", JSONObject().put("command", "script").put("path", path).put("keys", org.json.JSONArray(pick.keys)))
+            ScriptPick.Launch -> Triple("repo", "launch", JSONObject().put("path", path))
+        }
+        var ready = true
+        client.act(model, action, body, answer = { ready = it.optBoolean("ready", true) }) { failed ->
             error = failed
-            done(failed)
+            done(failed, ready)
         }
     }
 }
@@ -133,15 +141,25 @@ private fun toneColor(tone: Tone) = when (tone) {
  * Start and a menu (Load, Add to the queue, Download or Update, Pin), and the repository's task
  * and its buttons at the foot. Delete and Reset Scripts stay in the egui window.
  *
- * Opened from Army Control's Search scripts… ([ShellState.scriptPick]) it picks instead: a bar
- * says for how many clients, each row offers "Load in N clients", and a pick goes back to Army
- * Control, whose outcome line reports each client.
+ * Opened to pick ([ShellState.scriptPick]: Army Control's clients, Accounts' launch script) it
+ * picks instead: a bar says for what, each row offers its button ("Load in 2 clients", "Use"),
+ * and a pick goes back to the page that asked, once a script that needs a download has it.
  */
 @Composable
 fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
     // Leaving the page ends a pick (Back, Cancel, or the pick itself).
     DisposableEffect(Unit) { onDispose { search.follow(null); state.scriptPick = null } }
     val pick = state.scriptPick
+    // A launch script being downloaded: the page goes back once the repository's task ends, or
+    // stays to show why it failed.
+    var downloading by remember { mutableStateOf(false) }
+    LaunchedEffect(downloading, search.view?.busy) {
+        val v = search.view ?: return@LaunchedEffect
+        if (downloading && v.busy == null) {
+            downloading = false
+            if (v.message?.failed != true) state.back()
+        }
+    }
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { search.follow(state.tabs.active) }
     val view = search.view
     Column(Modifier.fillMaxSize()) {
@@ -183,7 +201,14 @@ fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
             items(view.rows, key = { it.path }) { row ->
                 if (pick != null) {
                     PickRow(row, topHit = row.path == top, pick = pick) {
-                        search.pick(row.path, pick) { failed -> if (failed == null) state.back() }
+                        search.pick(row.path, pick) { failed, ready ->
+                            when {
+                                failed != null -> {}
+                                ready -> state.back()
+                                // Downloading first: back once the task ends (the foot shows it).
+                                else -> downloading = true
+                            }
+                        }
                     }
                 } else {
                     ScriptRow(row, topHit = row.path == top, search = search) { state.push(Page.Scripts) }
@@ -298,7 +323,7 @@ private fun MenuChip(label: String, selected: Boolean, options: List<Pair<String
     }
 }
 
-/** What Search Scripts picks for, and Cancel (back to Army Control with nothing loaded). */
+/** What Search Scripts picks for, and Cancel (back to the page that asked, nothing picked). */
 @Composable
 private fun PickBar(pick: ScriptPick, cancel: () -> Unit) {
     Row(
@@ -311,7 +336,7 @@ private fun PickBar(pick: ScriptPick, cancel: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Pick a script to load in ${pick.who}",
+            pick.bar,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f),
             maxLines = 1,
@@ -321,7 +346,7 @@ private fun PickBar(pick: ScriptPick, cancel: () -> Unit) {
     }
 }
 
-/** A script while picking for Army Control: name, badge and description; a tap (or Load) picks it. */
+/** A script while picking: name, badge and description; a tap (or its button) picks it. */
 @Composable
 private fun PickRow(row: RowView, topHit: Boolean, pick: ScriptPick, onPick: () -> Unit) {
     Row(
@@ -353,7 +378,7 @@ private fun PickRow(row: RowView, topHit: Boolean, pick: ScriptPick, onPick: () 
         if (row.working) {
             CircularProgressIndicator(Modifier.padding(horizontal = 16.dp).size(20.dp), strokeWidth = 2.dp)
         } else {
-            val label = "Load in ${pick.who}"
+            val label = pick.button
             // A long account name stops at the button's width.
             val modifier = Modifier.heightIn(min = 48.dp).widthIn(max = 200.dp)
             val text: @Composable () -> Unit = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }

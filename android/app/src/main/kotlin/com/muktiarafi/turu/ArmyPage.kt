@@ -216,7 +216,7 @@ fun ArmyPage(state: ShellState, panel: ArmyPanel, select: (Int) -> Unit, fullWin
                             Action("Start script", primary = true, enabled = any) { panel.send("start-script") },
                             Action("Stop script", enabled = any) { guarded("Stop the script", "stop-script") },
                             Action("Search scripts…", enabled = any) {
-                                state.scriptPick = ScriptPick(panel.checked.keys.toList(), targets.singleOrNull()?.label ?: "${targets.size} clients")
+                                state.scriptPick = ScriptPick.Army(panel.checked.keys.toList(), targets.singleOrNull()?.label ?: "${targets.size} clients")
                                 state.push(Page.Search)
                             },
                         ),

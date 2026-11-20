@@ -101,7 +101,7 @@ class TabModels {
     /** Runs `action` of `model`; `done` gets the error, or null. */
     fun act(model: String, action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
         val client = client ?: return done("The tab isn't up yet")
-        client.act(model, action, body, done)
+        client.act(model, action, body, done = done)
     }
 
     fun clearLog(kind: String) {
