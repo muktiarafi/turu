@@ -751,6 +751,13 @@ script's message box and options request.
   the emulator: the feed, an empty filter, selecting, Copy ending the selection, Clear's question
   (cancelled), Full window. Not seen on screen: the item, activity, warning and error icons (the
   feed held only a map change), Share, and a tab switch.
+* **Accounts' selection and groups** (2026-11-20): the long press, Start several, Add to group,
+  Remove from the group and Remove the group, as the pass gave them (where they differ: docs/UI.md,
+  "The long-press selection"), through new requests in `shell_accounts.rs` (`startMany`,
+  `addToGroup`, `removeFromGroup`, `removeGroup`). Checked on the emulator with three made-up
+  accounts (removed after): selecting, Select all shown, Start's question with 2 tabs free (not
+  started), a new group and its chip, filtering by it, Remove from the group, Army Control's
+  Groups listing it ("0 of 1 open"), Remove the group. Not checked: starting several for real.
 * Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)

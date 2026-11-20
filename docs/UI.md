@@ -981,8 +981,16 @@ above, and why:
 * **"No password" (amber) under an account without a saved password**, in place of "Log in by
   hand" at the end of its row (Start stays there; the longer words were cut off). "Failed: reason"
   isn't shown: the shell doesn't learn a slot's login result.
-* **Not built yet**: the long-press selection (contextual bar, Start several, Add to group),
-  group editing, and the 560-dp-tall layout listing tabs one by one in the rail.
+* **The long-press selection** (2026-11-20): the bar shows the count alone ("3", read out as "3
+  selected"), ✕, Start, and a ⋮ with Add to group…, Select all shown and, under a group's chip,
+  Remove from the group: the 320-dp panel had no room for "3 selected" and Add to group beside
+  Start. Start asks first when the free tabs are fewer than the accounts ("Only 2 of 4 tabs are
+  free": who starts, who won't), rather than starting some and saying so after, since the
+  panel closes once tabs start. Add to group lists the groups (a tap adds) and takes a new name.
+  Group editing: Remove from the group (the egui window has none: it only adds) and, from the
+  page's ⋮ under a group's chip, Remove the group (asked first; its accounts stay). Army
+  Control's Groups lists what these make.
+* **Not built yet**: the 560-dp-tall layout listing tabs one by one in the rail.
 * **The rail's top**: the item is 8 + 52 dp (`slots::RAIL_TOP`); the slot's rail starts below
   it and its symbol folds on a short screen as before.
 * **The Script Loader** (L5b, 2026-11-20) is a page of the same panel, opened however the slot
