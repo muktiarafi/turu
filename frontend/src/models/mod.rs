@@ -19,6 +19,7 @@ pub mod application_options;
 pub mod army;
 pub mod auto;
 pub mod bank;
+pub mod butler;
 pub mod core_bots;
 pub mod drops;
 pub mod fast_travel;
@@ -457,6 +458,13 @@ pub fn register() {
         "core-bots",
         "do",
         Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
+    add_model("butler", Box::new(|bot| to_json(&butler::view(bot))));
+    add_model_action(
+        "butler",
+        "do",
+        Box::new(|bot, body| butler::act(bot, &text(body, "action")?, body)),
     );
 
     add_model("fast-travel", Box::new(|bot| to_json(&fast_travel::view(bot))));

@@ -11,36 +11,44 @@
 
 use super::theme::{DANGER, EDGE, INSET, MUTED, SMALL_RADIUS, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::butler as model;
+use crate::models::form::{KindView, OptionValue};
+use crate::models::scheduler::Tint;
 use egui::{
     Align, Color32, ComboBox, Context, CornerRadius, Frame, Key, Label, Layout, Margin, Modal, Popup,
     PopupCloseBehavior, RectAlign, RichText, ScrollArea, Stroke, TextEdit, TextStyle, TextWrapMode, Ui, vec2,
 };
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::butler::debug_log::{Level, LogLine};
 use turu_bot::butler::sync::SyncData;
-use turu_bot::butler::{self, ClassType, FollowSource, ParkSpot, SuspendNotice};
+use turu_bot::butler::{self, SuspendNotice};
 
 /// The height of Butler's buttons: finger-sized on a touch screen.
 fn control_height() -> f32 {
     widgets::target(26.0, 40.0)
 }
 
-/// How often the roster is read again.
-const REFRESH: Duration = Duration::from_secs(1);
+fn tint_color(tint: Tint) -> Color32 {
+    match tint {
+        Tint::Plain => TEXT,
+        Tint::Muted => MUTED,
+        Tint::Success => SUCCESS,
+        Tint::Warning => WARNING,
+        Tint::Danger => DANGER,
+    }
+}
 
+/// The window's own state; what Butler shows and decides is `models::butler`, shared with a
+/// native page.
 #[derive(Default)]
 pub struct ButlerWindow {
     roster: Vec<SyncData>,
-    read_at: Option<Instant>,
     show_settings: bool,
     show_log: bool,
     /// The log lines shown, and the log's version they were read at.
     log: Vec<LogLine>,
     log_version: Option<u64>,
-    /// The last action's outcome (set from the Follow thread too) and whether it failed.
-    message: Arc<Mutex<Option<(String, bool)>>>,
     /// Send to player: the pop-up is open, its name box, and the recent names shown.
     send_open: bool,
     send_target: String,
@@ -63,9 +71,7 @@ impl ButlerWindow {
             return;
         }
         let bot = crate::turu::bot();
-        if self.read_at.is_none_or(|t| t.elapsed() >= REFRESH) {
-            self.refresh(&bot);
-        }
+        self.roster = model::roster(&bot, false);
         let mut window = super::window(ctx, "Butler", [520.0, 560.0], 6).open(open);
         // On a phone a floating window would cover the game and still be cramped: a sheet.
         let area = super::window_area(ctx);
@@ -73,20 +79,7 @@ impl ButlerWindow {
             window = window.sheet(ctx);
         }
         window.show(ctx, |ui| self.ui(ui, &bot));
-        ctx.request_repaint_after(REFRESH);
-    }
-
-    fn refresh(&mut self, bot: &Bot) {
-        self.roster = bot.butler.roster();
-        self.read_at = Some(Instant::now());
-    }
-
-    fn say(&self, result: Result<String, String>) {
-        let message = match result {
-            Ok(text) => (text, false),
-            Err(text) => (text, true),
-        };
-        *self.message.lock().unwrap_or_else(|e| e.into_inner()) = Some(message);
+        ctx.request_repaint_after(model::REFRESH);
     }
 
     fn ui(&mut self, ui: &mut Ui, bot: &Arc<Bot>) {
@@ -103,62 +96,48 @@ impl ButlerWindow {
         }
         if changed {
             // Show the new state now rather than at the next read.
-            self.refresh(bot);
+            self.roster = model::roster(bot, true);
         }
     }
 
     /// This account, whom it follows, and Stop following / Release all.
     fn header_card(&self, ui: &mut Ui, bot: &Arc<Bot>) -> bool {
-        let butler = &bot.butler;
-        let me = butler.username();
-        let following = butler.following();
-        let followers = butler.followers();
-        let enabled = butler.enabled();
+        let header = model::header(bot);
         let mut changed = false;
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    let name = if me.is_empty() { "(not logged in)" } else { me.as_str() };
-                    ui.label(RichText::new(name).size(16.0).strong().color(TEXT));
-                    let (state, color) = match &following {
-                        Some((master, _)) if butler.is_parked() => (format!("Parked, waiting for {master}"), WARNING),
-                        Some((master, source)) => {
-                            let how = match source {
-                                FollowSource::Ordered => "summoned",
-                                FollowSource::Manual => "manual",
-                            };
-                            (format!("Following {master} ({how})"), SUCCESS)
-                        }
-                        None if butler.is_parking() => ("Going to the park spot".into(), MUTED),
-                        None if !followers.is_empty() => (format!("Summoning {}", followers.join(", ")), SUCCESS),
-                        None => ("Not following anyone".into(), MUTED),
+                    let name = if header.me.is_empty() {
+                        "(not logged in)"
+                    } else {
+                        header.me.as_str()
                     };
-                    ui.label(RichText::new(state).size(12.0).color(color));
+                    ui.label(RichText::new(name).size(16.0).strong().color(TEXT));
+                    ui.label(RichText::new(&header.state).size(12.0).color(tint_color(header.tint)));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let control = vec2(0.0, control_height());
-                    if !followers.is_empty()
-                        && widgets::button(ui, "Release all", Kind::Normal, enabled, control, "")
+                    if header.summoning
+                        && widgets::button(ui, "Release all", Kind::Normal, header.enabled, control, "")
                             .on_hover_text("Clear the summon list; released butlers go to their park spot")
                             .clicked()
                     {
                         butler::release_all(bot);
-                        self.say(Ok("Released all followers.".into()));
+                        model::say(bot, Ok("Released all followers.".into()));
                         changed = true;
                     }
-                    if following.is_some()
+                    if header.following
                         && widgets::button(ui, "Stop following", Kind::Danger, true, control, "").clicked()
                     {
                         butler::stop_follow(bot);
-                        self.say(Ok("Stopped following.".into()));
+                        model::say(bot, Ok("Stopped following.".into()));
                         changed = true;
                     }
                 });
             });
-            let message = self.message.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            if let Some((text, failed)) = message {
-                ui.label(RichText::new(text).small().color(if failed { DANGER } else { MUTED }));
+            if let Some(note) = model::message(bot) {
+                ui.label(RichText::new(note.text).small().color(tint_color(note.tint)));
             }
         });
         changed
@@ -193,159 +172,9 @@ impl ButlerWindow {
                         if i > 0 {
                             ui.add(egui::Separator::default().spacing(separator));
                         }
-                        changed |= self.row(ui, bot, account);
+                        changed |= row(ui, bot, &model::account(bot, account));
                     }
                 });
-        });
-        changed
-    }
-
-    fn row(&self, ui: &mut Ui, bot: &Arc<Bot>, account: &SyncData) -> bool {
-        let butler = &bot.butler;
-        let me = butler.username();
-        let enabled = butler.enabled();
-        let following = butler.following().map(|(m, _)| m);
-        let summoned = butler
-            .followers()
-            .iter()
-            .any(|f| f.eq_ignore_ascii_case(&account.username));
-        let am_following = following
-            .as_deref()
-            .is_some_and(|m| m.eq_ignore_ascii_case(&account.username));
-        let follows_me = !me.is_empty() && account.following.eq_ignore_ascii_case(&me);
-        let follows_other = !account.following.is_empty() && !follows_me;
-        let my_server = butler.server();
-        let other_server =
-            !account.server.is_empty() && !my_server.is_empty() && !account.server.eq_ignore_ascii_case(&my_server);
-        let mut changed = false;
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(&account.username).strong().color(TEXT));
-                    if account.attacking {
-                        chip(ui, "fighting", WARNING);
-                    }
-                    if follows_me {
-                        chip(ui, "following me", SUCCESS);
-                    } else if follows_other {
-                        chip(ui, &format!("following {}", account.following), MUTED);
-                    } else if summoned {
-                        chip(ui, "summoned", MUTED);
-                    }
-                    if account.script_on {
-                        let script = if account.script_name.is_empty() {
-                            "script"
-                        } else {
-                            &account.script_name
-                        };
-                        chip(ui, &format!("busy: {script}"), WARNING);
-                    }
-                    if account.parking {
-                        chip(ui, "parking", MUTED);
-                    }
-                    if other_server {
-                        chip(ui, "other server", DANGER);
-                    }
-                });
-                let place: Vec<String> = [
-                    account.map_with_room(),
-                    account.server.clone(),
-                    account.class_name.clone(),
-                ]
-                .into_iter()
-                .filter(|v| !v.is_empty())
-                .collect();
-                ui.label(
-                    RichText::new(place.join("  ·  "))
-                        .size(widgets::small_label_size())
-                        .color(MUTED),
-                );
-            });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let size = if widgets::touch() {
-                    vec2(84.0, control_height())
-                } else {
-                    vec2(72.0, 26.0)
-                };
-                // Summon / Release.
-                if summoned {
-                    if widgets::button(ui, "Release", Kind::Normal, true, size, "").clicked() {
-                        self.say(butler::toggle_follower(bot, &account.username));
-                        changed = true;
-                    }
-                } else {
-                    let block = if !enabled {
-                        Some("Butler is disabled".to_owned())
-                    } else if let Some(master) = &following {
-                        Some(format!("You're following {master}: stop before summoning anyone"))
-                    } else {
-                        butler::unavailable(bot, account).map(|why| format!("{} {why}", account.username))
-                    };
-                    let response = widgets::button(
-                        ui,
-                        "Summon",
-                        Kind::Primary,
-                        block.is_none(),
-                        size,
-                        block.as_deref().unwrap_or_default(),
-                    );
-                    if response
-                        .on_hover_text(format!("Have {} follow me", account.username))
-                        .clicked()
-                    {
-                        self.say(butler::toggle_follower(bot, &account.username));
-                        changed = true;
-                    }
-                }
-                // Follow / Stop.
-                if am_following {
-                    if widgets::button(ui, "Stop", Kind::Danger, true, size, "").clicked() {
-                        butler::stop_follow(bot);
-                        self.say(Ok(format!("Stopped following {}.", account.username)));
-                        changed = true;
-                    }
-                } else {
-                    let block = if !enabled {
-                        Some("Butler is disabled".to_owned())
-                    } else if bot.scripts.is_running() {
-                        Some("A script is running here: stop it first".to_owned())
-                    } else if let Some(master) = &following {
-                        Some(format!("You're following {master}: stop first"))
-                    } else if summoned {
-                        Some(format!("Release {} before following them", account.username))
-                    } else if follows_me {
-                        Some(format!("{} follows you", account.username))
-                    } else if follows_other {
-                        Some(format!("{} follows {}", account.username, account.following))
-                    } else if other_server {
-                        Some(format!("{} is on {}", account.username, account.server))
-                    } else {
-                        None
-                    };
-                    let response = widgets::button(
-                        ui,
-                        "Follow",
-                        Kind::Normal,
-                        block.is_none(),
-                        size,
-                        block.as_deref().unwrap_or_default(),
-                    );
-                    if response.on_hover_text(format!("Follow {}", account.username)).clicked() {
-                        let master = account.username.clone();
-                        let message = self.message.clone();
-                        crate::turu::spawn_action("Butler Follow", move |bot| {
-                            let result = butler::start_follow(bot, &master);
-                            let text = match &result {
-                                Ok(()) => (format!("Following {master}."), false),
-                                Err(e) => (e.clone(), true),
-                            };
-                            *message.lock().unwrap_or_else(|e| e.into_inner()) = Some(text);
-                            Ok(())
-                        });
-                        changed = true;
-                    }
-                }
-            });
         });
         changed
     }
@@ -354,8 +183,7 @@ impl ButlerWindow {
     /// on the right, the count on its own line above them when one row is too narrow
     /// (VibeSkua's `FooterBar`).
     fn footer(&mut self, ui: &mut Ui, bot: &Arc<Bot>) -> bool {
-        let butler = &bot.butler;
-        let enabled = butler.enabled();
+        let enabled = bot.butler.enabled();
         let text = if enabled {
             let n = self.roster.len();
             format!("{n} other account{} online", if n == 1 { "" } else { "s" })
@@ -363,7 +191,7 @@ impl ButlerWindow {
             "Butler is disabled: turn it on in Settings".into()
         };
         let tip = if enabled {
-            format!("The list is read again every {}s.", REFRESH.as_secs())
+            format!("The list is read again every {}s.", model::REFRESH.as_secs())
         } else {
             "Open Settings and turn on Enable Butler.".to_owned()
         };
@@ -387,9 +215,7 @@ impl ButlerWindow {
 
     /// The footer's buttons, right to left.
     fn footer_buttons(&mut self, ui: &mut Ui, bot: &Arc<Bot>) -> bool {
-        let butler = &bot.butler;
-        let enabled = butler.enabled();
-        let following = butler.following();
+        let enabled = bot.butler.enabled();
         let mut changed = false;
         let label = if self.show_settings {
             "Hide Settings"
@@ -406,35 +232,29 @@ impl ButlerWindow {
         {
             self.show_log = !self.show_log;
         }
-        let block = if !enabled {
-            "Butler is disabled"
-        } else if following.is_some() {
-            "You're following someone: stop first"
-        } else {
-            ""
-        };
+        let rule = model::summon_all_control(bot);
         let summon = widgets::button(
             ui,
             "Summon all",
             Kind::Primary,
-            block.is_empty(),
+            rule.enabled,
             vec2(0.0, 26.0),
-            block,
+            &rule.reason,
         );
         if summon
             .on_hover_text("Have every available account on this server follow this one")
             .clicked()
         {
-            self.say(butler::summon_all(bot));
+            model::say(bot, butler::summon_all(bot));
             changed = true;
         }
-        self.send_to_player(ui, enabled);
+        self.send_to_player(ui, bot, enabled);
         changed
     }
 
     /// "Send to player" and its pop-up (VibeSkua's flyout): a name box (Enter sends), Send, and
     /// the recent names to pick from.
-    fn send_to_player(&mut self, ui: &mut Ui, enabled: bool) {
+    fn send_to_player(&mut self, ui: &mut Ui, bot: &Arc<Bot>, enabled: bool) {
         let tip = if enabled {
             "Send this account and every available butler to another player."
         } else {
@@ -444,7 +264,7 @@ impl ButlerWindow {
         if button.clicked() {
             self.send_open = !self.send_open;
             if self.send_open {
-                self.recent_targets = crate::turu::bot().butler.recent_targets();
+                self.recent_targets = bot.butler.recent_targets();
             }
         }
         if !enabled {
@@ -502,17 +322,67 @@ impl ButlerWindow {
             if !target.is_empty() {
                 self.send_open = false;
             }
-            let message = self.message.clone();
-            crate::turu::spawn_action("Butler Send to player", move |bot| {
-                let result = butler::send_all_to_player(bot, &target);
-                *message.lock().unwrap_or_else(|e| e.into_inner()) = Some(match result {
-                    Ok(text) => (text, false),
-                    Err(text) => (text, true),
-                });
-                Ok(())
-            });
+            model::send_to_player(bot, target);
         }
     }
+}
+
+/// A roster row: the name and its chips, where it is, then Summon/Release and Follow/Stop.
+fn row(ui: &mut Ui, bot: &Arc<Bot>, account: &model::ButlerAccount) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(&account.username).strong().color(TEXT));
+                for c in &account.chips {
+                    chip(ui, &c.text, tint_color(c.tint));
+                }
+            });
+            ui.label(
+                RichText::new(&account.place)
+                    .size(widgets::small_label_size())
+                    .color(MUTED),
+            );
+        });
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let size = if widgets::touch() {
+                vec2(84.0, control_height())
+            } else {
+                vec2(72.0, 26.0)
+            };
+            if account.summoned {
+                if widgets::button(ui, "Release", Kind::Normal, true, size, "").clicked() {
+                    model::say(bot, butler::toggle_follower(bot, &account.username));
+                    changed = true;
+                }
+            } else {
+                let rule = &account.summon;
+                let response = widgets::button(ui, "Summon", Kind::Primary, rule.enabled, size, &rule.reason);
+                if response
+                    .on_hover_text(format!("Have {} follow me", account.username))
+                    .clicked()
+                {
+                    model::say(bot, butler::toggle_follower(bot, &account.username));
+                    changed = true;
+                }
+            }
+            if account.followed {
+                if widgets::button(ui, "Stop", Kind::Danger, true, size, "").clicked() {
+                    butler::stop_follow(bot);
+                    model::say(bot, Ok(format!("Stopped following {}.", account.username)));
+                    changed = true;
+                }
+            } else {
+                let rule = &account.follow;
+                let response = widgets::button(ui, "Follow", Kind::Normal, rule.enabled, size, &rule.reason);
+                if response.on_hover_text(format!("Follow {}", account.username)).clicked() {
+                    model::follow(bot, account.username.clone());
+                    changed = true;
+                }
+            }
+        });
+    });
+    changed
 }
 
 impl ButlerWindow {
@@ -575,13 +445,14 @@ impl ButlerWindow {
                     .clicked()
                 {
                     ui.ctx().copy_text(butler.log_text());
-                    self.say(Ok(format!("Copied {} log lines.", self.log.len())));
+                    model::say(bot, Ok(format!("Copied {} log lines.", self.log.len())));
                 }
                 if widgets::button(ui, "Save", Kind::Normal, any, size, "")
                     .on_hover_text("Write the log to a new file in the butler_logs folder")
                     .clicked()
                 {
-                    self.say(
+                    model::say(
+                        bot,
                         butler
                             .save_log()
                             .map(|path| format!("Saved the log to {}", path.display()))
@@ -601,7 +472,7 @@ impl ButlerWindow {
                     {
                         match std::fs::create_dir_all(&butler.logs_dir) {
                             Ok(()) => crate::platform::platform().open_folder(&butler.logs_dir),
-                            Err(e) => self.say(Err(format!("Couldn't make {}: {e}", butler.logs_dir.display()))),
+                            Err(e) => model::say(bot, Err(format!("Couldn't make {}: {e}", butler.logs_dir.display()))),
                         }
                     }
                 });
@@ -611,12 +482,7 @@ impl ButlerWindow {
 }
 
 fn level_color(level: Level) -> Color32 {
-    match level {
-        Level::Info => TEXT,
-        Level::Success => SUCCESS,
-        Level::Warning => WARNING,
-        Level::Error => DANGER,
-    }
+    tint_color(model::level_tint(level))
 }
 
 /// "A script started while following" (VibeSkua ButlerV5 `ShowSuspendNotice`), for the active
@@ -661,216 +527,84 @@ fn chip(ui: &mut Ui, text: &str, color: Color32) {
     widgets::pill(ui, |ui| ui.label(RichText::new(text).size(10.0).color(color)));
 }
 
-/// Butler's options (shared by every client, saved at once) and this account's own.
+/// Butler's options (shared by every client, saved at once) and this account's own, from the
+/// model's option rows (a native page shows the same).
 fn settings_card(ui: &mut Ui, bot: &Arc<Bot>) {
     let butler = &bot.butler;
-    let mut settings = butler.settings();
-    let before = settings.clone();
     let me = butler.username();
+    let options = model::options(&butler.settings(), &me);
     widgets::card(ui, |ui| {
         ui.set_width(ui.available_width());
-        widgets::section_label(ui, "SETTINGS (EVERY CLIENT)");
-        row(
-            ui,
-            "Enable Butler",
-            "Off: no client broadcasts, follows or summons. An active follow stops where it stands.",
-            |ui| widgets::switch(ui, &mut settings.enabled),
-        );
-        row(
-            ui,
-            "Only attack when the master attacks",
-            "Off: always fight beside the master.",
-            |ui| widgets::switch(ui, &mut settings.passive_attack),
-        );
-        row(
-            ui,
-            "Leech mode",
-            "Stay in the master's room at the Enter cell and never fight: for dragging a weak alt along.",
-            |ui| widgets::switch(ui, &mut settings.leech_mode),
-        );
-        row(
-            ui,
-            "Always goto the master",
-            "Keep sending goto while already in the master's room: fixes a butler stuck in the wrong cell \
-             after dying, at the cost of a goto every Goto delay. Ignored in leech mode and when Copy \
-             master's walking is on.",
-            |ui| widgets::switch(ui, &mut settings.always_goto),
-        );
-        row(
-            ui,
-            "Copy master's walking",
-            "When following in the same room and cell, walk where the master walks instead of standing still \
-             after teleporting beside them. Goto, cell jumps, direct joins and rescues still handle map and room \
-             changes. Ignored in leech mode and takes over from Always goto.",
-            |ui| widgets::switch(ui, &mut settings.copy_walk),
-        );
-        row(
-            ui,
-            "Goto delay",
-            "Time between gotos while chasing the master (250 ms is the loop's floor).",
-            |ui| {
-                let size = vec2(80.0, widgets::target(24.0, 40.0));
-                widgets::number(
-                    ui,
-                    "goto_delay",
-                    &mut settings.goto_delay,
-                    250..=10_000,
-                    10.0,
-                    " ms",
-                    size,
-                )
-            },
-        );
-        row(
-            ui,
-            "Failed gotos before rescue",
-            "Gotos that don't reach the master before joining its room from its file (how locked maps \
-             are entered). Lower reacts faster but can trigger on map-change lag.",
-            |ui| {
-                let size = vec2(48.0, widgets::target(24.0, 40.0));
-                widgets::number(
-                    ui,
-                    "rescue_threshold",
-                    &mut settings.rescue_threshold,
-                    1..=10,
-                    1.0,
-                    "",
-                    size,
-                )
-            },
-        );
-        row(
-            ui,
-            "Park location",
-            "Where a butler goes when it's released or its master goes offline. Stay can leave it in a boss \
-             room taking hits.",
-            |ui| {
-                ComboBox::from_id_salt("turu_butler_park")
-                    .selected_text(park_label(settings.park))
-                    .width(120.0)
-                    .show_ui(ui, |ui| {
-                        for spot in [ParkSpot::House, ParkSpot::Whitemap, ParkSpot::Stay] {
-                            ui.selectable_value(&mut settings.park, spot, park_label(spot));
+        for section in model::sections() {
+            if section.chip != model::EVERY_CLIENT {
+                ui.add_space(4.0);
+            }
+            widgets::section_label(ui, &section.title.to_uppercase());
+            if section.chip == model::THIS_ACCOUNT && me.is_empty() {
+                ui.label(RichText::new("Log in to set this account's options.").color(MUTED));
+            }
+            for o in options.iter().filter(|o| o.section == section.chip) {
+                let set = |value: serde_json::Value| {
+                    if let Err(e) = model::set(bot, o.label, &value) {
+                        bot.logs.debug.push(e);
+                    }
+                };
+                row_ui(ui, o.label, o.description, |ui| match (&o.kind, &o.value) {
+                    (KindView::Switch, OptionValue::Switch(on)) => {
+                        let mut on = *on;
+                        let response = widgets::switch(ui, &mut on);
+                        if response.changed() {
+                            set(serde_json::json!(on));
                         }
-                    })
-                    .response
-            },
-        );
-
-        ui.add_space(4.0);
-        widgets::section_label(ui, "WHILE FOLLOWING");
-        row(
-            ui,
-            "Quest bypasses",
-            "When the butler lands on a map with quest-locked cells or monsters, fake the gate quest on this \
-             client so the cell opens and the monsters can be targeted. Only on maps in the built-in table; the \
-             server is never told anything.",
-            |ui| widgets::switch(ui, &mut settings.quest_bypass),
-        );
-        row(
-            ui,
-            "Custom bypass quest IDs",
-            "Extra quest IDs to fake when the follow starts, separated by commas (1234, 5678). For a map whose \
-             cells stay locked for butlers and isn't in the built-in table yet. Empty: none.",
-            |ui| widgets::text_box(ui, &mut settings.quest_bypass_custom, "1234, 5678", 140.0),
-        );
-        row(
-            ui,
-            "Follow master's quests",
-            "While following, mirror the master's active and registered quests: the butler registers the same \
-             quests here, with the chosen rewards, so it accepts them, collects its own drops and turns them in \
-             from its own inventory. Applied again after a relogin; removed when the follow ends.",
-            |ui| widgets::switch(ui, &mut settings.quest_sync),
-        );
-        row(
-            ui,
-            "Unlock all quests (experimental)",
-            "Sets every quest slot to the maximum on this client, so every quest-locked cell, monster and map \
-             opens without a bypass list. Overrides Quest bypasses while on. Client side only and undone by a \
-             relogin, but it scrambles this account's quest log until then: avoid it on an account you play by \
-             hand.",
-            |ui| widgets::switch(ui, &mut settings.quest_unlock_all),
-        );
-        row(
-            ui,
-            "Fake level 100",
-            "Shows this client as level 100 so level-gated maps (icestormunder) let the butler in. Client side \
-             only, but your character shows as level 100 to you until you relog.",
-            |ui| widgets::switch(ui, &mut settings.fake_level),
-        );
-        row(
-            ui,
-            "AntiLag while summoned",
-            "Turn on AntiLag (Lag Killer, the Lite animation cuts, hidden monsters) while this account is \
-             summoned: good for background alts. Your own settings come back when the follow ends.",
-            |ui| widgets::switch(ui, &mut settings.anti_lag_summoned),
-        );
-        row(
-            ui,
-            "AntiLag while following",
-            "The same, but only while following by hand (Follow in this window), not when summoned.",
-            |ui| widgets::switch(ui, &mut settings.anti_lag_following),
-        );
-        row(
-            ui,
-            "Debug logs",
-            "Record Butler's diagnostics in the debug log (Debug Log below). Off: nothing is recorded.",
-            |ui| widgets::switch(ui, &mut settings.debug_logs),
-        );
-        row(
-            ui,
-            "Auto-save logs",
-            "Also append every log line to a file in the butler_logs folder as it happens, one file per account.",
-            |ui| widgets::switch(ui, &mut settings.auto_save_log),
-        );
-
-        ui.add_space(4.0);
-        widgets::section_label(ui, "THIS ACCOUNT");
-        if me.is_empty() {
-            ui.label(RichText::new("Log in to set this account's options.").color(MUTED));
-        } else {
-            let mut account = settings.account(&me);
-            row(
-                ui,
-                "Class type",
-                "The CoreBots class (Options > CoreBots) this account equips when it starts following. None \
-                 keeps the current gear.",
-                |ui| {
-                    ComboBox::from_id_salt("turu_butler_class")
-                        .selected_text(format!("{:?}", account.class_type))
-                        .width(120.0)
-                        .show_ui(ui, |ui| {
-                            for class in [
-                                ClassType::None,
-                                ClassType::Farm,
-                                ClassType::Solo,
-                                ClassType::Dodge,
-                                ClassType::Boss,
-                            ] {
-                                ui.selectable_value(&mut account.class_type, class, format!("{class:?}"));
-                            }
-                        })
-                        .response
-                },
-            );
-            row(
-                ui,
-                "Obey summons",
-                "Off: this account ignores every summon. Turn it off on the account you play by hand.",
-                |ui| widgets::switch(ui, &mut account.obey_summons),
-            );
-            settings.set_account(&me, account);
+                        response
+                    }
+                    (KindView::Number { min, max, unit }, OptionValue::Number(n)) => {
+                        let mut n = *n;
+                        let size = vec2(80.0, widgets::target(24.0, 40.0));
+                        let max = max.map_or(i64::MAX, i64::from);
+                        let unit = unit.map(|u| format!(" {u}")).unwrap_or_default();
+                        let response =
+                            widgets::number(ui, o.label, &mut n, i64::from(*min)..=max, 10.0, unit.as_str(), size);
+                        if response.changed() {
+                            set(serde_json::json!(n));
+                        }
+                        response
+                    }
+                    (KindView::Choice { choices }, OptionValue::Text(key)) => {
+                        let mut picked = None;
+                        let response = ComboBox::from_id_salt(("turu_butler_choice", o.label))
+                            .selected_text(key.as_str())
+                            .width(120.0)
+                            .show_ui(ui, |ui| {
+                                for (k, words) in choices {
+                                    if ui.selectable_label(k == key, words).clicked() && k != key {
+                                        picked = Some(k.clone());
+                                    }
+                                }
+                            })
+                            .response;
+                        if let Some(k) = picked {
+                            set(serde_json::json!(k));
+                        }
+                        response
+                    }
+                    (KindView::Text { hint }, OptionValue::Text(text)) => {
+                        let mut text = text.clone();
+                        let response = widgets::text_box(ui, &mut text, hint, 140.0);
+                        if response.changed() {
+                            set(serde_json::json!(text));
+                        }
+                        response
+                    }
+                    _ => ui.label(""),
+                });
+            }
         }
     });
-    if settings != before
-        && let Err(e) = butler.set_settings(settings)
-    {
-        bot.logs.debug.push(format!("Couldn't save the Butler settings: {e}"));
-    }
 }
 
 /// A label (with its description on hover) and its control on the right.
-fn row(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui) -> egui::Response) {
+fn row_ui(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui) -> egui::Response) {
     ui.horizontal(|ui| {
         ui.set_min_height(26.0);
         ui.label(RichText::new(label).color(TEXT)).on_hover_text(help);
@@ -878,12 +612,4 @@ fn row(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui) -> eg
             control(ui).on_hover_text(help);
         });
     });
-}
-
-fn park_label(spot: ParkSpot) -> &'static str {
-    match spot {
-        ParkSpot::House => "House",
-        ParkSpot::Whitemap => "Whitemap",
-        ParkSpot::Stay => "Stay",
-    }
 }

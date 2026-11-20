@@ -8,10 +8,10 @@ use facet_generate::generation::json::JsonPlugin;
 use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
-    application_options::AppOptionsView, army::ArmyView, auto::AutoView, bank::BankView, core_bots::CoreBotsView,
-    drops::DropsView, fast_travel::FastTravelView, game_options::GameOptionsView, jump::JumpView,
-    loadouts::LoadoutsView, logs::LogsView, notifications::NotificationsView, rail::RailView, repo::RepoView,
-    scheduler::SchedulerView, scripts::ScriptsView, skills::SkillsView, stats::StatsView,
+    application_options::AppOptionsView, army::ArmyView, auto::AutoView, bank::BankView, butler::ButlerView,
+    core_bots::CoreBotsView, drops::DropsView, fast_travel::FastTravelView, game_options::GameOptionsView,
+    jump::JumpView, loadouts::LoadoutsView, logs::LogsView, notifications::NotificationsView, rail::RailView,
+    repo::RepoView, scheduler::SchedulerView, scripts::ScriptsView, skills::SkillsView, stats::StatsView,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<SkillsView>()?
         .add_type::<LoadoutsView>()?
         .add_type::<FastTravelView>()?
+        .add_type::<ButlerView>()?
         .add_type::<ArmyView>()?
         .add_type::<NotificationsView>()?
         .add_type::<StatsView>()?
