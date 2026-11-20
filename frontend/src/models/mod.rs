@@ -28,6 +28,7 @@ pub mod form;
 pub mod game_options;
 pub mod grabber;
 pub mod jump;
+pub mod junk;
 pub mod loader;
 pub mod loadouts;
 pub mod logs;
@@ -492,6 +493,13 @@ pub fn register() {
         "grabber",
         "do",
         Box::new(|bot, body| grabber::act(bot, &text(body, "action")?, body)),
+    );
+
+    add_model("junk", Box::new(|bot| to_json(&junk::view(bot))));
+    add_model_action(
+        "junk",
+        "do",
+        Box::new(|bot, body| junk::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
     add_model("loader", Box::new(|bot| to_json(&loader::view(bot))));
