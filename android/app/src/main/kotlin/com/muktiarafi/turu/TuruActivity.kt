@@ -84,6 +84,9 @@ class TuruActivity : GameActivity() {
         val view = mSurfaceView
         if (view != null) {
             shell = SlotShell(this, view, resources.displayMetrics.density).also { it.start(files.absolutePath) }
+            // The shell's own screens (Compose), above the slots' surface and the "Starting the
+            // tab..." view: they stay up while a tab's slot starts again.
+            (view.parent as? android.view.ViewGroup)?.let { screens.attach(it) }
             handleSlotIntent(intent)
         }
         // Back goes to the background like Home, instead of closing the activity: the game and a
@@ -113,6 +116,7 @@ class TuruActivity : GameActivity() {
             }
             // With process tabs, the slots draw Turu's UI: they lay it out around these too.
             shell?.insets(keyboard, left, right)
+            screens.cutout(left)
             view.onApplyWindowInsets(insets)
         }
         askOnce()
@@ -210,9 +214,10 @@ class TuruActivity : GameActivity() {
                 // A tap on the field moves its cursor, a long press selects: the EditText's, not the
                 // game's, which would take the focus off the game's field (or Turu's box) and close
                 // the strip.
+                // The shell's native screens (the Tabs item, its panel) are the views' too.
                 touchOnField = arrayOf(gameField, uiField).any { field ->
                     field.touchedInside(event.rawX, event.rawY)
-                }
+                } || screens.hits(event.x, event.y)
             }
             val onField = touchOnField
             if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -321,8 +326,12 @@ class TuruActivity : GameActivity() {
         }
     }
 
+    /** The shell's own screens: the Tabs item and its panel (Compose). */
+    val screens by lazy { ShellScreens(this) }
+
     /** The shell over the tabs' processes (the slots). */
-    private var shell: SlotShell? = null
+    var shell: SlotShell? = null
+        private set
 
     /** Process tabs: whether the gesture under way started on a [SurfaceField] ([dispatchTouchEvent]). */
     private var touchOnField = false

@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.androidApplication)
+    alias(libs.plugins.composeCompiler)
 }
 
 android {
@@ -25,6 +26,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     // Release signing: the keystore CI decodes from its secrets (`TURU_KEYSTORE` and the rest,
@@ -77,6 +79,15 @@ dependencies {
     implementation(libs.core)
     // Crash reports: Java and native crashes (its NDK part), ANRs and tombstones.
     implementation(libs.sentryAndroid)
+    // The shell's own screens: the Tabs item and its panel (docs/UI.md, "Native shells").
+    implementation(platform(libs.composeBom))
+    implementation(libs.composeUi)
+    implementation(libs.composeFoundation)
+    implementation(libs.composeMaterial3)
+    implementation(libs.composeIconsCore)
+    implementation(libs.activityCompose)
+    implementation(libs.composeUiToolingPreview)
+    debugImplementation(libs.composeUiTooling)
 }
 
 /// The version: `-PturuVersion=0.2.0-alpha.1` (the release tag without its `v`), else the

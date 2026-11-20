@@ -5,4 +5,5 @@ plugins {
     alias(libs.plugins.androidLibrary) apply false
     // Pins the Kotlin version AGP builds `rustls-platform-verifier` with.
     alias(libs.plugins.jetbrainsKotlinAndroid) apply false
+    alias(libs.plugins.composeCompiler) apply false
 }

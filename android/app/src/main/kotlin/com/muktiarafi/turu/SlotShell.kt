@@ -227,6 +227,8 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
                 "show" -> show(slot)
                 "send" -> sendJson(slot, action.getString("json"))
                 "activity" -> forActivity(slot, JSONObject(action.getString("json")))
+                // The native Tabs item and panel (`slots::NativeTabs`).
+                "tabs" -> activity.screens.tabs(action.getString("json"))
             }
         }
     }
@@ -264,7 +266,10 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     /** Shows `slot`: the surface moves there once the slot on screen has let go of it ([handOver]). */
     private fun show(slot: Int) {
         if (slot !in 1..SLOTS) return
-        if (slot != target) closeFields()
+        if (slot != target) {
+            closeFields()
+            activity.screens.close()
+        }
         target = slot
         handOver()
     }
@@ -288,6 +293,8 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
             }
             "install" -> install(slot, message.optString("path"))
             "prefer_refresh_rate" -> activity.preferRefreshRate(message.optInt("hz").toFloat())
+            // Army > Accounts in the slot's egui menu: the shell's native Accounts.
+            "open_accounts" -> activity.screens.openAccounts()
         }
     }
 

@@ -8,6 +8,10 @@ gamesActivity = "4.4.0"
 # GameActivity is an AppCompatActivity, and its POM names neither.
 appcompat = "1.7.1"
 core = "1.16.0"
+# The Android shell's own screens (docs/NATIVE_UI_PROPOSAL.md, L5a). 2026.06.01 (Compose 1.11): 1.12 needs compileSdk 37.
+composeBom = "2026.06.01"
+# BackHandler for the shell's panel (Back closes what's on top).
+activityCompose = "1.12.4"
 
 [libraries]
 sentryAndroid = { module = "io.sentry:sentry-android", version.ref = "sentry" }
@@ -15,7 +19,18 @@ gamesActivity = { module = "androidx.games:games-activity", version.ref = "games
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 core = { module = "androidx.core:core", version.ref = "core" }
 
+composeBom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+composeUi = { module = "androidx.compose.ui:ui" }
+composeFoundation = { module = "androidx.compose.foundation:foundation" }
+composeMaterial3 = { module = "androidx.compose.material3:material3" }
+composeUiTooling = { module = "androidx.compose.ui:ui-tooling" }
+composeUiToolingPreview = { module = "androidx.compose.ui:ui-tooling-preview" }
+# Material Symbols Rounded's core set (Icons.Rounded): Add, Close, Search, MoreVert, ...
+activityCompose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+composeIconsCore = { module = "androidx.compose.material:material-icons-core" }
+
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 androidLibrary = { id = "com.android.library", version.ref = "agp" }
 jetbrainsKotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
