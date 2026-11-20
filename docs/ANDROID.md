@@ -330,7 +330,10 @@ in the data folder's `crash/` (`/sdcard/Android/data/com.muktiarafi.turu/files/c
   (ANR, with its trace), a kill by the system or a battery saver (`SIGNALED`, `OTHER`), with the
   memory at the end (PSS only when the phone's memory could hold it: an OPPO reported 20 million
   MB), the phone and whether battery optimisation is off. Force stop, an update and
-  a clean exit are left out. A native crash (Android 12 and later) comes with its tombstone,
+  a clean exit are left out. A closed tab's slot process ends itself with status 0 for that
+  (`SlotService.onDestroy`): it used to kill itself, which Android records as `SIGNALED`, signal 9,
+  and every closed tab reached Sentry as "The system killed Turu (signal 9)" (TURU-ANDROID-C,
+  0.4.0 betas). A native crash (Android 12 and later) comes with its tombstone,
   read into text by `Tombstone.kt` (signal, abort message, backtraces, the end of the log), and
   the raw `-tombstone.pb` next to it. Android keeps these records across reboots and updates, but
   not across an uninstall: a tester who saw a crash should install the new build over the old one.

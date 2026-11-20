@@ -92,8 +92,12 @@ abstract class SlotService(private val slot: Int) : Service() {
         if (instance === this) instance = null
         super.onDestroy()
         // The tab was closed: the process is only its engine, which would otherwise keep playing
-        // (logged in) until Android reclaims the process.
-        android.os.Process.killProcess(android.os.Process.myPid())
+        // (logged in) until Android reclaims the process. Ended with an exit status, not
+        // `Process.killProcess`: Android records a SIGKILL as a kill by the system (`SIGNALED`,
+        // status 9), which CrashReports then sent to Sentry for every closed tab (TURU-ANDROID-C);
+        // an exit with status 0 is `EXIT_SELF`, which it leaves out. `halt`, as the kill did, runs
+        // no shutdown hooks that could hold the process up.
+        Runtime.getRuntime().halt(0)
     }
 
     override fun onBind(intent: Intent?): IBinder = messenger.binder
