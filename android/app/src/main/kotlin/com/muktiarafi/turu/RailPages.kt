@@ -288,6 +288,7 @@ private fun nativePage(window: String): Page? = when (window) {
     "notifications" -> Page.Notifications
     "stats" -> Page.Stats
     "current_drops" -> Page.CurrentDrops
+    "skills" -> Page.Skills
     "logs" -> Page.Logs
     else -> null
 }

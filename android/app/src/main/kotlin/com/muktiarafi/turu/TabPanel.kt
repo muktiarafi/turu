@@ -88,13 +88,14 @@ class TabActions(
     val notifications: NotificationsPanel,
     val stats: StatsPanel,
     val drops: DropsPanel,
+    val skills: SkillsPanel,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */
 private val PanelWidth = 320.dp
 
 /** Pages whose rows need more room than a list of tabs. */
-private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops)
+private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.AppOptions, Page.CoreBots, Page.Scheduler, Page.Army, Page.Notifications, Page.Stats, Page.CurrentDrops, Page.Skills)
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
@@ -256,6 +257,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                         Page.Notifications -> NotificationsPage(state, actions.notifications) { actions.window("notifications") }
                     Page.Stats -> StatsPage(state, actions.stats) { actions.window("stats") }
                     Page.CurrentDrops -> DropsPage(state, actions.drops) { actions.window("current_drops") }
+                    Page.Skills -> SkillsPage(state, actions.skills) { actions.window("skills") }
                     Page.Army -> ArmyPage(state, actions.army, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
                         is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
                     }

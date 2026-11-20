@@ -49,6 +49,7 @@ class ShellScreens(private val activity: TuruActivity) {
         notifications = NotificationsPanel(),
         stats = StatsPanel(),
         drops = DropsPanel(),
+        skills = SkillsPanel(),
     )
 
     private val railActions = RailActions(
@@ -122,6 +123,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "notifications" -> open(Page.Notifications)
             "stats" -> open(Page.Stats)
             "current_drops" -> open(Page.CurrentDrops)
+            "skills" -> open(Page.Skills)
         }
     }
 

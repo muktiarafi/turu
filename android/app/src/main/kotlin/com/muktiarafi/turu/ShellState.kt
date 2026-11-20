@@ -102,6 +102,9 @@ sealed interface Page {
     /** Tools > Current Drops. */
     data object CurrentDrops : Page
 
+    /** Combat > Skills. */
+    data object Skills : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

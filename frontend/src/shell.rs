@@ -503,6 +503,8 @@ pub enum NativeScreen {
     Stats,
     /// Tools > Current Drops.
     CurrentDrops,
+    /// Combat > Skills.
+    Skills,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the
