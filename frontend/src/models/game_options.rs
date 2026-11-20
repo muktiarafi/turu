@@ -582,6 +582,7 @@ pub const PRIORITIES: [HuntPriority; 4] = [
 
 /// Game Options for a shell: every option, live and saved, and what differs.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct GameOptionsView {
     pub sections: Vec<SectionView>,
@@ -596,6 +597,7 @@ pub struct GameOptionsView {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct SectionView {
     /// Its short name, for a filter chip ("Combat").
@@ -605,6 +607,7 @@ pub struct SectionView {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct OptionView {
     /// Its label, which is also its key for [`set`].
@@ -615,8 +618,8 @@ pub struct OptionView {
     /// The small heading inside its section ("" for none).
     pub group: &'static str,
     pub kind: KindView,
-    pub value: Value,
-    pub saved: Value,
+    pub value: OptionValue,
+    pub saved: OptionValue,
     pub differs: bool,
     /// It matters now: the option it depends on (Private Rooms for Private Number) is on.
     pub applies: bool,
@@ -624,9 +627,37 @@ pub struct OptionView {
     pub unused: bool,
 }
 
+/// An option's value, typed for the shells (a switch's, a number's, a text's or a choice's key).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+#[repr(C)]
+pub enum OptionValue {
+    Switch(bool),
+    Number(i64),
+    /// Text, a server's name, or a choice's key ("HighHP").
+    Text(String),
+    /// An action's (Reload Map): none.
+    None,
+}
+
+impl OptionValue {
+    /// As JSON, as [`set`] takes it.
+    pub fn to_json(&self) -> Value {
+        match self {
+            Self::Switch(on) => json!(on),
+            Self::Number(n) => json!(n),
+            Self::Text(text) => json!(text),
+            Self::None => Value::Null,
+        }
+    }
+}
+
 /// How an option is edited.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+#[repr(C)]
 pub enum KindView {
     Switch,
     #[serde(rename_all = "camelCase")]
@@ -635,7 +666,6 @@ pub enum KindView {
         unit: Option<&'static str>,
     },
     /// Set FPS: 0 is Off; `presets` for a menu.
-    #[serde(rename_all = "camelCase")]
     Fps {
         max: i32,
         presets: Vec<i32>,
@@ -645,15 +675,15 @@ pub enum KindView {
     },
     /// A server's name (Relogin Server).
     Server,
-    /// One of `choices`: (value, label).
+    /// One of `choices`: (key, words).
     Choice {
-        choices: Vec<(Value, &'static str)>,
+        choices: Vec<(String, String)>,
     },
-    /// A button (Reload Map), not a value.
-    #[serde(rename_all = "camelCase")]
+    /// A button (Reload Map), not a value; `login`: it needs one. (One-word fields in variants:
+    /// facet-generate doesn't rename inside them as serde does.)
     Action {
         label: &'static str,
-        needs_login: bool,
+        login: bool,
     },
 }
 
@@ -668,27 +698,30 @@ fn kind_view(field: &Field) -> KindView {
         Field::Text(_, hint) => KindView::Text { hint },
         Field::Server => KindView::Server,
         Field::Priority => KindView::Choice {
-            choices: PRIORITIES.iter().map(|p| (json!(p), priority_label(*p))).collect(),
+            choices: PRIORITIES
+                .iter()
+                .map(|p| (format!("{p:?}"), priority_label(*p).to_owned()))
+                .collect(),
         },
         Field::ReloadMap => KindView::Action {
             label: "Reload",
-            needs_login: true,
+            login: true,
         },
     }
 }
 
 impl Field {
     /// This option's value in `options`, as JSON (`null` for an action).
-    pub fn get(&self, options: &BotOptions) -> Value {
+    pub fn get(&self, options: &BotOptions) -> OptionValue {
         let mut options = options.clone();
         match self {
-            Field::Bool(access) => json!(*access(&mut options)),
-            Field::Int(access, ..) => json!(*access(&mut options)),
-            Field::Text(access, _) => json!(access(&mut options).clone()),
-            Field::Fps => json!(options.set_fps),
-            Field::Server => json!(options.relogin_server),
-            Field::Priority => json!(options.hunt_priority),
-            Field::ReloadMap => Value::Null,
+            Field::Bool(access) => OptionValue::Switch(*access(&mut options)),
+            Field::Int(access, ..) => OptionValue::Number(i64::from(*access(&mut options))),
+            Field::Text(access, _) => OptionValue::Text(access(&mut options).clone()),
+            Field::Fps => OptionValue::Number(i64::from(options.set_fps)),
+            Field::Server => OptionValue::Text(options.relogin_server.clone()),
+            Field::Priority => OptionValue::Text(format!("{:?}", options.hunt_priority)),
+            Field::ReloadMap => OptionValue::None,
         }
     }
 

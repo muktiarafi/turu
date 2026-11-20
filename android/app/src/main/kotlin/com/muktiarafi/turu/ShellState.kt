@@ -78,6 +78,9 @@ sealed interface Page {
     /** Search Scripts. */
     data object Search : Page
 
+    /** Options > Game. */
+    data object GameOptions : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

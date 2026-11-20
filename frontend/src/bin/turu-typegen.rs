@@ -8,8 +8,8 @@ use facet_generate::generation::json::JsonPlugin;
 use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
-    auto::AutoView, bank::BankView, jump::JumpView, logs::LogsView, rail::RailView, repo::RepoView,
-    scripts::ScriptsView,
+    auto::AutoView, bank::BankView, game_options::GameOptionsView, jump::JumpView, logs::LogsView, rail::RailView,
+    repo::RepoView, scripts::ScriptsView,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,6 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<RailView>()?
         .add_type::<LogsView>()?
         .add_type::<RepoView>()?
+        .add_type::<GameOptionsView>()?
         .build()?;
     kotlin::Installer::new("com.muktiarafi.turu.models", std::path::Path::new(&out))
         .plugin(JsonPlugin)

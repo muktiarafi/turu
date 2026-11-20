@@ -278,6 +278,7 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, hid
                         "accounts" -> Page.Accounts
                         "new_tab" -> Page.NewTab
                         "script_repo" -> Page.Search
+                        "game_options" -> Page.GameOptions
                         else -> null
                     }
                     ListItem(

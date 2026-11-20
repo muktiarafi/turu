@@ -487,6 +487,8 @@ pub enum NativeScreen {
     Scripts,
     /// Search Scripts.
     Search,
+    /// Options > Game.
+    GameOptions,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

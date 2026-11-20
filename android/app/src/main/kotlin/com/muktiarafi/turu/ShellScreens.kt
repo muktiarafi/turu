@@ -37,6 +37,7 @@ class ShellScreens(private val activity: TuruActivity) {
         window = ::openWindow,
         hideRail = { railHidden(true) },
         search = SearchPanel(),
+        gameOptions = GameOptionsPanel(),
     )
 
     private val railActions = RailActions(
@@ -102,6 +103,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "accounts" -> open(Page.Accounts)
             "scripts" -> open(Page.Scripts)
             "search" -> open(Page.Search)
+            "game_options" -> open(Page.GameOptions)
         }
     }
 

@@ -362,6 +362,9 @@ impl TuruUi {
         if w.script_repo && !tab.script_repo.picking() && crate::turu::open_shell_screen(NativeScreen::Search) {
             w.script_repo = false;
         }
+        if w.game_options && crate::turu::open_shell_screen(NativeScreen::GameOptions) {
+            w.game_options = false;
+        }
         // And the egui windows its native screens open, while those aren't native yet.
         for window in crate::turu::take_window_requests() {
             if !w.open(&window) {
