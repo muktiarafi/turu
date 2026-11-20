@@ -1,0 +1,192 @@
+Turu crashed: native code aborted (signal 6)
+
+When: 2026-11-07 13:18:08 +0800
+Reason: CRASH_NATIVE (5), status 6
+Description: crash
+Was: in the background with its notification (foreground service)
+Memory at the end: RSS 1895 MB, PSS 2469 MB
+Phone: Google Pixel 8 (shiba), Android 16 (API 36), build CP1A.260505.005
+Phone memory: 7572 MB, 3091 MB free now
+Turu: 0.2.0-beta.2 (200202)
+Battery optimisation: off for Turu, background restricted: no (now)
+
+Tombstone (raw: exit-2026-11-07_13-18-08-crash_native-tombstone.pb)
+Build fingerprint: 'google/shiba/shiba:16/CP1A.260505.005/15081906:user/release-keys'
+Timestamp: 2026-11-07 13:18:05.122178503+0800
+Process uptime: 1635s
+Cmdline: com.muktiarafi.turu
+pid: 19432, tid: 19456, name: Thread-7
+signal 6 (SIGABRT), code -1 (SI_QUEUE), fault addr --------
+
+backtrace (thread "Thread-7"):
+      #00 pc 0000000000077980  /apex/com.android.runtime/lib64/bionic/libc.so (abort+160) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f4e520  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000001f4a184  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000001f32470  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000001f2b5b4  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000001f49fd0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #06 pc 0000000001f33730  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #07 pc 0000000001f65f90  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #08 pc 0000000001f61a28  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #09 pc 0000000001645ee0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #10 pc 000000000163dba0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #11 pc 00000000016c5900  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #12 pc 0000000001838b68  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #13 pc 0000000001838214  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #14 pc 0000000001830fd0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #15 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #16 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #17 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #18 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #19 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #20 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #21 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #22 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #23 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #24 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #25 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #26 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #27 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #28 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #29 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #30 pc 0000000001831380  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #31 pc 00000000016f85ac  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #32 pc 0000000001733a38  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #33 pc 0000000001726a70  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #34 pc 000000000172f56c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #35 pc 000000000172bd84  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #36 pc 00000000009626bc  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #37 pc 00000000009cf058  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #38 pc 00000000009d529c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #39 pc 00000000009929f4  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #40 pc 0000000001f510b8  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #41 pc 000000000008a714  /apex/com.android.runtime/lib64/bionic/libc.so (__pthread_start(void*) (.__uniq.67847048707805468364044055584648682506)+180) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #42 pc 000000000007b3b4  /apex/com.android.runtime/lib64/bionic/libc.so (__start_thread+68) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+
+thread 19464 "tokio-rt-worker":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3564c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000001512a64  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000001512694  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000001514cc8  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 000000000151592c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 10 more
+
+thread 25207 "SurfaceSyncGrou":
+      #00 pc 00000000000e200c  /apex/com.android.runtime/lib64/bionic/libc.so (__epoll_pwait+12) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 000000000001603c  /system/lib64/libutils.so (android::Looper::pollOnce(int, int*, int*, void**)+316) (BuildId: 1df2ced4b0e58d9c06fdf86886397554)
+      #02 pc 00000000001bfd60  /system/lib64/libandroid_runtime.so (android::android_os_MessageQueue_nativePollOnce(_JNIEnv*, _jobject*, long, int) (.__uniq.190462215528616872930035678816392364378)+48) (BuildId: 83302318da3878f15b1f609b3f2fe03a)
+      #03 pc 0000000000cb57bc  /data/misc/apexdata/com.android.art/dalvik-cache/arm64/boot.oat (art_jni_trampoline+108)
+      #04 pc 00000000008bf5b4  /data/misc/apexdata/com.android.art/dalvik-cache/arm64/boot.oat (android.os.MessageQueue.nextDeliQueue+132)
+      #05 pc 00000000008c5fac  /data/misc/apexdata/com.android.art/dalvik-cache/arm64/boot.oat (android.os.MessageQueue.next+76)
+      ... 9 more
+
+thread 26180 "Script Thread":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3dff0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000000a7ebb4  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000000a9407c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000000ab399c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000000b1a018  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 25 more
+
+thread 25209 "Thread-6":
+      #00 pc 00000000000e200c  /apex/com.android.runtime/lib64/bionic/libc.so (__epoll_pwait+12) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 000000000152c564  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000001528978  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 000000000151be54  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 00000000015217f0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000001521b78  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 9 more
+
+thread 25193 "RenderThread":
+      #00 pc 00000000000e200c  /apex/com.android.runtime/lib64/bionic/libc.so (__epoll_pwait+12) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 000000000001603c  /system/lib64/libutils.so (android::Looper::pollOnce(int, int*, int*, void**)+316) (BuildId: 1df2ced4b0e58d9c06fdf86886397554)
+      #02 pc 00000000005829dc  /system/lib64/libhwui.so (android::uirenderer::renderthread::RenderThread::threadLoop()+220) (BuildId: 8778a24f72836b6c7d78460e294c3a3b)
+      #03 pc 0000000000019654  /system/lib64/libutils.so (android::Thread::_threadLoop(void*)+196) (BuildId: 1df2ced4b0e58d9c06fdf86886397554)
+      #04 pc 000000000001bb28  /system/lib64/libutils.so (libutil_thread_trampoline(void*) (.__uniq.226528677032898775202282855395389835431)+24) (BuildId: 1df2ced4b0e58d9c06fdf86886397554)
+      #05 pc 000000000008a714  /apex/com.android.runtime/lib64/bionic/libc.so (__pthread_start(void*) (.__uniq.67847048707805468364044055584648682506)+180) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      ... 1 more
+
+thread 19462 "tokio-rt-worker":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3564c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000001512a64  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000001512694  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000001514cc8  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 000000000151592c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 10 more
+
+thread 26036 "async-io":
+      #00 pc 00000000000e200c  /apex/com.android.runtime/lib64/bionic/libc.so (__epoll_pwait+12) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000000e634b0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000000e631e4  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000000e61be0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000000e5e44c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000000e5ee24  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 4 more
+
+thread 19461 "Thread-4":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3564c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000001512a64  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000001512694  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000001514cc8  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 000000000151592c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 10 more
+
+thread 25237 "Turu Engine":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3564c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000000a4dffc  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000000a4d728  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000000a4ce60  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000000a4ac38  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 4 more
+
+thread 19448 "binder:19432_2":
+      #00 pc 00000000000dffcc  /apex/com.android.runtime/lib64/bionic/libc.so (__ioctl+12) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000000085520  /apex/com.android.runtime/lib64/bionic/libc.so (ioctl+144) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #02 pc 000000000005883c  /system/lib64/libbinder.so (android::IPCThreadState::talkWithDriver(bool)+188) (BuildId: febea5b5afae161a436374f107587913)
+      #03 pc 0000000000099ab8  /system/lib64/libbinder.so (android::IPCThreadState::joinThreadPool(bool)+120) (BuildId: febea5b5afae161a436374f107587913)
+      #04 pc 0000000000099a2c  /system/lib64/libbinder.so (android::PoolThread::threadLoop()+28) (BuildId: febea5b5afae161a436374f107587913)
+      #05 pc 0000000000019654  /system/lib64/libutils.so (android::Thread::_threadLoop(void*)+196) (BuildId: 1df2ced4b0e58d9c06fdf86886397554)
+      ... 4 more
+
+thread 19432 "muktiarafi.turu":
+      #00 pc 00000000000e200c  /apex/com.android.runtime/lib64/bionic/libc.so (__epoll_pwait+12) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 000000000001603c  /system/lib64/libutils.so (android::Looper::pollOnce(int, int*, int*, void**)+316) (BuildId: 1df2ced4b0e58d9c06fdf86886397554)
+      #02 pc 00000000001bfd60  /system/lib64/libandroid_runtime.so (android::android_os_MessageQueue_nativePollOnce(_JNIEnv*, _jobject*, long, int) (.__uniq.190462215528616872930035678816392364378)+48) (BuildId: 83302318da3878f15b1f609b3f2fe03a)
+      #03 pc 0000000000cb57bc  /data/misc/apexdata/com.android.art/dalvik-cache/arm64/boot.oat (art_jni_trampoline+108)
+      #04 pc 00000000008bf5b4  /data/misc/apexdata/com.android.art/dalvik-cache/arm64/boot.oat (android.os.MessageQueue.nextDeliQueue+132)
+      #05 pc 00000000008c5fac  /data/misc/apexdata/com.android.art/dalvik-cache/arm64/boot.oat (android.os.MessageQueue.next+76)
+      ... 16 more
+
+thread 26217 "Skill Timer":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3dff0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000000a7ebb4  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000000a9407c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000000ab399c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000000b1a018  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 10 more
+
+thread 19467 "ScriptInterface":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000001f3dff0  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #02 pc 0000000000a7ebb4  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #03 pc 0000000000a9407c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #04 pc 0000000000ab399c  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      #05 pc 0000000000b1a018  /data/app/~~9tGnSNii7o3XloX4DC6Gpw==/com.muktiarafi.turu-7HRFCjjNnCHm53ZSnEJK2w==/base.apk (offset 0x274000)
+      ... 10 more
+
+thread 25243 "binder:19432_1":
+      #00 pc 00000000000a1860  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+32) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #01 pc 0000000000079fd4  /apex/com.android.runtime/lib64/bionic/libc.so (__futex_wait_ex(void volatile*, bool, int, bool, timespec const*)+132) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #02 pc 000000000008990c  /apex/com.android.runtime/lib64/bionic/libc.so (pthread_cond_wait+76) (BuildId: 43764f6fa9e16b18fa315be8700f5d9c)
+      #03 pc 00000000000afe28  /system/lib64/libc++.so (std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&)+28) (BuildId: c1178e02479441e4d5f533f88cd8ff05d8ef10a8)
+      #04 pc 000000000012b098  /system/lib64/libgui.so (android::AsyncWorker::run()+88) (BuildId: 16192bbbd292b60dc607b107a038668a)
+      #05 pc 00000000000d49dc  /system/lib64/libgui.so (void* std::__1::__thread_proxy[abi:nn210000]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, void (android::AsyncWorker::*)(), android::AsyncWorker*>>(void*)+60) (BuildId: 16192bbbd292b60dc607b107a038668a)
+      ... 2 more
+
+thread 19483 "mali-event-hand":

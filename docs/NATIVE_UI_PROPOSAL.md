@@ -1,7 +1,7 @@
 # Proposal: native windows on each platform, over process tabs
 
-Status: **reopened (2026-11-20), in steps. L0 is done (2026-11-20: go for L5a, "L0's answers"
-below); L5a is next; the rest waits for a checkpoint.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+Status: **reopened (2026-11-20), in steps. L0 and L5a are done (2026-11-20, on the emulator; "L0's
+answers" and "L5a as built" below); next is the owner's checkpoint.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -53,7 +53,7 @@ The steps, with their state:
 | Step | What | State |
 |---|---|---|
 | L0 | Spike: Compose in the shell, model copies over the control API, type generation | Done 2026-11-20: go (branch `native-ui-l0`) |
-| L5a | Android: design pass, then the tab strip and Accounts in Compose | Design pass approved (2026-11-20, `docs/UI.md`); build after L0 |
+| L5a | Android: design pass, then the tab strip and Accounts in Compose | Built 2026-11-20 (emulator); checkpoint next |
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Planned, any time |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | After the checkpoint |
@@ -570,6 +570,22 @@ there, or records why not.
 are Compose; opening, switching and closing tabs work from them; the game and the egui windows draw
 in the area left; a slot killed while shown comes back in the same place; the egui text boxes still
 open the native field. Then the **checkpoint**: the owner tries it and decides whether to go on.
+
+#### L5a as built (2026-11-20)
+
+On the Android 16 arm64 emulator with two slots in game: the Tabs item and its panel, New tab and
+Accounts are Compose; opening (an account or a blank tab), switching and closing tabs work from
+them; the game takes the full height and the slot's egui rail starts below the item; a slot killed
+while shown comes back in the same place, the item and panel staying up meanwhile (they sit above
+the "Starting the tab..." view); the game's text field still opens the native strip beside the
+panel; Back and the scrim close what's on top. Not on a phone yet (M4). What differs from the
+design pass, and what isn't built, is in `docs/UI.md` ("Android, as built"). Found on the way: the
+shell's process had no rustls crypto provider (the server list's fetch aborted it); it installs
+one now, and the fetch can't panic the shell.
+
+Not done in L5a: R8 for the release build (the shell's dex is still +20 MB without it), the
+long-press selection in Accounts, and Back closing a slot's egui window (Back still sends the app
+to the background when no native screen is open).
 
 ### L1: Libraries without egui or winit (M)
 

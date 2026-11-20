@@ -873,7 +873,8 @@ letters, digits) with Ctrl, Shift and Alt, as winit does on a desktop.
 
 `docs/NATIVE_UI_PROPOSAL.md` puts native windows in the shell, beside the client's picture, each
 shell designed for its platform after a design pass the owner approves. This section is those
-passes' record. Nothing here is built yet: until a step lands, the egui windows above stand.
+passes' record. Built so far: Android's Tabs item, tab panel, New tab and Accounts (L5a,
+2026-11-20, "As built" below); everything else is the egui windows above.
 
 ### Android (design pass approved 2026-11-20; for L5a, and the frame for L5b)
 
@@ -961,6 +962,30 @@ surface through a tab switch; if it can't, the same panel opens from a Menu entr
 
 To check before building: what `SlotShell` does when the last tab closes (the empty state above
 assumes it stays open), and whether the shell's Rust can read the server list for the ping.
+
+### Android, as built (L5a, 2026-11-20)
+
+Code: `android/app/src/main/kotlin/com/muktiarafi/turu/` (`ShellScreens.kt` hosts two
+`ComposeView`s over the slot's surface: the item, and the panel only while open; `TabPanel.kt`,
+`AccountsPage.kt`, `ShellState.kt`, `ShellTheme.kt`, `AccountsPanel.kt`), the list from
+`slots::SlotShell::native_tabs` (link: `Tabs.rail_top`, `Status.waits`/`rail_hidden`,
+`OpenAccounts`), the accounts from `android/src/shell_accounts.rs`. Where it differs from the pass
+above, and why:
+
+* **The last tab has no ✕**, and there is no "No tabs open" state: `SlotShell::close` keeps the
+  last tab (the pass's question, answered: it does).
+* **Add/Save sit in the form's top bar**, not at its foot: Compose gets no full-screen keyboard
+  field in landscape, and with the keyboard up the panel has room for a field or two above it
+  (the page shrinks with `imePadding`, the focused field scrolls into view).
+* **"No password" (amber) under an account without a saved password**, in place of "Log in by
+  hand" at the end of its row (Start stays there; the longer words were cut off). "Failed: reason"
+  isn't shown: the shell doesn't learn a slot's login result.
+* **Not built yet**: the long-press selection (contextual bar, Start several, Add to group),
+  group editing, and the 560-dp-tall layout listing tabs one by one in the rail.
+* **The rail's top**: the item is 8 + 52 dp (`slots::RAIL_TOP`); the slot's rail starts below
+  it and its symbol folds on a short screen as before.
+* **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
+  pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
 
 ## Adding a window
 

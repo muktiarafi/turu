@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="t d" font-family="'Avenir Next', Avenir, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif">
+  <title id="t">Turu and Turu Mas</title>
+  <desc id="d">Two Android apps, one bot. Turu runs the game in Ruffle. Turu Mas works with Adobe AIR.</desc>
+  <defs>
+    <!-- The closed eyes of turu-symbol.svg, without the tile. -->
+    <path id="eyes" d="M34 104 A44 44 0 0 0 50.61 138.44 L41.37 154.44 A6.5 6.5 0 0 0 52.63 160.94 L61.87 144.94 A44 44 0 0 0 71.5 147.52 L71.5 166 A6.5 6.5 0 0 0 84.5 166 L84.5 147.52 A44 44 0 0 0 94.13 144.94 L103.37 160.94 A6.5 6.5 0 0 0 114.63 154.44 L105.39 138.44 A44 44 0 0 0 122 104 A10 10 0 0 0 102 104 A24 24 0 0 1 54 104 A10 10 0 0 0 34 104 Z M134 104 A44 44 0 0 0 150.61 138.44 L141.37 154.44 A6.5 6.5 0 0 0 152.63 160.94 L161.87 144.94 A44 44 0 0 0 171.5 147.52 L171.5 166 A6.5 6.5 0 0 0 184.5 166 L184.5 147.52 A44 44 0 0 0 194.13 144.94 L203.37 160.94 A6.5 6.5 0 0 0 214.63 154.44 L205.39 138.44 A44 44 0 0 0 222 104 A10 10 0 0 0 202 104 A24 24 0 0 1 154 104 A10 10 0 0 0 134 104 Z"/>
+    <!-- "turu", the wordmark's own strokes (turu-logo-*.svg), starting at x=204. -->
+    <g id="turu" fill="none" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M224 76 V176 A32 32 0 0 0 256 208 H264 M204 120 H260"/>
+      <path d="M292 120 V160 A48 48 0 0 0 388 160 V120 M388 160 V208"/>
+      <path d="M428 208 V120 M428 168 A48 48 0 0 1 476 120 H484"/>
+      <path d="M524 120 V160 A48 48 0 0 0 620 160 V120 M620 160 V208"/>
+    </g>
+    <!-- "mas", drawn to match: same stroke, x-height 120 to 208. -->
+    <g id="mas" fill="none" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M700 208 V120 M700 156 A36 36 0 0 1 772 156 V208 M772 156 A36 36 0 0 1 844 156 V208"/>
+      <path d="M980 164 A44 44 0 1 0 892 164 A44 44 0 1 0 980 164 M980 120 V208"/>
+      <path d="M1072 136 A25 22 0 1 0 1048 164 A25 22 0 1 1 1024 192"/>
+    </g>
+  </defs>
+
+  <!-- Turu's violet field and Turu Mas's gold field. -->
+  <rect width="1280" height="640" fill="#7C6CF0"/>
+  <path d="M676 0 H1280 V640 H604 Z" fill="#D4A72C"/>
+
+  <!-- Turu -->
+  <g transform="translate(72 0)">
+    <use href="#eyes" transform="translate(-51 -69) scale(1.5)" fill="#FFFFFF"/>
+    <use href="#turu" transform="translate(-96 218) scale(0.5)" stroke="#FFFFFF"/>
+    <text x="0" y="424" font-size="38" font-weight="600" fill="#FFFFFF">Runs the game in Ruffle</text>
+    <text x="0" y="468" font-size="27" font-weight="500" fill="#FFFFFF">The open-source Flash emulator</text>
+  </g>
+
+  <!-- Turu Mas -->
+  <g transform="translate(700 0)">
+    <use href="#eyes" transform="translate(-51 -69) scale(1.5)" fill="#11131A"/>
+    <use href="#turu" transform="translate(-96 218) scale(0.5)" stroke="#11131A"/>
+    <use href="#mas" transform="translate(-96 218) scale(0.5)" stroke="#11131A"/>
+    <text x="0" y="424" font-size="38" font-weight="600" fill="#11131A">Works with Adobe® AIR®</text>
+    <text x="0" y="468" font-size="27" font-weight="500" fill="#11131A">The original Flash runtime</text>
+  </g>
+
+  <!-- What they share. -->
+  <rect y="536" width="1280" height="104" fill="#11131A"/>
+  <text x="72" y="600" font-size="30" font-weight="600" fill="#E8EAF2">Two Android apps, one bot.<tspan font-weight="400" fill="#B4B8C8" dx="14">Same engine, same scripts, same windows.</tspan></text>
+</svg>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Turu 0.4.0 beta</title>
+<!--
+  The v0.4.0-beta release banner, 1280x640 (as turu-banner.svg). Rendered to
+  turu-v0.4.0-beta.png with headless Chrome:
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+      --force-device-scale-factor=2 --window-size=1280,640 \
+      --screenshot=turu-v0.4.0-beta.png turu-v0.4.0-beta.html
+  Player names are made up.
+-->
+<style>
+:root{--violet:#7C6CF0;--ink:#11131A;--card:#181B25;--card2:#1F2331;--edge:#2A2F40;--text:#E8EAF2;--muted:#9AA0B4;--muted2:#B4B8C8;--green:#34D399;--amber:#FBBF24}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:640px;overflow:hidden;background:var(--ink);font-family:"Avenir Next",Avenir,"Nunito Sans","Segoe UI",sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+.abs{position:absolute}
+.glow{inset:0;background:
+  radial-gradient(620px 460px at 82% 38%,rgba(124,108,240,.30),transparent 70%),
+  radial-gradient(500px 360px at 0% 100%,rgba(124,108,240,.12),transparent 70%)}
+/* left */
+.brand{left:72px;top:58px;display:flex;align-items:center;gap:18px}
+.chip{left:72px;top:150px;padding:8px 18px;border-radius:999px;border:2px solid var(--edge);font-size:17px;font-weight:600;letter-spacing:2.5px;color:var(--muted2);white-space:nowrap}
+.chip b{color:var(--text);letter-spacing:.5px}
+h1{left:72px;top:202px;width:600px;font-size:66px;line-height:1.04;font-weight:700;letter-spacing:-1.5px}
+h1 em{font-style:normal;color:var(--violet)}
+.sub{left:72px;top:356px;width:540px;font-size:27px;line-height:1.36;font-weight:500;color:var(--muted2)}
+.sub b{color:var(--text);font-weight:600}
+/* right: the lanes */
+.lanes{left:676px;top:76px;width:532px}
+.lane{position:relative;display:flex;align-items:center;gap:16px;height:84px;padding:0 20px;margin-bottom:14px;border-radius:18px;background:var(--card);border:1.5px solid var(--edge);box-shadow:0 18px 40px rgba(0,0,0,.28)}
+.av{flex:none;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;color:#fff}
+.who{flex:1;min-width:0}
+.who b{display:block;font-size:22px;font-weight:700}
+.who span{display:block;font-size:16px;color:var(--muted);font-weight:500;margin-top:1px}
+.bar{position:absolute;left:82px;right:20px;bottom:0;height:4px;border-radius:4px 4px 0 0;background:#262a39;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--green);border-radius:4px}
+.pill{flex:none;display:flex;align-items:center;gap:8px;font-size:16px;font-weight:700;padding:6px 13px;border-radius:999px}
+.pill .d{width:9px;height:9px;border-radius:50%}
+.ok{background:rgba(52,211,153,.14);color:var(--green)}.ok .d{background:var(--green)}
+.lane.down{background:#1b1a1f;border:1.5px dashed rgba(251,191,36,.55)}
+.lane.down .who b{color:var(--muted2)}
+.lane.down .who span{color:var(--amber)}
+.re{background:rgba(251,191,36,.14);color:var(--amber)}
+/* bottom strip */
+.strip{left:0;right:0;top:536px;height:104px;background:var(--violet);display:flex;align-items:center;padding:0 72px;gap:44px;color:#fff}
+.it{display:flex;align-items:center;gap:13px;font-size:23px;font-weight:600;white-space:nowrap}
+.it svg{flex:none}
+.plat{margin-left:auto;font-size:19px;font-weight:600;color:rgba(255,255,255,.82);letter-spacing:.3px}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+ <path id="eyes" d="M34 104 A44 44 0 0 0 50.61 138.44 L41.37 154.44 A6.5 6.5 0 0 0 52.63 160.94 L61.87 144.94 A44 44 0 0 0 71.5 147.52 L71.5 166 A6.5 6.5 0 0 0 84.5 166 L84.5 147.52 A44 44 0 0 0 94.13 144.94 L103.37 160.94 A6.5 6.5 0 0 0 114.63 154.44 L105.39 138.44 A44 44 0 0 0 122 104 A10 10 0 0 0 102 104 A24 24 0 0 1 54 104 A10 10 0 0 0 34 104 Z M134 104 A44 44 0 0 0 150.61 138.44 L141.37 154.44 A6.5 6.5 0 0 0 152.63 160.94 L161.87 144.94 A44 44 0 0 0 171.5 147.52 L171.5 166 A6.5 6.5 0 0 0 184.5 166 L184.5 147.52 A44 44 0 0 0 194.13 144.94 L203.37 160.94 A6.5 6.5 0 0 0 214.63 154.44 L205.39 138.44 A44 44 0 0 0 222 104 A10 10 0 0 0 202 104 A24 24 0 0 1 154 104 A10 10 0 0 0 134 104 Z"/>
+ <g id="turu" fill="none" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M224 76 V176 A32 32 0 0 0 256 208 H264 M204 120 H260"/>
+  <path d="M292 120 V160 A48 48 0 0 0 388 160 V120 M388 160 V208"/>
+  <path d="M428 208 V120 M428 168 A48 48 0 0 1 476 120 H484"/>
+  <path d="M524 120 V160 A48 48 0 0 0 620 160 V120 M620 160 V208"/>
+ </g>
+</defs></svg>
+
+<div class="abs glow"></div>
+
+<!-- logo: the closed eyes and the stroke wordmark -->
+<div class="abs brand">
+ <svg viewBox="30 92 196 80" width="98" height="40"><use href="#eyes" fill="#fff"/></svg>
+ <svg viewBox="190 62 444 160" width="111" height="40"><use href="#turu" stroke="#fff"/></svg>
+</div>
+
+<div class="abs chip">NEW IN <b>v0.4.0-beta</b></div>
+<h1 class="abs">Every account<br>in <em>its own lane.</em></h1>
+<p class="abs sub">If one tab crashes, <b>the others keep farming</b>, and it restarts by itself.</p>
+
+<div class="abs lanes">
+ <div class="lane">
+  <div class="av" style="background:#7C6CF0">M</div>
+  <div class="who"><b>Moonfarmer</b><span>Farming gold</span></div>
+  <div class="pill ok"><span class="d"></span>Running</div>
+  <div class="bar"><i style="width:72%"></i></div>
+ </div>
+ <div class="lane">
+  <div class="av" style="background:#3B82F6">N</div>
+  <div class="who"><b>Nightowl</b><span>Daily quests</span></div>
+  <div class="pill ok"><span class="d"></span>Running</div>
+  <div class="bar"><i style="width:44%"></i></div>
+ </div>
+ <div class="lane down">
+  <div class="av" style="background:#4a4f63">D</div>
+  <div class="who"><b>Dozy</b><span>Crashed, coming back…</span></div>
+  <div class="pill re">
+   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>Restarting</div>
+ </div>
+ <div class="lane">
+  <div class="av" style="background:#E0709B">P</div>
+  <div class="who"><b>Pillowknight</b><span>Farming XP</span></div>
+  <div class="pill ok"><span class="d"></span>Running</div>
+  <div class="bar"><i style="width:88%"></i></div>
+ </div>
+</div>
+
+<div class="abs strip">
+ <div class="it">
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4.5-4.5"/><circle cx="12" cy="15" r="1.4" fill="#fff"/></svg>
+  Smoother on older PCs and phones</div>
+ <div class="it">
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>
+  Tips when the game lags</div>
+ <div class="plat">PC · Mac · Linux · Android</div>
+</div>
+</body></html>
