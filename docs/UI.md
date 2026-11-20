@@ -984,6 +984,14 @@ above, and why:
   group editing, and the 560-dp-tall layout listing tabs one by one in the rail.
 * **The rail's top**: the item is 8 + 52 dp (`slots::RAIL_TOP`); the slot's rail starts below
   it and its symbol folds on a short screen as before.
+* **The Script Loader** (L5b, 2026-11-20) is a page of the same panel, opened however the slot
+  opens its Script Loader (the rail's script chip, Menu > Scripts, the hotkey, Search Scripts'
+  Start). The pass puts it on the native rail; until Auto, Jump and Bank have models the rail
+  stays egui, and it has no room for another item. The page: status card (state with its dot and
+  clock or last run, last log's age, "Waits for you", the script with its favourite star, the
+  error's first line), Start alone or Stop with Pause/Resume (Force Stop while stopping), the
+  reason a control is off under it, Search and Options (the slot's egui windows, the panel
+  closing for them), and the script log (its last 500 lines, line-fed).
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
   pass pins it (as egui does); it is used only on the Add/Save button and the count badge.
 

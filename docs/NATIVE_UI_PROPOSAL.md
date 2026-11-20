@@ -2,8 +2,9 @@
 
 Status: **reopened (2026-11-20), in steps. L0 and L5a are done (2026-11-20, on the emulator; "L0's
 answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with Android's bot
-windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot is done ("L2's
-pilot" below); L4 and L5b's Scripts screen are next.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
+and L5b's first screen (the Script Loader) are done (2026-11-20; "L2's pilot", "L4 and L5b so
+far" below).** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -663,6 +664,24 @@ script's message box and options request.
 
 **Done when** the Android build decodes a slot's scripts view into generated types in a test, and
 (for macOS) a Swift test reads `turu_shell`'s tab list.
+
+#### L4 and L5b so far (2026-11-20)
+
+* **L4**: `turu-typegen` (`turu_frontend`'s `typegen` feature: facet 0.46.5 and facet-generate
+  0.22.4, pinned exactly) writes Kotlin for the scripts view with kotlinx.serialization; the
+  Android build's `turuTypes` task runs it into the build folder before the Kotlin compiles, so
+  the types are never committed. Views use `String` for paths (facet-generate has no `PathBuf`).
+  The game options and logs views aren't generated yet: game options' values are JSON (`Value`),
+  which needs a typed form first.
+* **L5b**: the Script Loader is native (`ScriptsPage.kt`, `ModelClient.kt`), in the shell's
+  panel, read from the tab on screen's scripts model and its log over the control API; Search
+  Scripts and Edit Script Options open the slot's egui windows (`ToClient::OpenWindow`). However
+  the slot opens the Script Loader or Accounts (its chip, menus, a hotkey), the shell shows its
+  own (`ToShell::OpenScreen`). Verified on the emulator: load, Start, Pause, Resume, Stop, the
+  log arriving, the state on the native pane and the egui rail in step.
+* Not yet: the native rail (Tabs, Scripts, Logs, Army, More, with Auto, Jump and Bank, which need
+  models first), Search Scripts, Logs and Options as native screens, and "Done when"'s "found
+  ... without an egui window" (finding a script is still Search Scripts, egui).
 
 ### L5b: Android, the daily features (L, after L2 to L4)
 
