@@ -744,6 +744,13 @@ script's message box and options request.
   client, and Cancel went back with the check kept. Not checked: a pick that needs a download, Groups (no groups saved), Accept quest, a row's own Start, Stop and
   Log in or out, a launched client's rows (Android has none), the slot opening Army Control by
   itself (`openScreen("army")`), and typegen on the release job's Linux runner.
+* **Notification Center** (2026-11-20, past the pass's list: picked as the next for checking in
+  on a running script): `models::notifications` gives the feed with each entry's copied line, the
+  filters with counts and their empty words; the selection and filter stay each window's. The
+  page copies and shares in Kotlin (clipboard, share sheet) from the entries' lines. Checked on
+  the emulator: the feed, an empty filter, selecting, Copy ending the selection, Clear's question
+  (cancelled), Full window. Not seen on screen: the item, activity, warning and error icons (the
+  feed held only a map change), Share, and a tab switch.
 * Not yet: a phone (M4).
 
 ### L5b: Android, the daily features (L, after L2 to L4)

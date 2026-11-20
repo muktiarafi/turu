@@ -949,10 +949,10 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
 | Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
-| Tools & Helpers, Combat, Butler, Cosmetics, Notification Center, Console | decided when reached; egui from More until then |
+| Tools & Helpers, Combat, Butler, Cosmetics, Console | decided when reached; egui from More until then |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1063,6 +1063,14 @@ above, and why:
   same row, so they stay through a tab switch; the outcomes are the slot's, so the list after a
   switch is that tab's; a script is named by its file there ("Load Farm.ts: done"). Load file… is
   the window's.
+* **Notification Center** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Diagnostics
+  and however the slot opens it: the tab's feed, newest first, under filter chips with their
+  counts (All, Items, Activity, Warnings, Errors, Maps). A row is the kind's icon in its colour
+  (a gift green, a play button muted, a warning amber, an alert red, a pin in the accent), the
+  time and the message, wrapping. A tap selects; while anything is selected the bar is the
+  selection's ("2 selected", ✕, Copy, Share), and Copy ends it with "Copied 2 events" where the
+  count was. ⋮ has Copy and Share for every event shown, Clear (asked first, where the window
+  clears at once) and Full window. Save is the window's.
 * **Full window**: every native page's ⋮ ends with Full window, the slot's egui window (which
   stays egui until it closes), and says what it adds there.
 * **Contrast**: white on the accent (`#7C6CF0`) is about 4.0:1, under 4.5:1 for small text. The
