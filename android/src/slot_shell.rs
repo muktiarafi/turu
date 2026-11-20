@@ -63,6 +63,11 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
                 Ok(text) => list.push(json!({ "kind": "activity", "slot": slot, "json": text })),
                 Err(e) => tracing::warn!("Shell: a message I can't write: {e}"),
             },
+            // The activity's native Tabs item and panel.
+            Action::Tabs(tabs) => match serde_json::to_string(&tabs) {
+                Ok(text) => list.push(json!({ "kind": "tabs", "slot": 0, "json": text })),
+                Err(e) => tracing::warn!("Shell: a tab list I can't write: {e}"),
+            },
             Action::Send(slot, message) => match serde_json::to_string(&message) {
                 Ok(text) => list.push(json!({ "kind": "send", "slot": slot, "json": text })),
                 Err(e) => tracing::warn!("Shell: a message I can't write: {e}"),
@@ -70,6 +75,19 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
         }
     }
     Value::Array(list).to_string()
+}
+
+/// [`with_shell`], for the activity's native screens (`shell_accounts.rs`).
+pub(crate) fn with_shell_actions(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> String {
+    with_shell(work)
+}
+
+/// The data folder and the open tabs' logins, while the activity runs.
+pub(crate) fn shell_root() -> Option<(PathBuf, Vec<(u32, Option<String>)>)> {
+    let shell = SHELL.lock().unwrap_or_else(|e| e.into_inner());
+    shell
+        .as_ref()
+        .map(|(shell, root)| (root.clone(), shell.usernames()))
 }
 
 /// Runs `work` on the shell, carrying out what comes of it.
@@ -121,6 +139,9 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeShellStart<'local>(
     unowned_env
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
             let root = PathBuf::from(files_dir.try_to_string(env)?);
+            // The native Accounts reads and keeps passwords with the Keystore, as the slots do.
+            static PASSWORDS: std::sync::Once = std::sync::Once::new();
+            PASSWORDS.call_once(crate::storage::install);
             let records = SlotRecord::read_all(&turu_frontend::slots::dir(&root));
             let first = records.is_empty().then(|| first_tab(&root));
             // The first start with process tabs on (no records yet): the tabs the app had open in
@@ -135,6 +156,8 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeShellStart<'local>(
             if password.is_some() {
                 actions.insert(0, Action::Password(1, password));
             }
+            // The activity's Tabs item, before any slot is up.
+            actions.push(Action::Tabs(shell.native_tabs()));
             tracing::info!("Shell: process tabs in slots {:?}", shell.slots());
             let answer = activity_actions(&root, actions);
             *SHELL.lock().unwrap_or_else(|e| e.into_inner()) = Some((shell, root));

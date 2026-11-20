@@ -52,10 +52,7 @@ impl TabStrip {
                                 let active = turu::active_tab();
                                 for (tab, bot) in turu::tabs() {
                                     let busy = super::busy(&bot);
-                                    let waits = bot
-                                        .scripts
-                                        .waits_for()
-                                        .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"));
+                                    let waits = super::waits_for(&bot);
                                     let label = turu::tab_label(&bot);
                                     tab_button(ui, Target::Local(tab), &label, tab == active, busy, waits);
                                 }

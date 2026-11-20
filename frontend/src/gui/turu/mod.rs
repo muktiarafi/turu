@@ -287,7 +287,7 @@ impl TuruUi {
     /// the top, or a rail down the left on a touch screen.
     pub fn show_bar(&mut self, ui: &mut egui::Ui) {
         self.ensure_theme(ui.ctx());
-        if crate::turu::tab_strip_count() > 1 {
+        if crate::turu::tab_strip_shown() {
             self.tab_strip.show(ui);
         }
         let tab = self.active();
@@ -459,6 +459,14 @@ pub fn show_headless_screen(ctx: &Context, top: f32) {
                 theme::MUTED,
             );
         });
+}
+
+/// What the tab's script (or Butler) waits for the user to answer, for the tab strips and the
+/// shell's tab list: "Script Options", "a message box", "Butler's question".
+pub fn waits_for(bot: &turu_bot::Bot) -> Option<&'static str> {
+    bot.scripts
+        .waits_for()
+        .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"))
 }
 
 /// Whether the bot runs a script, a Console snippet or Auto Attack/Hunt.

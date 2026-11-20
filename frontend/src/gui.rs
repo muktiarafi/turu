@@ -95,7 +95,7 @@ pub fn left_width() -> u32 {
 /// shows.
 pub fn top_height() -> u32 {
     let bar = if nav_rail() { 0 } else { nav_bar_height() };
-    if crate::turu::tab_strip_count() > 1 {
+    if crate::turu::tab_strip_shown() {
         bar + tab_strip_height()
     } else {
         bar

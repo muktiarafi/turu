@@ -947,7 +947,8 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
         }
         Menu::Army => {
-            if item(ui, "Accounts") {
+            // Android: the shell's native Accounts, beside its Tabs item.
+            if item(ui, "Accounts") && !crate::turu::open_shell_accounts() {
                 windows.accounts = true;
             }
             if item(ui, "Army Control") {
@@ -1597,9 +1598,11 @@ impl NavBar {
             .show_separator_line(true)
             .show(ui, |ui| {
                 // Clear of a cutout on this side, 4 points in from each edge.
+                // Below the shell's native Tabs item, when it draws one (Android).
                 let full = ui.max_rect();
+                let shell_top = crate::turu::shell_rail_top().unwrap_or(0.0);
                 let inner = Rect::from_min_max(
-                    pos2(full.left() + inset + 4.0, full.top() + RAIL_PAD),
+                    pos2(full.left() + inset + 4.0, full.top() + shell_top + RAIL_PAD),
                     pos2(full.right() - 4.0, full.bottom() - RAIL_PAD),
                 );
                 ui.scope_builder(

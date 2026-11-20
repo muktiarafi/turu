@@ -501,8 +501,13 @@ impl ClientEnd for Forward {
     fn handle(&mut self, message: ToClient) {
         match message {
             ToClient::Dump { path } => *self.dump.lock().unwrap_or_else(|e| e.into_inner()) = Some(path),
-            ToClient::Tabs { tabs, shown, you } => {
-                turu_frontend::client_link::set_tabs(tabs, shown, you);
+            ToClient::Tabs {
+                tabs,
+                shown,
+                you,
+                rail_top,
+            } => {
+                turu_frontend::client_link::set_tabs(tabs, shown, you, rail_top);
                 let _ = self.sender.send(EngineEvent::Run(Box::new(|_| {
                     SCREEN.with_borrow_mut(|screen| {
                         if let Some(screen) = screen {

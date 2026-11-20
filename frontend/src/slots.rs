@@ -21,6 +21,10 @@ use std::path::{Path, PathBuf};
 /// The slots the manifest declares (`Slot1Service` ... `Slot4Service`).
 pub const POOL: u32 = 4;
 
+/// Where a slot's rail starts, in points, below the shell's native Tabs item (docs/UI.md, "Native
+/// shells"): the item's 8-point top padding and its 52-point height. `TabsItem.kt` draws it so.
+pub const RAIL_TOP: f32 = 60.0;
+
 /// The folder of the slots' records, in the data folder.
 pub fn dir(root: &Path) -> PathBuf {
     root.join("slots")
@@ -248,6 +252,32 @@ pub enum Action {
     /// Something only the activity can do, for slot `n`: the text field above the keyboard (for
     /// the slot on screen), a link, the share sheet, a file picker, installing an update.
     Activity(u32, ToShell),
+    /// The activity's native Tabs item and panel show this list.
+    Tabs(NativeTabs),
+}
+
+/// The tab list as the shell's native screens show it (`TabsItem.kt`, `TabPanel.kt`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NativeTabs {
+    pub tabs: Vec<NativeTab>,
+    /// The tab on screen.
+    pub shown: u32,
+    /// Whether the tab on screen hid its rail: the Tabs item hides with it.
+    pub rail_hidden: bool,
+    /// Every slot is taken: no New tab.
+    pub full: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NativeTab {
+    pub id: u32,
+    pub label: String,
+    /// Its script or Auto runs.
+    pub busy: bool,
+    /// What its script waits for the user to answer.
+    pub waits: Option<String>,
+    /// Its process isn't up: "starting".
+    pub down: Option<String>,
 }
 
 /// A slot whose process is bound and has said hello.
@@ -255,6 +285,8 @@ pub enum Action {
 struct Live {
     label: String,
     busy: bool,
+    waits: Option<String>,
+    rail_hidden: bool,
     api: Option<String>,
     token: Option<String>,
 }
@@ -305,6 +337,15 @@ impl SlotShell {
     /// The open tabs' slots, in order.
     pub fn slots(&self) -> Vec<u32> {
         self.records.keys().copied().collect()
+    }
+
+    /// The open tabs' slots and the login each was opened with (the activity's Accounts shows
+    /// which account plays where).
+    pub fn usernames(&self) -> Vec<(u32, Option<String>)> {
+        self.records
+            .iter()
+            .map(|(&slot, record)| (slot, record.username().map(str::to_owned)))
+            .collect()
     }
 
     /// Slot `slot`'s process is bound and said hello (its control API with it).
@@ -359,14 +400,27 @@ impl SlotShell {
                 args.extend(playlist_args(playlist, run_playlist, options_storage));
                 self.open(args, password)
             }
-            ToShell::Status { label, busy } => match self.live.get_mut(&slot) {
-                Some(live) if live.label != label || live.busy != busy => {
+            ToShell::Status {
+                label,
+                busy,
+                waits,
+                rail_hidden,
+            } => match self.live.get_mut(&slot) {
+                Some(live) if live.label != label || live.busy != busy || live.waits != waits => {
                     live.label = label;
                     live.busy = busy;
+                    live.waits = waits;
+                    live.rail_hidden = rail_hidden;
                     self.tab_lists()
+                }
+                Some(live) if live.rail_hidden != rail_hidden => {
+                    live.rail_hidden = rail_hidden;
+                    vec![Action::Tabs(self.native_tabs())]
                 }
                 _ => Vec::new(),
             },
+            // Army > Accounts in a slot: the activity's native Accounts.
+            ToShell::OpenAccounts => vec![Action::Activity(slot, ToShell::OpenAccounts)],
             hello @ ToShell::Hello { .. } => self.connected(slot, &hello),
             // Every tab's: to the other slots up.
             ToShell::HeadlessMode { on } => {
@@ -462,7 +516,43 @@ impl SlotShell {
         actions
     }
 
-    /// Every live slot gets the tab list.
+    /// The tab list for the activity's native screens.
+    pub fn native_tabs(&self) -> NativeTabs {
+        let tabs = self
+            .records
+            .iter()
+            .map(|(&slot, record)| {
+                let live = self.live.get(&slot);
+                NativeTab {
+                    id: slot,
+                    label: self.label(slot, record),
+                    busy: live.is_some_and(|l| l.busy),
+                    waits: live.and_then(|l| l.waits.clone()),
+                    down: live.is_none().then(|| "starting".into()),
+                }
+            })
+            .collect();
+        NativeTabs {
+            tabs,
+            shown: self.shown,
+            rail_hidden: self.live.get(&self.shown).is_some_and(|l| l.rail_hidden),
+            full: self.records.len() >= POOL as usize,
+        }
+    }
+
+    /// A tab's name: the character once a slot says it, else the login, else "Login". A slot at
+    /// the login screen without a password says "Login": the account it was opened for is the
+    /// better name then.
+    fn label(&self, slot: u32, record: &SlotRecord) -> String {
+        self.live
+            .get(&slot)
+            .map(|l| l.label.clone())
+            .filter(|l| !l.is_empty() && !(l == "Login" && record.username().is_some()))
+            .or_else(|| record.username().map(str::to_owned))
+            .unwrap_or_else(|| "Login".into())
+    }
+
+    /// Every live slot gets the tab list, and the activity's native screens theirs.
     fn tab_lists(&self) -> Vec<Action> {
         let tabs: Vec<TabInfo> = self
             .records
@@ -471,11 +561,7 @@ impl SlotShell {
                 let live = self.live.get(&slot);
                 TabInfo {
                     id: slot,
-                    label: live
-                        .map(|l| l.label.clone())
-                        .filter(|l| !l.is_empty())
-                        .or_else(|| record.username().map(str::to_owned))
-                        .unwrap_or_else(|| "Login".into()),
+                    label: self.label(slot, record),
                     busy: live.is_some_and(|l| l.busy),
                     down: live.is_none().then(|| "starting".into()),
                     api: live.and_then(|l| l.api.clone()),
@@ -483,7 +569,8 @@ impl SlotShell {
                 }
             })
             .collect();
-        self.live
+        let mut actions: Vec<Action> = self
+            .live
             .keys()
             .map(|&slot| {
                 Action::Send(
@@ -492,10 +579,14 @@ impl SlotShell {
                         tabs: tabs.clone(),
                         shown: self.shown,
                         you: Some(slot),
+                        // The activity draws the tabs (its Tabs item): the slots draw no strip.
+                        rail_top: Some(RAIL_TOP),
                     },
                 )
             })
-            .collect()
+            .collect();
+        actions.push(Action::Tabs(self.native_tabs()));
+        actions
     }
 }
 
@@ -853,5 +944,65 @@ mod tests {
         // A slot that says hello after its tab closed is stopped.
         shell.close(2);
         assert_eq!(shell.connected(2, &hello()), [Action::Stop(2)]);
+    }
+
+    /// The activity's native screens get the list with what each tab waits for, and the slots
+    /// are told the activity draws the tabs (no strip; the rail starts below its item).
+    #[test]
+    fn the_native_tabs_follow_the_slots_status() {
+        let records = (1..=2)
+            .map(|slot| {
+                (
+                    slot,
+                    SlotRecord {
+                        args: vec!["--user".into(), format!("Alt{slot}")],
+                    },
+                )
+            })
+            .collect();
+        let (mut shell, _) = SlotShell::new(records, Vec::new(), Vec::new());
+        shell.message(1, hello());
+        let native = |actions: &[Action]| {
+            actions.iter().find_map(|a| match a {
+                Action::Tabs(tabs) => Some(tabs.clone()),
+                _ => None,
+            })
+        };
+        let actions = shell.message(
+            1,
+            ToShell::Status {
+                label: "Hero".into(),
+                busy: true,
+                waits: Some("a message box".into()),
+                rail_hidden: false,
+            },
+        );
+        assert!(actions.iter().any(|a| matches!(
+            a,
+            Action::Send(1, ToClient::Tabs { rail_top: Some(top), .. }) if *top == RAIL_TOP
+        )));
+        let tabs = native(&actions).expect("the activity's list");
+        assert_eq!((tabs.shown, tabs.full, tabs.rail_hidden), (1, false, false));
+        assert_eq!(tabs.tabs[0].label, "Hero");
+        assert_eq!(tabs.tabs[0].waits.as_deref(), Some("a message box"));
+        assert_eq!(tabs.tabs[1].label, "Alt2");
+        assert_eq!(tabs.tabs[1].down.as_deref(), Some("starting"));
+        // Hiding the rail changes only the activity's list.
+        let actions = shell.message(
+            1,
+            ToShell::Status {
+                label: "Hero".into(),
+                busy: true,
+                waits: Some("a message box".into()),
+                rail_hidden: true,
+            },
+        );
+        assert_eq!(actions.len(), 1);
+        assert!(native(&actions).expect("the activity's list").rail_hidden);
+        // Army > Accounts goes to the activity.
+        assert_eq!(
+            shell.message(1, ToShell::OpenAccounts),
+            [Action::Activity(1, ToShell::OpenAccounts)]
+        );
     }
 }

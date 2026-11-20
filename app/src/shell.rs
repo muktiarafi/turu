@@ -1107,6 +1107,7 @@ impl ShellApp {
                 tabs: tabs.clone(),
                 shown,
                 you: Some(tab.id),
+                rail_top: None,
             };
             send(tab, &message);
         }
@@ -1256,7 +1257,7 @@ impl ShellApp {
                 ));
                 self.open_tab(args, password);
             }
-            ToShell::Status { label, busy } => {
+            ToShell::Status { label, busy, .. } => {
                 if let Some(tab) = self.tab(id)
                     && (tab.label != label || tab.busy != busy)
                 {
@@ -1414,6 +1415,8 @@ impl ShellApp {
             | ToShell::Install { .. }
             | ToShell::SoftKeyboard { .. }
             | ToShell::PreferRefreshRate { .. }
+            // Android's: the desktop's clients keep their own Accounts window.
+            | ToShell::OpenAccounts
             | ToShell::Unknown => {}
         }
     }

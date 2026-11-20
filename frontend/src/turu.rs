@@ -299,6 +299,8 @@ impl ShellTab {
 pub enum ShellTabAction {
     Select(u32),
     Close(u32),
+    /// Open the shell's native Accounts.
+    Accounts,
 }
 
 /// The shell's tabs and the one shown, while this process is a client.
@@ -472,6 +474,42 @@ pub fn shell_tab_action(action: ShellTabAction) {
     if let Some(send) = SHELL_ACTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         send(action);
     }
+}
+
+/// Where the client's rail starts when the shell draws the tabs itself (`ToClient::Tabs`'
+/// `rail_top`, in points, as `f32` bits; `u32::MAX`: the client draws its tab strip).
+static SHELL_RAIL_TOP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// The shell's `rail_top`, from its latest tab list (a client only).
+pub fn set_shell_rail_top(top: Option<f32>) {
+    let bits = top.map_or(u32::MAX, |top| top.max(0.0).to_bits());
+    SHELL_RAIL_TOP.store(bits, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Where the rail starts, in points, when the shell draws the tabs (Android's native Tabs item);
+/// `None` while the client draws its own tab strip.
+pub fn shell_rail_top() -> Option<f32> {
+    match SHELL_RAIL_TOP.load(std::sync::atomic::Ordering::Relaxed) {
+        u32::MAX => None,
+        bits => Some(f32::from_bits(bits)),
+    }
+}
+
+/// Whether this process draws a tab strip: two tabs or more, and no shell drawing them natively.
+pub fn tab_strip_shown() -> bool {
+    tab_strip_count() > 1 && shell_rail_top().is_none()
+}
+
+/// Asks the shell to open its native Accounts, where it has one (Android's).
+pub fn open_shell_accounts() -> bool {
+    if shell_rail_top().is_none() {
+        return false;
+    }
+    if let Some(send) = SHELL_ACTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        send(ShellTabAction::Accounts);
+        return true;
+    }
+    false
 }
 
 /// How many tabs the tab strip shows: the shell's in a client, else this window's.

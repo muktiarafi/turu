@@ -102,6 +102,11 @@ pub enum ToClient {
         /// The tab this client is.
         #[serde(default)]
         you: Option<u32>,
+        /// Android: the shell draws the tabs itself, in a native item at the top of the rail
+        /// (docs/UI.md, "Native shells"): the client draws no tab strip, and its rail starts this
+        /// many points down. `None`: the client draws the strip, as before.
+        #[serde(default)]
+        rail_top: Option<f32>,
     },
     /// The answer to a request the client made: a [`ToShell::FileDialog`]'s `id` and the path
     /// chosen (`None`: cancelled, or another dialog was open).
@@ -384,7 +389,20 @@ pub enum ToShell {
     },
     /// The tab's name (the character, once in game) and whether its script or Auto runs, for the
     /// tab strips and the window's title; sent when it changes.
-    Status { label: String, busy: bool },
+    Status {
+        label: String,
+        busy: bool,
+        /// What the tab's script (or Butler) waits for the user to answer ("Script Options", "a
+        /// message box", "Butler's question"), for the shell's tab list.
+        #[serde(default)]
+        waits: Option<String>,
+        /// Whether the tab's rail is hidden (Menu > Hide Side Bar): the shell's Tabs item hides
+        /// with it.
+        #[serde(default)]
+        rail_hidden: bool,
+    },
+    /// Android: Army > Accounts opens the shell's native Accounts (docs/UI.md, "Native shells").
+    OpenAccounts,
     /// The bar's Grid toggle: Grid View on or off. `left` and `top` are what Turu's UI takes of the
     /// window, in points (the rail, the bar and the tab strip): the tiles fill the rest.
     Grid {
@@ -1074,6 +1092,7 @@ mod tests {
                 }],
                 shown: 1,
                 you: Some(1),
+                rail_top: Some(56.0),
             },
             ToClient::Hide,
             ToClient::RefreshRate {
@@ -1156,7 +1175,10 @@ mod tests {
             ToShell::Status {
                 label: "Player One".into(),
                 busy: true,
+                waits: Some("a message box".into()),
+                rail_hidden: true,
             },
+            ToShell::OpenAccounts,
             ToShell::Grid {
                 on: true,
                 left: 0.0,
@@ -1261,6 +1283,7 @@ mod tests {
                 }],
                 shown: 1,
                 you: None,
+                rail_top: None,
             })
         );
         // And an open-tab request without its optional fields.

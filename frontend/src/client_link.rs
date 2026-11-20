@@ -50,6 +50,7 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
         actions(match action {
             turu::ShellTabAction::Select(id) => ToShell::SelectTab { id },
             turu::ShellTabAction::Close(id) => ToShell::CloseTab { id },
+            turu::ShellTabAction::Accounts => ToShell::OpenAccounts,
         });
     }));
     report_status(send, open);
@@ -73,7 +74,8 @@ pub fn set_army_clients(clients: Vec<crate::shell::ArmyClientInfo>) {
 }
 
 /// The shell's tab list, from its `Tabs` message: `you` is this tab.
-pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>) {
+pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>, rail_top: Option<f32>) {
+    turu::set_shell_rail_top(rail_top);
     let tabs = tabs
         .into_iter()
         .map(|tab| turu::ShellTab {
@@ -129,12 +131,19 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
             while open() {
                 let bot = turu::bot();
                 report_headless_mode(&send, bot.opts().headless_mode);
-                let now = (turu::tab_label(&bot), crate::gui::turu::busy(&bot));
+                let now = (
+                    turu::tab_label(&bot),
+                    crate::gui::turu::busy(&bot),
+                    crate::gui::turu::waits_for(&bot).map(str::to_owned),
+                    crate::gui::rail_hidden(),
+                );
                 let resend = std::mem::take(&mut *RESEND.lock().unwrap_or_else(|e| e.into_inner()));
                 if resend || sent.as_ref() != Some(&now) {
                     send(ToShell::Status {
                         label: now.0.clone(),
                         busy: now.1,
+                        waits: now.2.clone(),
+                        rail_hidden: now.3,
                     });
                     sent = Some(now);
                 }

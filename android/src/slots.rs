@@ -256,8 +256,13 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
         .with_env(|env| -> jni::errors::Result<()> {
             let json = json.try_to_string(env)?;
             match serde_json::from_str::<ToClient>(&json) {
-                Ok(ToClient::Tabs { tabs, shown, you }) => {
-                    turu_frontend::client_link::set_tabs(tabs, shown, you);
+                Ok(ToClient::Tabs {
+                    tabs,
+                    shown,
+                    you,
+                    rail_top,
+                }) => {
+                    turu_frontend::client_link::set_tabs(tabs, shown, you, rail_top);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
                 // The text fields above the keyboard are the shell's activity's.
