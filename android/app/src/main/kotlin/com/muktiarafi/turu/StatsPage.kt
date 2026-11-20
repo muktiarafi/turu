@@ -102,8 +102,8 @@ private fun CounterKind.color(): Color = when (this) {
     CounterKind.KILLS, CounterKind.COMPLETED -> Turu.Success
     CounterKind.DEATHS -> Turu.Danger
     CounterKind.PICKUPS -> Turu.Warning
-    CounterKind.ACCEPTED -> Color(0xFF60A5FA)
-    CounterKind.RELOGINS -> Color(0xFFA78BFA)
+    CounterKind.ACCEPTED -> Turu.Blue
+    CounterKind.RELOGINS -> Turu.Purple
 }
 
 /**

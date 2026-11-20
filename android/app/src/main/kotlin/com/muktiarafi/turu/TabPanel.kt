@@ -138,6 +138,7 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
                     Text(
                         if (warn) "!" else "${tabs.tabs.size}",
                         color = if (warn) Turu.Panel else Color.White,
+                        // impeccable-disable-next-line tiny-text: a badge's count, sized to the 16-dp badge whatever the font scale
                         fontSize = (10f / LocalDensity.current.fontScale).sp,
                         fontWeight = FontWeight.Bold,
                         lineHeight = (10f / LocalDensity.current.fontScale).sp,

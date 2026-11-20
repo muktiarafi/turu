@@ -24,6 +24,10 @@ object Turu {
     val Warning = Color(0xFFFBBF24)
     val Danger = Color(0xFFEF4444)
 
+    /** Stats' accepted and re-logins counters, as egui's tiles (`stats.rs`'s `BLUE`, `PURPLE`). */
+    val Blue = Color(0xFF60A5FA)
+    val Purple = Color(0xFFA78BFA)
+
     /** The selected row and tonal buttons: the accent 22% into the card. */
     val AccentTint = Color(0xFF2B2A4A)
 }

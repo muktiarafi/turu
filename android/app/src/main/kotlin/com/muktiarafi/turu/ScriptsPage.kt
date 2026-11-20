@@ -271,7 +271,7 @@ private fun RunControls(view: ScriptsView, scripts: ScriptsPanel) {
             Button(
                 onClick = scripts::stop,
                 enabled = stop.enabled && !busy,
-                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
                 modifier = Modifier.weight(1.6f).heightIn(min = 48.dp),
             ) { Text("Stop") }
         }
@@ -279,7 +279,7 @@ private fun RunControls(view: ScriptsView, scripts: ScriptsPanel) {
             Button(
                 onClick = scripts::stop,
                 enabled = force.enabled && !busy,
-                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) { Text("Force stop", maxLines = 1) }
         } ?: c.pause?.let {

@@ -134,7 +134,7 @@ fun AutoPage(state: ShellState, models: TabModels) {
             Button(
                 onClick = { act("stop", JSONObject()) },
                 enabled = view.stop.enabled,
-                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) { Text("Stop Automation") }
             Picker(

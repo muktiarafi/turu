@@ -216,7 +216,7 @@ private fun RoleCard(index: Int, role: RoleView, view: CoreBotsView, panel: Core
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val c = role.color.toLong()
-            Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF000000 or c)))
+            Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF000000 or c))) // impeccable-disable-line raw-color: the class's own colour, from the model
             Spacer(Modifier.width(8.dp))
             Text(role.name, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.width(8.dp))

@@ -270,6 +270,7 @@ fun BankNote(models: TabModels) {
     val note = models.bank?.note
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.LaunchedEffect(note) {
+        // impeccable-disable-next-line toast: the panel may be closed, so no snackbar host shows (docs/UI.md)
         if (note != null) android.widget.Toast.makeText(context, "Bank: $note", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

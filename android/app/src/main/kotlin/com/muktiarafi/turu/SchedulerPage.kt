@@ -156,7 +156,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
             Button(
                 onClick = { panel.act("toggle") },
                 enabled = view.toggle.enabled,
-                colors = if (view.running) ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Color.White) else ButtonDefaults.buttonColors(),
+                colors = if (view.running) ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError) else ButtonDefaults.buttonColors(),
                 modifier = Modifier.heightIn(min = 44.dp),
             ) { Text(if (view.running) "Stop queue" else "Start queue") }
             Spacer(Modifier.width(12.dp))
