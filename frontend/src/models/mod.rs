@@ -24,6 +24,7 @@ pub mod form;
 pub mod game_options;
 pub mod jump;
 pub mod logs;
+pub mod notifications;
 pub mod rail;
 pub mod repo;
 pub mod scheduler;
@@ -128,6 +129,16 @@ pub fn register() {
         "logs",
         "clear",
         Box::new(|bot, body| logs::clear(bot, &text(body, "kind")?).and_then(|()| done())),
+    );
+
+    add_model("notifications", Box::new(|bot| to_json(&notifications::view(bot))));
+    add_model_action(
+        "notifications",
+        "clear",
+        Box::new(|bot, _| {
+            notifications::clear(bot);
+            done()
+        }),
     );
 
     add_model("auto", Box::new(|bot| to_json(&auto::view(bot))));

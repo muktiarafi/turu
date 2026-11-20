@@ -6,6 +6,7 @@
 use super::files::SaveText;
 use super::theme::{ACCENT, ACCENT_PRESSED, CARD, DANGER, EDGE, HOVER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
+use crate::models::notifications::{FILTERS, NoticeKind, empty_text};
 use egui::{
     Align, Button, Color32, Context, CornerRadius, Frame, Label, Layout, Margin, Painter, Pos2, Rect, RichText,
     ScrollArea, Sense, Shape, Stroke, Ui, pos2, vec2,
@@ -15,23 +16,13 @@ use turu_bot::notifications::{Notification, NotificationKind, thousands, to_text
 
 pub const TITLE: &str = "Notification Center";
 
-/// VibeSkua `Filters`: each chip's kind (`None`: all) and label.
-const FILTERS: [(Option<NotificationKind>, &str); 6] = [
-    (None, "All"),
-    (Some(NotificationKind::Item), "Items"),
-    (Some(NotificationKind::Activity), "Activity"),
-    (Some(NotificationKind::Warning), "Warnings"),
-    (Some(NotificationKind::Error), "Errors"),
-    (Some(NotificationKind::System), "Maps"),
-];
-
 /// Below this width the footer's count goes on a line of its own (a phone held upright).
 const NARROW: f32 = 420.0;
 
 #[derive(Default)]
 pub struct NotificationCenterWindow {
     /// VibeSkua `SelectedFilter` (`None`: All).
-    filter: Option<NotificationKind>,
+    filter: Option<NoticeKind>,
     /// The feed as last read (newest first) and its revision.
     entries: Vec<Notification>,
     revision: Option<u64>,
@@ -70,7 +61,7 @@ impl NotificationCenterWindow {
     }
 
     fn matches(&self, entry: &Notification) -> bool {
-        self.filter.is_none_or(|kind| entry.kind == kind)
+        crate::models::notifications::matches(self.filter, entry)
     }
 
     fn ui(&mut self, ui: &mut Ui) {
@@ -80,10 +71,11 @@ impl NotificationCenterWindow {
         // Filter chips with counts; they wrap on a narrow window.
         ui.horizontal_wrapped(|ui| {
             for (kind, title) in FILTERS {
-                let count = match kind {
-                    None => self.entries.len(),
-                    Some(kind) => self.entries.iter().filter(|e| e.kind == kind).count(),
-                };
+                let count = self
+                    .entries
+                    .iter()
+                    .filter(|e| crate::models::notifications::matches(kind, e))
+                    .count();
                 if widgets::chip(ui, &format!("{title}  {count}"), self.filter == kind) && self.filter != kind {
                     self.filter = kind;
                     self.selected.clear();
@@ -323,20 +315,8 @@ fn kind_color(kind: NotificationKind) -> Color32 {
 }
 
 /// VibeSkua `EmptyText` under a bell.
-fn empty_notice(ui: &mut Ui, filter: Option<NotificationKind>, height: f32) {
-    let text = match filter {
-        None => "No events yet. Drops, deaths, relogins, quests and script starts and stops show up here.".to_owned(),
-        Some(kind) => format!(
-            "No {} events yet.",
-            match kind {
-                NotificationKind::Item => "item",
-                NotificationKind::Warning => "warning",
-                NotificationKind::Error => "error",
-                NotificationKind::System => "map",
-                NotificationKind::Activity => "activity",
-            }
-        ),
-    };
+fn empty_notice(ui: &mut Ui, filter: Option<NoticeKind>, height: f32) {
+    let text = empty_text(filter);
     let width = ui.available_width().min(300.0);
     ui.vertical_centered(|ui| {
         ui.add_space(((height - 80.0) / 2.0).max(8.0));

@@ -9,8 +9,8 @@ use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
     application_options::AppOptionsView, army::ArmyView, auto::AutoView, bank::BankView, core_bots::CoreBotsView,
-    game_options::GameOptionsView, jump::JumpView, logs::LogsView, rail::RailView, repo::RepoView,
-    scheduler::SchedulerView, scripts::ScriptsView,
+    game_options::GameOptionsView, jump::JumpView, logs::LogsView, notifications::NotificationsView, rail::RailView,
+    repo::RepoView, scheduler::SchedulerView, scripts::ScriptsView,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<CoreBotsView>()?
         .add_type::<SchedulerView>()?
         .add_type::<ArmyView>()?
+        .add_type::<NotificationsView>()?
         .build()?;
     kotlin::Installer::new("com.muktiarafi.turu.models", std::path::Path::new(&out))
         .plugin(JsonPlugin)
