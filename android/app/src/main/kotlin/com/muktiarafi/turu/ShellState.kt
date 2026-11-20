@@ -84,6 +84,9 @@ sealed interface Page {
     /** Options > Application. */
     data object AppOptions : Page
 
+    /** Options > CoreBots. */
+    data object CoreBots : Page
+
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
 }

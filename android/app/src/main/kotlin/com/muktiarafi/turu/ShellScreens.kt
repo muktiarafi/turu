@@ -39,6 +39,7 @@ class ShellScreens(private val activity: TuruActivity) {
         search = SearchPanel(),
         gameOptions = GameOptionsPanel(),
         appOptions = AppOptionsPanel(),
+        coreBots = CoreBotsPanel(),
     )
 
     private val railActions = RailActions(
@@ -106,6 +107,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "search" -> open(Page.Search)
             "game_options" -> open(Page.GameOptions)
             "app_options" -> open(Page.AppOptions)
+            "core_bots" -> open(Page.CoreBots)
         }
     }
 

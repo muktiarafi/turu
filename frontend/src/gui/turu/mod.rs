@@ -372,6 +372,7 @@ impl TuruUi {
             ("script_repo", w.script_repo),
             ("game_options", w.game_options),
             ("application_options", w.application_options),
+            ("core_bots", w.core_bots),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -398,6 +399,9 @@ impl TuruUi {
             && crate::turu::open_shell_screen(NativeScreen::AppOptions)
         {
             w.application_options = false;
+        }
+        if w.core_bots && !kept(w, "core_bots") && crate::turu::open_shell_screen(NativeScreen::CoreBots) {
+            w.core_bots = false;
         }
         tab.script_loader.show(
             ctx,

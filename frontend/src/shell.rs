@@ -491,6 +491,8 @@ pub enum NativeScreen {
     GameOptions,
     /// Options > Application.
     AppOptions,
+    /// Options > CoreBots.
+    CoreBots,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

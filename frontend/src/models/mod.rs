@@ -290,6 +290,13 @@ pub fn register() {
         Box::new(|bot, body| application_options::act(bot, &text(body, "label")?).and_then(|()| done())),
     );
 
+    add_model("core-bots", Box::new(|bot| to_json(&core_bots::view(bot))));
+    add_model_action(
+        "core-bots",
+        "do",
+        Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+
     add_model("game-options", Box::new(|bot| to_json(&game_options::view(bot))));
     add_model_action(
         "game-options",

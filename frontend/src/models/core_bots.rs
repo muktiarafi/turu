@@ -10,6 +10,7 @@ use super::auto::SkillSets;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
+use turu_bot::Bot;
 use turu_bot::api::inventory::{self, Container};
 use turu_bot::api::player;
 use turu_bot::models::ItemBase;
@@ -715,3 +716,247 @@ pub const OPTION_GROUPS: [(&str, &[&str]); 6] = [
     ),
     ("When the bot stops", &["StopLocationSelect"]),
 ];
+
+// A shell's page: one draft per tab, in the slot.
+
+use super::form::{KindView, OptionValue, OptionView, SectionView};
+use super::tab_state::PerTab;
+use serde::Serialize;
+use serde_json::Value as Json;
+
+static DRAFTS: PerTab<Draft> = PerTab::new();
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct CoreBotsView {
+    /// The character whose file this is ("" while logged out).
+    pub username: String,
+    /// Reading the game.
+    pub busy: bool,
+    /// The header's line: "Unsaved changes", "Saved", "CoreBots' defaults · not saved yet", ...
+    pub state: String,
+    pub unsaved: bool,
+    /// A message for the user (a Load or Save that couldn't): (title, text).
+    pub message: Option<(String, String)>,
+    pub roles: Vec<RoleView>,
+    /// The classes the roles can pick (`[Current]` first) and each gear slot's items.
+    pub classes: Vec<String>,
+    pub slots: Vec<SlotView>,
+    /// The Options tab's groups and the Other tab's categories, as option rows (the tag is the
+    /// row's label's key: [`OptionView::group`] holds it).
+    pub sections: Vec<SectionView>,
+    pub options: Vec<OptionView>,
+    /// The sections that are the Other tab's (the rest are the Options tab's).
+    pub other: Vec<String>,
+    /// Private Rooms is off and its warning wasn't answered: Save asks first.
+    pub ask_public: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct RoleView {
+    pub name: String,
+    pub purpose: String,
+    /// Its dot, as 0xRRGGBB.
+    pub color: u32,
+    pub class: String,
+    pub mode: String,
+    pub modes: Vec<String>,
+    pub use_equipment: bool,
+    /// Per slot of [`SLOTS`].
+    pub gear: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct SlotView {
+    pub name: String,
+    pub items: Vec<String>,
+}
+
+fn option_view(o: &Opt, section: &'static str) -> OptionView {
+    let value = match &o.value {
+        Value::Bool(b) => OptionValue::Switch(*b),
+        Value::Int(n) => OptionValue::Number(i64::from(*n)),
+        Value::Text(t) => OptionValue::Text(t.clone()),
+    };
+    let kind = match &o.value {
+        Value::Bool(_) => KindView::Switch,
+        Value::Int(_) => KindView::Number {
+            min: 0,
+            max: None,
+            unit: (!o.unit.is_empty()).then_some(o.unit),
+        },
+        Value::Text(_) => KindView::Text { hint: "" },
+    };
+    OptionView {
+        label: o.label,
+        description: o.description,
+        section,
+        group: o.tag,
+        kind,
+        saved: value.clone(),
+        differs: o.value != o.default,
+        value,
+        applies: true,
+        unused: false,
+        restart: false,
+    }
+}
+
+/// The page's view of `bot`'s draft (and what a bot thread read since).
+pub fn view(bot: &Arc<Bot>) -> CoreBotsView {
+    let draft = DRAFTS.of(bot);
+    let mut d = lock(&draft);
+    d.apply_fetched();
+    let unsaved = d.has_changes();
+    let state = if d.busy {
+        "Reading the game..."
+    } else if d.username.is_empty() {
+        "Not logged in · log in, then Refresh from game"
+    } else if unsaved {
+        "Unsaved changes · saved when you close this page"
+    } else if d.has_file {
+        "Saved"
+    } else {
+        "CoreBots' defaults · not saved yet"
+    };
+    let mut sections = Vec::new();
+    let mut options = Vec::new();
+    for (title, tags) in OPTION_GROUPS {
+        sections.push(SectionView { chip: title, title });
+        for tag in tags {
+            if let Some(o) = d.options.iter().find(|o| o.tag == *tag) {
+                options.push(option_view(o, title));
+            }
+        }
+    }
+    for (category, opts) in &d.other {
+        sections.push(SectionView {
+            chip: category,
+            title: category,
+        });
+        options.extend(opts.iter().map(|o| option_view(o, category)));
+    }
+    let private = d
+        .options
+        .iter()
+        .find(|o| o.tag == "PrivateRooms")
+        .is_none_or(|o| o.value == Value::Bool(true));
+    CoreBotsView {
+        username: d.username.clone(),
+        busy: d.busy,
+        state: state.into(),
+        unsaved,
+        message: d.message.as_ref().map(|(t, m)| ((*t).to_owned(), m.clone())),
+        roles: d
+            .roles
+            .iter()
+            .map(|r| RoleView {
+                name: r.name.into(),
+                purpose: r.purpose.into(),
+                color: r.color,
+                class: r.class.clone().unwrap_or_default(),
+                mode: r.use_mode().into(),
+                modes: r.modes.clone(),
+                use_equipment: r.use_equipment,
+                gear: r.gear.to_vec(),
+            })
+            .collect(),
+        classes: d.owned.classes.clone(),
+        slots: SLOTS
+            .iter()
+            .zip(&d.owned.gear)
+            .map(|((name, _), items)| SlotView {
+                name: (*name).into(),
+                items: items.clone(),
+            })
+            .collect(),
+        other: d.other.iter().map(|(c, _)| (*c).to_owned()).collect(),
+        sections,
+        options,
+        ask_public: !private && !d.public_confirmed(),
+    }
+}
+
+/// What the page does: `open` (read the game and the file), `close` (save, as closing the egui
+/// window does), `save`, `revert`, `refresh` (the classes and gear again), `confirm-public`
+/// (Private Rooms off, answered), `dismiss` (the message), `option` (`tag`, `value`), `role`
+/// (`index`, and `class`, `mode`, `equipment` or `slot` with `item`).
+pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
+    let draft = DRAFTS.of(bot);
+    let mut d = lock(&draft);
+    d.apply_fetched();
+    let editable = !d.username.is_empty();
+    match action {
+        "open" => {
+            d.sets = SkillSets::load_for(bot);
+            d.fetch(bot, Purpose::Open);
+        }
+        "close" => {
+            if editable {
+                d.save(false);
+            }
+        }
+        "save" => d.fetch(bot, Purpose::Save),
+        "refresh" => d.fetch(bot, Purpose::LoadCharacter),
+        "revert" => {
+            let username = d.username.clone();
+            d.read_values.remove(&username);
+            d.load(true);
+        }
+        "confirm-public" => *lock(&PUBLIC_CONFIRMED) = Some(d.username.clone()),
+        "dismiss" => d.message = None,
+        "option" if editable => {
+            let tag = body.get("tag").and_then(Json::as_str).ok_or("tag is missing")?;
+            let value = body.get("value").ok_or("value is missing")?;
+            let d = &mut *d;
+            let opt = d
+                .options
+                .iter_mut()
+                .chain(d.other.iter_mut().flat_map(|(_, opts)| opts.iter_mut()))
+                .find(|o| o.tag == tag)
+                .ok_or_else(|| format!("no option {tag}"))?;
+            opt.value = match (&opt.default, value) {
+                (Value::Bool(_), Json::Bool(b)) => Value::Bool(*b),
+                (Value::Int(_), n) => Value::Int(n.as_i64().and_then(|n| i32::try_from(n).ok()).ok_or("not a number")?),
+                (Value::Text(_), Json::String(t)) => Value::Text(t.clone()),
+                _ => return Err(format!("not a value for {tag}: {value}")),
+            };
+        }
+        "role" if editable => {
+            let index = body.get("index").and_then(Json::as_u64).ok_or("index is missing")? as usize;
+            let d = &mut *d;
+            if index >= d.roles.len() {
+                return Err("no such role".into());
+            }
+            if let Some(class) = body.get("class").and_then(Json::as_str) {
+                d.roles[index].mode = None;
+                let (sets, current) = (&mut d.sets, d.current_class.clone());
+                d.roles[index].select_class(class.to_owned(), sets, current.as_deref());
+            }
+            if let Some(mode) = body.get("mode").and_then(Json::as_str) {
+                d.roles[index].mode = Some(mode.to_owned());
+            }
+            if let Some(on) = body.get("equipment").and_then(Json::as_bool) {
+                d.roles[index].use_equipment = on;
+            }
+            if let (Some(slot), Some(item)) = (
+                body.get("slot").and_then(Json::as_u64),
+                body.get("item").and_then(Json::as_str),
+            ) {
+                let slot = slot as usize;
+                if slot >= SLOTS.len() {
+                    return Err("no such slot".into());
+                }
+                d.roles[index].gear[slot] = item.to_owned();
+            }
+        }
+        "option" | "role" => return Err("Log in first: the options are your character's".into()),
+        other => return Err(format!("no action {other}")),
+    }
+    Ok(())
+}
