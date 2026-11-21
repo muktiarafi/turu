@@ -41,6 +41,7 @@ abstract class SlotService(private val slot: Int) : Service() {
     private var running = false
     private var paused = false
     private var startable = false
+    private var held = false
 
     override fun onCreate() {
         super.onCreate()
@@ -69,7 +70,10 @@ abstract class SlotService(private val slot: Int) : Service() {
         wakeLock.setReferenceCounted(false)
         Storage.init(applicationContext)
         val files = getExternalFilesDir(null) ?: filesDir
-        nativeStartSlot(applicationContext, files.absolutePath, slot)
+        // How this slot's process last ended: after kills for memory, it may come back held
+        // (`memory_kills.rs`).
+        val exit = CrashReports.lastExit(applicationContext, "$packageName:c$slot")
+        nativeStartSlot(applicationContext, files.absolutePath, slot, exit?.timestamp ?: 0, exit?.reason ?: 0, exit?.status ?: 0)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -78,6 +82,7 @@ abstract class SlotService(private val slot: Int) : Service() {
             ACTION_START -> nativeAction("start")
             ACTION_STOP -> nativeAction("stop")
             ACTION_PAUSE -> nativeAction("pause")
+            ACTION_START_AGAIN -> nativeAction("start_again")
         }
         return START_STICKY
     }
@@ -127,8 +132,11 @@ abstract class SlotService(private val slot: Int) : Service() {
             .setContentIntent(open)
             .setGroup(GROUP)
             .setOngoing(true)
-        // Pause/Resume and Stop while the tab's script runs, Start while it can start.
-        if (running) {
+        // Pause/Resume and Stop while the tab's script runs, Start while it can start; Start again
+        // while it's held after kills for memory.
+        if (held) {
+            builder.addAction(Notification.Action.Builder(null, "Start again", action(ACTION_START_AGAIN, 4)).build())
+        } else if (running) {
             builder.addAction(
                 Notification.Action.Builder(null, if (paused) "Resume" else "Pause", action(ACTION_PAUSE, 1)).build(),
             )
@@ -201,7 +209,8 @@ abstract class SlotService(private val slot: Int) : Service() {
         manager.notify(NOTIFICATION, summary)
     }
 
-    private fun show(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
+    private fun show(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean, held: Boolean) {
+        this.held = held
         this.title = title
         this.text = text
         this.running = running
@@ -311,6 +320,7 @@ abstract class SlotService(private val slot: Int) : Service() {
         private const val ACTION_START = "com.muktiarafi.turu.slot.START"
         private const val ACTION_STOP = "com.muktiarafi.turu.slot.STOP"
         private const val ACTION_PAUSE = "com.muktiarafi.turu.slot.PAUSE"
+        private const val ACTION_START_AGAIN = "com.muktiarafi.turu.slot.START_AGAIN"
         /** The group summary's notification ID; each slot's is this plus its slot. */
         private const val NOTIFICATION = 100
 
@@ -386,19 +396,20 @@ abstract class SlotService(private val slot: Int) : Service() {
         /**
          * The tab's notification: [running] and [paused] are its script's (Pause and Stop act on
          * it), [startable] says its loaded script can start (Start), [awake] whether the CPU stays
-         * awake (its script runs). Called from Rust.
+         * awake (its script runs), [held] that it came back held after kills for memory (Start again).
+         * Called from Rust.
          */
         @JvmStatic
-        fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean) {
+        fun status(title: String, text: String, running: Boolean, paused: Boolean, startable: Boolean, awake: Boolean, held: Boolean) {
             val service = instance ?: return
-            Handler(Looper.getMainLooper()).post { service.show(title, text, running, paused, startable, awake) }
+            Handler(Looper.getMainLooper()).post { service.show(title, text, running, paused, startable, awake, held) }
         }
 
         @JvmStatic
         private external fun nativeAction(action: String)
 
         @JvmStatic
-        private external fun nativeStartSlot(context: Context, filesDir: String, slot: Int)
+        private external fun nativeStartSlot(context: Context, filesDir: String, slot: Int, exitTime: Long, exitReason: Int, exitStatus: Int)
 
         @JvmStatic
         private external fun nativeShellBound()

@@ -269,7 +269,8 @@ The data folder is the app's files folder on shared storage,
 startup flags (`docs/HEADLESS.md`), **one argument per line**, `#` for comments, plus
 `--graphics auto|vulkan|gl` (auto, the default: OpenGL ES, else Vulkan; without the flag,
 Options > Application > Graphics, saved as `graphics.txt`, from each tab's next start), `--test-gpu-loss` (destroys the GPU device
-20 s after the start: "A lost GPU device" below), `--test-low-prompt` and `--test-performance-offer`
+20 s after the start: "A lost GPU device" below), `--test-memory-kills` (every `SIGKILL` of a
+slot counts as a kill for memory, so `kill -9` tries "Tabs closed for memory" below), `--test-low-prompt` and `--test-performance-offer`
 (the graphics tips' Quality Low tip and Performance mode offer about 30 s after the game is drawn,
 every time: `RUFFLE_TEST_LOW_PROMPT`, `RUFFLE_TEST_PERFORMANCE_OFFER`), `--safe-drawing` (Options >
 Application > Safe Drawing: "Misdrawing" below) and `--perf-log <seconds>`
@@ -578,3 +579,45 @@ device 5.5 minutes in on beta.8, in the foreground (Sentry TURU-ANDROID-B, "Unkn
 lost"), and Turu went on with a frozen screen, as meant; it was that phone's third loss. Getting
 the picture back without a restart is proposed in docs/GPU_RECOVERY_PROPOSAL.md (a new device
 and player, then auto-relogin).
+
+## Tabs closed for memory
+
+When Android ends a tab's slot process for memory, the slot comes straight back (`START_STICKY`:
+1 s, 4 s, 16 s on the emulator), logs in from its record and runs its script again
+(`restart.rs`). While memory is still short, that can push out another slot, which comes back in
+turn: the restart storm docs/TAB_PROCESSES_PROPOSAL.md warned of. So (`memory_kills.rs`, rules in
+`turu_frontend::memory_kills`):
+
+* As a slot starts, `SlotService` reads how its process (`:c<N>`) last ended from Android's
+  exit records (`CrashReports.lastExit`, Android 11 and later). A kill for memory is
+  `REASON_LOW_MEMORY`, or a plain `SIGKILL` (`REASON_SIGNALED`, status 9: phones whose killer
+  doesn't say why) while the phone is still low on memory (MemAvailable under 15%), so a battery
+  saver's kill isn't taken for one.
+* Each kill's time goes into `crash/memory-kills-c<N>.log` (the exit record's time, so the same
+  kill seen twice counts once). Up to 3 in 30 minutes, the slot starts as before, first waiting
+  up to 20 s while the phone is still low on memory (less than the 30 s the shell gives a starting
+  slot to let go of the screen).
+* The 4th kill in 30 minutes holds it, and the file keeps that (`held 4`), however long ago the
+  kills were, until it's started again by hand, its tab closes (the shell clears the file then), or
+  it gets in game or runs a script anyway (logged in by hand on the game's screen). A
+  held slot comes back at the game's login screen with no password given and its script or
+  playlist loaded, not run (`restart.rs`'s record is kept). Its notification starts with "Android
+  closed this tab 4 times for memory. Lower Tab Limit or close other apps, then start it again."
+  and offers Start again instead of Start; the Tabs panel's row says "Closed for memory" in red,
+  with its dot red, the reason under it and Start again (no Log in), and while another tab is on
+  screen the Tabs item's count turns amber, as for a tab that waits for you.
+* Start again (either) clears the file and ends the slot's process with status 87, which
+  `CrashReports.kt` doesn't report; Android starts it again as after any end it didn't ask for,
+  logged in and with its script.
+
+Without exit records (Android 8 to 10) nothing is counted and slots come back as before.
+
+Checked on the emulator (2026-11-22, `--test-memory-kills`, a blank tab killed with `kill -9`):
+it came back after 2, 4 and 16 s with "1 (2, 3) of 3 times", and after the 4th kill (64 s later)
+held, with the notification, the red row and Start again as above; Start again ended it with
+status 87 (no exit report), it was back in 2 s as a plain start and its file was gone. The
+notification's Start again did the same, a hold written into the file survived a reinstall, and
+the row wraps at font scale 1.3. Not seen yet: a real `REASON_LOW_MEMORY` kill, on a phone; a held
+tab with a saved login and a script (its flags are tested on the host: `held_args`); the hold
+lifting once a held tab gets in game by hand. Each test kill still made an exit report and the
+"Turu closed unexpectedly" prompt, as any `SIGKILL` does.

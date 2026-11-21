@@ -1118,6 +1118,11 @@ so the 503 wasn't seen there). Not run: `POST /update` through it (the client's 
   helps.
 * **Restart storms.** A killed slot that comes straight back while memory is still short can push
   out another slot. Restarts need a policy (wait, back off, give up after a few, tell the user).
+  Built on Android 2026-11-22 (docs/ANDROID.md, "Tabs closed for memory"): a slot tells a kill for
+  memory from other restarts by Android's exit record for its process, waits up to 20 s while the
+  phone is low on memory before it logs in, and after more than 3 kills in 30 minutes comes back
+  held, at the login screen with its script not started, saying why in its notification and tab
+  row with Start again. Back-off between restarts stays Android's own (`START_STICKY`).
 * **Two ways of doing tabs** live side by side from M3 to M6.
 * **Text input across processes** (the keyboard, IME composition, the field above the keyboard)
   is the part most likely to feel worse.

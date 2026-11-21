@@ -123,6 +123,9 @@ pub enum ToClient {
     /// Android: one of the tab's egui windows the shell's native screens open ("script_repo",
     /// "script_options"), while those windows aren't native yet.
     OpenWindow { window: String },
+    /// Android: the tab list's Start again for a tab held after kills for memory
+    /// (`memory_kills`): its slot starts again as it would have, logged in and with its script.
+    StartAgain,
     /// Android: the text field above the keyboard (`FieldShow`) was edited: all its text, the
     /// selection in UTF-16 units (M3).
     FieldEdited {
@@ -427,6 +430,10 @@ pub enum ToShell {
         /// Accounts and New tab), and keep "Tab n" while the tab starts again.
         #[serde(default)]
         streamer: bool,
+        /// Android: why the tab came back held, at the login screen with its script not started
+        /// (`memory_kills`: Android closed it for memory too often), until it's started again.
+        #[serde(default)]
+        held: Option<String>,
     },
     /// Android: a window the shell has natively (docs/UI.md, "Native shells") was opened in the
     /// tab's egui menus: the shell shows its own instead.
@@ -1200,6 +1207,7 @@ mod tests {
                 native_rail: true,
             },
             ToClient::RailHidden { hidden: true },
+            ToClient::StartAgain,
             ToClient::Hide,
             ToClient::RefreshRate {
                 millihertz: 119_880,
@@ -1288,6 +1296,7 @@ mod tests {
                 map: Some("battleon".into()),
                 script: Some("Example".into()),
                 streamer: true,
+                held: None,
             },
             ToShell::OpenScreen {
                 screen: NativeScreen::Scripts,

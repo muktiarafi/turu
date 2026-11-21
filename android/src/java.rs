@@ -104,13 +104,21 @@ jni::bind_java_type! {
             paused: jboolean,
             startable: jboolean,
             awake: jboolean,
+            held: jboolean,
         ),
         static fn copy_text(text: JString),
         static fn clip_text() -> JString,
     },
     native_methods {
         static raw fn native_start_slot {
-            sig = (context: android.content.Context, files_dir: JString, slot: jint) -> void,
+            sig = (
+                context: android.content.Context,
+                files_dir: JString,
+                slot: jint,
+                exit_time: jlong,
+                exit_reason: jint,
+                exit_status: jint,
+            ) -> void,
             fn = crate::slots::Java_com_muktiarafi_turu_SlotService_nativeStartSlot,
         },
         static raw fn native_shell_bound {

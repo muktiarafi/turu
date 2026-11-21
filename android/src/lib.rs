@@ -21,6 +21,7 @@ mod game_field;
 mod input;
 mod java;
 mod memory;
+mod memory_kills;
 mod notify;
 mod pan;
 mod platform;
@@ -551,7 +552,21 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
         tracing::error!("An engine outside a slot: not started");
         return;
     };
-    let mut args = slots::args(root, slot);
+    // Turu: after kills for memory, a slot may come back held (no login, no script), or wait a
+    // little for memory before it logs in (`memory_kills`): VibeSkua has no processes Android
+    // starts again.
+    let any_kill = args_lines(root)
+        .iter()
+        .any(|line| line.trim() == "--test-memory-kills");
+    let start = memory_kills::at_start(slot, any_kill);
+    match start {
+        turu_frontend::memory_kills::Start::AfterKill { .. } => memory_kills::wait_for_memory(slot),
+        turu_frontend::memory_kills::Start::Held { .. }
+        | turu_frontend::memory_kills::Start::Plain => {}
+    }
+    let held = matches!(start, turu_frontend::memory_kills::Start::Held { .. });
+    let mut args = slots::args(root, slot, !held);
+    take_flag(&mut args, "--test-memory-kills");
     // `--graphics` in turu-args.txt, else Options > Application's choice.
     // (Options' choice is read either way, for its chip.)
     let saved_graphics = load_graphics(root);
@@ -577,7 +592,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // `RUFFLE_NO_BASE_VERTEX`, ...).
     let env = take_values(&mut args, "--env");
     let releases_url = take_value(&mut args, "--releases-url");
-    restart::prepare(&mut args);
+    if !held {
+        restart::prepare(&mut args);
+    }
     turu::take_startup_args(&mut args);
     if !args.is_empty() {
         tracing::warn!(
@@ -627,6 +644,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::configure_startup();
     turu::start_api();
     restart::start();
+    memory_kills::watch_hold();
     // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with.
     if let Some(seconds) = perf_log {
         // SAFETY: before the engine's threads exist (the perf log's is started just below).

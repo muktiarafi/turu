@@ -133,12 +133,40 @@ object CrashReports {
         -> false
         // A slot that lost its GPU ends itself to start again (`memory.rs`, `EXIT_GPU_LOST`): that
         // went to Sentry as a warning already.
-        ApplicationExitInfo.REASON_EXIT_SELF -> exit.status != 0 && exit.status != EXIT_GPU_LOST
+        // Nor one started again by hand after kills for memory (`memory_kills.rs`, `EXIT_START_AGAIN`).
+        ApplicationExitInfo.REASON_EXIT_SELF ->
+            exit.status != 0 && exit.status != EXIT_GPU_LOST && exit.status != EXIT_START_AGAIN
         else -> true
     }
 
     /** The exit status of a Turu slot that lost its GPU (`android/src/memory.rs`). */
     private const val EXIT_GPU_LOST = 86
+
+    /** The exit status of a Turu slot started again by hand (`android/src/memory_kills.rs`). */
+    private const val EXIT_START_AGAIN = 87
+
+    /** How a process ended: Android's `ApplicationExitInfo` timestamp (ms), reason and status. */
+    data class ProcessExit(val timestamp: Long, val reason: Int, val status: Int)
+
+    /**
+     * How process `processName` of this app last ended, from Android's record (Android 11 and
+     * later; null before, or with no record): Turu's process tabs read it as a slot starts, to tell
+     * a kill for memory from other restarts. Its own query, over every record Android keeps (the
+     * other processes' exits may be newer): [collect] may have marked this one read already.
+     */
+    fun lastExit(context: Context, processName: String): ProcessExit? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return try {
+            context.getSystemService(ActivityManager::class.java)
+                .getHistoricalProcessExitReasons(context.packageName, 0, 0)
+                .filter { it.processName == processName }
+                .maxByOrNull { it.timestamp }
+                ?.let { ProcessExit(it.timestamp, it.reason, it.status) }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Couldn't read how $processName last ended", e)
+            null
+        }
+    }
 
     private fun write(context: Context, activities: ActivityManager, dir: File, exit: ApplicationExitInfo) {
         if (!dir.isDirectory && !dir.mkdirs()) {

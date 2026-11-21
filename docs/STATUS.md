@@ -1143,6 +1143,13 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   and "Without a window" launch processes as before; a window's only tab closing itself this way
   ends the window (the shell used to start the tab again, running the script once more, and the
   process never ended, so the queue waited on it for good). Not checked with real accounts.
+- **A tab Android closed for memory too often stays down** (Android's process tabs, 2026-11-22,
+  `android/src/memory_kills.rs`): VibeSkua has no processes the system starts again. A slot that
+  comes back after a kill for memory logs in and runs its script again 3 times in 30 minutes
+  (waiting up to 20 s while the phone is low on memory); the 4th kill holds it at the login
+  screen, its script not started, until Start again in its notification or the Tabs panel (or it
+  gets in game by hand). Its
+  notification and tab row say why (docs/ANDROID.md, "Tabs closed for memory").
 
 - **A script dropped on the window is loaded** (a process tab's, 2026-11-18): VibeSkua takes no
   dropped files; Turu loads a dropped `.ts` or `.js` in the tab on screen, as Load Script does.

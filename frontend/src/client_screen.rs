@@ -826,6 +826,7 @@ impl ClientScreen {
             | ToClient::FullScreen { .. }
             | ToClient::OpenWindow { .. }
             | ToClient::RailHidden { .. }
+            | ToClient::StartAgain
             | ToClient::Unknown => {}
         }
         if self.shown.is_some() && !self.events.is_empty() {

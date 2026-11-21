@@ -220,6 +220,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         sendJson(current, json)
     }
 
+    /** A message to slot [slot] (`ToClient`, as JSON), whether it's on screen or not. */
+    fun toSlot(slot: Int, json: String) {
+        sendJson(slot, json)
+    }
+
     /** Actions the Rust side sent of its own (keys for the slot on screen), on the main thread. */
     fun actions(actions: String) {
         if (!stopped) run(actions)

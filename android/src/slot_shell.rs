@@ -37,8 +37,16 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
                     tracing::warn!("Shell: couldn't remove slot {slot}'s record: {e}");
                 }
                 turu_frontend::slots::SlotAddress::remove(&dir, slot);
-                // A script it ran isn't brought back in the next tab there.
+                // A script it ran isn't brought back in the next tab there, nor its kills for
+                // memory held against it (`memory_kills`).
                 let _ = std::fs::remove_file(root.join(crate::restart::slot_record_file(slot)));
+                turu_frontend::memory_kills::clear(
+                    &turu_bot::paths::Paths {
+                        root: root.to_owned(),
+                    }
+                    .crash_dir(),
+                    slot,
+                );
             }
             Action::Password(slot, password) => {
                 let key = crate::slots::password_key(slot);

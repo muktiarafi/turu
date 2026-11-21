@@ -467,6 +467,11 @@ fn log_file() -> Option<PathBuf> {
     Some(dir.join(format!("memory-{}.log", std::process::id())))
 }
 
+/// Whether the phone is low on memory now ([`LOW_PERCENT`] of it available, or less).
+pub(crate) fn phone_low() -> bool {
+    read_meminfo().is_some_and(|(available, total)| available * 100 < total * LOW_PERCENT)
+}
+
 /// `MemAvailable` and `MemTotal` from `/proc/meminfo`, in bytes.
 fn read_meminfo() -> Option<(u64, u64)> {
     parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)

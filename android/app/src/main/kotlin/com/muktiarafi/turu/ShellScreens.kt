@@ -32,6 +32,7 @@ class ShellScreens(private val activity: TuruActivity) {
     private val actions = TabActions(
         select = { id -> activity.shell?.asShown(JSONObject().put("type", "select_tab").put("id", id).toString()) },
         close = { id -> activity.shell?.asShown(JSONObject().put("type", "close_tab").put("id", id).toString()) },
+        startAgain = { id -> activity.shell?.toSlot(id, JSONObject().put("type", "start_again").toString()) },
         blank = { activity.shell?.asShown(JSONObject().put("type", "open_tab").toString()) },
         accounts = AccountsPanel { actions -> activity.shell?.actions(actions) },
         scripts = scripts,

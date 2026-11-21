@@ -24,6 +24,10 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeAction<'local>(
     unowned_env
         .with_env(|env| -> jni::errors::Result<()> {
             let action = action.try_to_string(env)?;
+            if action == "start_again" {
+                crate::memory_kills::start_again();
+                return Ok(());
+            }
             // Off the calling thread: stopping waits for the script's stop handlers.
             turu::spawn_action("Notification", move |bot| {
                 match action.as_str() {
@@ -75,6 +79,8 @@ pub(crate) struct Status {
     pub(crate) startable: bool,
     /// Some tab's script runs: the wake lock is held.
     pub(crate) awake: bool,
+    /// Held after kills for memory (`memory_kills`): Start again, not Start.
+    pub(crate) held: bool,
 }
 
 /// The tab's script's name, while one is loaded.
@@ -134,13 +140,20 @@ pub(crate) fn status() -> Status {
     if ruffle_render_wgpu::device_lost().is_some() {
         text.push_str(". Graphics stopped: restart Turu to see the game");
     }
+    // Held after kills for memory: why comes first (the group's summary shows the first line).
+    let held = crate::memory_kills::held_text();
+    if let Some(why) = &held {
+        text = format!("{why}\n{text}");
+    }
     Status {
         title,
         text,
         running,
         paused,
-        startable: can_start(&bot),
+        // Its Start would run the script at the login screen: Start again instead.
+        startable: held.is_none() && can_start(&bot),
         awake: tabs.iter().any(|(_, tab)| tab.scripts.is_running()),
+        held: held.is_some(),
     }
 }
 

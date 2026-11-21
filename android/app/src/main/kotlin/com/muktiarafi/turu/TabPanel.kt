@@ -81,6 +81,8 @@ import androidx.compose.ui.unit.sp
 class TabActions(
     val select: (Int) -> Unit,
     val close: (Int) -> Unit,
+    /** Starts a tab held after kills for memory again, logged in and with its script (`memory_kills`). */
+    val startAgain: (Int) -> Unit,
     /** A new tab at the game's login screen. */
     val blank: () -> Unit,
     val accounts: AccountsPanel,
@@ -404,6 +406,7 @@ private fun statusLine(tab: ShellTab): String {
     val where = tab.map?.let { " · $it" }.orEmpty()
     return when {
         tab.down != null -> "Starting…"
+        tab.held != null -> "Closed for memory"
         tab.waits != null -> "Waits for you: ${tab.waits}"
         tab.dropped -> "Disconnected"
         tab.game == "relogging" -> "Logging back in…"
@@ -415,6 +418,7 @@ private fun statusLine(tab: ShellTab): String {
 
 /** The colour of a tab's state: its dot, and its status line where it needs you. */
 private fun statusColor(tab: ShellTab, dot: Boolean): Color = when {
+    tab.held != null -> Turu.Danger
     tab.waits != null -> Turu.Warning
     tab.dropped -> Turu.Danger
     tab.game == "relogging" -> Turu.Warning
@@ -428,7 +432,7 @@ private fun loggedIn(tab: ShellTab): Boolean =
 
 /** It can log itself in from the panel: out of the game, not on its way back, with a saved login. */
 private fun canLogIn(tab: ShellTab): Boolean =
-    tab.down == null && tab.account && tab.api != null && (tab.game == "dropped" || tab.game == "logged_out")
+    tab.down == null && tab.held == null && tab.account && tab.api != null && (tab.game == "dropped" || tab.game == "logged_out")
 
 @Composable
 private fun TabsPage(state: ShellState, actions: TabActions) {
@@ -485,7 +489,8 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                                 Text(
                                     statusLine(tab),
                                     color = statusColor(tab, dot = false),
-                                    maxLines = 1,
+                                    // A held tab's isn't cut short at large font scales: it says why.
+                                    maxLines = if (tab.held != null) 2 else 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -498,6 +503,20 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = 2.dp),
                                 )
+                            }
+                            // Held after kills for memory: why, and Start again (which logs it in
+                            // and starts its script, as its restart would have).
+                            if (tab.down == null && tab.held != null) {
+                                Text(
+                                    tab.held,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Turu.Muted,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                                TextButton(
+                                    onClick = { actions.startAgain(tab.id) },
+                                    contentPadding = PaddingValues(horizontal = 0.dp),
+                                ) { Text("Start again") }
                             }
                             if (canLogIn(tab)) {
                                 if (tab.id in loggingIn) {

@@ -210,9 +210,10 @@ pub fn playlist_args(
 /// Android's own flags in `turu-args.txt` (graphics, logs, test switches), with a value or without:
 /// the app's, not a tab's, so every slot reads them there and no record keeps them.
 const APP_FLAGS_WITH_VALUE: [&str; 4] = ["--graphics", "--perf-log", "--releases-url", "--env"];
-const APP_FLAGS: [&str; 4] = [
+const APP_FLAGS: [&str; 5] = [
     "--safe-drawing",
     "--test-gpu-loss",
+    "--test-memory-kills",
     "--test-low-prompt",
     "--test-performance-offer",
 ];
@@ -299,6 +300,8 @@ pub struct NativeTab {
     pub map: Option<String>,
     /// Its loaded script's name.
     pub script: Option<String>,
+    /// Why it's held after kills for memory (`memory_kills`): it waits to be started again.
+    pub held: Option<String>,
     /// It was opened for a saved login: the tab can log itself in (the control API's `/login`).
     pub account: bool,
     /// Its control API (`127.0.0.1:<port>`) and token, from its hello: the native screens read
@@ -317,6 +320,7 @@ struct Live {
     game: TabGame,
     map: Option<String>,
     script: Option<String>,
+    held: Option<String>,
     api: Option<String>,
     token: Option<String>,
 }
@@ -446,9 +450,16 @@ impl SlotShell {
                 map,
                 script,
                 streamer,
+                held,
             } => {
-                let mut actions =
-                    self.status(slot, label, busy, waits, rail_hidden, (game, map, script));
+                let mut actions = self.status(
+                    slot,
+                    label,
+                    busy,
+                    waits,
+                    rail_hidden,
+                    (game, map, script, held),
+                );
                 if let Some(record) = self.records.get_mut(&slot)
                     && record.streamer != streamer
                 {
@@ -586,7 +597,7 @@ impl SlotShell {
         busy: bool,
         waits: Option<String>,
         rail_hidden: bool,
-        (game, map, script): (TabGame, Option<String>, Option<String>),
+        (game, map, script, held): (TabGame, Option<String>, Option<String>, Option<String>),
     ) -> Vec<Action> {
         match self.live.get_mut(&slot) {
             Some(live) if live.label != label || live.busy != busy || live.waits != waits => {
@@ -594,16 +605,17 @@ impl SlotShell {
                 live.busy = busy;
                 live.waits = waits;
                 live.rail_hidden = rail_hidden;
-                (live.game, live.map, live.script) = (game, map, script);
+                (live.game, live.map, live.script, live.held) = (game, map, script, held);
                 self.tab_lists()
             }
             // What only the activity's list shows.
             Some(live)
                 if live.rail_hidden != rail_hidden
-                    || (live.game, &live.map, &live.script) != (game, &map, &script) =>
+                    || (live.game, &live.map, &live.script, &live.held)
+                        != (game, &map, &script, &held) =>
             {
                 live.rail_hidden = rail_hidden;
-                (live.game, live.map, live.script) = (game, map, script);
+                (live.game, live.map, live.script, live.held) = (game, map, script, held);
                 vec![Action::Tabs(self.native_tabs())]
             }
             _ => Vec::new(),
@@ -626,6 +638,7 @@ impl SlotShell {
                     game: live.map_or_else(TabGame::default, |l| l.game),
                     map: live.and_then(|l| l.map.clone()),
                     script: live.and_then(|l| l.script.clone()),
+                    held: live.and_then(|l| l.held.clone()),
                     account: record.username().is_some(),
                     api: live.and_then(|l| l.api.clone()),
                     token: live.and_then(|l| l.token.clone()),
@@ -1179,6 +1192,7 @@ mod tests {
                 map: Some("battleon".into()),
                 script: None,
                 streamer: false,
+                held: None,
             },
         );
         assert!(actions.iter().any(|a| matches!(
@@ -1203,6 +1217,7 @@ mod tests {
                 map: Some("battleon".into()),
                 script: None,
                 streamer: false,
+                held: None,
             },
         );
         assert_eq!(actions.len(), 1);
@@ -1219,6 +1234,7 @@ mod tests {
                 map: None,
                 script: Some("Farm".into()),
                 streamer: false,
+                held: None,
             },
         );
         assert_eq!(actions.len(), 1);
@@ -1226,6 +1242,24 @@ mod tests {
         assert_eq!(tabs.tabs[0].game, TabGame::Dropped);
         assert_eq!(tabs.tabs[0].script.as_deref(), Some("Farm"));
         assert!(tabs.tabs[0].account);
+        // So does a hold after kills for memory.
+        let actions = shell.message(
+            1,
+            ToShell::Status {
+                label: "Hero".into(),
+                busy: true,
+                waits: Some("a message box".into()),
+                rail_hidden: true,
+                game: TabGame::Dropped,
+                map: None,
+                script: Some("Farm".into()),
+                streamer: false,
+                held: Some(crate::memory_kills::held_text(4)),
+            },
+        );
+        assert_eq!(actions.len(), 1);
+        let tabs = native(&actions).expect("the activity's list");
+        assert_eq!(tabs.tabs[0].held, Some(crate::memory_kills::held_text(4)));
         // Army > Accounts goes to the activity.
         let open = ToShell::OpenScreen {
             screen: crate::shell::NativeScreen::Accounts,
@@ -1259,6 +1293,7 @@ mod tests {
             map: None,
             script: None,
             streamer,
+            held: None,
         };
         assert!(!shell.streamer());
         let actions = shell.message(1, status("Tab 1", true));

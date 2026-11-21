@@ -21,6 +21,7 @@ pub mod grid;
 pub mod gui;
 pub mod map_items;
 pub mod map_pads;
+pub mod memory_kills;
 pub mod models;
 #[cfg(feature = "ruffle")]
 pub mod movie_texture;

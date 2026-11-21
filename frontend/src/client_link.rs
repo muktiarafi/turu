@@ -163,6 +163,7 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                     crate::gui::rail_hidden(),
                     (game, map, script),
                     bot.opts().streamer_mode,
+                    HELD.lock().unwrap_or_else(|e| e.into_inner()).clone(),
                 );
                 let resend = std::mem::take(&mut *RESEND.lock().unwrap_or_else(|e| e.into_inner()));
                 if resend || sent.as_ref() != Some(&now) {
@@ -175,6 +176,7 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                         map: now.4.1.clone(),
                         script: now.4.2.clone(),
                         streamer: now.5,
+                        held: now.6.clone(),
                     });
                     sent = Some(now);
                 }
@@ -187,6 +189,15 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
 }
 
 static RESEND: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+/// Why the tab is held after kills for memory (Android's process tabs, `memory_kills`), for the
+/// shell's tab list.
+static HELD: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The tab is held after kills for memory (`None`: it isn't): the shell's tab list says why.
+pub fn set_held(why: Option<String>) {
+    *HELD.lock().unwrap_or_else(|e| e.into_inner()) = why;
+}
 
 /// A new shell is listening: the next status report goes even if nothing changed.
 pub fn resend_status() {

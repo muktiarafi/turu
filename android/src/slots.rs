@@ -50,16 +50,22 @@ pub(crate) fn password_key(slot: u32) -> String {
 }
 
 /// The slot's startup flags: the app's own from `turu-args.txt`, its record's, the login's password (Accounts', else the shell's copy
-/// for this slot), and a control API of its own on a free local port.
-pub(crate) fn args(root: &Path, slot: u32) -> Vec<OsString> {
+/// for this slot), and a control API of its own on a free local port. Without `login` (held after
+/// kills for memory, `memory_kills`), no password, and its script or playlist loaded, not run.
+pub(crate) fn args(root: &Path, slot: u32, login: bool) -> Vec<OsString> {
     let record = SlotRecord::read(&turu_frontend::slots::dir(root), slot).unwrap_or_else(|| {
         tracing::warn!("Slot {slot}: no record; at the login screen");
         SlotRecord::default()
     });
     // The app's own flags (graphics, logs) from turu-args.txt, then the tab's.
     let (_, _, app) = turu_frontend::slots::split_args(&crate::args_lines(root));
-    let mut args: Vec<OsString> = app.iter().chain(&record.args).map(OsString::from).collect();
-    if let Some(username) = record.username() {
+    let tab = if login {
+        record.args.clone()
+    } else {
+        turu_frontend::memory_kills::held_args(&record.args)
+    };
+    let mut args: Vec<OsString> = app.iter().chain(&tab).map(OsString::from).collect();
+    if let Some(username) = record.username().filter(|_| login) {
         let password = turu_bot::accounts::password(username)
             .ok()
             .flatten()
@@ -192,7 +198,16 @@ fn start_status() {
                     with_service(|env| {
                         let title = env.new_string(&now.title)?;
                         let text = env.new_string(&now.text)?;
-                        SlotService::status(env, &title, &text, now.running, now.paused, now.startable, now.awake)
+                        SlotService::status(
+                            env,
+                            &title,
+                            &text,
+                            now.running,
+                            now.paused,
+                            now.startable,
+                            now.awake,
+                            now.held,
+                        )
                     });
                     shown = Some(now);
                 }
@@ -207,7 +222,9 @@ fn start_status() {
     }
 }
 
-/// `SlotService.nativeStartSlot(context, filesDir, slot)`: starts this slot process's engine.
+/// `SlotService.nativeStartSlot(context, filesDir, slot, exitTime, exitReason, exitStatus)`: starts
+/// this slot process's engine; how its process last ended (Android's record, a time of 0 without
+/// one) for `memory_kills`.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeStartSlot<'local>(
     mut unowned_env: EnvUnowned<'local>,
@@ -215,11 +232,15 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeStartSlot<'local>(
     context: JObject<'local>,
     files_dir: JString<'local>,
     slot: jint,
+    exit_time: jni::sys::jlong,
+    exit_reason: jint,
+    exit_status: jint,
 ) {
     unowned_env
         .with_env(|env| -> jni::errors::Result<()> {
             crate::init_logging();
             let _ = SLOT.set(slot as u32);
+            crate::memory_kills::set_last_exit(exit_time, exit_reason, exit_status);
             let _ = VM.set(env.get_java_vm()?);
             crate::notify::set_slot_vm(env.get_java_vm()?);
             tracing::info!("Slot {slot}: process {}", std::process::id());
@@ -340,6 +361,8 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                     turu::request_window(window);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
+                // The tab list's Start again, for a slot held after kills for memory.
+                Ok(ToClient::StartAgain) => crate::memory_kills::start_again(),
                 // The display's refresh rate, from the shell's activity.
                 Ok(ToClient::RefreshRate { millihertz }) => crate::ui::set_refresh_millihertz(millihertz),
                 // Another tab turned Headless Mode on or off.
