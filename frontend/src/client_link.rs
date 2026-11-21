@@ -34,6 +34,7 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                     .map(|path| path.to_string_lossy().into_owned()),
                 run_playlist: startup.run_playlist,
                 options_storage: startup.options_storage,
+                exit_on_stop: startup.exit_on_stop,
             }),
             // The shell lays the tiles out in what Turu's UI leaves of the window.
             turu::TabRequest::Grid(on) => tabs(ToShell::Grid {
@@ -87,6 +88,7 @@ pub fn set_tabs(tabs: Vec<TabInfo>, shown: u32, you: Option<u32>, rail_top: Opti
             down: tab.down,
             api: tab.api.and_then(|api| api.parse().ok()),
             token: tab.token.unwrap_or_default(),
+            user: tab.user,
         })
         .collect();
     turu::set_shell_tabs(tabs, shown);

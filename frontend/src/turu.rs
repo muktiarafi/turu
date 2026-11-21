@@ -286,6 +286,8 @@ pub struct ShellTab {
     pub token: String,
     /// It's this client's own tab.
     pub me: bool,
+    /// The login it was opened with (`--user`), if any.
+    pub user: Option<String>,
 }
 
 impl ShellTab {
@@ -1949,6 +1951,15 @@ fn exit_after_stop(bot: &Arc<Bot>) {
     }
     let _ = turu_bot::api::servers::logout(bot);
     std::thread::sleep(Duration::from_secs(1));
+    // Turu: a shell's tab asks the shell to close it instead of quitting. The shell starts a tab
+    // whose client quit again, with its flags: the script would run once more.
+    if client_of().is_some() {
+        match shell_tabs().and_then(|(tabs, _)| tabs.into_iter().find(|tab| tab.me)) {
+            Some(me) => shell_tab_action(ShellTabAction::Close(me.id)),
+            None => tracing::warn!("--exit-on-script-stop: the shell's tab list hasn't come; the tab stays open"),
+        }
+        return;
+    }
     close_butlers();
     std::process::exit(0);
 }

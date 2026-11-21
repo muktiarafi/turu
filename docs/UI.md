@@ -448,10 +448,14 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Pick Accounts", then each account: name, its Script or "(Uses Squad Script)", its run state,
   and Script, File…, Options, ✕, Remove), and Preset: (drop-down, Load, Preset Name, Save
   Preset). Pick Accounts for Squad searches by name or username, with All (the shown ones),
-  None, Done and Cancel. Squads run one after another (`bot/src/army/queue.rs`): each account in
-  a `turu` of its own with `--run-script`, `--script-options-storage ArmyQueue_<squad>[_<user>]_
-  <script>` and `--exit-on-script-stop`, 3 s apart; once all have quit, a 5 s ghost-session
-  countdown, then the next squad. Editing waits while it runs. Saved as you edit in
+  None, Done and Cancel. Squads run one after another (`bot/src/army/queue.rs`): each account
+  with `--run-script`, `--script-options-storage ArmyQueue_<squad>[_<user>]_<script>` and
+  `--exit-on-script-stop`, 3 s apart, where Army > Accounts launches: with "In a tab" in a tab of
+  this window (`TabLauncher`; the tab logs out and closes once its script stops; an account open in
+  a tab already shows "Already Open" and is skipped; one whose script hasn't run within the queue's
+  timeout, 30 min, shows "Didn't Start" and its tab is closed), else in a `turu` of its own (a
+  window, or none when headless). Once all have ended, a 5 s ghost-session countdown, then the next
+  squad. Editing waits while it runs. Saved as you edit in
   `ArmyQueueActive.json`, presets in `ArmyQueues.json`. Stop script and Log out sent to
   everyone need a second click ("Log out all?") within 4 s. The last outcome shows below, with
   the earlier ones under History. VibeSkua's "Include this window's tabs" is gone: tabs are rows.

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use turu_bot::army::jump::{self, Destination, JumpSettings, Location, Visits};
 use turu_bot::army::queue::{
     Launched, MemberStatus, Outcome, Presets, QueueAccount, QueueConfig, QueueLauncher,
-    QueueRunner, QueueStep, StepStatus,
+    QueueRunner, QueueStep, QueueTab, QueueTabs, StepStatus, TabLauncher,
 };
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -424,4 +424,200 @@ fn stop_ends_the_queue() {
     wait_for("the stop", || !runner.is_running());
     assert_eq!(launcher.launched(), ["A1"]);
     assert!(!runner.status().paused);
+}
+
+/// A shell's tab list: tabs open when asked, and the test runs and ends their scripts.
+#[derive(Default)]
+struct FakeShell {
+    tabs: Mutex<Vec<QueueTab>>,
+    next: Mutex<u32>,
+    /// What was asked for: the login, script and storage.
+    opened: Mutex<Vec<(String, String, Option<String>)>>,
+    closed: Mutex<Vec<u32>>,
+    /// Asked-for tabs the shell never lists (the Tab Limit).
+    refused: Vec<String>,
+}
+
+impl FakeShell {
+    fn with_tab(user: &str) -> Self {
+        let shell = Self::default();
+        shell.add(user);
+        shell
+    }
+
+    fn add(&self, user: &str) -> u32 {
+        let mut next = self.next.lock();
+        *next += 1;
+        self.tabs.lock().push(QueueTab {
+            id: *next,
+            user: Some(user.into()),
+            busy: false,
+            closed: false,
+        });
+        *next
+    }
+
+    fn set(&self, user: &str, f: impl FnOnce(&mut QueueTab)) {
+        let mut tabs = self.tabs.lock();
+        let tab = tabs
+            .iter_mut()
+            .find(|t| t.user.as_deref() == Some(user))
+            .unwrap();
+        f(tab);
+    }
+
+    /// Its script ran, stopped, and the tab closed itself.
+    fn finish(&self, user: &str) {
+        self.set(user, |t| t.busy = true);
+    }
+
+    fn close_tab(&self, user: &str) {
+        self.tabs.lock().retain(|t| t.user.as_deref() != Some(user));
+    }
+}
+
+impl QueueTabs for FakeShell {
+    fn tabs(&self) -> Vec<QueueTab> {
+        self.tabs.lock().clone()
+    }
+
+    fn open(&self, username: &str, script: &str, storage: Option<&str>) -> Launched {
+        self.opened
+            .lock()
+            .push((username.into(), script.into(), storage.map(str::to_owned)));
+        if !self.refused.iter().any(|r| r == username) {
+            self.add(username);
+        }
+        Launched::Started
+    }
+
+    fn close(&self, id: u32) {
+        self.closed.lock().push(id);
+        self.tabs.lock().retain(|t| t.id != id);
+    }
+}
+
+#[test]
+fn a_tab_counts_as_done_once_it_closes_after_its_script_ran() {
+    let shell = Arc::new(FakeShell::default());
+    let launcher = TabLauncher::with_times(
+        shell.clone(),
+        Duration::from_secs(60),
+        Duration::from_secs(60),
+    );
+    assert_eq!(
+        launcher.launch("Questwalker", "Farm.ts", Some("ArmyQueue_A_Farm")),
+        Launched::Started
+    );
+    assert_eq!(
+        shell.opened.lock()[0],
+        (
+            "Questwalker".into(),
+            "Farm.ts".into(),
+            Some("ArmyQueue_A_Farm".into())
+        )
+    );
+    // Logging in, then running: not done.
+    assert!(!launcher.exited("questwalker"));
+    shell.finish("Questwalker");
+    assert!(!launcher.exited("Questwalker"));
+    // The script stopped; the tab logs out before it closes.
+    shell.set("Questwalker", |t| t.busy = false);
+    assert!(!launcher.exited("Questwalker"));
+    shell.close_tab("Questwalker");
+    assert!(launcher.exited("Questwalker"));
+    assert_eq!(launcher.failure("Questwalker"), None);
+    assert!(shell.closed.lock().is_empty());
+    // A login never launched has nothing to wait for.
+    assert!(launcher.exited("Nobody"));
+}
+
+#[test]
+fn a_tab_open_already_is_skipped() {
+    let shell = Arc::new(FakeShell::with_tab("Questwalker"));
+    let launcher = TabLauncher::new(shell.clone(), Duration::from_secs(60));
+    assert_eq!(
+        launcher.launch("QUESTWALKER", "Farm.ts", None),
+        Launched::AlreadyOpen
+    );
+    assert!(shell.opened.lock().is_empty());
+    // A tab the shell gave up on doesn't count, and the new one is the one followed.
+    shell.set("Questwalker", |t| t.closed = true);
+    assert_eq!(
+        launcher.launch("Questwalker", "Farm.ts", None),
+        Launched::Started
+    );
+    assert!(!launcher.exited("Questwalker"), "not the old closed tab");
+    let new = shell.tabs.lock()[1].id;
+    shell.tabs.lock()[1].busy = true;
+    assert!(!launcher.exited("Questwalker"));
+    shell.tabs.lock().retain(|t| t.id != new);
+    assert!(launcher.exited("Questwalker"));
+    assert_eq!(launcher.failure("Questwalker"), None);
+}
+
+#[test]
+fn a_tab_whose_script_never_runs_is_closed_after_the_timeout() {
+    let shell = Arc::new(FakeShell {
+        refused: vec!["Refused".into()],
+        ..Default::default()
+    });
+    let launcher = TabLauncher::with_times(
+        shell.clone(),
+        Duration::from_millis(40),
+        Duration::from_millis(40),
+    );
+    launcher.launch("Stuck", "Farm.ts", None);
+    launcher.launch("Refused", "Farm.ts", None);
+    assert!(!launcher.exited("Stuck"));
+    assert!(!launcher.exited("Refused"), "the shell may list it late");
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(launcher.exited("Stuck"));
+    assert_eq!(
+        launcher.failure("Stuck").as_deref(),
+        Some("its script didn't start within 1 min")
+    );
+    assert_eq!(shell.closed.lock().len(), 1, "the stuck tab is closed");
+    assert!(launcher.exited("Refused"));
+    assert_eq!(
+        launcher.failure("Refused").as_deref(),
+        Some("its tab didn't open")
+    );
+}
+
+#[test]
+fn a_queue_in_tabs_marks_who_never_started() {
+    let runner = QueueRunner::with_second(Duration::from_millis(10));
+    let shell = Arc::new(FakeShell::with_tab("Open"));
+    let launcher = Arc::new(TabLauncher::with_times(
+        shell.clone(),
+        Duration::from_millis(300),
+        Duration::from_secs(60),
+    ));
+    let config = QueueConfig {
+        steps: vec![
+            squad("One", &["Open", "Ran", "Stuck"]),
+            squad("Two", &["B1"]),
+        ],
+        delay_between_steps_seconds: 1,
+        delay_between_launches_seconds: 1,
+        ..Default::default()
+    };
+    runner.start(config, launcher).unwrap();
+    wait_for("squad 1 to open", || shell.opened.lock().len() == 2);
+    assert_eq!(runner.status().member(0, 0), MemberStatus::AlreadyOpen);
+    shell.finish("Ran");
+    std::thread::sleep(Duration::from_millis(30));
+    shell.close_tab("Ran");
+    wait_for("Ran finished", || {
+        runner.status().member(0, 1) == MemberStatus::Finished
+    });
+    wait_for("squad 2 to open", || shell.opened.lock().len() == 3);
+    let status = runner.status();
+    assert_eq!(status.member(0, 2), MemberStatus::NeverStarted);
+    assert_eq!(status.steps[0], StepStatus::Completed);
+    shell.finish("B1");
+    shell.close_tab("B1");
+    wait_for("the end", || !runner.is_running());
+    assert_eq!(runner.status().member(1, 0), MemberStatus::Finished);
 }

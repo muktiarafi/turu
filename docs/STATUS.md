@@ -842,7 +842,7 @@ memory budget (NVIDIA, AMD).
   The tabs share the data folder and Ruffle's SharedObjects (the game's saved
   login), as VibeSkua's processes do. `--api` steers any tab (`/tabs/<id>/...`; routes without it
   act on the first). Army > Army Queue runs squads
-  one after another (`bot/src/army/queue.rs`); not built: VibeSkua's Army Scheduler. Logging
+  one after another (`bot/src/army/queue.rs`), in tabs with Accounts' "In a tab"; not built: VibeSkua's Army Scheduler. Logging
   in and farming in several tabs is unverified with real accounts.
 - **Grid View is new and unchecked with real accounts** (`frontend/src/grid.rs`, nav bar Grid, with
   two tabs or more): every tab at once, each in a tile in VibeSkua's layout (rows of ⌈√n⌉),
@@ -1120,6 +1120,20 @@ is marked `Turu:` (`grep -rn 'Turu:' bot/src frontend/src`); in the scripts, fix
 marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known gaps" above, as
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
+
+- **Army Queue runs squads in tabs and follows the tabs** (2026-11-21, `army::queue::TabLauncher`,
+  the window's `ShellTabs`): with Army > Accounts' "In a tab" (the default), each account opens in
+  a tab of the window that runs the queue, as VibeSkua's clients join its tabbed host. VibeSkua then
+  waits on the process it started, which hands its flags to the host and quits at once, so a squad
+  could look done before its scripts ran; Turu waits on the tab instead: an account is done once its
+  tab closes (with `--exit-on-script-stop` a tab logs out and asks the shell to close it, as a
+  process quits). Two new account states: "Already Open" (its tab was open when its turn came: it's
+  skipped, not taken over) and "Didn't Start" (its script hadn't run within the queue's
+  `TimeoutMinutes`, 30 by default and unused by VibeSkua, or the shell never opened the tab: its tab
+  is closed and the queue moves on, where a failed login held it for good). "In its own window"
+  and "Without a window" launch processes as before; a window's only tab closing itself this way
+  ends the window (the shell used to start the tab again, running the script once more, and the
+  process never ended, so the queue waited on it for good). Not checked with real accounts.
 
 - **A script dropped on the window is loaded** (a process tab's, 2026-11-18): VibeSkua takes no
   dropped files; Turu loads a dropped `.ts` or `.js` in the tab on screen, as Load Script does.

@@ -791,7 +791,8 @@ data folder, a made-up account "Without a window", no password): Start Selected 
 shell start it (its parent the shell's process, not the tab's client); tab 1's Army Control listed
 it ("no window", login screen); after `kill -9` of tab 1's client it kept its process, and the
 restarted tab's Army Control listed it again; Close there ended it and took its row away. Not
-changed: Army Queue's launches from a tab are still the tab's client's.
+changed: Army Queue's launches from a tab are still the tab's client's (with Accounts' "In its own
+window" or "Without a window"; with "In a tab" its squads open as tabs since 2026-11-21, below).
 
 **`OpenTab` carries a playlist and a Script Options storage** (2026-11-17): a tab asked for with
 them (`Startup`'s `playlist`, `run_playlist`, `options_storage`) now starts with
@@ -799,6 +800,17 @@ them (`Startup`'s `playlist`, `run_playlist`, `options_storage`) now starts with
 (`slots::playlist_args`), on the desktop and in Android's slots. Nothing asks for a tab with them
 yet (Accounts, the strip's "+" and the saved tabs give the login, server and script; Army Queue,
 which has a storage, launches processes), so it was a gap waiting for its first caller.
+
+**Army Queue's squads in tabs** (2026-11-21): Army Queue is that first caller. With Accounts' "In a
+tab" it opens each account with `OpenTab` and its storage, plus `exit_on_stop` (new: the tab gets
+`--exit-on-script-stop`). Such a tab logs out once its script stops and sends `CloseTab` for itself
+rather than quitting: the shell starts a tab whose client quit again, with its flags, so the script
+would run once more. The desktop shell's only tab closing itself ends the window: that is
+`turu --exit-on-script-stop` with a window (Accounts' "In its own window", which Army Queue waits
+on), whose client used to quit and be restarted. `TabInfo` now carries each tab's login (`user`, from its `--user`, both
+shells), which `army::queue::TabLauncher` follows: an account is done once its tab is gone; one
+whose script never showed busy within the queue's timeout has its tab closed ("Didn't Start"). Unit
+tests only (`bot/tests/army_queue.rs`, `slots.rs`); not run in the window with real accounts.
 
 **Map Travel for the shell's other tabs** (2026-11-17): its jumps already went to every row, as
 Army commands do, but it read a client's location under its Army id only, while a shell's other

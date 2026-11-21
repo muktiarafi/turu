@@ -129,7 +129,7 @@ pub fn peers_from_files(dir: &Path, me: u32) -> Vec<turu_bot::monitor::hub::Peer
 }
 
 /// The value of `flag` in `args` (`--flag value` or `--flag=value`).
-fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+pub fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         if arg == flag {
@@ -172,6 +172,12 @@ pub fn open_args(
         ]);
     }
     args
+}
+
+/// `--exit-on-script-stop` for a tab opened with `OpenTab`'s `exit_on_stop` (Army Queue's), after
+/// [`open_args`]'.
+pub fn exit_args(exit_on_stop: bool) -> Option<String> {
+    exit_on_stop.then(|| "--exit-on-script-stop".to_owned())
 }
 
 /// The flags for a tab's playlist and Script Options storage (`OpenTab`'s), after
@@ -410,9 +416,11 @@ impl SlotShell {
                 playlist,
                 run_playlist,
                 options_storage,
+                exit_on_stop,
             } => {
                 let mut args = open_args(username, server, script, run_script);
                 args.extend(playlist_args(playlist, run_playlist, options_storage));
+                args.extend(exit_args(exit_on_stop));
                 self.open(args, password)
             }
             ToShell::Status {
@@ -596,6 +604,7 @@ impl SlotShell {
                     down: live.is_none().then(|| "starting".into()),
                     api: live.and_then(|l| l.api.clone()),
                     token: live.and_then(|l| l.token.clone()),
+                    user: record.username().map(str::to_owned),
                 }
             })
             .collect();
@@ -842,6 +851,7 @@ mod tests {
                 playlist: None,
                 run_playlist: false,
                 options_storage: None,
+                exit_on_stop: false,
             },
         );
         assert!(actions.contains(&Action::Record(
@@ -863,6 +873,43 @@ mod tests {
         assert_eq!(tabs[1].label, "Alt");
         assert_eq!(tabs[1].down.as_deref(), Some("starting"));
         assert_eq!(tabs[0].api.as_deref(), Some("127.0.0.1:50001"));
+        // Army Queue follows its tabs by their login.
+        assert_eq!(
+            (tabs[0].user.as_deref(), tabs[1].user.as_deref()),
+            (None, Some("Alt"))
+        );
+
+        // An Army Queue tab: it closes itself once its script stops.
+        let actions = shell.message(
+            1,
+            ToShell::OpenTab {
+                username: Some("Questwalker".into()),
+                password: None,
+                server: None,
+                script: Some("Farm.ts".into()),
+                run_script: true,
+                playlist: None,
+                run_playlist: false,
+                options_storage: Some("ArmyQueue_A_Farm".into()),
+                exit_on_stop: true,
+            },
+        );
+        let args: Vec<String> = [
+            "--user",
+            "Questwalker",
+            "--run-script",
+            "Farm.ts",
+            "--script-options-storage",
+            "ArmyQueue_A_Farm",
+            "--exit-on-script-stop",
+        ]
+        .map(String::from)
+        .into();
+        assert!(
+            actions.contains(&Action::Record(3, Some(SlotRecord { args }))),
+            "{actions:?}"
+        );
+        shell.close(3);
 
         assert_eq!(sent_to(&shell.connected(2, &hello())), [1, 2]);
         let actions = shell.message(2, ToShell::SelectTab { id: 1 });

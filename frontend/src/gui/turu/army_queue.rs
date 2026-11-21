@@ -13,10 +13,66 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use turu_bot::accounts::{Accounts, Group};
 use turu_bot::army::queue::{
-    self, ArmyLauncher, MemberStatus, Outcome, Presets, QueueConfig, QueueRunner, QueueStatus, StepStatus,
+    self, ArmyLauncher, Launched, MemberStatus, Outcome, Presets, QueueConfig, QueueLauncher, QueueRunner, QueueStatus,
+    QueueTab, QueueTabs, StepStatus, TabLauncher,
 };
 use turu_bot::script::ScriptOptionsState;
 use turu_bot::script::options::ScriptOptions;
+
+/// The shell's tabs, for a queue run in tabs: the tab list it sends, new tabs as Accounts' "In a
+/// tab" opens them (the account's saved password, Accounts' server, the Tab Limit), closing ones.
+struct ShellTabs {
+    accounts_file: PathBuf,
+}
+
+impl QueueTabs for ShellTabs {
+    fn tabs(&self) -> Vec<QueueTab> {
+        crate::turu::shell_tabs()
+            .map(|(tabs, _)| tabs)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tab| QueueTab {
+                id: tab.id,
+                user: tab.user,
+                busy: tab.busy,
+                closed: tab.down.as_deref() == Some("closed"),
+            })
+            .collect()
+    }
+
+    fn open(&self, username: &str, script: &str, storage: Option<&str>) -> Launched {
+        let accounts = Accounts::load(&self.accounts_file);
+        let Some(account) = accounts.find(username) else {
+            return Launched::Missing;
+        };
+        let password = match turu_bot::accounts::password(&account.username) {
+            Ok(password) => password,
+            Err(e) => return Launched::Failed(e),
+        };
+        let script = script.trim();
+        let startup = turu_bot::startup::Startup {
+            username: Some(account.username.clone()),
+            password,
+            server: Some(accounts.server.trim().to_owned()).filter(|s| !s.is_empty()),
+            script: (!script.is_empty()).then(|| PathBuf::from(script)),
+            run_script: !script.is_empty(),
+            options_storage: storage.map(str::to_owned),
+            exit_on_stop: true,
+            ..Default::default()
+        };
+        if super::tab_limit::open_tab(startup) {
+            Launched::Started
+        } else if super::tab_limit::reached() {
+            Launched::Failed("the Tab Limit is reached".into())
+        } else {
+            Launched::Failed("couldn't open a tab".into())
+        }
+    }
+
+    fn close(&self, id: u32) {
+        crate::turu::shell_tab_action(crate::turu::ShellTabAction::Close(id));
+    }
+}
 
 /// Where a picked script goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,12 +395,23 @@ impl ArmyQueueWindow {
         });
     }
 
-    /// VibeSkua `StartQueue`.
+    /// VibeSkua `StartQueue`. Accounts' "In a tab" in a shell's tab: the squads open in tabs of
+    /// this window ([`ShellTabs`]); else in processes of their own, as Accounts launches them.
     fn start(&mut self) {
-        let launcher = Arc::new(ArmyLauncher {
-            army: crate::turu::army().clone(),
-            accounts_file: crate::turu::bot().paths.accounts_file(),
-        });
+        let accounts_file = crate::turu::bot().paths.accounts_file();
+        let mode = Accounts::load(&accounts_file).mode;
+        let in_tabs = (mode == turu_bot::accounts::LaunchMode::Tab
+            || !crate::platform::platform().launches_processes())
+            && crate::turu::shell_tabs().is_some();
+        let launcher: Arc<dyn QueueLauncher> = if in_tabs {
+            let timeout = Duration::from_secs(self.config.timeout_minutes.max(1) * 60);
+            Arc::new(TabLauncher::new(ShellTabs { accounts_file }, timeout))
+        } else {
+            Arc::new(ArmyLauncher {
+                army: crate::turu::army().clone(),
+                accounts_file,
+            })
+        };
         match self.runner.start(self.config.clone(), launcher) {
             Ok(()) => self.running = Some(self.config.clone()),
             Err(e) => self.notice = Some(("Empty Queue".into(), e)),
@@ -590,7 +657,10 @@ impl ArmyQueueWindow {
                     if status.running || state != MemberStatus::Idle {
                         let color = match state {
                             MemberStatus::Running => SUCCESS,
-                            MemberStatus::AccountMissing | MemberStatus::LaunchFailed => DANGER,
+                            MemberStatus::AccountMissing | MemberStatus::LaunchFailed | MemberStatus::NeverStarted => {
+                                DANGER
+                            }
+                            MemberStatus::AlreadyOpen => WARNING,
                             _ => MUTED,
                         };
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

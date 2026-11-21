@@ -371,6 +371,10 @@ pub enum MemberStatus {
     Running,
     Finished,
     LaunchFailed,
+    /// Turu: it was open in a tab already when its turn came (a queue's tabs).
+    AlreadyOpen,
+    /// Turu: its tab opened but its script never ran within the queue's timeout (a queue's tabs).
+    NeverStarted,
 }
 
 impl MemberStatus {
@@ -383,6 +387,8 @@ impl MemberStatus {
             Self::Running => "Running",
             Self::Finished => "Finished",
             Self::LaunchFailed => "Launch Failed",
+            Self::AlreadyOpen => "Already Open",
+            Self::NeverStarted => "Didn't Start",
         }
     }
 }
@@ -474,6 +480,8 @@ pub enum Launched {
     Started,
     /// It isn't in Army > Accounts.
     Missing,
+    /// Turu: it's open in a tab already (a queue's tabs).
+    AlreadyOpen,
     Failed(String),
 }
 
@@ -484,6 +492,170 @@ pub trait QueueLauncher: Send + Sync {
     fn launch(&self, username: &str, script: &str, storage: Option<&str>) -> Launched;
     /// The client launched for `username` has quit.
     fn exited(&self, username: &str) -> bool;
+    /// Once [`Self::exited`] says so: why the client ended without its script having run, if it
+    /// did (a tab whose script never started in time).
+    fn failure(&self, _username: &str) -> Option<String> {
+        None
+    }
+}
+
+/// A tab of the shell's, as [`TabLauncher`] sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueTab {
+    pub id: u32,
+    /// The login it was opened with.
+    pub user: Option<String>,
+    /// Its script (or Auto) runs.
+    pub busy: bool,
+    /// The shell gave up starting its client again (it kept crashing).
+    pub closed: bool,
+}
+
+/// The shell's tabs, for [`TabLauncher`] (the frontend's, from its tab list).
+pub trait QueueTabs: Send + Sync {
+    /// The shell's tabs as last heard.
+    fn tabs(&self) -> Vec<QueueTab>;
+    /// Asks for a tab logging in as `username` and running `script` with its Script Options from
+    /// `storage`, which logs out and closes once the script stops.
+    fn open(&self, username: &str, script: &str, storage: Option<&str>) -> Launched;
+    /// Asks the shell to close tab `id`.
+    fn close(&self, id: u32);
+}
+
+impl<T: QueueTabs + ?Sized> QueueTabs for Arc<T> {
+    fn tabs(&self) -> Vec<QueueTab> {
+        (**self).tabs()
+    }
+
+    fn open(&self, username: &str, script: &str, storage: Option<&str>) -> Launched {
+        (**self).open(username, script, storage)
+    }
+
+    fn close(&self, id: u32) {
+        (**self).close(id)
+    }
+}
+
+/// One account's tab in a run.
+struct TabEntry {
+    opened: Instant,
+    /// The tab, once the shell's list showed it.
+    seen: Option<u32>,
+    /// Its script was seen running.
+    ran: bool,
+    failure: Option<String>,
+}
+
+/// Turu: launches a squad in tabs of the shell's window, as VibeSkua's Army Queue ends up doing
+/// (its clients join the tabbed host), and follows each tab, not a process: VibeSkua waits on the
+/// process it started, which only hands its flags to the host and quits, so a squad looked done
+/// at once. An account is done once its tab closes (it closes itself after its script stops);
+/// a tab whose script hasn't run within the timeout is closed and counted as not started (a
+/// failed login would otherwise hold the queue for good).
+pub struct TabLauncher<T> {
+    tabs: T,
+    entries: Mutex<BTreeMap<String, TabEntry>>,
+    /// How long a tab may take to start its script (the queue's `TimeoutMinutes`).
+    timeout: Duration,
+    /// How long the shell may take to list a tab asked for.
+    appear: Duration,
+}
+
+impl<T: QueueTabs> TabLauncher<T> {
+    /// A launcher whose tabs must run their script within `timeout`.
+    pub fn new(tabs: T, timeout: Duration) -> Self {
+        Self::with_times(tabs, timeout, Duration::from_secs(60))
+    }
+
+    /// [`Self::new`], the shell given `appear` to list a new tab (tests shorten it).
+    pub fn with_times(tabs: T, timeout: Duration, appear: Duration) -> Self {
+        Self {
+            tabs,
+            entries: Mutex::default(),
+            timeout,
+            appear,
+        }
+    }
+
+    /// `username`'s open tab: one the shell gave up on is no one's (a new one may be opened).
+    fn tab_of<'a>(tabs: &'a [QueueTab], username: &str) -> Option<&'a QueueTab> {
+        tabs.iter().find(|tab| {
+            !tab.closed
+                && tab
+                    .user
+                    .as_deref()
+                    .is_some_and(|user| user.trim().eq_ignore_ascii_case(username.trim()))
+        })
+    }
+}
+
+impl<T: QueueTabs> QueueLauncher for TabLauncher<T> {
+    fn launch(&self, username: &str, script: &str, storage: Option<&str>) -> Launched {
+        if Self::tab_of(&self.tabs.tabs(), username).is_some() {
+            return Launched::AlreadyOpen;
+        }
+        let launched = self.tabs.open(username, script, storage);
+        if launched == Launched::Started {
+            self.entries.lock().insert(
+                username.to_lowercase(),
+                TabEntry {
+                    opened: Instant::now(),
+                    seen: None,
+                    ran: false,
+                    failure: None,
+                },
+            );
+        }
+        launched
+    }
+
+    fn exited(&self, username: &str) -> bool {
+        let tabs = self.tabs.tabs();
+        let mut entries = self.entries.lock();
+        let Some(entry) = entries.get_mut(&username.to_lowercase()) else {
+            return true;
+        };
+        if entry.failure.is_some() {
+            return true;
+        }
+        let tab = entry
+            .seen
+            .and_then(|id| tabs.iter().find(|tab| tab.id == id))
+            .or_else(|| Self::tab_of(&tabs, username));
+        let Some(tab) = tab else {
+            // Gone after it was listed: it closed itself (or was closed). Never listed: the shell
+            // didn't open it (the Tab Limit, a full pool of slots).
+            if entry.seen.is_none() && entry.opened.elapsed() >= self.appear {
+                entry.failure = Some("its tab didn't open".into());
+                return true;
+            }
+            return entry.seen.is_some();
+        };
+        entry.seen = Some(tab.id);
+        if tab.busy {
+            entry.ran = true;
+        }
+        if tab.closed {
+            entry.failure = (!entry.ran).then(|| "its tab kept crashing".into());
+            return true;
+        }
+        if !entry.ran && entry.opened.elapsed() >= self.timeout {
+            entry.failure = Some(format!(
+                "its script didn't start within {} min",
+                self.timeout.as_secs().div_ceil(60).max(1)
+            ));
+            self.tabs.close(tab.id);
+            return true;
+        }
+        false
+    }
+
+    fn failure(&self, username: &str) -> Option<String> {
+        self.entries
+            .lock()
+            .get(&username.to_lowercase())
+            .and_then(|entry| entry.failure.clone())
+    }
 }
 
 /// Launches through [`Army`], as Army > Accounts does: the account's saved password, the
@@ -753,6 +925,10 @@ impl QueueRunner {
                         self.set(|s| s.members[i][j] = MemberStatus::AccountMissing);
                         continue;
                     }
+                    Launched::AlreadyOpen => {
+                        self.set(|s| s.members[i][j] = MemberStatus::AlreadyOpen);
+                        continue;
+                    }
                     Launched::Failed(_) => MemberStatus::LaunchFailed,
                 };
                 self.set(|s| s.members[i][j] = state);
@@ -767,18 +943,25 @@ impl QueueRunner {
                     .iter()
                     .map(|&j| launcher.exited(&step.accounts[j].username))
                     .collect();
+                let ended = |s: &mut QueueStatus| {
+                    for (&j, &e) in launched.iter().zip(&exited) {
+                        if e && s.members[i][j] == MemberStatus::Running {
+                            s.members[i][j] = match launcher.failure(&step.accounts[j].username) {
+                                Some(_) => MemberStatus::NeverStarted,
+                                None => MemberStatus::Finished,
+                            };
+                        }
+                    }
+                };
                 if exited.iter().all(|&e| e) {
+                    self.set(ended);
                     break;
                 }
                 self.check()?;
                 let done = exited.iter().filter(|&&e| e).count();
                 let count = launched.len();
                 self.set(|s| {
-                    for (&j, &e) in launched.iter().zip(&exited) {
-                        if e && s.members[i][j] == MemberStatus::Running {
-                            s.members[i][j] = MemberStatus::Finished;
-                        }
-                    }
+                    ended(s);
                     s.text = format!(
                         "Squad {}/{total} '{}': {done}/{count} accounts finished (Runtime: {})",
                         i + 1,

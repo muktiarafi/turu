@@ -333,6 +333,7 @@ pub fn run(preferences: GlobalPreferences, client_args: Vec<String>) -> Result<(
         dialog_open: false,
         #[cfg(any(windows, target_os = "linux"))]
         start_again: false,
+        quit: false,
         rate_since: Instant::now(),
         pace: Pace::Frames,
         refresh_millihertz: 0,
@@ -726,6 +727,9 @@ struct ShellApp {
     /// A graphics choice was saved: the shell starts again once its loop ends (`run`).
     #[cfg(any(windows, target_os = "linux"))]
     start_again: bool,
+    /// The only tab closed itself (`--exit-on-script-stop`): the window ends, as VibeSkua's
+    /// process quits.
+    quit: bool,
     /// When `TURU_SHELL_TEST`'s last `rate` was.
     rate_since: Instant,
     /// How the window is presented: the tab on screen's pace while it's seen (`apply_pace`).
@@ -1087,6 +1091,7 @@ impl ShellApp {
                 down: tab.down(),
                 api: tab.api.map(|api| api.to_string()),
                 token: Some(tab.api_token.clone()),
+                user: turu_frontend::slots::flag_value(&tab.args, "--user").map(str::to_owned),
             })
             .collect();
         *self.peers.lock().unwrap_or_else(|e| e.into_inner()) = self
@@ -1239,6 +1244,13 @@ impl ShellApp {
         match message {
             ToShell::SelectTab { id: target } => self.select_requested(target),
             ToShell::Grid { on, left, top } => self.set_grid(on.then_some((left, top))),
+            // Turu: a tab asking to close itself is `--exit-on-script-stop`'s quit (`exit_after_stop`):
+            // as the only tab, the window ends with it (Army's "In its own window" launches, which
+            // Army Queue waits on). Restarting it instead would run the script again.
+            ToShell::CloseTab { id: target } if target == id && self.tabs.len() == 1 => {
+                tracing::info!("Shell: the only tab closed itself; quitting");
+                self.quit = true;
+            }
             ToShell::CloseTab { id: target } => self.close(target),
             ToShell::OpenTab {
                 username,
@@ -1249,6 +1261,7 @@ impl ShellApp {
                 playlist,
                 run_playlist,
                 options_storage,
+                exit_on_stop,
             } => {
                 let mut args = turu_frontend::slots::open_args(username, server, script, run_script);
                 args.extend(turu_frontend::slots::playlist_args(
@@ -1256,6 +1269,7 @@ impl ShellApp {
                     run_playlist,
                     options_storage,
                 ));
+                args.extend(turu_frontend::slots::exit_args(exit_on_stop));
                 self.open_tab(args, password);
             }
             ToShell::Status { label, busy, .. } => {
@@ -2472,7 +2486,12 @@ impl ApplicationHandler<ShellEvent> for ShellApp {
                     send(tab, &ToClient::Answer { id: request, value });
                 }
             }
-            ShellEvent::Message(id, message) => self.message(id, message),
+            ShellEvent::Message(id, message) => {
+                self.message(id, message);
+                if self.quit {
+                    event_loop.exit();
+                }
+            }
             #[cfg(any(windows, target_os = "linux"))]
             ShellEvent::GraphicsChosen(value) => {
                 self.dialog_open = false;

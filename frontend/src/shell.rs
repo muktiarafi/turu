@@ -396,6 +396,10 @@ pub enum ToShell {
         run_playlist: bool,
         #[serde(default)]
         options_storage: Option<String>,
+        /// Its client logs out once the script stops and asks the shell to close the tab
+        /// (`--exit-on-script-stop`, Army Queue's squads).
+        #[serde(default)]
+        exit_on_stop: bool,
     },
     /// The tab's name (the character, once in game) and whether its script or Auto runs, for the
     /// tab strips and the window's title; sent when it changes.
@@ -879,6 +883,9 @@ pub struct TabInfo {
     pub api: Option<String>,
     #[serde(default)]
     pub token: Option<String>,
+    /// The login it was opened with (`--user`), if any: Army Queue follows its squads' tabs by it.
+    #[serde(default)]
+    pub user: Option<String>,
 }
 
 /// How a tab shows in Grid View: every tab's game at once, each in a tile of the window. The
@@ -1181,6 +1188,7 @@ mod tests {
                     down: Some("restarting".into()),
                     api: Some("127.0.0.1:50123".into()),
                     token: Some("a-token".into()),
+                    user: Some("questwalker".into()),
                 }],
                 shown: 1,
                 you: Some(1),
@@ -1263,6 +1271,7 @@ mod tests {
                 playlist: Some("daily.json".into()),
                 run_playlist: true,
                 options_storage: Some("Squad A".into()),
+                exit_on_stop: true,
             },
             ToShell::CloseTab { id: 3 },
             ToShell::SelectTab { id: 2 },
@@ -1379,6 +1388,7 @@ mod tests {
                     down: None,
                     api: None,
                     token: None,
+                    user: None,
                 }],
                 shown: 1,
                 you: None,
@@ -1394,6 +1404,7 @@ mod tests {
             Some(ToShell::OpenTab {
                 username: None,
                 run_script: false,
+                exit_on_stop: false,
                 ..
             })
         ));

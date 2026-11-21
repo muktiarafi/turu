@@ -28,6 +28,10 @@ pub struct Startup {
     /// VibeSkua `--script-options-storage`: the script's options come from
     /// `options/<storage>.cfg`, and it starts without asking for them (Army Queue).
     pub options_storage: Option<String>,
+    /// VibeSkua `--exit-on-script-stop`: log out once the script stops, then quit (a shell's
+    /// tab: close the tab). The frontend acts on it; here only so a new tab can be asked for
+    /// with it (Army Queue's squads).
+    pub exit_on_stop: bool,
 }
 
 impl Startup {
