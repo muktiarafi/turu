@@ -285,6 +285,8 @@ data class Account(
     val tab: Int?,
     /** A password is saved: it logs in by itself. */
     val password: Boolean,
+    /** Streamer Mode is on in a tab: [label] is "Account n" and the username isn't shown. */
+    val masked: Boolean = false,
 )
 
 /** The account list and the launch options. */
@@ -299,11 +301,14 @@ data class AccountList(
     /** Favourite and recent scripts, for the launch options. */
     val scripts: List<String> = emptyList(),
     val keepsPasswords: Boolean = true,
+    /** Streamer Mode is on in a tab: names are hidden (rows say "Account n", the form masks them). */
+    val streamer: Boolean = false,
 ) {
     companion object {
         fun parse(json: String): AccountList {
             if (json == "null") return AccountList()
             val o = JSONObject(json)
+            val masked = o.optBoolean("streamer")
             val list = o.getJSONArray("accounts")
             return AccountList(
                 accounts = (0 until list.length()).map { i ->
@@ -316,6 +321,7 @@ data class AccountList(
                         groups = a.getJSONArray("groups").strings(),
                         tab = if (a.isNull("tab")) null else a.getInt("tab"),
                         password = a.optBoolean("password"),
+                        masked = masked,
                     )
                 },
                 groups = o.getJSONArray("groups").strings(),
@@ -325,6 +331,7 @@ data class AccountList(
                 autoStart = o.optBoolean("autoStart"),
                 scripts = o.optJSONArray("scripts")?.strings().orEmpty(),
                 keepsPasswords = o.optBoolean("keepsPasswords", true),
+                streamer = masked,
             )
         }
     }

@@ -36,6 +36,10 @@ pub fn dir(root: &Path) -> PathBuf {
 pub struct SlotRecord {
     /// Startup flags (`--user`, `--server`, `--run-script`, ...), never `--password`.
     pub args: Vec<String>,
+    /// Its Streamer Mode was on when it last said: kept here so the shell names it "Tab n", not
+    /// by its login, while it starts again (also after the app was stopped).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub streamer: bool,
 }
 
 impl SlotRecord {
@@ -339,7 +343,10 @@ impl SlotShell {
         let mut actions = Vec::new();
         if shell.records.is_empty() {
             for (slot, args) in (1..=POOL).zip(std::iter::once(first).chain(more)) {
-                let record = SlotRecord { args };
+                let record = SlotRecord {
+                    args,
+                    ..Default::default()
+                };
                 shell.records.insert(slot, record.clone());
                 actions.push(Action::Record(slot, Some(record)));
             }
@@ -431,26 +438,22 @@ impl SlotShell {
                 game,
                 map,
                 script,
-            } => match self.live.get_mut(&slot) {
-                Some(live) if live.label != label || live.busy != busy || live.waits != waits => {
-                    live.label = label;
-                    live.busy = busy;
-                    live.waits = waits;
-                    live.rail_hidden = rail_hidden;
-                    (live.game, live.map, live.script) = (game, map, script);
-                    self.tab_lists()
-                }
-                // What only the activity's list shows.
-                Some(live)
-                    if live.rail_hidden != rail_hidden
-                        || (live.game, &live.map, &live.script) != (game, &map, &script) =>
+                streamer,
+            } => {
+                let mut actions =
+                    self.status(slot, label, busy, waits, rail_hidden, (game, map, script));
+                if let Some(record) = self.records.get_mut(&slot)
+                    && record.streamer != streamer
                 {
-                    live.rail_hidden = rail_hidden;
-                    (live.game, live.map, live.script) = (game, map, script);
-                    vec![Action::Tabs(self.native_tabs())]
+                    record.streamer = streamer;
+                    actions.push(Action::Record(slot, Some(record.clone())));
+                    // The activity's Accounts hide the names, or show them again.
+                    if !actions.iter().any(|a| matches!(a, Action::Tabs(_))) {
+                        actions.push(Action::Tabs(self.native_tabs()));
+                    }
                 }
-                _ => Vec::new(),
-            },
+                actions
+            }
             // A window the activity has natively (Accounts, the Script Loader): its own.
             open @ ToShell::OpenScreen { .. } => vec![Action::Activity(slot, open)],
             hello @ ToShell::Hello { .. } => self.connected(slot, &hello),
@@ -494,7 +497,10 @@ impl SlotShell {
         let Some(slot) = (1..=POOL).find(|slot| !self.records.contains_key(slot)) else {
             return Vec::new();
         };
-        let record = SlotRecord { args };
+        let record = SlotRecord {
+            args,
+            ..Default::default()
+        };
         self.records.insert(slot, record.clone());
         let mut actions = vec![
             Action::Record(slot, Some(record)),
@@ -548,6 +554,38 @@ impl SlotShell {
         actions
     }
 
+    /// A slot's status: the tab lists again when what they show changed.
+    fn status(
+        &mut self,
+        slot: u32,
+        label: String,
+        busy: bool,
+        waits: Option<String>,
+        rail_hidden: bool,
+        (game, map, script): (TabGame, Option<String>, Option<String>),
+    ) -> Vec<Action> {
+        match self.live.get_mut(&slot) {
+            Some(live) if live.label != label || live.busy != busy || live.waits != waits => {
+                live.label = label;
+                live.busy = busy;
+                live.waits = waits;
+                live.rail_hidden = rail_hidden;
+                (live.game, live.map, live.script) = (game, map, script);
+                self.tab_lists()
+            }
+            // What only the activity's list shows.
+            Some(live)
+                if live.rail_hidden != rail_hidden
+                    || (live.game, &live.map, &live.script) != (game, &map, &script) =>
+            {
+                live.rail_hidden = rail_hidden;
+                (live.game, live.map, live.script) = (game, map, script);
+                vec![Action::Tabs(self.native_tabs())]
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// The tab list for the activity's native screens.
     pub fn native_tabs(&self) -> NativeTabs {
         let tabs = self
@@ -582,12 +620,33 @@ impl SlotShell {
     /// the login screen without a password says "Login": the account it was opened for is the
     /// better name then.
     fn label(&self, slot: u32, record: &SlotRecord) -> String {
-        self.live
+        let said = self
+            .live
             .get(&slot)
             .map(|l| l.label.clone())
-            .filter(|l| !l.is_empty() && !(l == "Login" && record.username().is_some()))
-            .or_else(|| record.username().map(str::to_owned))
-            .unwrap_or_else(|| "Login".into())
+            .filter(|l| !l.is_empty() && !(l == "Login" && record.username().is_some()));
+        if let Some(said) = said {
+            return said;
+        }
+        // Turu: Streamer Mode hides the login while the tab starts (again), as the tab does: its
+        // own, as it last said, or another tab's for a tab that hasn't said yet.
+        if record.streamer || self.streamer() {
+            let n = self
+                .records
+                .keys()
+                .position(|&s| s == slot)
+                .unwrap_or_default();
+            return format!("Tab {}", n + 1);
+        }
+        record
+            .username()
+            .map_or_else(|| "Login".into(), str::to_owned)
+    }
+
+    /// An open tab's Streamer Mode is on (as it last said): the activity's Accounts hide the
+    /// account names.
+    pub fn streamer(&self) -> bool {
+        self.records.values().any(|r| r.streamer)
     }
 
     /// Every live slot gets the tab list, and the activity's native screens theirs.
@@ -682,6 +741,7 @@ mod tests {
                 Some("farm/Gold.ts".into()),
                 true,
             ),
+            ..Default::default()
         };
         record.write(dir.path(), 2).unwrap();
         assert_eq!(SlotRecord::read(dir.path(), 2), Some(record.clone()));
@@ -742,7 +802,12 @@ mod tests {
             } else {
                 Vec::new()
             };
-            SlotRecord { args }.write(dir.path(), slot).unwrap();
+            SlotRecord {
+                args,
+                ..Default::default()
+            }
+            .write(dir.path(), slot)
+            .unwrap();
         }
         let address = |port: u16| SlotAddress {
             api: format!("127.0.0.1:{port}"),
@@ -776,7 +841,8 @@ mod tests {
                 Action::Record(
                     1,
                     Some(SlotRecord {
-                        args: vec!["--user".into(), "Hero".into()]
+                        args: vec!["--user".into(), "Hero".into()],
+                        ..Default::default()
                     })
                 ),
                 Action::Start(1),
@@ -857,7 +923,8 @@ mod tests {
         assert!(actions.contains(&Action::Record(
             2,
             Some(SlotRecord {
-                args: vec!["--user".into(), "Alt".into()]
+                args: vec!["--user".into(), "Alt".into()],
+                ..Default::default()
             })
         )));
         assert!(actions.contains(&Action::Password(2, Some("secret".into()))));
@@ -906,7 +973,13 @@ mod tests {
         .map(String::from)
         .into();
         assert!(
-            actions.contains(&Action::Record(3, Some(SlotRecord { args }))),
+            actions.contains(&Action::Record(
+                3,
+                Some(SlotRecord {
+                    args,
+                    ..Default::default()
+                })
+            )),
             "{actions:?}"
         );
         shell.close(3);
@@ -1034,6 +1107,7 @@ mod tests {
                     slot,
                     SlotRecord {
                         args: vec!["--user".into(), format!("Alt{slot}")],
+                        ..Default::default()
                     },
                 )
             })
@@ -1056,6 +1130,7 @@ mod tests {
                 game: TabGame::InGame,
                 map: Some("battleon".into()),
                 script: None,
+                streamer: false,
             },
         );
         assert!(actions.iter().any(|a| matches!(
@@ -1079,6 +1154,7 @@ mod tests {
                 game: TabGame::InGame,
                 map: Some("battleon".into()),
                 script: None,
+                streamer: false,
             },
         );
         assert_eq!(actions.len(), 1);
@@ -1094,6 +1170,7 @@ mod tests {
                 game: TabGame::Dropped,
                 map: None,
                 script: Some("Farm".into()),
+                streamer: false,
             },
         );
         assert_eq!(actions.len(), 1);
@@ -1106,5 +1183,69 @@ mod tests {
             screen: crate::shell::NativeScreen::Accounts,
         };
         assert_eq!(shell.message(1, open.clone()), [Action::Activity(1, open)]);
+    }
+
+    /// Streamer Mode: a tab says "Tab n" itself; while it starts again the shell keeps that name
+    /// (saved in its record), and a tab yet to say anything is hidden too while another streams.
+    #[test]
+    fn streamer_mode_keeps_the_logins_hidden() {
+        let records = (1..=2)
+            .map(|slot| {
+                (
+                    slot,
+                    SlotRecord {
+                        args: vec!["--user".into(), format!("Questwalker{slot}")],
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        let (mut shell, _) = SlotShell::new(records, Vec::new(), Vec::new());
+        shell.message(1, hello());
+        let status = |label: &str, streamer| ToShell::Status {
+            label: label.into(),
+            busy: false,
+            waits: None,
+            rail_hidden: false,
+            game: TabGame::InGame,
+            map: None,
+            script: None,
+            streamer,
+        };
+        assert!(!shell.streamer());
+        let actions = shell.message(1, status("Tab 1", true));
+        assert!(shell.streamer());
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::Record(1, Some(r)) if r.streamer))
+        );
+        let tabs = shell.native_tabs();
+        assert_eq!(tabs.tabs[0].label, "Tab 1");
+        // Slot 2 hasn't said yet: not by its login while slot 1 streams.
+        assert_eq!(tabs.tabs[1].label, "Tab 2");
+        // Slot 1 starts again: still "Tab 1", also in a shell started afresh from the records.
+        shell.disconnected(1);
+        assert_eq!(shell.native_tabs().tabs[0].label, "Tab 1");
+        let dir = tempfile::tempdir().unwrap();
+        for (&slot, record) in &shell.records {
+            record.write(dir.path(), slot).unwrap();
+        }
+        let (fresh, _) = SlotShell::new(SlotRecord::read_all(dir.path()), Vec::new(), Vec::new());
+        assert_eq!(fresh.native_tabs().tabs[0].label, "Tab 1");
+        // Off again: the names come back, and the record says so.
+        shell.message(1, hello());
+        let actions = shell.message(1, status("Questwalker1", false));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::Record(1, Some(r)) if !r.streamer))
+        );
+        assert!(!shell.streamer());
+        let tabs = shell.native_tabs();
+        assert_eq!(
+            (tabs.tabs[0].label.as_str(), tabs.tabs[1].label.as_str()),
+            ("Questwalker1", "Questwalker2")
+        );
     }
 }

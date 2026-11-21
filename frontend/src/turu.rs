@@ -589,12 +589,16 @@ pub fn request_tab(request: TabRequest) -> bool {
 }
 
 /// A tab's name: the character once in game, else the login name it was opened with; "Tab 2"
-/// while its Streamer Mode is on.
+/// while its Streamer Mode is on (in a client, which runs one tab, its place in the shell's tabs).
 pub fn tab_label(bot: &Bot) -> String {
     if bot.opts().streamer_mode {
-        let tab = tabs()
-            .iter()
-            .position(|(_, b)| std::ptr::eq(Arc::as_ptr(b), bot));
+        let tab = shell_tabs()
+            .and_then(|(tabs, _)| tabs.iter().position(|t| t.me))
+            .or_else(|| {
+                tabs()
+                    .iter()
+                    .position(|(_, b)| std::ptr::eq(Arc::as_ptr(b), bot))
+            });
         return tab.map_or_else(|| "Tab".into(), |i| format!("Tab {}", i + 1));
     }
     let state = bot.state.lock();

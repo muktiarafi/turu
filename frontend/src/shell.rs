@@ -423,6 +423,10 @@ pub enum ToShell {
         /// Its loaded script's name (the file's, without `.ts`).
         #[serde(default)]
         script: Option<String>,
+        /// Its Streamer Mode is on: the shell's own screens hide the account names too (Android's
+        /// Accounts and New tab), and keep "Tab n" while the tab starts again.
+        #[serde(default)]
+        streamer: bool,
     },
     /// Android: a window the shell has natively (docs/UI.md, "Native shells") was opened in the
     /// tab's egui menus: the shell shows its own instead.
@@ -1283,6 +1287,7 @@ mod tests {
                 game: TabGame::InGame,
                 map: Some("battleon".into()),
                 script: Some("Example".into()),
+                streamer: true,
             },
             ToShell::OpenScreen {
                 screen: NativeScreen::Scripts,

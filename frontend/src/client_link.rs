@@ -162,6 +162,7 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                     crate::gui::turu::waits_for(&bot).map(str::to_owned),
                     crate::gui::rail_hidden(),
                     (game, map, script),
+                    bot.opts().streamer_mode,
                 );
                 let resend = std::mem::take(&mut *RESEND.lock().unwrap_or_else(|e| e.into_inner()));
                 if resend || sent.as_ref() != Some(&now) {
@@ -173,6 +174,7 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                         game: now.4.0,
                         map: now.4.1.clone(),
                         script: now.4.2.clone(),
+                        streamer: now.5,
                     });
                     sent = Some(now);
                 }

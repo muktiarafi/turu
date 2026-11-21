@@ -90,6 +90,12 @@ pub(crate) fn shell_root() -> Option<(PathBuf, Vec<(u32, Option<String>)>)> {
         .map(|(shell, root)| (root.clone(), shell.usernames()))
 }
 
+/// An open tab's Streamer Mode is on: the activity's Accounts hide the account names.
+pub(crate) fn shell_streamer() -> bool {
+    let shell = SHELL.lock().unwrap_or_else(|e| e.into_inner());
+    shell.as_ref().is_some_and(|(shell, _)| shell.streamer())
+}
+
 /// Runs `work` on the shell, carrying out what comes of it.
 fn with_shell(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> String {
     let mut shell = SHELL.lock().unwrap_or_else(|e| e.into_inner());

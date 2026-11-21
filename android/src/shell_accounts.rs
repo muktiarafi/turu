@@ -4,7 +4,7 @@
 //! are the Keystore's (`storage::KeystoreStore`), under the account's name, where a slot started
 //! for that account finds them (`slots.rs`'s `args`).
 
-use crate::slot_shell::{shell_root, with_shell_actions};
+use crate::slot_shell::{shell_root, shell_streamer, with_shell_actions};
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JClass, JString};
@@ -23,12 +23,15 @@ fn accounts_file(root: &Path) -> PathBuf {
 
 /// The account list as the panel shows it: each account with the tab it plays in (an open tab
 /// logging in with it) and whether a password is saved; the groups, tags and launch options.
-pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)]) -> Value {
+/// With `streamer` (an open tab's Streamer Mode is on), each is labelled "Account n" and the
+/// panel shows no username (the edit form keeps the real ones, so saving keeps them).
+pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)], streamer: bool) -> Value {
     let list = Accounts::load(&accounts_file(root));
     let accounts: Vec<Value> = list
         .accounts
         .iter()
-        .map(|account| {
+        .enumerate()
+        .map(|(n, account)| {
             let tab = tabs.iter().find_map(|(slot, username)| {
                 username
                     .as_deref()
@@ -36,9 +39,16 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)]) -> Valu
                     .then_some(*slot)
             });
             let password = accounts::password(&account.username).ok().flatten().is_some();
+            // Turu: VibeSkua's Streamer Mode leaves its Manager's account list as it is; here the
+            // list is part of the window being streamed.
+            let label = if streamer {
+                format!("Account {}", n + 1)
+            } else {
+                account.label().to_owned()
+            };
             json!({
                 "username": account.username,
-                "label": account.label(),
+                "label": label,
                 "displayName": account.display_name,
                 "tags": account.tags,
                 "groups": list.groups_of(&account.username),
@@ -64,6 +74,7 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)]) -> Valu
         "autoStart": list.auto_start,
         "scripts": scripts,
         "keepsPasswords": accounts::keeps_passwords(),
+        "streamer": streamer,
     })
 }
 
@@ -280,7 +291,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeAccounts<'local>(
     unowned_env
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
             let view = shell_root()
-                .map(|(root, tabs)| accounts_view(&root, &tabs))
+                .map(|(root, tabs)| accounts_view(&root, &tabs, shell_streamer()))
                 .unwrap_or(Value::Null);
             env.new_string(view.to_string())
         })

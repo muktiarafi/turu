@@ -101,6 +101,8 @@ struct Form {
     password: String,
     show_password: bool,
     display_name: String,
+    /// Streamer Mode masks the username and display name like the password, until Show.
+    show_names: bool,
     tags: String,
 }
 
@@ -278,6 +280,7 @@ impl AccountsWindow {
             };
             // Enter in any field saves, as Add Account / Save Account would.
             let mut enter = false;
+            let streamer = crate::turu::bot().opts().streamer_mode;
             {
                 let form = &mut self.form;
                 let mut field_ui = |ui: &mut Ui, which: usize| {
@@ -285,13 +288,26 @@ impl AccountsWindow {
                         0 => {
                             let username = ui
                                 .add_enabled_ui(!editing, |ui| {
-                                    widgets::text_box(ui, &mut form.username, "Username", field)
+                                    if streamer {
+                                        let show = &mut form.show_names;
+                                        ui.horizontal(|ui| {
+                                            masked_field(ui, &mut form.username, "Username", field, show)
+                                        })
+                                        .inner
+                                    } else {
+                                        widgets::text_box(ui, &mut form.username, "Username", field)
+                                    }
                                 })
                                 .inner;
                             username.on_disabled_hover_text(
                                 "The username is the account's key: to rename it, remove the account and add it \
                                  again",
                             )
+                        }
+                        1 if streamer => {
+                            let (text, show) = (&mut form.display_name, &mut form.show_names);
+                            ui.horizontal(|ui| masked_field(ui, text, "Display name (optional)", field, show))
+                                .inner
                         }
                         1 => widgets::text_box(ui, &mut form.display_name, "Display name (optional)", field),
                         2 if accounts::keeps_passwords() => {
@@ -322,7 +338,7 @@ impl AccountsWindow {
             if let Some(existing) = &duplicate {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
-                        RichText::new(format!("{} is already in the list", existing.label()))
+                        RichText::new(format!("{} is already in the list", self.shown(existing)))
                             .size(12.0)
                             .color(WARNING),
                     );
@@ -414,6 +430,7 @@ impl AccountsWindow {
             password: String::new(),
             show_password: false,
             display_name: account.display_name.clone(),
+            show_names: false,
             tags: account.tags.join(", "),
         };
     }
@@ -469,11 +486,13 @@ impl AccountsWindow {
                                 .collect()
                         })
                         .collect();
+                    let streamer = crate::turu::bot().opts().streamer_mode;
                     for (index, account) in self.list.accounts.iter_mut().enumerate() {
                         if !shows(account, self.tag_filter.as_deref(), &self.search) {
                             continue;
                         }
                         let row = AccountRow {
+                            streamer,
                             running: is_running(&account.username),
                             launched: launches.rows.get(&account.username),
                             logged_in: logged_in_tab(&account.username),
@@ -1104,6 +1123,16 @@ fn launch_note(ui: &mut Ui, launched: Option<&Launched>, running: bool, logged_i
 }
 
 impl AccountsWindow {
+    /// An account as the window names it: its label, or "Account 3" (its place in the list) in
+    /// Streamer Mode. Turu: VibeSkua's Manager lists the names whatever Streamer Mode says.
+    fn shown(&self, account: &Account) -> String {
+        if !crate::turu::bot().opts().streamer_mode {
+            return account.label().to_owned();
+        }
+        let place = self.list.accounts.iter().position(|a| a.username == account.username);
+        place.map_or_else(|| "An account".into(), |i| format!("Account {}", i + 1))
+    }
+
     /// Remove's question: the account goes, and its password with it.
     fn confirm_remove(&mut self, ctx: &Context) {
         let Some(username) = self.confirm_remove.clone() else {
@@ -1112,7 +1141,7 @@ impl AccountsWindow {
         let label = self
             .list
             .find(&username)
-            .map_or_else(|| username.clone(), |a| a.label().to_owned());
+            .map_or_else(|| username.clone(), |a| self.shown(a));
         let mut answer = None;
         Modal::new(egui::Id::new("turu_accounts_remove")).show(ctx, |ui| {
             ui.set_max_width(360.0);
@@ -1225,6 +1254,15 @@ fn logged_in_tab(username: &str) -> bool {
         .any(|(_, bot)| turu_bot::api::servers::login_name(bot).is_some_and(|name| name.eq_ignore_ascii_case(username)))
 }
 
+/// A launch's username as the window's outcome line names it ("an account" in Streamer Mode).
+fn shown_launch(username: &str) -> String {
+    if crate::turu::bot().opts().streamer_mode {
+        "an account".into()
+    } else {
+        username.to_owned()
+    }
+}
+
 /// Opens a tab for each launch, 500-900 ms apart; each logs in once its game has loaded.
 fn open_tabs(launches: Vec<Launch>, status: &Mutex<Status>, states: &Mutex<Launches>) {
     for (i, launch) in launches.into_iter().enumerate() {
@@ -1252,14 +1290,14 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<Status>, states: &Mutex<Launc
             } else {
                 Launched::NeedsLogin
             };
-            (format!("Opened a tab for {}.", launch.username), state)
+            (format!("Opened a tab for {}.", shown_launch(&launch.username)), state)
         } else {
             let failed = if super::tab_limit::reached() {
                 "the Tab Limit is reached".to_owned()
             } else {
                 "couldn't open a tab".to_owned()
             };
-            (format!("{}: {failed}", launch.username), Launched::Failed(failed))
+            (format!("{}: {failed}", shown_launch(&launch.username)), Launched::Failed(failed))
         };
         let failed = matches!(state, Launched::Failed(_));
         lock(states).set(&launch.username, state);
@@ -1304,6 +1342,33 @@ fn password_field(ui: &mut Ui, form: &mut Form, editing: bool, width: f32) -> eg
     password
 }
 
+/// A username or display name masked like the password while Streamer Mode is on, with Show.
+fn masked_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32, show: &mut bool) -> egui::Response {
+    let gap = ui.spacing().item_spacing.x;
+    let mut field = ui.add(
+        egui::TextEdit::singleline(text)
+            .password(!*show)
+            .hint_text(hint)
+            .desired_width(width - SHOW_WIDTH - gap)
+            .min_size(vec2(0.0, widgets::target(0.0, 40.0)))
+            .vertical_align(egui::Align::Center)
+            .margin(egui::Margin::symmetric(8, 5))
+            .background_color(super::theme::INSET),
+    );
+    let kind = if *show {
+        super::native_field::Kind::Line
+    } else {
+        super::native_field::Kind::Password
+    };
+    super::native_field::follow(ui, &mut field, text, hint, kind);
+    let eye = if *show { "Hide" } else { "Show" };
+    let size = vec2(SHOW_WIDTH, widgets::target(22.0, 40.0));
+    if widgets::button(ui, eye, Kind::Normal, true, size, "Hidden while Streamer Mode is on").clicked() {
+        *show = !*show;
+    }
+    field
+}
+
 /// The launch script's file name, or "No script".
 fn script_name(script: Option<&std::path::Path>) -> String {
     script.map_or_else(
@@ -1326,6 +1391,8 @@ fn plural(count: usize, noun: &str) -> String {
 
 /// What an account's row shows besides its checkbox (drawn by the list).
 struct AccountRow<'a> {
+    /// Streamer Mode: the row says "Account n" and shows no username.
+    streamer: bool,
     running: bool,
     launched: Option<&'a Launched>,
     logged_in: bool,
@@ -1365,10 +1432,10 @@ impl AccountRow<'_> {
                         // Text lines, not the touch screen's 40-point control lines.
                         ui.spacing_mut().interact_size.y = 16.0;
                         ui.spacing_mut().item_spacing.y = 3.0;
-                        ui.horizontal(|ui| self.name(ui, account));
+                        ui.horizontal(|ui| self.name(ui, account, index));
                         ui.horizontal(|ui| {
                             if !self.note(ui) {
-                                if !account.display_name.trim().is_empty() {
+                                if !account.display_name.trim().is_empty() && !self.streamer {
                                     ui.label(RichText::new(&account.username).size(11.0).color(MUTED));
                                 }
                                 self.pills(ui, account);
@@ -1376,7 +1443,7 @@ impl AccountRow<'_> {
                         });
                     });
                 } else {
-                    self.name(ui, account);
+                    self.name(ui, account, index);
                     // How the launch went comes before the tags: it's what a narrow row keeps.
                     self.note(ui);
                     self.pills(ui, account);
@@ -1386,15 +1453,20 @@ impl AccountRow<'_> {
         picked
     }
 
-    /// The state mark (playing, starting) and the name.
-    fn name(&self, ui: &mut Ui, account: &Account) {
+    /// The state mark (playing, starting) and the name ("Account 3" in Streamer Mode).
+    fn name(&self, ui: &mut Ui, account: &Account, index: usize) {
         if self.running {
             widgets::dot(ui, SUCCESS, 4.0);
         } else if self.launched == Some(&Launched::Starting) {
             ui.add(egui::Spinner::new().size(10.0));
         }
-        let name = ui.add(Label::new(RichText::new(account.label()).strong()).truncate());
-        if !account.display_name.trim().is_empty() {
+        let label = if self.streamer {
+            format!("Account {}", index + 1)
+        } else {
+            account.label().to_owned()
+        };
+        let name = ui.add(Label::new(RichText::new(label).strong()).truncate());
+        if !account.display_name.trim().is_empty() && !self.streamer {
             name.on_hover_text(&account.username);
         }
     }

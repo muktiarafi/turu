@@ -157,7 +157,7 @@ fun AccountRow(
         headlineContent = { Text(account.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             Column {
-                if (account.label != account.username) {
+                if (account.label != account.username && !account.masked) {
                     Text(account.username, color = Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 when {
@@ -240,6 +240,7 @@ private fun shows(account: Account, filter: String?, search: String): Boolean {
     val inFilter = filter == null || account.groups.contains(filter) || account.tags.any { it.equals(filter, true) }
     val needle = search.trim()
     val found = needle.isEmpty() ||
+        account.label.contains(needle, true) ||
         account.username.contains(needle, true) ||
         account.displayName.contains(needle, true) ||
         account.tags.any { it.contains(needle, true) }
@@ -842,6 +843,14 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var displayName by remember { mutableStateOf(original?.displayName ?: "") }
+    // Streamer Mode: the names are masked like the password until Show.
+    var showNames by remember { mutableStateOf(!accounts.list.streamer) }
+    val names = if (showNames) VisualTransformation.None else PasswordVisualTransformation()
+    // A masked field also keeps the keyboard's suggestion strip from repeating what's typed.
+    val namesKeyboard = if (showNames) KeyboardType.Ascii else KeyboardType.Password
+    val namesToggle: @Composable () -> Unit = {
+        TextButton(onClick = { showNames = !showNames }) { Text(if (showNames) "Hide" else "Show") }
+    }
     var tags by remember { mutableStateOf(original?.tags?.joinToString(", ") ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -874,10 +883,16 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
                 label = { Text("Username") },
                 singleLine = true,
                 isError = taken != null,
-                supportingText = taken?.let { { Text("${it.label} is already in the list") } },
+                visualTransformation = names,
+                trailingIcon = if (accounts.list.streamer) namesToggle else null,
+                supportingText = when {
+                    taken != null -> { { Text("${taken.label} is already in the list") } }
+                    accounts.list.streamer -> { { Text("Hidden while Streamer Mode is on") } }
+                    else -> null
+                },
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next, autoCorrectEnabled = false),
+                keyboardOptions = KeyboardOptions(keyboardType = namesKeyboard, imeAction = ImeAction.Next, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),
             )
             if (taken != null) {
@@ -911,11 +926,13 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
                 value = displayName,
                 onValueChange = { displayName = it },
                 label = { Text("Display name") },
-                placeholder = { Text(username.ifBlank { "Shown instead of the username" }) },
+                placeholder = { Text(if (showNames) username.ifBlank { "Shown instead of the username" } else "Shown instead of the username") },
                 singleLine = true,
+                visualTransformation = names,
+                trailingIcon = if (accounts.list.streamer) namesToggle else null,
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardOptions = if (showNames) KeyboardOptions(imeAction = ImeAction.Next) else KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
