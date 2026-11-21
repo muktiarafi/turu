@@ -179,6 +179,31 @@ impl CaptureProxy {
         self.version.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Clears the log and returns what it held, for an undo ([`Self::restore`]).
+    pub fn take(&self) -> Vec<InterceptedPacket> {
+        let packets = std::mem::take(&mut *self.log.lock());
+        self.version.fetch_add(1, Ordering::Relaxed);
+        packets.into()
+    }
+
+    /// Puts back packets [`Self::take`] returned, before the ones logged since, as many as
+    /// [`LOG_CAPACITY`] keeps (the oldest go first). The ones logged since keep their numbers.
+    pub fn restore(&self, earlier: Vec<InterceptedPacket>) {
+        let mut log = self.log.lock();
+        let mut all: VecDeque<InterceptedPacket> = earlier.into();
+        all.extend(std::mem::take(&mut *log));
+        while all.len() > LOG_CAPACITY {
+            all.pop_front();
+        }
+        // The numbers count back from the next one's: what was there before can't number past 0.
+        let logged = self.logged.load(Ordering::Relaxed);
+        while all.len() as u64 > logged {
+            all.pop_front();
+        }
+        *log = all;
+        self.version.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// One packet without its NUL: what to send on (`None`: dropped). While the capture runs
     /// the interceptors see it (an inbound packet inflated when the server compressed it) and
     /// it is logged after them, as VibeSkua's logger runs last.
@@ -336,4 +361,29 @@ pub fn pack(content: &str) -> Vec<u8> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod undo_tests {
+    use super::*;
+
+    #[test]
+    fn a_cleared_capture_comes_back_before_what_came_since() {
+        let capture = CaptureProxy::default();
+        capture.start();
+        capture.process(b"%xt%zm%afk%1%true%", true);
+        capture.process(b"%xt%zm%afk%1%false%", true);
+        let taken = capture.take();
+        assert_eq!(taken.len(), 2);
+        assert!(capture.packets().is_empty());
+        capture.process(b"%xt%zm%moveToCell%1%Enter%Spawn%", true);
+        let (_, after) = capture.snapshot();
+        let newest = after.len();
+        capture.restore(taken);
+        let (first, packets) = capture.snapshot();
+        assert_eq!(packets.len(), 3);
+        assert_eq!(first, 0);
+        assert!(packets[2].packet.contains("moveToCell"));
+        assert_eq!(newest, 1);
+    }
 }

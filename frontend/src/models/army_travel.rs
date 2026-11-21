@@ -97,6 +97,8 @@ struct Inner {
     latest: HashMap<String, (Location, Instant)>,
     polled: Option<Instant>,
     servers: Servers,
+    /// The history Clear took, for its Undo.
+    cleared: Option<Vec<Destination>>,
 }
 
 pub struct Travel {
@@ -456,13 +458,33 @@ pub fn destination(body: &Json) -> Destination {
     }
 }
 
-/// The control API's actions (`POST /models/army-travel/do`): `clear-history`, `save-preset`
+/// The control API's actions (`POST /models/army-travel/do`): `clear-history` (`undo-clear-history`
+/// puts it back), `save-preset`
 /// (the preset's fields, and `editing`: the name of the one edited), `delete-preset` (`name`),
 /// `servers` (loads the list) and `forget-servers`. Jumps are Army Control's commands.
 pub fn act(travel: &Travel, action: &str, body: &Json) -> Result<(), String> {
     let name = |key: &str| body.get(key).and_then(Json::as_str).unwrap_or_default().to_owned();
     match action {
-        "clear-history" => travel.change(JumpSettings::clear_history),
+        "clear-history" => {
+            let history = travel.change(|s| std::mem::take(&mut s.history));
+            lock(&travel.inner).cleared = Some(history);
+        }
+        // The cleared maps come back after those visited since, once each, as many as it keeps.
+        "undo-clear-history" => {
+            let earlier = lock(&travel.inner).cleared.take().ok_or("Nothing to put back")?;
+            travel.change(|s| {
+                for d in earlier {
+                    let known = s
+                        .history
+                        .iter()
+                        .any(|h| h.map.eq_ignore_ascii_case(&d.map) && h.room.eq_ignore_ascii_case(&d.room));
+                    if !known {
+                        s.history.push(d);
+                    }
+                }
+                s.history.truncate(turu_bot::army::jump::HISTORY_LEN);
+            });
+        }
         "save-preset" => {
             let preset = destination(body);
             let editing = name("editing");
@@ -580,6 +602,13 @@ mod tests {
         );
         assert_eq!(JumpSettings::load(&file).history.len(), 2);
         assert_eq!(travel.location("questwalker").unwrap().map, "yulgar");
+        // Clear, a new visit, Undo: the new one first, then the cleared ones not already there.
+        act(&travel, "clear-history", &Json::Null).unwrap();
+        assert!(JumpSettings::load(&file).history.is_empty());
+        record(&travel.inner, &file, &keys, vec![("questwalker".into(), location("battleon", "1"))]);
+        act(&travel, "undo-clear-history", &Json::Null).unwrap();
+        let maps: Vec<String> = JumpSettings::load(&file).history.iter().map(|d| d.map.clone()).collect();
+        assert_eq!(maps, ["battleon", "yulgar"]);
         assert!(travel.location("gone").is_none());
     }
 }

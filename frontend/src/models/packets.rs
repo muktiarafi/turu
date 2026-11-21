@@ -37,6 +37,16 @@ fn ticks(body: &Json, len: usize) -> Result<Vec<bool>, String> {
     Ok(shown)
 }
 
+/// What each tool's last Clear took, for its Undo: the page offers it for a few seconds.
+#[derive(Default)]
+pub struct Cleared {
+    log: Option<Vec<turu_bot::log::LogLine>>,
+    queue: Option<Vec<String>>,
+    capture: Option<Vec<turu_bot::capture::InterceptedPacket>>,
+}
+
+pub static CLEARED: PerTab<Cleared> = PerTab::new();
+
 fn flag(body: &Json, key: &str) -> Result<bool, String> {
     body.get(key)
         .and_then(Json::as_bool)
@@ -91,7 +101,8 @@ pub fn logger_view(bot: &Arc<Bot>) -> PacketLoggerView {
 }
 
 /// `POST /models/packet-logger/do`: `logging` (`on`), `filters` (`shown`: a filter that's off
-/// drops the packets it takes from then on) and `clear`.
+/// drops the packets it takes from then on), `clear` and `undo-clear` (puts the cleared lines back
+/// before those logged since).
 pub fn logger_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
     match action {
         "logging" => bot.logs.packet_logging.store(flag(body, "on")?, Ordering::Relaxed),
@@ -103,7 +114,11 @@ pub fn logger_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), Strin
                 .fold(0u32, |mask, (i, _)| mask | 1 << i);
             bot.logs.packet_hidden.store(hidden, Ordering::Relaxed);
         }
-        "clear" => bot.logs.packets.clear(),
+        "clear" => lock(&CLEARED.of(bot)).log = Some(bot.logs.packets.take()),
+        "undo-clear" => {
+            let lines = lock(&CLEARED.of(bot)).log.take().ok_or("Nothing to put back")?;
+            bot.logs.packets.restore(lines);
+        }
         other => return Err(format!("no action {other}")),
     }
     Ok(())
@@ -144,7 +159,8 @@ pub fn spammer_view(bot: &Arc<Bot>) -> SpammerView {
 
 /// `POST /models/spammer/do`: `start`, `stop`, `delay` (`ms`), `to-client` (`on`), `add`
 /// (`packet`), `send` (`packet`: once, now), `remove` (`index` and its `packet`, so a queue
-/// changed meanwhile isn't cut in the wrong place) and `clear`.
+/// changed meanwhile isn't cut in the wrong place), `clear` and `undo-clear` (the cleared queue
+/// back before what was added since).
 pub fn spammer_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
     let spammer = &bot.spammer;
     match action {
@@ -181,7 +197,16 @@ pub fn spammer_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), Stri
             }
             queue.remove(index);
         }
-        "clear" => spammer.packets.lock().clear(),
+        "clear" => {
+            let queue = std::mem::take(&mut *spammer.packets.lock());
+            lock(&CLEARED.of(bot)).queue = Some(queue);
+        }
+        "undo-clear" => {
+            let mut earlier = lock(&CLEARED.of(bot)).queue.take().ok_or("Nothing to put back")?;
+            let mut queue = spammer.packets.lock();
+            earlier.append(&mut queue);
+            *queue = earlier;
+        }
         other => return Err(format!("no action {other}")),
     }
     Ok(())
@@ -309,7 +334,7 @@ pub fn interceptor_view(bot: &Arc<Bot>) -> InterceptorView {
 
 /// `POST /models/interceptor/do`: `server` (`name`, empty for the current one), `refresh-servers`,
 /// `connect` (relogging on the chosen server), `disconnect`, `logging` (`on`), `search` (`text`),
-/// `filters` (`shown`), `select` (`number`, `on`), `unselect`, `clear` and `copy` (answers `text`:
+/// `filters` (`shown`), `select` (`number`, `on`), `unselect`, `clear`, `undo-clear` and `copy` (answers `text`:
 /// the selected packets, or every shown one).
 pub fn interceptor_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
     let state = INTERCEPTOR.of(bot);
@@ -352,8 +377,13 @@ pub fn interceptor_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json
         }
         "unselect" => lock(&state).selected.clear(),
         "clear" => {
-            capture.clear();
+            let packets = capture.take();
+            lock(&CLEARED.of(bot)).capture = Some(packets);
             lock(&state).selected.clear();
+        }
+        "undo-clear" => {
+            let packets = lock(&CLEARED.of(bot)).capture.take().ok_or("Nothing to put back")?;
+            capture.restore(packets);
         }
         "copy" => {
             let rows = shown(bot);
@@ -407,6 +437,12 @@ mod tests {
         assert_eq!(spammer_view(&bot).packets, ["%xt%zm%afk%1%false%"]);
         spammer_act(&bot, "delay", &json!({ "ms": 999_999 })).unwrap();
         assert_eq!(spammer_view(&bot).delay_ms, 600_000);
+        // Clear, add one, Undo: the cleared queue comes back first.
+        spammer_act(&bot, "clear", &Json::Null).unwrap();
+        spammer_act(&bot, "add", &json!({ "packet": "%xt%zm%afk%1%true%" })).unwrap();
+        spammer_act(&bot, "undo-clear", &Json::Null).unwrap();
+        assert_eq!(spammer_view(&bot).packets, ["%xt%zm%afk%1%false%", "%xt%zm%afk%1%true%"]);
+        assert!(spammer_act(&bot, "undo-clear", &Json::Null).is_err());
     }
 
     #[test]
