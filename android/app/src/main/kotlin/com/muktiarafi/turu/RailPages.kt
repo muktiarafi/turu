@@ -2,8 +2,12 @@ package com.muktiarafi.turu
 
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -134,12 +138,23 @@ fun AutoPage(state: ShellState, models: TabModels) {
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (running) {
-                Running(view, stopping = sending == "stop") { press("stop") }
-                error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
+            // The running card and the start buttons trade places as a run starts and stops:
+            // each unfolds or folds on the panel's spring rather than jumping.
+            val layout = PanelMotion
+            AnimatedVisibility(
+                running,
+                enter = fadeIn(layout.defaultEffectsSpec()) + expandVertically(layout.defaultSpatialSpec()),
+                exit = fadeOut(layout.fastEffectsSpec()) + shrinkVertically(layout.fastSpatialSpec()),
+                label = "running card",
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Running(view, stopping = sending == "stop") { press("stop") }
+                    error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
+                }
             }
-            // While a run goes, the settings are the next run's: they step back.
-            val settings = Modifier.alpha(if (running) 0.6f else 1f)
+            // While a run goes, the settings are the next run's: they step back (and fade there).
+            val dim by animateFloatAsState(if (running) 0.6f else 1f, layout.defaultEffectsSpec(), label = "settings")
+            val settings = Modifier.alpha(dim)
             Column(settings, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ClassPicker(view, onOpen = { act("reload-classes", JSONObject()) }) { act("class", JSONObject().put("class", it)) }
                 Picker(
@@ -177,7 +192,12 @@ fun AutoPage(state: ShellState, models: TabModels) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            if (!running) {
+            AnimatedVisibility(
+                !running,
+                enter = fadeIn(layout.defaultEffectsSpec()) + expandVertically(layout.defaultSpatialSpec()),
+                exit = fadeOut(layout.fastEffectsSpec()) + shrinkVertically(layout.fastSpatialSpec()),
+                label = "start buttons",
+            ) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // The equipped class by name once the class list has been read.
                 val with = if (view.`class` != null && view.mode != null) {
                     "${view.`class`}, ${view.mode} skills"
@@ -191,7 +211,7 @@ fun AutoPage(state: ShellState, models: TabModels) {
                 }
                 Reason(view.start)
                 error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
-            }
+            } }
             Spacer(Modifier.heightIn(min = 12.dp))
         }
     }
@@ -626,7 +646,7 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
                                 .clip(MaterialTheme.shapes.medium)
-                                .background(if (selected) Turu.AccentTint else Color.Transparent)
+                                .background(selectionTint(selected))
                                 .selectable(selected = selected, role = Role.Tab) { memory.show(title) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             contentAlignment = Alignment.CenterStart,

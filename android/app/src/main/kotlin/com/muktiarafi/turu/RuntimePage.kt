@@ -310,7 +310,7 @@ private fun SwitchRow(label: String, about: String, checked: Boolean, strong: Bo
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (strong && checked) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(strong && checked))
             .clickable { onChange(!checked) }
             .heightIn(min = 56.dp)
             .padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -374,7 +374,7 @@ private fun CheckRow(label: String, checked: Boolean, onToggle: () -> Unit) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (checked) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(checked))
             .clickable(onClick = onToggle)
             .heightIn(min = 48.dp)
             .padding(end = 12.dp),

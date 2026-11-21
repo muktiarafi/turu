@@ -293,7 +293,7 @@ private fun GrabRow(row: GrabRowView, on: Boolean, view: GrabberView, panel: Gra
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (on) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(on))
             .clickable { panel.toggle(row, view.multiple) }
             .heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,

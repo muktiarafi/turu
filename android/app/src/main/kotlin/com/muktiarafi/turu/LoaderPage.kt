@@ -233,7 +233,7 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 1.dp)
                         .clip(MaterialTheme.shapes.medium)
-                        .background(if (on) Turu.AccentTint else Color.Transparent)
+                        .background(selectionTint(on))
                         .clickable { panel.toggle(q) }
                         .heightIn(min = 48.dp)
                         .padding(end = 12.dp),

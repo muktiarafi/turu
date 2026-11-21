@@ -1,6 +1,16 @@
 package com.muktiarafi.turu
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -186,8 +197,14 @@ fun ScriptsPage(state: ShellState, scripts: ScriptsPanel, fullWindow: () -> Unit
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val cap = if (scripts.log.isEmpty()) maxHeight else maxHeight * 0.55f
             Column(Modifier.fillMaxSize()) {
+                // The head changes with the state (Start alone, Stop with Pause, setup and quick
+                // scripts while stopped): its height follows on the panel's spring, the controls
+                // cross over, and what comes or goes unfolds or folds rather than jumping.
+                val layout = PanelMotion
+                val controls = MaterialTheme.motionScheme
                 Column(
                     Modifier
+                        .animateContentSize(layout.defaultSpatialSpec())
                         .heightIn(max = cap)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 12.dp)
@@ -195,10 +212,28 @@ fun ScriptsPage(state: ShellState, scripts: ScriptsPanel, fullWindow: () -> Unit
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     StatusCard(view, scripts)
-                    RunControls(view, scripts)
+                    AnimatedContent(
+                        targetState = view,
+                        contentKey = { runKey(it) },
+                        transitionSpec = {
+                            (fadeIn(layout.defaultEffectsSpec()) + scaleIn(controls.fastSpatialSpec(), initialScale = 0.94f))
+                                .togetherWith(fadeOut(layout.fastEffectsSpec()))
+                        },
+                        label = "run controls",
+                    ) { shown -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { RunControls(shown, scripts) } }
                     scripts.error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
-                    if (view.script != null && !active) Setup(view, scripts)
-                    if (!active) QuickScripts(scripts)
+                    AnimatedVisibility(
+                        view.script != null && !active,
+                        enter = fadeIn(layout.defaultEffectsSpec()) + expandVertically(layout.defaultSpatialSpec()),
+                        exit = fadeOut(layout.fastEffectsSpec()) + shrinkVertically(layout.fastSpatialSpec()),
+                        label = "setup",
+                    ) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Setup(view, scripts) } }
+                    AnimatedVisibility(
+                        !active,
+                        enter = fadeIn(layout.defaultEffectsSpec()) + expandVertically(layout.defaultSpatialSpec()),
+                        exit = fadeOut(layout.fastEffectsSpec()) + shrinkVertically(layout.fastSpatialSpec()),
+                        label = "quick scripts",
+                    ) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { QuickScripts(scripts) } }
                 }
                 ScriptLog(scripts, running = view.status != Status.EMPTY && view.status != Status.LOADED && view.status != Status.ERROR)
             }
@@ -208,12 +243,27 @@ fun ScriptsPage(state: ShellState, scripts: ScriptsPanel, fullWindow: () -> Unit
 
 private fun Status.isActive() = this == Status.COMPILING || this == Status.RUNNING || this == Status.PAUSED || this == Status.STOPPING
 
+/** Which set of run controls [view] shows: the controls cross over only when this changes. */
+private fun runKey(view: ScriptsView): List<Boolean> {
+    val c = view.controls
+    return listOf(view.script == null && !view.status.isActive(), c.start != null, c.stop != null, c.forceStop != null, c.paused)
+}
+
 /** A button's label, with a spinner beside it while its action is under way. */
 @Composable
-private fun Working(on: Boolean, label: String) {
-    if (on) {
-        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-        Spacer(Modifier.width(8.dp))
+private fun RowScope.Working(on: Boolean, label: String) {
+    // The spinner slides in beside the label on the theme's fast spring, and out again.
+    val motion = MaterialTheme.motionScheme
+    AnimatedVisibility(
+        on,
+        enter = fadeIn(motion.fastEffectsSpec()) + expandHorizontally(motion.fastSpatialSpec()),
+        exit = fadeOut(motion.fastEffectsSpec()) + shrinkHorizontally(motion.fastSpatialSpec()),
+        label = "working",
+    ) {
+        Row {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+            Spacer(Modifier.width(8.dp))
+        }
     }
     Text(label, maxLines = 1)
 }

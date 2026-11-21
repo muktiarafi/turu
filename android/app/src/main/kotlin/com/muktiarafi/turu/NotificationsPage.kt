@@ -277,7 +277,7 @@ private fun NoticeRow(entry: NoticeView, selected: Boolean, onClick: () -> Unit)
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (selected) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(selected))
             .clickable(onClick = onClick)
             .heightIn(min = 48.dp)
             .padding(horizontal = 8.dp, vertical = 8.dp),

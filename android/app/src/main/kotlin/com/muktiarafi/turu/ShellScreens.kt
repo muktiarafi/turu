@@ -98,7 +98,8 @@ class ShellScreens(private val activity: TuruActivity) {
     private val panel = ComposeView(activity).apply {
         visibility = View.GONE
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-        setContent { ShellTheme { TabPanel(state, actions) } }
+        // Hidden only once the closing slide is over (and the panel wasn't opened again meanwhile).
+        setContent { ShellTheme { TabPanel(state, actions) { if (!state.open) visibility = View.GONE } } }
     }
 
     private val prompts = PromptsPanel()
@@ -112,7 +113,8 @@ class ShellScreens(private val activity: TuruActivity) {
 
     init {
         state.onOpenChanged = { open ->
-            panel.visibility = if (open) View.VISIBLE else View.GONE
+            // Closing leaves the view up for the panel's slide; TabPanel hides it when that's done.
+            if (open) panel.visibility = View.VISIBLE
             // The keys go back to the slot (egui's text boxes, the game) once the panel is gone.
             if (!open) activity.focusSurface()
         }

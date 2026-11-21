@@ -432,7 +432,7 @@ fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: 
                     itemsIndexed(view.packets) { i, p ->
                         val sending = view.sending == i.toLong()
                         Row(
-                            Modifier.fillMaxWidth().background(if (sending) Turu.AccentTint else Color.Transparent).heightIn(min = 48.dp).padding(start = 10.dp),
+                            Modifier.fillMaxWidth().background(selectionTint(sending)).heightIn(min = 48.dp).padding(start = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text("${i + 1}", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), color = Turu.Muted, modifier = Modifier.width(28.dp))
@@ -611,7 +611,7 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .background(if (selected) Turu.AccentTint else Color.Transparent)
+                                .background(selectionTint(selected))
                                 .combinedClickable(
                                     onClickLabel = "Read the packet",
                                     onLongClickLabel = if (selected) "Unselect" else "Select",

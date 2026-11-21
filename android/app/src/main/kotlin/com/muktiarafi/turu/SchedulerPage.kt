@@ -256,7 +256,7 @@ private fun EntryRow(index: Int, entry: EntryView, view: SchedulerView, panel: S
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (entry.current) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(entry.current))
             .heightIn(min = 56.dp)
             .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

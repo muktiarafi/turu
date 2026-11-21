@@ -2,6 +2,9 @@ package com.muktiarafi.turu
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -49,6 +52,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -57,7 +62,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -133,13 +140,17 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
         else if (tabs.othersNeedYou) append(", a tab waits for you")
     }
     val selected = state.open && (state.page == Page.Tabs || state.page == Page.NewTab)
+    // Its highlight grows out from the middle as the rail items' pills do (the theme's spring).
+    val grow by animateFloatAsState(if (selected) 1f else 0f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "tabs item")
     Column(
         Modifier
             .padding(top = 8.dp)
             .width(56.dp)
             .height(railItemHeight())
             .clip(MaterialTheme.shapes.medium)
-            .background(if (selected) Turu.RailSelected else Color.Transparent)
+            .drawBehind {
+                if (grow > 0f) scale(scaleX = grow, scaleY = 1f) { drawRect(Turu.RailSelected.copy(alpha = grow.coerceIn(0f, 1f))) }
+            }
             .semantics { contentDescription = description }
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -221,91 +232,116 @@ fun Avatar(label: String, size: Dp, tab: ShellTab? = null, tint: Color = Turu.Tr
 /**
  * The panel beside the rail, over the dimmed game: the tabs, New tab and Accounts as pages pushed
  * in place. Back, or a tap on the scrim, closes what's on top.
+ *
+ * Opening slides it out from under the rail while the scrim fades in; closing reverses that. Both
+ * run on [PanelMotion], the standard scheme, so nothing overshoots over the game. [onGone] says
+ * when the closing slide is over, so the shell hides the view only then.
  */
 @Composable
-fun TabPanel(state: ShellState, actions: TabActions) {
+fun TabPanel(state: ShellState, actions: TabActions, onGone: () -> Unit = {}) {
     BackHandler(enabled = state.open) { state.back() }
+    val motion = PanelMotion
+    val shown = remember { MutableTransitionState(false) }
+    shown.targetState = state.open
+    LaunchedEffect(shown.isIdle, shown.currentState) { if (shown.isIdle && !shown.currentState) onGone() }
+    // close() goes back to the Tabs page at once: the closing panel keeps the page it was on.
+    var last by remember { mutableStateOf(state.page) }
+    SideEffect { if (state.open) last = state.page }
+    val page = if (state.open) state.page else last
     Box(Modifier.fillMaxSize()) {
         // The scrim: the game stays in view, dimmed; a tap closes the panel.
-        Box(
-            Modifier
-                .fillMaxSize()
-                // The rail stays in use beside the panel (it's drawn above this view).
-                .padding(start = 64.dp + state.cutoutLeftDp.dp)
-                .background(Color.Black.copy(alpha = 0.48f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                    state.close()
-                }
-                .semantics { contentDescription = "Close the panel" },
-        )
-        Surface(
-            color = Turu.Panel,
-            modifier = Modifier
-                .padding(start = 64.dp + state.cutoutLeftDp.dp)
-                .width(if (state.page in widePages || state.page is Page.ArmyPreset || state.page is Page.ArmyGear || state.page is Page.ArmyLogs || state.page is Page.CrashReport) 440.dp else PanelWidth)
-                .fillMaxHeight()
-                .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
-                // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
-                .imePadding(),
+        AnimatedVisibility(
+            visibleState = shown,
+            // The rail stays in use beside the panel (it's drawn above this view).
+            modifier = Modifier.padding(start = 64.dp + state.cutoutLeftDp.dp),
+            enter = fadeIn(motion.defaultEffectsSpec()),
+            exit = fadeOut(motion.fastEffectsSpec()),
+            label = "scrim",
         ) {
-            // A new opening starts the pages afresh: no slide from the page the panel last closed on.
-            // Pages slide on the standard scheme: no overshoot in a pane over the game.
-            val motion = PanelMotion
-            key(state.openings) {
-                AnimatedContent(
-                    targetState = state.page,
-                    transitionSpec = {
-                        val forward = targetState !is Page.Tabs
-                        val dir = if (forward) 1 else -1
-                        (slideInHorizontally(motion.defaultSpatialSpec()) { it / 6 * dir } + fadeIn(motion.defaultEffectsSpec()))
-                            .togetherWith(slideOutHorizontally(motion.fastSpatialSpec()) { -it / 8 * dir } + fadeOut(motion.fastEffectsSpec()))
-                    },
-                    label = "panel page",
-                ) { page ->
-                    when (page) {
-                        Page.Tabs -> TabsPage(state, actions)
-                        Page.NewTab -> NewTabPage(state, actions)
-                        Page.Accounts -> AccountsPage(state, actions.accounts, actions.select) { actions.window("accounts") }
-                        Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
-                        Page.Auto -> AutoPage(state, actions.scripts.models)
-                        Page.Jump -> JumpPage(state, actions.scripts.models)
-                        Page.Logs -> LogsPage(state, actions.scripts.models, actions.crashes) { actions.window("logs") }
-                        is Page.CrashReport -> CrashReportPage(state, actions.crashes, page.name)
-                        Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.bank, actions.hideRail)
-                        Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
-                        Page.GameOptions -> GameOptionsPage(
-                            state,
-                            actions.gameOptions,
-                            running = actions.scripts.models.scripts?.controls?.stop != null,
-                        ) { actions.window("game_options") }
-                        Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
-                        Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
-                        Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = {}) { actions.window("scheduler") }
-                        Page.Notifications -> NotificationsPage(state, actions.notifications) { actions.window("notifications") }
-                    Page.Stats -> StatsPage(state, actions.stats) { actions.window("stats") }
-                    Page.CurrentDrops -> DropsPage(state, actions.drops) { actions.window("current_drops") }
-                    Page.Skills -> SkillsPage(state, actions.skills) { actions.window("skills") }
-                    Page.Loadouts -> LoadoutsPage(state, actions.loadouts) { actions.window("loadouts") }
-                    Page.FastTravel -> FastTravelPage(state, actions.fastTravel) { actions.window("fast_travel") }
-                    Page.Butler -> ButlerPage(state, actions.butler) { actions.window("butler") }
-                    Page.Cosmetics -> CosmeticsPage(state, actions.cosmetics) { actions.window("cosmetics") }
-                    Page.Runtime -> RuntimePage(state, actions.runtime, notifyDrop = { state.push(Page.NotifyDrop) }) { actions.window("runtime") }
-                    Page.NotifyDrop -> NotifyDropPage(state, actions.notifyDrop) { actions.window("notify_drop") }
-                    Page.Loader -> LoaderPage(state, actions.loader) { actions.window("loader") }
-                    Page.Grabber -> GrabberPage(state, actions.grabber) { actions.window("grabber") }
-                    Page.JunkItems -> JunkPage(state, actions.junk) { actions.window("junk_items") }
-                    Page.Console -> ConsolePage(state, actions.console) { actions.window("console") }
-                    Page.PacketLogger -> PacketLoggerPage(state, actions.packetLogger) { actions.window("packet_logger") }
-                    Page.Spammer -> SpammerPage(state, actions.spammer) { actions.window("spammer") }
-                    Page.Interceptor -> InterceptorPage(state, actions.interceptor) { actions.window("interceptor") }
-                    Page.ScriptOptions -> ScriptOptionsPage(state, actions.scriptOptions) { actions.window("script_options") }
-                    Page.Army -> ArmyPage(state, actions.army, actions.armyTravel, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
-                    Page.ArmyTravel -> ArmyTravelPage(state, actions.army, actions.armyTravel)
-                        is Page.ArmyPreset -> ArmyPresetPage(state, actions.army, actions.armyTravel, page.editing, page.start)
-                        is Page.ArmyGear -> ArmyGearPage(state, actions.armyClient, page.key, page.label)
-                        is Page.ArmyLogs -> ArmyLogsPage(state, actions.armyClient, page.key, page.label) { actions.window("army") }
-                        is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
-                        Page.LaunchOptions -> LaunchOptionsPage(state, actions.accounts)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.48f))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        state.close()
+                    }
+                    .semantics { contentDescription = "Close the panel" },
+            )
+        }
+        AnimatedVisibility(
+            visibleState = shown,
+            modifier = Modifier.padding(start = 64.dp + state.cutoutLeftDp.dp),
+            enter = slideInHorizontally(motion.defaultSpatialSpec()) { -it } + fadeIn(motion.defaultEffectsSpec()),
+            exit = slideOutHorizontally(motion.fastSpatialSpec()) { -it } + fadeOut(motion.fastEffectsSpec()),
+            label = "panel",
+        ) {
+            Surface(
+                color = Turu.Panel,
+                modifier = Modifier
+                    .width(if (page in widePages || page is Page.ArmyPreset || page is Page.ArmyGear || page is Page.ArmyLogs || page is Page.CrashReport) 440.dp else PanelWidth)
+                    .fillMaxHeight()
+                    .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
+                    // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
+                    .imePadding(),
+            ) {
+                // A new opening starts the pages afresh: no slide from the page the panel last closed on.
+                // Pages slide on the standard scheme: no overshoot in a pane over the game.
+                key(state.openings) {
+                    AnimatedContent(
+                        targetState = page,
+                        transitionSpec = {
+                            val forward = targetState !is Page.Tabs
+                            val dir = if (forward) 1 else -1
+                            (slideInHorizontally(motion.defaultSpatialSpec()) { it / 6 * dir } + fadeIn(motion.defaultEffectsSpec()))
+                                .togetherWith(slideOutHorizontally(motion.fastSpatialSpec()) { -it / 8 * dir } + fadeOut(motion.fastEffectsSpec()))
+                        },
+                        label = "panel page",
+                    ) { page ->
+                        when (page) {
+                            Page.Tabs -> TabsPage(state, actions)
+                            Page.NewTab -> NewTabPage(state, actions)
+                            Page.Accounts -> AccountsPage(state, actions.accounts, actions.select) { actions.window("accounts") }
+                            Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
+                            Page.Auto -> AutoPage(state, actions.scripts.models)
+                            Page.Jump -> JumpPage(state, actions.scripts.models)
+                            Page.Logs -> LogsPage(state, actions.scripts.models, actions.crashes) { actions.window("logs") }
+                            is Page.CrashReport -> CrashReportPage(state, actions.crashes, page.name)
+                            Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.bank, actions.hideRail)
+                            Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
+                            Page.GameOptions -> GameOptionsPage(
+                                state,
+                                actions.gameOptions,
+                                running = actions.scripts.models.scripts?.controls?.stop != null,
+                            ) { actions.window("game_options") }
+                            Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
+                            Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
+                            Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = {}) { actions.window("scheduler") }
+                            Page.Notifications -> NotificationsPage(state, actions.notifications) { actions.window("notifications") }
+                        Page.Stats -> StatsPage(state, actions.stats) { actions.window("stats") }
+                        Page.CurrentDrops -> DropsPage(state, actions.drops) { actions.window("current_drops") }
+                        Page.Skills -> SkillsPage(state, actions.skills) { actions.window("skills") }
+                        Page.Loadouts -> LoadoutsPage(state, actions.loadouts) { actions.window("loadouts") }
+                        Page.FastTravel -> FastTravelPage(state, actions.fastTravel) { actions.window("fast_travel") }
+                        Page.Butler -> ButlerPage(state, actions.butler) { actions.window("butler") }
+                        Page.Cosmetics -> CosmeticsPage(state, actions.cosmetics) { actions.window("cosmetics") }
+                        Page.Runtime -> RuntimePage(state, actions.runtime, notifyDrop = { state.push(Page.NotifyDrop) }) { actions.window("runtime") }
+                        Page.NotifyDrop -> NotifyDropPage(state, actions.notifyDrop) { actions.window("notify_drop") }
+                        Page.Loader -> LoaderPage(state, actions.loader) { actions.window("loader") }
+                        Page.Grabber -> GrabberPage(state, actions.grabber) { actions.window("grabber") }
+                        Page.JunkItems -> JunkPage(state, actions.junk) { actions.window("junk_items") }
+                        Page.Console -> ConsolePage(state, actions.console) { actions.window("console") }
+                        Page.PacketLogger -> PacketLoggerPage(state, actions.packetLogger) { actions.window("packet_logger") }
+                        Page.Spammer -> SpammerPage(state, actions.spammer) { actions.window("spammer") }
+                        Page.Interceptor -> InterceptorPage(state, actions.interceptor) { actions.window("interceptor") }
+                        Page.ScriptOptions -> ScriptOptionsPage(state, actions.scriptOptions) { actions.window("script_options") }
+                        Page.Army -> ArmyPage(state, actions.army, actions.armyTravel, select = { id -> actions.select(id); state.close() }) { actions.window("army") }
+                        Page.ArmyTravel -> ArmyTravelPage(state, actions.army, actions.armyTravel)
+                            is Page.ArmyPreset -> ArmyPresetPage(state, actions.army, actions.armyTravel, page.editing, page.start)
+                            is Page.ArmyGear -> ArmyGearPage(state, actions.armyClient, page.key, page.label)
+                            is Page.ArmyLogs -> ArmyLogsPage(state, actions.armyClient, page.key, page.label) { actions.window("army") }
+                            is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
+                            Page.LaunchOptions -> LaunchOptionsPage(state, actions.accounts)
+                        }
                     }
                 }
             }
@@ -435,7 +471,7 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                             state.close()
                         }),
                     colors = ListItemDefaults.colors(
-                        containerColor = if (selected) Turu.AccentTint else Color.Transparent,
+                        containerColor = selectionTint(selected),
                     ),
                     leadingContent = { Avatar(tab.label, size = 40.dp, tab = tab) },
                     supportingContent = {

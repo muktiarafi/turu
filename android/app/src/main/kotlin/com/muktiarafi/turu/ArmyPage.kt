@@ -414,7 +414,7 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (checked) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(checked))
             .clickable(enabled = !row.ended) { panel.toggle(row) }
             .heightIn(min = 60.dp)
             .padding(end = 4.dp),

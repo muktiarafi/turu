@@ -199,7 +199,7 @@ fun NotifyDropPage(state: ShellState, panel: NotifyDropPanel, fullWindow: () -> 
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 1.dp)
                         .clip(MaterialTheme.shapes.medium)
-                        .background(if (on) Turu.AccentTint else Color.Transparent)
+                        .background(selectionTint(on))
                         .clickable { panel.toggle(name) }
                         .heightIn(min = 48.dp)
                         .padding(end = 12.dp),

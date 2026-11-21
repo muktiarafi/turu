@@ -130,7 +130,7 @@ fun AccountRow(
         modifier = Modifier
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (selected) Turu.AccentTint else Color.Transparent)
+            .background(selectionTint(selected))
             .then(
                 if (select != null) {
                     Modifier.combinedClickable(

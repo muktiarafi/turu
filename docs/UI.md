@@ -935,6 +935,25 @@ wave means work under way); Stats' bars measure, so they stay flat, and the 12-1
 stay plain (a wave doesn't read that small). Kept as they were, by the owner's choice: the
 Script Loader's Start with Search and Options as their own buttons (no split button), and
 Auto's Attack and Hunt with the running card (no toggle buttons).
+*The rail's motion (2026-11-22):* a page item's pill grows out from the middle when its page
+opens, and its icon and label fade to the selected colour, on the theme's Expressive springs
+(Material's rail indicator); the chip's tint fades too. The run controls keep their shape and
+the 8 dp between Pause and Stop, and move as Expressive's buttons do: corners tighten from the
+theme's medium to its extra-small while pressed; a new control (Start becoming Pause, Pause
+becoming Resume, Stop becoming Force stop) springs in over the old while the fill fades across;
+while the tab answers a tap, that cell shows the loading indicator (`LoadingIndicator`, still
+experimental in Material 3 1.5.0, opted in on `RunCell`); and when Stop joins Pause the chip rides
+up on a spring instead of jumping.
+*The panel's motion (2026-11-22):* the side panel slides out from under the rail as the scrim
+fades in, and back as it fades out, on `PanelMotion` (the shell hides the view once the slide is
+over, and the closing panel keeps the page it was on); the Tabs item's highlight grows out from
+the middle as the rail items' pills do; a row's selection tint (`selectionTint`: Accounts, Army,
+Drops, Grabber, Loader, Notify Drop, Notifications, Runtime, Scheduler, Fast Travel, the packet
+tools, the Tabs list) fades rather than flips. On the Script Loader the run controls cross over
+when their set changes, Search and Options and the quick scripts unfold and fold, and a tapped
+button's spinner slides in beside its label; on Auto the running card and the start buttons
+unfold and fold as a run starts and stops, the settings fading back. Layout moves on the panel's
+standard scheme, controls on the theme's Expressive one.
 
 **Structure.** A navigation rail, the pattern for landscape. In L5a the shell owns its top item
 and the client's egui rail starts below it; in L5b the whole rail is native.

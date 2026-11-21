@@ -190,7 +190,7 @@ fun DropsPage(state: ShellState, panel: DropsPanel, fullWindow: () -> Unit) {
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 1.dp)
                         .clip(MaterialTheme.shapes.medium)
-                        .background(if (checked) Turu.AccentTint else Color.Transparent)
+                        .background(selectionTint(checked))
                         .clickable { panel.toggle(drop) }
                         .heightIn(min = 48.dp)
                         .padding(end = 12.dp),

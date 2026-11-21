@@ -281,7 +281,7 @@ private fun DestinationRow(dest: DestinationView, busy: Boolean, panel: FastTrav
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
-            .background(if (dest.traveling) Turu.AccentTint else androidx.compose.ui.graphics.Color.Transparent)
+            .background(selectionTint(dest.traveling))
             .clickable(enabled = !busy) { panel.on("travel", dest) }
             .heightIn(min = 56.dp)
             .padding(start = 12.dp),

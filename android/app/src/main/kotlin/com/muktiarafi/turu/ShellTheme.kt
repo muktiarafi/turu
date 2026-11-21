@@ -1,5 +1,6 @@
 package com.muktiarafi.turu
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
@@ -93,6 +94,19 @@ private val scheme = darkColorScheme(
     onErrorContainer = Color(0xFFFFB4B4),
     scrim = Color.Black,
 )
+
+/**
+ * A row's selection tint (checked, selected, on screen): it fades in and out on the theme's
+ * effects spring rather than flipping, towards a clear copy of itself so the row doesn't dim on
+ * the way.
+ */
+@Composable
+fun selectionTint(on: Boolean, color: Color = Turu.AccentTint): Color =
+    animateColorAsState(
+        if (on) color else color.copy(alpha = 0f),
+        MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "selection",
+    ).value
 
 @Composable
 fun ShellTheme(content: @Composable () -> Unit) {

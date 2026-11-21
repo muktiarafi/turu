@@ -1,7 +1,19 @@
 package com.muktiarafi.turu
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,21 +28,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -76,6 +95,8 @@ private class Cell(
     val reason: String = "",
     val primary: Boolean = false,
     val danger: Boolean = false,
+    /** The Script Loader's name for it ("start", "pause"...): its cell shows the wait for that. */
+    val action: String = "",
     val run: () -> Unit,
 )
 
@@ -178,15 +199,22 @@ private fun RailItem(entry: Entry, height: Dp, selected: Boolean) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            Modifier
-                .width(52.dp)
-                .height(32.dp)
-                .clip(CircleShape)
-                .background(if (selected) Turu.RailSelected else Color.Transparent),
-            contentAlignment = Alignment.Center,
-        ) {
-            val tint = if (selected) Turu.Text else Turu.Muted
+        // The pill grows out from the middle when its page opens (Material's rail indicator, on the
+        // theme's Expressive spring); icon and label fade to the selected colour.
+        val motion = MaterialTheme.motionScheme
+        val pill by animateFloatAsState(if (selected) 1f else 0f, motion.fastSpatialSpec(), label = "rail pill")
+        val tint by animateColorAsState(if (selected) Turu.Text else Turu.Muted, motion.defaultEffectsSpec(), label = "rail tint")
+        Box(Modifier.width(52.dp).height(32.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = pill
+                        alpha = pill.coerceIn(0f, 1f)
+                    }
+                    .clip(CircleShape)
+                    .background(Turu.RailSelected),
+            )
             if (entry.busy) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = tint)
             } else {
@@ -206,7 +234,7 @@ private fun RailItem(entry: Entry, height: Dp, selected: Boolean) {
         Text(
             entry.label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (selected) Turu.Text else Turu.Muted,
+            color = tint,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp),
@@ -258,27 +286,31 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
             if (view.script == null) {
                 add(Cell(RailIcons.Search, "Search scripts", c.load.enabled, c.load.reason) { actions.open(Page.Search) })
             } else {
-                add(Cell(RailIcons.Play, "Start the script", start.enabled, start.reason, primary = true, run = scripts::start))
+                add(Cell(RailIcons.Play, "Start the script", start.enabled, start.reason, primary = true, action = "start", run = scripts::start))
             }
         }
         c?.pause?.let {
-            if (c.paused) add(Cell(RailIcons.Play, "Resume", it.enabled, it.reason, primary = true, run = scripts::resume))
-            else add(Cell(RailIcons.Pause, "Pause", it.enabled, it.reason, run = scripts::pause))
+            if (c.paused) add(Cell(RailIcons.Play, "Resume", it.enabled, it.reason, primary = true, action = "resume", run = scripts::resume))
+            else add(Cell(RailIcons.Pause, "Pause", it.enabled, it.reason, action = "pause", run = scripts::pause))
         }
-        c?.forceStop?.let { add(Cell(RailIcons.Stop, "Force stop", it.enabled, it.reason, danger = true, run = scripts::stop)) }
-        c?.stop?.let { add(Cell(RailIcons.Stop, "Stop the script", it.enabled, it.reason, danger = true, run = scripts::stop)) }
+        c?.forceStop?.let { add(Cell(RailIcons.Stop, "Force stop", it.enabled, it.reason, danger = true, action = "stop", run = scripts::stop)) }
+        c?.stop?.let { add(Cell(RailIcons.Stop, "Stop the script", it.enabled, it.reason, danger = true, action = "stop", run = scripts::stop)) }
     }
     // The theme's medium corner; the chip and its first control share a square seam.
     val round = MaterialTheme.shapes.medium
     val square = CornerSize(0.dp)
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    val motion = MaterialTheme.motionScheme
+    val chipColor by animateColorAsState(if (selected) Turu.RailSelected else Turu.Track, motion.defaultEffectsSpec(), label = "chip")
+    // The column grows when Stop joins Pause (and shrinks again): the chip rides up on a spring
+    // rather than jumping.
+    Column(Modifier.animateContentSize(motion.defaultSpatialSpec()), horizontalAlignment = Alignment.CenterHorizontally) {
         val joined = cells.isNotEmpty()
         Column(
             Modifier
                 .width(56.dp)
                 .height(chipHeight)
                 .clip(if (joined) round.copy(bottomStart = square, bottomEnd = square) else round)
-                .background(if (selected) Turu.RailSelected else Turu.Track)
+                .background(chipColor)
                 .semantics { contentDescription = "Script Loader: ${view?.state ?: "reading the tab"}" }
                 .selectable(selected = selected, role = Role.Tab, onClick = openLoader),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -297,37 +329,73 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
         cells.forEachIndexed { i, cell ->
             // The first control hangs under the chip; the second stands apart.
             Spacer(Modifier.height(if (i == 0) 1.dp else CellGap))
-            val shape = if (i == 0) {
-                round.copy(topStart = square, topEnd = square)
+            RunCell(cell, joinedTop = i == 0, busy = scripts.busy, openLoader = openLoader)
+        }
+    }
+}
+
+/**
+ * A run control: Material 3 Expressive's motion on Turu's cell. Its corners tighten while pressed
+ * (the press morph, on the fast spatial spring); a new control (Pause becoming Resume, Start
+ * becoming Pause) springs in over the old one while the colour fades across; and while the tab
+ * answers the tap, the cell shows the loading indicator in place of its icon. All cells are off
+ * meanwhile, as before. [joinedTop] keeps the square seam with the chip.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class) // LoadingIndicator: still experimental in Material 3 1.5.0
+@Composable
+private fun RunCell(cell: Cell, joinedTop: Boolean, busy: String?, openLoader: () -> Unit) {
+    val motion = MaterialTheme.motionScheme
+    val density = LocalDensity.current
+    val shapes = MaterialTheme.shapes
+    // Rest on the theme's medium corner, pressed on its extra-small one.
+    val rest = with(density) { shapes.medium.topEnd.toPx(Size(1f, 1f), density).toDp() }
+    val tight = with(density) { shapes.extraSmall.topEnd.toPx(Size(1f, 1f), density).toDp() }
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val corner by animateDpAsState(if (pressed) tight else rest, motion.fastSpatialSpec(), label = "cell corner")
+    val top = if (joinedTop) 0.dp else corner
+    val waiting = busy != null && busy == cell.action
+    val fill = if (cell.primary && cell.enabled) Turu.Accent else Turu.Track
+    val container by animateColorAsState(fill, motion.defaultEffectsSpec(), label = "cell fill")
+    val tint = when {
+        !cell.enabled -> Turu.Muted.copy(alpha = 0.5f)
+        cell.danger -> Turu.Danger
+        cell.primary -> Color.White
+        else -> Turu.Text
+    }
+    Box(
+        Modifier
+            .width(56.dp)
+            .height(CellHeight)
+            .clip(RoundedCornerShape(topStart = top, topEnd = top, bottomStart = corner, bottomEnd = corner))
+            .background(container)
+            .clickable(
+                interactionSource = press,
+                indication = ripple(),
+                enabled = busy == null,
+                role = Role.Button,
+                onClickLabel = if (cell.enabled) null else "open the Script Loader",
+                onClick = if (cell.enabled) cell.run else openLoader,
+            )
+            .semantics {
+                contentDescription = cell.label
+                if (waiting) stateDescription = "waiting for the tab"
+                else if (!cell.enabled) stateDescription = cell.reason.ifEmpty { "off" }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = if (waiting) null else cell.icon,
+            transitionSpec = {
+                (scaleIn(motion.fastSpatialSpec(), initialScale = 0.6f) + fadeIn(motion.fastEffectsSpec()))
+                    .togetherWith(scaleOut(motion.fastSpatialSpec(), targetScale = 0.6f) + fadeOut(motion.fastEffectsSpec()))
+            },
+            label = "cell icon",
+        ) { icon ->
+            if (icon == null) {
+                LoadingIndicator(Modifier.size(28.dp), color = tint)
             } else {
-                round
-            }
-            val idle = scripts.busy == null
-            Box(
-                Modifier
-                    .width(56.dp)
-                    .height(CellHeight)
-                    .clip(shape)
-                    .background(if (cell.primary && cell.enabled) Turu.Accent else Turu.Track)
-                    .clickable(
-                        enabled = idle,
-                        role = Role.Button,
-                        onClickLabel = if (cell.enabled) null else "open the Script Loader",
-                        onClick = if (cell.enabled) cell.run else openLoader,
-                    )
-                    .semantics {
-                        contentDescription = cell.label
-                        if (!cell.enabled) stateDescription = cell.reason.ifEmpty { "off" }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                val tint = when {
-                    !cell.enabled -> Turu.Muted.copy(alpha = 0.5f)
-                    cell.danger -> Turu.Danger
-                    cell.primary -> Color.White
-                    else -> Turu.Text
-                }
-                Icon(cell.icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
             }
         }
     }
