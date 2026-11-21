@@ -3,10 +3,12 @@
 //! Loadout (classes, modes and gear per role), Options and Other. Opening the window loads the
 //! file; closing it saves. The header says whether the window holds unsaved changes.
 
+use super::game_options::Answer;
 use super::skills::SkillSets;
 use super::theme::{CARD, EDGE, HOVER, INSET, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::models::core_bots::{Draft, OPTION_GROUPS, Opt, PUBLIC_CONFIRMED, Purpose, Role, SLOTS, Value};
+use crate::models::game_options::PUBLIC_ROOMS;
 use egui::{
     Align, Color32, ComboBox, CornerRadius, Frame, Label, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
     Ui, UiBuilder, vec2,
@@ -351,28 +353,19 @@ impl CoreBotsWindow {
     /// VibeSkua's message boxes: the public room warning and the Load/Save messages.
     fn dialogs(&mut self, ctx: &egui::Context) {
         if self.confirm_public {
-            let mut answer = None;
-            Modal::new(egui::Id::new("cbo_public_rooms")).show(ctx, |ui| {
-                ui.set_max_width(380.0);
-                ui.heading("Public Room Warning");
-                ui.label(
-                    "Whilst we do offer the option, we highly recommend staying in private rooms while botting. \
-                     Bot in public at your own risk.\nConfirm the use of Public Rooms?",
-                );
-                ui.horizontal(|ui| {
-                    if widgets::button(ui, "Yes", Kind::Danger, true, vec2(72.0, 28.0), "").clicked() {
-                        answer = Some(true);
-                    }
-                    if widgets::button(ui, "No", Kind::Normal, true, vec2(72.0, 28.0), "").clicked() {
-                        answer = Some(false);
-                    }
-                });
-            });
-            if let Some(yes) = answer {
-                self.confirm_public = false;
-                // The answer holds for this character until the window saves a different one.
-                *lock(&PUBLIC_CONFIRMED) = yes.then(|| self.username.clone());
-                self.draft.fetch(&crate::turu::bot(), Purpose::Save);
+            // Turu: Game Options' public room question (VibeSkua's CoreBots asks in its own words).
+            let answer = super::game_options::warning_modal(ctx, egui::Id::new("cbo_public_rooms"), &PUBLIC_ROOMS);
+            match answer {
+                // Escape or a click outside: no save, as on Android.
+                Some(Answer::Dismiss) => self.confirm_public = false,
+                Some(answer) => {
+                    self.confirm_public = false;
+                    // The answer holds for this character until the window saves a different one.
+                    let yes = answer == Answer::Confirm;
+                    *lock(&PUBLIC_CONFIRMED) = yes.then(|| self.username.clone());
+                    self.draft.fetch(&crate::turu::bot(), Purpose::Save);
+                }
+                None => {}
             }
         }
         if self.confirm_revert {

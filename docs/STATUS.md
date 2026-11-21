@@ -1122,6 +1122,14 @@ marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known ga
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
+- **Game Options asks before Private Rooms goes off, in CoreBots' words** (2026-11-22,
+  `models::game_options::PUBLIC_ROOMS`, `warning_modal`, Android's `PublicRoomsDialog`): VibeSkua
+  turns it off without a word, and only CoreBots Options warns, on Save ("Public Room Warning",
+  Yes/No). Botting in a public room lets other players see the bot and report the account, which
+  can get it banned, so Turu says so and keeps the option on unless the user confirms. CoreBots'
+  Save asks with the same dialog ("Bot in public rooms?", Use public rooms or Keep private, both
+  shells); Escape or a click outside closes it without saving. Scripts, Defaults, Revert and the
+  control API set Game Options' without asking.
 - **Streamer Mode hides names in Turu's own screens too** (2026-11-21, `turu::tab_label`,
   `slots::SlotShell::label`, `shell_accounts::accounts_view`, the Loadouts and Cosmetics models):
   VibeSkua's tabs and Manager keep the account names, but in Turu the tab list, Android's Accounts

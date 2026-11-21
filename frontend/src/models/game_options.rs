@@ -70,7 +70,33 @@ pub struct Entry {
     /// The option this one only matters with (Private Number: Private Rooms): when that is off,
     /// the row is indented and dimmed, but stays editable.
     pub requires: Option<fn(&BotOptions) -> bool>,
+    /// What a shell asks before this switch goes off (Private Rooms: [`PUBLIC_ROOMS`]); the
+    /// option stays on unless the user confirms.
+    pub warn_off: Option<&'static Warning>,
 }
+
+/// A question a shell asks before it changes an option, in the words both shells use.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Warning {
+    pub title: &'static str,
+    pub text: &'static str,
+    /// The button that goes ahead (shown as a danger button).
+    pub confirm: &'static str,
+    /// The button that leaves the option as it is.
+    pub cancel: &'static str,
+}
+
+/// Turu: asked before Private Rooms goes off (VibeSkua's Game Options turns it off without a
+/// word), and by CoreBots Options before it saves public rooms (VibeSkua's asks in other words):
+/// one question in both windows (`gui::turu::game_options::warning_modal`, Android's
+/// `PublicRoomsDialog`, which has the same words).
+pub const PUBLIC_ROOMS: Warning = Warning {
+    title: "Bot in public rooms?",
+    text: "Other players in a public room can see the bot and report your account, and a report can get it \
+           banned. Private rooms keep strangers out.",
+    confirm: "Use public rooms",
+    cancel: "Keep private",
+};
 
 macro_rules! b {
     ($section:ident, $label:expr, $f:ident, $description:expr) => {
@@ -81,6 +107,7 @@ macro_rules! b {
             field: Field::Bool(|o| &mut o.$f),
             group: "",
             requires: None,
+            warn_off: None,
         }
     };
 }
@@ -93,6 +120,7 @@ macro_rules! n {
             field: Field::Int(|o| &mut o.$f, $min, None),
             group: "",
             requires: None,
+            warn_off: None,
         }
     };
     ($section:ident, $label:expr, $f:ident, $min:expr, $suffix:expr, $description:expr) => {
@@ -103,6 +131,7 @@ macro_rules! n {
             field: Field::Int(|o| &mut o.$f, $min, Some($suffix)),
             group: "",
             requires: None,
+            warn_off: None,
         }
     };
 }
@@ -116,6 +145,7 @@ fn entry(section: Section, label: &'static str, field: Field, description: &'sta
         field,
         group: "",
         requires: None,
+        warn_off: None,
     }
 }
 
@@ -295,12 +325,15 @@ pub fn entries() -> Vec<Entry> {
     list.extend(grouped(
         "World",
         vec![
-            b!(
-                Gameplay,
-                "Private Rooms",
-                private_rooms,
-                "Joins maps in a numbered private room (Private Number) instead of a public one"
-            ),
+            Entry {
+                warn_off: Some(&PUBLIC_ROOMS),
+                ..b!(
+                    Gameplay,
+                    "Private Rooms",
+                    private_rooms,
+                    "Joins maps in a numbered private room (Private Number) instead of a public one"
+                )
+            },
             Entry {
                 requires: Some(|o| o.private_rooms),
                 ..n!(

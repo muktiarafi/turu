@@ -80,6 +80,10 @@ class GameOptionsPanel {
     /** The options changed here since the last Save or Revert (by label). */
     val edited = mutableStateListOf<String>()
 
+    /** The switch whose warning is up (Private Rooms going off): it stays on unless confirmed. */
+    var askOff by mutableStateOf<OptionView?>(null)
+        private set
+
     private var client: ModelClient? = null
     private var following: ShellTab? = null
     private val json = Json { ignoreUnknownKeys = true }
@@ -91,6 +95,8 @@ class GameOptionsPanel {
         client = null
         view = null
         edited.clear()
+        // A question about the tab that was on screen doesn't carry over to another.
+        askOff = null
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
@@ -119,8 +125,23 @@ class GameOptionsPanel {
     }
 
     fun set(option: OptionView, value: Any) {
+        // Turu: asks before Private Rooms goes off, as the egui window does (PublicRoomsDialog).
+        if (option.label == PUBLIC_ROOMS_OPTION && value == false) {
+            askOff = option
+            return
+        }
         if (option.label !in edited) edited.add(option.label)
         act("set", JSONObject().put("label", option.label).put("value", value))
+    }
+
+    /** The warning's answer: [confirmed] turns the option off, otherwise it stays on. */
+    fun answer(confirmed: Boolean) {
+        val option = askOff ?: return
+        askOff = null
+        if (confirmed) {
+            if (option.label !in edited) edited.add(option.label)
+            act("set", JSONObject().put("label", option.label).put("value", false))
+        }
     }
 
     fun reload(option: OptionView) = act("set", JSONObject().put("label", option.label).put("value", JSONObject.NULL))
@@ -133,6 +154,31 @@ class GameOptionsPanel {
         view?.options?.filter { it.differs }?.forEach { if (it.label !in edited) edited.add(it.label) }
         act("reset")
     }
+}
+
+/** The option that asks before it goes off ([PublicRoomsDialog]). */
+private const val PUBLIC_ROOMS_OPTION = "Private Rooms"
+
+/**
+ * The public room question, the same in Game Options (Private Rooms going off) and CoreBots
+ * (Save with Private Rooms off), in `game_options::PUBLIC_ROOMS`'s words, as the egui windows
+ * ask it (`warning_modal`). [onDismiss]: Back or a tap outside, no answer.
+ */
+@Composable
+fun PublicRoomsDialog(onConfirm: () -> Unit, onKeep: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bot in public rooms?") },
+        text = {
+            Text(
+                "Other players in a public room can see the bot and report your account, and a report can get it " +
+                    "banned. Private rooms keep strangers out.",
+            )
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Use public rooms", color = Turu.Danger) } },
+        dismissButton = { TextButton(onClick = onKeep) { Text("Keep private") } },
+        containerColor = Turu.Card,
+    )
 }
 
 private fun OptionValue.bool() = (this as? OptionValue.switch)?.value ?: false
@@ -243,6 +289,14 @@ fun GameOptionsPage(state: ShellState, options: GameOptionsPanel, running: Boole
             }
         }
         Footer(view, options, running)
+    }
+    if (options.askOff != null) {
+        // A tap outside keeps the option as it is, as Keep private does.
+        PublicRoomsDialog(
+            onConfirm = { options.answer(true) },
+            onKeep = { options.answer(false) },
+            onDismiss = { options.answer(false) },
+        )
     }
 }
 

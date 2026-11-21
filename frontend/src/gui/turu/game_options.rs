@@ -8,8 +8,8 @@ use super::widgets::{self, Kind};
 #[cfg(test)]
 use crate::models::game_options::UNUSED_GROUP;
 use crate::models::game_options::{
-    self as model, Entry, FPS_PRESETS, Field, MAX_FPS, PRIORITIES, Section, UNUSED, defaults, differing, entries,
-    matches, options, priority_label, revert_mine,
+    self as model, Entry, FPS_PRESETS, Field, MAX_FPS, PRIORITIES, Section, UNUSED, Warning, defaults, differing,
+    entries, matches, options, priority_label, revert_mine,
 };
 use egui::{ComboBox, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use std::collections::HashSet;
@@ -65,6 +65,8 @@ pub struct GameOptionsWindow {
     /// The options changed here since the last Save or Revert (by label): what differs from
     /// `options.json` and isn't here was changed by something else, most often a script.
     edited: HashSet<&'static str>,
+    /// The switch whose [warning](Entry::warn_off) is up (Private Rooms going off), by label.
+    ask_off: Option<&'static str>,
 }
 
 impl Default for GameOptionsWindow {
@@ -79,6 +81,7 @@ impl Default for GameOptionsWindow {
             save_result: None,
             footer_height: None,
             edited: HashSet::new(),
+            ask_off: None,
         }
     }
 }
@@ -89,6 +92,7 @@ impl GameOptionsWindow {
             self.saved = None;
             self.confirm = None;
             self.save_result = None;
+            self.ask_off = None;
             return;
         }
         // VibeSkua's size; on a phone a full-screen sheet (`super::window`), so the footer's
@@ -96,6 +100,31 @@ impl GameOptionsWindow {
         super::window(ctx, "Game Options", [612.0, 720.0], 1)
             .open(open)
             .show(ctx, |ui| self.ui(ui));
+        self.warning(ctx);
+    }
+
+    /// The question a switch asks before it goes off (Private Rooms: [`model::PUBLIC_ROOMS`]);
+    /// the option changes only on its confirm.
+    fn warning(&mut self, ctx: &Context) {
+        let Some(label) = self.ask_off else { return };
+        let Some(entry) = self.entries.iter().find(|e| e.label == label) else {
+            self.ask_off = None;
+            return;
+        };
+        let (Some(warning), Field::Bool(access)) = (entry.warn_off, &entry.field) else {
+            self.ask_off = None;
+            return;
+        };
+        match warning_modal(ctx, egui::Id::new(("game_options_warn_off", label)), warning) {
+            // Escape or a click outside keeps the option as it is.
+            Some(Answer::Keep | Answer::Dismiss) => self.ask_off = None,
+            Some(Answer::Confirm) => {
+                self.ask_off = None;
+                *access(&mut crate::turu::bot().options.write()) = false;
+                self.edited.insert(label);
+            }
+            None => {}
+        }
     }
 
     /// Whether the list shows `entry`: the search finds it, and it differs from the saved
@@ -200,7 +229,7 @@ impl GameOptionsWindow {
                                 ui.label(RichText::new(group).small().strong().color(MUTED));
                             }
                             for entry in run {
-                                if row(ui, entry, mark(entry), &mut snapshot, &bot) {
+                                if row(ui, entry, mark(entry), &mut snapshot, &bot, &mut self.ask_off) {
                                     changed.push(entry.label);
                                 }
                             }
@@ -484,6 +513,44 @@ enum Mark {
     Outside,
 }
 
+/// How a [`warning_modal`] was answered.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Answer {
+    /// Its danger button ("Use public rooms").
+    Confirm,
+    /// Its other button ("Keep private").
+    Keep,
+    /// Escape or a click outside: no answer.
+    Dismiss,
+}
+
+/// `warning` as a modal: its title, its text, then its danger button and its other button. Game
+/// Options and CoreBots Options ask about public rooms with it ([`model::PUBLIC_ROOMS`]), so the
+/// question looks and reads the same in both, as Android's `PublicRoomsDialog` does.
+pub(super) fn warning_modal(ctx: &Context, id: egui::Id, warning: &Warning) -> Option<Answer> {
+    let mut answer = None;
+    // Each button as wide as its words (`min_size`), finger-tall on a touch screen.
+    let size = vec2(96.0, widgets::target(28.0, 44.0));
+    let response = egui::Modal::new(id).show(ctx, |ui| {
+        ui.set_max_width(380.0);
+        ui.heading(warning.title);
+        ui.label(warning.text);
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if widgets::button(ui, warning.confirm, Kind::Danger, true, size, "").clicked() {
+                answer = Some(Answer::Confirm);
+            }
+            if widgets::button(ui, warning.cancel, Kind::Normal, true, size, "").clicked() {
+                answer = Some(Answer::Keep);
+            }
+        });
+    });
+    if response.should_close() && answer.is_none() {
+        answer = Some(Answer::Dismiss);
+    }
+    answer
+}
+
 /// One option's row ([`widgets::setting_row`]): its label, `mark` and description, with its
 /// control at the right (under them on a phone, when they'd be too narrow beside it). An option
 /// that [requires](Entry::requires) another is indented, and dimmed while that one is off.
@@ -494,6 +561,7 @@ fn row(
     mark: Option<Mark>,
     snapshot: &mut BotOptions,
     bot: &std::sync::Arc<turu_bot::Bot>,
+    ask_off: &mut Option<&'static str>,
 ) -> bool {
     let mut changed = false;
     // Some(whether to dim) for an option that requires another.
@@ -504,7 +572,7 @@ fn row(
             |ui| title(ui, entry, mark),
             entry.description,
             entry.field.width(),
-            |ui| changed = control(ui, entry, snapshot, bot),
+            |ui| changed = control(ui, entry, snapshot, bot, ask_off),
         );
     };
     match dim {
@@ -551,14 +619,29 @@ fn title(ui: &mut Ui, entry: &Entry, mark: Option<Mark>) {
 }
 
 /// `entry`'s control, greyed for an [`UNUSED`] option; returns whether it changed the option.
-fn control(ui: &mut Ui, entry: &Entry, snapshot: &mut BotOptions, bot: &std::sync::Arc<turu_bot::Bot>) -> bool {
+/// A switch with a [warning](Entry::warn_off) that the user turns off stays on and sets `ask_off`.
+fn control(
+    ui: &mut Ui,
+    entry: &Entry,
+    snapshot: &mut BotOptions,
+    bot: &std::sync::Arc<turu_bot::Bot>,
+    ask_off: &mut Option<&'static str>,
+) -> bool {
     if UNUSED.contains(&entry.label) {
-        ui.add_enabled_ui(false, |ui| edit(ui, entry.label, &entry.field, snapshot, bot))
+        ui.add_enabled_ui(false, |ui| edit(ui, entry.label, &entry.field, snapshot, bot, None))
             .response
             .on_disabled_hover_text("Coming soon: Turu doesn't use this yet");
         return false;
     }
-    edit(ui, entry.label, &entry.field, snapshot, bot)
+    let warn = entry.warn_off.is_some().then_some(&mut *ask_off);
+    edit(
+        ui,
+        entry.label,
+        &entry.field,
+        snapshot,
+        bot,
+        warn.map(|a| (entry.label, a)),
+    )
 }
 
 /// One option's control. Writes to the live options as soon as it changes, and returns whether
@@ -569,6 +652,7 @@ fn edit(
     field: &Field,
     snapshot: &mut BotOptions,
     bot: &std::sync::Arc<turu_bot::Bot>,
+    ask_off: Option<(&'static str, &mut Option<&'static str>)>,
 ) -> bool {
     let mut changed = false;
     // Combo boxes are as tall as `interact_size`: finger-sized on a touch screen.
@@ -577,8 +661,14 @@ fn edit(
         Field::Bool(access) => {
             let mut value = *access(snapshot);
             if widgets::switch(ui, &mut value).changed() {
-                *access(&mut bot.options.write()) = value;
-                changed = true;
+                match ask_off {
+                    // Turu: asks before Private Rooms goes off; `GameOptionsWindow::warning` turns it off.
+                    Some((label, ask)) if !value => *ask = Some(label),
+                    _ => {
+                        *access(&mut bot.options.write()) = value;
+                        changed = true;
+                    }
+                }
             }
         }
         Field::Int(access, min, suffix) => {
@@ -754,6 +844,20 @@ mod tests {
 
     /// Unused options come last in their section, under their own heading; Private Number
     /// follows Private Rooms, which it requires.
+    #[test]
+    fn only_private_rooms_asks_before_going_off() {
+        let asking: Vec<&str> = entries()
+            .iter()
+            .filter(|e| e.warn_off.is_some())
+            .map(|e| e.label)
+            .collect();
+        assert_eq!(asking, ["Private Rooms"]);
+        let entries = entries();
+        let entry = entries.iter().find(|e| e.label == "Private Rooms").unwrap();
+        assert!(matches!(entry.field, Field::Bool(_)));
+        assert!(entry.warn_off.unwrap().text.contains("report"));
+    }
+
     #[test]
     fn entries_order() {
         let list = entries();

@@ -163,13 +163,11 @@ fun CoreBotsPage(state: ShellState, panel: CoreBotsPanel, fullWindow: () -> Unit
         }
     }
     if (askPublic) {
-        AlertDialog(
-            onDismissRequest = { askPublic = false },
-            title = { Text("Use public rooms?") },
-            text = { Text("With Private Rooms off, the bot joins public rooms, where other players see it. Save keeps Private Rooms on unless you say yes.") },
-            confirmButton = { TextButton(onClick = { askPublic = false; panel.act("confirm-public"); panel.act("save") }) { Text("Use public rooms") } },
-            dismissButton = { TextButton(onClick = { askPublic = false; panel.act("save") }) { Text("Keep private") } },
-            containerColor = Turu.Card,
+        // Keep private saves with Private Rooms kept on; a tap outside doesn't save.
+        PublicRoomsDialog(
+            onConfirm = { askPublic = false; panel.act("confirm-public"); panel.act("save") },
+            onKeep = { askPublic = false; panel.act("save") },
+            onDismiss = { askPublic = false },
         )
     }
     view?.message?.let { (title, text) ->

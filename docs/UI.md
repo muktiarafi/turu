@@ -273,7 +273,11 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Application Options owns; Revert and Save are enabled only while the live options differ from
   `options.json` (read again every 2 s). Number boxes have floors (1 for the tries and Walk Speed,
   1000 ms for Login and Load Timeout), and the Drops card warns when Accept All and Reject All
-  Drops are both on. On a touch screen smaller than 700x760 it opens as a full-screen sheet,
+  Drops are both on. Turning Private Rooms off asks first ("Bot in public rooms?": other players
+  there can see the bot and report the account, which can get it banned; Use public rooms or Keep
+  private, and Escape or a click outside keeps it on), in words both shells share
+  (`models::game_options::PUBLIC_ROOMS`) and with CoreBots Options' Save (`warning_modal`);
+  Defaults and Revert don't ask. On a touch screen smaller than 700x760 it opens as a full-screen sheet,
   and every control (switches, number boxes, text boxes, combos and their rows, buttons) is
   40 points tall; a row too narrow for its text beside the control (under 160 points left)
   puts the control under the text. In a window under 480 points tall (a phone, which Turu holds
@@ -712,8 +716,9 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   grouped rows, searchable too (the PvP and Story Test Mode ones reworded: VibeSkua's have
   typos). Opening the window
   loads `options/CBO_Storage(<username>).txt` (cached per character), closing it saves; Save asks
-  before saving public rooms (a save without the answer keeps private rooms, and the window
-  shows them on again). Game reads
+  before saving public rooms, with Game Options' question ("Bot in public rooms?", the same dialog:
+  `game_options::warning_modal`): Keep private saves with private rooms (as does a save without
+  the answer, and the window shows them on again), Escape or a click outside doesn't save. Game reads
   (username, equipped class, inventory) run through `spawn_action`; VibeSkua's message boxes are
   egui modals. A `[Current]` class with no skill set gets VibeSkua's default `Base` set in the
   skill file (`EnsureSkillEntryExists`, `turu_bot::skills::ensure_skill_set`). Unlike VibeSkua,
@@ -1175,7 +1180,10 @@ above, and why:
   with a switch, a number box, Set FPS with its presets, a text box (Relogin Server's a text box
   too: the page has no server list), a choice or Reload Map; "Edited" or "Changed outside"
   outlined after the label; an option that depends on another indented and dimmed while that one
-  is off; an unused one dimmed with "Coming soon". At the foot one status line, Defaults (asks
+  is off; an unused one dimmed with "Coming soon". Turning Private Rooms off asks first, as the
+  egui window does ("Bot in public rooms?", Use public rooms or Keep private; the switch stays on
+  until confirmed, and the question goes when the tab on screen changes); CoreBots' Save asks
+  with the same dialog (`PublicRoomsDialog`). At the foot one status line, Defaults (asks
   first), Revert (asks first while a script changed options) and Save.
 * **Application Options and CoreBots** (L5b, 2026-11-20), pages of the panel from More > Options.
   Application Options: search and section chips, each setting with its control and saved as it
