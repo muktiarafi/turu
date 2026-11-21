@@ -21,7 +21,7 @@ How to build, run and check the Android app. The design and the plan are in
 > tab" only; "Log in by hand" without a saved password) and Army Control's Show open and select
 > them; one engine thread runs them all (`turu_frontend::players`), the active tab drawn and
 > heard, the others muted and ticked at the hidden tab's rate. Options > Application > Tab Limit
-> (default 4, at most 4) refuses more, with a log line. The Army menu and Plugins > Butler show
+> (default 4, at most 4 then: 9 since 2026-11-22, below) refuses more, with a log line. The Army menu and Plugins > Butler show
 > (`Platform::has_army`), Butler and Army Control as full-screen sheets with finger-sized
 > buttons. The wake lock is held while any tab's script runs and the notification has a line per
 > tab (Pause and Stop act on the active one). The tabs after the first are written to
@@ -34,6 +34,16 @@ How to build, run and check the Android app. The design and the plan are in
 > There is no Process Tabs switch any more, and the app's own process runs no engine. The first
 > start opens `android-tabs.json`'s tabs (from before process tabs) in slots. The Tab Limit
 > counts the shell's tabs.
+>
+> **Nine slots since 2026-11-22** (`Slot1Service` ... `Slot9Service`, `slots::POOL`): Tab Limit
+> goes up to 9, still 4 by default. The shell reads it from `settings.json` (again whenever the
+> file changes) and opens no tab past it, whichever way the tab is asked for (New tab, Accounts,
+> a slot's egui menus). Raising it above 4 asks first, with the phone's memory beside what the
+> tabs take (docs/UI.md, "Application Options and CoreBots"). Turu Mas stays at 4: its tabs share
+> one process (`Platform::tab_max`). Checked on the emulator (`-gpu host`, 6 GB AVD, blank tabs at
+> the login screen): at Tab Limit 4 a fifth tab was refused, with the Tabs footer's Raise Tab Limit
+> and Accounts' "No tab is free" landing on the setting; Keep 4 left it as it was; Allow 6 opened
+> slots 5 and 6 in `:c5` and `:c6`. Slots 7 to 9 weren't started (nine clients on that AVD).
 >
 > **Checked on MuMu (2026-11-07, at the login screen, no account logged in):** a second tab
 > from Army > New Tab, switching between the two, closing one, and the second reopened from

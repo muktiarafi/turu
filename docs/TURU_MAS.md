@@ -21,7 +21,8 @@ The name: *mas*, from *emas*, is Javanese for gold, with *turu*, sleep; hence it
 * It starts with the AIR SDK's splash screen for about 1.6 s (the SDK's free tier).
 * Tabs, Army and Butler as in Turu on Android: the tab strip's "+", Army > New Tab, Army >
   Accounts ("In a tab") and Army Control, up to Options > Application > Tab Limit (default 4,
-  at most 4; about 200 MB a client), reopened after Android stops the app
+  at most 4 where Turu on Android goes to 9: every tab shares this one process; about 200 MB a
+  client), reopened after Android stops the app
   (`android-tabs.json`). No Grid View or HotKeys.
 * File dialogs are Android's system picker, as in Turu on Android: Load Script (the script copied
   into `scripts/Imported/`), Junk Items' and Loadouts' import and export, the logs' Save, ...

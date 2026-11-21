@@ -22,8 +22,10 @@ use turu_bot::startup::Startup;
 
 /// How long after a shell last read the view egui still leaves the dialogs to it.
 const SHELL_FRESH: Duration = Duration::from_secs(3);
-/// The most tabs Options > Application > Tab Limit allows.
-pub const TAB_MAX: i32 = 4;
+/// The most tabs Options > Application > Tab Limit allows (`Platform::tab_max`).
+pub fn tab_max() -> i32 {
+    crate::platform::platform().tab_max()
+}
 
 static SHELL_READ: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -167,7 +169,7 @@ static REFUSED: AtomicBool = AtomicBool::new(false);
 pub fn tab_limit() -> Option<usize> {
     crate::platform::platform()
         .limits_tabs()
-        .then(|| crate::turu::bot().settings.read().tab_limit.clamp(1, TAB_MAX) as usize)
+        .then(|| crate::turu::bot().settings.read().tab_limit.clamp(1, tab_max()) as usize)
 }
 
 /// As many tabs are open as the Tab Limit allows: the shell's tabs, where this process is one of
@@ -205,7 +207,7 @@ pub fn answer_tab_refused() {
 
 /// The notice's text and whether Turu's most is reached (no Raise Tab Limit then).
 pub fn tab_limit_text(limit: usize) -> (String, bool) {
-    let at_most = limit as i32 >= TAB_MAX;
+    let at_most = limit as i32 >= tab_max();
     let text = if at_most {
         format!("{limit} tabs are open, the most Turu runs at once. Close a tab to open another.")
     } else {

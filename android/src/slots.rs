@@ -1,5 +1,5 @@
 //! Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): each tab in a slot, a foreground service in a
-//! process of its own (`SlotService.kt`: `Slot1Service` ... `Slot4Service` in `:c1` ... `:c4`). While
+//! process of its own (`SlotService.kt`: `Slot1Service` ... `Slot9Service` in `:c1` ... `:c9`). While
 //! they're on (unless `turu-process-tabs.txt` in the data folder says `off`:
 //! `turu_frontend::slots::switched_on`), the activity's process runs no engine: it's the
 //! shell (`SlotShell.kt`, `slot_shell.rs`). These are a slot process's side: the engine's start

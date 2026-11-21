@@ -864,7 +864,8 @@ memory budget (NVIDIA, AMD).
   10 and a Pixel 8 have run it (docs/ANDROID.md). File dialogs are Android's system picker
   (`android/src/saf.rs`); OpenGL ES is the default since 2026-11-18 (see "GL renderer" below); the game's own text fields are typed in a native
   field above the keyboard (docs/ANDROID_NATIVE_UI.md). Tabs (phase 5): several clients in one
-  engine thread, the Army menu and Butler, a Tab Limit (default 4), tabs reopened after a kill;
+  engine thread, the Army menu and Butler, a Tab Limit (default 4, at most 9 in slots since
+  2026-11-22; Turu Mas at most 4), tabs reopened after a kill;
   built, not run on a device yet.
   Since 2026-11-20 (branch `native-ui`, docs/NATIVE_UI_PROPOSAL.md) the rail, the tabs and
   Accounts and the daily windows are native Android pages beside the game: Script Loader, Search

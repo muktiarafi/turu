@@ -162,6 +162,11 @@ impl Platform for AndroidPlatform {
         true
     }
 
+    // A tab in each of the manifest's slots: Tab Limit (4 by default) keeps it to fewer.
+    fn tab_max(&self) -> i32 {
+        turu_frontend::slots::POOL as i32
+    }
+
     // A phone's screen is too small for the tiles (the engine ignores `TabRequest::Grid`).
     fn has_grid_view(&self) -> bool {
         false

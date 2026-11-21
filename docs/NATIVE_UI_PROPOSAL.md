@@ -962,7 +962,7 @@ script's message box and options request.
   a shell has read it within three seconds, egui's dialogs step aside. A script's box isn't
   closed by a tap beside it (Back still answers "closed"). Show report opens the report in the
   native Logs > Crashes (since the crash reports' page, below; it opened egui's Logs before);
-  Raise Tab Limit opens Application options. The
+  Raise Tab Limit opens Application options, searched to Tab Limit (since 2026-11-22). The
   crash upload question is one too since the same day (egui drew it in the slot's picture: a slot
   has no activity for `CrashQuestion.kt`), with its Privacy policy link as a text button. Checked on the emulator: a made-up crash
   report's notice and Show report (the report and the one it pushed out of the 30 kept were put

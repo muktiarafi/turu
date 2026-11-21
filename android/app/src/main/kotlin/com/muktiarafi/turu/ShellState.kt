@@ -39,8 +39,19 @@ data class ShellTabs(
     val tabs: List<ShellTab> = emptyList(),
     val shown: Int = 0,
     val railHidden: Boolean = false,
+    /** Tab Limit's tabs are open (or every slot is taken): no New tab. */
     val full: Boolean = false,
+    /** Options > Application > Tab Limit: how many tabs may be open. */
+    val limit: Int = SlotShell.SLOTS,
+    /** The most Tab Limit allows (the slots). */
+    val most: Int = SlotShell.SLOTS,
 ) {
+    /** Tabs that can still open. */
+    val free: Int get() = (limit - tabs.size).coerceAtLeast(0)
+
+    /** Full because of Tab Limit, which can go higher: Raise Tab Limit is offered. */
+    val raisable: Boolean get() = limit < most
+
     val active: ShellTab? get() = tabs.firstOrNull { it.id == shown }
 
     /** Another tab than the one on screen needs the user: it waits for an answer, or dropped out of the game. */
@@ -73,6 +84,8 @@ data class ShellTabs(
                 shown = o.getInt("shown"),
                 railHidden = o.optBoolean("rail_hidden"),
                 full = o.optBoolean("full"),
+                limit = o.optInt("limit", SlotShell.SLOTS),
+                most = o.optInt("most", SlotShell.SLOTS),
             )
         }
     }
@@ -242,6 +255,15 @@ class ShellState {
      */
     var openings by mutableStateOf(0)
         private set
+
+    /** What Application Options opens searching for, once (Raise Tab Limit: "Tab Limit"). */
+    var optionsFind by mutableStateOf("")
+
+    /** Application Options at Tab Limit (Raise Tab Limit). */
+    fun raiseTabLimit() {
+        optionsFind = "Tab Limit"
+        push(Page.AppOptions)
+    }
 
     fun openAt(at: Page) {
         stack.clear()

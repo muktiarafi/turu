@@ -1,5 +1,6 @@
 package com.muktiarafi.turu
 
+import android.app.ActivityManager
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,17 +30,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.AppOptionsView
+import com.muktiarafi.turu.models.OptionValue
 import com.muktiarafi.turu.models.OptionView
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import kotlin.math.ceil
 
 /**
  * Application Options' copy of the tab on screen (`turu_frontend::models::application_options`),
@@ -89,7 +95,8 @@ class AppOptionsPanel {
 /**
  * Options > Application (docs/UI.md, "Native shells"; VibeSkua's Application Options): the search
  * and the sections as chips, the settings under their headings, each saved as it changes. The Web
- * Monitor's links, QR code and keys open the full window. Clear Flash Cache asks first.
+ * Monitor's links, QR code and keys open the full window. Clear Flash Cache asks first, and so
+ * does raising Tab Limit above [TAB_LIMIT_SAFE] (with this phone's memory beside what the tabs take).
  */
 @Composable
 fun AppOptionsPage(state: ShellState, options: AppOptionsPanel, fullWindow: () -> Unit) {
@@ -97,8 +104,18 @@ fun AppOptionsPage(state: ShellState, options: AppOptionsPanel, fullWindow: () -
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { options.follow(state.tabs.active) }
     val view = options.view
     var search by remember { mutableStateOf("") }
+    // Raise Tab Limit: the setting found, also when the page already shows.
+    LaunchedEffect(state.optionsFind) {
+        if (state.optionsFind.isNotEmpty()) {
+            search = state.optionsFind
+            state.optionsFind = ""
+        }
+    }
     var section by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf<OptionView?>(null) }
+    // Tab Limit asked above the safe number, and what for; a refusal puts its field back.
+    var raising by remember { mutableStateOf<Pair<OptionView, Long>?>(null) }
+    var refused by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         PageBar("Application Options", onBack = { state.back() }) {
             FullWindowMenu("The Web Monitor's links, QR code and keys", fullWindow)
@@ -148,14 +165,19 @@ fun AppOptionsPage(state: ShellState, options: AppOptionsPanel, fullWindow: () -
                 }
                 for (o in rows) {
                     item(key = o.section + o.label) {
-                        OptionRow(
-                            o,
-                            edited = false,
-                            inGame = true,
-                            onSet = { options.set(o, it) },
-                            onAction = { if (o.label == "Clear Flash Cache") clearing = o else options.run(o) },
-                            fullWindow = fullWindow,
-                        )
+                        key(if (o.label == TAB_LIMIT) refused else 0) {
+                            OptionRow(
+                                o,
+                                edited = false,
+                                inGame = true,
+                                onSet = { value ->
+                                    val asks = o.label == TAB_LIMIT && value is Long && value > TAB_LIMIT_SAFE && o.value.long() <= TAB_LIMIT_SAFE
+                                    if (asks) raising = o to value else options.set(o, value)
+                                },
+                                onAction = { if (o.label == "Clear Flash Cache") clearing = o else options.run(o) },
+                                fullWindow = fullWindow,
+                            )
+                        }
                     }
                 }
             }
@@ -181,6 +203,51 @@ fun AppOptionsPage(state: ShellState, options: AppOptionsPanel, fullWindow: () -
             dismissButton = { TextButton(onClick = { clearing = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
+    }
+    raising?.let { (o, tabs) ->
+        val keep = o.value.long()
+        val refuse: () -> Unit = {
+            raising = null
+            refused += 1
+        }
+        AlertDialog(
+            onDismissRequest = refuse,
+            title = { Text("Allow up to $tabs tabs?") },
+            text = { Text(tabLimitWarning(tabs, phoneMemoryGb()), color = Turu.Muted) },
+            confirmButton = { TextButton(onClick = { raising = null; options.set(o, tabs) }) { Text("Allow $tabs") } },
+            dismissButton = { TextButton(onClick = refuse) { Text("Keep $keep") } },
+            containerColor = Turu.Card,
+        )
+    }
+}
+
+private fun OptionValue.long() = (this as? OptionValue.number)?.value ?: 0L
+
+/** Tab Limit's label in Application Options. */
+private const val TAB_LIMIT = "Tab Limit"
+
+/** The Tab Limit most phones hold, its default (`application_options::TAB_LIMIT_SAFE`): above it, raising it asks first. */
+private const val TAB_LIMIT_SAFE = 4L
+
+/** What `tabs` tabs take beside the phone's memory (`gb`, 0 when unknown). */
+internal fun tabLimitWarning(tabs: Long, gb: Int): String {
+    // In tenths of a GB: 200 MB a tab at least, 400 at most.
+    val gbs = { tenths: Long -> if (tenths % 10 == 0L) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}" }
+    val need = "${gbs(tabs * 2)} to ${gbs(tabs * 4)} GB"
+    val phone = if (gb > 0) " of this phone's $gb GB, which Android and your other apps share too" else ""
+    return "Each tab takes 200 to 400 MB, so $tabs need about $need$phone. " +
+        "When memory runs short, Android closes tabs; each comes back, logs in and starts its script again."
+}
+
+/** This phone's memory in whole GB, as sold (0 when unknown). */
+@Composable
+private fun phoneMemoryGb(): Int {
+    val context = LocalContext.current
+    return remember {
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return@remember 0
+        val info = ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
+        // Android reports a little under what the phone is sold with (8 GB reads as 7.5 GiB).
+        ceil(info.totalMem / (1024.0 * 1024 * 1024)).toInt()
     }
 }
 

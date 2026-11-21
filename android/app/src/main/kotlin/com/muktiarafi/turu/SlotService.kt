@@ -28,7 +28,7 @@ import kotlin.concurrent.thread
 
 /**
  * Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): one tab's engine in a process of its own
- * (`android:process=":c1"` ... `":c4"`). A
+ * (`android:process=":c1"` ... `":c9"`). A
  * foreground service with a notification of its own, started and bound by the activity (the shell,
  * [SlotShell]), which sends it its surface, touches and messages through a [Messenger]. The engine
  * is the Rust side's (`slots.rs`), set up from the slot's record (`slots/c<N>.json`). Android starts
@@ -314,8 +314,8 @@ abstract class SlotService(private val slot: Int) : Service() {
         /** The group summary's notification ID; each slot's is this plus its slot. */
         private const val NOTIFICATION = 100
 
-        /** The slots in the manifest (`Slot1Service` ... `Slot4Service`). */
-        private const val SLOTS = 4
+        /** The slots in the manifest (`Slot1Service` ... `Slot9Service`, `slots::POOL`). */
+        private const val SLOTS = 9
         const val MSG_ATTACH = 1
         const val MSG_DETACH = 2
         const val MSG_RESIZE = 3
@@ -430,3 +430,13 @@ class Slot2Service : SlotService(2)
 class Slot3Service : SlotService(3)
 
 class Slot4Service : SlotService(4)
+
+class Slot5Service : SlotService(5)
+
+class Slot6Service : SlotService(6)
+
+class Slot7Service : SlotService(7)
+
+class Slot8Service : SlotService(8)
+
+class Slot9Service : SlotService(9)

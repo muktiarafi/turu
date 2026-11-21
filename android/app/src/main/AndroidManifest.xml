@@ -82,5 +82,50 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Runs a game client and its bot script while the app is in the background" />
         </service>
+        <service
+            android:name=".Slot5Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c5">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
+        <service
+            android:name=".Slot6Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c6">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
+        <service
+            android:name=".Slot7Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c7">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
+        <service
+            android:name=".Slot8Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c8">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
+        <service
+            android:name=".Slot9Service"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":c9">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs a game client and its bot script while the app is in the background" />
+        </service>
     </application>
 </manifest>

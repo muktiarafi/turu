@@ -94,6 +94,12 @@ pub trait Platform: Send + Sync {
         false
     }
 
+    /// The most tabs Tab Limit allows, where [`Self::limits_tabs`]: Turu's Android app has a slot
+    /// process for each (`slots::POOL`); Turu Mas keeps its tabs in one process.
+    fn tab_max(&self) -> i32 {
+        4
+    }
+
     /// Whether Grid View (every tab at once) is offered: the nav bar's Grid. Where it's false
     /// the button is hidden and the frontend ignores `TabRequest::Grid`.
     fn has_grid_view(&self) -> bool {

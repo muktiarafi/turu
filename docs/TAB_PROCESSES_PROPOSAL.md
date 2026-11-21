@@ -535,7 +535,8 @@ Checked on the emulator (Android 16, one account on Twig):
   through the native field today).
 
 Not done yet:
-* **Tab Limit** from the phone's memory (with M4's numbers; the four slots cap it meanwhile).
+* **Tab Limit** from the phone's memory (with M4's numbers). Meanwhile 4 by default, up to the
+  nine slots since 2026-11-22, raising it above 4 asking first with the phone's memory.
 Accounts' "In a tab" in a slot, checked on the emulator (host GPU): Start on a saved account opened
 slot 3 in a process of its own and showed it (the slot on screen let go in 6 ms); its record held
 the login and server, no password; it logged in with Accounts' password and was in game 5.6 s

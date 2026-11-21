@@ -249,9 +249,6 @@ private fun shows(account: Account, filter: String?, search: String): Boolean {
     return inFilter && found
 }
 
-/** Tabs a phone keeps open at most (`slots::POOL`). */
-private const val TAB_POOL = 4
-
 /**
  * Accounts: search, filter chips, the list with Start and a ⋮ menu each, launch options at the
  * foot. A long press selects (docs/UI.md, "Accounts"): the bar then says how many, with Start
@@ -346,6 +343,7 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
                         shown = shown,
                         selected = selected,
                         tabs = state.tabs.tabs.size,
+                        limit = state.tabs.limit,
                         group = group.takeIf { !selecting },
                         onAll = { all -> selected = if (all) selected + shown.map { it.username } else selected - shown.map { it.username }.toSet() },
                         onStartGroup = { startingMany = shown.filter { it.tab == null } },
@@ -425,7 +423,8 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
         )
     }
     startingMany?.let { wanted ->
-        val free = (TAB_POOL - state.tabs.tabs.size).coerceAtLeast(0)
+        val tabs = state.tabs
+        val free = tabs.free
         val go = { start: List<Account> ->
             startingMany = null
             selected = emptySet()
@@ -439,22 +438,37 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
             val left = wanted.drop(free)
             AlertDialog(
                 onDismissRequest = { startingMany = null },
-                title = { Text(if (free == 0) "No tab is free" else "Only $free of $TAB_POOL tabs ${if (free == 1) "is" else "are"} free") },
+                title = { Text(if (free == 0) "No tab is free" else "Only $free of ${tabs.limit} tabs ${if (free == 1) "is" else "are"} free") },
                 text = {
                     Text(
-                        if (free == 0) {
-                            "$TAB_POOL tabs are open, the most a phone keeps. Close one (Tabs) to start ${if (wanted.size == 1) wanted[0].label else "another"}."
-                        } else {
-                            "Start ${fits.joinToString(", ") { it.label }}? " +
-                                "${left.joinToString(", ") { it.label }} won't start: $TAB_POOL tabs at most."
+                        when {
+                            free > 0 ->
+                                "Start ${fits.joinToString(", ") { it.label }}? " +
+                                    "${left.joinToString(", ") { it.label }} won't start: Tab Limit is ${tabs.limit}."
+                            tabs.raisable ->
+                                "${tabs.tabs.size} ${if (tabs.tabs.size == 1) "tab is" else "tabs are"} open, as many as your Tab Limit allows. " +
+                                    "Raise it, or close a tab (Tabs) to start ${if (wanted.size == 1) wanted[0].label else "another"}."
+                            else ->
+                                "${tabs.tabs.size} tabs are open, the most Turu runs at once. Close one (Tabs) to start ${if (wanted.size == 1) wanted[0].label else "another"}."
                         },
                         color = Turu.Muted,
                     )
                 },
                 confirmButton = {
-                    if (free > 0) TextButton(onClick = { go(fits) }) { Text("Start $free") }
+                    if (free > 0) {
+                        TextButton(onClick = { go(fits) }) { Text("Start $free") }
+                    } else if (tabs.raisable) {
+                        TextButton(onClick = {
+                            startingMany = null
+                            state.raiseTabLimit()
+                        }) { Text("Raise Tab Limit") }
+                    }
                 },
-                dismissButton = { TextButton(onClick = { startingMany = null }) { Text(if (free == 0) "OK" else "Cancel") } },
+                dismissButton = {
+                    TextButton(onClick = { startingMany = null }) {
+                        Text(if (free > 0) "Cancel" else if (tabs.raisable) "Not now" else "OK")
+                    }
+                },
                 containerColor = Turu.Card,
             )
         }
@@ -666,6 +680,7 @@ private fun ListHeader(
     shown: List<Account>,
     selected: Set<String>,
     tabs: Int,
+    limit: Int,
     group: String?,
     onAll: (Boolean) -> Unit,
     onStartGroup: () -> Unit,
@@ -685,7 +700,7 @@ private fun ListHeader(
         Text(
             buildString {
                 append(if (checked > 0) "$checked of ${shown.size} selected" else if (shown.size == 1) "1 account" else "${shown.size} accounts")
-                append(" · $tabs of $TAB_POOL tabs open")
+                append(" · $tabs of $limit tabs open")
             },
             style = MaterialTheme.typography.labelLarge,
             color = if (checked > 0) Turu.Text else Turu.Muted,

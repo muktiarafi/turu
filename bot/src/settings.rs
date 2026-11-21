@@ -81,7 +81,8 @@ pub struct AppSettings {
     // Army Queue
     /// Its "How to Use" guide was dismissed (VibeSkua `ArmyQueueHelpDismissed`).
     pub army_queue_help_dismissed: bool,
-    /// Turu (Android): how many tabs (game clients) may be open at once, 1 to 4 (4 by default).
+    /// Turu (Android): how many tabs (game clients) may be open at once, 1 to 9 (Turu Mas: 4), 4
+    /// by default.
     /// Each one takes 200-400 MB, so a phone with less memory may want fewer
     /// (`docs/ANDROID_PROPOSAL.md`, phase 5).
     pub tab_limit: i32,

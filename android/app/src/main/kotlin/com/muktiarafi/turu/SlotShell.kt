@@ -607,7 +607,8 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     private fun intent(slot: Int) = Intent(context, CLASSES[slot - 1])
 
     companion object {
-        const val SLOTS = 4
+        /** The slots in the manifest (`slots::POOL`). */
+        const val SLOTS = 9
 
         /** The text fields above the keyboard, as the messages name them. */
         const val GAME = "game"
@@ -617,6 +618,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
             Slot2Service::class.java,
             Slot3Service::class.java,
             Slot4Service::class.java,
+            Slot5Service::class.java,
+            Slot6Service::class.java,
+            Slot7Service::class.java,
+            Slot8Service::class.java,
+            Slot9Service::class.java,
         )
 
         init {

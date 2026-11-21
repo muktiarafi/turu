@@ -48,6 +48,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -452,7 +453,7 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
     Column(Modifier.fillMaxSize()) {
         PageBar("Tabs", onBack = null) {
             Text(
-                "${tabs.tabs.size} of 4",
+                "${tabs.tabs.size} of ${tabs.limit}",
                 style = MaterialTheme.typography.labelMedium,
                 color = Turu.Muted,
                 modifier = Modifier.padding(end = 16.dp),
@@ -527,11 +528,25 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
             }
         }
         HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+        if (tabs.full && tabs.raisable) {
+            Text(
+                "${tabs.tabs.size} ${if (tabs.tabs.size == 1) "tab is" else "tabs are"} open, as many as your Tab Limit allows. Close one, or raise the limit.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Turu.Muted,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            )
+        }
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (tabs.full) {
+            if (tabs.full && tabs.raisable) {
+                // Tab Limit's tabs: raising it is the way on (Options asks first above 4).
+                OutlinedButton(
+                    onClick = { state.raiseTabLimit() },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                ) { Text("Raise Tab Limit", maxLines = 1) }
+            } else if (tabs.full) {
                 Text(
                     "Close a tab to open another",
                     style = MaterialTheme.typography.bodyMedium,

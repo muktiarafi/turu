@@ -227,12 +227,19 @@ pub fn entries() -> Vec<Entry> {
         entries.push(entry!(
             General,
             "Tab Limit",
-            "How many tabs (game clients) can be open at once. Each one takes 200-400 MB of memory: on a phone with less of it, Android may stop Turu with more open",
-            Field::Int(|s| &mut s.tab_limit, "tabs", 1, 4)
+            TAB_LIMIT_ABOUT,
+            Field::Int(|s| &mut s.tab_limit, "tabs", 1, crate::models::prompts::tab_max())
         ));
     }
     entries
 }
+
+/// Tab Limit's description, and what it says instead while above [`TAB_LIMIT_SAFE`].
+const TAB_LIMIT_ABOUT: &str = "How many tabs (game clients) can be open at once. Each one takes 200-400 MB of memory: on a phone with less of it, Android may stop Turu with more open";
+const TAB_LIMIT_ABOVE_SAFE: &str = "More than 4 tabs: when the phone runs short of memory, Android closes some, and each comes back to log in and start its script again. Each one takes 200-400 MB. Lower it if tabs keep restarting";
+/// The Tab Limit most phones hold (its default): above it, the description warns, and Android's
+/// Options asks first (`AppOptionsPage.kt`).
+pub const TAB_LIMIT_SAFE: i32 = 4;
 
 fn vibeskua_entries() -> Vec<Entry> {
     vec![
@@ -619,6 +626,9 @@ pub fn view(bot: &Arc<Bot>) -> AppOptionsView {
     let note = NOTE.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let description = |e: &Entry| match &e.field {
         Field::Test if settings.discord_webhook_url.trim().is_empty() => "Set the Discord Webhook URL first",
+        Field::Int(..) if e.description == TAB_LIMIT_ABOUT && settings.tab_limit > TAB_LIMIT_SAFE => {
+            TAB_LIMIT_ABOVE_SAFE
+        }
         _ => e.description,
     };
     AppOptionsView {

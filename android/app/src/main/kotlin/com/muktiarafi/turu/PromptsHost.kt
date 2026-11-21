@@ -107,7 +107,12 @@ fun PromptsHost(state: ShellState, panel: PromptsPanel, window: (String) -> Unit
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { panel.follow(state.tabs.active) }
     val p = panel.prompt ?: return
     val script = p.id.startsWith("box:")
-    val answer = { button: Int -> panel.answer(p, button, window, open, report) }
+    // Raise Tab Limit opens Application Options at the setting.
+    val opens = { screen: String ->
+        if (p.id == "tab-limit" && screen == "app_options") state.optionsFind = "Tab Limit"
+        open(screen)
+    }
+    val answer = { button: Int -> panel.answer(p, button, window, opens, report) }
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = { answer(-1) },

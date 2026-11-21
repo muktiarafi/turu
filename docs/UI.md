@@ -981,7 +981,9 @@ Back or a tap on the scrim closes it):
   covers the hand-over as now.
 * ✕ on each row closes it, asking first only while its script runs ("Hero's script is running.
   Close the tab?").
-* At the foot, **New tab**; with every slot taken, "4 tabs at most" instead.
+* At the foot, **New tab**; with Tab Limit's tabs open, why ("4 tabs are open, as many as your Tab
+  Limit allows. Close one, or raise the limit.") over **Raise Tab Limit**, and at the most (9)
+  "Close a tab to open another".
 
 **New tab** (a page pushed in the same panel, with a back arrow): the accounts list, a tap starting
 that account in a new tab, and under it "Blank tab (log in by hand)". With no tab open, the
@@ -1061,7 +1063,8 @@ above, and why:
   idle tab's grey one. The Tabs item's count stays when another tab needs you: amber while one
   waits, red while one dropped (the "!" took the count's place).
 * **✕ asks first whenever the tab is logged in** (or its script runs), since closing it logs the
-  character out; a tab out of the game closes at once. Full: "Close a tab to open another".
+  character out; a tab out of the game closes at once. Full: "Close a tab to open another", or
+  with Tab Limit under 9, the reason over Raise Tab Limit (Application Options) in New tab's place.
 * **New tab lists the accounts to start first** and those already in a tab last, with "On
   screen" or **Switch to** (not "In tab 3": a slot's number, which the list doesn't show), and
   Blank tab kept at the foot. Its top bar's link says Accounts, as the Tabs page's does.
@@ -1075,7 +1078,8 @@ above, and why:
   selected"), ✕, Start, and a ⋮ with Add to group…, Select all shown and, under a group's chip,
   Remove from the group: the 320-dp panel had no room for "3 selected" and Add to group beside
   Start. Start asks first when the free tabs are fewer than the accounts ("Only 2 of 4 tabs are
-  free": who starts, who won't), rather than starting some and saying so after, since the
+  free": who starts, who won't; free counts against Tab Limit, and with none free it offers Raise
+  Tab Limit), rather than starting some and saying so after, since the
   panel closes once tabs start. Add to group lists the groups (a tap adds) and takes a new name.
   Group editing: Remove from the group (the egui window has none: it only adds) and, from the
   page's ⋮ under a group's chip, Remove the group (asked first; its accounts stay). Army
@@ -1171,6 +1175,10 @@ above, and why:
 * **Application Options and CoreBots** (L5b, 2026-11-20), pages of the panel from More > Options.
   Application Options: search and section chips, each setting with its control and saved as it
   changes ("Restart required" under those that need it), Test, Clear Flash Cache (asks first),
+  Tab Limit (asks first when raised above 4, the default: "Allow up to 6 tabs?", what that many
+  tabs take beside the phone's memory, Allow 6 or Keep 4; a dialog only there, not on each tab
+  past 4, which would interrupt a repeated action; while above 4 its description says what
+  Android does when memory runs short),
   Check Now, Free and Open as buttons; the Web Monitor's links, QR code and keys say "In the full
   window" with Open. CoreBots: the character and whether its file is saved, Loadout, Options and
   Other as segments, a card per role (class, mode, Use equipment, the gear folded under "Gear · N
@@ -1415,7 +1423,7 @@ above, and why:
   the buttons as text buttons left to right, the last (the main one) in the accent and semibold.
   The words are egui's. A script's box isn't closed by a tap beside it; Back closes any of them.
   Show report opens that report's page in Logs > Crashes; Raise Tab Limit opens Application
-  options.
+  options searched to Tab Limit, as the Tabs footer's and Accounts' Raise Tab Limit do.
 * **Logs > Crashes** (L5b, 2026-11-21; `models::crashes`): a third segment, "Crashes (n)", once
   there is a report (most never crash) and while it's chosen; Clear leaves the bar. The reports
   newest first, each a row with what happened (two lines at most) and when, a chevron; none left

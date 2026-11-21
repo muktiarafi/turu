@@ -1,5 +1,5 @@
 //! Turu: process tabs on Android (docs/TAB_PROCESSES_PROPOSAL.md, M3). Each tab is a slot: a
-//! foreground service in a process of its own (`:c1` ... `:c4`), running one account's engine.
+//! foreground service in a process of its own (`:c1` ... `:c9`), running one account's engine.
 //! The activity is the shell: it hands its surface to the slot on screen and keeps the tab list.
 //!
 //! Slots outlive the shell: Android restarts a killed slot on its own, with or without the
@@ -18,8 +18,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The slots the manifest declares (`Slot1Service` ... `Slot4Service`).
-pub const POOL: u32 = 4;
+/// The slots the manifest declares (`Slot1Service` ... `Slot9Service`): the most tabs, where
+/// Options > Application > Tab Limit allows as many ([`SlotShell::set_limit`]).
+pub const POOL: u32 = 9;
 
 /// Where a slot's rail starts, in points, below the shell's native Tabs item (docs/UI.md, "Native
 /// shells"): the item's 8-point top padding and its 52-point height. `TabsItem.kt` draws it so.
@@ -274,8 +275,12 @@ pub struct NativeTabs {
     pub shown: u32,
     /// Whether the tab on screen hid its rail: the Tabs item hides with it.
     pub rail_hidden: bool,
-    /// Every slot is taken: no New tab.
+    /// Tab Limit's tabs are open (or every slot is taken): no New tab.
     pub full: bool,
+    /// Tab Limit: how many tabs may be open.
+    pub limit: u32,
+    /// The most Tab Limit allows ([`POOL`]).
+    pub most: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -324,6 +329,8 @@ pub struct SlotShell {
     shown: u32,
     /// Headless Mode as a slot last turned it on or off (`None`: none has yet): every slot's.
     headless_mode: Option<bool>,
+    /// Options > Application > Tab Limit, as the shell last read it (`None`: [`POOL`]).
+    limit: Option<u32>,
 }
 
 impl SlotShell {
@@ -492,8 +499,25 @@ impl SlotShell {
         }
     }
 
-    /// Opens a tab in a free slot and shows it; nothing when every slot is taken.
+    /// How many tabs may be open: Tab Limit, within the slots.
+    pub fn limit(&self) -> u32 {
+        self.limit.unwrap_or(POOL).clamp(1, POOL)
+    }
+
+    /// Tab Limit as read from the settings; whether it changed (the tab list then goes again,
+    /// with [`Self::native_tabs`]). Tabs open past a lowered limit stay open.
+    pub fn set_limit(&mut self, limit: u32) -> bool {
+        let before = self.limit();
+        self.limit = Some(limit);
+        before != self.limit()
+    }
+
+    /// Opens a tab in a free slot and shows it; nothing when Tab Limit's tabs are open (or
+    /// every slot is taken).
     pub fn open(&mut self, args: Vec<String>, password: Option<String>) -> Vec<Action> {
+        if self.records.len() >= self.limit() as usize {
+            return Vec::new();
+        }
         let Some(slot) = (1..=POOL).find(|slot| !self.records.contains_key(slot)) else {
             return Vec::new();
         };
@@ -612,7 +636,9 @@ impl SlotShell {
             tabs,
             shown: self.shown,
             rail_hidden: self.live.get(&self.shown).is_some_and(|l| l.rail_hidden),
-            full: self.records.len() >= POOL as usize,
+            full: self.records.len() >= self.limit() as usize,
+            limit: self.limit(),
+            most: POOL,
         }
     }
 
@@ -857,28 +883,25 @@ mod tests {
     /// back in the next slots, as many as there are slots.
     #[test]
     fn the_first_shell_opens_the_app_s_other_tabs_too() {
-        let more = (1..=4)
+        let more = (1..=POOL)
             .map(|n| vec!["--user".to_owned(), format!("Alt{n}")])
             .collect();
         let (shell, actions) = SlotShell::new(BTreeMap::new(), Vec::new(), more);
-        assert_eq!(shell.slots(), [1, 2, 3, 4]);
+        assert_eq!(shell.slots(), (1..=POOL).collect::<Vec<_>>());
         assert_eq!(shell.shown(), 1);
         let records: Vec<_> = actions
             .iter()
             .filter_map(|a| match a {
-                Action::Record(slot, Some(record)) => Some((*slot, record.username())),
+                Action::Record(slot, Some(record)) => {
+                    Some((*slot, record.username().map(str::to_owned)))
+                }
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            records,
-            [
-                (1, None),
-                (2, Some("Alt1")),
-                (3, Some("Alt2")),
-                (4, Some("Alt3"))
-            ]
-        );
+        let expected: Vec<_> = std::iter::once((1, None))
+            .chain((2..=POOL).map(|slot| (slot, Some(format!("Alt{}", slot - 1)))))
+            .collect();
+        assert_eq!(records, expected);
         // With records already (not the first start), `more` isn't read again.
         let mut open = BTreeMap::new();
         open.insert(2, SlotRecord::default());
@@ -1082,6 +1105,31 @@ mod tests {
         }
         assert!(shell.open(Vec::new(), None).is_empty());
         assert_eq!(shell.slots().len(), POOL as usize);
+    }
+
+    #[test]
+    fn tab_limit_keeps_the_tabs_to_fewer_slots() {
+        let (mut shell, _) = SlotShell::new(BTreeMap::new(), Vec::new(), Vec::new());
+        assert!(shell.set_limit(4));
+        assert!(!shell.set_limit(4));
+        for _ in 1..4 {
+            assert!(!shell.open(Vec::new(), None).is_empty());
+        }
+        let tabs = shell.native_tabs();
+        assert!(tabs.full);
+        assert_eq!((tabs.limit, tabs.most), (4, POOL));
+        assert!(shell.open(Vec::new(), None).is_empty());
+        // Raised, a fifth opens; lowered, the open tabs stay.
+        assert!(shell.set_limit(6));
+        assert!(!shell.open(Vec::new(), None).is_empty());
+        assert!(shell.set_limit(2));
+        assert_eq!(shell.slots().len(), 5);
+        assert!(shell.native_tabs().full);
+        // Out of range: within the slots.
+        shell.set_limit(0);
+        assert_eq!(shell.limit(), 1);
+        shell.set_limit(99);
+        assert_eq!(shell.limit(), POOL);
     }
 
     #[test]

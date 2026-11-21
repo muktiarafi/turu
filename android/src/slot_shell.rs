@@ -102,8 +102,33 @@ fn with_shell(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> String {
     let Some((shell, root)) = shell.as_mut() else {
         return "[]".into();
     };
-    let actions = work(shell);
+    let limit_changed = read_tab_limit(shell, root);
+    let mut actions = work(shell);
+    if limit_changed {
+        actions.push(Action::Tabs(shell.native_tabs()));
+    }
     activity_actions(root, actions)
+}
+
+/// When `settings.json` last changed, as [`read_tab_limit`] read it (`None`: not read yet).
+static TAB_LIMIT_SEEN: Mutex<Option<Option<std::time::SystemTime>>> = Mutex::new(None);
+
+/// Gives the shell Options > Application > Tab Limit, read again when `settings.json` changed (a
+/// slot saves it); whether the limit changed.
+fn read_tab_limit(shell: &mut SlotShell, root: &std::path::Path) -> bool {
+    let paths = turu_bot::paths::Paths {
+        root: root.to_owned(),
+    };
+    let modified = std::fs::metadata(paths.settings_file())
+        .and_then(|m| m.modified())
+        .ok();
+    let mut seen = TAB_LIMIT_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if *seen == Some(modified) {
+        return false;
+    }
+    *seen = Some(modified);
+    let limit = paths.load_settings().unwrap_or_default().tab_limit;
+    shell.set_limit(u32::try_from(limit).unwrap_or(1))
 }
 
 /// Sends the slot on screen `messages` (keys the activity got): `TuruActivity.shellActions` posts
@@ -158,7 +183,10 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeShellStart<'local>(
                 Vec::new()
             };
             let (args, password) = first.unwrap_or_default();
-            let (shell, mut actions) = SlotShell::new(records, args, more);
+            let (mut shell, mut actions) = SlotShell::new(records, args, more);
+            // A new shell: read the limit again.
+            *TAB_LIMIT_SEEN.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            read_tab_limit(&mut shell, &root);
             if password.is_some() {
                 actions.insert(0, Action::Password(1, password));
             }
