@@ -1121,6 +1121,14 @@ marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known ga
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
+- **Streamer Mode hides names in Turu's own screens too** (2026-11-21, `turu::tab_label`,
+  `slots::SlotShell::label`, `shell_accounts::accounts_view`, the Loadouts and Cosmetics models):
+  VibeSkua's tabs and Manager keep the account names, but in Turu the tab list, Android's Accounts
+  and New tab, Loadouts' heading and Cosmetics' room players are part of the screen being streamed
+  ("Tab 2", "Account 3", "Your loadouts", "Player 1"; docs/UI.md, Game Options), and so are
+  Butler (`models::butler::Masks`), CoreBots' character, the account forms and the desktop
+  Accounts window. VibeSkua's works only in game; Turu's also masks the login screen's username
+  field (`api::options::apply_out_of_game`, `Streamer.as`'s `loginFrame`).
 - **Army Queue runs squads in tabs and follows the tabs** (2026-11-21, `army::queue::TabLauncher`,
   the window's `ShellTabs`): with Army > Accounts' "In a tab" (the default), each account opens in
   a tab of the window that runs the queue, as VibeSkua's clients join its tabbed host. VibeSkua then

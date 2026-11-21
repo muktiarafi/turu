@@ -311,7 +311,24 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   guild back from `objData` (VibeSkua's `world.setUserData` alone leaves the name tag as it is). Beyond VibeSkua, whose tabs keep the character's name, it hides the
   name from Turu's own UI too: the tab is "Tab 2" in the tab strip, Grid View and Army
   Control, the window title drops the name, and an Army client with it on is "Client 3" in
-  Army Control (its `GET /snapshot` says so), with its map shown without the room number.
+  Army Control (its `GET /snapshot` says so), with its map shown without the room number. A
+  client of the shell numbers itself by its place in the shell's tabs (it runs one tab), and
+  tells the shell it is on (`ToShell::Status`'s `streamer`), which keeps it in the tab's record
+  (`slots::SlotRecord`): Android's shell names a tab "Tab n" while it starts again too, and while
+  any open tab has it on, a tab yet to report, and every account in Accounts and New tab
+  ("Account 3", no username; the edit form keeps the real ones, so saving keeps them). Loadouts
+  says "Your loadouts" and "What you wear now", and Cosmetics lists the room's players as
+  "Player 1", "Player 2"... (Copy still goes by the name behind each) and names nobody in its
+  outcome. Butler names this account by its tab's label and the others as Accounts does
+  ("Account 2"; "Alt 1" for one not in the list) in its header, rows, reasons, outcomes and log,
+  shows the room without its number and offers no recent Send to player names
+  (`models::butler::Masks`, worked out with the roster, once a second). CoreBots names the
+  character by its tab. The account edit form (both shells) and the desktop's Accounts window
+  draw the username and display name as a password field is, with Show; the desktop's rows say
+  "Account 3". At the login screen, where nothing is in game yet, the engine switches the module
+  alone (`api::options::apply_out_of_game`), and it draws the login screen's typing fields, the
+  remembered username's, as passwords (`displayAsPassword`; the text stays, so logging in works),
+  giving them back when it goes off.
 * **Application Options** (`application_options.rs`, 580x650, VibeSkua `ApplicationOptionsView`):
   search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title
