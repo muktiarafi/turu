@@ -525,6 +525,12 @@ pub enum NativeScreen {
     JunkItems,
     /// Diagnostics > Console.
     Console,
+    /// Diagnostics > Packet Logger.
+    PacketLogger,
+    /// Diagnostics > Spammer.
+    Spammer,
+    /// Diagnostics > Interceptor.
+    Interceptor,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
 }

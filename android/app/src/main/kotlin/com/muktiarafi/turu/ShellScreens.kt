@@ -64,6 +64,9 @@ class ShellScreens(private val activity: TuruActivity) {
         scriptOptions = ScriptOptionsPanel(),
         armyTravel = ArmyTravelPanel(),
         armyClient = ArmyClientPanel(),
+        packetLogger = packetLoggerPanel(),
+        spammer = spammerPanel(),
+        interceptor = interceptorPanel(),
     )
 
     private val railActions = RailActions(
@@ -158,6 +161,9 @@ class ShellScreens(private val activity: TuruActivity) {
             "grabber" -> open(Page.Grabber)
             "junk_items" -> open(Page.JunkItems)
             "console" -> open(Page.Console)
+            "packet_logger" -> open(Page.PacketLogger)
+            "spammer" -> open(Page.Spammer)
+            "interceptor" -> open(Page.Interceptor)
             "script_options" -> open(Page.ScriptOptions)
         }
     }

@@ -135,6 +135,15 @@ sealed interface Page {
     /** Diagnostics > Console. */
     data object Console : Page
 
+    /** Diagnostics > Packet Logger. */
+    data object PacketLogger : Page
+
+    /** Diagnostics > Spammer. */
+    data object Spammer : Page
+
+    /** Diagnostics > Interceptor. */
+    data object Interceptor : Page
+
     /** Army Control > Travel > Map Travel. */
     data object ArmyTravel : Page
 

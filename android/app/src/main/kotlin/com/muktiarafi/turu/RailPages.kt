@@ -299,6 +299,9 @@ private fun nativePage(window: String): Page? = when (window) {
     "grabber" -> Page.Grabber
     "junk_items" -> Page.JunkItems
     "console" -> Page.Console
+    "packet_logger" -> Page.PacketLogger
+    "spammer" -> Page.Spammer
+    "interceptor" -> Page.Interceptor
     "script_options" -> Page.ScriptOptions
     "logs" -> Page.Logs
     else -> null

@@ -391,6 +391,9 @@ impl TuruUi {
             ("grabber", w.grabber),
             ("junk_items", w.junk_items),
             ("console", w.console),
+            ("packet_logger", w.packet_logger),
+            ("spammer", w.spammer),
+            ("interceptor", w.interceptor),
             ("script_options", w.script_options),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
@@ -469,6 +472,15 @@ impl TuruUi {
         }
         if w.console && !kept(w, "console") && crate::turu::open_shell_screen(NativeScreen::Console) {
             w.console = false;
+        }
+        if w.packet_logger && !kept(w, "packet_logger") && crate::turu::open_shell_screen(NativeScreen::PacketLogger) {
+            w.packet_logger = false;
+        }
+        if w.spammer && !kept(w, "spammer") && crate::turu::open_shell_screen(NativeScreen::Spammer) {
+            w.spammer = false;
+        }
+        if w.interceptor && !kept(w, "interceptor") && crate::turu::open_shell_screen(NativeScreen::Interceptor) {
+            w.interceptor = false;
         }
         // Only from the tab on screen: the native page shows that tab's, and a script waiting in
         // another tab waits in that tab's picture until it's shown.

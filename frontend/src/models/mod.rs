@@ -625,28 +625,6 @@ fn to_json(view: &impl Serialize) -> serde_json::Value {
     serde_json::to_value(view).unwrap_or(serde_json::Value::Null)
 }
 
-#[cfg(test)]
-mod tests {
-    /// The models stay free of any UI toolkit, so L1's split can move them as they are.
-    #[test]
-    fn models_import_no_ui() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/models");
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            let text = std::fs::read_to_string(&path).unwrap();
-            for line in text.lines().filter(|l| !l.trim_start().starts_with("//")) {
-                for ui in ["egui", "crate::gui", "winit", "rfd"] {
-                    assert!(
-                        !line.contains(&format!("{ui}::")) && !line.contains(&format!("use {ui}")),
-                        "{} uses {ui}: {line}",
-                        path.display()
-                    );
-                }
-            }
-        }
-    }
-}
-
 /// VibeSkua's fallback server list for the server boxes (when neither the server list API
 /// nor the game's login screen gave one).
 const SERVERS: [&str; 12] = [
@@ -684,4 +662,26 @@ pub fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
     list.sort_by_key(|n| n.to_lowercase());
     list.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     list
+}
+
+#[cfg(test)]
+mod tests {
+    /// The models stay free of any UI toolkit, so L1's split can move them as they are.
+    #[test]
+    fn models_import_no_ui() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/models");
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let text = std::fs::read_to_string(&path).unwrap();
+            for line in text.lines().filter(|l| !l.trim_start().starts_with("//")) {
+                for ui in ["egui", "crate::gui", "winit", "rfd"] {
+                    assert!(
+                        !line.contains(&format!("{ui}::")) && !line.contains(&format!("use {ui}")),
+                        "{} uses {ui}: {line}",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
 }
