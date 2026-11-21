@@ -37,6 +37,7 @@ pub mod loadouts;
 pub mod logs;
 pub mod notifications;
 pub mod notify_drop;
+pub mod packets;
 pub mod prompts;
 pub mod rail;
 pub mod repo;
@@ -517,6 +518,25 @@ pub fn register() {
         Box::new(|bot, body| console::act(bot, &text(body, "action")?, body).and_then(|()| done())),
     );
 
+    add_model("packet-logger", Box::new(|bot| to_json(&packets::logger_view(bot))));
+    add_model_action(
+        "packet-logger",
+        "do",
+        Box::new(|bot, body| packets::logger_act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+    add_model("spammer", Box::new(|bot| to_json(&packets::spammer_view(bot))));
+    add_model_action(
+        "spammer",
+        "do",
+        Box::new(|bot, body| packets::spammer_act(bot, &text(body, "action")?, body).and_then(|()| done())),
+    );
+    add_model("interceptor", Box::new(|bot| to_json(&packets::interceptor_view(bot))));
+    add_model_action(
+        "interceptor",
+        "do",
+        Box::new(|bot, body| packets::interceptor_act(bot, &text(body, "action")?, body)),
+    );
+
     add_model("prompts", Box::new(|bot| to_json(&prompts::view(bot))));
     add_model_action("prompts", "answer", Box::new(prompts::answer));
 
@@ -625,4 +645,43 @@ mod tests {
             }
         }
     }
+}
+
+/// VibeSkua's fallback server list for the server boxes (when neither the server list API
+/// nor the game's login screen gave one).
+const SERVERS: [&str; 12] = [
+    "Artix",
+    "Twilly",
+    "Galanoth",
+    "Gravelyn",
+    "Safiria",
+    "Sir Ver",
+    "Sepulchure",
+    "Yorumi",
+    "Alteon",
+    "Espada",
+    "Yokai",
+    "Zorbot",
+];
+
+/// VibeSkua `ServersList`: the names from the server list API, else from the game's login
+/// screen, else [`SERVERS`]; without duplicates (ignoring case), sorted.
+pub fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
+    let names = |servers: Vec<turu_bot::models::Server>| -> Vec<String> {
+        servers
+            .into_iter()
+            .map(|s| s.name.trim().to_owned())
+            .filter(|n| !n.is_empty())
+            .collect()
+    };
+    let mut list = names(bot.servers.cached());
+    if list.is_empty() {
+        list = names(bot.servers.listed());
+    }
+    if list.is_empty() {
+        list = SERVERS.iter().map(|&n| n.to_owned()).collect();
+    }
+    list.sort_by_key(|n| n.to_lowercase());
+    list.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    list
 }

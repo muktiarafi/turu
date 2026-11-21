@@ -832,44 +832,7 @@ pub fn status_color(status: turu_bot::script::ScriptStatus) -> Color32 {
     }
 }
 
-/// VibeSkua's fallback server list for the server boxes (when neither the server list API
-/// nor the game's login screen gave one).
-const SERVERS: [&str; 12] = [
-    "Artix",
-    "Twilly",
-    "Galanoth",
-    "Gravelyn",
-    "Safiria",
-    "Sir Ver",
-    "Sepulchure",
-    "Yorumi",
-    "Alteon",
-    "Espada",
-    "Yokai",
-    "Zorbot",
-];
-
-/// VibeSkua `ServersList`: the names from the server list API, else from the game's login
-/// screen, else [`SERVERS`]; without duplicates (ignoring case), sorted.
-pub fn server_names(bot: &turu_bot::Bot) -> Vec<String> {
-    let names = |servers: Vec<turu_bot::models::Server>| -> Vec<String> {
-        servers
-            .into_iter()
-            .map(|s| s.name.trim().to_owned())
-            .filter(|n| !n.is_empty())
-            .collect()
-    };
-    let mut list = names(bot.servers.cached());
-    if list.is_empty() {
-        list = names(bot.servers.listed());
-    }
-    if list.is_empty() {
-        list = SERVERS.iter().map(|&n| n.to_owned()).collect();
-    }
-    list.sort_by_key(|n| n.to_lowercase());
-    list.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
-    list
-}
+pub use crate::models::server_names;
 
 /// A server drop-down (Options > Game's Relogin Server, Accounts' launch server): VibeSkua's
 /// server list ([`server_names`], refreshed in the background while it is open), plus

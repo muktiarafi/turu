@@ -8,7 +8,7 @@ use turu_bot::Bot;
 use turu_bot::log::LogKind;
 
 /// The logs a user reads, in the Logs window's order: the script's and the client's (debug).
-/// Packets are the Packet Logger's, which stays egui.
+/// Packets are the Packet Logger's (`models::packets`).
 pub const KINDS: [(LogKind, &str, &str); 2] = [
     (LogKind::Script, "script", "Script"),
     (LogKind::Debug, "debug", "Client"),
