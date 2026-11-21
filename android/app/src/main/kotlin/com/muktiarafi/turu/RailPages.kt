@@ -69,7 +69,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -369,27 +368,37 @@ fun JumpPage(state: ShellState, models: TabModels) {
 }
 
 /**
- * Logs: the script's and the client's, line-fed (`models::logs`); Find and Copy in the full
- * window.
+ * Logs: the script's and the client's, line-fed (`models::logs`), and the crash reports earlier
+ * runs left (`models::crashes`), offered once there is one; Find and Copy in the full window.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogsPage(state: ShellState, models: TabModels, full: () -> Unit) {
-    var kind by rememberSaveable { mutableStateOf("script") }
+fun LogsPage(state: ShellState, models: TabModels, crashes: CrashesPanel, full: () -> Unit) {
+    val kind = state.logsKind
+    val reports = crashCount(state, crashes)
+    // Most never crash: the segment shows once there is a report, and stays while it's chosen.
+    val segments = buildList {
+        add("script" to "Script")
+        add("debug" to "Client")
+        // The count is the list's first line: "Crashes (30)" doesn't fit a third of the panel.
+        if (reports > 0 || kind == "crashes") add("crashes" to "Crashes")
+    }
     val lines = if (kind == "script") models.scriptLog else models.clientLog
     val list = rememberLazyListState()
-    LaunchedEffect(kind, lines.size) { if (lines.isNotEmpty()) list.scrollToItem(lines.size - 1) }
+    LaunchedEffect(kind, lines.size) { if (kind != "crashes" && lines.isNotEmpty()) list.scrollToItem(lines.size - 1) }
     Column(Modifier.fillMaxSize()) {
         PageBar("Logs", onBack = { state.back() }) {
-            TextButton(onClick = { models.clearLog(kind) }, enabled = lines.isNotEmpty()) { Text("Clear") }
-            FullWindowMenu(adds = "Find and Copy", open = full)
+            if (kind != "crashes") {
+                TextButton(onClick = { models.clearLog(kind) }, enabled = lines.isNotEmpty()) { Text("Clear") }
+            }
+            FullWindowMenu(adds = "Find and Copy in the logs", open = full)
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            listOf("script" to "Script", "debug" to "Client").forEachIndexed { i, (key, label) ->
+            segments.forEachIndexed { i, (key, label) ->
                 SegmentedButton(
                     selected = kind == key,
-                    onClick = { kind = key },
-                    shape = SegmentedButtonDefaults.itemShape(i, 2),
+                    onClick = { state.logsKind = key },
+                    shape = SegmentedButtonDefaults.itemShape(i, segments.size),
                     colors = SegmentedButtonDefaults.colors(
                         activeContainerColor = Turu.AccentTint,
                         activeContentColor = Turu.Text,
@@ -398,9 +407,11 @@ fun LogsPage(state: ShellState, models: TabModels, full: () -> Unit) {
                         activeBorderColor = Turu.Edge,
                         inactiveBorderColor = Turu.Edge,
                     ),
-                ) { Text(label) }
+                    icon = {},
+                ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }
+        if (kind == "crashes") return@Column CrashList(state, crashes, models)
         if (lines.isEmpty()) {
             Text(
                 if (kind == "script") "The script's log shows here when it runs" else "Nothing logged yet",

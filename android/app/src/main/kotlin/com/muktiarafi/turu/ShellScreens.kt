@@ -46,6 +46,7 @@ class ShellScreens(private val activity: TuruActivity) {
         appOptions = AppOptionsPanel(),
         coreBots = CoreBotsPanel(),
         scheduler = SchedulerPanel(),
+        crashes = CrashesPanel(),
         army = ArmyPanel(),
         notifications = NotificationsPanel(),
         stats = StatsPanel(),
@@ -106,7 +107,7 @@ class ShellScreens(private val activity: TuruActivity) {
     private val promptsView = ComposeView(activity).apply {
         isFocusable = false
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-        setContent { ShellTheme { PromptsHost(state, prompts, window = ::openWindow, open = ::openScreen) } }
+        setContent { ShellTheme { PromptsHost(state, prompts, window = ::openWindow, open = ::openScreen, report = ::openCrash) } }
     }
 
     init {
@@ -165,7 +166,19 @@ class ShellScreens(private val activity: TuruActivity) {
             "spammer" -> open(Page.Spammer)
             "interceptor" -> open(Page.Interceptor)
             "script_options" -> open(Page.ScriptOptions)
+            "logs" -> open(Page.Logs)
+            "crashes" -> {
+                state.logsKind = "crashes"
+                open(Page.Logs)
+            }
         }
+    }
+
+    /** Logs > Crashes on the report `name` (the crash notice's Show report); Back goes to the list. */
+    fun openCrash(name: String) {
+        state.logsKind = "crashes"
+        open(Page.Logs)
+        state.push(Page.CrashReport(name))
     }
 
     fun open(page: Page) {

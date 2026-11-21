@@ -67,14 +67,16 @@ class PromptsPanel {
 
     /**
      * Answers the prompt with its button `button` (-1: closed without one). `window` gets an egui
-     * window to open ("logs"), `open` a native screen ("application_options").
+     * window to open, `open` a native screen ("app_options"), `report` a crash report to show (its
+     * name: the crash notice's Show report).
      */
-    fun answer(p: PromptView, button: Int, window: (String) -> Unit, open: (String) -> Unit) {
+    fun answer(p: PromptView, button: Int, window: (String) -> Unit, open: (String) -> Unit, report: (String) -> Unit) {
         answered = p.id
         prompt = null
         client?.act("prompts", "answer", JSONObject().put("id", p.id).put("button", button), { reply ->
             reply.optString("window").takeIf { it.isNotEmpty() }?.let(window)
-            reply.optString("open").takeIf { it.isNotEmpty() }?.let(open)
+            val crash = reply.optString("report")
+            if (crash.isNotEmpty()) report(crash) else reply.optString("open").takeIf { it.isNotEmpty() }?.let(open)
         }) { e -> if (e != null) Log.w(ModelClient.TAG, "prompt answer: $e") }
     }
 }
@@ -86,11 +88,11 @@ class PromptsPanel {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PromptsHost(state: ShellState, panel: PromptsPanel, window: (String) -> Unit, open: (String) -> Unit) {
+fun PromptsHost(state: ShellState, panel: PromptsPanel, window: (String) -> Unit, open: (String) -> Unit, report: (String) -> Unit) {
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { panel.follow(state.tabs.active) }
     val p = panel.prompt ?: return
     val script = p.id.startsWith("box:")
-    val answer = { button: Int -> panel.answer(p, button, window, open) }
+    val answer = { button: Int -> panel.answer(p, button, window, open, report) }
     AlertDialog(
         onDismissRequest = { answer(-1) },
         properties = DialogProperties(dismissOnClickOutside = !script),

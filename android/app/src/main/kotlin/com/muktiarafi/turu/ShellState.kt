@@ -90,6 +90,9 @@ sealed interface Page {
     data object Jump : Page
     data object Logs : Page
 
+    /** Logs > Crashes > a report, by its file name. */
+    data class CrashReport(val name: String) : Page
+
     /** Every menu's windows, Hide Side Bar. */
     data object More : Page
 
@@ -214,6 +217,9 @@ class ShellState {
     var tabs by mutableStateOf(ShellTabs())
     var open by mutableStateOf(false)
     var page by mutableStateOf<Page>(Page.Tabs)
+
+    /** Logs' segment: "script", "debug" or "crashes" (the crash notice's Show report sets it). */
+    var logsKind by mutableStateOf("script")
 
     /** Search Scripts picks a script for another page while this is set ([ScriptPick]). */
     var scriptPick by mutableStateOf<ScriptPick?>(null)

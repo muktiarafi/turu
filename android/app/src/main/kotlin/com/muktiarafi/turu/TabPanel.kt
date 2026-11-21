@@ -89,6 +89,7 @@ class TabActions(
     val appOptions: AppOptionsPanel,
     val coreBots: CoreBotsPanel,
     val scheduler: SchedulerPanel,
+    val crashes: CrashesPanel,
     val army: ArmyPanel,
     val notifications: NotificationsPanel,
     val stats: StatsPanel,
@@ -243,7 +244,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
             color = Turu.Panel,
             modifier = Modifier
                 .padding(start = 64.dp + state.cutoutLeftDp.dp)
-                .width(if (state.page in widePages || state.page is Page.ArmyPreset || state.page is Page.ArmyGear || state.page is Page.ArmyLogs) 440.dp else PanelWidth)
+                .width(if (state.page in widePages || state.page is Page.ArmyPreset || state.page is Page.ArmyGear || state.page is Page.ArmyLogs || state.page is Page.CrashReport) 440.dp else PanelWidth)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
                 // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
@@ -268,7 +269,8 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                         Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
                         Page.Auto -> AutoPage(state, actions.scripts.models)
                         Page.Jump -> JumpPage(state, actions.scripts.models)
-                        Page.Logs -> LogsPage(state, actions.scripts.models) { actions.window("logs") }
+                        Page.Logs -> LogsPage(state, actions.scripts.models, actions.crashes) { actions.window("logs") }
+                        is Page.CrashReport -> CrashReportPage(state, actions.crashes, page.name)
                         Page.More -> MorePage(state, actions.scripts.models, actions.window, actions.bank, actions.hideRail)
                         Page.Search -> SearchPage(state, actions.search) { actions.window("script_repo") }
                         Page.GameOptions -> GameOptionsPage(
