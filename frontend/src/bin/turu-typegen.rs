@@ -9,7 +9,7 @@ use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
     application_options::AppOptionsView, army::ArmyView, army_client::ArmyGearView, army_travel::ArmyTravelView, auto::AutoView, bank::BankView, butler::ButlerView,
-    core_bots::CoreBotsView, cosmetics::CosmeticsView, drops::DropsView, fast_travel::FastTravelView,
+    core_bots::CoreBotsView, cosmetics::CosmeticsView, crashes::CrashesView, drops::DropsView, fast_travel::FastTravelView,
     game_options::GameOptionsView, grabber::GrabberView, hotkeys::HotKeysView, console::ConsoleView, jump::JumpView, junk::JunkView, loader::LoaderView, loadouts::LoadoutsView,
     logs::LogsView, notifications::NotificationsView, notify_drop::NotifyDropView, packets::{InterceptorView, PacketLoggerView, SpammerView}, prompts::PromptsView, rail::RailView, repo::RepoView,
     runtime::RuntimeView, scheduler::SchedulerView, script_options::ScriptOptionsView, scripts::ScriptsView,
@@ -34,6 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<BankView>()?
         .add_type::<RailView>()?
         .add_type::<LogsView>()?
+        .add_type::<CrashesView>()?
         .add_type::<RepoView>()?
         .add_type::<GameOptionsView>()?
         .add_type::<AppOptionsView>()?

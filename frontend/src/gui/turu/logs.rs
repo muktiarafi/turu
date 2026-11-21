@@ -6,8 +6,8 @@ use super::files::SaveText;
 use super::theme::{MUTED, WARNING};
 use super::widgets::{self, Kind, LogView};
 use crate::crash_reports::{self, Report};
+use crate::models::crashes::{self, CrashRow, CrashText};
 use egui::{Align, Color32, Context, Frame, Layout, Margin, Modal, RichText, ScrollArea, TextStyle, Ui, vec2};
-use std::path::PathBuf;
 use std::sync::Arc;
 use turu_bot::log::{LogBuffer, LogLine};
 
@@ -115,9 +115,9 @@ impl LogsWindow {
     }
 
     /// Opens on the Crashes tab with `report` chosen.
-    pub(super) fn show_report(&mut self, report: &Report) {
+    fn show_report(&mut self, report: &Report) {
         self.tab = Tab::Crashes;
-        self.crashes.selected = Some(report.path.clone());
+        self.crashes.selected = Some(report.name.clone());
         self.crashes.listed_at = None;
     }
 
@@ -169,15 +169,16 @@ impl LogsWindow {
     }
 }
 
-/// The Crashes tab: the reports, newest first, and the chosen one's text.
+/// The Crashes tab: the reports, newest first, and the chosen one's text (`models::crashes`).
 #[derive(Default)]
 struct Crashes {
-    reports: Vec<Report>,
+    reports: Vec<CrashRow>,
     /// `Context` time of the last listing (`None`: list again).
     listed_at: Option<f64>,
-    selected: Option<PathBuf>,
+    /// The chosen report's name.
+    selected: Option<String>,
     /// The chosen report's text, and which report it is.
-    text: Option<(PathBuf, String)>,
+    text: Option<(String, Result<CrashText, String>)>,
 }
 
 impl Crashes {
@@ -188,47 +189,41 @@ impl Crashes {
             return;
         }
         self.listed_at = Some(now);
-        self.reports = crash_reports::list();
-        if !self.reports.iter().any(|r| Some(&r.path) == self.selected.as_ref()) {
-            self.selected = self.reports.first().map(|r| r.path.clone());
+        self.reports = crashes::view().reports;
+        if !self.reports.iter().any(|r| Some(&r.name) == self.selected.as_ref()) {
+            self.selected = self.reports.first().map(|r| r.name.clone());
         }
-        if self.text.as_ref().map(|(path, _)| path) != self.selected.as_ref() {
-            self.text = self.selected.as_ref().map(|path| {
-                let text = std::fs::read_to_string(path).unwrap_or_else(|e| format!("Couldn't read it: {e}"));
-                (path.clone(), text)
-            });
+        if self.text.as_ref().map(|(name, _)| name) != self.selected.as_ref() {
+            self.text = self.selected.as_ref().map(|name| (name.clone(), crashes::text(name)));
         }
     }
 
     fn buttons(&mut self, ui: &mut Ui) {
         let size = vec2(0.0, widgets::target(22.0, 40.0));
-        let has = self.text.is_some();
-        if widgets::button(ui, "Delete", Kind::Normal, has, size, "").clicked()
-            && let Some((path, _)) = self.text.take()
+        let has = self.text.as_ref().is_some_and(|(_, read)| read.is_ok());
+        if widgets::button(ui, "Delete", Kind::Normal, self.text.is_some(), size, "").clicked()
+            && let Some((name, _)) = self.text.take()
         {
-            if let Err(e) = std::fs::remove_file(&path) {
-                tracing::warn!("Couldn't delete {}: {e}", path.display());
+            if let Err(e) = crashes::delete(&name) {
+                tracing::warn!("{e}");
             }
             self.selected = None;
             self.listed_at = None;
+            return;
         }
+        let read = self.text.as_ref().and_then(|(_, read)| read.as_ref().ok());
         ui.add_space(10.0);
         let platform = crate::platform::platform();
         if platform.shares_text()
             && widgets::button(ui, "Share", Kind::Primary, has, size, "").clicked()
-            && let Some((path, text)) = &self.text
+            && let Some(read) = read
         {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("crash report");
-            platform.share_text(
-                &format!("Turu {} crash report: {name}", crate::turu::VERSION),
-                &crash_reports::shareable(text, crash_reports::SHARE_BYTES),
-            );
+            platform.share_text(&read.subject, &read.text);
         }
         if widgets::button(ui, "Copy", Kind::Normal, has, size, "").clicked()
-            && let Some((_, text)) = &self.text
+            && let Some(read) = read
         {
-            ui.ctx()
-                .copy_text(crash_reports::shareable(text, crash_reports::SHARE_BYTES));
+            ui.ctx().copy_text(read.text.clone());
         }
     }
 
@@ -245,26 +240,29 @@ impl Crashes {
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 for report in &self.reports {
-                    let chosen = self.selected.as_ref() == Some(&report.path);
-                    let when = chrono::DateTime::<chrono::Local>::from(report.modified).format("%b %-d, %H:%M");
-                    let label = format!("{when}  {}", report.summary);
+                    let chosen = self.selected.as_ref() == Some(&report.name);
+                    let label = format!("{}  {}", report.written, report.summary);
                     let response = ui.add_sized(
                         [ui.available_width(), row],
                         egui::Button::selectable(chosen, RichText::new(label).small()).truncate(),
                     );
                     if response.clicked() && !chosen {
-                        self.selected = Some(report.path.clone());
+                        self.selected = Some(report.name.clone());
                         self.listed_at = None;
                     }
                 }
             });
         ui.separator();
-        if let Some((_, text)) = &self.text {
+        if let Some((_, read)) = &self.text {
+            let text = match read {
+                Ok(read) => read.text.as_str(),
+                Err(e) => e.as_str(),
+            };
             ScrollArea::both()
                 .id_salt("turu_crash_text")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.add(egui::Label::new(RichText::new(text.as_str()).monospace().small()).extend());
+                    ui.add(egui::Label::new(RichText::new(text).monospace().small()).extend());
                 });
         }
     }
@@ -305,7 +303,7 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
         ["Close", "Show report"],
     );
     if clicked.is_some() || close {
-        crate::models::prompts::answer_crashes(false);
+        crate::models::prompts::answer_crashes();
         if clicked == Some(1) {
             *logs_open = true;
             logs.show_report(&newest);

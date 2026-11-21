@@ -25,6 +25,7 @@ pub mod butler;
 pub mod console;
 pub mod core_bots;
 pub mod cosmetics;
+pub mod crashes;
 pub mod drops;
 pub mod fast_travel;
 pub mod form;
@@ -148,6 +149,26 @@ pub fn register() {
         "logs",
         "clear",
         Box::new(|bot, body| logs::clear(bot, &text(body, "kind")?).and_then(|()| done())),
+    );
+
+    add_model("crashes", Box::new(|_| to_json(&crashes::view())));
+    add_model_action(
+        "crashes",
+        "text",
+        Box::new(|_, body| {
+            let read = crashes::text(&text(body, "name")?)?;
+            Ok(json!({ "text": read.text, "subject": read.subject, "cut": read.cut }))
+        }),
+    );
+    add_model_action(
+        "crashes",
+        "delete",
+        Box::new(|_, body| crashes::delete(&text(body, "name")?).and_then(|()| done())),
+    );
+    add_model_action(
+        "crashes",
+        "restore",
+        Box::new(|_, body| crashes::restore(&text(body, "name")?).and_then(|()| done())),
     );
 
     add_model("notifications", Box::new(|bot| to_json(&notifications::view(bot))));

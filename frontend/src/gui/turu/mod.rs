@@ -534,11 +534,6 @@ impl TuruUi {
         tab.notify_drop.show(ctx, &mut w.notify_drop);
         tab.skills.show(ctx, &mut w.skills);
         tab.notifications.show(ctx, &mut w.notifications);
-        // The native crash notice's Show report: the Logs window on that report.
-        if let Some(report) = crate::models::prompts::take_report_to_show() {
-            w.logs = true;
-            tab.logs.show_report(&report);
-        }
         tab.logs.show(ctx, &mut w.logs);
         // A modal: over the windows whatever the order.
         logs::show_crash_notice(ctx, &mut w.logs, &mut tab.logs);

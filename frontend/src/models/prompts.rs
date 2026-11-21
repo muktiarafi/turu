@@ -35,8 +35,6 @@ pub fn native_shown() -> bool {
 
 static UNSEEN: Mutex<Vec<Report>> = Mutex::new(Vec::new());
 static LOOKED: Once = Once::new();
-/// "Show report" was picked: the Logs window opens on it.
-static SHOW_REPORT: Mutex<Option<Report>> = Mutex::new(None);
 
 /// The crash reports written since the last notice, the newest first (read once a run).
 pub fn unseen_crashes() -> Vec<Report> {
@@ -44,22 +42,17 @@ pub fn unseen_crashes() -> Vec<Report> {
     LOOKED.call_once(|| {
         if !cfg!(test) {
             *lock(&UNSEEN) = crash_reports::take_unseen();
+            // What a Delete kept aside for Undo last run.
+            super::crashes::purge_in(&crash_reports::dir());
         }
     });
     lock(&UNSEEN).clone()
 }
 
-/// The notice was answered: `show` opens the newest report in the Logs window.
-pub fn answer_crashes(show: bool) {
-    let newest = std::mem::take(&mut *lock(&UNSEEN)).into_iter().next();
-    if show {
-        *lock(&SHOW_REPORT) = newest;
-    }
-}
-
-/// The report the Logs window should open on, once.
-pub fn take_report_to_show() -> Option<Report> {
-    lock(&SHOW_REPORT).take()
+/// The notice was answered: the reports are no longer unseen. Returns the newest, which Show
+/// report opens.
+pub fn answer_crashes() -> Option<Report> {
+    std::mem::take(&mut *lock(&UNSEEN)).into_iter().next()
 }
 
 /// The notice's heading, text and note.
@@ -272,9 +265,9 @@ pub fn view(bot: &Arc<Bot>) -> PromptsView {
 }
 
 /// `POST /models/prompts/answer`: `id` (the prompt's) and `button` (its index; absent or -1 when
-/// closed without one: Back, a tap outside). Answers `window` (an egui window to open: "logs" for
-/// Show report) and `open` (a native screen: "app_options" for Raise Tab Limit), each
-/// empty when nothing opens.
+/// closed without one: Back, a tap outside). Answers `window` (an egui window to open), `open` (a
+/// native screen: "app_options" for Raise Tab Limit, "crashes" for Show report) and `report` (the
+/// crash report Show report opens, by its name), each empty when nothing opens.
 pub fn answer(bot: &Arc<Bot>, body: &Json) -> Result<Json, String> {
     let id = body.get("id").and_then(Json::as_str).ok_or("id is missing")?;
     let button = body
@@ -284,12 +277,13 @@ pub fn answer(bot: &Arc<Bot>, body: &Json) -> Result<Json, String> {
         .map(|b| b as usize);
     // Only the prompt still waiting: an answer to one already gone does nothing.
     let Some(now) = current(bot) else {
-        return Ok(json!({ "window": "", "open": "" }));
+        return Ok(json!({ "window": "", "open": "", "report": "" }));
     };
     if now.id != id {
-        return Ok(json!({ "window": "", "open": "" }));
+        return Ok(json!({ "window": "", "open": "", "report": "" }));
     }
-    let (mut window, mut open) = ("", "");
+    let (window, mut open) = ("", "");
+    let mut report = String::new();
     let main = |b: Option<usize>| b.is_some_and(|b| b + 1 == now.buttons.len());
     match id.split_once(':').map_or(id, |(kind, _)| kind) {
         "box" => {
@@ -305,10 +299,12 @@ pub fn answer(bot: &Arc<Bot>, body: &Json) -> Result<Json, String> {
             }
         }
         "crash" => {
-            let show = main(button);
-            answer_crashes(show);
-            if show {
-                window = "logs";
+            let newest = answer_crashes();
+            if main(button)
+                && let Some(newest) = newest
+            {
+                open = "crashes";
+                report = newest.name;
             }
         }
         "tab-limit" => {
@@ -324,7 +320,7 @@ pub fn answer(bot: &Arc<Bot>, body: &Json) -> Result<Json, String> {
         }
         other => return Err(format!("no prompt {other}")),
     }
-    Ok(json!({ "window": window, "open": open }))
+    Ok(json!({ "window": window, "open": open, "report": report }))
 }
 
 #[cfg(test)]
@@ -337,7 +333,7 @@ mod tests {
         assert_eq!(view(&bot).prompt, None);
         assert!(native_shown());
         let reply = answer(&bot, &json!({ "id": "box:7", "button": 0 })).unwrap();
-        assert_eq!(reply, json!({ "window": "", "open": "" }));
+        assert_eq!(reply, json!({ "window": "", "open": "", "report": "" }));
         assert!(answer(&bot, &json!({})).is_err());
         let (text, at_most) = tab_limit_text(4);
         assert!(at_most && text.starts_with("4 tabs are open"));
