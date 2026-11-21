@@ -311,31 +311,24 @@ pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWin
     }
 }
 
-/// What Turu sends and where (`PRIVACY.md`).
-pub const PRIVACY_POLICY_URL: &str = "https://github.com/muktiarafi/turu/blob/main/PRIVACY.md";
-
-/// "Send crash reports automatically?", once: where the build can send them
-/// (`Platform::uploads_crash_reports`) and the user hasn't answered (`send_crash_reports`). After
-/// the crash notice, and never over a script's message box. Closing it without an answer asks
-/// again at the next start; Options > Application has the switch.
+/// "Send crash reports automatically?", once: where the build can send them and the user hasn't
+/// answered (`models::prompts::crash_uploads_waiting`). After the crash notice, and never over a
+/// script's message box. Closing it without an answer asks again at the next start; Options >
+/// Application has the switch. A native shell shows it itself (`models::prompts`).
 pub fn show_crash_upload_question(ctx: &Context) {
-    static DISMISSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if DISMISSED.load(std::sync::atomic::Ordering::Relaxed) {
-        return;
-    }
     let bot = crate::turu::bot();
-    if bot.settings.read().send_crash_reports.is_some()
+    if crate::models::prompts::native_shown()
         || !crate::models::prompts::unseen_crashes().is_empty()
         || bot.scripts.message_box().is_some()
-        || !crate::platform::platform().uploads_crash_reports()
+        || !crate::models::prompts::crash_uploads_waiting(&bot)
     {
         return;
     }
-    let question = crash_upload_question();
-    // Android asks with its own dialog, once a run; it answers through
+    let question = crate::models::prompts::crash_upload_question();
+    // Turu Mas asks with Android's own dialog, once a run; it answers through
     // `answer_crash_upload_question`.
     if crate::platform::platform().ask_crash_uploads(&question) {
-        DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed);
+        answer_crash_upload_question(None);
         return;
     }
     let (clicked, close) = dialog(
@@ -360,43 +353,12 @@ pub fn show_crash_upload_question(ctx: &Context) {
     );
     match clicked {
         Some(i) => answer_crash_upload_question(Some(i == 1)),
-        None if close => DISMISSED.store(true, std::sync::atomic::Ordering::Relaxed),
+        None if close => answer_crash_upload_question(None),
         None => {}
     }
 }
 
-/// "Send crash reports?": what it says and its buttons, in the UI or the system's dialog.
-fn crash_upload_question() -> crate::platform::Question {
-    // "Turu", or "Turu Mas".
-    let app = turu_bot::updates::app_name();
-    crate::platform::Question {
-        title: "Send crash reports?".into(),
-        message: format!(
-            "When {app} crashes, it can send a report to its developers so they can fix it: what crashed, \
-             the device and system version, and {app}'s version."
-        ),
-        note: "No account names, passwords or game data. You can change this in Options > Application.".into(),
-        link: "Privacy policy".into(),
-        link_url: PRIVACY_POLICY_URL.into(),
-        no: "Don't send".into(),
-        yes: "Send reports".into(),
-    }
-}
-
-/// The answer to "Send crash reports?": `Some(on)` is kept in `settings.json`
-/// (`send_crash_reports`) and turns the uploads on or off now; `None` (closed without one) asks
-/// again at the next start. From the UI's dialog, or the system's (any thread).
-pub fn answer_crash_upload_question(answer: Option<bool>) {
-    let Some(on) = answer else {
-        return;
-    };
-    let bot = crate::turu::bot();
-    let mut settings = bot.settings.read().clone();
-    settings.send_crash_reports = Some(on);
-    *bot.settings.write() = settings;
-    bot.save_settings();
-    crate::platform::platform().set_crash_uploads(on);
-}
+pub use crate::models::prompts::answer_crash_upload_question;
 
 /// The crash dialogs' layout, for a desktop window and a phone alike: as wide as the text reads
 /// well (400 points) but never wider than the screen less a margin, room around the text, the

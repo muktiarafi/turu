@@ -1,10 +1,14 @@
 package com.muktiarafi.turu
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -19,9 +23,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.net.toUri
 import com.muktiarafi.turu.models.PromptView
 import com.muktiarafi.turu.models.PromptsView
 import kotlinx.serialization.json.Json
@@ -81,10 +87,19 @@ class PromptsPanel {
     }
 }
 
+private fun openLink(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    } catch (e: ActivityNotFoundException) {
+        Log.w(ModelClient.TAG, "Nothing opens $url: $e")
+    }
+}
+
 /**
  * The prompt as a Material dialog: its title, text (a script's or a report's scrolls when long),
- * a smaller note, and its buttons left to right with the last as the main one. A script's box
- * isn't closed by a tap beside it (its answer would be "closed"); Back still closes it.
+ * a smaller note, a link if it has one, and its buttons left to right with the last as the main
+ * one. A script's box isn't closed by a tap beside it (its answer would be "closed"); Back still
+ * closes it.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -93,6 +108,7 @@ fun PromptsHost(state: ShellState, panel: PromptsPanel, window: (String) -> Unit
     val p = panel.prompt ?: return
     val script = p.id.startsWith("box:")
     val answer = { button: Int -> panel.answer(p, button, window, open, report) }
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = { answer(-1) },
         properties = DialogProperties(dismissOnClickOutside = !script),
@@ -102,6 +118,14 @@ fun PromptsHost(state: ShellState, panel: PromptsPanel, window: (String) -> Unit
                 Text(p.text, style = MaterialTheme.typography.bodyMedium, color = Turu.Text)
                 if (p.note.isNotEmpty()) {
                     Text(p.note, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(top = 12.dp))
+                }
+                // "Privacy policy": opens it and leaves the prompt waiting.
+                if (p.link.isNotEmpty()) {
+                    TextButton(
+                        onClick = { openLink(context, p.linkUrl) },
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                        modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp),
+                    ) { Text(p.link, color = Turu.Accent) }
                 }
             }
         },

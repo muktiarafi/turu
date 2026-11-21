@@ -1,6 +1,7 @@
 //! What the engine asks of the user over the game, one at a time, for a native shell (the plan's
 //! L3, docs/NATIVE_UI_PROPOSAL.md): a script's message box (`bot.showMessageBox`), Butler's "a
-//! script started while following", the crash notice, the Tab Limit's notice and the graphics tips.
+//! script started while following", the crash notice, "Send crash reports?", the Tab Limit's notice
+//! and the graphics tips.
 //! The egui dialogs draw the same ones from here and step aside while a shell reads the view
 //! ([`native_shown`]), so each is answered once, natively or in egui.
 //!
@@ -69,6 +70,92 @@ pub fn crash_texts(reports: &[Report]) -> (String, String, String) {
         text,
         format!("Diagnostics > Logs > Crashes has the report. Share it with whoever helps you with {app}."),
     )
+}
+
+// --- "Send crash reports?" ---------------------------------------------------------------------
+
+/// What Turu sends and where (`PRIVACY.md`).
+pub const PRIVACY_POLICY_URL: &str = "https://github.com/muktiarafi/turu/blob/main/PRIVACY.md";
+
+/// "Send crash reports?" was closed without an answer: not again this run.
+static UPLOADS_DISMISSED: AtomicBool = AtomicBool::new(false);
+/// When the saved settings were last read for another process's answer.
+static UPLOADS_LOOKED: Mutex<Option<Instant>> = Mutex::new(None);
+/// How often the saved settings are read for it.
+const UPLOADS_LOOK_EVERY: Duration = Duration::from_secs(3);
+
+/// Whether "Send crash reports?" waits for an answer: where the build can send them
+/// (`Platform::uploads_crash_reports`), the user hasn't answered (`send_crash_reports`) and didn't
+/// close it this run. Each tab is a process of its own (Android, M6) with its own copy of the
+/// settings, so an answer given in another tab is read from the saved file and taken up here,
+/// uploads included, instead of asking again.
+pub fn crash_uploads_waiting(bot: &Bot) -> bool {
+    if UPLOADS_DISMISSED.load(Ordering::Relaxed) || bot.settings.read().send_crash_reports.is_some() {
+        return false;
+    }
+    if !crate::platform::platform().uploads_crash_reports() {
+        return false;
+    }
+    if let Some(on) = saved_crash_uploads(bot) {
+        bot.settings.write().send_crash_reports = Some(on);
+        crate::platform::platform().set_crash_uploads(on);
+        return false;
+    }
+    true
+}
+
+/// `sendCrashReports` in the saved settings, read at most every few seconds (never in a test).
+fn saved_crash_uploads(bot: &Bot) -> Option<bool> {
+    if cfg!(test) {
+        return None;
+    }
+    {
+        let mut looked = lock(&UPLOADS_LOOKED);
+        if looked.is_some_and(|at| at.elapsed() < UPLOADS_LOOK_EVERY) {
+            return None;
+        }
+        *looked = Some(Instant::now());
+    }
+    let text = std::fs::read_to_string(bot.paths.settings_file()).ok()?;
+    serde_json::from_str::<Json>(&text)
+        .ok()?
+        .get("sendCrashReports")?
+        .as_bool()
+}
+
+/// "Send crash reports?": what it says and its buttons, in a shell's dialog, egui's or the
+/// system's.
+pub fn crash_upload_question() -> crate::platform::Question {
+    // "Turu", or "Turu Mas".
+    let app = turu_bot::updates::app_name();
+    crate::platform::Question {
+        title: "Send crash reports?".into(),
+        message: format!(
+            "When {app} crashes, it can send a report to its developers so they can fix it: what crashed, \
+             the device and system version, and {app}'s version."
+        ),
+        note: "No account names, passwords or game data. You can change this in Options > Application.".into(),
+        link: "Privacy policy".into(),
+        link_url: PRIVACY_POLICY_URL.into(),
+        no: "Don't send".into(),
+        yes: "Send reports".into(),
+    }
+}
+
+/// The answer to "Send crash reports?": `Some(on)` is kept in `settings.json`
+/// (`send_crash_reports`) and turns the uploads on or off now; `None` (closed without one) asks
+/// again at the next start. From a shell's dialog, egui's or the system's (any thread).
+pub fn answer_crash_upload_question(answer: Option<bool>) {
+    let Some(on) = answer else {
+        UPLOADS_DISMISSED.store(true, Ordering::Relaxed);
+        return;
+    };
+    let bot = crate::turu::bot();
+    let mut settings = bot.settings.read().clone();
+    settings.send_crash_reports = Some(on);
+    *bot.settings.write() = settings;
+    bot.save_settings();
+    crate::platform::platform().set_crash_uploads(on);
 }
 
 // --- the Tab Limit ---------------------------------------------------------------------------
@@ -190,10 +277,14 @@ pub struct PromptView {
     pub buttons: Vec<String>,
     /// The text is a script's or a report's own (shown as it is, scrolling when long).
     pub long: bool,
+    /// A link under the note (its label; empty for none): it opens `link_url` and leaves the
+    /// prompt waiting.
+    pub link: String,
+    pub link_url: String,
 }
 
 /// The prompt waiting for `bot`'s tab, the most pressing first: the script's (it waits on it),
-/// Butler's, the crash notice, the Tab Limit, a graphics tip.
+/// Butler's, the crash notice, "Send crash reports?", the Tab Limit, a graphics tip.
 pub fn current(bot: &Arc<Bot>) -> Option<PromptView> {
     if let Some(m) = bot.scripts.message_box() {
         return Some(PromptView {
@@ -203,6 +294,8 @@ pub fn current(bot: &Arc<Bot>) -> Option<PromptView> {
             note: String::new(),
             buttons: m.buttons,
             long: true,
+            link: String::new(),
+            link_url: String::new(),
         });
     }
     if let Some(notice) = bot.butler.suspend_notice() {
@@ -213,6 +306,8 @@ pub fn current(bot: &Arc<Bot>) -> Option<PromptView> {
             note: String::new(),
             buttons: vec!["No".into(), "Yes".into()],
             long: false,
+            link: String::new(),
+            link_url: String::new(),
         });
     }
     let crashes = unseen_crashes();
@@ -225,6 +320,21 @@ pub fn current(bot: &Arc<Bot>) -> Option<PromptView> {
             note,
             buttons: vec!["Close".into(), "Show report".into()],
             long: true,
+            link: String::new(),
+            link_url: String::new(),
+        });
+    }
+    if crash_uploads_waiting(bot) {
+        let q = crash_upload_question();
+        return Some(PromptView {
+            id: "uploads".into(),
+            title: q.title,
+            text: q.message,
+            note: q.note,
+            buttons: vec![q.no, q.yes],
+            long: false,
+            link: q.link,
+            link_url: q.link_url,
         });
     }
     if let Some(limit) = tab_refused() {
@@ -240,6 +350,8 @@ pub fn current(bot: &Arc<Bot>) -> Option<PromptView> {
                 vec!["Not now".into(), "Raise Tab Limit".into()]
             },
             long: false,
+            link: String::new(),
+            link_url: String::new(),
         });
     }
     let tip = graphics_tips::pending()?;
@@ -255,6 +367,8 @@ pub fn current(bot: &Arc<Bot>) -> Option<PromptView> {
         note: note.into(),
         buttons,
         long: false,
+        link: String::new(),
+        link_url: String::new(),
     })
 }
 
@@ -307,6 +421,7 @@ pub fn answer(bot: &Arc<Bot>, body: &Json) -> Result<Json, String> {
                 report = newest.name;
             }
         }
+        "uploads" => answer_crash_upload_question(button.map(|b| b == 1)),
         "tab-limit" => {
             answer_tab_refused();
             if now.buttons.len() > 1 && main(button) {

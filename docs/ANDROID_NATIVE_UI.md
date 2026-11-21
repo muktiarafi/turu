@@ -10,7 +10,7 @@ and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MA
 |---|---|---|---|
 | The game's text fields as a native field above the keyboard | `1c32e1adb` | `SurfaceField.kt` (was `DialogField.kt`), `game_field.rs` | `ViewField.kt`, host SWF's `gameTyping` |
 | Turu's own text boxes as a native field; a tap outside closes it | `8174af2e9` | `ui_field.rs` | `overlay.rs`, `Bridge` |
-| "Send crash reports?" as Android's dialog | `b37f9f790` | `CrashQuestion.kt` (shared), `platform.rs` | `CrashQuestion.kt` (shared), `platform.rs` |
+| "Send crash reports?" as a native dialog | `b37f9f790`; since process tabs, `models::prompts` | `PromptsHost.kt` over `models::prompts` | `CrashQuestion.kt` (shared), `platform.rs` |
 | File dialogs through the system picker | `c013aa4c0` (Turu had them before) | `saf.rs` | `saf.rs`, `Documents.kt`, `PickerActivity.kt` |
 | An update's APK installed by Android's installer, not the browser | `67ec55652` | `PackageUpdate.kt` (shared), `platform.rs` | `PackageUpdate.kt` (shared), `platform.rs`, `Bridge` |
 | Drop and script-stopped alerts as notifications | "Alert drops and stopped scripts" (after `67ec55652`) | `Alerts.kt`, `Foreground.kt` (shared), `notify.rs` | `Alerts.kt`, `Foreground.kt` (shared), `platform.rs`, `Bridge` |
@@ -88,14 +88,22 @@ How the strip is placed differs:
 
 ## "Send crash reports?"
 
-A one-time question at first start, so it belongs with the notification and battery prompts as an
-`AlertDialog` (`CrashQuestion.kt`, shared). The Rust side still decides when to ask and
-what it says, and keeps the answer: `show_crash_upload_question` (`logs.rs`) builds a
-`platform::Question` and calls `Platform::ask_crash_uploads`; Android shows it and answers through
-`answer_crash_upload_question` (any thread); where there's no native dialog (the desktop) egui asks
-as before. Privacy policy opens the link and leaves the dialog up; closing it without an answer
-asks again at the next start. On Turu Mas the dialog has AIR's focus while it's up: acceptable once,
-at first start.
+A one-time question at first start. The Rust side decides when to ask and what it says, and keeps
+the answer (`models::prompts`: `crash_uploads_waiting`, `crash_upload_question`,
+`answer_crash_upload_question`, any thread). Privacy policy opens the link and leaves the question
+up; closing it without an answer asks again at the next start.
+
+* **Turu**: since process tabs the engine runs in each slot's process, which has no activity, so
+  `Platform::ask_crash_uploads` couldn't show `CrashQuestion.kt` there and egui drew its dialog in
+  the slot's picture (seen 2026-11-21). It is now one of the engine's prompts (`uploads`, after
+  the crash notice), shown by the shell's `PromptsHost` as the same Material dialog as the others,
+  with the link as a text button. Each slot keeps its own copy of the settings, so a slot reads
+  `sendCrashReports` from `settings.json` (every 3 s while it would ask) and takes up an answer
+  another tab gave, uploads included, instead of asking again.
+* **Turu Mas**: `show_crash_upload_question` (`logs.rs`) calls `Platform::ask_crash_uploads`, and
+  `CrashQuestion.kt` (shared) shows an `AlertDialog`; it has AIR's focus while it's up: acceptable
+  once, at first start.
+* **The desktop**: egui asks.
 
 ## File dialogs
 

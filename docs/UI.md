@@ -1344,7 +1344,9 @@ above, and why:
   Undo) for a few seconds; Undo puts back what was cleared before what came since. The Spammer's Add
   clears its field, and Send now says "Sent to the server" (or the client).
 * **The engine's dialogs** (L5b, 2026-11-21): a script's message box, Butler's "a script started
-  while following", the crash notice, the Tab Limit notice and the graphics tips, one at a time
+  while following", the crash notice, "Send crash reports?" (its Privacy policy a text button under
+  the note, opening the policy and leaving the question up), the Tab Limit notice and the graphics
+  tips, one at a time
   over the game whether the panel is open or not, as Material dialogs on the panel's card colour:
   the title, the text (a script's or a report's scrolls past 320 dp), a smaller muted note, and
   the buttons as text buttons left to right, the last (the main one) in the accent and semibold.

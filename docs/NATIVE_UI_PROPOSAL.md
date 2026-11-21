@@ -962,7 +962,8 @@ script's message box and options request.
   closed by a tap beside it (Back still answers "closed"). Show report opens the report in the
   native Logs > Crashes (since the crash reports' page, below; it opened egui's Logs before);
   Raise Tab Limit opens Application options. The
-  crash upload question was already Android's own. Checked on the emulator: a made-up crash
+  crash upload question is one too since the same day (egui drew it in the slot's picture: a slot
+  has no activity for `CrashQuestion.kt`), with its Privacy policy link as a text button. Checked on the emulator: a made-up crash
   report's notice and Show report (the report and the one it pushed out of the 30 kept were put
   back, with `.seen`). Not seen: the message box, Butler's notice, the Tab Limit and the tips
   (they need a script, Butler following, a refused tab or a slow GPU); they share the dialog.
@@ -1020,8 +1021,8 @@ the owner says so).
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
 Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console, Logs > Crashes. Each window's page has Full window for the
-egui one, and the engine's dialogs (a script's message box, Butler's notice, the crash notice, the
-Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys only
+egui one, and the engine's dialogs (a script's message box, Butler's notice, the crash notice,
+"Send crash reports?", the Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys only
 (staying egui; decision 8 as changed 2026-11-21). Spammer, Packet Logger and Interceptor are native
 since the same day. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done). Crash reports (Logs > Crashes) are native since 2026-11-21.
