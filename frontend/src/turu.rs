@@ -643,8 +643,11 @@ pub fn start_app_updates() {
         let mut done = Ok(String::new());
         let message = match shared_update("script-update", || done = repo.startup(&settings)) {
             Ran::Here => done?,
-            Ran::Busy => "another tab is updating the scripts".to_owned(),
-            Ran::Recent => "another tab updated the scripts lately".to_owned(),
+            Ran::Busy => "Another tab is updating the scripts".to_owned(),
+            Ran::Recent => format!(
+                "Another tab updated the scripts in the last {} minutes",
+                SHARED_UPDATE_EVERY.as_secs() / 60
+            ),
         };
         tracing::info!("Scripts: {message}");
         Ok(message)

@@ -1061,14 +1061,21 @@ above, and why:
   Control's Search scripts… it picks (and from Accounts' launch options: "Pick the script launched
   accounts run", each row's button Use, a script that needs a download downloaded first while
   the page waits): a bar under the title says for whom ("Pick a script to
-  load in cecilus", "in 2 clients") with Cancel, each row's button is "Load in …" (a tap on the
-  row too), and a pick goes back to Army Control. The search, then
-  the filters as chips (folder, Pinned, Local, the sort in words, what the search looks in),
-  then the rows: name (a star when pinned), badge and description; Start (the top hit's filled)
-  and a menu with the path, what the badge means, Load, Add to the queue, Download, Update or
-  Replace, Pin, and why Start rests. The task's progress with Cancel, or the last outcome, on one
-  line at the foot; Update all, Download all and Refresh in the bar's menu, to leave the short
-  screen to the rows. Delete and Reset Scripts stay in the egui window.
+  load in Questwalker", "in 2 clients") with Cancel, each row's button is "Load in …" (a tap on the
+  row too), and a pick goes back to Army Control. The search, with what it looks in inside the
+  box ("All fields" and its menu); the keyboard's Search closes the keyboard to show the results,
+  and while the keyboard is up the filters and the foot step aside. Then the filters as chips:
+  folder, the sort (a menu of VibeSkua's four, the chip in short: "A to Z"), Pinned and On this
+  device (VibeSkua's Local). Then the rows: the name (a star when pinned; a file name run
+  together shown in words, "Demanding Approval From Nulgath"), and under it a badge only for what
+  sets the script apart (Update, Modified, Local, Removed, or Not downloaded: "Downloaded" goes)
+  and one line of description (none, or the index's "null": its folder). Start is a text button,
+  filled only on the first row when its name starts with what's typed (VibeSkua's sort stays, so
+  the first row isn't always the best match); a row's menu has the path, what the badge means,
+  Start, Load, Add to the queue, Download, Update or Replace, Pin, each with why it rests. The
+  task's progress with Cancel, or the last outcome, at the foot, a success going after 8 s;
+  Update all, Download all and Refresh in the bar's menu, to leave the short screen to the rows.
+  Delete and Reset Scripts stay in the egui window. Critique fixes, 2026-11-21.
 * **Game Options** (L5b, 2026-11-20) is a page of the panel, 440 dp wide, from More > Game and
   however the slot opens it: the search and the sections as chips (with counts, and Changed while
   anything differs from options.json), the options under their section's heading (and group's)

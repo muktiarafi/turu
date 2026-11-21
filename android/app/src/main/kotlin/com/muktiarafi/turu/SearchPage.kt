@@ -6,12 +6,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +33,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,6 +59,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -136,6 +144,50 @@ private fun toneColor(tone: Tone) = when (tone) {
 }
 
 /**
+ * A file name run together ("DemandingApprovalFromNulgath") in words, so it can wrap; a name
+ * with spaces stays as written.
+ */
+private fun shownName(name: String): String =
+    if (' ' in name) name else name.replace(Regex("(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])"), " ")
+
+/** The row's line under its name: its description, else its folder (an index's "null" is none). */
+private fun about(row: RowView): String =
+    row.description.trim().takeUnless { it.isEmpty() || it.equals("null", ignoreCase = true) }
+        ?: row.path.substringBeforeLast('/', "").replace('/', ' ').ifEmpty { "Scripts folder" }
+
+/**
+ * The badge a row shows: only what sets it apart. Most scripts are downloaded and up to date, so
+ * "Downloaded" goes; a script not yet downloaded says so (it has no badge of its own).
+ */
+private fun shownBadge(row: RowView): Pair<String, Tone>? = when {
+    row.badge == null -> "Not downloaded" to Tone.MUTED
+    row.badge.label == "Downloaded" -> null
+    else -> row.badge.label to row.badge.tone
+}
+
+/** The first row is the best match only when its name starts with what's typed (the sort stays). */
+private fun bestMatch(view: RepoView): String? {
+    val typed = view.query.search.trim()
+    val first = view.rows.firstOrNull() ?: return null
+    if (typed.isEmpty()) return null
+    val hit = listOf(first.name, shownName(first.name)).any { it.startsWith(typed, ignoreCase = true) }
+    return first.path.takeIf { hit }
+}
+
+@Composable
+private fun Badge(label: String, tone: Tone) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelSmall,
+        color = toneColor(tone),
+        maxLines = 1,
+        modifier = Modifier
+            .background(toneColor(tone).copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
+}
+
+/**
  * Search Scripts (docs/UI.md, "Native shells"; VibeSkua's Script Repo): the search box, the
  * filters as chips (folder, Pinned, Local, the sort, what the search looks in), the rows with
  * Start and a menu (Load, Add to the queue, Download or Update, Pin), and the repository's task
@@ -145,6 +197,7 @@ private fun toneColor(tone: Tone) = when (tone) {
  * picks instead: a bar says for what, each row offers its button ("Load in 2 clients", "Use"),
  * and a pick goes back to the page that asked, once a script that needs a download has it.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
     // Leaving the page ends a pick (Back, Cancel, or the pick itself).
@@ -179,8 +232,9 @@ fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
         }
         pick?.let { PickBar(it) { state.scriptPick = null; state.back() } }
         SearchBox(view, search)
-        Filters(view, search)
-        val top = view.rows.firstOrNull()?.path.takeIf { view.query.search.isNotBlank() }
+        // While typing, the keyboard leaves little height: the filters step aside for results.
+        if (!WindowInsets.isImeVisible) Filters(view, search)
+        val top = bestMatch(view)
         LazyColumn(Modifier.weight(1f).padding(top = 4.dp)) {
             if (view.rows.isEmpty()) {
                 item {
@@ -225,7 +279,8 @@ fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
                 }
             }
         }
-        Footer(view, search)
+        // While typing, the foot's note would take what little height the keyboard leaves.
+        if (!WindowInsets.isImeVisible) Footer(view, search)
     }
 }
 
@@ -239,24 +294,61 @@ private fun SearchBox(view: RepoView, search: SearchPanel) {
             search.query("search", text)
         }
     }
+    val focus = LocalFocusManager.current
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
-        placeholder = { Text("Search ${view.total} scripts") },
+        placeholder = { Text("Search scripts", maxLines = 1) },
         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-        trailingIcon = if (text.isNotEmpty()) {
-            { IconButton(onClick = { text = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") } }
-        } else {
-            null
+        trailingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ScopeButton(view, search)
+                if (text.isNotEmpty()) {
+                    IconButton(onClick = { text = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") }
+                }
+            }
         },
         singleLine = true,
         shape = RoundedCornerShape(12.dp),
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { search.query("search", text) }),
+        // Search shows the results: the keyboard hides them on a landscape phone.
+        keyboardActions = KeyboardActions(onSearch = { search.query("search", text); focus.clearFocus() }),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
     )
 }
+
+/** What the search looks in, inside the box: "All fields", "Name", ... */
+@Composable
+private fun ScopeButton(view: RepoView, search: SearchPanel) {
+    var open by remember { mutableStateOf(false) }
+    val words = view.scopes.firstOrNull { it.first == view.query.scope }?.second ?: "All fields"
+    Box {
+        TextButton(
+            onClick = { open = true },
+            contentPadding = PaddingValues(start = 8.dp, end = 4.dp),
+            colors = ButtonDefaults.textButtonColors(contentColor = if (view.query.scope != "all") Turu.Text else Turu.Muted),
+            modifier = Modifier.semantics { contentDescription = "Search in: $words" },
+        ) {
+            Text(words, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
+            Text("Search in", style = MaterialTheme.typography.labelMedium, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            for ((value, label) in view.scopes) {
+                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; search.query("scope", value) })
+            }
+        }
+    }
+}
+
+/** VibeSkua's sorts in words: (sort, descending) to how it reads. */
+private val SORTS = listOf(
+    ("name" to false) to "Name A to Z",
+    ("name" to true) to "Name Z to A",
+    ("added" to true) to "Newest first",
+    ("added" to false) to "Oldest first",
+)
 
 @Composable
 private fun Filters(view: RepoView, search: SearchPanel) {
@@ -271,24 +363,21 @@ private fun Filters(view: RepoView, search: SearchPanel) {
                 search.query("category", it)
             }
         }
+        item {
+            // The chip says it short so the four fit a phone's panel; its menu in full.
+            val now = when (q.sort to q.descending) {
+                "name" to true -> "Z to A"
+                "added" to true -> "Newest"
+                "added" to false -> "Oldest"
+                else -> "A to Z"
+            }
+            MenuChip(now, selected = false, SORTS.mapIndexed { i, it -> "$i" to it.second }) { picked ->
+                val (sort, descending) = SORTS[picked.toInt()].first
+                search.act("query", JSONObject().put("sort", sort).put("descending", descending))
+            }
+        }
         item { ToggleChip("Pinned", q.pinnedOnly) { search.query("pinnedOnly", !q.pinnedOnly) } }
-        item { ToggleChip("Local", q.localOnly) { search.query("localOnly", !q.localOnly) } }
-        item {
-            // VibeSkua's sort in words; a tap goes to the next.
-            val (label, next) = when (q.sort to q.descending) {
-                "name" to false -> "Name A to Z" to ("name" to true)
-                "name" to true -> "Name Z to A" to ("added" to true)
-                "added" to true -> "Newest first" to ("added" to false)
-                else -> "Oldest first" to ("name" to false)
-            }
-            ToggleChip(label, false) {
-                search.act("query", JSONObject().put("sort", next.first).put("descending", next.second))
-            }
-        }
-        item {
-            val scope = view.scopes.firstOrNull { it.first == q.scope }?.second ?: "All fields"
-            MenuChip("In: $scope", q.scope != "all", view.scopes) { search.query("scope", it) }
-        }
+        item { ToggleChip("On this device", q.localOnly) { search.query("localOnly", !q.localOnly) } }
     }
 }
 
@@ -358,23 +447,7 @@ private fun PickRow(row: RowView, topHit: Boolean, pick: ScriptPick, onPick: () 
             .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(row.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                row.badge?.let { badge ->
-                    Text(
-                        badge.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = toneColor(badge.tone),
-                        modifier = Modifier
-                            .background(toneColor(badge.tone).copy(alpha = 0.14f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 1.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(row.description.ifEmpty { row.path }, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        }
+        RowText(row)
         if (row.working) {
             CircularProgressIndicator(Modifier.padding(horizontal = 16.dp).size(20.dp), strokeWidth = 2.dp)
         } else {
@@ -391,58 +464,52 @@ private fun PickRow(row: RowView, topHit: Boolean, pick: ScriptPick, onPick: () 
     }
 }
 
-/** One script: name (a star when pinned), badge and description; Start and its menu. */
+/** A row's name (a star when pinned) and, under it, what sets it apart and what it does. */
+@Composable
+private fun RowScope.RowText(row: RowView) {
+    Column(Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (row.pinned) {
+                Icon(Icons.Rounded.Star, contentDescription = "Pinned", tint = Turu.Warning, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(shownName(row.name), style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+            shownBadge(row)?.let { (label, tone) ->
+                Badge(label, tone)
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(about(row), style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/**
+ * One script: its name and line; Start (filled for the best match, else a text button, so the
+ * list doesn't read as a column of buttons) and its menu, Start first.
+ */
 @Composable
 private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, started: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val body = JSONObject().put("path", row.path)
+    val start = { search.act("start", body) { if (it == null) started() } }
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable { menu = true }
-            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            .clickable(onClickLabel = "more for ${row.name}") { menu = true }
+            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (row.pinned) {
-                    Icon(Icons.Rounded.Star, contentDescription = "Pinned", tint = Turu.Warning, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                }
-                Text(row.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                row.badge?.let { badge ->
-                    Text(
-                        badge.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = toneColor(badge.tone),
-                        modifier = Modifier
-                            .background(toneColor(badge.tone).copy(alpha = 0.14f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 1.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(
-                    row.description.ifEmpty { row.path },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Turu.Muted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        RowText(row)
         if (row.working) {
             CircularProgressIndicator(Modifier.padding(horizontal = 16.dp).size(20.dp), strokeWidth = 2.dp)
+        } else if (topHit) {
+            Button(onClick = start, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
         } else {
-            val start = { search.act("start", body) { if (it == null) started() } }
-            if (topHit) {
-                Button(onClick = start, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("Start") }
-            } else {
-                FilledTonalButton(onClick = start, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("Start") }
-            }
+            TextButton(onClick = start, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
         }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More for ${row.name}", tint = Turu.Muted) }
@@ -452,6 +519,7 @@ private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, starte
                     Text("${it.label}: ${it.meaning}", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
                 // A touch screen has no tooltips: why an item rests, under it.
+                MenuAction("Start", row.start) { menu = false; start() }
                 MenuAction("Load", row.load) { menu = false; search.act("load", body) }
                 MenuAction("Add to the queue", row.queue) { menu = false; search.act("queue", body) }
                 row.download?.let { label ->
@@ -463,10 +531,6 @@ private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, starte
                 MenuAction(if (row.pinned) "Unpin" else "Pin", com.muktiarafi.turu.models.Control(true, "")) {
                     menu = false
                     search.act("pin", JSONObject().put("path", row.path).put("pinned", !row.pinned))
-                }
-                if (!row.start.enabled && row.start.reason.isNotEmpty()) {
-                    HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-                    Text("Start: ${row.start.reason}", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
             }
         }
@@ -494,7 +558,16 @@ private fun MenuAction(label: String, control: com.muktiarafi.turu.models.Contro
 private fun Footer(view: RepoView, search: SearchPanel) {
     val busy = view.busy
     val note = search.error?.let { it to true } ?: view.message?.let { it.text to it.failed }
-    if (busy == null && note == null) return
+    // A done task's note ("Started ...", "Another tab updated ...") goes after a while; a failure stays.
+    var seen by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(note) {
+        if (note != null && !note.second) {
+            delay(8_000)
+            seen = note.first
+        }
+    }
+    val shown = note?.takeUnless { !it.second && it.first == seen }
+    if (busy == null && shown == null) return
     Column(Modifier.fillMaxWidth()) {
         HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
         if (busy != null) {
@@ -512,12 +585,12 @@ private fun Footer(view: RepoView, search: SearchPanel) {
                 }
                 TextButton(onClick = { search.act("cancel") }) { Text("Cancel") }
             }
-        } else if (note != null) {
+        } else if (shown != null) {
             Text(
-                note.first,
+                shown.first,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (note.second) Turu.Danger else Turu.Muted,
-                maxLines = 1,
+                color = if (shown.second) Turu.Danger else Turu.Muted,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
