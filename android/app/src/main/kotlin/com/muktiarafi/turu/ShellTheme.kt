@@ -1,14 +1,25 @@
 package com.muktiarafi.turu
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /**
  * The shell's native screens' look (docs/UI.md, "Native shells", Android): Material 3 with a fixed
  * dark scheme pinned to egui's tokens (`frontend/src/gui/turu/theme.rs`), since Compose and egui
- * share the rail until L5b. No wallpaper colours. Roboto in the M3 type scale.
+ * share the rail until L5b. No wallpaper colours. Roboto in the M3 type scale; the Script Loader's
+ * state line uses its emphasized twin (`titleSmallEmphasized`).
+ *
+ * Motion is Material 3 Expressive's for the controls' own feedback (switches, chips, menus:
+ * `MotionScheme.expressive()`'s springs, through the theme). The panel's page changes take
+ * [PanelMotion], the standard scheme, since a pane over the game shouldn't bounce. Neither uses a
+ * hand-picked `tween`: spatial specs move things, effects specs fade them, the fast ones are for
+ * what leaves.
  */
 object Turu {
     val Panel = Color(0xFF11131A)
@@ -34,6 +45,22 @@ object Turu {
     /** The rail's selected item: the accent 35% into the panel, to stand out from the dark rail. */
     val RailSelected = Color(0xFF373265)
 }
+
+/** The panel's page changes: the standard scheme's springs, no overshoot (see the note above). */
+val PanelMotion: MotionScheme = MotionScheme.standard()
+
+/**
+ * Corners, by role (Material's own sizes, so menus, dialogs and the snackbar keep theirs): `medium`
+ * (12 dp) for cards, rows, fields and boxes; `small` (8 dp) for tags and what sits inside a card;
+ * `CircleShape` for pills, dots and avatars. Pages read `MaterialTheme.shapes`, never a radius.
+ */
+private val shapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(28.dp),
+)
 
 private val scheme = darkColorScheme(
     primary = Turu.Accent,
@@ -69,5 +96,5 @@ private val scheme = darkColorScheme(
 
 @Composable
 fun ShellTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, motionScheme = MotionScheme.expressive(), shapes = shapes, content = content)
 }

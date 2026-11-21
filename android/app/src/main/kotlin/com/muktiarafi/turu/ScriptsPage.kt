@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -162,7 +161,7 @@ fun ScriptsPage(state: ShellState, scripts: ScriptsPanel, fullWindow: () -> Unit
             }
             FullWindowMenu("The log's Find and Copy, opening the script in an editor", fullWindow) { close ->
                 // While a script runs, the page keeps only its run controls: setup lives here.
-                if (active && view != null) {
+                if (active) {
                     DropdownMenuItem(text = { Text("Search scripts") }, onClick = { close(); scripts.searchScripts() })
                     DropdownMenuItem(
                         text = { Text("Script options") },
@@ -263,7 +262,7 @@ private fun QuickScripts(scripts: ScriptsPanel) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .clickable(enabled = idle, onClickLabel = "start ${quick.name}") { scripts.startQuick(quick.path) }
                         .heightIn(min = 48.dp)
                         .padding(horizontal = 4.dp),
@@ -295,7 +294,7 @@ private fun StatusCard(view: ScriptsView, scripts: ScriptsPanel) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.Card)
             .padding(12.dp)
             .animateContentSize(),
@@ -311,7 +310,7 @@ private fun StatusCard(view: ScriptsView, scripts: ScriptsPanel) {
                 view.elapsedSecs != null -> "${view.state} · ${durationText(view.elapsedSecs.toLong())}"
                 else -> view.state
             }
-            Text(state, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(state, style = MaterialTheme.typography.titleSmallEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         }
         view.lastLog?.let { log ->
             val ago = if (log.quietSecs.toLong() < 5) "just now" else "${durationText(log.quietSecs.toLong())} ago"
@@ -348,7 +347,7 @@ private fun ErrorText(first: String, whole: String) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.small)
             .then(if (more) Modifier.clickable(onClickLabel = if (open) "show less" else "show the whole error") { open = !open } else Modifier)
             .heightIn(min = if (more) 48.dp else 0.dp),
         verticalArrangement = Arrangement.Center,
@@ -375,7 +374,7 @@ private fun RunControls(view: ScriptsView, scripts: ScriptsPanel) {
     val c = view.controls
     val busy = scripts.busy
     if (view.script == null && !view.status.isActive()) {
-        Button(onClick = scripts::searchScripts, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Button(onClick = scripts::searchScripts, shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Search scripts")
@@ -384,13 +383,14 @@ private fun RunControls(view: ScriptsView, scripts: ScriptsPanel) {
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         c.start?.let { start ->
-            Button(onClick = scripts::start, enabled = start.enabled && busy == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+            Button(onClick = scripts::start, shapes = ButtonDefaults.shapes(), enabled = start.enabled && busy == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                 Working(busy == "start", "Start script")
             }
         }
         c.stop?.let { stop ->
             Button(
                 onClick = scripts::stop,
+                shapes = ButtonDefaults.shapes(),
                 enabled = stop.enabled && busy == null,
                 colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
                 modifier = Modifier.weight(1.6f).heightIn(min = 48.dp),
@@ -400,17 +400,18 @@ private fun RunControls(view: ScriptsView, scripts: ScriptsPanel) {
         c.forceStop?.let { force ->
             Button(
                 onClick = scripts::stop,
+                shapes = ButtonDefaults.shapes(),
                 enabled = force.enabled && busy == null,
                 colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) { Working(busy == "stop", "Force stop") }
         } ?: c.pause?.let {
             if (c.paused) {
-                Button(onClick = scripts::resume, enabled = busy == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                Button(onClick = scripts::resume, shapes = ButtonDefaults.shapes(), enabled = busy == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Working(busy == "resume", "Resume")
                 }
             } else {
-                FilledTonalButton(onClick = scripts::pause, enabled = busy == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                FilledTonalButton(onClick = scripts::pause, shapes = ButtonDefaults.shapes(), enabled = busy == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Working(busy == "pause", "Pause")
                 }
             }

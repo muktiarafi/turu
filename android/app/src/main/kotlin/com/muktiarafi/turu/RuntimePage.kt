@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -27,9 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -186,28 +182,13 @@ fun RuntimePage(state: ShellState, panel: RuntimePanel, notifyDrop: () -> Unit, 
             return@Column
         }
         // With the keyboard up the panel has room for the field typed in: the parts step aside.
-        if (!WindowInsets.isImeVisible) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-            RuntimePart.entries.forEachIndexed { i, p ->
-                val count = when (p) {
-                    RuntimePart.Drops -> view.drops.size
-                    RuntimePart.Quests -> view.quests.size
-                    RuntimePart.Boosts -> view.boosts.count { it.uses }
-                }
-                SegmentedButton(
-                    selected = panel.part == p,
-                    onClick = { panel.part = p },
-                    shape = SegmentedButtonDefaults.itemShape(i, RuntimePart.entries.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Turu.AccentTint,
-                        activeContentColor = Turu.Text,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = Turu.Muted,
-                        activeBorderColor = Turu.Edge,
-                        inactiveBorderColor = Turu.Edge,
-                    ),
-                    icon = {},
-                ) { Text(if (count > 0) "${p.label}  $count" else p.label, maxLines = 1) }
+        if (!WindowInsets.isImeVisible) ConnectedChoice(RuntimePart.entries, panel.part, { panel.part = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) { p ->
+            val count = when (p) {
+                RuntimePart.Drops -> view.drops.size
+                RuntimePart.Quests -> view.quests.size
+                RuntimePart.Boosts -> view.boosts.count { it.uses }
             }
+            Text(if (count > 0) "${p.label}  $count" else p.label, maxLines = 1)
         }
         LazyColumn(Modifier.weight(1f)) {
             when (panel.part) {
@@ -328,7 +309,7 @@ private fun SwitchRow(label: String, about: String, checked: Boolean, strong: Bo
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (strong && checked) Turu.AccentTint else Color.Transparent)
             .clickable { onChange(!checked) }
             .heightIn(min = 56.dp)
@@ -365,7 +346,7 @@ private fun IntervalRow(ms: Long, onSet: (Long) -> Unit) {
             },
             suffix = { Text("ms", color = Turu.Muted) },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             modifier = Modifier.width(130.dp).onFocusChanged { focused = it.isFocused },
@@ -392,7 +373,7 @@ private fun CheckRow(label: String, checked: Boolean, onToggle: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (checked) Turu.AccentTint else Color.Transparent)
             .clickable(onClick = onToggle)
             .heightIn(min = 48.dp)
@@ -430,7 +411,7 @@ private fun AddField(value: String, hint: String, modifier: Modifier, number: Bo
         onValueChange = onChange,
         placeholder = { Text(hint, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = if (number) KeyboardType.Ascii else KeyboardType.Text, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { onDone() }),

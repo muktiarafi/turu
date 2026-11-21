@@ -2,7 +2,6 @@ package com.muktiarafi.turu
 
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -29,7 +28,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,6 +44,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -58,9 +57,6 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -175,7 +171,7 @@ fun AutoPage(state: ShellState, models: TabModels) {
                         )
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                     modifier = Modifier.fillMaxWidth(),
@@ -207,7 +203,7 @@ private fun Running(view: AutoView, stopping: Boolean, stop: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.Card)
             .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -218,7 +214,7 @@ private fun Running(view: AutoView, stopping: Boolean, stop: () -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     listOfNotNull(view.runningMode ?: "Running", view.runningSecs?.let { durationText(it.toLong()) }).joinToString(" · "),
-                    style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                    style = MaterialTheme.typography.titleSmallEmphasized.copy(fontFeatureSettings = "tnum"),
                 )
             }
             view.fighting?.let {
@@ -283,7 +279,7 @@ private fun ClassPicker(view: AutoView, onOpen: () -> Unit, onPick: (String) -> 
                 else ExposedDropdownMenuDefaults.TrailingIcon(expanded = open)
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
@@ -393,23 +389,8 @@ fun LogsPage(state: ShellState, models: TabModels, crashes: CrashesPanel, full: 
             }
             FullWindowMenu(adds = "Find and Copy in the logs", open = full)
         }
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            segments.forEachIndexed { i, (key, label) ->
-                SegmentedButton(
-                    selected = kind == key,
-                    onClick = { state.logsKind = key },
-                    shape = SegmentedButtonDefaults.itemShape(i, segments.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Turu.AccentTint,
-                        activeContentColor = Turu.Text,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = Turu.Muted,
-                        activeBorderColor = Turu.Edge,
-                        inactiveBorderColor = Turu.Edge,
-                    ),
-                    icon = {},
-                ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
+        ConnectedChoice(segments.map { it.first }, kind, { state.logsKind = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { key ->
+            Text(segments.first { it.first == key }.second, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (kind == "crashes") return@Column CrashList(state, crashes, models)
         if (lines.isEmpty()) {
@@ -602,7 +583,7 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
                 null
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
@@ -644,7 +625,7 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(MaterialTheme.shapes.medium)
                                 .background(if (selected) Turu.AccentTint else Color.Transparent)
                                 .selectable(selected = selected, role = Role.Tab) { memory.show(title) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -670,9 +651,10 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
                 }
             }
             VerticalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+            val motion = PanelMotion
             AnimatedContent(
                 targetState = shown,
-                transitionSpec = { fadeIn(tween(150, delayMillis = 60)).togetherWith(fadeOut(tween(90))) },
+                transitionSpec = { fadeIn(motion.defaultEffectsSpec()).togetherWith(fadeOut(motion.fastEffectsSpec())) },
                 label = "more menu",
             ) { title ->
                 val items = if (title == RECENT_TITLE) recent.map { it.second } else menus.firstOrNull { it.title == title }?.items.orEmpty()
@@ -697,12 +679,9 @@ private fun MenuRow(item: MenuItem, page: Page?, where: String? = null, open: ()
     }
     ListItem(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(enabled = enabled, onClick = open),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = {
-            Text(item.label, color = if (enabled) Turu.Text else Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
         supportingContent = if (about != null || page == null) {
             {
                 Column {
@@ -713,5 +692,7 @@ private fun MenuRow(item: MenuItem, page: Page?, where: String? = null, open: ()
         } else {
             null
         },
-    )
+    ) {
+        Text(item.label, color = if (enabled) Turu.Text else Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }

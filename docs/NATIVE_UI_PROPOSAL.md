@@ -516,7 +516,8 @@ APK, arm64 only. The spike's code is on the branch `native-ui-l0` (commit `2d323
      debug build without R8. Release builds have `isMinifyEnabled = false`, so they pay the same
      until R8 is turned on for the shell's classes (to measure in L5a).
    * **Compose's version**: the BOM 2026.09 (Compose 1.12) needs compileSdk 37; the SDK has 36,
-     so 2026.06.01 (Compose 1.11). Moving to 37 is a separate change.
+     so 2026.06.01 (Compose 1.11). Moving to 37 is a separate change. *Done 2026-11-21: BOM
+     2026.11.01 (Compose 1.13, Material 3 1.5.0), the app on compileSdk 37.1 (docs/UI.md, "Look").*
 2. **A copy over the control API works and is fast.** A registry in `control_api.rs`
    (`add_model(name, view)`, filled by the client before it starts the API) serves
    `GET /models/<name>` (`{revision, view}`) and `event: model` on `/events?models=<name>` when the

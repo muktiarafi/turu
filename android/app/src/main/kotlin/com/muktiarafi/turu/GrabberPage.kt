@@ -30,7 +30,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -240,7 +239,7 @@ fun GrabberPage(state: ShellState, panel: GrabberPanel, fullWindow: () -> Unit) 
                             null
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = fieldColors(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -293,7 +292,7 @@ private fun GrabRow(row: GrabRowView, on: Boolean, view: GrabberView, panel: Gra
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (on) Turu.AccentTint else Color.Transparent)
             .clickable { panel.toggle(row, view.multiple) }
             .heightIn(min = 48.dp),

@@ -12,17 +12,17 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -34,9 +34,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -154,22 +150,8 @@ fun ButlerPage(state: ShellState, panel: ButlerPanel, fullWindow: () -> Unit) {
         // so the field shows above it in landscape.
         val typing = WindowInsets.isImeVisible
         if (!typing) Header(view, panel)
-        if (!typing) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-            ButlerTab.entries.forEachIndexed { i, t ->
-                SegmentedButton(
-                    selected = tab == t,
-                    onClick = { tab = t },
-                    shape = SegmentedButtonDefaults.itemShape(i, ButlerTab.entries.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Turu.AccentTint,
-                        activeContentColor = Turu.Text,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = Turu.Muted,
-                        activeBorderColor = Turu.Edge,
-                        inactiveBorderColor = Turu.Edge,
-                    ),
-                ) { Text(t.label) }
-            }
+        if (!typing) ConnectedChoice(ButlerTab.entries, tab, { tab = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Text(it.label)
         }
         when (tab) {
             ButlerTab.Accounts -> Accounts(view, panel, Modifier.weight(1f))
@@ -255,7 +237,7 @@ private fun AccountRow(a: ButlerAccount, panel: ButlerPanel) {
                     color = color,
                     modifier = Modifier
                         .align(Alignment.CenterVertically)
-                        .clip(RoundedCornerShape(50))
+                        .clip(CircleShape)
                         .background(color.copy(alpha = 0.14f))
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
@@ -367,7 +349,7 @@ private fun SendDialog(view: ButlerView, panel: ButlerPanel, onClose: () -> Unit
                     onValueChange = { name = it },
                     placeholder = { Text("Player name") },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { send() }),

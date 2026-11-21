@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -280,9 +279,9 @@ fun ArmyLogsPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(MaterialTheme.shapes.medium)
                 .background(Turu.Inset)
-                .border(1.dp, Turu.Edge, RoundedCornerShape(10.dp)),
+                .border(1.dp, Turu.Edge, MaterialTheme.shapes.medium),
         ) {
             if (lines.isEmpty()) {
                 Text("Nothing logged yet", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(12.dp))

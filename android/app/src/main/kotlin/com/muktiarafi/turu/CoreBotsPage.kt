@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -27,9 +26,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -121,22 +117,8 @@ fun CoreBotsPage(state: ShellState, panel: CoreBotsPanel, fullWindow: () -> Unit
             Text(view.shownName.ifEmpty { "No character" }, style = MaterialTheme.typography.titleSmall)
             Text(view.state, style = MaterialTheme.typography.bodySmall, color = if (view.unsaved) Turu.Warning else Turu.Muted)
         }
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            CboTab.entries.forEachIndexed { i, t ->
-                SegmentedButton(
-                    selected = tab == t,
-                    onClick = { tab = t },
-                    shape = SegmentedButtonDefaults.itemShape(i, CboTab.entries.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Turu.AccentTint,
-                        activeContentColor = Turu.Text,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = Turu.Muted,
-                        activeBorderColor = Turu.Edge,
-                        inactiveBorderColor = Turu.Edge,
-                    ),
-                ) { Text(t.label) }
-            }
+        ConnectedChoice(CboTab.entries, tab, { tab = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(it.label)
         }
         val editable = view.username.isNotEmpty()
         LazyColumn(Modifier.weight(1f)) {
@@ -209,7 +191,7 @@ private fun RoleCard(index: Int, role: RoleView, view: CoreBotsView, panel: Core
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.Card)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -247,7 +229,7 @@ private fun RoleCard(index: Int, role: RoleView, view: CoreBotsView, panel: Core
             Switch(checked = role.useEquipment, enabled = editable, onCheckedChange = { panel.role(index, "equipment", it) })
         }
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { gear = !gear }.heightIn(min = 40.dp),
+            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { gear = !gear }.heightIn(min = 40.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val set = role.gear.count { it.isNotEmpty() }

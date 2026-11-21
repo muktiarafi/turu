@@ -7,13 +7,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -43,9 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,7 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -202,15 +197,8 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
         // With the keyboard up the panel has room for the field alone (landscape): the tabs and
         // the footer step aside until it goes.
         val typing = WindowInsets.isImeVisible
-        if (!typing) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-            SkillsTab.entries.forEachIndexed { i, t ->
-                SegmentedButton(
-                    selected = tab == t,
-                    onClick = { tab = t },
-                    shape = SegmentedButtonDefaults.itemShape(i, SkillsTab.entries.size),
-                    colors = segmentColors(),
-                ) { Text(t.label) }
-            }
+        if (!typing) ConnectedChoice(SkillsTab.entries, tab, { tab = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Text(it.label)
         }
         when (tab) {
             SkillsTab.Edit -> EditTab(view, panel, Modifier.weight(1f), onTyping = { typedClass = it }) { rulesFor = RulesTarget.New }
@@ -270,15 +258,6 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
     }
 }
 
-@Composable
-private fun segmentColors() = SegmentedButtonDefaults.colors(
-    activeContainerColor = Turu.AccentTint,
-    activeContentColor = Turu.Text,
-    inactiveContainerColor = Color.Transparent,
-    inactiveContentColor = Turu.Muted,
-    activeBorderColor = Turu.Edge,
-    inactiveBorderColor = Turu.Edge,
-)
 
 /** A small heading over a group of rows. */
 @Composable
@@ -340,7 +319,7 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .clickable(onClick = openNewRules)
                     .heightIn(min = 56.dp)
                     .padding(horizontal = 8.dp),
@@ -359,16 +338,12 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
         }
         item { GroupLabel("How skills are used") }
         item {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                listOf(false to "Use if available", true to "Wait for cooldown").forEachIndexed { i, (wait, label) ->
-                    SegmentedButton(
-                        selected = view.waitForCooldown == wait,
-                        onClick = { panel.editor("waitForCooldown", wait) },
-                        shape = SegmentedButtonDefaults.itemShape(i, 2),
-                        colors = segmentColors(),
-                    ) { Text(label, maxLines = 1) }
-                }
-            }
+            ConnectedChoice(
+                listOf(false, true),
+                view.waitForCooldown,
+                { panel.editor("waitForCooldown", it) },
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            ) { Text(if (it) "Wait for cooldown" else "Use if available", maxLines = 1) }
             Text(
                 if (view.waitForCooldown) "Waits for each skill to cool down, up to the timeout." else "A skill still cooling down is skipped.",
                 style = MaterialTheme.typography.bodySmall,
@@ -396,7 +371,7 @@ private fun SkillRow(index: Int, line: String, count: Int, panel: SkillsPanel) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable { panel.act("edit-rules", JSONObject().put("index", index)) }
             .heightIn(min = 56.dp)
             .padding(start = 8.dp),
@@ -448,7 +423,7 @@ private fun SavedTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, o
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -478,7 +453,7 @@ private fun SavedTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, o
                         Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(MaterialTheme.shapes.medium)
                             .clickable { panel.act("class", JSONObject().put("class", name)) }
                             .heightIn(min = 48.dp)
                             .padding(horizontal = 8.dp),
@@ -516,7 +491,7 @@ private fun SetRow(set: SetView, onOpen: () -> Unit, onRemove: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen)
             .heightIn(min = 64.dp)
             .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
@@ -527,7 +502,7 @@ private fun SetRow(set: SetView, onOpen: () -> Unit, onRemove: () -> Unit) {
                 Text(
                     set.mode,
                     style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Turu.AccentTint).padding(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.clip(CircleShape).background(Turu.AccentTint).padding(horizontal = 10.dp, vertical = 2.dp),
                 )
                 Text(
                     set.useMode + if (set.resetOnTarget) " · resets on target" else "",
@@ -683,7 +658,7 @@ private fun AuraEditor(aura: AuraView, enabled: Boolean, onRemove: (() -> Unit)?
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.Card)
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
@@ -695,7 +670,7 @@ private fun AuraEditor(aura: AuraView, enabled: Boolean, onRemove: (() -> Unit)?
                 placeholder = { Text("Focus") },
                 singleLine = true,
                 enabled = enabled,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 modifier = Modifier.weight(1f),
@@ -714,28 +689,17 @@ private fun AuraEditor(aura: AuraView, enabled: Boolean, onRemove: (() -> Unit)?
     }
 }
 
-/** A two-way choice as a segmented button row. */
+/** A two-way choice as a connected button pair. */
 @Composable
 private fun Toggle(labels: List<String>, selected: Int, enabled: Boolean, modifier: Modifier, descriptions: List<String>? = null, onPick: (Int) -> Unit) {
-    SingleChoiceSegmentedButtonRow(modifier) {
-        labels.forEachIndexed { i, label ->
-            SegmentedButton(
-                selected = selected == i,
-                onClick = { if (selected != i) onPick(i) },
-                enabled = enabled,
-                shape = SegmentedButtonDefaults.itemShape(i, labels.size),
-                colors = segmentColors(),
-                icon = {},
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) {
-                Text(
-                    label,
-                    maxLines = 1,
-                    modifier = descriptions?.let { d -> Modifier.semantics { contentDescription = d[i] } } ?: Modifier,
-                )
-            }
-        }
-    }
+    ConnectedChoice(
+        labels.indices.toList(),
+        selected,
+        onPick,
+        modifier,
+        enabled,
+        descriptions?.let { d -> { i: Int -> d[i] } },
+    ) { i -> Text(labels[i], maxLines = 1) }
 }
 
 /** A label with a line under it, and a control at the end. */
@@ -784,7 +748,7 @@ private fun NumberBox(value: Long, min: Long, max: Long, unit: String?, enabled:
         suffix = unit?.let { { Text(it, color = Turu.Muted) } },
         singleLine = true,
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         modifier = modifier,
@@ -805,7 +769,7 @@ private fun StacksBox(value: Double, enabled: Boolean, modifier: Modifier, onSet
         label = { Text("Stacks") },
         singleLine = true,
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
         modifier = modifier,
@@ -850,7 +814,7 @@ private fun DebouncedText(
         placeholder = { Text(placeholder) },
         singleLine = true,
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         modifier = modifier,

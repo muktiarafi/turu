@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -199,7 +198,7 @@ fun NotifyDropPage(state: ShellState, panel: NotifyDropPanel, fullWindow: () -> 
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 1.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(if (on) Turu.AccentTint else Color.Transparent)
                         .clickable { panel.toggle(name) }
                         .heightIn(min = 48.dp)
@@ -226,7 +225,7 @@ fun NotifyDropPage(state: ShellState, panel: NotifyDropPanel, fullWindow: () -> 
                     onValueChange = { panel.input = it },
                     placeholder = { Text("Item name, | between several", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { panel.add() }),
@@ -272,7 +271,7 @@ private fun NumberBox(value: Long, min: Long, max: Long, unit: String?, width: I
         },
         suffix = unit?.let { { Text(it, color = Turu.Muted) } },
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         modifier = Modifier.width(width.dp).onFocusChanged {

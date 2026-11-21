@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -193,16 +192,15 @@ fun CrashList(state: ShellState, panel: CrashesPanel, models: TabModels) {
                 }
                 items(view.reports, key = { it.name }) { row ->
                     ListItem(
-                        headlineContent = {
-                            Text(row.summary.ifBlank { "No summary" }, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        },
                         supportingContent = { Text(row.written, color = Turu.Muted) },
                         trailingContent = {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Muted)
                         },
                         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent, headlineColor = Turu.Text),
                         modifier = Modifier.clickable(onClickLabel = "Open the report") { state.push(Page.CrashReport(row.name)) },
-                    )
+                    ) {
+                        Text(row.summary.ifBlank { "No summary" }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }
@@ -284,9 +282,9 @@ fun CrashReportPage(state: ShellState, panel: CrashesPanel, name: String) {
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(Turu.Inset)
-                    .border(1.dp, Turu.Edge, RoundedCornerShape(10.dp)),
+                    .border(1.dp, Turu.Edge, MaterialTheme.shapes.medium),
             ) {
                 when {
                     row == null && panel.view != null -> Text(

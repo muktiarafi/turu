@@ -22,9 +22,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -41,6 +44,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -54,6 +58,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
@@ -81,8 +86,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
@@ -126,7 +129,7 @@ fun AccountRow(
     ListItem(
         modifier = Modifier
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (selected) Turu.AccentTint else Color.Transparent)
             .then(
                 if (select != null) {
@@ -154,7 +157,6 @@ fun AccountRow(
                 }
             }
         },
-        headlineContent = { Text(account.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             Column {
                 if (account.label != account.username && !account.masked) {
@@ -218,7 +220,7 @@ fun AccountRow(
                 if (!selecting) menu?.invoke()
             }
         },
-    )
+    ) { Text(account.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
 @Composable
@@ -230,7 +232,7 @@ private fun TagChip(label: String) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
-            .background(Turu.Track, RoundedCornerShape(6.dp))
+            .background(Turu.Track, MaterialTheme.shapes.small)
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
@@ -320,7 +322,7 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
                 null
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -543,7 +545,7 @@ private fun GroupDialog(count: Int, groups: List<String>, onDismiss: () -> Unit,
                                 g,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(MaterialTheme.shapes.small)
                                     .clickable { onAdd(g) }
                                     .heightIn(min = 48.dp)
                                     .padding(horizontal = 8.dp, vertical = 14.dp),
@@ -632,7 +634,7 @@ private fun LaunchRow(list: AccountList, open: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClickLabel = "change the launch options", onClick = open)
             .heightIn(min = 48.dp)
             .padding(horizontal = 8.dp),
@@ -801,7 +803,7 @@ fun Picker(
                 else ExposedDropdownMenuDefaults.TrailingIcon(expanded = open)
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
@@ -836,16 +838,27 @@ fun fieldColors() = OutlinedTextFieldDefaults.colors(
     focusedPlaceholderColor = Turu.Muted,
 )
 
+/**
+ * Streamer Mode's mask for the name fields: a dot per letter, as a password field shows. One
+ * replacement per letter, so the caret can still sit between letters (a whole-range replacement
+ * maps as one block).
+ */
+private val MaskNames = OutputTransformation {
+    for (i in 0 until length) replace(i, i + 1, "\u2022")
+}
+
 /** Add or Edit: username, password (to the Keystore), display name, tags. */
 @Composable
 fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Account?) {
-    var username by remember { mutableStateOf(original?.username ?: "") }
-    var password by remember { mutableStateOf("") }
+    val usernameField = rememberTextFieldState(original?.username ?: "")
+    val username = usernameField.text.toString()
+    val passwordField = rememberTextFieldState()
     var showPassword by remember { mutableStateOf(false) }
-    var displayName by remember { mutableStateOf(original?.displayName ?: "") }
+    val displayNameField = rememberTextFieldState(original?.displayName ?: "")
+    val displayName = displayNameField.text.toString()
     // Streamer Mode: the names are masked like the password until Show.
     var showNames by remember { mutableStateOf(!accounts.list.streamer) }
-    val names = if (showNames) VisualTransformation.None else PasswordVisualTransformation()
+    val names = if (showNames) null else MaskNames
     // A masked field also keeps the keyboard's suggestion strip from repeating what's typed.
     val namesKeyboard = if (showNames) KeyboardType.Ascii else KeyboardType.Password
     val namesToggle: @Composable () -> Unit = {
@@ -865,7 +878,7 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
                 enabled = username.isNotBlank() && taken == null && !saving,
                 onClick = {
                     saving = true
-                    accounts.save(original, username, password, displayName, tags.split(',')) { failed ->
+                    accounts.save(original, username, passwordField.text.toString(), displayName, tags.split(',')) { failed ->
                         saving = false
                         if (failed == null) state.back() else error = failed
                     }
@@ -878,19 +891,18 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
+                state = usernameField,
                 label = { Text("Username") },
-                singleLine = true,
+                lineLimits = TextFieldLineLimits.SingleLine,
                 isError = taken != null,
-                visualTransformation = names,
+                outputTransformation = names,
                 trailingIcon = if (accounts.list.streamer) namesToggle else null,
                 supportingText = when {
                     taken != null -> { { Text("${taken.label} is already in the list") } }
                     accounts.list.streamer -> { { Text("Hidden while Streamer Mode is on") } }
                     else -> null
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = namesKeyboard, imeAction = ImeAction.Next, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),
@@ -901,36 +913,34 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
                 }
             }
             if (accounts.list.keepsPasswords) {
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
+                OutlinedSecureTextField(
+                    state = passwordField,
                     label = { Text("Password") },
                     placeholder = if (original?.password == true) {
                         { Text("Saved; type to change it") }
                     } else {
                         null
                     },
-                    singleLine = true,
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    // Hidden as before (1.5's default, System, would show the last letter typed).
+                    textObfuscationMode = if (showPassword) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
                     trailingIcon = {
                         TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Hide" else "Show") }
                     },
                     supportingText = { Text("Kept in the Keystore, not the accounts file") },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             OutlinedTextField(
-                value = displayName,
-                onValueChange = { displayName = it },
+                state = displayNameField,
                 label = { Text("Display name") },
                 placeholder = { Text(if (showNames) username.ifBlank { "Shown instead of the username" } else "Shown instead of the username") },
-                singleLine = true,
-                visualTransformation = names,
+                lineLimits = TextFieldLineLimits.SingleLine,
+                outputTransformation = names,
                 trailingIcon = if (accounts.list.streamer) namesToggle else null,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = if (showNames) KeyboardOptions(imeAction = ImeAction.Next) else KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
@@ -942,7 +952,7 @@ fun AccountFormPage(state: ShellState, accounts: AccountsPanel, original: Accoun
                 placeholder = { Text("farm, alt") },
                 supportingText = { Text("Separated by commas") },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 modifier = Modifier.fillMaxWidth(),

@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Close
@@ -33,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -170,7 +173,7 @@ fun GameOptionsPage(state: ShellState, options: GameOptionsPanel, running: Boole
                 null
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -290,7 +293,7 @@ fun OptionRow(
                             style = MaterialTheme.typography.labelSmall,
                             color = color,
                             modifier = Modifier
-                                .border(1.dp, color.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                .border(1.dp, color.copy(alpha = 0.6f), MaterialTheme.shapes.small)
                                 .padding(horizontal = 6.dp, vertical = 1.dp),
                         )
                     }
@@ -357,7 +360,7 @@ private fun NumberField(value: Long, min: Long, max: Long, unit: String?, enable
         suffix = unit?.let { { Text(it, color = Turu.Muted) } },
         singleLine = true,
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         modifier = Modifier.width(120.dp),
@@ -380,23 +383,34 @@ private fun FpsPresets(presets: List<Int>, onSet: (Long) -> Unit) {
 /** Text, sent a moment after the typing stops. */
 @Composable
 private fun TextOption(value: String, hint: String, secret: Boolean, onSet: (String) -> Unit) {
-    var text by remember { mutableStateOf(value) }
+    val field = rememberTextFieldState(value)
+    val text = field.text.toString()
     LaunchedEffect(text) {
         if (text != value) {
             delay(400)
             onSet(text)
         }
     }
-    OutlinedTextField(
-        value = text,
-        onValueChange = { text = it },
-        placeholder = { Text(hint) },
-        singleLine = true,
-        visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        shape = RoundedCornerShape(12.dp),
-        colors = fieldColors(),
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-    )
+    val modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+    if (secret) {
+        OutlinedSecureTextField(
+            state = field,
+            placeholder = { Text(hint) },
+            textObfuscationMode = TextObfuscationMode.Hidden,
+            shape = MaterialTheme.shapes.medium,
+            colors = fieldColors(),
+            modifier = modifier,
+        )
+    } else {
+        OutlinedTextField(
+            state = field,
+            placeholder = { Text(hint) },
+            lineLimits = TextFieldLineLimits.SingleLine,
+            shape = MaterialTheme.shapes.medium,
+            colors = fieldColors(),
+            modifier = modifier,
+        )
+    }
 }
 
 /** The status line, then Defaults (asks first), Revert (asks first while a script runs) and Save. */

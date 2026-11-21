@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
@@ -310,7 +309,7 @@ private fun LoadoutRow(name: String, detail: String, worn: Boolean, onClick: () 
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onClick)
             .heightIn(min = 56.dp)
             .padding(horizontal = 8.dp),
@@ -336,7 +335,7 @@ private fun Chip(text: String, color: androidx.compose.ui.graphics.Color) {
         style = MaterialTheme.typography.labelSmall,
         color = color,
         maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = Modifier.clip(CircleShape).background(color.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }
 

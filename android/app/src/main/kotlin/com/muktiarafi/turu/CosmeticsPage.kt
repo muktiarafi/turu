@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -49,9 +48,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -173,23 +169,8 @@ fun CosmeticsPage(state: ShellState, panel: CosmeticsPanel, fullWindow: () -> Un
         }
         // With the keyboard up the segments and the foot step aside, so the field shows.
         val typing = WindowInsets.isImeVisible
-        if (!typing) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-            CosmeticsTab.entries.forEachIndexed { i, t ->
-                SegmentedButton(
-                    selected = tab == t,
-                    onClick = { tab = t },
-                    shape = SegmentedButtonDefaults.itemShape(i, CosmeticsTab.entries.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Turu.AccentTint,
-                        activeContentColor = Turu.Text,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = Turu.Muted,
-                        activeBorderColor = Turu.Edge,
-                        inactiveBorderColor = Turu.Edge,
-                    ),
-                    icon = {},
-                ) { Text(t.label, maxLines = 1) }
-            }
+        if (!typing) ConnectedChoice(CosmeticsTab.entries, tab, { tab = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Text(it.label, maxLines = 1)
         }
         when (tab) {
             CosmeticsTab.Copy -> CopyTab(view, panel, Modifier.weight(1f))
@@ -252,7 +233,7 @@ private fun CopyTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modifi
                     onValueChange = { character = it },
                     placeholder = { Text("Character name") },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { copy() }),
@@ -309,7 +290,7 @@ private fun CatalogTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Turu.Muted) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") } },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -505,7 +486,7 @@ private fun ColorsTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modi
                     singleLine = true,
                     isError = hex[i].isNotBlank() && swatch == null,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     modifier = Modifier.width(130.dp),
@@ -527,7 +508,7 @@ private fun ColorsTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modi
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .clickable {
                         p.colors.forEachIndexed { i, h -> hex[i] = h }
                         apply()

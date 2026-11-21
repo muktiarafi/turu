@@ -4,7 +4,6 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,8 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -158,7 +157,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
                     // The label toggles too: one control, as Android's settings rows.
                     Row(
                         Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(MaterialTheme.shapes.medium)
                             .toggleable(value = view.advanced, role = Role.Switch) { panel.act("advanced", JSONObject().put("on", it)) }
                             .heightIn(min = 48.dp)
                             .padding(start = 12.dp, end = 4.dp),
@@ -269,7 +268,7 @@ private fun Counters(counters: List<CounterView>) {
                     Column(
                         Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(MaterialTheme.shapes.medium)
                             .background(Turu.Card)
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                     ) {

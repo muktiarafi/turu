@@ -155,8 +155,11 @@ brew install --cask android-commandlinetools
 ```
 
 ```bash
-sdkmanager --sdk_root=$HOME/Library/Android/sdk "platform-tools" "build-tools;36.0.0" "platforms;android-36" "ndk;27.3.13750724"
+sdkmanager --sdk_root=$HOME/Library/Android/sdk "platform-tools" "build-tools;36.0.0" "platforms;android-37.1" "platforms;android-36" "ndk;27.3.13750724"
 ```
+
+The app compiles against Android 37.1 (Compose 1.13 and Material 3 1.5 need it; targetSdk stays
+36); `shared`, the verifier and Turu Mas's extension compile against 36.
 
 ```bash
 rustup target add aarch64-linux-android x86_64-linux-android && cargo install cargo-ndk --locked

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
@@ -187,7 +186,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Turu.Muted) },
                 trailingIcon = { if (filter.isNotEmpty()) IconButton(onClick = { filter = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the filter") } },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).onFocusChanged { filterFocused = it.isFocused },
@@ -253,7 +252,7 @@ private fun ChecklistHead(group: ScriptOptionGroupView, rows: List<ScriptOptionR
                 Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(Turu.Warning.copy(alpha = 0.10f))
                     .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -369,7 +368,7 @@ private fun LiveField(value: String, hint: String, number: Boolean, modifier: Mo
         placeholder = { if (hint.isNotEmpty()) Text(hint) },
         trailingIcon = trailing,
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(keyboardType = if (number) KeyboardType.Number else KeyboardType.Text, imeAction = ImeAction.Done),
         modifier = modifier.onFocusChanged { focused = it.isFocused },

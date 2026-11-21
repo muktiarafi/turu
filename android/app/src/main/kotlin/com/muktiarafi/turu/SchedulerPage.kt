@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -46,9 +46,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -231,7 +231,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
                                 name.removeSuffix(".json"),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(MaterialTheme.shapes.small)
                                     .clickable { loading = false; panel.act("load", JSONObject().put("name", name)) }
                                     .heightIn(min = 48.dp)
                                     .padding(horizontal = 8.dp, vertical = 14.dp),
@@ -255,7 +255,7 @@ private fun EntryRow(index: Int, entry: EntryView, view: SchedulerView, panel: S
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (entry.current) Turu.AccentTint else Color.Transparent)
             .heightIn(min = 56.dp)
             .padding(start = 12.dp),
@@ -270,7 +270,7 @@ private fun EntryRow(index: Int, entry: EntryView, view: SchedulerView, panel: S
                     style = MaterialTheme.typography.labelSmall,
                     color = entry.tint.color(),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
+                        .clip(CircleShape)
                         .background(entry.tint.color().copy(alpha = 0.14f))
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )

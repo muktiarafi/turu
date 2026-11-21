@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -154,7 +153,7 @@ fun DropsPage(state: ShellState, panel: DropsPanel, fullWindow: () -> Unit) {
                     null
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 modifier = Modifier.weight(1f),
@@ -190,7 +189,7 @@ fun DropsPage(state: ShellState, panel: DropsPanel, fullWindow: () -> Unit) {
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 1.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(if (checked) Turu.AccentTint else Color.Transparent)
                         .clickable { panel.toggle(drop) }
                         .heightIn(min = 48.dp)
@@ -209,7 +208,7 @@ fun DropsPage(state: ShellState, panel: DropsPanel, fullWindow: () -> Unit) {
                             style = MaterialTheme.typography.labelSmall,
                             color = Turu.Success,
                             modifier = Modifier
-                                .background(Turu.Success.copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+                                .background(Turu.Success.copy(alpha = 0.14f), MaterialTheme.shapes.small)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                         )
                     }

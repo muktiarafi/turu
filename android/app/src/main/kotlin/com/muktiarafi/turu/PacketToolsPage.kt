@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -235,7 +234,7 @@ private fun SearchField(value: String, hint: String, modifier: Modifier, change:
             null
         },
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
         modifier = modifier,
@@ -249,9 +248,9 @@ private fun Well(modifier: Modifier, content: @Composable () -> Unit) {
         modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.Inset)
-            .border(1.dp, Turu.Edge, RoundedCornerShape(10.dp)),
+            .border(1.dp, Turu.Edge, MaterialTheme.shapes.medium),
     ) { content() }
 }
 
@@ -453,7 +452,7 @@ fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: 
                     placeholder = { Text("%xt%zm%…", fontFamily = FontFamily.Monospace) },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false),
                     modifier = Modifier.weight(1f),
@@ -486,7 +485,7 @@ private fun DelayBox(value: Long, set: (Long) -> Unit) {
             },
             suffix = { Text("ms", color = Turu.Muted) },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.width(128.dp),
@@ -693,7 +692,7 @@ private fun Direction(direction: String) {
         maxLines = 1,
         modifier = Modifier
             .width(52.dp)
-            .clip(RoundedCornerShape(9.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(color.copy(alpha = 0.18f))
             .padding(vertical = 2.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,

@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -284,7 +283,7 @@ private fun GoTo(goTo: TravelDest, pads: List<String>, reach: Int, here: TravelD
                 onValueChange = { text -> change(if (text.contains(',')) parsePasted(text) ?: goTo.copy(map = text) else goTo.copy(map = text)) },
                 label = { Text("Map") },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false, imeAction = ImeAction.Go),
                 keyboardActions = go,
@@ -296,7 +295,7 @@ private fun GoTo(goTo: TravelDest, pads: List<String>, reach: Int, here: TravelD
                 label = { Text("Room") },
                 placeholder = { Text("Any") },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
                 keyboardActions = go,
@@ -311,7 +310,7 @@ private fun GoTo(goTo: TravelDest, pads: List<String>, reach: Int, here: TravelD
                 label = { Text("Cell") },
                 placeholder = { Text("Enter") },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false, imeAction = ImeAction.Go),
                 keyboardActions = go,
@@ -424,7 +423,7 @@ fun ArmyPresetPage(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel, 
                     onValueChange = { set(if (number) it.filter { c -> c.isDigit() } else it); error = null },
                     label = { Text(label) },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = if (number) KeyboardType.Number else KeyboardType.Ascii, autoCorrectEnabled = false, imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth(),

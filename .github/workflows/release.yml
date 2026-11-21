@@ -363,8 +363,9 @@ jobs:
       - name: Install the Android SDK parts, cargo-ndk and libclang
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          # 37.1 for the app (Compose 1.13), 36 for the modules it includes.
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
+            "platforms;android-37.1" "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
           cargo install cargo-ndk --version 4.1.2 --locked
           # rquickjs makes its QuickJS bindings with bindgen, which loads libclang.
           sudo apt-get update

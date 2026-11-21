@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -42,9 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -211,7 +207,7 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
                         null
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
@@ -236,7 +232,7 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 1.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(if (on) Turu.AccentTint else Color.Transparent)
                         .clickable { panel.toggle(q) }
                         .heightIn(min = 48.dp)
@@ -290,23 +286,8 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
 @Composable
 private fun LoadRow(panel: LoaderPanel) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("Quests" to true, "Shop" to false).forEachIndexed { i, (label, quests) ->
-                SegmentedButton(
-                    selected = panel.quests == quests,
-                    onClick = { panel.quests = quests },
-                    shape = SegmentedButtonDefaults.itemShape(i, 2),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Turu.AccentTint,
-                        activeContentColor = Turu.Text,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = Turu.Muted,
-                        activeBorderColor = Turu.Edge,
-                        inactiveBorderColor = Turu.Edge,
-                    ),
-                    icon = {},
-                ) { Text(label) }
-            }
+        ConnectedChoice(listOf(true, false), panel.quests, { panel.quests = it }, Modifier.fillMaxWidth()) {
+            Text(if (it) "Quests" else "Shop")
         }
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -314,7 +295,7 @@ private fun LoadRow(panel: LoaderPanel) {
                 onValueChange = { panel.ids = it },
                 placeholder = { Text(if (panel.quests) "Quest IDs, like 2566, 2567" else "A shop's ID", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { panel.load() }),

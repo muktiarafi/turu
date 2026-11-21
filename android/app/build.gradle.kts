@@ -10,7 +10,11 @@ plugins {
 
 android {
     namespace = "com.muktiarafi.turu"
-    compileSdk = 36
+    // Compose 1.13 (BOM 2026.11.01, Material 3 1.5.0) needs compileSdk 37.1. Only this module:
+    // `shared` and Turu Mas's extension stay on 36. targetSdk stays 36 (no behaviour change).
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
     ndkVersion = "27.3.13750724"
 
     defaultConfig {

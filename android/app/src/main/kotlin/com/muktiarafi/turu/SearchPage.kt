@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -43,7 +42,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -182,7 +181,7 @@ private fun Badge(label: String, tone: Tone) {
         color = toneColor(tone),
         maxLines = 1,
         modifier = Modifier
-            .background(toneColor(tone).copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+            .background(toneColor(tone).copy(alpha = 0.14f), MaterialTheme.shapes.small)
             .padding(horizontal = 6.dp, vertical = 1.dp),
     )
 }
@@ -309,7 +308,7 @@ private fun SearchBox(view: RepoView, search: SearchPanel) {
             }
         },
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         // Search shows the results: the keyboard hides them on a landscape phone.
@@ -419,7 +418,7 @@ private fun PickBar(pick: ScriptPick, cancel: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.AccentTint)
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -442,7 +441,7 @@ private fun PickRow(row: RowView, topHit: Boolean, pick: ScriptPick, onPick: () 
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(enabled = !row.working, onClick = onPick)
             .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -498,7 +497,7 @@ private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, starte
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClickLabel = "more for ${row.name}") { menu = true }
             .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -574,8 +573,9 @@ private fun Footer(view: RepoView, search: SearchPanel) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("${busy.task}: ${busy.message}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // A wave while it works (Expressive's activity cue); Stats' bars, which measure, stay flat.
                     if (busy.total.toLong() > 0) {
-                        LinearProgressIndicator(
+                        LinearWavyProgressIndicator(
                             progress = { busy.done.toFloat() / busy.total.toFloat() },
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                             color = Turu.Accent,

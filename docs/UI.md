@@ -912,6 +912,29 @@ Compose and egui share one 64-dp column until L5b, so the surfaces are pinned to
 `#181B25`, outlines `EDGE`, text `TEXT` and `MUTED`; primary `ACCENT` `#7C6CF0` with white on
 it; success, warning and danger as egui's. Roboto in the M3 type scale, in sp; Material Symbols
 Rounded for icons. Touch targets 48 dp. DESIGN.md's palette is the Monitor's and doesn't apply.
+*Material 3 Expressive, at the theme (2026-11-21, Material 3 1.5.0; a spike, for the owner to
+keep or not):* the controls' feedback (switches, chips, menus) moves on `MotionScheme.expressive()`'s
+springs, set in the theme; the panel's page changes on the standard scheme's (`PanelMotion`: a
+pane over the game doesn't overshoot), with no hand-picked `tween` left. The state lines of
+the Script Loader and of Auto's running card are `titleSmallEmphasized` (bold). Corners come from
+`MaterialTheme.shapes`, Material's own sizes (menus, dialogs and the snackbar keep theirs):
+`medium` (12 dp) for cards, rows, fields and boxes, `small` (8 dp) for tags and what sits inside a
+card, `CircleShape` for pills, dots and avatars; no page names a radius (the 10, 9 and 6 dp ones
+folded into the nearest step). Colours and layout are unchanged; Expressive's colour schemes,
+rails and larger components aren't used. (Emphasized `bodyLarge`/`bodyMedium`, Medium weight,
+was tried on the tab on screen and dropped: it drew no heavier than regular on the emulator; the
+tab rows' status line and the rail's chip stay as they were for that reason and for room.)
+*Expressive components (2026-11-22):* every one-of-a-few choice (the tabs of Logs, Skills,
+CoreBots, Butler, Cosmetics, Runtime and Loader, and Skills' small pairs) is a connected button
+group (`ConnectedChoice.kt`: `ToggleButton`s 2 dp apart, the chosen one in the accent tint and
+fully round, the others `surfaceContainerHigh`, read out as radio buttons), in place of segmented
+buttons. The Script Loader's run buttons square their corners while pressed
+(`ButtonDefaults.shapes()`), and Stop and Pause stay 8 dp apart rather than joining a group, so a
+slip doesn't stop the run. Search Scripts' download bar is a `LinearWavyProgressIndicator` (a
+wave means work under way); Stats' bars measure, so they stay flat, and the 12-18 dp spinners
+stay plain (a wave doesn't read that small). Kept as they were, by the owner's choice: the
+Script Loader's Start with Search and Options as their own buttons (no split button), and
+Auto's Attack and Hunt with the running card (no toggle buttons).
 
 **Structure.** A navigation rail, the pattern for landscape. In L5a the shell owns its top item
 and the client's egui rail starts below it; in L5b the whole rail is native.

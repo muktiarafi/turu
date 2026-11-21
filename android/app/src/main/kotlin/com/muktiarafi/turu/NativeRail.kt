@@ -2,7 +2,6 @@ package com.muktiarafi.turu
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,8 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
@@ -169,7 +169,7 @@ private fun RailItem(entry: Entry, height: Dp, selected: Boolean) {
         Modifier
             .width(56.dp)
             .height(height)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .semantics {
                 contentDescription = entry.label
                 entry.state?.let { stateDescription = it }
@@ -182,7 +182,7 @@ private fun RailItem(entry: Entry, height: Dp, selected: Boolean) {
             Modifier
                 .width(52.dp)
                 .height(32.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(CircleShape)
                 .background(if (selected) Turu.RailSelected else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
@@ -268,14 +268,16 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
         c?.forceStop?.let { add(Cell(RailIcons.Stop, "Force stop", it.enabled, it.reason, danger = true, run = scripts::stop)) }
         c?.stop?.let { add(Cell(RailIcons.Stop, "Stop the script", it.enabled, it.reason, danger = true, run = scripts::stop)) }
     }
-    val round = 10.dp
+    // The theme's medium corner; the chip and its first control share a square seam.
+    val round = MaterialTheme.shapes.medium
+    val square = CornerSize(0.dp)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val joined = cells.isNotEmpty()
         Column(
             Modifier
                 .width(56.dp)
                 .height(chipHeight)
-                .clip(RoundedCornerShape(topStart = round, topEnd = round, bottomStart = if (joined) 0.dp else round, bottomEnd = if (joined) 0.dp else round))
+                .clip(if (joined) round.copy(bottomStart = square, bottomEnd = square) else round)
                 .background(if (selected) Turu.RailSelected else Turu.Track)
                 .semantics { contentDescription = "Script Loader: ${view?.state ?: "reading the tab"}" }
                 .selectable(selected = selected, role = Role.Tab, onClick = openLoader),
@@ -296,9 +298,9 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
             // The first control hangs under the chip; the second stands apart.
             Spacer(Modifier.height(if (i == 0) 1.dp else CellGap))
             val shape = if (i == 0) {
-                RoundedCornerShape(bottomStart = round, bottomEnd = round)
+                round.copy(topStart = square, topEnd = square)
             } else {
-                RoundedCornerShape(round)
+                round
             }
             val idle = scripts.busy == null
             Box(
@@ -348,7 +350,7 @@ fun RailHandle(insetDp: Dp, onClick: () -> Unit) {
             Modifier
                 .width(24.dp + insetDp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
+                .clip(MaterialTheme.shapes.medium.copy(topStart = CornerSize(0.dp), bottomStart = CornerSize(0.dp)))
                 .background(Turu.Panel.copy(alpha = 0.85f))
                 .padding(start = insetDp),
             contentAlignment = Alignment.Center,

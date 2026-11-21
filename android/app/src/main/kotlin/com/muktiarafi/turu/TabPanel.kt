@@ -2,37 +2,34 @@ package com.muktiarafi.turu
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -62,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -140,7 +138,7 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
             .padding(top = 8.dp)
             .width(56.dp)
             .height(railItemHeight())
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (selected) Turu.RailSelected else Color.Transparent)
             .semantics { contentDescription = description }
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
@@ -251,14 +249,16 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                 .imePadding(),
         ) {
             // A new opening starts the pages afresh: no slide from the page the panel last closed on.
+            // Pages slide on the standard scheme: no overshoot in a pane over the game.
+            val motion = PanelMotion
             key(state.openings) {
                 AnimatedContent(
                     targetState = state.page,
                     transitionSpec = {
                         val forward = targetState !is Page.Tabs
                         val dir = if (forward) 1 else -1
-                        (slideInHorizontally(tween(220)) { it / 6 * dir } + fadeIn(tween(220)))
-                            .togetherWith(slideOutHorizontally(tween(160)) { -it / 8 * dir } + fadeOut(tween(120)))
+                        (slideInHorizontally(motion.defaultSpatialSpec()) { it / 6 * dir } + fadeIn(motion.defaultEffectsSpec()))
+                            .togetherWith(slideOutHorizontally(motion.fastSpatialSpec()) { -it / 8 * dir } + fadeOut(motion.fastEffectsSpec()))
                     },
                     label = "panel page",
                 ) { page ->
@@ -428,7 +428,7 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                 ListItem(
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 2.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .then(if (selected) Modifier.semantics { stateDescription = "On screen" } else Modifier)
                         .selectable(selected = selected, onClick = {
                             actions.select(tab.id)
@@ -438,7 +438,6 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                         containerColor = if (selected) Turu.AccentTint else Color.Transparent,
                     ),
                     leadingContent = { Avatar(tab.label, size = 40.dp, tab = tab) },
-                    headlineContent = { Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -488,7 +487,7 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                     } else {
                         null
                     },
-                )
+                ) { Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }
         HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -595,7 +594,7 @@ private fun NewTabPage(state: ShellState, actions: TabActions) {
         ListItem(
             modifier = Modifier
                 .padding(horizontal = 8.dp, vertical = 4.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(MaterialTheme.shapes.medium)
                 .clickable {
                     actions.blank()
                     state.close()
@@ -607,8 +606,7 @@ private fun NewTabPage(state: ShellState, actions: TabActions) {
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Rounded.Person, contentDescription = null, tint = Turu.Muted) }
             },
-            headlineContent = { Text("Blank tab") },
             supportingContent = { Text("Log in by hand", color = Turu.Muted) },
-        )
+        ) { Text("Blank tab") }
     }
 }

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,8 +27,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -234,7 +233,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                             null
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = fieldColors(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         modifier = Modifier.weight(1f),
@@ -389,7 +388,7 @@ private fun JunkRow(row: JunkRowView, on: Boolean, toggle: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(
                 when {
                     on -> Turu.AccentTint
@@ -455,9 +454,9 @@ private fun JunkChip(text: String, tone: JunkTone) {
         color = color,
         maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(9.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(if (tone == JunkTone.Plain) Turu.Track else color.copy(alpha = 0.16f))
-            .border(1.dp, if (tone == JunkTone.Plain) Turu.Edge else color.copy(alpha = 0.5f), RoundedCornerShape(9.dp))
+            .border(1.dp, if (tone == JunkTone.Plain) Turu.Edge else color.copy(alpha = 0.5f), MaterialTheme.shapes.small)
             .padding(horizontal = 7.dp, vertical = 1.dp),
     )
 }
@@ -588,7 +587,7 @@ private fun JunkGoalBar(view: JunkView, panel: JunkPanel, close: () -> Unit) {
             label = { Text(if (wrong) "A whole number above 0" else "Goal for $items, inventory + bank", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             singleLine = true,
             isError = wrong,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { set() }),

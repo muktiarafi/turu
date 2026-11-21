@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.LocationOn
@@ -277,7 +276,7 @@ private fun NoticeRow(entry: NoticeView, selected: Boolean, onClick: () -> Unit)
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (selected) Turu.AccentTint else Color.Transparent)
             .clickable(onClick = onClick)
             .heightIn(min = 48.dp)

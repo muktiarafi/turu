@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -173,7 +172,7 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Turu.Muted) },
             trailingIcon = { if (search.isNotEmpty()) IconButton(onClick = { search = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") } },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).onFocusChanged { searchFocused = it.isFocused },
@@ -243,7 +242,7 @@ private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel, onFocus: (
         Column(
             Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(MaterialTheme.shapes.medium)
                 .clickable { panel.act("private", JSONObject().put("on", !view.privateRoom)) }
                 .heightIn(min = 48.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
@@ -263,7 +262,7 @@ private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel, onFocus: (
             },
             enabled = view.privateRoom,
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             modifier = Modifier.width(136.dp).onFocusChanged { onFocus(it.isFocused) },
@@ -281,7 +280,7 @@ private fun DestinationRow(dest: DestinationView, busy: Boolean, panel: FastTrav
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(if (dest.traveling) Turu.AccentTint else androidx.compose.ui.graphics.Color.Transparent)
             .clickable(enabled = !busy) { panel.on("travel", dest) }
             .heightIn(min = 56.dp)
@@ -349,7 +348,7 @@ private fun FormPage(form: Form, view: FastTravelView, panel: FastTravelPanel, o
                             onValueChange = { onChange(form.copy(cell = it)) },
                             label = { Text("Cell") },
                             singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.medium,
                             colors = fieldColors(),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { submit() }),
@@ -385,7 +384,7 @@ private fun FormField(label: String, value: String, placeholder: String, onChang
         label = { Text(label) },
         placeholder = { Text(placeholder) },
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),

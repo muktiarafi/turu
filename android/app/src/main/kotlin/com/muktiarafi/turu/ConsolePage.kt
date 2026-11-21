@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
@@ -147,7 +146,7 @@ fun ConsolePage(state: ShellState, panel: ConsolePanel, fullWindow: () -> Unit) 
                 onValueChange = { code = it },
                 placeholder = { Text("bot.player.gold", fontFamily = FontFamily.Monospace) },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = fieldColors(),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
@@ -217,9 +216,9 @@ private fun Output(view: ConsoleView, modifier: Modifier) {
         modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Turu.Inset)
-            .border(1.dp, Turu.Edge, RoundedCornerShape(10.dp)),
+            .border(1.dp, Turu.Edge, MaterialTheme.shapes.medium),
     ) {
         if (view.output.isEmpty()) {
             Text("Run a snippet to see its output here", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(12.dp))
