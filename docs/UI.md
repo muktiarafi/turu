@@ -827,7 +827,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   in tercessuinotlim; elsewhere it stays where you are). On a touch screen with a window under
   620x520 the window fills the screen; its controls, tile menus and rows are finger-sized.
 
-* **HotKeys** (Options > HotKeys; `hotkeys_window.rs`, model and dispatch in `hotkeys.rs`,
+* **HotKeys** (Options > HotKeys; `hotkeys_window.rs`; the catalog, bindings, editing and running
+  an action in `models::hotkeys` since 2026-11-21, the key presses and windows in `hotkeys.rs`,
   VibeSkua `HotKeysView`): VibeSkua's whole catalog of bindable actions (its `_actionList`, 76:
   script and windows, Auto, the Game options it toggles, Rest, Jump To Home, Logout, Reject All
   Drops, 37 AQW Lite settings, Army broadcasts), with its titles and descriptions. Wide (600 px
@@ -852,7 +853,8 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   macOS (shown as "Cmd"). Checked by eye from offscreen renders (1100x720 wide, 520x760 both
   pages, 640x420); not yet in the running app.
 
-Hotkeys run (`hotkeys::run_pressed`, before the windows each frame) for the active tab while
+Hotkeys run (`hotkeys::run_pressed` reads the presses, before the windows each frame, and
+`models::hotkeys::run` runs the action) for the active tab while
 Turu's window has focus (VibeSkua's Windows-only global keyboard hook isn't ported). The
 modifiers must match exactly; a key that types is ignored while a Turu text box has focus;
 the press is taken from egui, and the game gets it too, as it does Ruffle's own shortcuts.
@@ -952,7 +954,7 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Tabs, Accounts | native (L5a) |
 | Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console, Packet Logger, Spammer, Interceptor | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
-| HotKeys | egui, from More (unused without a keyboard) |
+| HotKeys | egui, from More (unused without a keyboard); its model is shell-neutral (`/models/hotkeys`) |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field

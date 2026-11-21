@@ -612,7 +612,8 @@ three frontends pass their tests and start.
 Move each feature's state and what it decides into `turu_client`, cut by feature rather than by
 egui window where the two differ, with its route on the control API. First what every shell needs:
 the list of features (what `Host` hides, which are enabled; egui shows it as its nav menu), and
-hotkeys (today `hotkeys::run_pressed` runs inside egui's frame). Then pilot on three features of
+hotkeys (today `hotkeys::run_pressed` runs inside egui's frame; since 2026-11-21 the catalog,
+bindings, editing and running an action are `models::hotkeys`, and egui only reads the presses). Then pilot on three features of
 different kinds: scripts (a status and commands), logs (lines arriving) and game options (a form
 that saves). Record for each how many lines stayed in egui and how many moved: that ratio sizes the
 rest. Then the daily features (accounts, tabs, Army, the rest of options), in the order the Android
@@ -943,6 +944,14 @@ script's message box and options request.
   Change server, Equip or Refresh, Save, Clear or Delete. While building, a model test sent a
   jump into the Mac's real `army-control-jump.json` and replaced its last jump (Go to's starting
   fields) with yulgar; the history and presets were untouched, and test builds can't reach it now.
+* **HotKeys' model** (2026-11-21, the owner's request, though HotKeys has no native page):
+  `models::hotkeys` holds the catalog, the bindings and `HotKeys.json`, editing (assign, a key
+  moving from another action, clear, add, remove with Undo, defaults) and running an action for a
+  tab, answering what it needs of the UI (`Needs`: a window, the bank, Auto, the script button).
+  No egui: a key is kept by egui's name (`KEY_NAMES`), and a test in the egui glue keeps the table
+  in step with `egui::Key::ALL`. `/models/hotkeys` serves the view and the edits for a shell that
+  gets keys (macOS, later). Checked by the tests (the window drawn at every size included), not by
+  pressing keys in the desktop app.
 * **Engine dialogs** (2026-11-21, the owner's pick; L3's first part): `models::prompts` gives the
   one prompt waiting for the tab, the most pressing first (the script's message box, Butler's
   "a script started while following", the crash notice, the Tab Limit, a graphics tip), each with
