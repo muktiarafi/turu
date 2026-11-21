@@ -1054,13 +1054,16 @@ above, and why:
   starting a script moves nothing: the emulator's 411 dp keeps Auto, Jump and More.
   Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
   Army opens Army Control. Bank's reason for opening nothing shows as a toast (a snackbar
-  would need the panel open). More (440 dp) is list and detail, so nothing in it needs scrolling
-  on the emulator: the menus down the left (Scripts, Options, Tools & Helpers, Combat,
-  Diagnostics, Plugins, Army), the one picked on the right, kept while the panel is closed. A row
-  that opens a native page has a chevron (Logs included, whose page has Full window for Find and
-  Copy); the rest open the slot's egui window. Its bar has Hide Side Bar, and Bank and Update while
-  the rail has folded them (no menu has either); a `›` tab at the left edge brings the rail back,
-  in every tab. The rail's
+  would need the panel open). More (440 dp) is list and detail: a search above it ("Search
+  windows: drops, packets…") lists every window whose name or line matches each word typed, with
+  its menu; under it Recent (the last four windows opened, once there are any) and the menus down
+  the left (Scripts, Options, Tools & Helpers, Combat, Diagnostics, Plugins, Army), an arrow at the
+  list's foot while more are below, the one picked on the right. Each window has a line on what
+  it's for under its name (or why it's off); one that opens the slot's egui window, not a page
+  here, says "Opens the full window" (critique fixes, 2026-11-21: the chevron every native row
+  had is gone). The menu on show and Recent are kept on the device, through a font-size change
+  too. Its bar has Bank and Update while the rail has folded them (no menu has either), and ⋮
+  with Hide Side Bar; a `›` tab at the left edge brings the rail back, in every tab. The rail's
   icons are drawn in one stroke where Material Symbols' core set lacks them (`RailIcons.kt`);
   Jump's pin is the core set's filled one.
 * **Search Scripts** (L5b, 2026-11-20) is a page of the panel, 440 dp wide (its rows need it),

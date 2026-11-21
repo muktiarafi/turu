@@ -1,5 +1,6 @@
 package com.muktiarafi.turu
 
+import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,13 +33,20 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -61,12 +69,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.muktiarafi.turu.models.Control
 import com.muktiarafi.turu.models.MenuItem
 import org.json.JSONObject
@@ -308,15 +319,94 @@ private fun nativePage(window: String): Page? = when (window) {
 }
 
 /**
+ * What each of More's windows is for, in a line under its name (and words its search matches):
+ * VibeSkua's names don't always say ("Runtime", "Interceptor").
+ */
+private val ABOUT = mapOf(
+    "script_loader" to "Load, start and stop a script; its log",
+    "script_repo" to "Find, download and start scripts",
+    "script_options" to "The loaded script's own settings",
+    "scheduler" to "A playlist of scripts run one after another",
+    "game_options" to "Relogin, lag killer, FPS and the game's switches",
+    "application_options" to "Turu's own settings",
+    "core_bots" to "CoreBots' settings for this character",
+    "hotkeys" to "Keyboard shortcuts",
+    "loader" to "Load quests and shops by ID; the quest cache",
+    "grabber" to "Read inventory, shops, quests, monsters; act on them",
+    "current_drops" to "Drops waiting to be picked up",
+    "junk_items" to "Mark items as junk and sell them",
+    "loadouts" to "Save and equip sets of gear",
+    "fast_travel" to "Saved places to travel to in a tap",
+    "skills" to "The skill order and its rules",
+    "stats" to "Kills, deaths, drops and run time",
+    "runtime" to "Drops to pick up, quests to keep accepted, boosts",
+    "notifications" to "What happened: drops, deaths, relogins, script events",
+    "logs" to "The script's, the client's and the bot's logs",
+    "console" to "Run a TypeScript snippet with bot in scope",
+    "spammer" to "Send packets on a timer",
+    "packet_logger" to "Watch the packets the game sends",
+    "interceptor" to "Read and change packets through a proxy",
+    "butler" to "Have accounts follow and help each other",
+    "cosmetics" to "Copy looks and change your outfit",
+    "accounts" to "Saved accounts; start them in tabs",
+    "army" to "Command every tab and client at once",
+    "army_queue" to "Squads of accounts that run scripts in turn",
+    "new_tab" to "Open another account in a tab",
+)
+
+/** More's search: the item's name or what it's for, every word typed. */
+private fun matches(item: MenuItem, menu: String, typed: String): Boolean {
+    val text = "${item.label} ${ABOUT[item.window].orEmpty()} $menu".lowercase()
+    return typed.lowercase().split(' ').filter { it.isNotBlank() }.all { it in text }
+}
+
+/**
+ * More's memory on this device: the menu on show and the windows opened last (newest first). In
+ * preferences, not the panel's state, so a font-size change (the activity made again) keeps them.
+ */
+private class MoreMemory(context: Context) {
+    private val prefs = context.getSharedPreferences("more", Context.MODE_PRIVATE)
+    var menu by mutableStateOf(prefs.getString("menu", null))
+        private set
+    var recent by mutableStateOf(prefs.getString("recent", "").orEmpty().split(',').filter { it.isNotEmpty() })
+        private set
+
+    fun show(title: String) {
+        menu = title
+        prefs.edit { putString("menu", title) }
+    }
+
+    fun opened(window: String) {
+        recent = (listOf(window) + recent.filter { it != window }).take(RECENT)
+        prefs.edit { putString("recent", recent.joinToString(",")) }
+    }
+}
+
+private const val RECENT = 4
+
+/** The Recent group's title in More's list. */
+private const val RECENT_TITLE = "Recent"
+
+/**
  * More: VibeSkua's menus as this platform has them (`models::rail`), list and detail so none is
- * more than a tap away: the menus down the left, the one picked on the right (kept while the
- * panel is closed). A native window opens its page (a chevron says so), the rest the slot's egui
- * window. The bar holds what the rail folded and no menu has (Bank, Update) and Hide Side Bar.
+ * more than a tap away: Recent (the windows opened last) and the menus down the left, the one
+ * picked on the right, each window with a line on what it's for. A search above the list looks
+ * through every window's name and line. A native window opens its page; one that opens the
+ * slot's full egui window says so. The bar holds what the rail folded and no menu has (Bank,
+ * Update), and ⋮ Hide Side Bar.
  */
 @Composable
 fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, bank: () -> Unit, hideRail: () -> Unit) {
     val rail = models.rail
     val menus = rail?.menus
+    val context = LocalContext.current
+    val memory = remember { MoreMemory(context) }
+    var search by remember { mutableStateOf("") }
+    val open = { item: MenuItem ->
+        memory.opened(item.window)
+        val page = nativePage(item.window)
+        if (page != null) state.push(page) else window(item.window)
+    }
     Column(Modifier.fillMaxSize()) {
         PageBar("More", onBack = { state.back() }) {
             if ("Bank" in state.folded) {
@@ -336,75 +426,143 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
                     Text("Update")
                 }
             }
-            TextButton(onClick = hideRail) { Text("Hide Side Bar") }
+            // A layout setting, not a place to go: under ⋮, so the bar keeps to destinations.
+            var more by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { more = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "More options", tint = Turu.Muted) }
+                DropdownMenu(expanded = more, onDismissRequest = { more = false }, containerColor = Turu.Card) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Hide Side Bar")
+                                Text("The tab at the left edge brings it back", style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
+                            }
+                        },
+                        onClick = { more = false; hideRail() },
+                    )
+                }
+            }
         }
         if (menus == null) return@Column Waiting(models)
-        val shown = menus.firstOrNull { it.title == state.moreMenu } ?: menus.firstOrNull() ?: return@Column
-        Row(Modifier.fillMaxSize()) {
-            Column(
-                Modifier
-                    .width(152.dp)
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
-                    .selectableGroup(),
-            ) {
-                for (menu in menus) {
-                    val selected = menu.title == shown.title
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (selected) Turu.AccentTint else Color.Transparent)
-                            .selectable(selected = selected, role = Role.Tab) { state.moreMenu = menu.title }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            placeholder = { Text("Search windows: drops, packets…", maxLines = 1) },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            trailingIcon = if (search.isNotEmpty()) {
+                { IconButton(onClick = { search = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") } }
+            } else {
+                null
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            colors = fieldColors(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+        )
+        val all = menus.flatMap { m -> m.items.map { m.title to it } }
+        if (search.isNotBlank()) {
+            val found = all.filter { (menu, item) -> matches(item, menu, search) }
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                if (found.isEmpty()) {
+                    item {
                         Text(
-                            menu.title,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (selected) Turu.Text else Turu.Muted,
+                            "No window matches. Try a word for what it does: drops, quests, packets.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Turu.Muted,
+                            modifier = Modifier.padding(12.dp),
                         )
+                    }
+                }
+                items(found, key = { it.second.window }) { (menu, item) -> MenuRow(item, nativePage(item.window), where = menu) { open(item) } }
+            }
+            return@Column
+        }
+        val recent = memory.recent.mapNotNull { w -> all.firstOrNull { it.second.window == w } }
+        val titles = (if (recent.isNotEmpty()) listOf(RECENT_TITLE) else emptyList()) + menus.map { it.title }
+        val shown = memory.menu?.takeIf { it in titles } ?: menus.first().title
+        Row(Modifier.fillMaxSize()) {
+            val scroll = rememberScrollState()
+            Box(Modifier.width(152.dp).fillMaxHeight()) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scroll)
+                        .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                        .selectableGroup(),
+                ) {
+                    for (title in titles) {
+                        val selected = title == shown
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) Turu.AccentTint else Color.Transparent)
+                                .selectable(selected = selected, role = Role.Tab) { memory.show(title) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Text(
+                                title,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = Turu.Text,
+                            )
+                        }
+                    }
+                }
+                // More menus below the edge: an arrow there says the list scrolls.
+                if (scroll.canScrollForward) {
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Turu.Panel).padding(vertical = 2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "More menus below", tint = Turu.Muted)
                     }
                 }
             }
             VerticalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             AnimatedContent(
-                targetState = shown.title,
+                targetState = shown,
                 transitionSpec = { fadeIn(tween(150, delayMillis = 60)).togetherWith(fadeOut(tween(90))) },
                 label = "more menu",
             ) { title ->
-                val menu = menus.firstOrNull { it.title == title } ?: return@AnimatedContent
+                val items = if (title == RECENT_TITLE) recent.map { it.second } else menus.firstOrNull { it.title == title }?.items.orEmpty()
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                    items(menu.items, key = { it.window }) { item ->
-                        MenuRow(item, nativePage(item.window)) { page ->
-                            if (page != null) state.push(page) else window(item.window)
-                        }
-                    }
+                    items(items, key = { it.window }) { item -> MenuRow(item, nativePage(item.window)) { open(item) } }
                 }
             }
         }
     }
 }
 
-/** A row of More: the window's name, why it's off under it, a chevron if it opens a page here. */
+/**
+ * A row of More: the window's name and, under it, why it's off or what it's for (with its menu
+ * in a search). One that opens the slot's full window, not a page here, says so.
+ */
 @Composable
-private fun MenuRow(item: MenuItem, page: Page?, open: (Page?) -> Unit) {
+private fun MenuRow(item: MenuItem, page: Page?, where: String? = null, open: () -> Unit) {
     val enabled = item.control.enabled
+    val about = when {
+        !enabled && item.control.reason.isNotEmpty() -> item.control.reason
+        else -> listOfNotNull(where, ABOUT[item.window]).joinToString(" · ").ifEmpty { null }
+    }
     ListItem(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled) { open(page) },
+            .clickable(enabled = enabled, onClick = open),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         headlineContent = {
             Text(item.label, color = if (enabled) Turu.Text else Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
-        supportingContent = item.control.takeIf { !it.enabled && it.reason.isNotEmpty() }?.let { c ->
-            { Text(c.reason, color = Turu.Muted) }
-        },
-        trailingContent = if (page != null && enabled) {
-            { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Muted) }
+        supportingContent = if (about != null || page == null) {
+            {
+                Column {
+                    about?.let { Text(it, color = Turu.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    if (page == null && enabled) Text("Opens the full window", style = MaterialTheme.typography.labelMedium, color = Turu.Accent)
+                }
+            }
         } else {
             null
         },
