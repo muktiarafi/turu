@@ -222,6 +222,13 @@ Locally, the same environment variables the workflow sets (`TURU_KEYSTORE` with 
 path, `TURU_KEYSTORE_PASSWORD`, `TURU_KEY_ALIAS`, `TURU_KEY_PASSWORD`) sign `assembleRelease`
 with it; without them it's signed with the debug key.
 
+The release build runs R8 (`isMinifyEnabled`, `isShrinkResources`, rules in
+`app/proguard-rules.pro`): Compose, Sentry and Kotlin's libraries shrink from ~10 MB of DEX to
+~2.6 MB. Names aren't obfuscated, so crash reports need no mapping file. R8 can't see JNI: Turu's
+own packages, GameActivity's and rustls-platform-verifier's Kotlin are kept whole, and any other
+library class Rust reaches by JNI needs a `-keep` there too, or the release APK fails where the
+debug one works. Try a change on a release build (`./gradlew assembleRelease`) before shipping it.
+
 ## Run on an emulator
 
 ```bash

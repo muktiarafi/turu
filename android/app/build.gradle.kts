@@ -46,7 +46,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
@@ -58,8 +60,9 @@ android {
 
     packaging {
         jniLibs {
-            // cargo-ndk copies every cdylib the build made; oxc_sourcemap is one, unused.
-            excludes += "**/liboxc_sourcemap-*.so"
+            // cargo-ndk copies every cdylib the build made; oxc_sourcemap is one, unused (hashed names
+            // locally, `liboxc_sourcemap.so` on CI).
+            excludes += "**/liboxc_sourcemap*.so"
         }
     }
 }
