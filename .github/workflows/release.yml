@@ -415,9 +415,11 @@ jobs:
           path: turu-${{ needs.version.outputs.version }}-android-arm64.apk
           if-no-files-found: error
 
-      # Sentry reads Turu's frames in native crash reports with the library's symbols. Skipped
-      # without SENTRY_AUTH_TOKEN (an organization auth token); SENTRY_ORG and
-      # SENTRY_PROJECT are repository variables.
+      # Sentry reads Turu's frames in native crash reports with the library's symbols, and puts
+      # back the Kotlin frames R8 inlined with its mapping, under the UUID the build wrote into
+      # the APK (`sentryProguardUuid` in app/build.gradle.kts; sentry-cli 3 still takes `--uuid`,
+      # though its help no longer lists it). Skipped without SENTRY_AUTH_TOKEN (an organization
+      # auth token); SENTRY_ORG and SENTRY_PROJECT are repository variables.
       - name: Upload symbols to Sentry
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -429,6 +431,8 @@ jobs:
             exit 0
           fi
           npx -y @sentry/cli@3.8.1 debug-files upload android/app/src/main/jniLibs/arm64-v8a/libturu_android.so
+          mapping=android/app/build/outputs/mapping/release
+          npx -y @sentry/cli@3.8.1 upload-proguard --require-one --uuid "$(cat "$mapping/sentry-uuid.txt")" "$mapping/mapping.txt"
 
       # The library with its symbols (the APK's is stripped), to read a crash report's
       # backtrace: `llvm-symbolizer --obj=libturu_android.so <pc>` (docs/ANDROID.md). Not

@@ -224,10 +224,11 @@ with it; without them it's signed with the debug key.
 
 The release build runs R8 (`isMinifyEnabled`, `isShrinkResources`, rules in
 `app/proguard-rules.pro`): Compose, Sentry and Kotlin's libraries shrink from ~10 MB of DEX to
-~2.6 MB. Names aren't obfuscated, so crash reports need no mapping file. R8 can't see JNI: Turu's
-own packages, GameActivity's and rustls-platform-verifier's Kotlin are kept whole, and any other
-library class Rust reaches by JNI needs a `-keep` there too, or the release APK fails where the
-debug one works. Try a change on a release build (`./gradlew assembleRelease`) before shipping it.
+~2.6 MB. Names aren't obfuscated, and the mapping goes to Sentry for the frames R8 inlined
+("Sent to Sentry", below). R8 can't see JNI: Turu's own packages, GameActivity's and
+rustls-platform-verifier's Kotlin are kept whole, and any other library class Rust reaches by JNI
+needs a `-keep` there too, or the release APK fails where the debug one works. Try a change on a
+release build (`./gradlew assembleRelease`) before shipping it.
 
 ## Run on an emulator
 
@@ -396,7 +397,10 @@ Sentry (`io.sentry:sentry-android`, auto-init off in the manifest):
 Setup, in the GitHub repository: the `SENTRY_DSN` secret (the project's DSN; the release build
 passes it to Gradle), and for readable native frames the `SENTRY_AUTH_TOKEN` secret (an
 organization auth token) with the `SENTRY_ORG` and `SENTRY_PROJECT` variables: the release
-workflow then uploads `libturu_android.so`'s symbols with `sentry-cli`. A local build takes the
+workflow then uploads `libturu_android.so`'s symbols and R8's `mapping.txt` with `sentry-cli`.
+The mapping goes under a UUID each release build writes into the APK
+(`assets/sentry-debug-meta.properties`, task `sentryProguardUuid`), which the app sends with each
+report: Sentry then puts back the Kotlin and library frames R8 inlined. A local build takes the
 DSN from `-PsentryDsn=...`, `SENTRY_DSN` or `sentryDsn` in `android/local.properties`.
 
 The desktop app sends its own to a separate project (docs/STATUS.md, "Crash reports to Sentry").

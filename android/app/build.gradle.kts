@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.UUID
 import javax.inject.Inject
 
 plugins {
@@ -253,9 +254,44 @@ val turuNetworkConfig = tasks.register<TuruNetworkConfig>("turuNetworkConfig") {
     outDir.set(layout.buildDirectory.dir("generated/turu-res"))
 }
 
+/**
+ * The R8 mapping's ID for Sentry: a new UUID each release build, in the APK's
+ * `assets/sentry-debug-meta.properties` (sentry-android reads it and sends it with each crash
+ * report) and beside the mapping (`build/outputs/mapping/release/sentry-uuid.txt`), from where
+ * release.yml uploads `mapping.txt` under it. With the mapping Sentry puts back the frames R8
+ * inlined. The mapping and the UUID belong to one build: upload the mapping of the build whose
+ * APK ships.
+ */
+abstract class SentryProguardUuid : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outDir: DirectoryProperty
+
+    @get:OutputFile
+    abstract val uuidFile: RegularFileProperty
+
+    @TaskAction
+    fun generate() {
+        val uuid = UUID.randomUUID().toString()
+        val out = outDir.get().asFile
+        out.mkdirs()
+        out.resolve("sentry-debug-meta.properties").writeText("io.sentry.ProguardUuids=$uuid\n")
+        uuidFile.get().asFile.writeText("$uuid\n")
+    }
+}
+
+val sentryProguardUuid = tasks.register<SentryProguardUuid>("sentryProguardUuid") {
+    outDir.set(layout.buildDirectory.dir("generated/sentry-assets"))
+    uuidFile.set(layout.buildDirectory.file("outputs/mapping/release/sentry-uuid.txt"))
+    // A new one each build: two builds' mappings never share an ID.
+    outputs.upToDateWhen { false }
+}
+
 androidComponents {
     onVariants { variant ->
         variant.sources.kotlin?.addGeneratedSourceDirectory(turuTypes, TuruTypes::outDir)
         variant.sources.res?.addGeneratedSourceDirectory(turuNetworkConfig, TuruNetworkConfig::outDir)
+    }
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(sentryProguardUuid, SentryProguardUuid::outDir)
     }
 }
