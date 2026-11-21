@@ -30,6 +30,7 @@ pub mod fast_travel;
 pub mod form;
 pub mod game_options;
 pub mod grabber;
+pub mod hotkeys;
 pub mod jump;
 pub mod junk;
 pub mod loader;
@@ -535,6 +536,13 @@ pub fn register() {
         "interceptor",
         "do",
         Box::new(|bot, body| packets::interceptor_act(bot, &text(body, "action")?, body)),
+    );
+
+    add_model("hotkeys", Box::new(|_| to_json(&hotkeys::view())));
+    add_model_action(
+        "hotkeys",
+        "do",
+        Box::new(|_, body| hotkeys::act(&hotkeys::STORE, &text(body, "action")?, body)),
     );
 
     add_model("prompts", Box::new(|bot| to_json(&prompts::view(bot))));

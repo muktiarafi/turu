@@ -1,5 +1,6 @@
 //! Options > HotKeys (VibeSkua `HotKeysView`, 480x500): the actions you gave a key, and the
-//! catalog to add more from. The bindings and what each action does are in `hotkeys.rs`.
+//! catalog to add more from. The bindings, editing them and what each action does are the model's
+//! (`models::hotkeys`); the window keeps its search, filter, notes and the key it waits for.
 //!
 //! Wide, the two sit side by side: YOUR HOTKEYS and ADD AN ACTION. Narrow, they are two pages,
 //! the catalog behind "+ Add an action". A keycap is clicked to set its key: the next press
@@ -7,7 +8,7 @@
 //! another action holds moves to this one, and the note under the list says from which.
 //! Adding an action from the catalog waits for its key at once. Every change is saved.
 
-use super::hotkeys::{self, ACTIONS, Action, Binding, Gesture, Group};
+use super::hotkeys::{self, ACTIONS, Action, Binding, Gesture, Group, STORE};
 use super::theme::{ACCENT, ACCENT_HOVER, DANGER, EDGE, HOVER, INSET, MUTED, TEXT, TRACK, WARNING};
 use super::widgets::{self, Kind};
 use egui::text::{LayoutJob, TextWrapping};
@@ -37,8 +38,8 @@ struct Note {
     text: String,
     tone: Tone,
     at: Instant,
-    /// A removed binding and where it was, for Undo.
-    undo: Option<(usize, Binding)>,
+    /// A removal the model can undo.
+    undo: bool,
 }
 
 #[derive(Default)]
@@ -96,10 +97,10 @@ impl HotKeysWindow {
     }
 
     fn ui(&mut self, ui: &mut Ui) {
-        let mut bindings = hotkeys::bindings();
+        let bindings = hotkeys::bindings();
         if let Some(action) = self.capturing {
             hotkeys::mark_capturing(ui.ctx());
-            self.capture(ui.ctx(), &mut bindings, action);
+            self.capture(ui.ctx(), &bindings, action);
         }
         if self.note.as_ref().is_some_and(|n| n.at.elapsed() >= NOTE_FOR) {
             self.note = None;
@@ -111,9 +112,9 @@ impl HotKeysWindow {
         let height = ui.available_height();
         if ui.available_width() < NARROW {
             if self.adding {
-                self.catalog_pane(ui, &mut bindings, height, true);
+                self.catalog_pane(ui, &bindings, height, true);
             } else {
-                self.assigned_pane(ui, &mut bindings, height, true);
+                self.assigned_pane(ui, &bindings, height, true);
             }
             return;
         }
@@ -121,17 +122,17 @@ impl HotKeysWindow {
             let left = ((ui.available_width() - GAP) * 0.58).floor();
             ui.allocate_ui_with_layout(vec2(left, height), Layout::top_down(Align::Min), |ui| {
                 ui.set_width(left);
-                self.assigned_pane(ui, &mut bindings, height, false);
+                self.assigned_pane(ui, &bindings, height, false);
             });
             ui.allocate_ui_with_layout(vec2(ui.available_width(), height), Layout::top_down(Align::Min), |ui| {
                 ui.set_width(ui.available_width());
-                self.catalog_pane(ui, &mut bindings, height, false);
+                self.catalog_pane(ui, &bindings, height, false);
             });
         });
     }
 
     /// Takes the first key press for the action waiting for its key.
-    fn capture(&mut self, ctx: &Context, bindings: &mut [Binding], action: &'static str) {
+    fn capture(&mut self, ctx: &Context, bindings: &[Binding], action: &'static str) {
         let Some(index) = bindings.iter().position(|b| b.action == action) else {
             self.stop_capture();
             return;
@@ -155,43 +156,36 @@ impl HotKeysWindow {
             return;
         }
         if modifiers.is_none() && matches!(key, Key::Backspace | Key::Delete) {
-            if bindings[index].gesture.take().is_some() {
-                self.save(bindings, Some(format!("{title} has no key now")), Tone::Info);
+            match STORE.clear_key(action) {
+                Ok(true) => self.set_note(format!("{title} has no key now"), Tone::Info),
+                Ok(false) => {}
+                Err(e) => self.set_note(e, Tone::Error),
             }
             return;
         }
-        let Some(gesture) = Gesture::of_press(key, modifiers) else {
+        let Some(gesture) = hotkeys::of_press(key, modifiers) else {
             self.set_note(format!("{} can't be a hotkey", key.name()), Tone::Warning);
             return;
         };
-        let mut moved = None;
-        for (i, other) in bindings.iter_mut().enumerate() {
-            if i != index && other.gesture == Some(gesture) {
-                other.gesture = None;
-                moved = Some(other.action().title);
-            }
-        }
-        bindings[index].gesture = Some(gesture);
-        let label = gesture.label();
-        match moved {
-            Some(from) => self.save(
-                bindings,
-                Some(format!("{label} moved from {from} to {title}")),
+        match STORE.assign(action, gesture) {
+            Ok(Some(from)) => self.set_note(
+                format!("{} moved from {from} to {title}", gesture.label()),
                 Tone::Warning,
             ),
-            None => self.save(bindings, None, Tone::Info),
+            Ok(None) => {}
+            Err(e) => self.set_note(e, Tone::Error),
         }
     }
 
-    /// Writes the bindings; `note` (or the error) shows under the list.
-    fn save(&mut self, bindings: &[Binding], note: Option<String>, tone: Tone) {
-        match hotkeys::set_bindings(bindings.to_vec()) {
+    /// Shows what a change of the model's said: `note` when it worked, else its error.
+    fn report(&mut self, result: Result<(), String>, note: Option<String>, tone: Tone) {
+        match result {
             Ok(()) => {
                 if let Some(text) = note {
                     self.set_note(text, tone);
                 }
             }
-            Err(e) => self.set_note(format!("Couldn't save the hotkeys: {e}"), Tone::Error),
+            Err(e) => self.set_note(e, Tone::Error),
         }
     }
 
@@ -200,12 +194,12 @@ impl HotKeysWindow {
             text,
             tone,
             at: Instant::now(),
-            undo: None,
+            undo: false,
         });
     }
 
     /// YOUR HOTKEYS: the bound actions, a filter, the note and Restore defaults.
-    fn assigned_pane(&mut self, ui: &mut Ui, bindings: &mut Vec<Binding>, height: f32, narrow: bool) {
+    fn assigned_pane(&mut self, ui: &mut Ui, bindings: &[Binding], height: f32, narrow: bool) {
         let top = ui.min_rect().bottom();
         let control = widgets::target(26.0, 40.0);
         ui.horizontal(|ui| {
@@ -276,22 +270,26 @@ impl HotKeysWindow {
                 if self.capturing == Some(bindings[i].action) {
                     self.stop_capture();
                 }
-                let removed = bindings.remove(i);
-                let title = removed.action().title;
-                let text = match removed.gesture {
-                    Some(g) => format!("Removed {title} ({})", g.label()),
-                    None => format!("Removed {title}"),
-                };
-                self.save(bindings, Some(text), Tone::Info);
-                if let Some(note) = &mut self.note {
-                    note.undo = Some((i, removed));
+                match STORE.remove(bindings[i].action) {
+                    Ok(removed) => {
+                        let title = removed.action().title;
+                        let text = match removed.gesture {
+                            Some(g) => format!("Removed {title} ({})", g.label()),
+                            None => format!("Removed {title}"),
+                        };
+                        self.set_note(text, Tone::Info);
+                        if let Some(note) = &mut self.note {
+                            note.undo = true;
+                        }
+                    }
+                    Err(e) => self.set_note(e, Tone::Error),
                 }
             }
             None => {}
         }
 
         let footer_top = ui.min_rect().bottom();
-        self.note_line(ui, bindings);
+        self.note_line(ui);
         self.hint_line(ui, bindings);
         ui.horizontal(|ui| {
             let confirming = self.confirm_reset.is_some();
@@ -307,8 +305,8 @@ impl HotKeysWindow {
                 if confirming {
                     self.confirm_reset = None;
                     self.stop_capture();
-                    *bindings = hotkeys::defaults();
-                    self.save(bindings, Some("Restored the default hotkeys".into()), Tone::Info);
+                    let result = STORE.reset();
+                    self.report(result, Some("Restored the default hotkeys".into()), Tone::Info);
                 } else {
                     self.confirm_reset = Some(Instant::now());
                 }
@@ -337,7 +335,7 @@ impl HotKeysWindow {
     }
 
     /// The note under the list (one line, whole on hover), with Undo after a removal.
-    fn note_line(&mut self, ui: &mut Ui, bindings: &mut Vec<Binding>) {
+    fn note_line(&mut self, ui: &mut Ui) {
         if self.note.is_none() {
             return;
         }
@@ -354,31 +352,27 @@ impl HotKeysWindow {
                     Tone::Error => DANGER,
                 };
                 widgets::dot(ui, color, 3.0);
-                let undo_width = if note.undo.is_some() { 48.0 } else { 0.0 };
+                let undo_width = if note.undo { 48.0 } else { 0.0 };
                 let width = ui.available_width() - undo_width;
                 let font = FontId::proportional(widgets::small_label_size() + 1.0);
                 ui.add(single_line(&note.text, font, color, width, true))
                     .on_hover_text(&note.text);
-                if note.undo.is_some() {
+                if note.undo {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         undo = widgets::small_button(ui, "Undo", true).clicked();
                     });
                 }
             },
         );
-        if undo && let Some((i, binding)) = self.note.take().and_then(|n| n.undo) {
-            let title = binding.action().title;
-            // A key the binding had may have gone to another action since.
-            let mut binding = binding;
-            if bindings
-                .iter()
-                .any(|b| b.gesture.is_some() && b.gesture == binding.gesture)
-            {
-                binding.gesture = None;
+        if undo {
+            self.note = None;
+            match STORE.undo_remove() {
+                Ok(action) => {
+                    self.reveal = Some(action.id);
+                    self.set_note(format!("{} is back", action.title), Tone::Info);
+                }
+                Err(e) => self.set_note(e, Tone::Error),
             }
-            bindings.insert(i.min(bindings.len()), binding);
-            self.reveal = Some(bindings[i.min(bindings.len() - 1)].action);
-            self.save(bindings, Some(format!("{title} is back")), Tone::Info);
         }
     }
 
@@ -402,7 +396,7 @@ impl HotKeysWindow {
     }
 
     /// ADD AN ACTION: the actions without a binding, searchable and by group.
-    fn catalog_pane(&mut self, ui: &mut Ui, bindings: &mut Vec<Binding>, height: f32, narrow: bool) {
+    fn catalog_pane(&mut self, ui: &mut Ui, bindings: &[Binding], height: f32, narrow: bool) {
         let top = ui.min_rect().bottom();
         let control = widgets::target(26.0, 40.0);
         ui.horizontal(|ui| {
@@ -484,11 +478,8 @@ impl HotKeysWindow {
                 });
         });
         if let Some(action) = added {
-            bindings.push(Binding {
-                action: action.id,
-                gesture: None,
-            });
-            self.save(bindings, None, Tone::Info);
+            let result = STORE.add(action.id);
+            self.report(result, None, Tone::Info);
             self.reveal = Some(action.id);
             self.adding = false;
             self.start_capture(action.id);
