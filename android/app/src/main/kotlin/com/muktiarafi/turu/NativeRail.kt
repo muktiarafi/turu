@@ -1,14 +1,20 @@
 package com.muktiarafi.turu
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,12 +45,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -62,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.Status
+import kotlinx.coroutines.launch
 
 /** What the rail asks of the shell. */
 class RailActions(
@@ -301,12 +312,42 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
     val square = CornerSize(0.dp)
     val motion = MaterialTheme.motionScheme
     val chipColor by animateColorAsState(if (selected) Turu.RailSelected else Turu.Track, motion.defaultEffectsSpec(), label = "chip")
-    // The column grows when Stop joins Pause (and shrinks again): the chip rides up on a spring
-    // rather than jumping.
-    Column(Modifier.animateContentSize(motion.defaultSpatialSpec()), horizontalAlignment = Alignment.CenterHorizontally) {
+    val dotColor by animateColorAsState(dot, motion.defaultEffectsSpec(), label = "chip dot")
+    // What kind of word the chip shows: it changes on a new state, not on the clock's ticks.
+    val wordKind = when {
+        view == null -> "reading"
+        status == Status.ERROR -> "error"
+        clock != null -> "clock"
+        view.lastRun != null -> if (view.lastRun.finished) "finished" else "stopped"
+        view.script == null -> "none"
+        else -> "ready"
+    }
+    // The status itself (pausing keeps the clock but turns the dot amber): the dot pops on a change.
+    val phase = "$wordKind:${status?.name}"
+    val pop = remember { Animatable(1f) }
+    val shake = remember { Animatable(0f) }
+    var seen by remember { mutableStateOf(phase) }
+    LaunchedEffect(phase) {
+        if (phase == seen) return@LaunchedEffect
+        seen = phase
+        // One beat when the state changes, then still: the rail never pulses while you're away.
+        if (wordKind == "error") {
+            launch {
+                // A short shake, the one state that asks for you: a looser spring than the
+                // schemes have, so it swings a couple of times and settles.
+                shake.snapTo(0f)
+                shake.animateTo(0f, spring(dampingRatio = 0.25f, stiffness = 900f), initialVelocity = 220f)
+            }
+        }
+        pop.snapTo(1f)
+        pop.animateTo(1.7f, motion.fastSpatialSpec())
+        pop.animateTo(1f, motion.defaultSpatialSpec())
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val joined = cells.isNotEmpty()
         Column(
             Modifier
+                .graphicsLayer { translationX = shake.value.dp.toPx() }
                 .width(56.dp)
                 .height(chipHeight)
                 .clip(if (joined) round.copy(bottomStart = square, bottomEnd = square) else round)
@@ -316,20 +357,65 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-            Text(
-                words,
-                style = style,
-                color = if (status == Status.ERROR) Turu.Danger else Turu.Text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp, start = 3.dp, end = 3.dp),
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .graphicsLayer {
+                        scaleX = pop.value
+                        scaleY = pop.value
+                    }
+                    .clip(CircleShape)
+                    .background(dotColor),
             )
+            // A new state's word rises in as the old one rises out (Material's shared Y axis: the
+            // states run in order); the clock's own ticks change in place.
+            AnimatedContent(
+                targetState = wordKind to words,
+                contentKey = { it.first },
+                transitionSpec = {
+                    (slideInVertically(motion.fastSpatialSpec()) { it } + fadeIn(motion.fastEffectsSpec()))
+                        .togetherWith(slideOutVertically(motion.fastSpatialSpec()) { -it } + fadeOut(motion.fastEffectsSpec()))
+                },
+                modifier = Modifier.padding(top = 4.dp).clipToBounds(),
+                label = "chip word",
+            ) { (kind, word) ->
+                Text(
+                    word,
+                    style = style,
+                    color = if (kind == "error") Turu.Danger else Turu.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 3.dp),
+                )
+            }
         }
-        cells.forEachIndexed { i, cell ->
-            // The first control hangs under the chip; the second stands apart.
-            Spacer(Modifier.height(if (i == 0) 1.dp else CellGap))
-            RunCell(cell, joinedTop = i == 0, busy = scripts.busy, openLoader = openLoader)
+        // The first control hangs under the chip.
+        cells.firstOrNull()?.let { first ->
+            Spacer(Modifier.height(1.dp))
+            RunCell(first, joinedTop = true, busy = scripts.busy, openLoader = openLoader)
+        }
+        // The second (Stop under Pause) stands apart: it grows out from under the first as a run
+        // starts and folds back as it ends, the chip riding up and down with it. On its way out it
+        // takes no taps.
+        val second = cells.getOrNull(1)
+        var leaving by remember { mutableStateOf(second) }
+        SideEffect { if (second != null) leaving = second }
+        AnimatedVisibility(
+            visible = second != null,
+            enter = expandVertically(motion.defaultSpatialSpec(), expandFrom = Alignment.Top) + fadeIn(motion.defaultEffectsSpec()),
+            exit = shrinkVertically(motion.fastSpatialSpec(), shrinkTowards = Alignment.Top) + fadeOut(motion.fastEffectsSpec()),
+            label = "second control",
+        ) {
+            (second ?: leaving)?.let { cell ->
+                Column {
+                    Spacer(Modifier.height(CellGap))
+                    RunCell(cell, joinedTop = false, busy = scripts.busy, openLoader = openLoader, interactive = second != null)
+                }
+            }
+        }
+        cells.drop(2).forEach { cell ->
+            Spacer(Modifier.height(CellGap))
+            RunCell(cell, joinedTop = false, busy = scripts.busy, openLoader = openLoader)
         }
     }
 }
@@ -339,11 +425,12 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp
  * (the press morph, on the fast spatial spring); a new control (Pause becoming Resume, Start
  * becoming Pause) springs in over the old one while the colour fades across; and while the tab
  * answers the tap, the cell shows the loading indicator in place of its icon. All cells are off
- * meanwhile, as before. [joinedTop] keeps the square seam with the chip.
+ * meanwhile, as before. [joinedTop] keeps the square seam with the chip; [interactive] is off for
+ * a cell on its way out.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class) // LoadingIndicator: still experimental in Material 3 1.5.0
 @Composable
-private fun RunCell(cell: Cell, joinedTop: Boolean, busy: String?, openLoader: () -> Unit) {
+private fun RunCell(cell: Cell, joinedTop: Boolean, busy: String?, openLoader: () -> Unit, interactive: Boolean = true) {
     val motion = MaterialTheme.motionScheme
     val density = LocalDensity.current
     val shapes = MaterialTheme.shapes
@@ -372,7 +459,7 @@ private fun RunCell(cell: Cell, joinedTop: Boolean, busy: String?, openLoader: (
             .clickable(
                 interactionSource = press,
                 indication = ripple(),
-                enabled = busy == null,
+                enabled = interactive && busy == null,
                 role = Role.Button,
                 onClickLabel = if (cell.enabled) null else "open the Script Loader",
                 onClick = if (cell.enabled) cell.run else openLoader,

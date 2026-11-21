@@ -942,8 +942,13 @@ the 8 dp between Pause and Stop, and move as Expressive's buttons do: corners ti
 theme's medium to its extra-small while pressed; a new control (Start becoming Pause, Pause
 becoming Resume, Stop becoming Force stop) springs in over the old while the fill fades across;
 while the tab answers a tap, that cell shows the loading indicator (`LoadingIndicator`, still
-experimental in Material 3 1.5.0, opted in on `RunCell`); and when Stop joins Pause the chip rides
-up on a spring instead of jumping.
+experimental in Material 3 1.5.0, opted in on `RunCell`); and Stop grows out from under Pause as
+a run starts and folds back as it ends (taking no taps on its way out), the chip riding up and
+down with it. The chip marks a change of state once and then keeps still (nothing loops while
+you're away): a new state's word rises in as the old one rises out (Material's shared Y axis,
+since the states run in order; the clock's ticks and a font-size fallback change in place), the
+dot fades to its colour and pops once, and an error gives the chip one short shake. Switching to
+another tab counts as a change, so its state pops (and shakes on an error) as it comes on screen.
 *The panel's motion (2026-11-22):* the side panel slides out from under the rail as the scrim
 fades in, and back as it fades out, on `PanelMotion` (the shell hides the view once the slide is
 over, and the closing panel keeps the page it was on); the Tabs item's highlight grows out from
