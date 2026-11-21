@@ -4,17 +4,23 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
@@ -63,6 +69,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -204,7 +211,10 @@ fun GrabberPage(state: ShellState, panel: GrabberPanel, fullWindow: () -> Unit) 
         // A landscape phone has no height to pin the fields: they scroll away with the rows.
         LazyColumn(Modifier.weight(1f), state = list) {
             item(key = "pick") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Grab spans the field's box at any font scale: the row's height, less the half
+                // line of the floated label (bodySmall) that the outlined field keeps above its box.
+                val labelHalf = with(LocalDensity.current) { (MaterialTheme.typography.bodySmall.lineHeight.toPx() / 2).toDp() }
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 12.dp, vertical = 4.dp)) {
                     Column(Modifier.weight(1f)) {
                         Picker(
                             label = "List",
@@ -214,7 +224,7 @@ fun GrabberPage(state: ShellState, panel: GrabberPanel, fullWindow: () -> Unit) 
                         ) { panel.act("select", JSONObject().put("kind", it)) }
                     }
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = { panel.act("grab") }, enabled = !view.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Grab") }
+                    Button(onClick = { panel.act("grab") }, enabled = !view.busy, modifier = Modifier.fillMaxHeight().padding(top = labelHalf)) { Text("Grab") }
                 }
             }
             if (view.grabbed > 0u) {
@@ -299,13 +309,22 @@ private fun GrabRow(row: GrabRowView, on: Boolean, view: GrabberView, panel: Gra
     }
 }
 
-/** What runs (with Cancel) or the status, then Copy and the list's actions. */
+/**
+ * What runs (with Cancel), the status or why the actions are off, then the list's actions in an
+ * even grid on the page's edges.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Foot(view: GrabberView, panel: GrabberPanel) {
     val count = panel.checked.size
+    // With nothing grabbed there's nothing to check: only what needs no rows (Unregister All).
+    val shown = if (view.grabbed == 0u) view.actions.filter { it.label in WITHOUT_ROWS } else view.actions
+    // Why buttons are off, as a disabled button can't say: a fight waits for the script, or
+    // nothing is checked (VibeSkua answers "No quests found/selected." after the tap).
+    val reason = shown.firstOrNull { !it.control.enabled && it.control.reason != "Busy" }?.control?.reason
+        ?: if (count == 0 && view.grabbed > 0u && shown.any { it.label !in WITHOUT_ROWS }) "Check ${view.kind.lowercase()} in the list to use these" else null
     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-    val status = panel.error ?: view.message ?: if (count > 0) "$count checked" else null
+    val status = panel.error ?: view.message ?: if (count > 0) "$count checked" else reason
     if (status != null || view.busy) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
             if (view.busy) {
@@ -325,26 +344,41 @@ private fun Foot(view: GrabberView, panel: GrabberPanel) {
             }
         }
     }
-    if (view.actions.isEmpty() || view.grabbed == 0u && view.actions.none { it.label == "Unregister All" }) return
-    FlowRow(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        for (a in view.actions) {
-            OutlinedButton(
-                onClick = { panel.run(a.label) },
-                enabled = a.control.enabled,
-                colors = if (a.destructive) ButtonDefaults.outlinedButtonColors(contentColor = Turu.Danger) else ButtonDefaults.outlinedButtonColors(),
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text(a.label, maxLines = 1) }
+    if (shown.isEmpty()) return
+    // As few rows as fit (up to four a row, 96 dp each), balanced: four in one row, five as 3 + 2.
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)) {
+        val fit = (maxWidth / 96.dp).toInt().coerceIn(1, 4)
+        val rows = (shown.size + fit - 1) / fit
+        val columns = (shown.size + rows - 1) / rows
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = columns,
+        ) {
+            for (a in shown) {
+                // Turu: VibeSkua's buttons stay on and answer "No ... found/selected." after the
+                // tap; on a touch screen the page turns them off until a row is checked instead.
+                val on = a.control.enabled && (count > 0 || a.label in WITHOUT_ROWS)
+                OutlinedButton(
+                    onClick = { panel.run(a.label) },
+                    enabled = on,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (a.destructive) Turu.Danger else Turu.Text,
+                        disabledContentColor = Turu.Muted,
+                    ),
+                    // Off, a button keeps its outline: the row stays legible as the list's tools.
+                    border = BorderStroke(1.dp, if (on) Turu.Edge else Turu.Edge.copy(alpha = 0.6f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                ) { Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
         }
     }
-    // A fight waits for the script: say why, as the disabled button can't.
-    view.actions.firstOrNull { !it.control.enabled && it.control.reason != "Busy" }?.let {
-        Text(it.control.reason, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp))
-    }
 }
+
+/** The actions that run without checked rows (`turu_bot::grabber::prepare`). */
+private val WITHOUT_ROWS = setOf("Unregister All")
 
 /** The quantity an action asks for, its message box, and a row's fields. */
 @Composable

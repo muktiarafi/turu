@@ -1124,6 +1124,12 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
 - **A script dropped on the window is loaded** (a process tab's, 2026-11-18): VibeSkua takes no
   dropped files; Turu loads a dropped `.ts` or `.js` in the tab on screen, as Load Script does.
 
+- **The native Grabber's actions wait for a checked row** (Android, 2026-11-21, `GrabberPage.kt`):
+  VibeSkua's buttons are always on and, with nothing selected, answer "No quests found/selected."
+  (`grabber::prepare`, unchanged). On a touch screen that message came after the tap; the page now
+  turns off every action but Unregister All until a row is checked and says so in its status
+  ("Check quests in the list to use these"). The engine and the egui window are as VibeSkua.
+
 - **Cosmetics empties a slot by deleting it** (2026-11-19, `cosmetics::avatar::unequip_slot`,
   turu.swf's `deleteGameObjectKey`): VibeSkua sets `objData.eqp[slot]` (and `eqp.pe`) to null.
   The game reads a field of every `eqp` value in two places, and a null one threw: the

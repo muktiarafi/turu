@@ -1266,12 +1266,16 @@ above, and why:
   Rebuild all, Update range… (asks the first and last IDs), Full window. The first open with no
   cache file downloads the community one. With the keyboard up the foot steps aside.
 * **Grabber** (L5b, 2026-11-21), a page of the panel (440 dp) from More > Tools & Helpers and
-  however the slot opens it. List (a drop-down of the ten, "Inventory - 166 grabbed") and Grab,
-  then the search (once something is grabbed) and the rows a page of 100 at a time: the row's
+  however the slot opens it. List (a drop-down of the ten, "Inventory - 166 grabbed") and Grab
+  (spanning the field's box at any font size), then the search (once something is grabbed) and the rows a page of 100 at a time: the row's
   text, its ID and an info button showing its fields (a dialog titled by the item's name). A tap
   checks a row; Shop IDs and Temp Inventory keep one. The foot: what runs with a spinner and
-  Cancel, or the status ("Copied 1 item(s) to clipboard.", "3 checked"), then the list's actions
-  (Sell and Sell All in red), wrapping; Kill says why it waits. An action's quantity question
+  Cancel, or the status ("Copied 1 item(s) to clipboard.", "3 checked", or with none checked
+  "Check quests in the list to use these"), then the list's actions in an even grid on the
+  page's edges, as few rows as fit (four in one row, five as 3 + 2), Sell and Sell All in red.
+  An action that needs checked rows is off until one is (VibeSkua answers "No quests
+  found/selected." after the tap); with nothing grabbed only Unregister All shows. Kill says why
+  it waits. An action's quantity question
   and message box are dialogs. ⋮: Copy (the checked rows, or all shown), Full window (Export to a
   file). With the keyboard up the foot steps aside.
 * **Junk Items** (L5b, 2026-11-21), a page of the panel (440 dp) from More > Tools & Helpers and
