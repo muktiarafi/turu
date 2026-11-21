@@ -13,7 +13,7 @@
 //! its [`Action`]s (start or stop a slot's service, hand it the surface, write a record, send it a
 //! message). Shell and slots talk in `crate::shell`'s messages, over Binder.
 
-use crate::shell::{TabInfo, ToClient, ToShell};
+use crate::shell::{TabGame, TabInfo, ToClient, ToShell};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -278,6 +278,14 @@ pub struct NativeTab {
     pub waits: Option<String>,
     /// Its process isn't up: "starting".
     pub down: Option<String>,
+    /// Where its game is (in game, logging back in, out).
+    pub game: TabGame,
+    /// The map it's in, while in game.
+    pub map: Option<String>,
+    /// Its loaded script's name.
+    pub script: Option<String>,
+    /// It was opened for a saved login: the tab can log itself in (the control API's `/login`).
+    pub account: bool,
     /// Its control API (`127.0.0.1:<port>`) and token, from its hello: the native screens read
     /// its view models there.
     pub api: Option<String>,
@@ -291,6 +299,9 @@ struct Live {
     busy: bool,
     waits: Option<String>,
     rail_hidden: bool,
+    game: TabGame,
+    map: Option<String>,
+    script: Option<String>,
     api: Option<String>,
     token: Option<String>,
 }
@@ -409,16 +420,25 @@ impl SlotShell {
                 busy,
                 waits,
                 rail_hidden,
+                game,
+                map,
+                script,
             } => match self.live.get_mut(&slot) {
                 Some(live) if live.label != label || live.busy != busy || live.waits != waits => {
                     live.label = label;
                     live.busy = busy;
                     live.waits = waits;
                     live.rail_hidden = rail_hidden;
+                    (live.game, live.map, live.script) = (game, map, script);
                     self.tab_lists()
                 }
-                Some(live) if live.rail_hidden != rail_hidden => {
+                // What only the activity's list shows.
+                Some(live)
+                    if live.rail_hidden != rail_hidden
+                        || (live.game, &live.map, &live.script) != (game, &map, &script) =>
+                {
                     live.rail_hidden = rail_hidden;
+                    (live.game, live.map, live.script) = (game, map, script);
                     vec![Action::Tabs(self.native_tabs())]
                 }
                 _ => Vec::new(),
@@ -533,6 +553,10 @@ impl SlotShell {
                     busy: live.is_some_and(|l| l.busy),
                     waits: live.and_then(|l| l.waits.clone()),
                     down: live.is_none().then(|| "starting".into()),
+                    game: live.map_or_else(TabGame::default, |l| l.game),
+                    map: live.and_then(|l| l.map.clone()),
+                    script: live.and_then(|l| l.script.clone()),
+                    account: record.username().is_some(),
                     api: live.and_then(|l| l.api.clone()),
                     token: live.and_then(|l| l.token.clone()),
                 }
@@ -982,6 +1006,9 @@ mod tests {
                 busy: true,
                 waits: Some("a message box".into()),
                 rail_hidden: false,
+                game: TabGame::InGame,
+                map: Some("battleon".into()),
+                script: None,
             },
         );
         assert!(actions.iter().any(|a| matches!(
@@ -1002,10 +1029,31 @@ mod tests {
                 busy: true,
                 waits: Some("a message box".into()),
                 rail_hidden: true,
+                game: TabGame::InGame,
+                map: Some("battleon".into()),
+                script: None,
             },
         );
         assert_eq!(actions.len(), 1);
         assert!(native(&actions).expect("the activity's list").rail_hidden);
+        // So does dropping out of the game.
+        let actions = shell.message(
+            1,
+            ToShell::Status {
+                label: "Hero".into(),
+                busy: true,
+                waits: Some("a message box".into()),
+                rail_hidden: true,
+                game: TabGame::Dropped,
+                map: None,
+                script: Some("Farm".into()),
+            },
+        );
+        assert_eq!(actions.len(), 1);
+        let tabs = native(&actions).expect("the activity's list");
+        assert_eq!(tabs.tabs[0].game, TabGame::Dropped);
+        assert_eq!(tabs.tabs[0].script.as_deref(), Some("Farm"));
+        assert!(tabs.tabs[0].account);
         // Army > Accounts goes to the activity.
         let open = ToShell::OpenScreen {
             screen: crate::shell::NativeScreen::Accounts,

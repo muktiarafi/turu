@@ -7,7 +7,7 @@
 //! other tabs (each in a process of its own: `turu::start_headless_mode_sync` reaches only this
 //! process's).
 
-use crate::shell::{TabInfo, ToShell};
+use crate::shell::{TabGame, TabInfo, ToShell};
 use crate::turu;
 use std::sync::Arc;
 use std::time::Duration;
@@ -122,21 +122,44 @@ fn report_headless_mode(send: &Sender, on: bool) {
     }
 }
 
-/// The tab's name and whether its script or Auto runs, to the shell when either changes (checked
-/// every second), and again after [`resend_status`] (a new shell); Headless Mode when it changes.
+/// The tab's name, whether its script or Auto runs, where its game is (in game and the map, or
+/// out) and its script, to the shell when any changes (checked every second), and again after
+/// [`resend_status`] (a new shell); Headless Mode when it changes.
 fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
     let spawned = std::thread::Builder::new()
         .name("Turu Shell Status".into())
         .spawn(move || {
             let mut sent = None;
+            // Whether it has been in game: out of the game after that is a drop (or a logout), not
+            // a first login.
+            let mut was_in_game = false;
             while open() {
                 let bot = turu::bot();
                 report_headless_mode(&send, bot.opts().headless_mode);
+                let (in_game, map) = {
+                    let state = bot.state.lock();
+                    (state.in_game, state.map_name.clone().filter(|_| state.in_game))
+                };
+                let game = if in_game {
+                    was_in_game = true;
+                    TabGame::InGame
+                } else if bot.servers.is_relogging() {
+                    TabGame::Relogging
+                } else if was_in_game {
+                    TabGame::Dropped
+                } else {
+                    TabGame::LoggedOut
+                };
+                let script = bot
+                    .scripts
+                    .loaded()
+                    .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
                 let now = (
                     turu::tab_label(&bot),
                     crate::gui::turu::busy(&bot),
                     crate::gui::turu::waits_for(&bot).map(str::to_owned),
                     crate::gui::rail_hidden(),
+                    (game, map, script),
                 );
                 let resend = std::mem::take(&mut *RESEND.lock().unwrap_or_else(|e| e.into_inner()));
                 if resend || sent.as_ref() != Some(&now) {
@@ -145,6 +168,9 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                         busy: now.1,
                         waits: now.2.clone(),
                         rail_hidden: now.3,
+                        game: now.4.0,
+                        map: now.4.1.clone(),
+                        script: now.4.2.clone(),
                     });
                     sent = Some(now);
                 }

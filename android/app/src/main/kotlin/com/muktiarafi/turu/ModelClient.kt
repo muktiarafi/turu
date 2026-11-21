@@ -135,6 +135,29 @@ class ModelClient(
         }
     }
 
+    /**
+     * `POST <path>` on the control API (`/login`, ...), waiting up to `wait` ms for the answer;
+     * `done` gets the error, or null.
+     */
+    fun call(path: String, wait: Int = 10_000, done: (String?) -> Unit = {}) {
+        actions.execute {
+            val error = runCatching {
+                val connection = open(path, "POST").apply {
+                    readTimeout = wait
+                    doOutput = true
+                }
+                connection.outputStream.use { it.write(ByteArray(0)) }
+                if (connection.responseCode == 200) {
+                    null
+                } else {
+                    val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    runCatching { JSONObject(text).getString("error") }.getOrDefault(text)
+                }
+            }.getOrElse { it.message ?: "the tab didn't answer" }
+            main.post { if (!stopped) done(error) }
+        }
+    }
+
     companion object {
         const val TAG = "turu-models"
     }

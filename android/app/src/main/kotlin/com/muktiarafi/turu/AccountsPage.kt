@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -79,7 +80,9 @@ import androidx.compose.ui.unit.dp
 
 /**
  * An account's row: avatar, its name, the username muted, up to two group or tag chips, and at
- * the end Start or where it is ("In tab 2", "Starting..."). `menu` adds the ⋮ menu (Accounts).
+ * the end Start or where it is ("On screen", Switch to its tab, "Starting..."; not its tab's
+ * number: that's a slot, which the tab list doesn't show). `shown` is the tab on screen. `menu`
+ * adds the ⋮ menu (Accounts).
  * With `select` (Accounts) a long press selects it; while `selecting`, a tap selects or clears it,
  * its avatar turns to a check while selected, and Start and the menu step aside.
  */
@@ -93,6 +96,7 @@ fun AccountRow(
     select: (() -> Unit)? = null,
     selecting: Boolean = false,
     selected: Boolean = false,
+    shown: Int? = null,
 ) {
     val labels = account.groups + account.tags
     val tap = {
@@ -150,14 +154,25 @@ fun AccountRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val tab = account.tab
                 when {
-                    selecting -> if (tab != null) Text("In tab $tab", style = MaterialTheme.typography.labelLarge, color = Turu.Muted)
-                    tab != null -> TextButton(onClick = { onShow(tab) }) { Text("In tab $tab") }
+                    selecting -> if (tab != null) Text("In a tab", style = MaterialTheme.typography.labelLarge, color = Turu.Muted)
+                    tab != null && tab == shown -> Text(
+                        "On screen",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Turu.Muted,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                    tab != null -> TextButton(onClick = { onShow(tab) }) { Text("Switch to") }
                     starting -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp)
                         Spacer(Modifier.width(8.dp))
                         Text("Starting…", style = MaterialTheme.typography.labelLarge, color = Turu.Muted)
                     }
-                    else -> FilledTonalButton(onClick = onStart, modifier = Modifier.heightIn(min = 40.dp)) { Text("Start") }
+                    // Narrower than the default (24 dp a side), so "No password" keeps its words at 1.3x text.
+                    else -> FilledTonalButton(
+                        onClick = onStart,
+                        modifier = Modifier.heightIn(min = 40.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                    ) { Text("Start") }
                 }
                 if (!selecting) menu?.invoke()
             }
@@ -200,7 +215,7 @@ private const val TAB_POOL = 4
  * Select all and, under a group's chip, Remove from the group. ⋮ also removes the group shown.
  */
 @Composable
-fun AccountsPage(state: ShellState, accounts: AccountsPanel, fullWindow: () -> Unit) {
+fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Unit, fullWindow: () -> Unit) {
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<Account?>(null) }
@@ -313,7 +328,10 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, fullWindow: () -> U
                         accounts.start(account)
                         state.close()
                     },
-                    onShow = { state.close() },
+                    onShow = { tab ->
+                        select(tab)
+                        state.close()
+                    },
                     menu = {
                         AccountMenu(
                             canMoveUp = index > 0,
@@ -326,6 +344,7 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, fullWindow: () -> U
                     select = { toggle(account) },
                     selecting = selecting,
                     selected = account.username in selected,
+                    shown = state.tabs.shown,
                 )
             }
         }

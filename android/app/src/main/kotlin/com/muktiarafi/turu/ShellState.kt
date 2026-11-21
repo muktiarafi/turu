@@ -17,10 +17,21 @@ data class ShellTab(
     val waits: String?,
     /** Its process isn't up yet ("starting"). */
     val down: String?,
+    /** Where its game is: "logged_out", "in_game", "relogging" or "dropped" (`shell::TabGame`). */
+    val game: String = "logged_out",
+    /** The map it's in, while in game. */
+    val map: String? = null,
+    /** Its loaded script's name. */
+    val script: String? = null,
+    /** It was opened for a saved login, so it can log itself in. */
+    val account: Boolean = false,
     /** Its control API and token, where its view models are read (null until it says hello). */
     val api: String? = null,
     val token: String? = null,
-)
+) {
+    /** It was in game and isn't, with no relogin under way. */
+    val dropped: Boolean get() = down == null && game == "dropped"
+}
 
 /** The tab list (`slots::NativeTabs`). */
 @Immutable
@@ -32,8 +43,11 @@ data class ShellTabs(
 ) {
     val active: ShellTab? get() = tabs.firstOrNull { it.id == shown }
 
-    /** Another tab than the one on screen needs the user: it waits for an answer. */
-    val othersNeedYou: Boolean get() = tabs.any { it.id != shown && it.waits != null }
+    /** Another tab than the one on screen needs the user: it waits for an answer, or dropped out of the game. */
+    val othersNeedYou: Boolean get() = tabs.any { it.id != shown && (it.waits != null || it.dropped) }
+
+    /** Another tab than the one on screen dropped out of the game. */
+    val othersDropped: Boolean get() = tabs.any { it.id != shown && it.dropped }
 
     companion object {
         fun parse(json: String): ShellTabs {
@@ -48,6 +62,10 @@ data class ShellTabs(
                         busy = t.optBoolean("busy"),
                         waits = t.optStringOrNull("waits"),
                         down = t.optStringOrNull("down"),
+                        game = t.optString("game", "logged_out"),
+                        map = t.optStringOrNull("map"),
+                        script = t.optStringOrNull("script"),
+                        account = t.optBoolean("account"),
                         api = t.optStringOrNull("api"),
                         token = t.optStringOrNull("token"),
                     )

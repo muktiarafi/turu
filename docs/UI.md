@@ -904,8 +904,8 @@ listed one by one in the rail instead. Auto and Jump don't fold into Menu to mak
 **Tabs item** (top of the rail, 64 x 52 dp, with the cutout's inset as the rail has):
 
 * The active tab's avatar (two letters of its label, so army accounts with similar names stay
-  apart) with its status dot; a count badge with two tabs or more; a warning "!" while another
-  tab waits for you or has closed.
+  apart) with its status dot; a count badge with two tabs or more, amber while another tab
+  waits for you and red while one dropped out of the game (as built, below).
 * Shown with one tab too: it is the way to New tab and Accounts.
 * Hidden with the client's rail (Menu > Hide Side Bar); the `›` tab brings both back.
 
@@ -977,6 +977,22 @@ above, and why:
 
 * **The last tab has no ✕**, and there is no "No tabs open" state: `SlotShell::close` keeps the
   last tab (the pass's question, answered: it does).
+* **The rows say where each tab's game is** (2026-11-21, from the panel's critique): the slot's
+  `Status` carries `game` (`shell::TabGame`: in game, logging back in, logged out, or dropped:
+  in game before and not now, with no relogin under way), the map and the loaded script, and the
+  status line reads "Running GoldFarm · battleon", "Idle in battleon", "Waits for you: ...",
+  "Logging back in…" (amber ring), "Disconnected" (red), "Not logged in" or "At the login
+  screen" (no saved login). A tab opened for a saved login that is out of the game has **Log
+  in** ("Log in again" after a drop) under its status, the control API's `/login` (the error
+  shown under it if it fails). There is no "Closed" with Restart: a slot whose process dies is
+  restarted by Android and shows "Starting…" with a turning ring in its dot, apart from an
+  idle tab's grey one. The Tabs item's count stays when another tab needs you: amber while one
+  waits, red while one dropped (the "!" took the count's place).
+* **✕ asks first whenever the tab is logged in** (or its script runs), since closing it logs the
+  character out; a tab out of the game closes at once. Full: "Close a tab to open another".
+* **New tab lists the accounts to start first** and those already in a tab last, with "On
+  screen" or **Switch to** (not "In tab 3": a slot's number, which the list doesn't show), and
+  Blank tab kept at the foot. Its top bar's link says Accounts, as the Tabs page's does.
 * **Add/Save sit in the form's top bar**, not at its foot: Compose gets no full-screen keyboard
   field in landscape, and with the keyboard up the panel has room for a field or two above it
   (the page shrinks with `imePadding`, the focused field scrolls into view).

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -118,7 +120,8 @@ private val widePages = setOf(Page.More, Page.Search, Page.GameOptions, Page.App
 
 /**
  * The Tabs item at the top of the rail (64 x 52 dp, plus the cutout's inset): the tab on screen's
- * avatar with its status dot, how many tabs are open, and a warning while another tab waits.
+ * avatar with its status dot, how many tabs are open, the count turning amber while another tab
+ * waits for you and red while one dropped out of the game.
  */
 @Composable
 fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
@@ -127,7 +130,8 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
     val description = buildString {
         append("Tabs, ${tabs.tabs.size} open")
         active?.let { append(", on screen: ${it.label}") }
-        if (tabs.othersNeedYou) append(", a tab waits for you")
+        if (tabs.othersDropped) append(", a tab is disconnected")
+        else if (tabs.othersNeedYou) append(", a tab waits for you")
     }
     val selected = state.open && (state.page == Page.Tabs || state.page == Page.NewTab)
     Column(
@@ -144,8 +148,13 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Avatar(active?.label ?: "", size = 32.dp, tab = active)
-            if (tabs.tabs.size > 1 || tabs.othersNeedYou) {
-                val warn = tabs.othersNeedYou
+            if (tabs.tabs.size > 1) {
+                // The count stays; its colour says another tab needs you.
+                val (fill, ink) = when {
+                    tabs.othersDropped -> Turu.Danger to Color.White
+                    tabs.othersNeedYou -> Turu.Warning to Turu.Panel
+                    else -> Turu.Accent to Color.White
+                }
                 Box(
                     Modifier
                         .align(Alignment.TopEnd)
@@ -153,12 +162,12 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
                         .offset(x = 8.dp, y = (-1).dp)
                         .size(16.dp)
                         .clip(CircleShape)
-                        .background(if (warn) Turu.Warning else Turu.Accent),
+                        .background(fill),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        if (warn) "!" else "${tabs.tabs.size}",
-                        color = if (warn) Turu.Panel else Color.White,
+                        "${tabs.tabs.size}",
+                        color = ink,
                         // impeccable-disable-next-line tiny-text: a badge's count, sized to the 16-dp badge whatever the font scale
                         fontSize = (10f / LocalDensity.current.fontScale).sp,
                         fontWeight = FontWeight.Bold,
@@ -194,22 +203,18 @@ fun Avatar(label: String, size: Dp, tab: ShellTab? = null, tint: Color = Turu.Tr
             )
         }
         if (tab != null) {
-            val dot = when {
-                tab.down != null -> Turu.Muted
-                tab.waits != null -> Turu.Warning
-                tab.busy -> Turu.Success
-                else -> Turu.Muted
+            val dot = Modifier
+                .align(Alignment.BottomEnd)
+                .size(size * 0.34f)
+                .clip(CircleShape)
+                .background(Turu.Panel)
+                .padding(2.dp)
+            if (tab.down != null || tab.game == "relogging") {
+                // Starting or logging back in: a turning ring, not the idle tab's grey dot.
+                CircularProgressIndicator(dot, strokeWidth = 1.5.dp, color = if (tab.down != null) Turu.Muted else Turu.Warning)
+            } else {
+                Box(dot.clip(CircleShape).background(statusColor(tab, dot = true)))
             }
-            Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(size * 0.34f)
-                    .clip(CircleShape)
-                    .background(Turu.Panel)
-                    .padding(2.dp)
-                    .clip(CircleShape)
-                    .background(dot),
-            )
         }
     }
 }
@@ -259,7 +264,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                     when (page) {
                         Page.Tabs -> TabsPage(state, actions)
                         Page.NewTab -> NewTabPage(state, actions)
-                        Page.Accounts -> AccountsPage(state, actions.accounts) { actions.window("accounts") }
+                        Page.Accounts -> AccountsPage(state, actions.accounts, actions.select) { actions.window("accounts") }
                         Page.Scripts -> ScriptsPage(state, actions.scripts) { actions.window("script_loader") }
                         Page.Auto -> AutoPage(state, actions.scripts.models)
                         Page.Jump -> JumpPage(state, actions.scripts.models)
@@ -354,18 +359,57 @@ fun PageBar(title: String, onBack: (() -> Unit)?, actions: @Composable () -> Uni
     }
 }
 
-/** The status line under a tab's name. */
-private fun statusLine(tab: ShellTab): String = when {
-    tab.down != null -> "Starting…"
-    tab.waits != null -> "Waits for you: ${tab.waits}"
-    tab.busy -> "Script running"
-    else -> "Idle"
+/** The status line under a tab's name: what it's doing, where, or why it isn't. */
+private fun statusLine(tab: ShellTab): String {
+    val where = tab.map?.let { " · $it" }.orEmpty()
+    return when {
+        tab.down != null -> "Starting…"
+        tab.waits != null -> "Waits for you: ${tab.waits}"
+        tab.dropped -> "Disconnected"
+        tab.game == "relogging" -> "Logging back in…"
+        tab.game == "logged_out" -> if (tab.account) "Not logged in" else "At the login screen"
+        tab.busy -> (tab.script?.let { "Running $it" } ?: "Auto running") + where
+        else -> tab.map?.let { "Idle in $it" } ?: "Idle"
+    }
 }
+
+/** The colour of a tab's state: its dot, and its status line where it needs you. */
+private fun statusColor(tab: ShellTab, dot: Boolean): Color = when {
+    tab.waits != null -> Turu.Warning
+    tab.dropped -> Turu.Danger
+    tab.game == "relogging" -> Turu.Warning
+    dot && tab.busy && tab.game == "in_game" -> Turu.Success
+    else -> Turu.Muted
+}
+
+/** Closing it logs a character out: the panel asks first. */
+private fun loggedIn(tab: ShellTab): Boolean =
+    tab.down == null && (tab.busy || tab.game == "in_game" || tab.game == "relogging")
+
+/** It can log itself in from the panel: out of the game, not on its way back, with a saved login. */
+private fun canLogIn(tab: ShellTab): Boolean =
+    tab.down == null && tab.account && tab.api != null && (tab.game == "dropped" || tab.game == "logged_out")
 
 @Composable
 private fun TabsPage(state: ShellState, actions: TabActions) {
     var closing by remember { mutableStateOf<ShellTab?>(null) }
+    // Tabs logging themselves in from here, and why one couldn't.
+    var loggingIn by remember { mutableStateOf(emptySet<Int>()) }
+    var loginErrors by remember { mutableStateOf(emptyMap<Int, String>()) }
     val tabs = state.tabs
+    fun logIn(tab: ShellTab) {
+        val api = tab.api ?: return
+        val token = tab.token ?: return
+        loggingIn = loggingIn + tab.id
+        loginErrors = loginErrors - tab.id
+        val client = ModelClient(api, token, models = emptyList(), logs = emptyList(), onView = { _, _ -> }, onLog = { _, _, _ -> })
+        // A login waits for the server list and the world: up to a minute or so.
+        client.call("/login", wait = 120_000) { error ->
+            client.stop()
+            loggingIn = loggingIn - tab.id
+            if (error != null) loginErrors = loginErrors + (tab.id to error)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         PageBar("Tabs", onBack = null) {
             Text(
@@ -382,32 +426,59 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 2.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable {
+                        .then(if (selected) Modifier.semantics { stateDescription = "On screen" } else Modifier)
+                        .selectable(selected = selected, onClick = {
                             actions.select(tab.id)
                             state.close()
-                        },
+                        }),
                     colors = ListItemDefaults.colors(
                         containerColor = if (selected) Turu.AccentTint else Color.Transparent,
                     ),
                     leadingContent = { Avatar(tab.label, size = 40.dp, tab = tab) },
                     headlineContent = { Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (tab.down != null) {
-                                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = Turu.Muted)
-                                Spacer(Modifier.width(6.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (tab.down != null || tab.game == "relogging") {
+                                    CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = statusColor(tab, dot = false))
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    statusLine(tab),
+                                    color = statusColor(tab, dot = false),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            Text(
-                                statusLine(tab),
-                                color = if (tab.waits != null) Turu.Warning else Turu.Muted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            loginErrors[tab.id]?.takeIf { canLogIn(tab) }?.let { error ->
+                                Text(
+                                    "Couldn't log in: $error",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Turu.Danger,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                            if (canLogIn(tab)) {
+                                if (tab.id in loggingIn) {
+                                    Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Logging in…", style = MaterialTheme.typography.labelLarge, color = Turu.Muted)
+                                    }
+                                } else {
+                                    TextButton(
+                                        onClick = { logIn(tab) },
+                                        contentPadding = PaddingValues(horizontal = 0.dp),
+                                    ) { Text(if (tab.dropped) "Log in again" else "Log in") }
+                                }
+                            }
                         }
                     },
                     trailingContent = if (tabs.tabs.size > 1) {
                         {
-                            IconButton(onClick = { if (tab.busy) closing = tab else actions.close(tab.id) }) {
+                            IconButton(onClick = { if (loggedIn(tab)) closing = tab else actions.close(tab.id) }) {
                                 Icon(Icons.Rounded.Close, contentDescription = "Close ${tab.label}'s tab", tint = Turu.Muted)
                             }
                         }
@@ -424,7 +495,7 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
         ) {
             if (tabs.full) {
                 Text(
-                    "4 tabs at most",
+                    "Close a tab to open another",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Turu.Muted,
                     modifier = Modifier.weight(1f).padding(start = 4.dp),
@@ -455,8 +526,16 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
     closing?.let { tab ->
         AlertDialog(
             onDismissRequest = { closing = null },
-            title = { Text("Close the tab?") },
-            text = { Text("${tab.label}'s script is running. Closing the tab stops it.") },
+            title = { Text("Close ${tab.label}'s tab?") },
+            text = {
+                Text(
+                    if (tab.busy) {
+                        "Its script is running. Closing the tab stops it and logs ${tab.label} out."
+                    } else {
+                        "${tab.label} is logged in. Closing the tab logs them out."
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     actions.close(tab.id)
@@ -469,16 +548,21 @@ private fun TabsPage(state: ShellState, actions: TabActions) {
     }
 }
 
-/** New tab: an account to start in it, or a blank tab at the game's login screen. */
+/**
+ * New tab: an account to start in it (those already in a tab last, to switch to), or a blank tab
+ * at the game's login screen, kept at the foot.
+ */
 @Composable
 private fun NewTabPage(state: ShellState, actions: TabActions) {
     val accounts = actions.accounts
+    // Stable: the saved order within each group.
+    val listed = accounts.list.accounts.sortedBy { it.tab != null }
     Column(Modifier.fillMaxSize()) {
         PageBar("New tab", onBack = { state.back() }) {
-            TextButton(onClick = { state.push(Page.Accounts) }) { Text("Manage") }
+            TextButton(onClick = { state.push(Page.Accounts) }) { Text("Accounts") }
         }
         LazyColumn(Modifier.weight(1f)) {
-            if (accounts.loaded && accounts.list.accounts.isEmpty()) {
+            if (accounts.loaded && listed.isEmpty()) {
                 item {
                     Text(
                         "No saved accounts. Add one in Accounts, or log in by hand.",
@@ -488,7 +572,7 @@ private fun NewTabPage(state: ShellState, actions: TabActions) {
                     )
                 }
             }
-            items(accounts.list.accounts, key = { it.username }) { account ->
+            items(listed, key = { it.username }) { account ->
                 AccountRow(
                     account = account,
                     starting = account.username in accounts.starting,
@@ -500,28 +584,28 @@ private fun NewTabPage(state: ShellState, actions: TabActions) {
                         actions.select(tab)
                         state.close()
                     },
-                )
-            }
-            item {
-                ListItem(
-                    modifier = Modifier
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            actions.blank()
-                            state.close()
-                        },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        Box(
-                            Modifier.size(40.dp).clip(CircleShape).background(Turu.Card),
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Rounded.Person, contentDescription = null, tint = Turu.Muted) }
-                    },
-                    headlineContent = { Text("Blank tab") },
-                    supportingContent = { Text("Log in by hand", color = Turu.Muted) },
+                    shown = state.tabs.shown,
                 )
             }
         }
+        HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+        ListItem(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    actions.blank()
+                    state.close()
+                },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(Turu.Card),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.Person, contentDescription = null, tint = Turu.Muted) }
+            },
+            headlineContent = { Text("Blank tab") },
+            supportingContent = { Text("Log in by hand", color = Turu.Muted) },
+        )
     }
 }

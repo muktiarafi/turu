@@ -410,6 +410,15 @@ pub enum ToShell {
         /// with it.
         #[serde(default)]
         rail_hidden: bool,
+        /// Where the tab's game is (in game, logging back in, out), for the shell's tab list.
+        #[serde(default)]
+        game: TabGame,
+        /// The map it's in, while in game.
+        #[serde(default)]
+        map: Option<String>,
+        /// Its loaded script's name (the file's, without `.ts`).
+        #[serde(default)]
+        script: Option<String>,
     },
     /// Android: a window the shell has natively (docs/UI.md, "Native shells") was opened in the
     /// tab's egui menus: the shell shows its own instead.
@@ -479,6 +488,21 @@ pub enum ToShell {
 }
 
 /// A screen Android's shell has natively.
+/// Where a tab's game is, for the shell's tab list (`ToShell::Status`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TabGame {
+    /// Not logged in (yet).
+    #[default]
+    LoggedOut,
+    InGame,
+    /// Auto Relogin is logging it back in.
+    Relogging,
+    /// It was in game and isn't any more, with no relogin under way: the connection dropped, it
+    /// was kicked, or it logged out.
+    Dropped,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeScreen {
@@ -1247,6 +1271,9 @@ mod tests {
                 busy: true,
                 waits: Some("a message box".into()),
                 rail_hidden: true,
+                game: TabGame::InGame,
+                map: Some("battleon".into()),
+                script: Some("Example".into()),
             },
             ToShell::OpenScreen {
                 screen: NativeScreen::Scripts,
