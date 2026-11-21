@@ -148,7 +148,8 @@ impl CoreBotsWindow {
             let name = if self.username.is_empty() {
                 RichText::new("No character").size(15.0).strong().color(MUTED)
             } else {
-                RichText::new(&self.username).size(15.0).strong().color(TEXT)
+                let shown = crate::models::core_bots::shown_name(&crate::turu::bot(), &self.username);
+                RichText::new(shown).size(15.0).strong().color(TEXT)
             };
             ui.add(Label::new(name).truncate());
             let (state, color) = self.save_state();
@@ -401,7 +402,11 @@ impl CoreBotsWindow {
             let response = Modal::new(egui::Id::new("cbo_message")).show(ctx, |ui| {
                 ui.set_max_width(380.0);
                 ui.heading(*title);
-                ui.label(text.as_str());
+                ui.label(crate::models::core_bots::shown_text(
+                    &crate::turu::bot(),
+                    &self.username,
+                    text,
+                ));
                 if widgets::button(ui, "OK", Kind::Primary, true, vec2(72.0, 28.0), "").clicked() {
                     close = true;
                 }

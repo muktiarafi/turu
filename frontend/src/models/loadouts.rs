@@ -460,6 +460,10 @@ pub fn read_gear(bot: &Arc<Bot>) {
 pub struct LoadoutsView {
     /// The character whose loadouts these are ("" while logged out).
     pub username: String,
+    /// The list's heading: "Hero's loadouts", "Your loadouts" in Streamer Mode.
+    pub list_title: String,
+    /// "Currently equipped"'s line: "What Hero wears now", "What you wear now" in Streamer Mode.
+    pub wearing: String,
     /// The gear wasn't read yet.
     pub reading: bool,
     /// What's worn now, as a loadout ("Currently equipped").
@@ -569,8 +573,17 @@ impl State {
 
     pub fn view(&mut self, bot: &Bot) -> LoadoutsView {
         let rows = self.rows();
+        let username = self.username.clone().unwrap_or_default();
+        // Turu: Streamer Mode hides the character's name here too, as in the tab's label.
+        let (list_title, wearing) = if bot.opts().streamer_mode {
+            ("Your loadouts".to_owned(), "What you wear now".to_owned())
+        } else {
+            (format!("{username}'s loadouts"), format!("What {username} wears now"))
+        };
         LoadoutsView {
-            username: self.username.clone().unwrap_or_default(),
+            username,
+            list_title,
+            wearing,
             reading: self.gear.is_none(),
             current: rows.current,
             loadouts: rows.loadouts,
@@ -736,5 +749,25 @@ mod tests {
                 .contains("live entry")
         );
         assert_eq!(state.rename_problem(1, "Questwalker's farm"), None);
+    }
+
+    /// Streamer Mode: the page names no character.
+    #[test]
+    fn streamer_mode_hides_whose_loadouts_these_are() {
+        let bot = Bot::new();
+        let mut state = State {
+            username: Some("Questwalker".into()),
+            ..Default::default()
+        };
+        let view = state.view(&bot);
+        assert_eq!(view.list_title, "Questwalker's loadouts");
+        assert_eq!(view.wearing, "What Questwalker wears now");
+        bot.options.write().streamer_mode = true;
+        let view = state.view(&bot);
+        assert_eq!(
+            (view.list_title.as_str(), view.wearing.as_str()),
+            ("Your loadouts", "What you wear now")
+        );
+        assert!(!format!("{view:?}").contains("Questwalker's"));
     }
 }

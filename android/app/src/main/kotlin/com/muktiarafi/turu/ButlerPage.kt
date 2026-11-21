@@ -246,7 +246,7 @@ private fun Accounts(view: ButlerView, panel: ButlerPanel, modifier: Modifier) {
 private fun AccountRow(a: ButlerAccount, panel: ButlerPanel) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(a.username, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.CenterVertically))
+            Text(a.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.CenterVertically))
             for (c in a.chips) {
                 val color = c.tint.color()
                 Text(

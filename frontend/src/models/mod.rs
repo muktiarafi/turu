@@ -85,6 +85,32 @@ impl Control {
     }
 }
 
+/// `text` with each whole-word `word` (ASCII case ignored) replaced by `with`: Streamer Mode's
+/// names out of a line.
+pub fn replace_word(text: &str, word: &str, with: &str) -> String {
+    let (bytes, needle) = (text.as_bytes(), word.as_bytes());
+    let part_of_word = |b: Option<&u8>| b.is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
+    let mut out = String::with_capacity(text.len());
+    let (mut i, mut from) = (0, 0);
+    while i + needle.len() <= bytes.len() {
+        if bytes[i..i + needle.len()].eq_ignore_ascii_case(needle)
+            && !part_of_word(i.checked_sub(1).and_then(|j| bytes.get(j)))
+            && !part_of_word(bytes.get(i + needle.len()))
+            && text.is_char_boundary(i)
+            && text.is_char_boundary(i + needle.len())
+        {
+            out.push_str(&text[from..i]);
+            out.push_str(with);
+            i += needle.len();
+            from = i;
+        } else {
+            i += 1;
+        }
+    }
+    out.push_str(&text[from..]);
+    out
+}
+
 /// Adds every model's view and actions to the control API (before it starts), for a native
 /// shell's screens: `GET /models/<name>`, `POST /models/<name>/<action>`.
 pub fn register() {
@@ -712,5 +738,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Streamer Mode's masking replaces a name only as a whole word, in any case.
+    #[test]
+    fn replace_word_takes_whole_words() {
+        let text = "Questwalker follows questwalker2; QUESTWALKER is on Twig.";
+        assert_eq!(
+            super::replace_word(text, "Questwalker", "Account 1"),
+            "Account 1 follows questwalker2; Account 1 is on Twig."
+        );
+        assert_eq!(super::replace_word("Nobody here", "Questwalker", "Account 1"), "Nobody here");
+        assert_eq!(super::replace_word("Questwalker", "Questwalker", "Account 1"), "Account 1");
     }
 }

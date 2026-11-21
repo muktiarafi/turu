@@ -151,6 +151,31 @@ pub struct State {
 
 pub static STATE: PerTab<State> = PerTab::new();
 
+/// How the room's players are shown: by name, or "Player 1", "Player 2"... in Streamer Mode
+/// (Copy still goes by the name behind each).
+pub fn player_labels(bot: &Bot, players: &[String]) -> Vec<String> {
+    // Turu: VibeSkua's Cosmetics plugin lists the names whatever Streamer Mode says.
+    if bot.opts().streamer_mode {
+        (1..=players.len()).map(|n| format!("Player {n}")).collect()
+    } else {
+        players.to_vec()
+    }
+}
+
+/// An outcome as the quick bar shows it: in Streamer Mode, without the player's name the copy
+/// names ("Copied look from Hero!", "Player 'Hero' was not found ...").
+fn shown_outcome(bot: &Bot, text: String) -> String {
+    if !bot.opts().streamer_mode {
+        text
+    } else if text.starts_with("Copied look from ") {
+        "Copied the look!".into()
+    } else if text.starts_with("Player '") && text.contains("was not found") {
+        "That player was not found in the current map.".into()
+    } else {
+        text
+    }
+}
+
 /// Runs a game action off the caller's thread; a failure goes to the script log as VibeSkua's
 /// "[Cosmetics] ... error" lines do.
 pub fn act_in_game(
@@ -270,7 +295,7 @@ pub fn quick(bot: &Arc<Bot>, start: &str, action: impl FnOnce(&Arc<Bot>) -> Resu
         };
         let mut s = lock(&state);
         s.busy = false;
-        s.status = result.unwrap_or_else(|e| e);
+        s.status = shown_outcome(bot, result.unwrap_or_else(|e| e));
         if let Some(colors) = colors {
             s.colors = Some(colors);
             s.colors_count = s.colors_count.wrapping_add(1);
@@ -282,7 +307,12 @@ pub fn quick(bot: &Arc<Bot>, start: &str, action: impl FnOnce(&Arc<Bot>) -> Resu
 
 pub fn copy_player(bot: &Arc<Bot>, library: &Arc<Library>, name: String) {
     let library = library.clone();
-    quick(bot, &format!("Copying look from {name}..."), move |bot| {
+    let start = if bot.opts().streamer_mode {
+        "Copying the look...".to_owned()
+    } else {
+        format!("Copying look from {name}...")
+    };
+    quick(bot, &start, move |bot| {
         avatar::copy_player_look_by_name(bot, &library, &name)
     });
 }
@@ -296,7 +326,12 @@ pub fn copy_target(bot: &Arc<Bot>, library: &Arc<Library>) {
 
 /// Turu: any character's look from its account.aq.com page.
 pub fn copy_page(bot: &Arc<Bot>, name: String) {
-    quick(bot, &format!("Reading {name}'s character page..."), move |bot| {
+    let start = if bot.opts().streamer_mode {
+        "Reading the character page...".to_owned()
+    } else {
+        format!("Reading {name}'s character page...")
+    };
+    quick(bot, &start, move |bot| {
         let page = charpage::fetch(&name)?;
         avatar::copy_char_page(bot, &page)
     });
@@ -410,6 +445,8 @@ pub const COLOR_ROWS: [(&str, &str); 6] = [
 pub struct CosmeticsView {
     /// The room's other players, for Copy Player.
     pub players: Vec<String>,
+    /// How each is shown: its name, or "Player n" in Streamer Mode.
+    pub player_labels: Vec<String>,
     /// The quick bar's outcome ("" for none) and whether an action runs.
     pub status: String,
     pub busy: bool,
@@ -552,6 +589,7 @@ pub fn view(bot: &Arc<Bot>) -> CosmeticsView {
         .collect();
     CosmeticsView {
         players: s.room_players.clone(),
+        player_labels: player_labels(bot, &s.room_players),
         status: s.status.clone(),
         busy: s.busy,
         catalog: CatalogView {
@@ -776,6 +814,25 @@ mod tests {
                 &serde_json::json!({ "hex": ["#12", "", "", "", "", "nope"] })
             )
             .is_err()
+        );
+    }
+
+    /// Streamer Mode: the room's players are numbered, and the outcome names nobody.
+    #[test]
+    fn streamer_mode_numbers_the_rooms_players() {
+        let bot = Bot::new();
+        let players = vec!["Questwalker".to_owned(), "Brambleox".to_owned()];
+        assert_eq!(player_labels(&bot, &players), players);
+        let copied = || "Copied look from Questwalker!".to_owned();
+        assert_eq!(shown_outcome(&bot, copied()), copied());
+        bot.options.write().streamer_mode = true;
+        assert_eq!(player_labels(&bot, &players), ["Player 1", "Player 2"]);
+        assert_eq!(shown_outcome(&bot, copied()), "Copied the look!");
+        let missing = "Player 'Questwalker' was not found in the current map.".to_owned();
+        assert!(!shown_outcome(&bot, missing).contains("Questwalker"));
+        assert_eq!(
+            shown_outcome(&bot, "You are not logged in.".into()),
+            "You are not logged in."
         );
     }
 }

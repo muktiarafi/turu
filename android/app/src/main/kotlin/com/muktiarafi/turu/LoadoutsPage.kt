@@ -282,7 +282,7 @@ private fun ListBody(view: LoadoutsView, modifier: Modifier, onOpen: (Open) -> U
             ) { onOpen(Open.Current) }
             HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             Text(
-                "${view.username}'s loadouts · ${view.loadouts.size}",
+                "${view.listTitle} · ${view.loadouts.size}",
                 style = MaterialTheme.typography.labelLarge,
                 color = Turu.Muted,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
@@ -356,7 +356,7 @@ private fun DetailBody(loadout: LoadoutView, saved: Boolean, view: LoadoutsView,
     LazyColumn(modifier) {
         item {
             Text(
-                if (saved) "${loadout.`class`} · ${loadout.items} ${if (loadout.items == 1u) "item" else "items"}" else "What ${view.username} wears now",
+                if (saved) "${loadout.`class`} · ${loadout.items} ${if (loadout.items == 1u) "item" else "items"}" else view.wearing,
                 style = MaterialTheme.typography.bodySmall,
                 color = Turu.Muted,
                 modifier = Modifier.padding(horizontal = 16.dp),

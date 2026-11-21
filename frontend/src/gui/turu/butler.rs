@@ -46,9 +46,11 @@ pub struct ButlerWindow {
     roster: Vec<SyncData>,
     show_settings: bool,
     show_log: bool,
-    /// The log lines shown, and the log's version they were read at.
+    /// The log lines shown, the log's version they were read at, and Streamer Mode's names
+    /// they were masked with.
     log: Vec<LogLine>,
     log_version: Option<u64>,
+    log_masked: Option<model::Masks>,
     /// Send to player: the pop-up is open, its name box, and the recent names shown.
     send_open: bool,
     send_target: String,
@@ -102,7 +104,7 @@ impl ButlerWindow {
 
     /// This account, whom it follows, and Stop following / Release all.
     fn header_card(&self, ui: &mut Ui, bot: &Arc<Bot>) -> bool {
-        let header = model::header(bot);
+        let header = model::header(bot, model::masks(bot).as_ref());
         let mut changed = false;
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -168,11 +170,12 @@ impl ButlerWindow {
                     }
                     // Roomier rows for a finger.
                     let separator = if widgets::touch() { 14.0 } else { 6.0 };
+                    let masks = model::masks(bot);
                     for (i, account) in self.roster.iter().enumerate() {
                         if i > 0 {
                             ui.add(egui::Separator::default().spacing(separator));
                         }
-                        changed |= row(ui, bot, &model::account(bot, account));
+                        changed |= row(ui, bot, &model::account(bot, account, masks.as_ref()));
                     }
                 });
         });
@@ -264,7 +267,12 @@ impl ButlerWindow {
         if button.clicked() {
             self.send_open = !self.send_open;
             if self.send_open {
-                self.recent_targets = bot.butler.recent_targets();
+                // Other players' names: none to pick from in Streamer Mode.
+                self.recent_targets = if bot.opts().streamer_mode {
+                    Vec::new()
+                } else {
+                    bot.butler.recent_targets()
+                };
             }
         }
         if !enabled {
@@ -333,7 +341,7 @@ fn row(ui: &mut Ui, bot: &Arc<Bot>, account: &model::ButlerAccount) -> bool {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(&account.username).strong().color(TEXT));
+                ui.label(RichText::new(&account.label).strong().color(TEXT));
                 for c in &account.chips {
                     chip(ui, &c.text, tint_color(c.tint));
                 }
@@ -359,7 +367,7 @@ fn row(ui: &mut Ui, bot: &Arc<Bot>, account: &model::ButlerAccount) -> bool {
                 let rule = &account.summon;
                 let response = widgets::button(ui, "Summon", Kind::Primary, rule.enabled, size, &rule.reason);
                 if response
-                    .on_hover_text(format!("Have {} follow me", account.username))
+                    .on_hover_text(format!("Have {} follow me", account.label))
                     .clicked()
                 {
                     model::say(bot, butler::toggle_follower(bot, &account.username));
@@ -369,13 +377,13 @@ fn row(ui: &mut Ui, bot: &Arc<Bot>, account: &model::ButlerAccount) -> bool {
             if account.followed {
                 if widgets::button(ui, "Stop", Kind::Danger, true, size, "").clicked() {
                     butler::stop_follow(bot);
-                    model::say(bot, Ok(format!("Stopped following {}.", account.username)));
+                    model::say(bot, Ok(format!("Stopped following {}.", account.label)));
                     changed = true;
                 }
             } else {
                 let rule = &account.follow;
                 let response = widgets::button(ui, "Follow", Kind::Normal, rule.enabled, size, &rule.reason);
-                if response.on_hover_text(format!("Follow {}", account.username)).clicked() {
+                if response.on_hover_text(format!("Follow {}", account.label)).clicked() {
                     model::follow(bot, account.username.clone());
                     changed = true;
                 }
@@ -391,9 +399,16 @@ impl ButlerWindow {
     fn log_card(&mut self, ui: &mut Ui, bot: &Arc<Bot>) {
         let butler = &bot.butler;
         let version = butler.log_version();
-        if self.log_version != Some(version) {
+        let masks = model::masks(bot);
+        if self.log_version != Some(version) || self.log_masked != masks {
             self.log = butler.log_lines();
+            if let Some(masks) = &masks {
+                for line in &mut self.log {
+                    line.text = masks.text(&line.text);
+                }
+            }
             self.log_version = Some(version);
+            self.log_masked = masks;
         }
         let enabled = butler.settings().debug_logs;
         widgets::card(ui, |ui| {

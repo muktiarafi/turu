@@ -273,6 +273,8 @@ fn act(what: &'static str, action: impl FnOnce(&Arc<Bot>) -> turu_bot::BotResult
 /// What the quick bar shows: the room's players, the last action's outcome, and whether one runs.
 struct Quick {
     players: Vec<String>,
+    /// How each is shown ("Player n" in Streamer Mode).
+    labels: Vec<String>,
     status: String,
     busy: bool,
 }
@@ -411,10 +413,12 @@ impl CosmeticsWindow {
     /// picked one left.
     fn quick_state(&mut self) -> Quick {
         let quick = {
-            let state = model::STATE.of(&crate::turu::bot());
+            let bot = crate::turu::bot();
+            let state = model::STATE.of(&bot);
             let s = lock(&state);
             Quick {
                 players: s.room_players.clone(),
+                labels: model::player_labels(&bot, &s.room_players),
                 status: s.status.clone(),
                 busy: s.busy,
             }
@@ -437,7 +441,7 @@ impl CosmeticsWindow {
         widgets::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                self.player_box(ui, &quick.players, INPUT_WIDTH);
+                self.player_box(ui, &quick.players, &quick.labels, INPUT_WIDTH);
                 self.copy_player(ui, library, quick.busy, COPY_WIDTH);
                 self.copy_target(ui, library, quick.busy, vec2(0.0, 0.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -491,7 +495,7 @@ impl CosmeticsWindow {
             widgets::section_label(ui, "PLAYER IN THE ROOM");
             ui.horizontal(|ui| {
                 let width = ui.available_width() - COPY_WIDTH - gap;
-                self.player_box(ui, &quick.players, width);
+                self.player_box(ui, &quick.players, &quick.labels, width);
                 self.copy_player(ui, library, quick.busy, COPY_WIDTH);
             });
             ui.horizontal(|ui| {
@@ -523,19 +527,19 @@ impl CosmeticsWindow {
         });
     }
 
-    fn player_box(&mut self, ui: &mut Ui, players: &[String], width: f32) {
+    fn player_box(&mut self, ui: &mut Ui, players: &[String], labels: &[String], width: f32) {
         ui.add_enabled_ui(!players.is_empty(), |ui| {
-            let shown = if self.room_player.is_empty() {
-                "No players in the room"
-            } else {
-                &self.room_player
+            let picked = players.iter().position(|p| *p == self.room_player);
+            let shown = match picked.and_then(|i| labels.get(i)) {
+                Some(label) => label.as_str(),
+                None => "No players in the room",
             };
             ComboBox::from_id_salt("turu_cosmetics_players")
                 .selected_text(shown)
                 .width(width)
                 .show_ui(ui, |ui| {
-                    for name in players {
-                        ui.selectable_value(&mut self.room_player, name.clone(), name);
+                    for (name, label) in players.iter().zip(labels) {
+                        ui.selectable_value(&mut self.room_player, name.clone(), label);
                     }
                 });
         });

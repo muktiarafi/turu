@@ -118,7 +118,7 @@ fun CoreBotsPage(state: ShellState, panel: CoreBotsPanel, fullWindow: () -> Unit
             return@Column
         }
         Column(Modifier.padding(horizontal = 16.dp)) {
-            Text(view.username.ifEmpty { "No character" }, style = MaterialTheme.typography.titleSmall)
+            Text(view.shownName.ifEmpty { "No character" }, style = MaterialTheme.typography.titleSmall)
             Text(view.state, style = MaterialTheme.typography.bodySmall, color = if (view.unsaved) Turu.Warning else Turu.Muted)
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {

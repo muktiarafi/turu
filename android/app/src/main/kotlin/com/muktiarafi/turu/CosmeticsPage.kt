@@ -231,7 +231,7 @@ private fun CopyTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modifi
                     Picker(
                         label = "Player",
                         value = player,
-                        options = view.players.map { it to it },
+                        options = view.players.zip(view.playerLabels),
                         loading = false,
                         empty = "Nobody else is in this room",
                         none = "Nobody else here",

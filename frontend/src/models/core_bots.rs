@@ -732,6 +732,8 @@ static DRAFTS: PerTab<Draft> = PerTab::new();
 pub struct CoreBotsView {
     /// The character whose file this is ("" while logged out).
     pub username: String,
+    /// How the page names it: `username`, or its tab's label ("Tab 1") in Streamer Mode.
+    pub shown_name: String,
     /// Reading the game.
     pub busy: bool,
     /// The header's line: "Unsaved changes", "Saved", "CoreBots' defaults · not saved yet", ...
@@ -808,6 +810,25 @@ fn option_view(o: &Opt, section: &'static str) -> OptionView {
 }
 
 /// The page's view of `bot`'s draft (and what a bot thread read since).
+/// The character as the page names it: its name, or its tab's label ("Tab 1") in Streamer Mode.
+pub fn shown_name(bot: &Bot, username: &str) -> String {
+    // Turu: VibeSkua's window names the character whatever Streamer Mode says.
+    if bot.opts().streamer_mode && !username.trim().is_empty() {
+        crate::turu::tab_label(bot)
+    } else {
+        username.to_owned()
+    }
+}
+
+/// `text` naming the character as [`shown_name`] does.
+pub fn shown_text(bot: &Bot, username: &str, text: &str) -> String {
+    if bot.opts().streamer_mode && !username.trim().is_empty() {
+        super::replace_word(text, username.trim(), &crate::turu::tab_label(bot))
+    } else {
+        text.to_owned()
+    }
+}
+
 pub fn view(bot: &Arc<Bot>) -> CoreBotsView {
     let draft = DRAFTS.of(bot);
     let mut d = lock(&draft);
@@ -848,10 +869,14 @@ pub fn view(bot: &Arc<Bot>) -> CoreBotsView {
         .is_none_or(|o| o.value == Value::Bool(true));
     CoreBotsView {
         username: d.username.clone(),
+        shown_name: shown_name(bot, &d.username),
         busy: d.busy,
         state: state.into(),
         unsaved,
-        message: d.message.as_ref().map(|(t, m)| ((*t).to_owned(), m.clone())),
+        message: d
+            .message
+            .as_ref()
+            .map(|(t, m)| ((*t).to_owned(), shown_text(bot, &d.username, m))),
         roles: d
             .roles
             .iter()
@@ -959,4 +984,22 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
         other => return Err(format!("no action {other}")),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Streamer Mode: the page names the character by its tab, and so do its messages.
+    #[test]
+    fn streamer_mode_hides_the_character() {
+        let bot = Bot::new();
+        let text = "You're now on Questwalker: the window shows its saved options.";
+        assert_eq!(shown_name(&bot, "Questwalker"), "Questwalker");
+        assert_eq!(shown_text(&bot, "Questwalker", text), text);
+        bot.options.write().streamer_mode = true;
+        assert!(shown_name(&bot, "Questwalker").starts_with("Tab"));
+        assert!(!shown_text(&bot, "Questwalker", text).contains("Questwalker"));
+        assert_eq!(shown_name(&bot, ""), "", "logged out: nothing to hide");
+    }
 }

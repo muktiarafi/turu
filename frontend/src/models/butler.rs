@@ -35,9 +35,97 @@ pub struct State {
     log: Vec<ButlerLogLine>,
     log_version: Option<u64>,
     log_count: u32,
+    /// Streamer Mode's names, worked out with the roster (`None` while it's off).
+    masks: Option<Masks>,
 }
 
 pub static STATE: PerTab<State> = PerTab::new();
+
+// --- Streamer Mode ----------------------------------------------------------------------
+
+/// The names Butler shows, each with what Streamer Mode shows instead: an account is "Account n"
+/// as in the Accounts list (its place in `accounts.json`), one that isn't there "Alt n", and this
+/// one its tab's label ("Tab 1").
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Masks(Vec<(String, String)>);
+
+impl Masks {
+    /// Turu: VibeSkua's ButlerV5 shows the names whatever Streamer Mode says; here they are part
+    /// of the window being streamed. `None` while Streamer Mode is off.
+    fn build(bot: &Bot, roster: &[SyncData]) -> Option<Self> {
+        if !bot.opts().streamer_mode {
+            return None;
+        }
+        let butler = &bot.butler;
+        let saved = turu_bot::accounts::Accounts::load(&bot.paths.accounts_file());
+        let mut names: Vec<String> = roster
+            .iter()
+            .flat_map(|a| [a.username.clone(), a.following.clone()])
+            .collect();
+        names.extend(butler.following().map(|(master, _)| master));
+        names.extend(butler.followers());
+        let me = butler.username();
+        Some(Self::named(&me, &crate::turu::tab_label(bot), names, &saved))
+    }
+
+    fn named(me: &str, my_label: &str, names: Vec<String>, saved: &turu_bot::accounts::Accounts) -> Self {
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        if !me.trim().is_empty() {
+            pairs.push((me.trim().to_owned(), my_label.to_owned()));
+        }
+        let mut alts = 0;
+        for name in names {
+            let name = name.trim();
+            if name.is_empty() || pairs.iter().any(|(n, _)| n.eq_ignore_ascii_case(name)) {
+                continue;
+            }
+            let label = match saved
+                .accounts
+                .iter()
+                .position(|a| a.username.eq_ignore_ascii_case(name))
+            {
+                Some(i) => format!("Account {}", i + 1),
+                None => {
+                    alts += 1;
+                    format!("Alt {alts}")
+                }
+            };
+            pairs.push((name.to_owned(), label));
+        }
+        // Longest first, so a name inside another isn't replaced there first.
+        pairs.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
+        Self(pairs)
+    }
+
+    /// What to show for `name`.
+    pub fn name(&self, name: &str) -> String {
+        self.0
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name.trim()))
+            .map_or_else(|| "another account".into(), |(_, label)| label.clone())
+    }
+
+    /// `text` with each name in it (as a whole word, in any case) replaced.
+    pub fn text(&self, text: &str) -> String {
+        let mut out = text.to_owned();
+        for (name, label) in &self.0 {
+            out = super::replace_word(&out, name, label);
+        }
+        out
+    }
+}
+
+/// Streamer Mode's names as last worked out (`None` while it's off).
+pub fn masks(bot: &Arc<Bot>) -> Option<Masks> {
+    if !bot.opts().streamer_mode {
+        return None;
+    }
+    let cached = lock(&STATE.of(bot)).masks.clone();
+    cached.or_else(|| {
+        roster(bot, true);
+        lock(&STATE.of(bot)).masks.clone()
+    })
+}
 
 /// The last action's outcome, as every shell shows it.
 pub fn say(bot: &Arc<Bot>, result: Result<String, String>) {
@@ -54,7 +142,14 @@ pub fn say(bot: &Arc<Bot>, result: Result<String, String>) {
 }
 
 pub fn message(bot: &Arc<Bot>) -> Option<Note> {
-    lock(&STATE.of(bot)).message.clone()
+    let note = lock(&STATE.of(bot)).message.clone()?;
+    Some(match masks(bot) {
+        Some(masks) => Note {
+            text: masks.text(&note.text),
+            ..note
+        },
+        None => note,
+    })
 }
 
 /// The other online accounts, read at most once a second (or now, `fresh`).
@@ -65,9 +160,11 @@ pub fn roster(bot: &Arc<Bot>, fresh: bool) -> Vec<SyncData> {
         // Read outside the lock: Butler has locks of its own.
         let roster = bot.butler.roster();
         let recent = bot.butler.recent_targets();
+        let masks = Masks::build(bot, &roster);
         let mut s = lock(&state);
         s.roster = roster;
         s.recent = recent;
+        s.masks = masks;
         s.read_at = Some(Instant::now());
     }
     lock(&state).roster.clone()
@@ -115,7 +212,8 @@ pub struct ButlerHeader {
     pub summoning: bool,
 }
 
-pub fn header(bot: &Bot) -> ButlerHeader {
+/// This account and whom it follows; `masks` (Streamer Mode's) hides the names.
+pub fn header(bot: &Bot, masks: Option<&Masks>) -> ButlerHeader {
     let butler = &bot.butler;
     let following = butler.following();
     let followers = butler.followers();
@@ -132,8 +230,14 @@ pub fn header(bot: &Bot) -> ButlerHeader {
         None if !followers.is_empty() => (format!("Summoning {}", followers.join(", ")), Tint::Success),
         None => ("Not following anyone".into(), Tint::Muted),
     };
+    let me = butler.username();
+    let (me, state) = match masks {
+        Some(masks) if !me.is_empty() => (masks.name(&me), masks.text(&state)),
+        Some(masks) => (me, masks.text(&state)),
+        None => (me, state),
+    };
     ButlerHeader {
-        me: butler.username(),
+        me,
         state,
         tint,
         enabled: butler.enabled(),
@@ -157,6 +261,8 @@ pub struct ButlerChip {
 #[serde(rename_all = "camelCase")]
 pub struct ButlerAccount {
     pub username: String,
+    /// What to show for it: the username, or "Account 2" in Streamer Mode.
+    pub label: String,
     /// "fighting", "following me", "busy: Farm.ts", "other server", ...
     pub chips: Vec<ButlerChip>,
     /// "battleon-1234 · Twilly · Legion Revenant".
@@ -169,8 +275,9 @@ pub struct ButlerAccount {
     pub follow: Control,
 }
 
-/// A roster row: its chips, and what Follow and Summon may do (VibeSkua's rules).
-pub fn account(bot: &Bot, account: &SyncData) -> ButlerAccount {
+/// A roster row: its chips, and what Follow and Summon may do (VibeSkua's rules); `masks`
+/// (Streamer Mode's) hides the names, and the place's room number.
+pub fn account(bot: &Bot, account: &SyncData, masks: Option<&Masks>) -> ButlerAccount {
     let butler = &bot.butler;
     let me = butler.username();
     let enabled = butler.enabled();
@@ -243,23 +350,34 @@ pub fn account(bot: &Bot, account: &SyncData) -> ButlerAccount {
     } else {
         None
     };
-    let place: Vec<String> = [
-        account.map_with_room(),
-        account.server.clone(),
-        account.class_name.clone(),
-    ]
-    .into_iter()
-    .filter(|v| !v.is_empty())
-    .collect();
-    ButlerAccount {
+    let map = if masks.is_some() {
+        account.map.clone()
+    } else {
+        account.map_with_room()
+    };
+    let place: Vec<String> = [map, account.server.clone(), account.class_name.clone()]
+        .into_iter()
+        .filter(|v| !v.is_empty())
+        .collect();
+    let mut row = ButlerAccount {
         username: account.username.clone(),
+        label: account.username.clone(),
         chips,
         place: place.join(" \u{B7} "),
         summoned,
         summon: summon_block.map_or_else(Control::on, Control::off),
         followed,
         follow: follow_block.map_or_else(Control::on, Control::off),
+    };
+    if let Some(masks) = masks {
+        row.label = masks.name(&row.username);
+        for chip in &mut row.chips {
+            chip.text = masks.text(&chip.text);
+        }
+        row.summon.reason = masks.text(&row.summon.reason);
+        row.follow.reason = masks.text(&row.follow.reason);
     }
+    row
 }
 
 /// Summon all's rule.
@@ -649,11 +767,26 @@ pub fn view(bot: &Arc<Bot>) -> ButlerView {
     let roster = roster(bot, false);
     let settings = butler.settings();
     let (log, log_count) = log(bot);
-    let recent = lock(&STATE.of(bot)).recent.iter().take(8).cloned().collect();
+    let masks = masks(bot);
+    // Send to player's recent names are other players': none to pick from in Streamer Mode.
+    let recent = match masks {
+        Some(_) => Vec::new(),
+        None => lock(&STATE.of(bot)).recent.iter().take(8).cloned().collect(),
+    };
+    let log = match &masks {
+        Some(masks) => log
+            .into_iter()
+            .map(|l| ButlerLogLine {
+                text: masks.text(&l.text),
+                ..l
+            })
+            .collect(),
+        None => log,
+    };
     ButlerView {
-        header: header(bot),
+        header: header(bot, masks.as_ref()),
         message: message(bot),
-        accounts: roster.iter().map(|a| account(bot, a)).collect(),
+        accounts: roster.iter().map(|a| account(bot, a, masks.as_ref())).collect(),
         summon_all: summon_all_control(bot),
         recent,
         sections: sections(),
@@ -676,12 +809,16 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
     };
     // Follow on a row as it is now, not as the view a tick ago showed it: `start_follow` checks
     // less than the button (it would switch masters, or follow one that follows you).
+    let masks = masks(bot);
     let row_now = |name: &str| {
         roster(bot, true)
             .iter()
             .find(|a| a.username.eq_ignore_ascii_case(name))
-            .map(|a| account(bot, a))
-            .ok_or_else(|| format!("{name} isn't online with Butler"))
+            .map(|a| account(bot, a, masks.as_ref()))
+            .ok_or_else(|| match &masks {
+                Some(masks) => format!("{} isn't online with Butler", masks.name(name)),
+                None => format!("{name} isn't online with Butler"),
+            })
     };
     match action {
         "follow" => {
@@ -772,5 +909,41 @@ mod tests {
         assert!(set_option(&mut s, "", "Obey summons", &json!(false)).is_err());
         assert!(set_option(&mut s, "Questwalker", "Leech mode", &json!("yes")).is_err());
         assert_eq!(options(&s, "").len(), 17, "no account rows while logged out");
+    }
+
+    /// Streamer Mode: a saved account is "Account n" (its place in the list), another "Alt n",
+    /// this one its tab's label; rows name nobody and drop the room number.
+    #[test]
+    fn streamer_mode_hides_butlers_names() {
+        let mut saved = turu_bot::accounts::Accounts::default();
+        for name in ["Brambleox", "Questwalker"] {
+            saved.upsert(turu_bot::accounts::Account {
+                username: name.into(),
+                ..Default::default()
+            });
+        }
+        let names = vec!["questwalker".into(), "Zephyrtest".into(), String::new(), "Hero".into()];
+        let masks = Masks::named("Hero", "Tab 1", names, &saved);
+        assert_eq!(masks.name("Questwalker"), "Account 2");
+        assert_eq!(masks.name("Zephyrtest"), "Alt 1");
+        assert_eq!(masks.name("hero"), "Tab 1");
+        assert_eq!(masks.name("Stranger"), "another account");
+        assert_eq!(masks.text("Following Questwalker (summoned)"), "Following Account 2 (summoned)");
+        let bot = Bot::new();
+        let alt = SyncData {
+            username: "Questwalker".into(),
+            map: "battleon".into(),
+            room: "1234".into(),
+            following: "Zephyrtest".into(),
+            ..Default::default()
+        };
+        let row = account(&bot, &alt, Some(&masks));
+        assert_eq!((row.username.as_str(), row.label.as_str()), ("Questwalker", "Account 2"));
+        assert!(!row.place.contains("1234"));
+        let shown = format!("{:?} {:?} {:?}", row.chips, row.summon, row.follow);
+        assert!(!shown.contains("Questwalker") && !shown.contains("Zephyrtest"), "{shown}");
+        let plain = account(&bot, &alt, None);
+        assert_eq!(plain.label, "Questwalker");
+        assert!(plain.place.contains("battleon-1234"));
     }
 }
