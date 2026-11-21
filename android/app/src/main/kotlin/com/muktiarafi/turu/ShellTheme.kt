@@ -30,6 +30,9 @@ object Turu {
 
     /** The selected row and tonal buttons: the accent 22% into the card. */
     val AccentTint = Color(0xFF2B2A4A)
+
+    /** The rail's selected item: the accent 35% into the panel, to stand out from the dark rail. */
+    val RailSelected = Color(0xFF373265)
 }
 
 private val scheme = darkColorScheme(

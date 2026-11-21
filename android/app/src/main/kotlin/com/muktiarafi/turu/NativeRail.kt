@@ -2,6 +2,7 @@ package com.muktiarafi.turu
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,14 +18,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,8 +32,13 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,18 +62,40 @@ private class Entry(
     val page: Page?,
     val badge: Color? = null,
     val busy: Boolean = false,
+    /** What the badge or spinner says, for TalkBack ("running", "failed"). */
+    val state: String? = null,
     val onClick: () -> Unit,
 )
 
-private val ItemHeight = 52.dp
-private val CellHeight = 44.dp
-private val ChipHeight = 48.dp
+/** A run control under the chip. */
+private class Cell(
+    val icon: ImageVector,
+    val label: String,
+    val enabled: Boolean,
+    /** Why it's off, read out and shown by the Script Loader it opens instead. */
+    val reason: String = "",
+    val primary: Boolean = false,
+    val danger: Boolean = false,
+    val run: () -> Unit,
+)
+
+private val CellHeight = 48.dp
+private val CellGap = 8.dp
+
+/** The labels' line, in dp at the current font scale: rail items and the chip grow with it. */
+@Composable
+private fun labelLine(): Dp = with(LocalDensity.current) { MaterialTheme.typography.labelSmall.lineHeight.toDp() }
+
+/** A rail item's height: the 32-dp indicator, the label's line and their gaps (52 dp at 1.0). */
+@Composable
+fun railItemHeight(): Dp = 36.dp + labelLine()
 
 /**
- * The native rail (docs/UI.md, "Native shells", Android; L5b): the Tabs item, then Logs, Army
- * and More, then Auto, Jump and Bank (and Update while one is out), the script chip and its
- * run controls at the bottom. A short screen folds the items into More, least needed first; the
- * fit always counts two run controls, so starting a script doesn't move the items.
+ * The native rail (docs/UI.md, "Native shells", Android; L5b): the Tabs item, then Logs, Army,
+ * Auto, Jump and Bank (and Update while one is out), More last, the script chip and its run
+ * controls at the bottom. A short screen folds the items into More, least needed first; the fit
+ * always counts two run controls, so starting a script doesn't move the items, and measures the
+ * items at the font scale, so larger text folds rather than crowds.
  */
 @Composable
 fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTabs: () -> Unit) {
@@ -80,19 +107,28 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
     val entries = listOfNotNull(
         Entry("Logs", RailIcons.Logs, 3, Page.Logs) { actions.open(Page.Logs) },
         Entry("Army", RailIcons.Army, 6, Page.Army) { actions.open(Page.Army) },
-        Entry("More", Icons.Rounded.Menu, 0, Page.More) { actions.open(Page.More) },
-        Entry("Auto", RailIcons.Auto, 1, Page.Auto, badge = if (auto?.running == true) Turu.Success else null) {
-            actions.open(Page.Auto)
+        Entry(
+            "Auto", RailIcons.Auto, 1, Page.Auto,
+            badge = if (auto?.running == true) Turu.Success else null,
+            state = if (auto?.running == true) "running" else null,
+        ) { actions.open(Page.Auto) },
+        Entry("Jump", RailIcons.Jump, 2, Page.Jump) { actions.open(Page.Jump) },
+        Entry("Bank", RailIcons.Bank, 4, null, busy = bank?.busy == true, state = if (bank?.busy == true) "opening" else null) {
+            actions.bank()
         },
-        Entry("Jump", Icons.Rounded.LocationOn, 2, Page.Jump) { actions.open(Page.Jump) },
-        Entry("Bank", RailIcons.Bank, 4, null, busy = bank?.busy == true) { actions.bank() },
         update?.let {
-            Entry("Update", RailIcons.Update, 3, null, badge = if (it.failed != null) Turu.Danger else Turu.Accent, busy = it.busy != null) {
-                actions.window("client_update")
-            }
+            Entry(
+                "Update", RailIcons.Update, 3, null,
+                badge = if (it.failed != null) Turu.Danger else Turu.Accent,
+                busy = it.busy != null,
+                state = it.failed?.let { why -> "failed: $why" } ?: it.busy ?: "version ${it.version} ready",
+            ) { actions.window("client_update") }
         },
+        Entry("More", RailIcons.More, 0, Page.More) { actions.open(Page.More) },
     )
     val width = 64.dp + state.cutoutLeftDp.dp
+    val item = railItemHeight()
+    val chip = 32.dp + labelLine()
     BoxWithConstraints(
         Modifier
             .width(width)
@@ -103,55 +139,64 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
             },
     ) {
         // What fits between the Tabs item and the status: More always, then the rest by `keep`.
-        val room = maxHeight - 60.dp - ChipHeight - CellHeight * 2 - 8.dp - 12.dp
-        val fit = (room / ItemHeight).toInt().coerceAtLeast(1)
+        val room = maxHeight - (8.dp + item) - chip - 1.dp - CellHeight * 2 - CellGap - 8.dp
+        val fit = (room / item).toInt().coerceAtLeast(1)
         val kept = entries.sortedBy { it.keep }.take(fit).toSet()
         val folded = entries.filter { it !in kept }.map { it.label }.toSet()
         SideEffect { if (state.folded != folded) state.folded = folded }
         Column(Modifier.fillMaxSize().padding(start = state.cutoutLeftDp.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.padding(end = 0.dp)) { TabsItemContent(state, onTabs) }
+            TabsItemContent(state, onTabs)
             for (entry in entries) {
                 if (entry in kept) {
-                    RailItem(entry, selected = open && entry.page != null && entry.page == page)
+                    RailItem(entry, item, selected = open && entry.page != null && entry.page == page)
                 }
             }
             Spacer(Modifier.weight(1f))
-            ScriptStatus(models, actions, selected = open && page == Page.Scripts)
+            ScriptStatus(models, actions, chip, selected = open && page == Page.Scripts)
             Spacer(Modifier.height(8.dp))
         }
     }
 }
 
 @Composable
-private fun RailItem(entry: Entry, selected: Boolean) {
+private fun RailItem(entry: Entry, height: Dp, selected: Boolean) {
+    val select = if (entry.page != null) {
+        Modifier.selectable(selected = selected, role = Role.Tab, onClick = entry.onClick)
+    } else {
+        Modifier.clickable(role = Role.Button, onClick = entry.onClick)
+    }
     Column(
         Modifier
             .width(56.dp)
-            .height(ItemHeight)
+            .height(height)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = entry.onClick)
-            .semantics { contentDescription = entry.label },
+            .semantics {
+                contentDescription = entry.label
+                entry.state?.let { stateDescription = it }
+            }
+            .then(select),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
             Modifier
-                .width(48.dp)
-                .height(30.dp)
-                .clip(RoundedCornerShape(15.dp))
-                .background(if (selected) Turu.AccentTint else Color.Transparent),
+                .width(52.dp)
+                .height(32.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (selected) Turu.RailSelected else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
+            val tint = if (selected) Turu.Text else Turu.Muted
             if (entry.busy) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Turu.Text)
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = tint)
             } else {
-                Icon(entry.icon, contentDescription = null, tint = Turu.Text, modifier = Modifier.size(22.dp))
+                Icon(entry.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
             }
             entry.badge?.let { color ->
                 Box(
                     Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 3.dp, end = 9.dp)
+                        .padding(top = 4.dp, end = 11.dp)
                         .size(8.dp)
                         .clip(CircleShape)
                         .background(color),
@@ -163,14 +208,29 @@ private fun RailItem(entry: Entry, selected: Boolean) {
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) Turu.Text else Turu.Muted,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp),
         )
     }
 }
 
-/** The chip (its status dot over the clock or the state) and the run controls under it. */
+/** The first of [words] that fits [width] in [style]: the chip's long word, or its short one. */
 @Composable
-private fun ScriptStatus(models: TabModels, actions: RailActions, selected: Boolean) {
+private fun fitting(words: List<String>, style: TextStyle, width: Dp): String {
+    val measurer = rememberTextMeasurer()
+    val px = with(LocalDensity.current) { width.roundToPx() }
+    return remember(words, style, px) {
+        words.firstOrNull { measurer.measure(it, style, maxLines = 1).size.width <= px } ?: words.last()
+    }
+}
+
+/**
+ * The chip (its status dot over the clock or the state) and the run controls under it. With no
+ * script loaded, the cell under it is Search scripts; an off control still opens the Script
+ * Loader, which says why. Two controls stand apart, so a slip from Pause doesn't Stop.
+ */
+@Composable
+private fun ScriptStatus(models: TabModels, actions: RailActions, chipHeight: Dp, selected: Boolean) {
     val view = models.scripts
     val scripts = actions.scripts
     val status = view?.status
@@ -180,87 +240,121 @@ private fun ScriptStatus(models: TabModels, actions: RailActions, selected: Bool
         Status.ERROR -> Turu.Danger
         else -> Turu.Muted
     }
-    val words = when {
-        view == null -> "…"
-        view.elapsedSecs != null -> durationText(view.elapsedSecs.toLong())
-        status == Status.ERROR -> "Error"
-        view.lastRun != null -> if (view.lastRun.finished) "Finished" else "Stopped"
-        view.script == null -> "No script"
-        else -> "Ready"
+    val clock = view?.elapsedSecs?.toLong()
+    val candidates = when {
+        view == null -> listOf("…")
+        clock != null -> listOfNotNull(durationText(clock), if (clock >= 3600) "${clock / 3600}h" else null)
+        status == Status.ERROR -> listOf("Error")
+        view.lastRun != null -> if (view.lastRun.finished) listOf("Finished", "Done") else listOf("Stopped", "Ended")
+        view.script == null -> listOf("No script", "None")
+        else -> listOf("Ready")
     }
+    val style = MaterialTheme.typography.labelSmall.let { if (clock != null) it.copy(fontFeatureSettings = "tnum") else it }
+    val words = fitting(candidates, style, 50.dp)
     val c = view?.controls
+    val openLoader = { actions.open(Page.Scripts) }
     val cells = buildList {
-        c?.start?.let { add(Triple(RailIcons.Play, "Start the script", it.enabled) to scripts::start) }
-        c?.pause?.let {
-            if (c.paused) add(Triple(RailIcons.Play, "Resume", true) to scripts::resume)
-            else add(Triple(RailIcons.Pause, "Pause", true) to scripts::pause)
+        c?.start?.let { start ->
+            if (view.script == null) {
+                add(Cell(RailIcons.Search, "Search scripts", c.load.enabled, c.load.reason) { actions.open(Page.Search) })
+            } else {
+                add(Cell(RailIcons.Play, "Start the script", start.enabled, start.reason, primary = true, run = scripts::start))
+            }
         }
-        c?.forceStop?.let { add(Triple(RailIcons.Stop, "Force stop", it.enabled) to scripts::stop) }
-        c?.stop?.let { add(Triple(RailIcons.Stop, "Stop the script", it.enabled) to scripts::stop) }
+        c?.pause?.let {
+            if (c.paused) add(Cell(RailIcons.Play, "Resume", it.enabled, it.reason, primary = true, run = scripts::resume))
+            else add(Cell(RailIcons.Pause, "Pause", it.enabled, it.reason, run = scripts::pause))
+        }
+        c?.forceStop?.let { add(Cell(RailIcons.Stop, "Force stop", it.enabled, it.reason, danger = true, run = scripts::stop)) }
+        c?.stop?.let { add(Cell(RailIcons.Stop, "Stop the script", it.enabled, it.reason, danger = true, run = scripts::stop)) }
     }
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(1.dp)) {
-        val top = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = if (cells.isEmpty()) 10.dp else 0.dp, bottomEnd = if (cells.isEmpty()) 10.dp else 0.dp)
+    val round = 10.dp
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        val joined = cells.isNotEmpty()
         Column(
             Modifier
                 .width(56.dp)
-                .height(ChipHeight)
-                .clip(top)
-                .background(if (selected) Turu.AccentTint else Turu.Track)
-                .clickable { actions.open(Page.Scripts) }
-                .semantics { contentDescription = "Script Loader: ${view?.state ?: "reading the tab"}" },
+                .height(chipHeight)
+                .clip(RoundedCornerShape(topStart = round, topEnd = round, bottomStart = if (joined) 0.dp else round, bottomEnd = if (joined) 0.dp else round))
+                .background(if (selected) Turu.RailSelected else Turu.Track)
+                .semantics { contentDescription = "Script Loader: ${view?.state ?: "reading the tab"}" }
+                .selectable(selected = selected, role = Role.Tab, onClick = openLoader),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
             Text(
                 words,
-                style = MaterialTheme.typography.labelSmall,
+                style = style,
                 color = if (status == Status.ERROR) Turu.Danger else Turu.Text,
                 maxLines = 1,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier.padding(top = 4.dp),
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp, start = 3.dp, end = 3.dp),
             )
         }
-        cells.forEachIndexed { i, (cell, run) ->
-            val (icon, label, enabled) = cell
-            val last = i == cells.lastIndex
-            val primary = icon == RailIcons.Play
+        cells.forEachIndexed { i, cell ->
+            // The first control hangs under the chip; the second stands apart.
+            Spacer(Modifier.height(if (i == 0) 1.dp else CellGap))
+            val shape = if (i == 0) {
+                RoundedCornerShape(bottomStart = round, bottomEnd = round)
+            } else {
+                RoundedCornerShape(round)
+            }
+            val idle = scripts.busy == null
             Box(
                 Modifier
                     .width(56.dp)
                     .height(CellHeight)
-                    .clip(RoundedCornerShape(bottomStart = if (last) 10.dp else 0.dp, bottomEnd = if (last) 10.dp else 0.dp))
-                    .background(if (primary && enabled) Turu.Accent else Turu.Track)
-                    .clickable(enabled = enabled && scripts.busy == null) { run() }
-                    .semantics { contentDescription = label },
+                    .clip(shape)
+                    .background(if (cell.primary && cell.enabled) Turu.Accent else Turu.Track)
+                    .clickable(
+                        enabled = idle,
+                        role = Role.Button,
+                        onClickLabel = if (cell.enabled) null else "open the Script Loader",
+                        onClick = if (cell.enabled) cell.run else openLoader,
+                    )
+                    .semantics {
+                        contentDescription = cell.label
+                        if (!cell.enabled) stateDescription = cell.reason.ifEmpty { "off" }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 val tint = when {
-                    !enabled -> Turu.Muted.copy(alpha = 0.5f)
-                    icon == RailIcons.Stop -> Turu.Danger
-                    else -> Color.White
+                    !cell.enabled -> Turu.Muted.copy(alpha = 0.5f)
+                    cell.danger -> Turu.Danger
+                    cell.primary -> Color.White
+                    else -> Turu.Text
                 }
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                Icon(cell.icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
 
-/** While the rail is hidden: a tab at the left edge, halfway down, that brings it back. */
+/**
+ * While the rail is hidden: a tab at the left edge, halfway down, that brings it back. It shows
+ * 24 dp but takes touches 48 dp wide.
+ */
 @Composable
 fun RailHandle(insetDp: Dp, onClick: () -> Unit) {
     Box(
         Modifier
-            .width(24.dp + insetDp)
+            .width(48.dp + insetDp)
             .height(64.dp)
-            .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
-            .background(Turu.Panel.copy(alpha = 0.85f))
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "Show the side bar" }
-            .padding(start = insetDp),
-        contentAlignment = Alignment.Center,
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Show the side bar" },
     ) {
-        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Text)
+        Box(
+            Modifier
+                .width(24.dp + insetDp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
+                .background(Turu.Panel.copy(alpha = 0.85f))
+                .padding(start = insetDp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Text)
+        }
     }
 }
 

@@ -103,6 +103,29 @@ object RailIcons {
         moveTo(10f, 8.8f); lineTo(15.2f, 12f); lineTo(10f, 15.2f); close()
     }
 
+    /** A map pin with a hollow centre: Jump (in the rail's stroke, not the core set's filled pin). */
+    val Jump = icon("Jump") {
+        moveTo(12f, 21f)
+        curveTo(8f, 16.5f, 5.5f, 13f, 5.5f, 9.5f)
+        arcTo(6.5f, 6.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 18.5f, y1 = 9.5f)
+        curveTo(18.5f, 13f, 16f, 16.5f, 12f, 21f)
+        close()
+        circle(12f, 9.5f, 2.3f)
+    }
+
+    /** Three dots in a row: More, the overflow (not a hamburger, which says "drawer"). */
+    val More = icon("More") {
+        circle(5.5f, 12f, 1.3f)
+        circle(12f, 12f, 1.3f)
+        circle(18.5f, 12f, 1.3f)
+    }
+
+    /** A magnifier: Search Scripts. */
+    val Search = icon("Search") {
+        circle(10.5f, 10.5f, 6f)
+        moveTo(15f, 15f); lineTo(20f, 20f)
+    }
+
     val Play = icon("Play", filled = true) {
         moveTo(8f, 5.5f); lineTo(18.5f, 12f); lineTo(8f, 18.5f); close()
     }

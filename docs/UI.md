@@ -1004,11 +1004,23 @@ above, and why:
   reason a control is off under it, Search and Options (the slot's egui windows, the panel
   closing for them), and the script log (its last 500 lines, line-fed).
 * **The native rail** (L5b, 2026-11-20) replaces the egui one on Android: the Tabs item, then
-  Logs, Army, More, Auto, Jump, Bank (and Update while one is out), the script chip and its run
-  controls at the bottom; the chip opens the Script Loader. No Scripts item: the owner took it off
+  Logs, Army, Auto, Jump, Bank (and Update while one is out), More last (three dots, the
+  overflow: a hamburger said "drawer"; moved there 2026-11-21 after a critique), the script chip
+  and its run controls at the bottom; the chip opens the Script Loader. The run controls are
+  48 dp; a second control (Stop under Pause) stands 8 dp apart, so a slip from Pause doesn't stop
+  the run. With no script loaded the control under the chip is Search scripts (Search Scripts,
+  loading in the tab); an off control opens the Script Loader, which says why. The chip's word
+  falls back to a shorter one where the long one doesn't fit ("None", "Done", "Ended", "3h"),
+  its clock in tabular figures. Items, the Tabs item and the chip grow with the font scale
+  (`railItemHeight`: 52 dp at 1.0), and the fold measures them, so larger text folds an item
+  rather than crowding: 411 dp keeps Auto, Jump and More at 1.0 and 1.3. Each item reads out its
+  badge or spinner ("Auto, running", "Update, failed: ...") and the page items are tabs with
+  their selection; icons are muted until selected, the selection a stronger pill
+  (`Turu.RailSelected`). All icons are the one stroke (`RailIcons`: Jump's pin and More's dots
+  too). The `›` handle takes touches 48 dp wide. No Scripts item: the owner took it off
   (2026-11-20) to keep Jump on a short screen. On a short screen it folds least needed first
   (Army, Bank, Logs and Update, then Jump and Auto; More never), counting two run controls so
-  starting a script moves nothing: the emulator's 411 dp keeps More, Auto and Jump.
+  starting a script moves nothing: the emulator's 411 dp keeps Auto, Jump and More.
   Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
   Army opens Army Control. Bank's reason for opening nothing shows as a toast (a snackbar
   would need the panel open). More (440 dp) is list and detail, so nothing in it needs scrolling

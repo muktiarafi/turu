@@ -9,6 +9,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -131,11 +134,11 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
         Modifier
             .padding(top = 8.dp)
             .width(56.dp)
-            .height(52.dp)
+            .height(railItemHeight())
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) Turu.AccentTint else Color.Transparent)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = description },
+            .background(if (selected) Turu.RailSelected else Color.Transparent)
+            .semantics { contentDescription = description }
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -146,7 +149,8 @@ fun TabsItemContent(state: ShellState, onClick: () -> Unit) {
                 Box(
                     Modifier
                         .align(Alignment.TopEnd)
-                        .padding(start = 26.dp)
+                        // Clear of the avatar's letters: over its edge, not its face.
+                        .offset(x = 8.dp, y = (-1).dp)
                         .size(16.dp)
                         .clip(CircleShape)
                         .background(if (warn) Turu.Warning else Turu.Accent),
