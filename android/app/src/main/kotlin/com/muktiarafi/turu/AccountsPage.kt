@@ -1,10 +1,9 @@
 package com.muktiarafi.turu
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,12 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -58,6 +59,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,14 +70,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 
 /**
@@ -83,8 +93,11 @@ import androidx.compose.ui.unit.dp
  * the end Start or where it is ("On screen", Switch to its tab, "Starting..."; not its tab's
  * number: that's a slot, which the tab list doesn't show). `shown` is the tab on screen. `menu`
  * adds the ⋮ menu (Accounts).
- * With `select` (Accounts) a long press selects it; while `selecting`, a tap selects or clears it,
- * its avatar turns to a check while selected, and Start and the menu step aside.
+ * With `select` (Accounts) a tap checks it, as Army Control's rows (a long press too): only Start
+ * starts; while `selecting`, its avatar turns to a check while selected, and Start and the menu
+ * step aside. Without `select` (New tab) a tap starts it. `failed` is why it didn't start;
+ * `onAddPassword` makes "No password" a link to the account's form. At large text the avatar
+ * steps aside, so the name and its warning keep their words in the panel.
  */
 @Composable
 fun AccountRow(
@@ -97,16 +110,19 @@ fun AccountRow(
     selecting: Boolean = false,
     selected: Boolean = false,
     shown: Int? = null,
+    failed: String? = null,
+    onAddPassword: (() -> Unit)? = null,
 ) {
     val labels = account.groups + account.tags
     val tap = {
         val tab = account.tab
         when {
-            selecting && select != null -> select()
+            select != null -> select()
             tab != null -> onShow(tab)
             else -> onStart()
         }
     }
+    val avatar = selected || LocalDensity.current.fontScale < 1.15f
     ListItem(
         modifier = Modifier
             .padding(horizontal = 8.dp, vertical = 2.dp)
@@ -114,19 +130,28 @@ fun AccountRow(
             .background(if (selected) Turu.AccentTint else Color.Transparent)
             .then(
                 if (select != null) {
-                    Modifier.combinedClickable(enabled = selecting || !starting, onLongClickLabel = "Select", onLongClick = select, onClick = tap)
+                    Modifier.combinedClickable(
+                        onClickLabel = if (selected) "Clear" else "Select",
+                        onLongClickLabel = "Select",
+                        onLongClick = select,
+                        onClick = tap,
+                    )
                 } else {
                     Modifier.clickable(enabled = !starting, onClick = tap)
                 },
             ),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = {
-            if (selected) {
-                Box(Modifier.size(40.dp).clip(CircleShape).background(Turu.Accent), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color.White)
+        leadingContent = if (!avatar) {
+            null
+        } else {
+            {
+                if (selected) {
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(Turu.Accent), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color.White)
+                    }
+                } else {
+                    Avatar(account.label, size = 40.dp)
                 }
-            } else {
-                Avatar(account.label, size = 40.dp)
             }
         },
         headlineContent = { Text(account.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -136,7 +161,22 @@ fun AccountRow(
                     Text(account.username, color = Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 when {
-                    account.tab == null && !account.password -> Text("No password", color = Turu.Warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Starts all the same: the tab opens at the login screen, typed by hand.
+                    account.tab == null && !account.password && onAddPassword != null -> Text(
+                        buildAnnotatedString {
+                            // The link on a line of its own: the panel is narrow beside Start.
+                            append("No password\n")
+                            withLink(
+                                LinkAnnotation.Clickable(
+                                    "add-password",
+                                    TextLinkStyles(SpanStyle(fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.Underline)),
+                                ) { onAddPassword() },
+                            ) { append("Add one") }
+                        },
+                        color = Turu.Warning,
+                        maxLines = 2,
+                    )
+                    account.tab == null && !account.password -> Text("No password", color = Turu.Warning, maxLines = 2)
                     labels.isNotEmpty() -> Row(
                         Modifier.padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -148,6 +188,7 @@ fun AccountRow(
                         }
                     }
                 }
+                failed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Turu.Danger, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         },
         trailingContent = {
@@ -237,6 +278,8 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
     fun toggle(account: Account) {
         selected = if (account.username in selected) selected - account.username else selected + account.username
     }
+    // A tab opening (or closing) changes the rows: "Starting…" turns to "Switch to".
+    LaunchedEffect(state.tabs.tabs.size) { accounts.reload() }
     Column(Modifier.fillMaxSize()) {
         if (selecting) {
             SelectionBar(
@@ -292,7 +335,20 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
                 items(filters) { name -> Filter(name, filter == name) { filter = if (filter == name) null else name } }
             }
         }
-        LazyColumn(Modifier.weight(1f).padding(top = 4.dp)) {
+        LaunchRow(list) { state.push(Page.LaunchOptions) }
+        LazyColumn(Modifier.weight(1f)) {
+            if (shown.isNotEmpty()) {
+                item(key = "header") {
+                    ListHeader(
+                        shown = shown,
+                        selected = selected,
+                        tabs = state.tabs.tabs.size,
+                        group = group.takeIf { !selecting },
+                        onAll = { all -> selected = if (all) selected + shown.map { it.username } else selected - shown.map { it.username }.toSet() },
+                        onStartGroup = { startingMany = shown.filter { it.tab == null } },
+                    )
+                }
+            }
             if (accounts.loaded && shown.isEmpty()) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(20.dp)) {
@@ -324,16 +380,15 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
                 AccountRow(
                     account = account,
                     starting = account.username in accounts.starting,
-                    onStart = {
-                        accounts.start(account)
-                        state.close()
-                    },
+                    // Through the tab check, as several are; the panel stays to show how it went.
+                    onStart = { startingMany = listOf(account) },
                     onShow = { tab ->
                         select(tab)
                         state.close()
                     },
                     menu = {
                         AccountMenu(
+                            label = account.label,
                             canMoveUp = index > 0,
                             canMoveDown = index < list.accounts.size - 1,
                             onEdit = { state.push(Page.AccountForm(account)) },
@@ -345,13 +400,10 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
                     selecting = selecting,
                     selected = account.username in selected,
                     shown = state.tabs.shown,
+                    failed = accounts.failed[account.username],
+                    onAddPassword = { state.push(Page.AccountForm(account)) }.takeIf { list.keepsPasswords },
                 )
             }
-        }
-        HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-        LaunchOptions(accounts) {
-            state.scriptPick = ScriptPick.Launch
-            state.push(Page.Search)
         }
     }
     removing?.let { account ->
@@ -375,7 +427,6 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
             startingMany = null
             selected = emptySet()
             accounts.startMany(start)
-            state.close()
         }
         if (wanted.size <= free) {
             // They all fit: no question.
@@ -389,7 +440,7 @@ fun AccountsPage(state: ShellState, accounts: AccountsPanel, select: (Int) -> Un
                 text = {
                     Text(
                         if (free == 0) {
-                            "$TAB_POOL tabs are open, the most a phone keeps. Close one to start another."
+                            "$TAB_POOL tabs are open, the most a phone keeps. Close one (Tabs) to start ${if (wanted.size == 1) wanted[0].label else "another"}."
                         } else {
                             "Start ${fits.joinToString(", ") { it.label }}? " +
                                 "${left.joinToString(", ") { it.label }} won't start: $TAB_POOL tabs at most."
@@ -541,6 +592,7 @@ private fun Filter(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun AccountMenu(
+    label: String,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onEdit: () -> Unit,
@@ -550,7 +602,7 @@ private fun AccountMenu(
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "More", tint = Turu.Muted)
+            Icon(Icons.Rounded.MoreVert, contentDescription = "More for $label", tint = Turu.Muted)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
             DropdownMenuItem(text = { Text("Edit") }, onClick = { open = false; onEdit() })
@@ -571,89 +623,148 @@ private fun AccountMenu(
     }
 }
 
-/**
- * Launch options, folded at the foot: the server (with its ping) and the script, with Auto-start.
- * The script is a favourite or recent one, or any from Search scripts… (Search Scripts, picking).
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** What every Start uses, in a line above the list ("Starts on Twig · runs Gold farm"); a tap opens Launch options. */
 @Composable
-private fun LaunchOptions(accounts: AccountsPanel, searchScripts: () -> Unit) {
-    var unfolded by remember { mutableStateOf(false) }
-    val list = accounts.list
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clickable {
-                    unfolded = !unfolded
-                    if (unfolded) accounts.loadServers()
-                }
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Launch options", style = MaterialTheme.typography.labelLarge)
-                val script = list.script?.substringAfterLast('/')?.removeSuffix(".ts")
-                Text(
-                    buildString {
-                        append(list.server.ifEmpty { "Any server" })
-                        append(" · ")
-                        append(script ?: "No script")
-                        if (script != null && list.autoStart) append(", starts")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Turu.Muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+private fun LaunchRow(list: AccountList, open: () -> Unit) {
+    val script = list.script?.substringAfterLast('/')?.removeSuffix(".ts")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClickLabel = "change the launch options", onClick = open)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // One line, so the rows keep the panel's height: the script's name is what gets cut.
+        Text(
+            buildString {
+                append("Starts on ")
+                append(list.server.ifEmpty { "any server" })
+                if (script != null) append(if (list.autoStart) " · runs " else " · loads ").append(script)
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = Turu.Muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = Turu.Muted)
+    }
+}
+
+/**
+ * Above the rows: check all shown or none, how many accounts and tabs, and with a group shown,
+ * Start it (its accounts without a tab, through the tab check).
+ */
+@Composable
+private fun ListHeader(
+    shown: List<Account>,
+    selected: Set<String>,
+    tabs: Int,
+    group: String?,
+    onAll: (Boolean) -> Unit,
+    onStartGroup: () -> Unit,
+) {
+    val checked = shown.count { it.username in selected }
+    val box = when {
+        checked == 0 -> ToggleableState.Off
+        checked == shown.size -> ToggleableState.On
+        else -> ToggleableState.Indeterminate
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        TriStateCheckbox(
+            state = box,
+            onClick = { onAll(box == ToggleableState.Off) },
+            modifier = Modifier.semantics { contentDescription = if (box == ToggleableState.Off) "Select all shown" else "Clear the selection" },
+        )
+        Text(
+            buildString {
+                append(if (checked > 0) "$checked of ${shown.size} selected" else if (shown.size == 1) "1 account" else "${shown.size} accounts")
+                append(" · $tabs of $TAB_POOL tabs open")
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = if (checked > 0) Turu.Text else Turu.Muted,
+            maxLines = 2,
+            modifier = Modifier.weight(1f),
+        )
+        val idle = shown.count { it.tab == null }
+        if (group != null && idle > 0) {
+            TextButton(onClick = onStartGroup, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (idle == 1) "Start 1" else "Start $idle", maxLines = 1)
             }
-            Icon(
-                if (unfolded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.KeyboardArrowUp,
-                contentDescription = if (unfolded) "Fold the launch options" else "Show the launch options",
-                tint = Turu.Muted,
-            )
         }
-        AnimatedVisibility(unfolded) {
-            Column(
-                Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+    }
+}
+
+/**
+ * Accounts > Launch options: the server (with its ping) and the script, with Auto-start, that
+ * every Start uses. The script is a favourite or recent one, or any from Search scripts…
+ * (Search Scripts, picking).
+ */
+@Composable
+fun LaunchOptionsPage(state: ShellState, accounts: AccountsPanel) {
+    LaunchedEffect(Unit) {
+        accounts.reload()
+        accounts.loadServers()
+    }
+    val list = accounts.list
+    Column(Modifier.fillMaxSize()) {
+        PageBar("Launch options", onBack = { state.back() })
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "Every Start in Accounts and New tab uses these.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Turu.Muted,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+            Picker(
+                label = "Server",
+                value = list.server,
+                options = accounts.servers?.map { it.name to it.line }
+                    ?: listOf(list.server to (accounts.serversError?.let { "${list.server} (couldn't list the servers)" } ?: list.server)),
+                loading = accounts.servers == null && accounts.serversError == null,
+            ) { accounts.launch(it, list.script, list.autoStart) }
+            Picker(
+                label = "Script",
+                value = list.script ?: "",
+                options = listOf("" to "No script") +
+                    (list.scripts + listOfNotNull(list.script)).distinct().map { it to it.substringAfterLast('/').removeSuffix(".ts") },
+                loading = false,
+            ) { accounts.launch(list.server, it.ifEmpty { null }, list.autoStart) }
+            OutlinedButton(
+                onClick = {
+                    state.scriptPick = ScriptPick.Launch
+                    state.push(Page.Search)
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
-                Picker(
-                    label = "Server",
-                    value = list.server,
-                    options = accounts.servers?.map { it.name to it.line }
-                        ?: listOf(list.server to (accounts.serversError?.let { "${list.server} (couldn't list the servers)" } ?: list.server)),
-                    loading = accounts.servers == null && accounts.serversError == null,
-                ) { accounts.launch(it, list.script, list.autoStart) }
-                Picker(
-                    label = "Script",
-                    value = list.script ?: "",
-                    options = listOf("" to "No script") +
-                        (list.scripts + listOfNotNull(list.script)).distinct().map { it to it.substringAfterLast('/').removeSuffix(".ts") },
-                    loading = false,
-                ) { accounts.launch(list.server, it.ifEmpty { null }, list.autoStart) }
-                OutlinedButton(
-                    onClick = searchScripts,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Search scripts…")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(
-                        "Start the script once logged in",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (list.script == null) Turu.Muted else Turu.Text,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = list.autoStart,
-                        enabled = list.script != null,
-                        onCheckedChange = { accounts.launch(list.server, list.script, it) },
-                    )
-                }
+                Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Search scripts…")
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .clickable(enabled = list.script != null) { accounts.launch(list.server, list.script, !list.autoStart) }
+                    .padding(horizontal = 4.dp),
+            ) {
+                Text(
+                    "Start the script once logged in",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (list.script == null) Turu.Muted else Turu.Text,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = list.autoStart,
+                    enabled = list.script != null,
+                    onCheckedChange = { accounts.launch(list.server, list.script, it) },
+                )
             }
         }
     }

@@ -927,19 +927,28 @@ shell's area shows "No tabs open" with the same list and Blank tab.
 **Accounts** (the same panel, from New tab or from egui's Menu > Army > Accounts, which opens it;
 the egui Accounts window goes on Android, Turu Mas keeps it):
 
-* Rows: avatar, the display name, the username muted, up to two group or tag chips with "+N".
-  At the end, a tonal **Start**, or the account's state: "In tab 2" (a tap switches to it),
-  "Starting...", "Log in by hand" (amber), "Failed: reason" (red). A ⋮ menu: Edit, Move up,
-  Move down, Remove... (its dialog says the saved password goes too).
-* Search in the top bar, and filter chips under it: All, each group, each tag.
-* A long press selects: a contextual bar with "3 selected", Start, Add to group, Select all.
-  Start with more accounts selected than free tabs starts as many as there are free tabs and says
-  so.
+* Rows: avatar (stepping aside at large text, so the name and its warning keep their words),
+  the display name, the username muted, up to two group or tag chips with "+N". At the end, a
+  tonal **Start**, or the account's state: "On screen", Switch to, "Starting…". An account
+  without a password says so in amber with an "Add one" link to its form (Start stays: the tab
+  opens at the login screen). Why a start failed (red) shows under the name ("No tab was free to
+  start it in"). A ⋮ menu ("More for <account>"): Edit, Move up, Move down, Remove... (its dialog
+  says the saved password goes too).
+* Search in the top bar, and filter chips under it: All, each group, each tag. Under them, what
+  every Start uses, on one line ("Starts on Twig · runs <script>"), opening Launch options.
+* Above the rows, a box checking every shown account or none and the count ("5 accounts · 1 of
+  4 tabs open", "2 of 5 selected"); with a group's chip on, **Start N** starts its accounts
+  without a tab.
+* A tap on a row checks it, as Army Control's (a long press too; only Start starts): a
+  contextual bar with the count, Start, Add to group, Select all. Any Start, one account's too,
+  goes through the tab check: with more accounts than free tabs it starts as many as fit and says
+  so, with none free it says to close one. The panel stays, showing "Starting…", then Switch to
+  (critique fixes, 2026-11-21; a row's tap started the account before).
 * Add and Edit: a page pushed in the panel, Username, Password (with a show toggle; saved to the
   Keystore), Display name, Tags. Typing in landscape uses Android's full-screen keyboard field,
   so the form needn't fit above the keyboard. A username already saved: "Hero is already in the
   list" with an "Edit it" link.
-* Launch options, folded at the panel's foot: Server (with its ping where the shell can measure
+* Launch options, a page of their own from the line above the list: Server (with its ping where the shell can measure
   it, the names alone otherwise) and the script, from favourites and recent
   (`quick-scripts.json`) or none, and Search scripts… (Search Scripts, picking), with
   Auto-start. (The owner overruled "a script's full search stays the Script Loader's" on

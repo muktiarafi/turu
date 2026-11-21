@@ -34,6 +34,10 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
     var starting by mutableStateOf(emptySet<String>())
         private set
 
+    /** Why an account didn't start (its row shows it), until it's started again. */
+    var failed by mutableStateOf(emptyMap<String, String>())
+        private set
+
     private val work = Executors.newSingleThreadExecutor { Thread(it, "Turu Accounts") }
     private val main = Handler(Looper.getMainLooper())
 
@@ -76,22 +80,32 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
         }
     }
 
-    /** Starts `account` in a new tab, with the launch options. */
-    fun start(account: Account) {
-        starting = starting + account.username
-        ask(JSONObject().put("do", "start").put("username", account.username)) {}
-    }
+    /** Starts `account` in a new tab, with the launch options (New tab's rows). */
+    fun start(account: Account) = startMany(listOf(account))
 
-    /** Starts each of `accounts` in a new tab of its own (the caller keeps them to the free tabs). */
+    /**
+     * Starts each of `accounts` in a new tab of its own (the caller keeps them to the free tabs).
+     * An error, or no tab opened at all (a full pool opens nothing), shows on their rows.
+     */
     fun startMany(accounts: List<Account>) {
         if (accounts.isEmpty()) return
-        starting = starting + accounts.map { it.username }
-        ask(JSONObject().put("do", "startMany").put("usernames", JSONArray(accounts.map { it.username }))) {}
+        val names = accounts.map { it.username }
+        starting = starting + names
+        failed = failed - names.toSet()
+        val ask = JSONObject().put("do", "startMany").put("usernames", JSONArray(names))
+        ask(ask, opened = { actions -> if (actions.trim() == "[]") fail(names, "No tab was free to start it in") }) { error ->
+            if (!error.isNullOrEmpty()) fail(names, error)
+        }
+    }
+
+    private fun fail(names: List<String>, why: String) {
+        starting = starting - names.toSet()
+        failed = failed + names.associateWith { why }
     }
 
     /** Puts `accounts` in `group` (made if new); `done` gets the error, or null. */
     fun addToGroup(group: String, accounts: List<Account>, done: (String?) -> Unit = {}) =
-        ask(JSONObject().put("do", "addToGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username })), done)
+        ask(JSONObject().put("do", "addToGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username })), done = done)
 
     fun removeFromGroup(group: String, accounts: List<Account>) =
         ask(JSONObject().put("do", "removeFromGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username }))) {}
@@ -106,7 +120,7 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
             .put("password", password.ifEmpty { null } ?: JSONObject.NULL)
             .put("displayName", displayName)
             .put("tags", JSONArray(tags))
-        ask(ask, done)
+        ask(ask, done = done)
     }
 
     fun remove(account: Account) = ask(JSONObject().put("do", "remove").put("username", account.username)) {}
@@ -120,8 +134,8 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
         ask(ask) {}
     }
 
-    /** Sends `ask`; the answer's actions are the activity's, an error goes to `done`. */
-    private fun ask(ask: JSONObject, done: (String?) -> Unit) {
+    /** Sends `ask`; the answer's actions are the activity's (and `opened`'s), an error goes to `done`. */
+    private fun ask(ask: JSONObject, opened: (String) -> Unit = {}, done: (String?) -> Unit) {
         work.execute {
             val answer = runCatching { nativeAccountsDo(ask.toString()) }.getOrElse { "{\"error\":\"${it.message}\"}" }
             main.post {
@@ -129,6 +143,7 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
                     done(JSONObject(answer).optString("error"))
                 } else {
                     runActions(answer)
+                    opened(answer)
                     done(null)
                 }
                 reload()

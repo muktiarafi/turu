@@ -303,6 +303,7 @@ fun TabPanel(state: ShellState, actions: TabActions) {
                         is Page.ArmyGear -> ArmyGearPage(state, actions.armyClient, page.key, page.label)
                         is Page.ArmyLogs -> ArmyLogsPage(state, actions.armyClient, page.key, page.label) { actions.window("army") }
                         is Page.AccountForm -> AccountFormPage(state, actions.accounts, page.original)
+                        Page.LaunchOptions -> LaunchOptionsPage(state, actions.accounts)
                     }
                 }
             }

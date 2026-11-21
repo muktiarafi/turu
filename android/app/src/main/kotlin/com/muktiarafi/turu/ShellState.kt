@@ -179,6 +179,9 @@ sealed interface Page {
 
     /** Add (`original` null) or edit an account. */
     data class AccountForm(val original: Account?) : Page
+
+    /** Accounts > Launch options: the server, the script and Auto-start every Start uses. */
+    data object LaunchOptions : Page
 }
 
 /** Search Scripts opened to pick a script for another page, which the bar and each row say. */
