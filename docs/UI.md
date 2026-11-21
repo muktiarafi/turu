@@ -1054,7 +1054,16 @@ above, and why:
   starting a script moves nothing: the emulator's 411 dp keeps Auto, Jump and More.
   Auto, Jump, Logs and More open as pages of the side panel, the rail staying in use beside it;
   Army opens Army Control. Bank's reason for opening nothing shows as a toast (a snackbar
-  would need the panel open). More (440 dp) is list and detail: a search above it ("Search
+  would need the panel open). Auto's page, "Combat Automation" (critique fixes, 2026-11-21):
+  what to fight with first: Class ("The equipped class" until one is picked; the list re-read on
+  opening, the equipped one first and marked "Equipped"; "Picking one equips it" under it, not
+  typed into, since the keyboard would cover the list), Skills ("Base" until a class's saved
+  set is picked) and "Monster IDs to fight first" (its line says what it read: "Fights 1, 2, in
+  that order"); then "Fights with <class>, <skills>" and **Attack** and **Hunt** (VibeSkua's Auto
+  Attack and Auto Hunt, alike, each with a line on what it does), the tapped one with a spinner
+  until it runs. While one runs, a card leads the page ("Hunt · 3m", "With Void Highlord,
+  Base") with Stop beside it, the settings dimmed (they're the next run's) and the start buttons
+  gone; the model says which runs, with what and for how long. More (440 dp) is list and detail: a search above it ("Search
   windows: drops, packets…") lists every window whose name or line matches each word typed, with
   its menu; under it Recent (the last four windows opened, once there are any) and the menus down
   the left (Scripts, Options, Tools & Helpers, Combat, Diagnostics, Plugins, Army), an arrow at the

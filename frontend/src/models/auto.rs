@@ -90,6 +90,10 @@ struct State {
     class: Option<String>,
     mode: Option<String>,
     map_ids: String,
+    /// The equipped class, as last read with the owned ones.
+    equipped: Option<String>,
+    /// The last run started here: when, and what it fights with in words.
+    run: Option<(std::time::Instant, String)>,
 }
 
 static STATE: PerTab<State> = PerTab::new();
@@ -113,12 +117,21 @@ pub struct AutoView {
     pub mode: Option<String>,
     /// Manual MapIDs, as typed ("1, 2").
     pub map_ids: String,
+    /// What runs: "Attack" or "Hunt".
+    pub running_mode: Option<String>,
+    /// What the run fights with ("Void Highlord, Base", or "the equipped class, Base").
+    pub fighting: Option<String>,
+    /// How long it has run, while it runs.
+    pub running_secs: Option<u64>,
+    /// The equipped class, when the owned classes were read.
+    pub equipped: Option<String>,
 }
 
 pub fn view(bot: &Arc<Bot>) -> AutoView {
     let state = STATE.of(bot);
     let state = lock(&state);
     let running = bot.auto.is_running();
+    let run = state.run.as_ref().filter(|_| running);
     let reason = if running {
         Some("Already running")
     } else if bot.scripts.is_snippet_running() {
@@ -142,6 +155,13 @@ pub fn view(bot: &Arc<Bot>) -> AutoView {
             .unwrap_or_default(),
         mode: state.mode.clone(),
         map_ids: state.map_ids.clone(),
+        running_mode: bot.auto.mode().map(|m| match m {
+            AutoMode::Attack => "Attack".to_owned(),
+            AutoMode::Hunt => "Hunt".to_owned(),
+        }),
+        fighting: run.map(|(_, with)| with.clone()),
+        running_secs: run.map(|(at, _)| at.elapsed().as_secs()),
+        equipped: state.equipped.clone(),
     }
 }
 
@@ -160,13 +180,15 @@ pub fn reload_classes(bot: &Arc<Bot>) {
         let read = read_classes(bot);
         let mut state = lock(&state);
         state.loading = false;
-        state.classes = read?;
+        let (classes, equipped) = read?;
+        state.classes = classes;
+        state.equipped = equipped;
         Ok(())
     });
 }
 
-/// The inventory's Class items, sorted ignoring case.
-fn read_classes(bot: &Arc<Bot>) -> turu_bot::BotResult<Vec<String>> {
+/// The inventory's Class items, sorted ignoring case, and the one equipped.
+fn read_classes(bot: &Arc<Bot>) -> turu_bot::BotResult<(Vec<String>, Option<String>)> {
     let items: Vec<serde_json::Value> =
         serde_json::from_value(turu_bot::api::dispatch(bot, "inventory.items", &[])?).unwrap_or_default();
     let mut classes: Vec<String> = items
@@ -180,7 +202,13 @@ fn read_classes(bot: &Arc<Bot>) -> turu_bot::BotResult<Vec<String>> {
         .map(str::to_owned)
         .collect();
     classes.sort_by_key(|name| name.to_lowercase());
-    Ok(classes)
+    let equipped = items
+        .iter()
+        .filter(|item| item.get("equipped").and_then(serde_json::Value::as_bool) == Some(true))
+        .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
+        .find(|name| classes.iter().any(|c| c == name))
+        .map(str::to_owned);
+    Ok((classes, equipped))
 }
 
 /// VibeSkua `SelectedClass`: its first saved mode, and the class equipped.
@@ -222,10 +250,19 @@ pub fn start(bot: &Arc<Bot>, mode: AutoMode) -> Result<(), String> {
             turu_bot::auto::parse_map_ids(&state.map_ids),
         )
     };
-    match (class, class_mode) {
-        (Some(class), Some(class_mode)) => turu_bot::auto::start(bot, mode, Some(class), class_mode, map_ids),
-        _ => turu_bot::auto::start(bot, mode, None, "Base".into(), map_ids),
+    let (with, started) = match (class, class_mode) {
+        (Some(class), Some(class_mode)) => (
+            format!("{class}, {class_mode}"),
+            turu_bot::auto::start(bot, mode, Some(class), class_mode, map_ids),
+        ),
+        _ => (
+            "the equipped class, Base".to_owned(),
+            turu_bot::auto::start(bot, mode, None, "Base".into(), map_ids),
+        ),
     };
+    if started {
+        lock(&STATE.of(bot)).run = Some((std::time::Instant::now(), with));
+    }
     Ok(())
 }
 
@@ -249,5 +286,7 @@ mod tests {
         pick_mode(&bot, "Base".into());
         let view = super::view(&bot);
         assert_eq!((view.map_ids.as_str(), view.mode.as_deref()), ("1, 2", Some("Base")));
+        // Nothing runs: no run to tell of.
+        assert_eq!((view.running_mode, view.fighting, view.running_secs), (None, None, None));
     }
 }

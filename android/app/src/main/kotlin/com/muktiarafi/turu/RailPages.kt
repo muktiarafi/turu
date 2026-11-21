@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -41,14 +42,19 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -67,6 +73,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -75,9 +82,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.muktiarafi.turu.models.AutoView
 import com.muktiarafi.turu.models.Control
 import com.muktiarafi.turu.models.MenuItem
 import org.json.JSONObject
@@ -101,88 +110,215 @@ private fun Waiting(models: TabModels) {
 }
 
 /**
- * Auto (VibeSkua's Auto view): Auto Attack and Auto Hunt, Stop, the class and mode to fight with
- * and the maps to hunt in (`turu_frontend::models::auto`).
+ * Auto (VibeSkua's Auto view), "Combat Automation": what to fight with first (Class, Mode, the
+ * monster IDs), the line saying what a Start fights with, then Attack and Hunt with a line each on
+ * how they differ. While one runs, a status block leads (what runs, how long, with what) with Stop
+ * beside it, and the rest steps back (`turu_frontend::models::auto`).
  */
 @Composable
 fun AutoPage(state: ShellState, models: TabModels) {
     val view = models.auto
     var error by remember { mutableStateOf<String?>(null) }
-    val act = { action: String, body: JSONObject -> models.act("auto", action, body) { error = it } }
+    var sending by remember { mutableStateOf<String?>(null) }
+    val act = { action: String, body: JSONObject ->
+        error = null
+        models.act("auto", action, body) { error = it }
+    }
+    // The tapped start or Stop shows a spinner until the view says it took.
+    val press = { action: String ->
+        sending = action
+        error = null
+        models.act("auto", action, JSONObject()) { error = it; if (it != null) sending = null }
+    }
+    LaunchedEffect(view?.running) { sending = null }
     Column(Modifier.fillMaxSize()) {
-        PageBar("Combat Automation", onBack = { state.back() }) {
-            if (view?.running == true) {
-                Text(
-                    "Running",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Turu.Success,
-                    modifier = Modifier
-                        .padding(end = 16.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Turu.Success.copy(alpha = 0.14f))
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-            }
-        }
+        PageBar("Combat Automation", onBack = { state.back() })
         if (view == null) return@Column Waiting(models)
+        val running = view.running
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { act("attack", JSONObject()) },
-                    enabled = view.start.enabled,
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                ) { Text("Auto Attack", maxLines = 1) }
-                FilledTonalButton(
-                    onClick = { act("hunt", JSONObject()) },
-                    enabled = view.start.enabled,
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                ) { Text("Auto Hunt", maxLines = 1) }
+            if (running) {
+                Running(view, stopping = sending == "stop") { press("stop") }
+                error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
             }
-            Reason(view.start.takeIf { !view.running })
-            Button(
-                onClick = { act("stop", JSONObject()) },
-                enabled = view.stop.enabled,
-                colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) { Text("Stop Automation") }
-            Picker(
-                label = "Class",
-                none = "Select a class",
-                value = view.`class` ?: "",
-                options = view.classes.map { it to it },
-                loading = view.loading,
-                // VibeSkua `ReloadClasses`: the owned classes again whenever the list opens.
-                onOpen = { act("reload-classes", JSONObject()) },
-                empty = if (view.loading) "Loading classes…" else "No classes (not logged in?)",
-            ) { act("class", JSONObject().put("class", it)) }
-            Picker(
-                label = "Mode",
-                none = "Select a mode",
-                value = view.mode ?: "",
-                options = view.modes.map { it to it },
-                loading = false,
-                empty = if (view.`class` == null) "Pick a class first" else "No saved skills for this class",
-            ) { act("mode", JSONObject().put("mode", it)) }
-            var mapIds by remember(models.tab?.id) { mutableStateOf(view.mapIds) }
-            OutlinedTextField(
-                value = mapIds,
-                onValueChange = {
-                    mapIds = it
-                    act("map-ids", JSONObject().put("mapIds", it))
-                },
-                label = { Text("Manual MapIDs") },
-                placeholder = { Text("Optional, e.g. 1, 2") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = fieldColors(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
+            // While a run goes, the settings are the next run's: they step back.
+            val settings = Modifier.alpha(if (running) 0.6f else 1f)
+            Column(settings, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ClassPicker(view, onOpen = { act("reload-classes", JSONObject()) }) { act("class", JSONObject().put("class", it)) }
+                Picker(
+                    label = "Skills",
+                    none = "Base",
+                    value = view.mode ?: "",
+                    options = view.modes.map { it to it },
+                    loading = false,
+                    empty = if (view.`class` == null) "Pick a class for its saved skills" else "No saved skills for this class",
+                ) { act("mode", JSONObject().put("mode", it)) }
+                var mapIds by remember(models.tab?.id) { mutableStateOf(view.mapIds) }
+                OutlinedTextField(
+                    value = mapIds,
+                    onValueChange = { typed ->
+                        mapIds = typed
+                        act("map-ids", JSONObject().put("mapIds", typed))
+                    },
+                    label = { Text("Monster IDs to fight first") },
+                    placeholder = { Text("Optional, e.g. 1, 2") },
+                    supportingText = {
+                        val ids = mapIds.split(',', ' ').mapNotNull { it.trim().toLongOrNull() }
+                        Text(
+                            when {
+                                mapIds.isBlank() -> "Their map IDs, in order; empty fights any"
+                                ids.isEmpty() -> "No IDs read: numbers, split by commas"
+                                ids.size == 1 -> "Fights ${ids[0]} first"
+                                else -> "Fights ${ids.joinToString(", ")}, in that order"
+                            },
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = fieldColors(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (!running) {
+                // The equipped class by name once the class list has been read.
+                val with = if (view.`class` != null && view.mode != null) {
+                    "${view.`class`}, ${view.mode} skills"
+                } else {
+                    "${view.equipped ?: "the equipped class"}, Base skills"
+                }
+                Text("Fights with $with", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StartButton("Attack", "Fights what's in your cell", sending == "attack", view.start.enabled && sending == null, Modifier.weight(1f)) { press("attack") }
+                    StartButton("Hunt", "Goes to the cells its targets are in", sending == "hunt", view.start.enabled && sending == null, Modifier.weight(1f)) { press("hunt") }
+                }
+                Reason(view.start)
+                error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
+            }
             Spacer(Modifier.heightIn(min = 12.dp))
+        }
+    }
+}
+
+/** What runs, for how long and with what, and Stop: the page's head while Attack or Hunt goes. */
+@Composable
+private fun Running(view: AutoView, stopping: Boolean, stop: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Turu.Card)
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(Turu.Success))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    listOfNotNull(view.runningMode ?: "Running", view.runningSecs?.let { durationText(it.toLong()) }).joinToString(" · "),
+                    style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                )
+            }
+            view.fighting?.let {
+                Text("With $it", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Button(
+            onClick = stop,
+            enabled = view.stop.enabled && !stopping,
+            colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError),
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+            if (stopping) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text("Stop")
+        }
+    }
+}
+
+/** Attack or Hunt, with what it does under it, both alike (neither is the default). */
+@Composable
+private fun StartButton(label: String, about: String, sending: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        FilledTonalButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            if (sending) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(label, maxLines = 1)
+        }
+        Text(about, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/**
+ * The class to fight with: the owned ones, read again when the list opens (VibeSkua
+ * `ReloadClasses`), the equipped one first and marked. Picking one equips it (VibeSkua
+ * `SelectedClass`); none picked fights with the equipped class. Not typed into: on a landscape
+ * phone the keyboard would cover the list it filters.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClassPicker(view: AutoView, onOpen: () -> Unit, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val equipped = view.equipped
+    val shown = listOfNotNull(equipped?.takeIf { it in view.classes }) + view.classes.filter { it != equipped }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = {
+        if (it && !open) onOpen()
+        open = it
+    }) {
+        OutlinedTextField(
+            // None picked reads as what it means, as Skills reads "Base".
+            value = view.`class` ?: "The equipped class",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Class") },
+            supportingText = { Text("Picking one equips it") },
+            trailingIcon = {
+                if (view.loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else ExposedDropdownMenuDefaults.TrailingIcon(expanded = open)
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
+            if (shown.isEmpty()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            when {
+                                view.loading -> "Reading your classes…"
+                                else -> "No classes (not logged in?)"
+                            },
+                            color = Turu.Muted,
+                        )
+                    },
+                    onClick = {},
+                    enabled = false,
+                )
+            }
+            for (name in shown) {
+                DropdownMenuItem(
+                    text = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    trailingIcon = if (name == equipped) {
+                        { Text("Equipped", style = MaterialTheme.typography.labelMedium, color = Turu.Muted) }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        open = false
+                        onPick(name)
+                    },
+                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                )
+            }
         }
     }
 }
