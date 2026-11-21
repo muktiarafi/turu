@@ -1016,9 +1016,15 @@ above, and why:
   Start). The pass puts it on the native rail; until Auto, Jump and Bank have models the rail
   stays egui, and it has no room for another item. The page: status card (state with its dot and
   clock or last run, last log's age, "Waits for you", the script with its favourite star, the
-  error's first line), Start alone or Stop with Pause/Resume (Force Stop while stopping), the
-  reason a control is off under it, Search and Options (the slot's egui windows, the panel
-  closing for them), and the script log (its last 500 lines, line-fed).
+  error's first line, the whole error on a tap) and the script log (its last 500 lines,
+  line-fed, following its last line unless scrolled back), laid out by state after a critique
+  (2026-11-21): with no script, Search scripts as the filled button in Start's place; with one
+  loaded and stopped, Start, then Search and Options (the reason a control is off under it);
+  while it runs, Stop with Pause/Resume (Force Stop while stopping) alone, Search scripts and
+  Script options moving to ⋮. While nothing runs, "Start a favourite" and "Start a recent
+  script" list three of each as rows (full name, a play mark; a tap loads and starts it, all
+  off while one starts). The top scrolls within 55% of the page while the log has lines, so the
+  log keeps the rest; the tapped run control shows a spinner until the tab answers.
 * **The native rail** (L5b, 2026-11-20) replaces the egui one on Android: the Tabs item, then
   Logs, Army, Auto, Jump, Bank (and Update while one is out), More last (three dots, the
   overflow: a hamburger said "drawer"; moved there 2026-11-21 after a critique), the script chip
