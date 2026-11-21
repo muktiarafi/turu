@@ -800,11 +800,14 @@ fun Picker(
     empty: String? = null,
     /** What it says while nothing is chosen. */
     none: String = "None",
+    /** Off: it shows its value, dimmed, and doesn't open. */
+    enabled: Boolean = true,
     onPick: (String) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     val shown = options.firstOrNull { it.first == value }?.second?.substringBefore(" - ") ?: value
-    ExposedDropdownMenuBox(expanded = open, onExpandedChange = {
+    ExposedDropdownMenuBox(expanded = open && enabled, onExpandedChange = {
+        if (!enabled) return@ExposedDropdownMenuBox
         if (it && !open) onOpen()
         open = it
     }) {
@@ -812,6 +815,7 @@ fun Picker(
             value = shown.ifEmpty { none },
             onValueChange = {},
             readOnly = true,
+            enabled = enabled,
             label = { Text(label) },
             trailingIcon = {
                 if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -820,9 +824,9 @@ fun Picker(
             singleLine = true,
             shape = MaterialTheme.shapes.medium,
             colors = fieldColors(),
-            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled),
         )
-        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
+        ExposedDropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }, containerColor = Turu.Card) {
             if (options.isEmpty() && empty != null) {
                 DropdownMenuItem(text = { Text(empty, color = Turu.Muted) }, onClick = {}, enabled = false)
             }

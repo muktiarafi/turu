@@ -124,6 +124,9 @@ sealed interface Page {
     /** Options > CoreBots. */
     data object CoreBots : Page
 
+    /** One CoreBots role (Solo, Farm, Dodge, Boss) on a page of its own, pushed from CoreBots. */
+    data class CoreBotsRole(val index: Int) : Page
+
     /** Scripts > Scheduler. */
     data object Scheduler : Page
 

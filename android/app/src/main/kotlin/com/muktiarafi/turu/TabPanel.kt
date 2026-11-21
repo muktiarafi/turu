@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -281,7 +282,7 @@ fun TabPanel(state: ShellState, actions: TabActions, onGone: () -> Unit = {}) {
             Surface(
                 color = Turu.Panel,
                 modifier = Modifier
-                    .width(if (page in widePages || page is Page.ArmyPreset || page is Page.ArmyGear || page is Page.ArmyLogs || page is Page.CrashReport) 440.dp else PanelWidth)
+                    .width(if (page in widePages || page is Page.CoreBotsRole || page is Page.ArmyPreset || page is Page.ArmyGear || page is Page.ArmyLogs || page is Page.CrashReport) 440.dp else PanelWidth)
                     .fillMaxHeight()
                     .border(width = 1.dp, color = Turu.Edge.copy(alpha = 0.6f))
                     // The window stays put under the keyboard (adjustNothing): the page shrinks above it.
@@ -318,6 +319,7 @@ fun TabPanel(state: ShellState, actions: TabActions, onGone: () -> Unit = {}) {
                             ) { actions.window("game_options") }
                             Page.AppOptions -> AppOptionsPage(state, actions.appOptions) { actions.window("application_options") }
                             Page.CoreBots -> CoreBotsPage(state, actions.coreBots) { actions.window("core_bots") }
+                            is Page.CoreBotsRole -> CoreBotsRolePage(state, actions.coreBots, page.index) { actions.window("core_bots") }
                             Page.Scheduler -> SchedulerPage(state, actions.scheduler, openOptions = {}) { actions.window("scheduler") }
                             Page.Notifications -> NotificationsPage(state, actions.notifications) { actions.window("notifications") }
                         Page.Stats -> StatsPage(state, actions.stats) { actions.window("stats") }
@@ -376,11 +378,20 @@ fun FullWindowMenu(adds: String, open: () -> Unit, more: @Composable (close: () 
     }
 }
 
-/** A page's top bar: a back arrow (or none on the first page), the title, actions at the end. */
+/**
+ * A page's top bar: a back arrow (or none on the first page), the title (with a line under it,
+ * [subtitle], where a page has a state to keep in view), actions at the end.
+ */
 @Composable
-fun PageBar(title: String, onBack: (() -> Unit)?, actions: @Composable () -> Unit = {}) {
+fun PageBar(
+    title: String,
+    onBack: (() -> Unit)?,
+    subtitle: String? = null,
+    subtitleColor: Color = Turu.Muted,
+    actions: @Composable () -> Unit = {},
+) {
     Row(
-        Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
@@ -390,13 +401,12 @@ fun PageBar(title: String, onBack: (() -> Unit)?, actions: @Composable () -> Uni
         } else {
             Spacer(Modifier.width(12.dp))
         }
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f).padding(start = 4.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = subtitleColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
         actions()
     }
 }

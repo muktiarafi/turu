@@ -315,7 +315,8 @@ private fun SectionChip(label: String, selected: Boolean, onClick: () -> Unit) {
 /** One option: its label (and why it differs), its description, its control. */
 /**
  * One option (both options pages): its label (why it differs, "Restart required"), description
- * and control. `edited`: changed on this page; `onAction` for a button's press.
+ * and control. `edited`: changed on this page; `onAction` for a button's press. `enabled` off:
+ * dimmed and untouchable for now (logged out, say), unlike `unused`, which Turu doesn't read at all.
  */
 @Composable
 fun OptionRow(
@@ -325,8 +326,10 @@ fun OptionRow(
     onSet: (Any) -> Unit,
     onAction: () -> Unit,
     fullWindow: () -> Unit = {},
+    enabled: Boolean = true,
 ) {
-    val dim = !o.applies || o.unused
+    val dim = !o.applies || o.unused || !enabled
+    val live = enabled && !o.unused
     Column(
         Modifier
             .fillMaxWidth()
@@ -374,28 +377,28 @@ fun OptionRow(
             // A gap between a long description and its control.
             if (kind !is KindView.text && kind !is KindView.secret && kind !is KindView.server) Spacer(Modifier.width(12.dp))
             when (kind) {
-                is KindView.switch -> Switch(checked = o.value.bool(), enabled = !o.unused, onCheckedChange = { onSet(it) })
+                is KindView.switch -> Switch(checked = o.value.bool(), enabled = live, onCheckedChange = { onSet(it) })
                 is KindView.action -> OutlinedButton(
                     onClick = onAction,
-                    enabled = (inGame || !kind.login) && !o.unused && o.applies,
+                    enabled = (inGame || !kind.login) && live && o.applies,
                     modifier = Modifier.heightIn(min = 40.dp),
                 ) { Text(kind.label) }
                 is KindView.elsewhere -> TextButton(onClick = fullWindow, modifier = Modifier.heightIn(min = 40.dp)) { Text("Open") }
                 is KindView.choice -> Box(Modifier.width(150.dp)) {
-                    Picker(label = "", value = o.value.string(), options = kind.choices.map { it.first to it.second }, loading = false) { onSet(it) }
+                    Picker(label = "", value = o.value.string(), options = kind.choices.map { it.first to it.second }, loading = false, enabled = live) { onSet(it) }
                 }
-                is KindView.number -> NumberField(o.value.long(), kind.min.toLong(), kind.max?.toLong() ?: Long.MAX_VALUE, kind.unit, enabled = !o.unused) { onSet(it) }
+                is KindView.number -> NumberField(o.value.long(), kind.min.toLong(), kind.max?.toLong() ?: Long.MAX_VALUE, kind.unit, enabled = live) { onSet(it) }
                 is KindView.fps -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    NumberField(o.value.long(), 0, kind.max.toLong(), if (o.value.long() == 0L) "Off" else "FPS", enabled = true) { onSet(it) }
+                    NumberField(o.value.long(), 0, kind.max.toLong(), if (o.value.long() == 0L) "Off" else "FPS", enabled = enabled) { onSet(it) }
                     FpsPresets(kind.presets) { onSet(it) }
                 }
                 else -> {}
             }
         }
         when (val kind = o.kind) {
-            is KindView.text -> TextOption(o.value.string(), kind.hint, secret = false) { onSet(it) }
-            is KindView.secret -> TextOption(o.value.string(), "", secret = true) { onSet(it) }
-            is KindView.server -> TextOption(o.value.string(), "A server's name", secret = false) { onSet(it) }
+            is KindView.text -> TextOption(o.value.string(), kind.hint, secret = false, enabled = enabled) { onSet(it) }
+            is KindView.secret -> TextOption(o.value.string(), "", secret = true, enabled = enabled) { onSet(it) }
+            is KindView.server -> TextOption(o.value.string(), "A server's name", secret = false, enabled = enabled) { onSet(it) }
             else -> {}
         }
     }
@@ -436,7 +439,7 @@ private fun FpsPresets(presets: List<Int>, onSet: (Long) -> Unit) {
 
 /** Text, sent a moment after the typing stops. */
 @Composable
-private fun TextOption(value: String, hint: String, secret: Boolean, onSet: (String) -> Unit) {
+private fun TextOption(value: String, hint: String, secret: Boolean, enabled: Boolean = true, onSet: (String) -> Unit) {
     val field = rememberTextFieldState(value)
     val text = field.text.toString()
     LaunchedEffect(text) {
@@ -449,6 +452,7 @@ private fun TextOption(value: String, hint: String, secret: Boolean, onSet: (Str
     if (secret) {
         OutlinedSecureTextField(
             state = field,
+            enabled = enabled,
             placeholder = { Text(hint) },
             textObfuscationMode = TextObfuscationMode.Hidden,
             shape = MaterialTheme.shapes.medium,
@@ -458,6 +462,7 @@ private fun TextOption(value: String, hint: String, secret: Boolean, onSet: (Str
     } else {
         OutlinedTextField(
             state = field,
+            enabled = enabled,
             placeholder = { Text(hint) },
             lineLimits = TextFieldLineLimits.SingleLine,
             shape = MaterialTheme.shapes.medium,

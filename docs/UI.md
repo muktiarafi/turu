@@ -1193,10 +1193,23 @@ above, and why:
   past 4, which would interrupt a repeated action; while above 4 its description says what
   Android does when memory runs short),
   Check Now, Free and Open as buttons; the Web Monitor's links, QR code and keys say "In the full
-  window" with Open. CoreBots: the character and whether its file is saved, Loadout, Options and
-  Other as segments, a card per role (class, mode, Use equipment, the gear folded under "Gear · N
-  of 6 set"), Options and Other as option rows under their groups, Refresh from game, Revert and
-  Save (asking before public rooms); the page saves when it closes, as the window does.
+  window" with Open. CoreBots (reworked 2026-11-22 after a critique, 26/40, whose first finding
+  was the panel's height): the bar carries the character and what saving does ("dod · Saved",
+  "dod · Saves when you close", in amber with "· Private Rooms stays on" while Public Rooms is
+  unanswered; "Not logged in"), with **Save now** (secondary: the page still saves when it closes,
+  as VibeSkua's window does) and ⋮ (Read classes again, "for a class or item got since; your picks
+  stay", the old Refresh from game; Revert changes, asked first; Full window). No footer. The
+  segments (Loadout, Options, Other: boosts, nation scripts, PvP and the like) slide away as the list scrolls and
+  come back on a scroll up, snapping fully in or out. Loadout is the four roles as rows (dot, name
+  and purpose, class · mode or "No class set", "Gear 3/6" or "Gear off"), all on one screen; a row
+  opens the role's own page (`Page.CoreBotsRole`, the same draft: going between them doesn't close
+  it): class, mode (off until a class is picked), Use equipment, the six gear slots two to a row
+  (pickable either way, "Worn only while Use equipment is on" while off), and ⋮ > Copy from
+  another role. Options and Other have search (the keyboard's Search key puts it away so
+  the matches show; landscape leaves no room above it), with muted headings. Logged out, a notice
+  says why and every picker, switch and field is off, dimmed (not "Coming soon", which marks the
+  options Turu doesn't read; `OptionRow`'s `enabled`). The pickers took a pick and dropped it before.
+  Another tab coming on screen while the page is open saves the one it left and says so.
 * **Scheduler** (L5b, 2026-11-20), a page of the panel (440 dp) from More and however the slot
   opens the Scheduler: Start queue (Stop queue in red while it runs) with the summary, and the
   reason it's off under it; the playlist as rows (number, name, status chip in its colour, time;
