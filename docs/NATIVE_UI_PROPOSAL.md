@@ -959,12 +959,30 @@ script's message box and options request.
   reports and the refused tab moved there from egui. The shell follows it whenever a tab shows,
   from a view of its own (the panel's draws only while open), and shows a Material dialog; while
   a shell has read it within three seconds, egui's dialogs step aside. A script's box isn't
-  closed by a tap beside it (Back still answers "closed"). Show report opens egui's Logs on the
-  report (the native Logs page has no Crashes); Raise Tab Limit opens Application options. The
+  closed by a tap beside it (Back still answers "closed"). Show report opens the report in the
+  native Logs > Crashes (since the crash reports' page, below; it opened egui's Logs before);
+  Raise Tab Limit opens Application options. The
   crash upload question was already Android's own. Checked on the emulator: a made-up crash
   report's notice and Show report (the report and the one it pushed out of the 30 kept were put
   back, with `.seen`). Not seen: the message box, Butler's notice, the Tab Limit and the tips
   (they need a script, Butler following, a refused tab or a slow GPU); they share the dialog.
+* **Crash reports** (2026-11-21, the owner's request; the last real gap): `models::crashes`
+  lists the reports (re-listed at most every 3 s, since the view runs each tick), answers a
+  report's text cut to `SHARE_BYTES` with its share subject (`text`), and deletes one by its file
+  name into `crash/.deleted/` so `restore` puts it back in its place (a rename keeps its time;
+  only the last Delete is kept, and it's purged at the next start). Not per tab: one folder for
+  the app. egui's Logs > Crashes draws from it. On Android (the owner's pick: a Logs segment, not
+  a page of its own) Logs gains "Crashes (n)" once there is a report, a tap opens
+  `Page.CrashReport` (Share, Copy, Delete with Undo, the text); `CrashesPanel` counts the pages
+  holding it, so crossing from the list to a report keeps the connection. The crash notice's Show
+  report answers `open: "crashes"` and `report: <name>` (`SHOW_REPORT` and egui's consumer are
+  gone) and the shell opens Logs > Crashes on that report. "Crashes (30)" didn't fit a third of the
+  320 dp panel: the segment says Crashes and the list's first line the count; the report's lines
+  wrap (they are mostly sentences). Checked on the emulator (`-gpu host`, the owner's 30 real
+  reports plus a made-up one, `crash/` backed up first and put back after with `.seen` and the
+  times): the notice's Show report opening the made-up report, the list, a report's page, Delete
+  and Undo (on the made-up report only), font scale 1.3. Not pressed: Share and Copy (they hand
+  the text to the system). No text field, so no keyboard check.
 * **Packet tools** (2026-11-21, decision 8 as changed): `models::packets` serves the Logger
   (logging and its filters, the engine's own; the lines are the control API's `packet` log, read
   from a point as the Logs page reads its own), the Spammer (`bot.spammer`: queue, loop, delay,
@@ -1001,23 +1019,20 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console. Each window's page has Full window for the
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console, Logs > Crashes. Each window's page has Full window for the
 egui one, and the engine's dialogs (a script's message box, Butler's notice, the crash notice, the
 Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys only
 (staying egui; decision 8 as changed 2026-11-21). Spammer, Packet Logger and Interceptor are native
 since the same day. The owner's order (2026-11-20): Skills, Loadouts, Fast
-Travel and Butler (all done).
+Travel and Butler (all done). Crash reports (Logs > Crashes) are native since 2026-11-21.
 
 **What's still egui on Android** (checked 2026-11-21 against the code: every More item maps to a
 native page in `RailPages.kt`'s `nativePage`, every egui window bounces to its page, and the
 engine's dialogs are `models::prompts`):
 
-1. **Crash reports**: Logs > Crashes (the list, a report's text, Copy, Share, Delete). The native
-   Logs page has Script and Client only; the crash notice's Show report and Logs' Full window open
-   egui's. The one real gap.
-2. **The Headless Mode screen**: the "monitor off" page egui draws over the game area while
+1. **The Headless Mode screen**: the "monitor off" page egui draws over the game area while
    Headless Mode is on. A placeholder with no controls, not a window.
-3. **What only a Full window has** (each page's ⋮ says so):
+2. **What only a Full window has** (each page's ⋮ says so):
    - Logs and Script Loader: the log's Find and Copy; opening the script in an editor.
    - Application options: the Web Monitor's links, QR code and keys.
    - Game options: Revert mine, and the Relogin Server list.

@@ -295,8 +295,8 @@ egui window shares. Turu Mas keeps egui throughout. What follows stands for what
 
 ## Still open
 
-What's still egui on Turu's Android app, as of 2026-11-21 (crash reports, the Headless Mode
-screen, what only a Full window has): `docs/NATIVE_UI_PROPOSAL.md`, "Handover", "What's still
+What's still egui on Turu's Android app, as of 2026-11-21 (the Headless Mode screen, what only a
+Full window has; crash reports are native since the same day, Logs > Crashes): `docs/NATIVE_UI_PROPOSAL.md`, "Handover", "What's still
 egui on Android".
 
 Nothing from the survey these came from is left.

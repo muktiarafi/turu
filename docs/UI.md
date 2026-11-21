@@ -1349,7 +1349,17 @@ above, and why:
   the title, the text (a script's or a report's scrolls past 320 dp), a smaller muted note, and
   the buttons as text buttons left to right, the last (the main one) in the accent and semibold.
   The words are egui's. A script's box isn't closed by a tap beside it; Back closes any of them.
-  Show report opens egui's Logs on the report; Raise Tab Limit opens Application options.
+  Show report opens that report's page in Logs > Crashes; Raise Tab Limit opens Application
+  options.
+* **Logs > Crashes** (L5b, 2026-11-21; `models::crashes`): a third segment, "Crashes (n)", once
+  there is a report (most never crash) and while it's chosen; Clear leaves the bar. The reports
+  newest first, each a row with what happened (two lines at most) and when, a chevron; none left
+  says so. A tap opens the report's page (440 dp): what happened, when and the file's name, then
+  Share (filled: the report goes to whoever helps), Copy and Delete (red text button, at the end),
+  then the text monospaced in the inset well, long lines wrapped (most reports are sentences), selectable. A long report
+  shows its first 400 KB with a line saying so (what Share and Copy take too). Delete goes back to
+  the list with a snackbar ("Deleted "Low memory"", Undo); Undo puts the report back in its place.
+  The egui window draws from the same model.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that
