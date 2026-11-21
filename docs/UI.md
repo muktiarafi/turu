@@ -1080,7 +1080,8 @@ above, and why:
   sends (as Army Control says it), Go to (Map and Room; Cell and a Pad drop-down; Use current, the
   only checked row's location else the tab on screen's; `map,room,cell,pad` pasted into Map fills
   them all; the note "Sends 2 clients to battleon-2 · Enter, Spawn" and Jump), Recent destinations
-  (Clear) and Saved presets (New…). A destination row's tap fills Go to and its Jump sends it; a
+  (Clear, with Undo in a snackbar) and Saved presets (New…), a line saying a tap fills Go to and
+  Jump sends. A destination row's tap fills Go to and its Jump (a text button) sends it; a
   preset's ⋮ has Edit… and Delete (asked first). New… and Edit… open a form page (name, map,
   room, cell, pad, Use the client's location, Save in the bar), a new one starting from Go to,
   else where the client is. **Jump to player…** is a dialog: the clients' logged-in players as
@@ -1247,8 +1248,8 @@ above, and why:
   Mark as junk, Unmark, Goal… and Sell checked on one row that scrolls sideways at large font
   sizes; else a hint and Sell all junk (N). Goal… swaps the foot for a goal bar (the quantity,
   Set, Clear, close) that stays above the keyboard. The sales ask first unless Skip sell warning
-  is on, and turning that on asks too. ⋮: Sell all junk, Unmark all, Skip sell warning, Full
-  window.
+  is on, and turning that on asks too. ⋮: Sell all junk, Unmark all (asked first), Skip sell
+  warning, Full window.
 * **Console** (L5b, 2026-11-21), a page of the panel (440 dp) from More > Diagnostics and however
   the slot opens it. The snippet editor (monospaced, no autocorrect or capitals, starting from the
   snippet last run in the tab), then Clear, a note (the last expression's value is shown; why Run
@@ -1267,8 +1268,13 @@ above, and why:
   queue, Full window (Load, Save). Interceptor: the Server drop-down (Current server first) with
   Refresh, Connect ("Connect and relog" with a server picked; Disconnect in red), Log packets, the
   state dot, the search and "Show 18 / 18", the packets with their OUT, IN or BLOCK tag (a tap
-  selects one; a blocked one struck through), and the count ("the newest 300 shown" past them,
+  opens the packet in full in a dialog with Copy and Select; a long press selects, and while some
+  are selected a tap selects too; a blocked one struck through), and the count ("the newest 300 shown" past them,
   "· 2 selected", Unselect); ⋮: Copy, Clear, Full window (Export).
+* **Clear and Undo** (2026-11-21, after the critique): the Packet Logger's, the Interceptor's,
+  the Spammer queue's and Map Travel's Clear act at once and show a snackbar ("Cleared 12 packets",
+  Undo) for a few seconds; Undo puts back what was cleared before what came since. The Spammer's Add
+  clears its field, and Send now says "Sent to the server" (or the client).
 * **The engine's dialogs** (L5b, 2026-11-21): a script's message box, Butler's "a script started
   while following", the crash notice, the Tab Limit notice and the graphics tips, one at a time
   over the game whether the panel is open or not, as Material dialogs on the panel's card colour:
