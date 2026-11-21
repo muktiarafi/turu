@@ -956,6 +956,16 @@ script's message box and options request.
   report's notice and Show report (the report and the one it pushed out of the 30 kept were put
   back, with `.seen`). Not seen: the message box, Butler's notice, the Tab Limit and the tips
   (they need a script, Butler following, a refused tab or a slow GPU); they share the dialog.
+* **Packet tools** (2026-11-21, decision 8 as changed): `models::packets` serves the Logger
+  (logging and its filters, the engine's own; the lines are the control API's `packet` log, read
+  from a point as the Logs page reads its own), the Spammer (`bot.spammer`: queue, loop, delay,
+  Send to client, Add, Send now; a row is removed by its index and text) and the Interceptor
+  (`bot.capture`: Connect, relogging on a chosen server, Log packets, and a page's server, search,
+  filters and selection; the newest 300 shown packets; Copy answers its text). The egui windows
+  use the same engine; Load, Save and Export stay theirs (Full window). Checked on the emulator:
+  the three pages, the Logger's logging on and back off and its filters dialog (cancelled), the
+  Spammer's composer with the keyboard up (the queue steps aside), the Interceptor at font scale
+  1.3. Not pressed: Start, Send now, Add, Connect, Clear.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -984,8 +994,9 @@ groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip),
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
 Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console. Each window's page has Full window for the
 egui one, and the engine's dialogs (a script's message box, Butler's notice, the crash notice, the
-Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys (staying
-egui), Spammer, Packet Logger and Interceptor (to be ported, decision 8 as changed 2026-11-21). The owner's order (2026-11-20): Skills, Loadouts, Fast
+Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys only
+(staying egui; decision 8 as changed 2026-11-21). Spammer, Packet Logger and Interceptor are native
+since the same day. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":

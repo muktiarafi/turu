@@ -282,8 +282,8 @@ and L5b, its "Handover" for the current list; `docs/UI.md`, "Android, as built")
 Accounts, the rail, and the daily windows as pages of a side panel, each over a view model the
 egui window shares. Turu Mas keeps egui throughout. What follows stands for what isn't ported:
 
-* **The windows not ported yet** (Tools & Helpers, Skills, Runtime, Butler, Cosmetics, Console)
-  and **for good** Spammer, Packet Logger and Interceptor: egui in the slot's picture, opened from
+* **The windows not ported**: on Turu's Android app only HotKeys since 2026-11-21 (every other
+  window has its native page, with Full window for egui's); egui in the slot's picture, opened from
   More, as on the desktop.
 * **Modals and confirmations** in those windows (26: Remove account, Clear stats, Delete loadout,
   ...): they lead back into Turu's windows, and on Turu Mas a native dialog takes AIR's focus each

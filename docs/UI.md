@@ -950,9 +950,9 @@ Screens open as panes beside it. The egui rail's icons move to Material Symbols 
 | Feature | Android |
 |---|---|
 | Tabs, Accounts | native (L5a) |
-| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console | native (L5b) |
+| Script Loader, Search Scripts, Scheduler, Logs, Options (Game, Application, CoreBots), Army Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console, Packet Logger, Spammer, Interceptor | native (L5b) |
 | Army Queue | none (its squads run as processes of their own, which Android can't start) |
-| Packet Logger, Interceptor, Spammer, Diagnostics | egui for good, from More |
+| HotKeys | egui, from More (unused without a keyboard) |
 | Grid View | none (a phone has no Grid View) |
 
 **What L5a needs from the link** (`frontend/src/shell.rs`): that the shell draws the tabs (a field
@@ -1257,6 +1257,18 @@ above, and why:
   the value green, errors red, Stopped amber), selectable, scrolling sideways, kept at the newest
   line. With the keyboard up the bar, note and output step aside: the editor fills the strip
   above it with Run beside it. ⋮: Copy output, Clear output, Full window.
+* **Packet Logger, Spammer, Interceptor** (L5b, 2026-11-21), pages of the panel (440 dp) from More >
+  Diagnostics. Logger: Start logging (Stop logging in red) with a dot and its state, "Show 12 / 12"
+  opening the filters dialog (a check box a kind in two columns, All, None, Invert, Apply), the
+  search with the count, and the packets monospaced in an inset well, newest last, selectable;
+  ⋮: Copy shown, Clear, Full window (Save). Spammer: Start (Stop in red), "Every [1000 ms]", Send to
+  client, "Queue · 3" with what it sends, the queue (number, packet, a remove button), and the
+  composer (the packet, Add, Send now), which alone stays while the keyboard is up; ⋮: Clear the
+  queue, Full window (Load, Save). Interceptor: the Server drop-down (Current server first) with
+  Refresh, Connect ("Connect and relog" with a server picked; Disconnect in red), Log packets, the
+  state dot, the search and "Show 18 / 18", the packets with their OUT, IN or BLOCK tag (a tap
+  selects one; a blocked one struck through), and the count ("the newest 300 shown" past them,
+  "· 2 selected", Unselect); ⋮: Copy, Clear, Full window (Export).
 * **The engine's dialogs** (L5b, 2026-11-21): a script's message box, Butler's "a script started
   while following", the crash notice, the Tab Limit notice and the graphics tips, one at a time
   over the game whether the panel is open or not, as Material dialogs on the panel's card colour:
