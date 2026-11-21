@@ -368,6 +368,36 @@ fn options_send_toggles_once_and_repeat_ticks() {
     assert_eq!(speeds(&game).len(), 4);
 }
 
+/// Out of game (the login screen), the module is switched alone, so it can mask the login
+/// fields; in game the pass knows it was sent.
+#[test]
+fn streamer_mode_reaches_the_login_screen() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    let streamer = |calls: Vec<Vec<FlashArg>>| {
+        calls
+            .into_iter()
+            .filter(|a| arg(a, 0) == "StreamerMode")
+            .count()
+    };
+    bot.options.write().streamer_mode = true;
+    options::apply_out_of_game(&bot).unwrap();
+    options::apply_out_of_game(&bot).unwrap();
+    assert_eq!(streamer(game.calls_to("modEnable")), 1);
+    assert!(
+        !game
+            .calls_to("modEnable")
+            .iter()
+            .any(|a| arg(a, 0) == "HidePlayers"),
+        "nothing else out of game"
+    );
+    options::apply(&bot).unwrap();
+    assert_eq!(streamer(game.calls_to("modEnable")), 1, "not again in game");
+    bot.options.write().streamer_mode = false;
+    options::apply_out_of_game(&bot).unwrap();
+    assert_eq!(streamer(game.calls_to("modDisable")), 1);
+}
+
 #[test]
 fn streamer_mode_is_turu_swfs_module_and_gives_custom_names_back() {
     let game = FakeGame::new();

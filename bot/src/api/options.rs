@@ -153,6 +153,16 @@ pub fn apply(bot: &Bot) -> BotResult<()> {
     result
 }
 
+/// Out of game, once the game has loaded (the login screen): Streamer Mode alone, whose module
+/// masks the login screen's fields there. Turu: VibeSkua's Streamer Mode works only in game.
+pub fn apply_out_of_game(bot: &Bot) -> BotResult<()> {
+    let on = bot.opts().streamer_mode;
+    let mut applied = bot.state.lock().options_applied.clone();
+    let result = switch(bot, "StreamerMode", on, &mut applied.streamer);
+    bot.state.lock().options_applied = applied;
+    result.map(|_| ())
+}
+
 fn apply_with(bot: &Bot, o: &crate::options::BotOptions, a: &mut Applied) -> BotResult<()> {
     // turu.swf keeps the world hidden while it's on (VibeSkua's CheckOptions called `killLag`
     // on every pass); turning it off shows the world again.

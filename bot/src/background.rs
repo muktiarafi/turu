@@ -271,6 +271,14 @@ fn timer(weak: Weak<Bot>) {
                 .update_gameplay(reading, Instant::now());
         }
         if !in_game {
+            // Streamer Mode masks the login screen too (the remembered username).
+            if last_options.elapsed() >= Duration::from_millis(250) && bot.state.lock().game_loaded
+            {
+                last_options = Instant::now();
+                if let Err(e) = crate::api::options::apply_out_of_game(&bot) {
+                    tracing::debug!("Applying Streamer Mode out of game failed: {e}");
+                }
+            }
             continue;
         }
         if !catching {
