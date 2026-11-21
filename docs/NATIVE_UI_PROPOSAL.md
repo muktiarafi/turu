@@ -1008,6 +1008,30 @@ Tab Limit, the graphics tips) are native too. **Still egui on Android**, from Mo
 since the same day. The owner's order (2026-11-20): Skills, Loadouts, Fast
 Travel and Butler (all done).
 
+**What's still egui on Android** (checked 2026-11-21 against the code: every More item maps to a
+native page in `RailPages.kt`'s `nativePage`, every egui window bounces to its page, and the
+engine's dialogs are `models::prompts`):
+
+1. **Crash reports**: Logs > Crashes (the list, a report's text, Copy, Share, Delete). The native
+   Logs page has Script and Client only; the crash notice's Show report and Logs' Full window open
+   egui's. The one real gap.
+2. **The Headless Mode screen**: the "monitor off" page egui draws over the game area while
+   Headless Mode is on. A placeholder with no controls, not a window.
+3. **What only a Full window has** (each page's ⋮ says so):
+   - Logs and Script Loader: the log's Find and Copy; opening the script in an editor.
+   - Application options: the Web Monitor's links, QR code and keys.
+   - Game options: Revert mine, and the Relogin Server list.
+   - Cosmetics: Manual SWF.
+   - Script Options: a picker under each item option.
+   - Stats: the history as a table, sorted by any column.
+   - Butler: opening the folder of saved logs.
+   - Files: Spammer's Load and Save, saving the Packet Logger's packets, the Interceptor's and the
+     Grabber's Export, saving an Army client's logs, Scheduler playlists anywhere on the device.
+
+Hidden on Android by design, so nothing to port: HotKeys (no keyboard; its model is shell-neutral,
+`models::hotkeys`) and Army Queue (Android can't start processes of its own). Turu Mas stays
+egui throughout (decision 9).
+
 **Owner decisions taken while building (2026-11-20)**, beyond "Decisions taken":
 
 * **Search Scripts everywhere a script is chosen** (docs/UI.md has the rule): every screen that
