@@ -148,7 +148,7 @@ class JunkPanel {
 }
 
 /** A sale or a setting that asks first. */
-private enum class JunkAsk { SellSelected, SellAll, SkipWarning }
+private enum class JunkAsk { SellSelected, SellAll, SkipWarning, UnmarkAll }
 
 /**
  * Tools & Helpers > Junk Items (docs/UI.md, "Native shells"): the search with Refresh, the
@@ -180,7 +180,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                 DropdownMenuItem(
                     text = { Text("Unmark all") },
                     enabled = view != null && view.junk > 0u,
-                    onClick = { close(); panel.act("unmark-all") },
+                    onClick = { close(); ask = JunkAsk.UnmarkAll },
                 )
                 DropdownMenuItem(
                     text = { Text("Skip sell warning") },
@@ -451,7 +451,7 @@ private fun JunkChip(text: String, tone: JunkTone) {
     }
     Text(
         text,
-        style = MaterialTheme.typography.labelSmall,
+        style = MaterialTheme.typography.labelMedium,
         color = color,
         maxLines = 1,
         modifier = Modifier
@@ -542,6 +542,11 @@ private fun JunkConfirm(ask: JunkAsk, view: JunkView, panel: JunkPanel, close: (
             "Sell",
         )
         JunkAsk.SkipWarning -> Triple("Skip the sell warning?", "Selling won't ask first any more.", "Skip it")
+        JunkAsk.UnmarkAll -> Triple(
+            "Unmark all ${view.junk} junk items?",
+            "None of them is junk any more, and the junk list is saved empty. Mark them again to undo.",
+            "Unmark all",
+        )
     }
     AlertDialog(
         onDismissRequest = close,
@@ -554,6 +559,7 @@ private fun JunkConfirm(ask: JunkAsk, view: JunkView, panel: JunkPanel, close: (
                     JunkAsk.SellSelected -> panel.act("sell-selected")
                     JunkAsk.SellAll -> panel.act("sell-all")
                     JunkAsk.SkipWarning -> panel.act("skip-warning", JSONObject().put("on", true))
+                    JunkAsk.UnmarkAll -> panel.act("unmark-all")
                 }
             }) { Text(yes, color = if (ask == JunkAsk.SkipWarning) Turu.Accent else Turu.Danger) }
         },

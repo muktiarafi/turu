@@ -174,73 +174,88 @@ fun ArmyTravelPage(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel) 
     FollowTravel(state, army, travel)
     val view = travel.view
     var deleting by remember { mutableStateOf<TravelDest?>(null) }
+    var notice by remember { mutableStateOf<Notice?>(null) }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
-        PageBar("Map Travel", onBack = { state.back() })
-        if (view == null || army.view == null) {
-            val down = state.tabs.active?.down != null || state.tabs.active?.api == null
-            Text(
-                if (down) "This tab is starting again. Map Travel is back with it." else "Reading the tab…",
-                color = Turu.Muted,
-                modifier = Modifier.padding(20.dp),
-            )
-            return@Column
-        }
-        val (targets, everyone) = targets(army)
-        var goTo by remember { mutableStateOf(view.goTo) }
-        val here = currentKey(state, army)?.let { key -> view.here.firstOrNull { it.key == key }?.here }
-        val jump = { d: TravelDest -> army.send("jump", jumpBody(d)) }
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
-            item { ArmyTarget(targets, everyone) }
-            item {
-                GoTo(
-                    goTo = goTo,
-                    pads = view.pads,
-                    reach = targets.size,
-                    here = here,
-                    change = { goTo = it },
-                    jump = { jump(goTo) },
+            PageBar("Map Travel", onBack = { state.back() })
+            if (view == null || army.view == null) {
+                val down = state.tabs.active?.down != null || state.tabs.active?.api == null
+                Text(
+                    if (down) "This tab is starting again. Map Travel is back with it." else "Reading the tab…",
+                    color = Turu.Muted,
+                    modifier = Modifier.padding(20.dp),
                 )
+                return@Column
             }
-            item {
-                Heading("Recent destinations") {
-                    TextButton(onClick = { travel.act("clear-history") }, enabled = view.history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("Clear")
+            val (targets, everyone) = targets(army)
+            var goTo by remember { mutableStateOf(view.goTo) }
+            val here = currentKey(state, army)?.let { key -> view.here.firstOrNull { it.key == key }?.here }
+            val jump = { d: TravelDest -> army.send("jump", jumpBody(d)) }
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
+                item { ArmyTarget(targets, everyone) }
+                item {
+                    GoTo(
+                        goTo = goTo,
+                        pads = view.pads,
+                        reach = targets.size,
+                        here = here,
+                        change = { goTo = it },
+                        jump = { jump(goTo) },
+                    )
+                }
+                item {
+                    Heading("Recent destinations") {
+                        TextButton(
+                            onClick = {
+                                val n = view.history.size
+                                travel.act("clear-history") { e ->
+                                    if (e == null) notice = Notice(if (n == 1) "Cleared 1 visited map" else "Cleared $n visited maps") { travel.act("undo-clear-history") }
+                                }
+                            },
+                            enabled = view.history.isNotEmpty(),
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text("Clear")
+                        }
+                    }
+                }
+                if (view.history.isEmpty()) {
+                    item { Muted("The maps the clients travel to show here, the newest first.") }
+                } else {
+                    item { Muted("Tap one to fill Go to; Jump sends the clients there now.") }
+                }
+                items(view.history, key = { "h:${it.map}:${it.room}" }) { d ->
+                    Destination(d.label, d.name, canJump = targets.isNotEmpty(), fill = { goTo = d }, jump = { jump(d) })
+                }
+                item {
+                    Heading("Saved presets") {
+                        // Go to's destination when one is typed, else where the client is (VibeSkua's editor).
+                        val start = (if (goTo.map.isNotBlank()) goTo else here)?.copy(name = "")
+                        TextButton(onClick = { state.push(Page.ArmyPreset(null, start)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("New…") }
+                    }
+                }
+                if (view.presets.isEmpty()) {
+                    item { Muted("Save a destination to jump to it again: New… starts from Go to, or where the client is.") }
+                }
+                items(view.presets, key = { "p:${it.name}" }) { d ->
+                    Destination(d.label, place(d), canJump = targets.isNotEmpty(), fill = { goTo = d }, jump = { jump(d) }) { close ->
+                        DropdownMenuItem(text = { Text("Edit…") }, onClick = { close(); state.push(Page.ArmyPreset(d)) })
+                        DropdownMenuItem(text = { Text("Delete", color = Turu.Danger) }, onClick = { close(); deleting = d })
                     }
                 }
             }
-            if (view.history.isEmpty()) {
-                item { Muted("The maps the clients travel to show here, the newest first.") }
-            }
-            items(view.history, key = { "h:${it.map}:${it.room}" }) { d ->
-                Destination(d.label, d.name, canJump = targets.isNotEmpty(), fill = { goTo = d }, jump = { jump(d) })
-            }
-            item {
-                Heading("Saved presets") {
-                    // Go to's destination when one is typed, else where the client is (VibeSkua's editor).
-                    val start = (if (goTo.map.isNotBlank()) goTo else here)?.copy(name = "")
-                    TextButton(onClick = { state.push(Page.ArmyPreset(null, start)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("New…") }
-                }
-            }
-            if (view.presets.isEmpty()) {
-                item { Muted("Save a destination to jump to it again: New… starts from Go to, or where the client is.") }
-            }
-            items(view.presets, key = { "p:${it.name}" }) { d ->
-                Destination(d.label, place(d), canJump = targets.isNotEmpty(), fill = { goTo = d }, jump = { jump(d) }) { close ->
-                    DropdownMenuItem(text = { Text("Edit…") }, onClick = { close(); state.push(Page.ArmyPreset(d)) })
-                    DropdownMenuItem(text = { Text("Delete", color = Turu.Danger) }, onClick = { close(); deleting = d })
-                }
-            }
-        }
-        val failed = travel.error ?: army.error
-        if (failed != null) {
-            HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-            Text(failed, style = MaterialTheme.typography.bodySmall, color = Turu.Danger, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        } else {
-            army.view?.results?.lastOrNull()?.let {
+            val failed = travel.error ?: army.error
+            if (failed != null) {
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-                Text(it, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                Text(failed, style = MaterialTheme.typography.bodySmall, color = Turu.Danger, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            } else {
+                army.view?.results?.lastOrNull()?.let {
+                    HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
             }
         }
+        NoticeHost(notice, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { notice = null }
     }
     deleting?.let { d ->
         AlertDialog(
@@ -352,7 +367,8 @@ private fun Destination(
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (under.isNotBlank()) Text(under, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        OutlinedButton(onClick = jump, enabled = canJump, modifier = Modifier.heightIn(min = 48.dp)) { Text("Jump") }
+        // A text button: the rows' second action, quieter than Go to's filled Jump.
+        TextButton(onClick = jump, enabled = canJump, modifier = Modifier.heightIn(min = 48.dp)) { Text("Jump") }
         if (menu != null) {
             var open by remember { mutableStateOf(false) }
             Box {
